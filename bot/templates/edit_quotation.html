@@ -1,0 +1,1352 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>Edit Quotation - Construction Quotation Generator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #764ba2;
+            --secondary: #6b7280;
+            --success: #10b981;
+            --danger: #dc2626;
+            --warning: #f59e0b;
+            --light: #f8f9fa;
+            --dark: #2d3748;
+            --accent: #0b5;
+            --muted: #657;
+            --bg: #f6f7fb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            min-height: 100vh;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 15px;
+        }
+
+        /* Header Styles */
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px 15px;
+            margin-bottom: 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            color: white;
+            font-size: clamp(1.5rem, 5vw, 2.5rem);
+            margin-bottom: 8px;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: clamp(0.9rem, 3vw, 1.1rem);
+        }
+
+        /* Navigation */
+        .navbar {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        @media (min-width: 768px) {
+            .navbar {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+            }
+        }
+
+        .navbar-brand {
+            color: white;
+            font-size: clamp(1.2rem, 5vw, 1.5rem);
+            font-weight: bold;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .navbar-nav {
+            display: flex;
+            gap: 10px;
+            list-style: none;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .navbar-nav a {
+            color: rgba(255, 255, 255, 0.9);
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .navbar-nav a:active,
+        .navbar-nav a.active {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Main Content Card */
+        .quotation-card {
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 20px;
+        }
+
+        /* Quotation Status Banner */
+        .quotation-status {
+            background: linear-gradient(135deg, #f3f6fb 0%, #e8f0fe 100%);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid var(--primary);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .quotation-status h3 {
+            color: var(--dark);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.3em;
+        }
+
+        .quotation-status p {
+            color: var(--secondary);
+            margin: 0;
+            font-size: 0.95em;
+        }
+
+        .status-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-draft {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .status-sent {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-accepted {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .status-rejected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        /* Form Styles */
+        .form-section {
+            margin-bottom: 30px;
+            padding-bottom: 25px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .form-section:last-child {
+            border-bottom: none;
+        }
+
+        .section-title {
+            color: var(--dark);
+            font-size: clamp(1.2rem, 4vw, 1.5rem);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--primary);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+            gap: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--dark);
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            transform: translateY(-2px);
+        }
+
+        /* Items Table */
+        .items-section {
+            margin-top: 20px;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 12px;
+            border: 2px solid #e5e7eb;
+            background: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 600px;
+        }
+
+        .items-table th {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 16px 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            border-bottom: 2px solid var(--primary-dark);
+        }
+
+        .items-table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: middle;
+            background: white;
+        }
+
+        .items-table tbody tr:hover {
+            background: #f8f9fa;
+            transform: translateY(-1px);
+            transition: all 0.2s ease;
+        }
+
+        .items-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .items-table input {
+            width: 100%;
+            min-width: 80px;
+            padding: 10px 12px;
+            border: 2px solid #dfe6f3;
+            border-radius: 6px;
+            font-size: clamp(0.8rem, 3vw, 0.9rem);
+            transition: border-color 0.2s ease;
+        }
+
+        .items-table input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+
+        .item-name {
+            min-width: 250px;
+            width: 45%;
+        }
+
+        .qty-col {
+            width: 90px;
+        }
+
+        .unit-col {
+            width: 120px;
+        }
+
+        .total-col {
+            width: 140px;
+        }
+
+        .action-col {
+            width: 90px;
+        }
+
+        .line-total {
+            text-align: right;
+            font-weight: 600;
+            color: var(--dark);
+            background: var(--light);
+            border-radius: 6px;
+            padding: 10px 12px;
+            border: 1px solid #e5e7eb;
+        }
+
+        /* Empty state for items */
+        .empty-items {
+            text-align: center;
+            padding: 50px 20px;
+            color: var(--secondary);
+        }
+
+        .empty-items i {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        /* Add Item Section */
+        .add-item-section {
+            padding: 25px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 12px;
+            margin-top: 20px;
+            text-align: center;
+            border: 2px dashed #dee2e6;
+        }
+
+        /* Totals Section */
+        .totals-section {
+            margin-top: 30px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .totals-table {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 12px;
+            padding: 25px;
+            width: 100%;
+            max-width: 400px;
+            border: 2px solid #e5e7eb;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px dashed #ced4da;
+        }
+
+        .totals-row:last-child {
+            border-bottom: none;
+            font-weight: bold;
+            font-size: 1.3em;
+            color: var(--primary);
+            padding-top: 18px;
+            margin-top: 12px;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .totals-label {
+            color: var(--secondary);
+            font-weight: 600;
+        }
+
+        .totals-input {
+            width: 120px;
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            text-align: right;
+            font-size: 1em;
+            font-weight: 600;
+            transition: border-color 0.2s ease;
+        }
+
+        .totals-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+
+        /* Buttons */
+        .btn {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            text-align: center;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(-1px);
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: clamp(0.8rem, 3vw, 0.9rem);
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+            box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+        }
+
+        .btn-success {
+            background: var(--success);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+            box-shadow: none;
+        }
+
+        .btn-outline:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 35px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        /* Loading Animation */
+        .loading-spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .btn.loading {
+            opacity: 0.8;
+            pointer-events: none;
+        }
+
+        .btn.loading .loading-spinner {
+            display: inline-block;
+        }
+
+        /* Alert Messages */
+        .alert {
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            border-left: 4px solid;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border-left-color: var(--success);
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border-left-color: var(--danger);
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            color: #1e40af;
+            border-left-color: var(--primary);
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .quotation-card {
+                padding: 20px;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .totals-section {
+                justify-content: stretch;
+            }
+
+            .totals-table {
+                max-width: 100%;
+            }
+
+            .actions {
+                gap: 10px;
+            }
+
+            .btn {
+                flex: 1 1 auto;
+                min-width: 140px;
+                padding: 12px 20px;
+            }
+
+            .items-table input {
+                min-width: 60px;
+            }
+
+            .qty-col {
+                width: 70px;
+            }
+
+            .unit-col {
+                width: 100px;
+            }
+
+            .total-col {
+                width: 110px;
+            }
+
+            .action-col {
+                width: 70px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .quotation-card {
+                padding: 15px;
+            }
+
+            .totals-input {
+                width: 100px;
+            }
+
+            .btn {
+                min-width: 120px;
+                padding: 10px 16px;
+                font-size: 0.85rem;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+            }
+        }
+
+        /* Print Styles */
+        @media print {
+            body {
+                background: white !important;
+            }
+
+            .navbar,
+            .header,
+            .actions {
+                display: none !important;
+            }
+
+            .quotation-card {
+                box-shadow: none !important;
+                border: none !important;
+                background: white !important;
+                padding: 0 !important;
+            }
+
+            .btn {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <a href="#" class="navbar-brand">
+                <i class="fas fa-hard-hat"></i> Homebase Construction
+            </a>
+            <ul class="navbar-nav">
+                <li><a href="/quotations/create/"><i class="fas fa-plus"></i> <span class="nav-text">New
+                            Quotation</span></a></li>
+                <li><a href="#" class="active"><i class="fas fa-edit"></i> <span class="nav-text">Edit</span></a></li>
+                <li><a href="#"><i class="fas fa-list"></i> <span class="nav-text">All Quotations</span></a></li>
+                <li><a href="#"><i class="fas fa-users"></i> <span class="nav-text">Clients</span></a></li>
+            </ul>
+        </nav>
+
+        <div class="header">
+            <h1><i class="fas fa-edit"></i> Edit Quotation</h1>
+            <p>"Quality Is Our Qualification"</p>
+        </div>
+
+        <!-- Alert Messages -->
+        <div id="alertContainer"></div>
+
+        <div class="quotation-card">
+            <!-- Quotation Status -->
+            <div class="quotation-status" id="quotationStatus">
+                <h3>
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    Quotation #<span id="quotationNumber">Loading...</span>
+                    <span class="status-badge status-draft" id="statusBadge">Draft</span>
+                </h3>
+                <p>
+                    Created on <span id="createdDate">Loading...</span> •
+                    Last updated <span id="updatedDate">Loading...</span>
+                </p>
+            </div>
+
+            <!-- Client Information -->
+            <div class="form-section">
+                <h2 class="section-title">
+                    <i class="fas fa-user"></i> Client Information
+                </h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="clientName">Client Name *</label>
+                        <input type="text" id="clientName" placeholder="Enter client name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="clientEmail">Email</label>
+                        <input type="email" id="clientEmail" placeholder="client@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="clientPhone">Phone</label>
+                        <input type="tel" id="clientPhone" placeholder="+263 77 123 4567">
+                    </div>
+                    <div class="form-group">
+                        <label for="clientAddress">Address</label>
+                        <input type="text" id="clientAddress" placeholder="Client address">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Project Information -->
+            <div class="form-section">
+                <h2 class="section-title">
+                    <i class="fas fa-project-diagram"></i> Project Information
+                </h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="projectType">Project Type *</label>
+                        <input type="text" id="projectType" placeholder="e.g., Bathroom Renovation" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="projectLocation">Project Location</label>
+                        <input type="text" id="projectLocation" placeholder="Project site address">
+                    </div>
+                    <div class="form-group">
+                        <label for="quotationDate">Quotation Date</label>
+                        <input type="date" id="quotationDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="validUntil">Valid Until</label>
+                        <input type="date" id="validUntil">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="projectNotes">Project Notes</label>
+                    <textarea id="projectNotes" rows="3"
+                        placeholder="Describe the project scope and requirements..."></textarea>
+                </div>
+            </div>
+
+            <!-- Items Section -->
+            <div class="form-section items-section">
+                <h2 class="section-title">
+                    <i class="fas fa-list"></i> Items & Materials
+                </h2>
+
+                <div class="table-responsive">
+                    <table class="items-table" id="itemsTable">
+                        <thead>
+                            <tr>
+                                <th class="item-name">Item / Description</th>
+                                <th class="qty-col">Qty</th>
+                                <th class="unit-col">Unit Price (USD)</th>
+                                <th class="total-col">Line Total (USD)</th>
+                                <th class="action-col">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsTableBody">
+                            <tr class="empty-items" id="emptyItemsRow">
+                                <td colspan="5">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>No items found</p>
+                                    <p class="text-muted" style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                                        Loading quotation items...
+                                    </p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="add-item-section">
+                    <button class="btn btn-success" id="addItemBtn">
+                        <i class="fas fa-plus"></i> Add Item
+                    </button>
+                </div>
+            </div>
+
+            <!-- Totals Section -->
+            <div class="totals-section">
+                <div class="totals-table">
+                    <div class="totals-row">
+                        <span class="totals-label">Material Cost:</span>
+                        <span id="materialsTotal">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span class="totals-label">Labour Cost:</span>
+                        <input type="number" class="totals-input" id="labourCost" value="0" min="0" step="0.01">
+                    </div>
+                    <div class="totals-row">
+                        <span class="totals-label">Transport Cost:</span>
+                        <input type="number" class="totals-input" id="transportCost" value="0" min="0" step="0.01">
+                    </div>
+                    <div class="totals-row">
+                        <span>Total Amount:</span>
+                        <span id="grandTotal">$0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="actions">
+                <button class="btn" id="saveChangesBtn">
+                    <i class="fas fa-save"></i> Save Changes
+                    <div class="loading-spinner"></div>
+                </button>
+                <button class="btn btn-success" id="previewBtn">
+                    <i class="fas fa-eye"></i> Preview
+                </button>
+                <button class="btn btn-outline" id="printBtn">
+                    <i class="fas fa-print"></i> Print / Save PDF
+                </button>
+                <button class="btn btn-warning" id="sendQuotationBtn">
+                    <i class="fas fa-paper-plane"></i> Send to Client
+                    <div class="loading-spinner"></div>
+                </button>
+                <button class="btn btn-secondary" id="duplicateBtn">
+                    <i class="fas fa-copy"></i> Duplicate
+                </button>
+                <button class="btn btn-danger" id="deleteBtn">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let quotationId = null;
+        let items = [];
+        let currentQuotation = null;
+
+        // DOM Elements
+        const itemsTableBody = document.getElementById('itemsTableBody');
+        const emptyItemsRow = document.getElementById('emptyItemsRow');
+        const addItemBtn = document.getElementById('addItemBtn');
+        const saveChangesBtn = document.getElementById('saveChangesBtn');
+        const previewBtn = document.getElementById('previewBtn');
+        const printBtn = document.getElementById('printBtn');
+        const sendQuotationBtn = document.getElementById('sendQuotationBtn');
+        const duplicateBtn = document.getElementById('duplicateBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const labourCost = document.getElementById('labourCost');
+        const transportCost = document.getElementById('transportCost');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function () {
+            loadQuotationFromUrl();
+            setupEventListeners();
+        });
+
+        function loadQuotationFromUrl() {
+            // Get quotation ID from URL path
+            const pathParts = window.location.pathname.split('/');
+            const quotationIndex = pathParts.indexOf('quotations');
+
+            if (quotationIndex !== -1 && pathParts[quotationIndex + 1]) {
+                quotationId = pathParts[quotationIndex + 1];
+                loadQuotation(quotationId);
+            } else {
+                showAlert('Invalid quotation ID', 'error');
+            }
+        }
+
+        function setupEventListeners() {
+            addItemBtn.addEventListener('click', addNewItem);
+            saveChangesBtn.addEventListener('click', saveChanges);
+            previewBtn.addEventListener('click', showPreview);
+            printBtn.addEventListener('click', () => window.print());
+            sendQuotationBtn.addEventListener('click', sendQuotation);
+            duplicateBtn.addEventListener('click', duplicateQuotation);
+            deleteBtn.addEventListener('click', deleteQuotation);
+            labourCost.addEventListener('input', calculateTotals);
+            transportCost.addEventListener('input', calculateTotals);
+
+            // Auto-calculate on any input change
+            document.addEventListener('input', function (e) {
+                if (e.target.classList.contains('item-input')) {
+                    updateItemFromInput(e.target);
+                }
+            });
+        }
+
+        async function loadQuotation(id) {
+            try {
+                showLoading(saveChangesBtn, true);
+
+                const response = await fetch(`/api/quotations/${id}/`);
+                const quotation = await response.json();
+
+                if (quotation.error) {
+                    showAlert('Error loading quotation: ' + quotation.error, 'error');
+                    return;
+                }
+
+                currentQuotation = quotation;
+                populateForm(quotation);
+                showAlert('Quotation loaded successfully', 'success');
+
+            } catch (error) {
+                console.error('Error loading quotation:', error);
+                showAlert('Failed to load quotation', 'error');
+            } finally {
+                showLoading(saveChangesBtn, false);
+            }
+        }
+
+        function populateForm(quotation) {
+            // Update quotation status header
+            document.getElementById('quotationNumber').textContent = quotation.quotation_number || 'Unknown';
+            document.getElementById('createdDate').textContent = formatDate(quotation.created_at);
+            document.getElementById('updatedDate').textContent = formatDate(quotation.updated_at);
+
+            const statusBadge = document.getElementById('statusBadge');
+            statusBadge.textContent = quotation.status || 'draft';
+            statusBadge.className = `status-badge status-${quotation.status || 'draft'}`;
+
+            // Populate client information from appointment
+            if (quotation.appointment) {
+                document.getElementById('clientName').value = quotation.appointment.customer_name || '';
+                document.getElementById('clientEmail').value = quotation.appointment.customer_email || '';
+                document.getElementById('clientPhone').value = quotation.appointment.phone_number || '';
+                document.getElementById('clientAddress').value = quotation.appointment.customer_area || '';
+
+                // Project information
+                document.getElementById('projectType').value = quotation.appointment.project_type || '';
+                document.getElementById('projectLocation').value = quotation.appointment.customer_area || '';
+                document.getElementById('projectNotes').value = quotation.notes || quotation.appointment.project_description || '';
+            }
+
+            // Set dates
+            if (quotation.created_at) {
+                document.getElementById('quotationDate').value = quotation.created_at.split('T')[0];
+            }
+
+            // Set valid until date (30 days from creation)
+            if (quotation.created_at) {
+                const validDate = new Date(quotation.created_at);
+                validDate.setDate(validDate.getDate() + 30);
+                document.getElementById('validUntil').value = validDate.toISOString().split('T')[0];
+            }
+
+            // Set costs
+            document.getElementById('labourCost').value = quotation.labor_cost || 0;
+            document.getElementById('transportCost').value = 0; // Default since it's not in your model
+
+            // Load items
+            items = quotation.items ? quotation.items.map(item => ({
+                name: item.description,
+                qty: parseFloat(item.quantity),
+                unit: parseFloat(item.unit_price)
+            })) : [];
+
+            renderItems();
+            calculateTotals();
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return 'Unknown';
+            return new Date(dateString).toLocaleDateString('en-GB', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        }
+
+        function showLoading(button, loading) {
+            if (loading) {
+                button.classList.add('loading');
+                button.disabled = true;
+            } else {
+                button.classList.remove('loading');
+                button.disabled = false;
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.innerHTML = `
+                ${message}
+                <button onclick="this.parentElement.remove()" style="float: right; background: none; border: none; font-size: 1.2em; cursor: pointer;">&times;</button>
+            `;
+            alertContainer.appendChild(alert);
+
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (alert.parentElement) {
+                    alert.remove();
+                }
+            }, 5000);
+        }
+
+        function showEmptyState() {
+            emptyItemsRow.style.display = 'table-row';
+        }
+
+        function hideEmptyState() {
+            emptyItemsRow.style.display = 'none';
+        }
+
+        function renderItems() {
+            // Clear existing rows except empty state
+            const rows = itemsTableBody.querySelectorAll('tr:not(.empty-items)');
+            rows.forEach(row => row.remove());
+
+            if (items.length === 0) {
+                showEmptyState();
+                return;
+            }
+
+            hideEmptyState();
+
+            items.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="item-name">
+                        <input type="text" class="item-input" data-index="${index}" data-field="name" 
+                               value="${item.name}" placeholder="Item description">
+                    </td>
+                    <td class="qty-col">
+                        <input type="number" class="item-input" data-index="${index}" data-field="qty" 
+                               value="${item.qty}" min="0" step="1">
+                    </td>
+                    <td class="unit-col">
+                        <input type="number" class="item-input" data-index="${index}" data-field="unit" 
+                               value="${item.unit}" min="0" step="0.01">
+                    </td>
+                    <td class="total-col">
+                        <div class="line-total">${(item.qty * item.unit).toFixed(2)}</div>
+                    </td>
+                    <td class="action-col">
+                        <button class="btn btn-danger btn-sm" onclick="removeItem(${index})" 
+                                style="padding: 4px 8px;" title="Remove item">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+                itemsTableBody.appendChild(row);
+            });
+        }
+
+        function updateItemFromInput(input) {
+            const index = parseInt(input.dataset.index);
+            const field = input.dataset.field;
+            const value = field === 'name' ? input.value : (parseFloat(input.value) || 0);
+
+            if (items[index]) {
+                items[index][field] = value;
+
+                // Update line total if qty or unit changed
+                if (field === 'qty' || field === 'unit') {
+                    const row = input.closest('tr');
+                    const lineTotal = row.querySelector('.line-total');
+                    lineTotal.textContent = `${(items[index].qty * items[index].unit).toFixed(2)}`;
+                    calculateTotals();
+                }
+            }
+        }
+
+        function addNewItem() {
+            items.push({
+                name: '',
+                qty: 1,
+                unit: 0
+            });
+            renderItems();
+            calculateTotals();
+
+            // Focus on the new item's name input
+            setTimeout(() => {
+                const newRow = itemsTableBody.lastElementChild;
+                if (newRow && !newRow.classList.contains('empty-items')) {
+                    const nameInput = newRow.querySelector('input[data-field="name"]');
+                    if (nameInput) nameInput.focus();
+                }
+            }, 100);
+        }
+
+        function removeItem(index) {
+            if (confirm('Are you sure you want to remove this item?')) {
+                items.splice(index, 1);
+                renderItems();
+                calculateTotals();
+            }
+        }
+
+        function calculateTotals() {
+            const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
+            const labour = parseFloat(labourCost.value) || 0;
+            const transport = parseFloat(transportCost.value) || 0;
+            const grandTotal = materialTotal + labour + transport;
+
+            document.getElementById('materialsTotal').textContent = `$${materialTotal.toFixed(2)}`;
+            document.getElementById('grandTotal').textContent = `$${grandTotal.toFixed(2)}`;
+        }
+
+        async function saveChanges() {
+            const clientName = document.getElementById('clientName').value.trim();
+            const projectType = document.getElementById('projectType').value.trim();
+
+            if (!clientName) {
+                showAlert('Please enter a client name before saving.', 'error');
+                document.getElementById('clientName').focus();
+                return;
+            }
+
+            if (!projectType) {
+                showAlert('Please enter a project type before saving.', 'error');
+                document.getElementById('projectType').focus();
+                return;
+            }
+
+            try {
+                showLoading(saveChangesBtn, true);
+
+                const updateData = {
+                    client_name: clientName,
+                    client_email: document.getElementById('clientEmail').value.trim(),
+                    client_phone: document.getElementById('clientPhone').value.trim(),
+                    client_address: document.getElementById('clientAddress').value.trim(),
+                    project_type: projectType,
+                    project_location: document.getElementById('projectLocation').value.trim(),
+                    project_notes: document.getElementById('projectNotes').value.trim(),
+                    quotation_date: document.getElementById('quotationDate').value,
+                    valid_until: document.getElementById('validUntil').value,
+                    items: items,
+                    labour_cost: parseFloat(labourCost.value) || 0,
+                    transport_cost: parseFloat(transportCost.value) || 0,
+                    materials_cost: items.reduce((sum, item) => sum + (item.qty * item.unit), 0),
+                    total_amount: items.reduce((sum, item) => sum + (item.qty * item.unit), 0) +
+                        (parseFloat(labourCost.value) || 0) +
+                        (parseFloat(transportCost.value) || 0)
+                };
+
+                const response = await fetch(`/quotations/${quotationId}/edit/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify(updateData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showAlert('Changes saved successfully!', 'success');
+                    document.getElementById('updatedDate').textContent = 'Just now';
+                } else {
+                    showAlert('Failed to save changes: ' + (result.error || 'Unknown error'), 'error');
+                }
+
+            } catch (error) {
+                console.error('Error saving changes:', error);
+                showAlert('Failed to save changes', 'error');
+            } finally {
+                showLoading(saveChangesBtn, false);
+            }
+        }
+
+        async function sendQuotation() {
+            if (!confirm('Send this quotation to the client?')) {
+                return;
+            }
+
+            try {
+                showLoading(sendQuotationBtn, true);
+
+                const response = await fetch(`/quotations/${quotationId}/send/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showAlert('Quotation sent successfully!', 'success');
+                    const statusBadge = document.getElementById('statusBadge');
+                    statusBadge.textContent = 'sent';
+                    statusBadge.className = 'status-badge status-sent';
+                } else {
+                    showAlert('Failed to send quotation: ' + (result.error || 'Unknown error'), 'error');
+                }
+
+            } catch (error) {
+                console.error('Error sending quotation:', error);
+                showAlert('Failed to send quotation', 'error');
+            } finally {
+                showLoading(sendQuotationBtn, false);
+            }
+        }
+
+        async function duplicateQuotation() {
+            if (!confirm('Create a duplicate of this quotation?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/quotations/${quotationId}/duplicate/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showAlert('Quotation duplicated successfully!', 'success');
+                    setTimeout(() => {
+                        window.location.href = `/quotations/${result.new_quotation_id}/edit/`;
+                    }, 1500);
+                } else {
+                    showAlert('Failed to duplicate quotation: ' + (result.error || 'Unknown error'), 'error');
+                }
+
+            } catch (error) {
+                console.error('Error duplicating quotation:', error);
+                showAlert('Failed to duplicate quotation', 'error');
+            }
+        }
+
+        async function deleteQuotation() {
+            if (!confirm('Are you sure you want to delete this quotation? This action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/quotations/${quotationId}/delete/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showAlert('Quotation deleted successfully!', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/quotations/';
+                    }, 1500);
+                } else {
+                    showAlert('Failed to delete quotation: ' + (result.error || 'Unknown error'), 'error');
+                }
+
+            } catch (error) {
+                console.error('Error deleting quotation:', error);
+                showAlert('Failed to delete quotation', 'error');
+            }
+        }
+
+        function showPreview() {
+            const clientName = document.getElementById('clientName').value.trim();
+            const projectType = document.getElementById('projectType').value.trim();
+
+            if (!clientName) {
+                showAlert('Please enter a client name before generating preview.', 'error');
+                document.getElementById('clientName').focus();
+                return;
+            }
+
+            if (!projectType) {
+                showAlert('Please enter a project type before generating preview.', 'error');
+                document.getElementById('projectType').focus();
+                return;
+            }
+
+            const previewUrl = `/quotations/${quotationId}/preview/`;
+            window.open(previewUrl, '_blank');
+        }
+
+        function getCsrfToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    return value;
+                }
+            }
+            return '';
+        }
+
+        // Global functions for onclick handlers
+        window.removeItem = removeItem;
+
+        // Mobile optimizations
+        document.addEventListener('DOMContentLoaded', function () {
+            // Better touch feedback for buttons
+            document.querySelectorAll('.btn').forEach(btn => {
+                btn.addEventListener('touchstart', function () {
+                    this.style.transform = 'scale(0.96)';
+                });
+
+                btn.addEventListener('touchend', function () {
+                    this.style.transform = 'scale(1)';
+                });
+            });
+
+            // Prevent zoom on form inputs on mobile
+            document.querySelectorAll('input, select, textarea').forEach(input => {
+                input.addEventListener('focus', function (e) {
+                    if (window.innerWidth <= 768) {
+                        this.style.fontSize = '16px';
+                    }
+                });
+            });
+
+            // Hide navbar text on very small screens
+            function handleNavText() {
+                const navTexts = document.querySelectorAll('.nav-text');
+                if (window.innerWidth < 400) {
+                    navTexts.forEach(text => {
+                        text.style.display = 'none';
+                    });
+                } else {
+                    navTexts.forEach(text => {
+                        text.style.display = 'inline';
+                    });
+                }
+            }
+
+            window.addEventListener('resize', handleNavText);
+            handleNavText();
+        });
+    </script>
+</body>
+
+</html>
+{% endblock %}

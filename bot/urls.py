@@ -1,0 +1,79 @@
+from django.contrib import admin
+from django.urls import path
+from . import views
+from .views import (
+    DashboardView, AppointmentsListView, AppointmentDetailView,
+    settings_view, calendar_settings_view, ai_settings_view,
+    update_appointment, send_followup, confirm_appointment,
+    cancel_appointment, test_whatsapp, export_appointments, bot, CalendarView, handle_whatsapp_media,
+    # Import the new document views
+    AppointmentDocumentsView, download_document,
+    # Import the new quotation views
+    CreateQuotationView, ViewQuotationView, EditQuotationView, send_quotation,create_quotation_api,  # Add this line
+ # Import job scheduling views
+    complete_site_visit, schedule_job, job_appointments_list, update_job_status, reschedule_job,
+    login_view, logout_view, profile_view, change_password_view
+)
+
+# In urls.py, add:
+from django.conf import settings
+from django.conf.urls.static import static
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+
+    path('webhook/', bot, name='whatsapp_webhook'),
+
+    # Authentication URLs
+    path('', login_view, name='login'),  # Root URL redirects to login
+    path('login/', login_view, name='login'),
+    path('logout/', logout_view, name='logout'),
+    path('profile/', profile_view, name='profile'),
+    path('change-password/', change_password_view, name='change_password'),
+
+
+    # Dashboard
+    path('dashboard/', views.DashboardView.as_view(), name='dashboard'),
+    
+    # Appointments
+    path('appointments/', AppointmentsListView.as_view(), name='appointments_list'),
+    path('appointments/<int:pk>/', AppointmentDetailView.as_view(), name='appointment_detail'),
+    path('appointments/<int:pk>/update/', update_appointment, name='update_appointment'),
+    path('appointments/<int:pk>/followup/', send_followup, name='send_followup'),
+    path('appointments/<int:pk>/confirm/', confirm_appointment, name='confirm_appointment'),
+    path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),
+    
+    # Job scheduling URLs - INTEGRATED HERE
+    path('appointments/<int:pk>/complete-site-visit/', complete_site_visit, name='complete_site_visit'),
+    path('appointments/<int:pk>/schedule-job/', schedule_job, name='schedule_job'),
+    path('jobs/', job_appointments_list, name='job_appointments_list'),
+    path('jobs/<int:pk>/update-status/', update_job_status, name='update_job_status'),
+    path('jobs/<int:pk>/reschedule/', reschedule_job, name='reschedule_job'),
+    
+    # Document Routes
+    path('appointments/<int:pk>/documents/', AppointmentDocumentsView.as_view(), name='appointment_documents'),
+    path('appointments/<int:pk>/download/<str:document_type>/', download_document, name='download_document'),
+    
+    # Quotation Routes
+    path('appointments/<int:pk>/create-quotation/', CreateQuotationView.as_view(), name='create_quotation'),
+    path('quotations/<int:pk>/', ViewQuotationView.as_view(), name='view_quotation'),
+    path('quotations/<int:pk>/edit/', EditQuotationView.as_view(), name='edit_quotation'),
+    path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),
+    
+    path('quotations/create/', create_quotation_api, name='create_quotation_api'),
+
+    # Settings
+    path('settings/', settings_view, name='settings'),
+    path('settings/calendar/', calendar_settings_view, name='calendar_settings'),
+    path('settings/ai/', ai_settings_view, name='ai_settings'),
+    
+    # Tools
+    path('test-whatsapp/', test_whatsapp, name='test_whatsapp'),
+    path('export-appointments/', export_appointments, name='export_appointments'),
+
+    path('calendar/', CalendarView.as_view(), name='calendar'),
+
+    path('media/', handle_whatsapp_media, name='whatsapp_media'),
+]
+
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

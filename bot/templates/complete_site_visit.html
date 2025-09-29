@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Complete Site Visit</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <i class="fas fa-clipboard-check"></i>
+                Complete Site Visit
+            </h1>
+            <p>Mark site visit as completed and prepare for job scheduling</p>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3>Site Visit Details</h3>
+            </div>
+            <div class="card-body">
+                <div class="appointment-info">
+                    <p><strong>Customer:</strong> {{ appointment.customer_name }}</p>
+                    <p><strong>Service:</strong> {{ appointment.project_type }}</p>
+                    <p><strong>Area:</strong> {{ appointment.customer_area }}</p>
+                    <p><strong>Property:</strong> {{ appointment.property_type }}</p>
+                    <p><strong>Appointment:</strong> {{ appointment.scheduled_datetime|date:"M d, Y H:i" }}</p>
+                </div>
+            </div>
+        </div>
+
+        <form method="post" class="card">
+            {% csrf_token %}
+            <div class="card-header">
+                <h3>Site Visit Completion</h3>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label for="site_visit_notes">Site Visit Notes</label>
+                    <textarea id="site_visit_notes" name="site_visit_notes" class="form-control" rows="4"
+                        placeholder="Enter detailed notes about the site visit..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="plumber_assessment">Plumber Assessment</label>
+                    <textarea id="plumber_assessment" name="plumber_assessment" class="form-control" rows="4"
+                        placeholder="Assessment of work needed, materials required, time estimate..."></textarea>
+                </div>
+
+                <div class="actions">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check-circle"></i> Complete Site Visit & Schedule Job
+                    </button>
+                    <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Appointment
+                    </a>
+                </div>
+            </div>
+        </form>
+    </div>
+</body>
+
+</html>
+{% endblock %}

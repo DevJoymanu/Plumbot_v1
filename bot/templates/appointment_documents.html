@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <div class="header-content">
+        <h1>
+            <i class="fas fa-file-alt"></i>
+            Documents for {{ appointment.customer_name|default:"Customer" }}
+        </h1>
+        <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Appointment
+        </a>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="card">
+        <div class="card-header">
+            <h2><i class="fas fa-files"></i> Uploaded Documents ({{ document_count }})</h2>
+        </div>
+
+        {% if documents %}
+        <div class="card-body">
+            <div class="documents-list">
+                {% for doc in documents %}
+                <div class="document-item">
+                    <div class="document-info">
+                        <div class="document-icon">
+                            {% if doc.file.name|lower|cut:" "|cut:"."|slice:"-3:" == 'pdf' %}
+                            <i class="fas fa-file-pdf fa-2x text-danger"></i>
+                            {% elif doc.file.name|lower|cut:" "|cut:"."|slice:"-3:" in 'jpg,jpeg,png,gif' %}
+                            <i class="fas fa-file-image fa-2x text-primary"></i>
+                            {% else %}
+                            <i class="fas fa-file fa-2x text-secondary"></i>
+                            {% endif %}
+                        </div>
+                        <div class="document-details">
+                            <h4>{{ doc.type }}</h4>
+                            <p class="document-description">{{ doc.description }}</p>
+                            <small class="text-muted">
+                                <i class="fas fa-calendar"></i>
+                                Uploaded: {{ doc.uploaded_at|date:"M d, Y H:i"|default:"Unknown" }}
+                            </small>
+                            <small class="text-muted d-block">
+                                <i class="fas fa-hashtag"></i>
+                                Appointment: #{{ appointment.id }}
+                            </small>
+                        </div>
+                    </div>
+                    <div class="document-actions">
+                        {% if doc.file %}
+                        <a href="{{ doc.file.url }}" class="btn btn-primary" target="_blank" download>
+                            <i class="fas fa-download"></i> Download
+                        </a>
+                        <a href="{{ doc.file.url }}" class="btn btn-outline-primary" target="_blank">
+                            <i class="fas fa-eye"></i> View
+                        </a>
+                        {% else %}
+                        <span class="text-muted">File not available</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if not forloop.last %}
+                <hr>{% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="fas fa-file-excel fa-3x text-muted"></i>
+                <h3>No Documents Available</h3>
+                <p>No documents have been uploaded for this appointment yet.</p>
+                <div class="empty-state-actions">
+                    <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-primary">
+                        <i class="fas fa-arrow-left"></i> Return to Appointment
+                    </a>
+                    {% if appointment.phone_number %}
+                    <a href="https://wa.me/{{ appointment.phone_number|cut:'whatsapp:'|cut:'+' }}"
+                        class="btn btn-success" target="_blank">
+                        <i class="fab fa-whatsapp"></i> Request Documents
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+    .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+
+    .document-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        background: #fafafa;
+    }
+
+    .document-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        flex: 1;
+    }
+
+    .document-details h4 {
+        margin: 0 0 8px 0;
+        color: #2c3e50;
+        font-weight: 600;
+    }
+
+    .document-description {
+        margin: 0 0 8px 0;
+        color: #7f8c8d;
+    }
+
+    .document-actions {
+        display: flex;
+        gap: 10px;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #7f8c8d;
+    }
+
+    .empty-state i {
+        margin-bottom: 20px;
+        opacity: 0.5;
+    }
+
+    .empty-state h3 {
+        margin-bottom: 10px;
+        color: #2c3e50;
+    }
+
+    .empty-state-actions {
+        margin-top: 20px;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 8px 16px;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+        background: #3498db;
+        color: white;
+        border: 1px solid #3498db;
+    }
+
+    .btn-primary:hover {
+        background: #2980b9;
+        color: white;
+    }
+
+    .btn-outline-primary {
+        background: transparent;
+        color: #3498db;
+        border: 1px solid #3498db;
+    }
+
+    .btn-outline-primary:hover {
+        background: #3498db;
+        color: white;
+    }
+
+    .btn-success {
+        background: #27ae60;
+        color: white;
+        border: 1px solid #27ae60;
+    }
+
+    .btn-success:hover {
+        background: #219a52;
+        color: white;
+    }
+
+    .btn-secondary {
+        background: #95a5a6;
+        color: white;
+        border: 1px solid #95a5a6;
+    }
+
+    .btn-secondary:hover {
+        background: #7f8c8d;
+        color: white;
+    }
+
+    @media (max-width: 768px) {
+        .document-item {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .document-actions {
+            align-self: stretch;
+            justify-content: space-between;
+        }
+
+        .header-content {
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-start;
+        }
+
+        .empty-state-actions {
+            flex-direction: column;
+        }
+    }
+</style>
+{% endblock %}

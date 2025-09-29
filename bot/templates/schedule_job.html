@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Schedule Job Appointment</title>
+    {% load static %}
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <i class="fas fa-calendar-plus"></i>
+                Schedule Job Appointment
+            </h1>
+            <p>Schedule the job appointment after site visit completion</p>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- Left Column - Site Visit Info -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>Site Visit Summary</h3>
+                </div>
+                <div class="card-body">
+                    <div class="site-visit-summary">
+                        <p><strong>Customer:</strong> {{ site_visit.customer_name }}</p>
+                        <p><strong>Service:</strong> {{ site_visit.project_type }}</p>
+                        <p><strong>Area:</strong> {{ site_visit.customer_area }}</p>
+                        <p><strong>Completed:</strong> {{ site_visit.site_visit_completed_at|date:"M d, Y H:i" }}</p>
+
+                        {% if site_visit.site_visit_notes %}
+                        <div class="notes-section">
+                            <h4>Site Visit Notes:</h4>
+                            <p class="notes">{{ site_visit.site_visit_notes|linebreaks }}</p>
+                        </div>
+                        {% endif %}
+
+                        {% if site_visit.plumber_assessment %}
+                        <div class="assessment-section">
+                            <h4>Plumber Assessment:</h4>
+                            <p class="assessment">{{ site_visit.plumber_assessment|linebreaks }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column - Job Scheduling Form -->
+            <div class="card">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="card-header">
+                        <h3>Job Appointment Details</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="job_date">Job Date</label>
+                            <input type="date" id="job_date" name="job_date" class="form-control"
+                                min="{{ today|date:'Y-m-d' }}" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="job_time">Job Time</label>
+                            <select id="job_time" name="job_time" class="form-control" required>
+                                <option value="">Select time</option>
+                                <option value="08:00">8:00 AM</option>
+                                <option value="09:00">9:00 AM</option>
+                                <option value="10:00">10:00 AM</option>
+                                <option value="11:00">11:00 AM</option>
+                                <option value="12:00">12:00 PM</option>
+                                <option value="13:00">1:00 PM</option>
+                                <option value="14:00">2:00 PM</option>
+                                <option value="15:00">3:00 PM</option>
+                                <option value="16:00">4:00 PM</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="duration_hours">Duration (hours)</label>
+                            <select id="duration_hours" name="duration_hours" class="form-control" required>
+                                <option value="2">2 hours</option>
+                                <option value="3">3 hours</option>
+                                <option value="4" selected>4 hours</option>
+                                <option value="5">5 hours</option>
+                                <option value="6">6 hours</option>
+                                <option value="8">Full day (8 hours)</option>
+                            </select>
+                        </div>
+
+
+                        <div class="form-group">
+                            <label for="job_description">Job Description</label>
+                            <textarea id="job_description" name="job_description" class="form-control" rows="4"
+                                placeholder="Detailed description of work to be done..."></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="materials_needed">Materials Needed</label>
+                            <textarea id="materials_needed" name="materials_needed" class="form-control" rows="3"
+                                placeholder="List of materials and tools required..."></textarea>
+                        </div>
+
+                        <div class="actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-calendar-check"></i> Schedule Job Appointment
+                            </button>
+                            <a href="{% url 'appointment_detail' site_visit.pk %}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Site Visit
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Disable past dates and weekends
+        document.addEventListener('DOMContentLoaded', function () {
+            const dateInput = document.getElementById('job_date');
+            const today = new Date();
+
+            dateInput.addEventListener('change', function () {
+                const selectedDate = new Date(this.value);
+                const dayOfWeek = selectedDate.getDay();
+
+                // Check if weekend (0 = Sunday, 6 = Saturday)
+                if (dayOfWeek === 0 || dayOfWeek === 6) {
+                    alert('Please select a weekday (Monday-Friday)');
+                    this.value = '';
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
+{% endblock %}

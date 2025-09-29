@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <h1><i class="fas fa-wrench"></i> Plumbing Appointment System</h1>
+    <p>Manage WhatsApp appointments and customer communications</p>
+</div>
+
+<div class="dashboard-grid">
+    <!-- Statistics Cards -->
+    <div class="card stat-card">
+        <div class="stat-number">{{ total_appointments }}</div>
+        <div class="stat-label">Total Appointments</div>
+    </div>
+
+    <div class="card stat-card">
+        <div class="stat-number">{{ pending_appointments }}</div>
+        <div class="stat-label">Pending Appointments</div>
+    </div>
+
+    <div class="card stat-card">
+        <div class="stat-number">{{ confirmed_appointments }}</div>
+        <div class="stat-label">Confirmed Appointments</div>
+    </div>
+
+    <!-- Today's Confirmed Appointments -->
+    <div class="card">
+        <h2><i class="fas fa-calendar-day"></i> Today's Confirmed Appointments</h2>
+        <div class="appointment-list">
+            {% for appointment in todays_confirmed_appointments %}
+            <div class="appointment-item">
+                <div class="appointment-header">
+                    <div class="appointment-name">
+                        {{ appointment.customer_name|default:"Unknown Customer" }}
+                    </div>
+                    <div class="appointment-status status-{{ appointment.status }}">
+                        {{ appointment.get_status_display }}
+                    </div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item">
+                        <i class="fas fa-phone"></i>
+                        {{ appointment.phone_number }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-map-marker-alt"></i>
+                        {{ appointment.customer_area|default:"No area" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-tools"></i>
+                        {{ appointment.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-clock"></i>
+                        {{ appointment.scheduled_datetime|date:"H:i"|default:"Not scheduled" }}
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ appointment.get_customer_info_completeness }}%"></div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-sm">
+                        <i class="fas fa-eye"></i> View
+                    </a>
+                </div>
+            </div>
+            {% empty %}
+            <div class="empty-state">
+                <i class="fas fa-calendar-times"></i>
+                <p>No confirmed appointments for today</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Tomorrow's Confirmed Appointments -->
+    <div class="card">
+        <h2><i class="fas fa-calendar-plus"></i> Tomorrow's Confirmed Appointments</h2>
+        <div class="appointment-list">
+            {% for appointment in tomorrows_confirmed_appointments %}
+            <div class="appointment-item">
+                <div class="appointment-header">
+                    <div class="appointment-name">
+                        {{ appointment.customer_name|default:"Unknown Customer" }}
+                    </div>
+                    <div class="appointment-status status-{{ appointment.status }}">
+                        {{ appointment.get_status_display }}
+                    </div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item">
+                        <i class="fas fa-phone"></i>
+                        {{ appointment.phone_number }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-map-marker-alt"></i>
+                        {{ appointment.customer_area|default:"No area" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-tools"></i>
+                        {{ appointment.project_type|default:"No serv" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-clock"></i>
+                        {{ appointment.scheduled_datetime|date:"H:i"|default:"Not scheduled" }}
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ appointment.get_customer_info_completeness }}%"></div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-sm">
+                        <i class="fas fa-eye"></i> View
+                    </a>
+                </div>
+            </div>
+            {% empty %}
+            <div class="empty-state">
+                <i class="fas fa-calendar-times"></i>
+                <p>No confirmed appointments for tomorrow</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Recent Appointments -->
+    <div class="card">
+        <h2><i class="fas fa-clock"></i> Recent Appointments</h2>
+        <div class="appointment-list">
+            {% for appointment in recent_appointments %}
+            <div class="appointment-item">
+                <div class="appointment-header">
+                    <div class="appointment-name">
+                        {{ appointment.customer_name|default:"Unknown Customer" }}
+                    </div>
+                    <div class="appointment-status status-{{ appointment.status }}">
+                        {{ appointment.get_status_display }}
+                    </div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item">
+                        <i class="fas fa-phone"></i>
+                        {{ appointment.phone_number }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-map-marker-alt"></i>
+                        {{ appointment.customer_area|default:"No area" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-tools"></i>
+                        {{ appointment.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-calendar"></i>
+                        {{ appointment.scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ appointment.get_customer_info_completeness }}%"></div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-sm">
+                        <i class="fas fa-eye"></i> View
+                    </a>
+                </div>
+            </div>
+            {% empty %}
+            <div class="empty-state">
+                <i class="fas fa-calendar-times"></i>
+                <p>No recent appointments</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- System Status -->
+    <div class="card">
+        <h2><i class="fas fa-cogs"></i> System Status</h2>
+        <div class="detail-item">
+            <i class="fas fa-circle text-success"></i>
+            WhatsApp Bot: Active
+        </div>
+        <div class="detail-item">
+            <i class="fas fa-circle text-success"></i>
+            Database: Connected
+        </div>
+        <div class="detail-item">
+            <i
+                class="fas fa-circle {% if calendar_status == 'Connected' %}text-success{% else %}text-warning{% endif %}"></i>
+            Google Calendar: {{ calendar_status }}
+        </div>
+        <div class="actions">
+            <a href="{% url 'test_whatsapp' %}" class="btn">
+                <i class="fas fa-phone"></i> Test WhatsApp
+            </a>
+            <a href="{% url 'appointments_list' %}" class="btn btn-secondary">
+                <i class="fas fa-list"></i> View All
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

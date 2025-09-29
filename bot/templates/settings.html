@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <h1><i class="fas fa-cog"></i> System Settings</h1>
+    <p>Configure your plumbing appointment system</p>
+</div>
+
+<div class="card">
+    <div class="tabs">
+        <a href="{% url 'settings' %}" class="tab {% if active_tab == 'general' %}active{% endif %}">
+            <i class="fas fa-sliders-h"></i> General
+        </a>
+        <a href="{% url 'calendar_settings' %}" class="tab {% if active_tab == 'calendar' %}active{% endif %}">
+            <i class="fas fa-calendar"></i> Calendar
+        </a>
+        <a href="{% url 'ai_settings' %}" class="tab {% if active_tab == 'ai' %}active{% endif %}">
+            <i class="fas fa-robot"></i> AI Settings
+        </a>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+        <div class="form-group">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}
+            <small class="text-muted">{{ field.help_text }}</small>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <div class="actions">
+            <button type="submit" class="btn">
+                <i class="fas fa-save"></i> Save Settings
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

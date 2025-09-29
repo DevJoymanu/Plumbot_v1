@@ -1,0 +1,15 @@
+Django>=4.0
+openai
+twilio
+google-api-python-client
+google-auth
+google-auth-oauthlib
+psycopg2-binary  # optional if using PostgreSQL
+
+gunicorn
+whitenoise
+redis
+celery
+requests
+twilio
+psycopg2-binary

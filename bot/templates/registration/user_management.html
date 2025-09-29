@@ -1,0 +1,71 @@
+{% extends 'registration/base_auth.html' %}
+
+{% block content %}
+<h4 class="text-center mb-4">User Management</h4>
+
+<div class="mb-3 text-center">
+    <a href="{% url 'create_user' %}" class="btn btn-success">
+        <i class="fas fa-user-plus me-2"></i>Create New User
+    </a>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user_obj in users %}
+            <tr>
+                <td>{{ user_obj.username }}</td>
+                <td>{{ user_obj.get_full_name|default:"-" }}</td>
+                <td>{{ user_obj.email|default:"-" }}</td>
+                <td>
+                    {% if user_obj.is_superuser %}
+                    <span class="badge bg-danger">Superuser</span>
+                    {% elif user_obj.is_staff %}
+                    <span class="badge bg-primary">Staff</span>
+                    {% endif %}
+                    {% if not user_obj.is_active %}
+                    <span class="badge bg-secondary">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{% url 'toggle_user_status' user_obj.id %}"
+                        class="btn btn-sm {% if user_obj.is_active %}btn-warning{% else %}btn-success{% endif %}">
+                        {% if user_obj.is_active %}Deactivate{% else %}Activate{% endif %}
+                    </a>
+                    {% if not user_obj.is_superuser %}
+                    <a href="{% url 'promote_to_superuser' user_obj.id %}" class="btn btn-sm btn-danger">Make
+                        Superuser</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="text-center">No users found</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="text-center mt-4">
+    <p class="text-muted">
+        <strong>Total Users:</strong> {{ total_users }} |
+        <strong>Active:</strong> {{ active_users }}
+    </p>
+</div>
+
+<div class="text-center">
+    <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+    </a>
+</div>
+{% endblock %}

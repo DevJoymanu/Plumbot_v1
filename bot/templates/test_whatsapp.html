@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <h1><i class="fas fa-phone"></i> Test WhatsApp Connection</h1>
+    <p>Verify your WhatsApp integration is working properly</p>
+</div>
+
+<div class="card">
+    <h2><i class="fas fa-vial"></i> Test Results</h2>
+
+    {% if results %}
+    {% if results.success %}
+    <div class="alert alert-success">
+        <i class="fas fa-check-circle"></i> WhatsApp test initiated successfully!
+    </div>
+    {% else %}
+    <div class="alert alert-error">
+        <i class="fas fa-exclamation-circle"></i> WhatsApp test failed: {{ results.error }}
+    </div>
+    {% endif %}
+
+    {% for result in results.results %}
+    <div class="test-result">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+            <strong>{{ result.number }}</strong>
+            <span class="badge {% if result.status == 'success' %}bg-success{% else %}bg-danger{% endif %}">
+                {{ result.status|title }}
+            </span>
+        </div>
+
+        {% if result.sid %}
+        <div class="detail-item">
+            <i class="fas fa-id-badge"></i> Message SID: {{ result.sid }}
+        </div>
+        {% endif %}
+
+        {% if result.error %}
+        <div class="detail-item">
+            <i class="fas fa-exclamation-triangle"></i> Error: {{ result.error }}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-vial"></i>
+        <p>No test results available. Run a test to verify your WhatsApp connection.</p>
+    </div>
+    {% endif %}
+
+    <div class="actions">
+        <a href="{% url 'test_whatsapp' %}" class="btn">
+            <i class="fas fa-sync-alt"></i> Run Test Again
+        </a>
+        <a href="{% url 'settings' %}" class="btn btn-secondary">
+            <i class="fas fa-cog"></i> Settings
+        </a>
+    </div>
+</div>
+{% endblock %}

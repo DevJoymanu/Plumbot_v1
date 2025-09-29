@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <h1><i class="fas fa-calendar-alt"></i> All Appointments</h1>
+    <p>Manage and view all customer appointments</p>
+</div>
+
+<div class="card">
+    <div class="appointment-header" style="margin-bottom: 20px;">
+        <div>
+            <h2 style="margin: 0;"><i class="fas fa-filter"></i> Appointments</h2>
+        </div>
+        <div class="actions">
+            <a href="{% url 'export_appointments' %}" class="btn btn-secondary">
+                <i class="fas fa-download"></i> Export
+            </a>
+        </div>
+    </div>
+
+    <div class="dashboard-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
+        <div class="card stat-card">
+            <div class="stat-number">{{ status_counts.total }}</div>
+            <div class="stat-label">Total</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-number">{{ status_counts.pending }}</div>
+            <div class="stat-label">Pending</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-number">{{ status_counts.confirmed }}</div>
+            <div class="stat-label">Confirmed</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-number">{{ status_counts.cancelled }}</div>
+            <div class="stat-label">Cancelled</div>
+        </div>
+    </div>
+
+    <div class="appointment-list">
+        {% for appointment in appointments %}
+        <div class="appointment-item">
+            <div class="appointment-header">
+                <div class="appointment-name">
+                    {{ appointment.customer_name|default:"Unknown Customer" }}
+                </div>
+                <div class="appointment-status status-{{ appointment.status }}">
+                    {{ appointment.get_status_display }}
+                </div>
+            </div>
+            <div class="appointment-details">
+                <div class="detail-item">
+                    <i class="fas fa-phone"></i>
+                    {{ appointment.phone_number }}
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-map-marker-alt"></i>
+                    {{ appointment.customer_area|default:"No area" }}
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-tools"></i>
+                    {{ appointment.project_type|default:"No service" }}
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-calendar"></i>
+                    {{ appointment.scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}
+                </div>
+            </div>
+            <div class="actions">
+                <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-sm">
+                    <i class="fas fa-eye"></i> View
+                </a>
+                {% if appointment.status == 'pending' %}
+                <a href="{% url 'confirm_appointment' appointment.pk %}" class="btn btn-sm btn-success">
+                    <i class="fas fa-check"></i> Confirm
+                </a>
+                {% endif %}
+                {% if appointment.status != 'cancelled' %}
+                <a href="{% url 'cancel_appointment' appointment.pk %}" class="btn btn-sm btn-danger">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="empty-state">
+            <i class="fas fa-calendar-times"></i>
+            <p>No appointments found</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if is_paginated %}
+    <div class="pagination" style="margin-top: 20px; display: flex; justify-content: center;">
+        <nav aria-label="Page navigation">
+            <ul class="pagination">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}" aria-label="Previous">
+                        <span aria-hidden="true">&laquo;</span>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                <li class="page-item active"><a class="page-link" href="#">{{ num }}</a></li>
+                {% else %}
+                <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+                {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}" aria-label="Next">
+                        <span aria-hidden="true">&raquo;</span>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

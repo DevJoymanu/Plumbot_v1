@@ -1,0 +1,1654 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>Construction Quotation Generator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #764ba2;
+            --secondary: #6b7280;
+            --success: #10b981;
+            --danger: #dc2626;
+            --warning: #f59e0b;
+            --light: #f8f9fa;
+            --dark: #2d3748;
+            --accent: #0b5;
+            --muted: #657;
+            --bg: #f6f7fb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            min-height: 100vh;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 15px;
+        }
+
+        /* Header Styles */
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px 15px;
+            margin-bottom: 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            color: white;
+            font-size: clamp(1.5rem, 5vw, 2.5rem);
+            margin-bottom: 8px;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: clamp(0.9rem, 3vw, 1.1rem);
+        }
+
+        /* Navigation */
+        .navbar {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        @media (min-width: 768px) {
+            .navbar {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+            }
+        }
+
+        .navbar-brand {
+            color: white;
+            font-size: clamp(1.2rem, 5vw, 1.5rem);
+            font-weight: bold;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .navbar-nav {
+            display: flex;
+            gap: 10px;
+            list-style: none;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .navbar-nav a {
+            color: rgba(255, 255, 255, 0.9);
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .navbar-nav a:active,
+        .navbar-nav a.active {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Main Content Card */
+        .quotation-card {
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 20px;
+        }
+
+        /* Form Styles */
+        .form-section {
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .form-section:last-child {
+            border-bottom: none;
+        }
+
+        .section-title {
+            color: var(--dark);
+            font-size: clamp(1.2rem, 4vw, 1.5rem);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+            gap: 15px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: var(--dark);
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            transition: border-color 0.2s ease;
+            background: white;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        /* Project Type Input with Suggestions */
+        .project-type-container {
+            position: relative;
+        }
+
+        .project-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .suggestion-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        .suggestion-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+
+        /* Items Table */
+        .items-section {
+            margin-top: 20px;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 600px;
+        }
+
+        .items-table th {
+            background: #f3f6fb;
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--dark);
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            border-bottom: 2px solid #e6e9f0;
+        }
+
+        .items-table td {
+            padding: 12px 8px;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: middle;
+        }
+
+        .items-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .items-table input {
+            width: 100%;
+            min-width: 80px;
+            padding: 8px 10px;
+            border: 1px solid #dfe6f3;
+            border-radius: 6px;
+            font-size: clamp(0.8rem, 3vw, 0.9rem);
+        }
+
+        .item-name {
+            min-width: 200px;
+            width: 40%;
+        }
+
+        .qty-col {
+            width: 80px;
+        }
+
+        .unit-col {
+            width: 100px;
+        }
+
+        .total-col {
+            width: 120px;
+        }
+
+        .action-col {
+            width: 80px;
+        }
+
+        .line-total {
+            text-align: right;
+            font-weight: 600;
+            color: var(--dark);
+            background: var(--light);
+            border-radius: 4px;
+            padding: 8px 10px;
+        }
+
+        /* Empty state for items */
+        .empty-items {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--secondary);
+        }
+
+        .empty-items i {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        /* Add Item Section */
+        .add-item-section {
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        /* Totals Section */
+        .totals-section {
+            margin-top: 25px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .totals-table {
+            background: var(--light);
+            border-radius: 8px;
+            padding: 20px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px dashed #e5e7eb;
+        }
+
+        .totals-row:last-child {
+            border-bottom: none;
+            font-weight: bold;
+            font-size: 1.2em;
+            color: var(--primary);
+            padding-top: 15px;
+            margin-top: 10px;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .totals-label {
+            color: var(--secondary);
+            font-weight: 500;
+        }
+
+        .totals-input {
+            width: 100px;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: right;
+            font-size: 0.95em;
+        }
+
+        /* Buttons */
+        .btn {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-align: center;
+            -webkit-user-select: none;
+            user-select: none;
+            font-weight: 600;
+        }
+
+        .btn:active {
+            transform: scale(0.96);
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: clamp(0.8rem, 3vw, 0.9rem);
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+        }
+
+        .btn-success {
+            background: var(--success);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 25px;
+            flex-wrap: wrap;
+        }
+
+        /* Loading Animation */
+        .loading-spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .btn.loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .btn.loading .loading-spinner {
+            display: inline-block;
+        }
+
+        /* Alert Messages */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: clamp(0.9rem, 3.5vw, 1rem);
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid var(--success);
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid var(--danger);
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid var(--primary);
+        }
+
+        /* Preview Section */
+        .preview-container {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            padding: 28px;
+            margin-top: 20px;
+            box-shadow: 0 8px 30px rgba(20, 30, 40, 0.08);
+        }
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .company-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .company-logo {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--accent), #4cd);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .quote-info {
+            text-align: right;
+        }
+
+        .quote-info h3 {
+            margin: 0;
+            color: var(--dark);
+        }
+
+        .quote-info p {
+            margin: 2px 0;
+            color: var(--muted);
+            font-size: 0.9em;
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .quotation-card {
+                padding: 15px;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .totals-section {
+                justify-content: stretch;
+            }
+
+            .totals-table {
+                max-width: 100%;
+            }
+
+            .actions {
+                gap: 8px;
+            }
+
+            .btn {
+                flex: 1 1 auto;
+                min-width: 120px;
+            }
+
+            .preview-header {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .quote-info {
+                text-align: center;
+            }
+
+            .items-table input {
+                min-width: 60px;
+            }
+
+            .qty-col {
+                width: 60px;
+            }
+
+            .unit-col {
+                width: 80px;
+            }
+
+            .total-col {
+                width: 90px;
+            }
+
+            .action-col {
+                width: 60px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .company-info {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .totals-input {
+                width: 80px;
+            }
+        }
+
+        /* Print Styles */
+        @media print {
+            body {
+                background: white !important;
+            }
+
+            .navbar,
+            .header,
+            .actions,
+            .form-section:not(.preview-container) {
+                display: none !important;
+            }
+
+            .quotation-card {
+                box-shadow: none !important;
+                border: none !important;
+                background: white !important;
+            }
+
+            .preview-container {
+                display: block !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <a href="#" class="navbar-brand">
+                <i class="fas fa-hard-hat"></i> Homebase Construction
+            </a>
+            <ul class="navbar-nav">
+                <li><a href="#" class="active"><i class="fas fa-file-invoice-dollar"></i> <span
+                            class="nav-text">Quotation</span></a></li>
+                <li><a href="#"><i class="fas fa-project-diagram"></i> <span class="nav-text">Projects</span></a></li>
+                <li><a href="#"><i class="fas fa-users"></i> <span class="nav-text">Clients</span></a></li>
+            </ul>
+        </nav>
+
+        <div class="header">
+            <h1><i class="fas fa-calculator"></i> Construction Quotation Generator</h1>
+            <p>"Quality Is Our Qualification"</p>
+        </div>
+
+        <!-- Alert Messages -->
+        <div id="alertContainer"></div>
+
+        <div class="quotation-card">
+            <!-- Client Information -->
+            <div class="form-section">
+                <h2 class="section-title">
+                    <i class="fas fa-user"></i> Client Information
+                </h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="clientName">Client Name *</label>
+                        <input type="text" id="clientName" placeholder="Enter client name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="clientEmail">Email</label>
+                        <input type="email" id="clientEmail" placeholder="client@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="clientPhone">Phone</label>
+                        <input type="tel" id="clientPhone" placeholder="+263 77 123 4567">
+                    </div>
+                    <div class="form-group">
+                        <label for="clientAddress">Address</label>
+                        <input type="text" id="clientAddress" placeholder="Client address">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Project Information -->
+            <div class="form-section">
+                <h2 class="section-title">
+                    <i class="fas fa-project-diagram"></i> Project Information
+                </h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="projectType">Project Type *</label>
+                        <div class="project-type-container">
+                            <input type="text" id="projectType" placeholder="e.g., Bathroom Renovation" required>
+                            <div class="project-suggestions" id="projectSuggestions">
+                                <!-- Suggestions will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="projectLocation">Project Location</label>
+                        <input type="text" id="projectLocation" placeholder="Project site address">
+                    </div>
+                    <div class="form-group">
+                        <label for="quotationDate">Quotation Date</label>
+                        <input type="date" id="quotationDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="validUntil">Valid Until</label>
+                        <input type="date" id="validUntil">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="projectNotes">Project Notes</label>
+                    <textarea id="projectNotes" rows="3"
+                        placeholder="Describe the project scope and requirements..."></textarea>
+                </div>
+            </div>
+
+            <!-- Items Section -->
+            <div class="form-section items-section">
+                <h2 class="section-title">
+                    <i class="fas fa-list"></i> Items & Materials
+                </h2>
+
+                <div class="table-responsive">
+                    <table class="items-table" id="itemsTable">
+                        <thead>
+                            <tr>
+                                <th class="item-name">Item / Description</th>
+                                <th class="qty-col">Qty</th>
+                                <th class="unit-col">Unit Price (USD)</th>
+                                <th class="total-col">Line Total (USD)</th>
+                                <th class="action-col">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsTableBody">
+                            <tr class="empty-items" id="emptyItemsRow">
+                                <td colspan="5">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>No items added yet</p>
+                                    <p class="text-muted" style="font-size: 0.9em; color: #666; margin-top: 5px;">Click
+                                        "Add Item" below to start building your quotation</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="add-item-section">
+                    <button class="btn btn-success" id="addItemBtn">
+                        <i class="fas fa-plus"></i> Add Item
+                    </button>
+                </div>
+            </div>
+
+            <!-- Totals Section -->
+            <div class="totals-section">
+                <div class="totals-table">
+                    <div class="totals-row">
+                        <span class="totals-label">Material Cost:</span>
+                        <span id="materialsTotal">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span class="totals-label">Labour Cost:</span>
+                        <input type="number" class="totals-input" id="labourCost" value="0" min="0" step="0.01">
+                    </div>
+                    <div class="totals-row">
+                        <span class="totals-label">Transport Cost:</span>
+                        <input type="number" class="totals-input" id="transportCost" value="0" min="0" step="0.01">
+                    </div>
+                    <div class="totals-row">
+                        <span>Total Amount:</span>
+                        <span id="grandTotal">$0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="actions">
+                <button class="btn" id="loadAppointmentBtn">
+                    <i class="fas fa-download"></i> Load From Appointment
+                    <div class="loading-spinner"></div>
+                </button>
+                <button class="btn btn-secondary" id="clearAllBtn">
+                    <i class="fas fa-trash"></i> Clear All
+                </button>
+                <button class="btn btn-success" id="previewBtn">
+                    <i class="fas fa-eye"></i> Preview
+                </button>
+                <button class="btn btn-outline" id="printBtn">
+                    <i class="fas fa-print"></i> Print / Save PDF
+                </button>
+                <button class="btn btn-success" id="saveQuotationBtn">
+                    <i class="fas fa-save"></i> Save Quotation
+                    <div class="loading-spinner"></div>
+                </button>
+            </div>
+        </div>
+
+        <!-- Preview Section -->
+        <div class="preview-container" id="previewContainer">
+            <div class="preview-header">
+                <div class="company-info">
+                    <div class="company-logo">HB</div>
+                    <div>
+                        <h2>HOMEBASE CONSTRUCTION [PVT] LTD</h2>
+                        <div class="contact" style="font-size: 13px; color: #666; margin-top: 8px;">
+                            150 Northway | Seke rd, Hatfield — Harare<br>
+                            Cell: 0774 819 901 | 0772 254 823<br>
+                            Email: <a href="mailto:info@homebaseplumbers.co.zw">info@homebaseplumbers.co.zw</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="quote-info">
+                    <h3>Quotation</h3>
+                    <p id="previewDate"></p>
+                    <p style="font-style: italic;">"Quality Is Our Qualification"</p>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 220px; gap: 20px; margin: 20px 0;">
+                <div style="padding: 15px; border: 1px dashed #e6e9f0; border-radius: 8px; background: #fafbfd;">
+                    <strong>Client Information</strong>
+                    <div id="previewClientName" style="color: #666; margin-top: 5px;"></div>
+                    <div id="previewClientDetails" style="color: #666; margin-top: 5px;"></div>
+                    <div style="margin-top: 12px;"><strong>Project Details</strong></div>
+                    <div id="previewProjectType" style="color: #666; margin-top: 5px;"></div>
+                    <div id="previewNotes" style="color: #666; margin-top: 5px;"></div>
+                </div>
+                <div>
+                    <div
+                        style="padding: 12px; border: 1px dashed #e6e9f0; border-radius: 8px; background: #fafbfd; margin-bottom: 12px;">
+                        <strong>Contact</strong>
+                        <div style="color: #666; font-size: 13px; margin-top: 5px;">
+                            info@homebaseplumbers.co.zw<br>
+                            www.homebaseplumbers.co.zw
+                        </div>
+                    </div>
+                    <div style="padding: 12px; border: 1px dashed #e6e9f0; border-radius: 8px; background: #fafbfd;">
+                        <strong>Bank Details</strong>
+                        <div style="color: #666; font-size: 13px; margin-top: 5px;">
+                            Branch: FBC CENTER<br>
+                            HOMEBASE CONSTRUCTION<br>
+                            Acc No. 4482103480101
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <table class="items-table" id="previewItemsTable" style="margin-top: 20px;">
+                <thead>
+                    <tr>
+                        <th>Item / Description</th>
+                        <th>Qty</th>
+                        <th>Unit Price</th>
+                        <th style="text-align: right;">Line Total (USD)</th>
+                    </tr>
+                </thead>
+                <tbody id="previewItemsBody">
+                    <!-- Preview items will be populated here -->
+                </tbody>
+            </table>
+
+            <div class="totals-section">
+                <div class="totals-table">
+                    <div class="totals-row">
+                        <span class="totals-label">Material cost:</span>
+                        <span id="previewMaterials">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span class="totals-label">Labour:</span>
+                        <span id="previewLabour">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span class="totals-label">Transport:</span>
+                        <span id="previewTransport">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span>Total Amount:</span>
+                        <span id="previewGrandTotal">$0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                style="margin-top: 28px; border-top: 1px solid #f0f2f6; padding-top: 14px; color: #555; font-size: 13px;">
+                <div><strong>Prepared for:</strong> <span id="previewPreparedFor"></span></div>
+                <div style="margin-top: 8px;">If you have any questions about this quotation please contact us at
+                    <a href="mailto:info@homebaseplumbers.co.zw">info@homebaseplumbers.co.zw</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Project type suggestions from Django models
+        const projectTypeSuggestions = [
+            "Bathroom Renovation",
+            "Kitchen Renovation",
+            "New Plumbing Installation",
+            "Electrical Installation",
+            "Roof Repair",
+            "Foundation Work",
+            "Interior Painting",
+            "Exterior Painting",
+            "Flooring Installation",
+            "Window Installation",
+            "Door Installation",
+            "Deck Construction",
+            "Driveway Construction",
+            "Fence Installation",
+            "HVAC Installation",
+            "Solar Panel Installation",
+            "Swimming Pool Construction",
+            "Landscaping",
+            "General Construction",
+            "Emergency Repairs"
+        ];
+
+        // Sample data from Django models
+        const sampleData = {
+            client: {
+                name: "Tinaye Nhemachena",
+                email: "tinaye@example.com",
+                phone: "+263 774 819 901",
+                address: "Hatfield, Harare"
+            },
+            project: {
+                type: "Bathroom Renovation",
+                location: "Residential Property - Hatfield",
+                notes: "Fix and supply — Complete bathroom renovation including plumbing, tiling, and fixtures."
+            },
+            items: [
+                { name: '500ml prodorite solvent cement', qty: 1, unit: 4 },
+                { name: '50mm pvc waste pipe', qty: 2, unit: 6 },
+                { name: '50mm pvc bends', qty: 15, unit: 0.5 },
+                { name: '50x45deg pvc bends', qty: 6, unit: 0.5 },
+                { name: '50x45deg pvc junction', qty: 3, unit: 1 },
+                { name: '50mm pvc tee', qty: 3, unit: 1 },
+                { name: 'Tub Waste', qty: 1, unit: 12 },
+                { name: 'Angle valve', qty: 3, unit: 3 },
+                { name: 'Rubber p trap', qty: 1, unit: 3 },
+                { name: 'Cabinet and basin set', qty: 1, unit: 170 },
+                { name: 'Basin mixer', qty: 1, unit: 40 },
+                { name: 'Shower p trap', qty: 1, unit: 3 }
+            ],
+            costs: {
+                labour: 280,
+                transport: 20
+            }
+        };
+
+        let items = [];
+        let itemCounter = 0;
+        let currentAppointmentId = null;
+
+        // DOM Elements
+        const itemsTableBody = document.getElementById('itemsTableBody');
+        const emptyItemsRow = document.getElementById('emptyItemsRow');
+        const addItemBtn = document.getElementById('addItemBtn');
+        const loadAppointmentBtn = document.getElementById('loadAppointmentBtn');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        const previewBtn = document.getElementById('previewBtn');
+        const printBtn = document.getElementById('printBtn');
+        const saveQuotationBtn = document.getElementById('saveQuotationBtn');
+        const labourCost = document.getElementById('labourCost');
+        const transportCost = document.getElementById('transportCost');
+        const projectTypeInput = document.getElementById('projectType');
+        const projectSuggestions = document.getElementById('projectSuggestions');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function () {
+            initializeForm();
+            setupEventListeners();
+            setupProjectTypeSuggestions();
+            updatePreviewDate();
+            loadAppointmentFromUrl();
+        });
+
+        function initializeForm() {
+            // Set default dates
+            const today = new Date();
+            const validUntil = new Date();
+            validUntil.setDate(today.getDate() + 30); // Valid for 30 days
+
+            document.getElementById('quotationDate').value = today.toISOString().split('T')[0];
+            document.getElementById('validUntil').value = validUntil.toISOString().split('T')[0];
+
+            // Initialize empty state
+            showEmptyState();
+            calculateTotals();
+        }
+
+        function setupEventListeners() {
+            addItemBtn.addEventListener('click', addNewItem);
+            loadAppointmentBtn.addEventListener('click', showAppointmentSelector);
+            clearAllBtn.addEventListener('click', clearAllData);
+            previewBtn.addEventListener('click', showPreview);
+            printBtn.addEventListener('click', () => window.print());
+            saveQuotationBtn.addEventListener('click', saveQuotation);
+            labourCost.addEventListener('input', calculateTotals);
+            transportCost.addEventListener('input', calculateTotals);
+
+            // Auto-calculate on any input change
+            document.addEventListener('input', function (e) {
+                if (e.target.classList.contains('item-input')) {
+                    updateItemFromInput(e.target);
+                }
+            });
+        }
+
+        function setupProjectTypeSuggestions() {
+            projectTypeInput.addEventListener('input', function () {
+                const value = this.value.toLowerCase();
+                const suggestions = projectTypeSuggestions.filter(suggestion =>
+                    suggestion.toLowerCase().includes(value)
+                );
+
+                if (value && suggestions.length > 0) {
+                    showSuggestions(suggestions);
+                } else {
+                    hideSuggestions();
+                }
+            });
+
+            projectTypeInput.addEventListener('blur', function () {
+                setTimeout(hideSuggestions, 200); // Delay to allow clicking on suggestions
+            });
+
+            projectTypeInput.addEventListener('focus', function () {
+                if (this.value) {
+                    const value = this.value.toLowerCase();
+                    const suggestions = projectTypeSuggestions.filter(suggestion =>
+                        suggestion.toLowerCase().includes(value)
+                    );
+                    if (suggestions.length > 0) {
+                        showSuggestions(suggestions);
+                    }
+                }
+            });
+        }
+
+        function showSuggestions(suggestions) {
+            projectSuggestions.innerHTML = '';
+            suggestions.forEach(suggestion => {
+                const div = document.createElement('div');
+                div.className = 'suggestion-item';
+                div.textContent = suggestion;
+                div.addEventListener('click', function () {
+                    projectTypeInput.value = suggestion;
+                    hideSuggestions();
+                });
+                projectSuggestions.appendChild(div);
+            });
+            projectSuggestions.style.display = 'block';
+        }
+
+        function hideSuggestions() {
+            projectSuggestions.style.display = 'none';
+        }
+
+        function loadAppointmentFromUrl() {
+            // Check if appointment_id is in URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const appointmentId = urlParams.get('appointment_id');
+
+            if (appointmentId) {
+                currentAppointmentId = appointmentId;
+                loadAppointmentData(appointmentId);
+            }
+        }
+
+        function showAppointmentSelector() {
+            // Create appointment selector modal
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.5); z-index: 1000; display: flex;
+                align-items: center; justify-content: center; padding: 20px;
+            `;
+
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white; border-radius: 12px; padding: 20px;
+                max-width: 600px; width: 100%; max-height: 80vh; overflow-y: auto;
+            `;
+
+            modalContent.innerHTML = `
+                <h3 style="margin: 0 0 15px 0;">Select Appointment</h3>
+                <div id="appointmentsList">Loading appointments...</div>
+                <div style="margin-top: 20px; text-align: right;">
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+                </div>
+            `;
+
+            modal.className = 'modal';
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+
+            // Load appointments
+            loadAppointmentsList();
+        }
+
+        async function loadAppointmentsList() {
+            try {
+                const response = await fetch('/api/appointments/');
+                const appointments = await response.json();
+
+                const appointmentsList = document.getElementById('appointmentsList');
+
+                if (appointments.length === 0) {
+                    appointmentsList.innerHTML = '<p>No appointments found.</p>';
+                    return;
+                }
+
+                let html = '';
+                appointments.forEach(appointment => {
+                    html += `
+                        <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: background 0.2s;"
+                             onclick="selectAppointment(${appointment.id})"
+                             onmouseover="this.style.background='#f8f9fa'"
+                             onmouseout="this.style.background='white'">
+                            <div style="font-weight: 600;">${appointment.customer_name || 'Unknown Customer'}</div>
+                            <div style="color: #666; font-size: 0.9em;">
+                                ${appointment.project_type || 'No project type'} • ${appointment.customer_area || 'No area'}
+                            </div>
+                            <div style="color: #666; font-size: 0.8em;">
+                                Phone: ${appointment.phone_number} • Status: ${appointment.status}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                appointmentsList.innerHTML = html;
+
+            } catch (error) {
+                document.getElementById('appointmentsList').innerHTML = '<p>Error loading appointments.</p>';
+                console.error('Error loading appointments:', error);
+            }
+        }
+
+        async function selectAppointment(appointmentId) {
+            document.querySelector('.modal').remove();
+            currentAppointmentId = appointmentId;
+            await loadAppointmentData(appointmentId);
+        }
+
+        async function loadAppointmentData(appointmentId) {
+            try {
+                showLoading(loadAppointmentBtn, true);
+
+                const response = await fetch(`/api/appointments/${appointmentId}/`);
+                const appointment = await response.json();
+
+                if (appointment.error) {
+                    showAlert('Error loading appointment: ' + appointment.error, 'error');
+                    return;
+                }
+
+                // Load client data
+                document.getElementById('clientName').value = appointment.customer_name || '';
+                document.getElementById('clientEmail').value = appointment.customer_email || '';
+                document.getElementById('clientPhone').value = appointment.phone_number || '';
+                document.getElementById('clientAddress').value = appointment.customer_area || '';
+
+                // Load project data
+                document.getElementById('projectType').value = formatProjectType(appointment.project_type) || '';
+                document.getElementById('projectLocation').value = appointment.customer_area || '';
+                document.getElementById('projectNotes').value = appointment.project_description || '';
+
+                // Load default items if available
+                if (appointment.project_type === 'bathroom_renovation') {
+                    items = [...sampleData.items];
+                    document.getElementById('labourCost').value = sampleData.costs.labour;
+                    document.getElementById('transportCost').value = sampleData.costs.transport;
+                }
+
+                renderItems();
+                calculateTotals();
+
+                showAlert('Appointment data loaded successfully!', 'success');
+
+            } catch (error) {
+                console.error('Error loading appointment:', error);
+                showAlert('Failed to load appointment data', 'error');
+            } finally {
+                showLoading(loadAppointmentBtn, false);
+            }
+        }
+
+        function formatProjectType(projectType) {
+            if (!projectType) return '';
+
+            const typeMap = {
+                'bathroom_renovation': 'Bathroom Renovation',
+                'kitchen_renovation': 'Kitchen Renovation',
+                'new_plumbing_installation': 'New Plumbing Installation'
+            };
+
+            return typeMap[projectType] || projectType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
+
+        function showLoading(button, loading) {
+            if (loading) {
+                button.classList.add('loading');
+                button.disabled = true;
+            } else {
+                button.classList.remove('loading');
+                button.disabled = false;
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.innerHTML = `
+                ${message}
+                <button onclick="this.parentElement.remove()" style="float: right; background: none; border: none; font-size: 1.2em; cursor: pointer;">&times;</button>
+            `;
+
+            alertContainer.appendChild(alert);
+
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (alert.parentElement) {
+                    alert.remove();
+                }
+            }, 5000);
+        }
+
+        function showEmptyState() {
+            emptyItemsRow.style.display = 'table-row';
+        }
+
+        function hideEmptyState() {
+            emptyItemsRow.style.display = 'none';
+        }
+
+        function renderItems() {
+            // Clear existing rows except empty state
+            const rows = itemsTableBody.querySelectorAll('tr:not(.empty-items)');
+            rows.forEach(row => row.remove());
+
+            if (items.length === 0) {
+                showEmptyState();
+                return;
+            }
+
+            hideEmptyState();
+
+            items.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="item-name">
+                        <input type="text" class="item-input" data-index="${index}" data-field="name" 
+                               value="${item.name}" placeholder="Item description">
+                    </td>
+                    <td class="qty-col">
+                        <input type="number" class="item-input" data-index="${index}" data-field="qty" 
+                               value="${item.qty}" min="0" step="1">
+                    </td>
+                    <td class="unit-col">
+                        <input type="number" class="item-input" data-index="${index}" data-field="unit" 
+                               value="${item.unit}" min="0" step="0.01">
+                    </td>
+                    <td class="total-col">
+                        <div class="line-total">${(item.qty * item.unit).toFixed(2)}</div>
+                    </td>
+                    <td class="action-col">
+                        <button class="btn btn-danger btn-sm" onclick="removeItem(${index})" 
+                                style="padding: 4px 8px;" title="Remove item">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+                itemsTableBody.appendChild(row);
+            });
+        }
+
+        function updateItemFromInput(input) {
+            const index = parseInt(input.dataset.index);
+            const field = input.dataset.field;
+            const value = field === 'name' ? input.value : (parseFloat(input.value) || 0);
+
+            if (items[index]) {
+                items[index][field] = value;
+
+                // Update line total if qty or unit changed
+                if (field === 'qty' || field === 'unit') {
+                    const row = input.closest('tr');
+                    const lineTotal = row.querySelector('.line-total');
+                    lineTotal.textContent = `${(items[index].qty * items[index].unit).toFixed(2)}`;
+                    calculateTotals();
+                }
+            }
+        }
+
+        function addNewItem() {
+            items.push({
+                name: '',
+                qty: 1,
+                unit: 0
+            });
+            renderItems();
+            calculateTotals();
+
+            // Focus on the new item's name input
+            setTimeout(() => {
+                const newRow = itemsTableBody.lastElementChild;
+                if (newRow && !newRow.classList.contains('empty-items')) {
+                    const nameInput = newRow.querySelector('input[data-field="name"]');
+                    if (nameInput) nameInput.focus();
+                }
+            }, 100);
+        }
+
+        function removeItem(index) {
+            if (confirm('Are you sure you want to remove this item?')) {
+                items.splice(index, 1);
+                renderItems();
+                calculateTotals();
+            }
+        }
+
+        function calculateTotals() {
+            const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
+            const labour = parseFloat(labourCost.value) || 0;
+            const transport = parseFloat(transportCost.value) || 0;
+            const grandTotal = materialTotal + labour + transport;
+
+            document.getElementById('materialsTotal').textContent = `${materialTotal.toFixed(2)}`;
+            document.getElementById('grandTotal').textContent = `${grandTotal.toFixed(2)}`;
+        }
+
+        function clearAllData() {
+            if (!confirm('This will clear all data. Are you sure?')) {
+                return;
+            }
+
+            // Clear all form fields
+            document.querySelectorAll('input, textarea').forEach(input => {
+                if (input.type === 'number') {
+                    input.value = 0;
+                } else if (input.type === 'date') {
+                    // Keep dates as they are
+                } else {
+                    input.value = '';
+                }
+            });
+
+            // Reset costs
+            document.getElementById('labourCost').value = 0;
+            document.getElementById('transportCost').value = 0;
+
+            // Clear items
+            items = [];
+            currentAppointmentId = null;
+            renderItems();
+            calculateTotals();
+
+            // Re-initialize dates
+            initializeForm();
+
+            showAlert('All data cleared', 'info');
+        }
+
+        function updatePreviewDate() {
+            const today = new Date();
+            const dateStr = today.toLocaleDateString('en-GB');
+            document.getElementById('previewDate').textContent = dateStr;
+        }
+
+        function showPreview() {
+            // Validate required fields
+            const clientName = document.getElementById('clientName').value.trim();
+            const projectType = document.getElementById('projectType').value.trim();
+
+            if (!clientName) {
+                showAlert('Please enter a client name before generating preview.', 'error');
+                document.getElementById('clientName').focus();
+                return;
+            }
+
+            if (!projectType) {
+                showAlert('Please enter a project type before generating preview.', 'error');
+                document.getElementById('projectType').focus();
+                return;
+            }
+
+            // Update preview with current data
+            document.getElementById('previewClientName').textContent = clientName;
+
+            // Build client details
+            const clientDetails = [];
+            const email = document.getElementById('clientEmail').value.trim();
+            const phone = document.getElementById('clientPhone').value.trim();
+            const address = document.getElementById('clientAddress').value.trim();
+
+            if (email) clientDetails.push(`Email: ${email}`);
+            if (phone) clientDetails.push(`Phone: ${phone}`);
+            if (address) clientDetails.push(`Address: ${address}`);
+
+            document.getElementById('previewClientDetails').innerHTML = clientDetails.join('<br>');
+
+            // Project details
+            const projectLocation = document.getElementById('projectLocation').value.trim();
+            const projectTypeDisplay = projectLocation ? `${projectType} - ${projectLocation}` : projectType;
+            document.getElementById('previewProjectType').textContent = projectTypeDisplay;
+
+            document.getElementById('previewNotes').textContent = document.getElementById('projectNotes').value || 'No additional notes provided.';
+            document.getElementById('previewPreparedFor').textContent = clientName;
+
+            // Update preview totals
+            const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
+            const labour = parseFloat(labourCost.value) || 0;
+            const transport = parseFloat(transportCost.value) || 0;
+            const grandTotal = materialTotal + labour + transport;
+
+            document.getElementById('previewMaterials').textContent = `${materialTotal.toFixed(2)}`;
+            document.getElementById('previewLabour').textContent = `${labour.toFixed(2)}`;
+            document.getElementById('previewTransport').textContent = `${transport.toFixed(2)}`;
+            document.getElementById('previewGrandTotal').textContent = `${grandTotal.toFixed(2)}`;
+
+            // Update preview items
+            const previewItemsBody = document.getElementById('previewItemsBody');
+            previewItemsBody.innerHTML = '';
+
+            if (items.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td colspan="4" style="text-align: center; padding: 30px; color: #666;">
+                        <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 10px; opacity: 0.5;"></i>
+                        <br>No items added to this quotation
+                    </td>
+                `;
+                previewItemsBody.appendChild(row);
+            } else {
+                items.forEach((item, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>
+                            <div style="font-weight: 600;">${item.name || 'Unnamed Item'}</div>
+                            <div style="color: #666; font-size: 0.9em;">item #${index + 1}</div>
+                        </td>
+                        <td>${item.qty}</td>
+                        <td>${item.unit.toFixed(2)}</td>
+                        <td style="text-align: right;">${(item.qty * item.unit).toFixed(2)}</td>
+                    `;
+                    previewItemsBody.appendChild(row);
+                });
+            }
+
+            // Show preview and scroll to it
+            document.getElementById('previewContainer').style.display = 'block';
+            document.getElementById('previewContainer').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function saveQuotation() {
+            const clientName = document.getElementById('clientName').value.trim();
+            const projectType = document.getElementById('projectType').value.trim();
+
+            if (!clientName) {
+                showAlert('Please enter a client name before saving.', 'error');
+                document.getElementById('clientName').focus();
+                return;
+            }
+
+            if (!projectType) {
+                showAlert('Please enter a project type before saving.', 'error');
+                document.getElementById('projectType').focus();
+                return;
+            }
+
+            if (items.length === 0) {
+                showAlert('Please add at least one item before saving.', 'error');
+                return;
+            }
+
+            try {
+                showLoading(saveQuotationBtn, true);
+
+                const quotationData = {
+                    appointment_id: currentAppointmentId,
+                    client_name: clientName,
+                    client_email: document.getElementById('clientEmail').value.trim(),
+                    client_phone: document.getElementById('clientPhone').value.trim(),
+                    client_address: document.getElementById('clientAddress').value.trim(),
+                    project_type: projectType,
+                    project_location: document.getElementById('projectLocation').value.trim(),
+                    project_notes: document.getElementById('projectNotes').value.trim(),
+                    quotation_date: document.getElementById('quotationDate').value,
+                    valid_until: document.getElementById('validUntil').value,
+                    items: items,
+                    labour_cost: parseFloat(labourCost.value) || 0,
+                    transport_cost: parseFloat(transportCost.value) || 0,
+                    materials_cost: items.reduce((sum, item) => sum + (item.qty * item.unit), 0),
+                    total_amount: items.reduce((sum, item) => sum + (item.qty * item.unit), 0) +
+                        (parseFloat(labourCost.value) || 0) +
+                        (parseFloat(transportCost.value) || 0)
+                };
+
+                const response = await fetch('/quotations/create/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify(quotationData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showAlert('Quotation saved successfully!', 'success');
+
+                    // Optionally redirect to quotation detail page
+                    if (result.quotation_id) {
+                        setTimeout(() => {
+                            window.location.href = `/quotations/${result.quotation_id}/`;
+                        }, 2000);
+                    }
+                } else {
+                    showAlert('Failed to save quotation: ' + (result.error || 'Unknown error'), 'error');
+                }
+
+            } catch (error) {
+                console.error('Error saving quotation:', error);
+                showAlert('Failed to save quotation', 'error');
+            } finally {
+                showLoading(saveQuotationBtn, false);
+            }
+        }
+
+        function getCsrfToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    return value;
+                }
+            }
+            return '';
+        }
+
+        // Export functionality
+        function exportToCSV() {
+            const clientName = document.getElementById('clientName').value || 'Unknown_Client';
+            let csv = 'Item,Quantity,Unit Price,Line Total\n';
+
+            items.forEach(item => {
+                csv += `"${item.name}",${item.qty},${item.unit},${(item.qty * item.unit).toFixed(2)}\n`;
+            });
+
+            // Add totals
+            const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
+            const labour = parseFloat(labourCost.value) || 0;
+            const transport = parseFloat(transportCost.value) || 0;
+
+            csv += '\nSUMMARY\n';
+            csv += `Material Cost,${materialTotal.toFixed(2)}\n`;
+            csv += `Labour Cost,${labour.toFixed(2)}\n`;
+            csv += `Transport Cost,${transport.toFixed(2)}\n`;
+            csv += `Total Amount,${(materialTotal + labour + transport).toFixed(2)}\n`;
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `quotation_${clientName.replace(/\s+/g, '_')}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }
+
+        // Add export button functionality
+        setTimeout(() => {
+            const exportBtn = document.createElement('button');
+            exportBtn.className = 'btn btn-secondary';
+            exportBtn.innerHTML = '<i class="fas fa-download"></i> Export CSV';
+            exportBtn.onclick = exportToCSV;
+
+            const actionsContainer = document.querySelector('.actions');
+            actionsContainer.appendChild(exportBtn);
+        }, 100);
+
+        // Mobile optimizations
+        document.addEventListener('DOMContentLoaded', function () {
+            // Better touch feedback for buttons
+            document.querySelectorAll('.btn').forEach(btn => {
+                btn.addEventListener('touchstart', function () {
+                    this.style.transform = 'scale(0.96)';
+                });
+
+                btn.addEventListener('touchend', function () {
+                    this.style.transform = 'scale(1)';
+                });
+            });
+
+            // Prevent zoom on form inputs on mobile
+            document.querySelectorAll('input, select, textarea').forEach(input => {
+                input.addEventListener('focus', function (e) {
+                    if (window.innerWidth <= 768) {
+                        this.style.fontSize = '16px';
+                    }
+                });
+            });
+
+            // Hide navbar text on very small screens
+            function handleNavText() {
+                const navTexts = document.querySelectorAll('.nav-text');
+                if (window.innerWidth < 400) {
+                    navTexts.forEach(text => {
+                        text.style.display = 'none';
+                    });
+                } else {
+                    navTexts.forEach(text => {
+                        text.style.display = 'inline';
+                    });
+                }
+            }
+
+            window.addEventListener('resize', handleNavText);
+            handleNavText();
+
+            // Make table scrollable indicator more visible on mobile
+            const tableContainer = document.querySelector('.table-responsive');
+            if (tableContainer) {
+                tableContainer.addEventListener('scroll', function () {
+                    if (this.scrollLeft > 0) {
+                        this.style.boxShadow = 'inset 5px 0 5px -5px rgba(102, 126, 234, 0.3)';
+                    } else {
+                        this.style.boxShadow = 'none';
+                    }
+                });
+            }
+        });
+
+        // Global functions for onclick handlers
+        window.selectAppointment = selectAppointment;
+        window.removeItem = removeItem;
+    </script>
+</body>
+
+</html>
+{% endblock %}
