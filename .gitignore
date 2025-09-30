@@ -1,26 +1,9 @@
-# Python
 *.pyc
 __pycache__/
-*.pyo
-*.pyd
-*.so
-
-# Virtual environment
-venv/
-.env/
-rasa_env/
-rasaenv/
-
-# Django specific
 db.sqlite3
-media/
-
-# IDE/editor
-.vscode/
-.idea/
-*.swp
-
-# Secrets
 *.json
-*.key
 .env
+staticfiles/
+media/
+venv/
+.DS_Store
