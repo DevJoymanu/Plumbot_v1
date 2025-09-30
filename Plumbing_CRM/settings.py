@@ -61,15 +61,20 @@ TEMPLATES = [
 WSGI_APPLICATION = 'Plumbing_CRM.wsgi.application'
 
 # Database - Use Railway's DATABASE_URL if available, otherwise use environment variables
-
 DATABASES = {
     'default': dj_database_url.config(
-        default=os.environ.get("DATABASE_URL"),  # Railway provides this
+        default=os.environ.get('DATABASE_URL'),
         conn_max_age=600,
-        ssl_require=True
-    )
+        conn_health_checks=True,
+    ) or {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('POSTGRES_DB', 'plumbing_db'),
+        'USER': os.getenv('POSTGRES_USER', 'postgres'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
+        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
+        'PORT': os.getenv('POSTGRES_PORT', '5432'),
+    }
 }
-
 
 # Static & Media files
 STATIC_URL = '/static/'
@@ -172,15 +177,17 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Security settings for production
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    # Don't force SSL redirect - Railway handles this
+    SECURE_SSL_REDIRECT = False
+    
+    # Trust Railway's proxy headers
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
 
 # Logging configuration
 LOGGING = {
@@ -210,4 +217,3 @@ LOGGING = {
         },
     },
 }
-
