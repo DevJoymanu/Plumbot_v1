@@ -185,3 +185,9 @@ websocket-client==1.8.0
 yarl==1.20.0
 zc.lockfile==3.0.post1
 zipp==3.23.0
+dj-database-url
+gunicorn>=21.2.0
+whitenoise>=6.6.0
+python-decouple>=3.8
+twilio
+deepseek-api  # or whatever package you're using
