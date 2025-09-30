@@ -61,16 +61,14 @@ TEMPLATES = [
 WSGI_APPLICATION = 'Plumbing_CRM.wsgi.application'
 
 # Database - Use Railway's DATABASE_URL if available, otherwise use environment variables
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'plumbing_crm',       # the database you created
-        'USER': 'plumbing_user',      # the user you created
-        'PASSWORD': 'securepassword',  # replace with your password
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    'default': dj_database_url.config(
+        default=os.environ.get("DATABASE_URL"),  # Railway provides this
+        conn_max_age=600,
+    )
 }
+
 
 # Static & Media files
 STATIC_URL = '/static/'
@@ -211,3 +209,4 @@ LOGGING = {
         },
     },
 }
+
