@@ -62,17 +62,13 @@ WSGI_APPLICATION = 'Plumbing_CRM.wsgi.application'
 
 # Database - Use Railway's DATABASE_URL if available, otherwise use environment variables
 DATABASES = {
-    'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL'),
-        conn_max_age=600,
-        conn_health_checks=True,
-    ) or {
+    'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB', 'plumbing_db'),
-        'USER': os.getenv('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),
+        'NAME': 'plumbing_crm',       # the database you created
+        'USER': 'plumbing_user',      # the user you created
+        'PASSWORD': 'securepassword',  # replace with your password
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
 
