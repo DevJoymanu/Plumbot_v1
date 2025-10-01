@@ -4,15 +4,17 @@
 <div class="header">
     <h1>
         <i class="fas fa-user"></i>
-        {% if appointment.customer_name %}
-        {{ appointment.customer_name }}
-        {% else %}
-        Appointment #{{ appointment.pk }}
-        {% endif %}
-        
-        <!-- Add appointment type indicator -->
-        {% if appointment.appointment_type  ==  'job_appointment' %}
-        <span class="appointment-type-badge job">Job Appointment</span>
+        <span class="header-text">
+            {% if appointment.customer_name %}
+            {{ appointment.customer_name }}
+            {% else %}
+            Appointment #{{ appointment.pk }}
+            {% endif %}
+        </span>
+
+        <!-- Appointment type indicator -->
+        {% if appointment.appointment_type == 'job_appointment' %}
+        <span class="appointment-type-badge job">Job</span>
         {% else %}
         <span class="appointment-type-badge site-visit">Site Visit</span>
         {% endif %}
@@ -20,8 +22,19 @@
     <p>Manage this customer appointment</p>
 </div>
 
+<!-- Messages -->
+{% if messages %}
+<div class="messages-container">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }}">
+        {{ message }}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <!-- Job Scheduling Actions Panel -->
-{% if appointment.appointment_type  ==  'site_visit' %}
+{% if appointment.appointment_type == 'site_visit' %}
 <div class="job-scheduling-panel">
     <div class="card">
         <div class="card-header">
@@ -31,37 +44,43 @@
             {% if not appointment.site_visit_completed %}
             <div class="scheduling-status pending">
                 <i class="fas fa-clock"></i>
-                <p>Site visit must be completed before scheduling job appointment</p>
-                <a href="{% url 'complete_site_visit' appointment.pk %}" class="btn btn-primary">
-                    <i class="fas fa-clipboard-check"></i> Complete Site Visit
-                </a>
+                <div class="status-content">
+                    <p>Site visit must be completed before scheduling job appointment</p>
+                    <a href="{% url 'complete_site_visit' appointment.pk %}" class="btn btn-primary">
+                        <i class="fas fa-clipboard-check"></i> Complete Site Visit
+                    </a>
+                </div>
             </div>
-            
+
             {% elif appointment.can_schedule_job %}
             <div class="scheduling-status ready">
                 <i class="fas fa-check-circle"></i>
-                <p>Site visit completed. Ready to schedule job appointment.</p>
-                <div class="completion-details">
-                    <p><strong>Completed:</strong> {{ appointment.site_visit_completed_at|date:"M d, Y H:i" }}</p>
-                    {% if appointment.site_visit_notes %}
-                    <p><strong>Notes:</strong> {{ appointment.site_visit_notes|truncatewords:15 }}</p>
-                    {% endif %}
+                <div class="status-content">
+                    <p>Site visit completed. Ready to schedule job appointment.</p>
+                    <div class="completion-details">
+                        <p><strong>Completed:</strong> {{ appointment.site_visit_completed_at|date:"M d, Y H:i" }}</p>
+                        {% if appointment.site_visit_notes %}
+                        <p><strong>Notes:</strong> {{ appointment.site_visit_notes|truncatewords:15 }}</p>
+                        {% endif %}
+                    </div>
+                    <a href="{% url 'schedule_job' appointment.pk %}" class="btn btn-success">
+                        <i class="fas fa-calendar-plus"></i> Schedule Job
+                    </a>
                 </div>
-                <a href="{% url 'schedule_job' appointment.pk %}" class="btn btn-success">
-                    <i class="fas fa-calendar-plus"></i> Schedule Job Appointment
-                </a>
             </div>
-            
-            {% elif appointment.job_status  ==  'scheduled' %}
+
+            {% elif appointment.job_status == 'scheduled' %}
             <div class="scheduling-status scheduled">
                 <i class="fas fa-calendar-check"></i>
-                <p>Job appointment has been scheduled</p>
-                <div class="job-links">
-                    {% for job in appointment.get_job_appointments %}
-                    <a href="{% url 'appointment_detail' job.pk %}" class="btn btn-primary">
-                        <i class="fas fa-eye"></i> View Job Appointment
-                    </a>
-                    {% endfor %}
+                <div class="status-content">
+                    <p>Job appointment has been scheduled</p>
+                    <div class="job-links">
+                        {% for job in appointment.get_job_appointments %}
+                        <a href="{% url 'appointment_detail' job.pk %}" class="btn btn-primary">
+                            <i class="fas fa-eye"></i> View Job
+                        </a>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
             {% endif %}
@@ -69,12 +88,12 @@
     </div>
 </div>
 
-<!-- Show job appointments if this is a site visit -->
+<!-- Related Job Appointments -->
 {% elif appointment.get_job_appointments.exists %}
 <div class="related-jobs-panel">
     <div class="card">
         <div class="card-header">
-            <h3><i class="fas fa-hard-hat"></i> Related Job Appointments</h3>
+            <h3><i class="fas fa-hard-hat"></i> Related Jobs</h3>
         </div>
         <div class="card-body">
             <div class="jobs-list">
@@ -88,7 +107,7 @@
                     </div>
                     <div class="job-actions">
                         <a href="{% url 'appointment_detail' job.pk %}" class="btn btn-sm btn-primary">
-                            <i class="fas fa-eye"></i> View Details
+                            <i class="fas fa-eye"></i> View
                         </a>
                     </div>
                 </div>
@@ -99,8 +118,8 @@
 </div>
 {% endif %}
 
-<!-- Job Appointment Details (if this IS a job appointment) -->
-{% if appointment.appointment_type  ==  'job_appointment' %}
+<!-- Job Details (if job appointment) -->
+{% if appointment.appointment_type == 'job_appointment' %}
 <div class="job-details-panel">
     <div class="card">
         <div class="card-header">
@@ -112,25 +131,26 @@
                     <h4>Schedule Information</h4>
                     <p><strong>Scheduled:</strong> {{ appointment.job_scheduled_datetime|date:"M d, Y H:i" }}</p>
                     <p><strong>Duration:</strong> {{ appointment.job_duration_hours }} hours</p>
-                    <p><strong>Status:</strong> 
+                    <p><strong>Status:</strong>
                         <span class="status-badge status-{{ appointment.job_status }}">
                             {{ appointment.get_job_status_display }}
                         </span>
                     </p>
-                    <p><strong>Assigned Plumber:</strong> {{ appointment.assigned_plumber.get_full_name|default:"Unassigned" }}</p>
-                    
+                    <p><strong>Plumber:</strong> {{ appointment.assigned_plumber.get_full_name|default:"Unassigned" }}
+                    </p>
+
                     {% if appointment.job_completed_at %}
                     <p><strong>Completed:</strong> {{ appointment.job_completed_at|date:"M d, Y H:i" }}</p>
                     {% endif %}
                 </div>
-                
+
                 {% if appointment.job_description or appointment.job_materials_needed %}
                 <div class="job-work-section">
                     {% if appointment.job_description %}
                     <h4>Work Description</h4>
                     <p>{{ appointment.job_description|linebreaks }}</p>
                     {% endif %}
-                    
+
                     {% if appointment.job_materials_needed %}
                     <h4>Materials Needed</h4>
                     <p>{{ appointment.job_materials_needed|linebreaks }}</p>
@@ -138,32 +158,32 @@
                 </div>
                 {% endif %}
             </div>
-            
+
             <!-- Job Actions -->
             <div class="job-actions">
-                {% if appointment.job_status  ==  'scheduled' %}
+                {% if appointment.job_status == 'scheduled' %}
                 <button onclick="updateJobStatus({{ appointment.pk }}, 'in_progress')" class="btn btn-warning">
                     <i class="fas fa-play"></i> Start Job
                 </button>
                 <a href="{% url 'reschedule_job' appointment.pk %}" class="btn btn-secondary">
                     <i class="fas fa-calendar-alt"></i> Reschedule
                 </a>
-                {% elif appointment.job_status  ==  'in_progress' %}
+                {% elif appointment.job_status == 'in_progress' %}
                 <button onclick="updateJobStatus({{ appointment.pk }}, 'completed')" class="btn btn-success">
-                    <i class="fas fa-check"></i> Complete Job
+                    <i class="fas fa-check"></i> Complete
                 </button>
                 {% endif %}
-                
+
                 {% if appointment.job_status in 'scheduled,in_progress' %}
                 <button onclick="updateJobStatus({{ appointment.pk }}, 'cancelled')" class="btn btn-danger">
-                    <i class="fas fa-times"></i> Cancel Job
+                    <i class="fas fa-times"></i> Cancel
                 </button>
                 {% endif %}
-                
-                <!-- Link back to site visit -->
+
                 {% if appointment.parent_site_visit %}
-                <a href="{% url 'appointment_detail' appointment.parent_site_visit.pk %}" class="btn btn-outline-primary">
-                    <i class="fas fa-eye"></i> View Original Site Visit
+                <a href="{% url 'appointment_detail' appointment.parent_site_visit.pk %}"
+                    class="btn btn-outline-primary">
+                    <i class="fas fa-eye"></i> View Site Visit
                 </a>
                 {% endif %}
             </div>
@@ -172,21 +192,21 @@
 </div>
 {% endif %}
 
-<!-- Document Access Button -->
+<!-- Documents -->
 {% if has_documents %}
 <div class="document-access-panel">
     <div class="card">
         <div class="card-header">
-            <h3><i class="fas fa-file-alt"></i> Customer Documents</h3>
+            <h3><i class="fas fa-file-alt"></i> Documents</h3>
         </div>
         <div class="card-body">
             <div class="document-summary">
-                <p>
+                <div>
                     <i class="fas fa-file-pdf"></i>
-                    {{ document_count }} document(s) uploaded by customer
-                </p>
+                    <span>{{ document_count }} document(s)</span>
+                </div>
                 <a href="{% url 'appointment_documents' appointment.pk %}" class="btn btn-primary">
-                    <i class="fas fa-eye"></i> View Documents
+                    <i class="fas fa-eye"></i> View
                 </a>
             </div>
         </div>
@@ -194,7 +214,7 @@
 </div>
 {% endif %}
 
-<!-- Quotation Section -->
+<!-- Quotations -->
 <div class="quotation-section">
     <div class="card">
         <div class="card-header">
@@ -206,7 +226,7 @@
                 {% for quote in appointment.quotations.all %}
                 <div class="quotation-item status-{{ quote.status|default:'draft' }}">
                     <div class="quotation-header">
-                        <h4>Quotation #{{ quote.quotation_number|default:quote.id }}</h4>
+                        <h4>Quote #{{ quote.quotation_number|default:quote.id }}</h4>
                         <span class="status-badge status-{{ quote.status|default:'draft' }}">
                             {{ quote.get_status_display }}
                         </span>
@@ -222,14 +242,14 @@
                         <a href="{% url 'view_quotation' quote.id %}" class="btn btn-sm btn-outline-primary">
                             <i class="fas fa-eye"></i> View
                         </a>
-                        {% if quote.status  ==  'draft' %}
+                        {% if quote.status == 'draft' %}
                         <a href="{% url 'edit_quotation' quote.id %}" class="btn btn-sm btn-outline-secondary">
                             <i class="fas fa-edit"></i> Edit
                         </a>
                         <a href="{% url 'send_quotation' quote.id %}" class="btn btn-sm btn-success">
-                            <i class="fab fa-whatsapp"></i> Send via WhatsApp
+                            <i class="fab fa-whatsapp"></i> Send
                         </a>
-                        {% elif quote.status  ==  'sent' %}
+                        {% elif quote.status == 'sent' %}
                         <a href="{% url 'send_quotation' quote.id %}" class="btn btn-sm btn-success">
                             <i class="fab fa-whatsapp"></i> Resend
                         </a>
@@ -241,9 +261,9 @@
             {% else %}
             <div class="empty-state">
                 <i class="fas fa-file-invoice-dollar fa-3x"></i>
-                <p>No quotations created yet</p>
+                <p>No quotations yet</p>
                 <a href="{% url 'create_quotation' appointment.pk %}" class="btn btn-primary mt-2">
-                    <i class="fas fa-plus"></i> Create First Quotation
+                    <i class="fas fa-plus"></i> Create Quotation
                 </a>
             </div>
             {% endif %}
@@ -252,29 +272,28 @@
 </div>
 
 <div class="dashboard-grid">
-    <!-- Left Column - Appointment Details -->
+    <!-- Appointment Details -->
     <div class="card">
-        <h2><i class="fas fa-info-circle"></i> Appointment Details</h2>
+        <h2><i class="fas fa-info-circle"></i> Details</h2>
 
-        <!-- Add document status -->
         <div class="form-group">
             <label>Document Status</label>
             <div class="document-status">
                 {% if has_documents %}
                 <span class="status-badge status-available">
                     <i class="fas fa-check-circle"></i>
-                    {{ document_count }} document(s) available
+                    {{ document_count }} document(s)
                 </span>
                 {% else %}
                 <span class="status-badge status-unavailable">
                     <i class="fas fa-times-circle"></i>
-                    No documents uploaded
+                    No documents
                 </span>
                 {% endif %}
             </div>
         </div>
 
-        <form method="post" action="{% url 'update_appointment' appointment.pk %}">
+        <form method="post">
             {% csrf_token %}
             <div class="form-group">
                 <label>Status</label>
@@ -305,7 +324,7 @@
                 <label for="property_type">Property Type</label>
                 <select id="property_type" name="property_type" class="form-control">
                     {% for value, display in appointment.PROPERTY_TYPE_CHOICES %}
-                    <option value="{{ value }}" {% if appointment.property_type  ==  value %}selected{% endif %}>
+                    <option value="{{ value }}" {% if appointment.property_type==value %}selected{% endif %}>
                         {{ display }}
                     </option>
                     {% endfor %}
@@ -324,18 +343,17 @@
                     class="form-control">
             </div>
 
-            <!-- Show appropriate datetime field based on appointment type -->
-            {% if appointment.appointment_type  ==  'job_appointment' %}
+            {% if appointment.appointment_type == 'job_appointment' %}
             <div class="form-group">
                 <label for="job_scheduled_datetime">Job Date/Time</label>
                 <input type="datetime-local" id="job_scheduled_datetime" name="job_scheduled_datetime"
-                    value="{{ appointment.job_scheduled_datetime|date:'Y-m-d\\TH:i' }}" class="form-control">
+                    value="{{ appointment.job_scheduled_datetime|date:'Y-m-d\TH:i' }}" class="form-control">
             </div>
             {% else %}
             <div class="form-group">
                 <label for="scheduled_datetime">Site Visit Date/Time</label>
                 <input type="datetime-local" id="scheduled_datetime" name="scheduled_datetime"
-                    value="{{ appointment.scheduled_datetime|date:'Y-m-d\\TH:i' }}" class="form-control">
+                    value="{{ appointment.scheduled_datetime|date:'Y-m-d\TH:i' }}" class="form-control">
             </div>
             {% endif %}
 
@@ -343,7 +361,7 @@
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-save"></i> Save Changes
                 </button>
-                {% if appointment.status  ==  'pending' %}
+                {% if appointment.status == 'pending' %}
                 <a href="{% url 'confirm_appointment' appointment.pk %}" class="btn btn-success">
                     <i class="fas fa-check"></i> Confirm
                 </a>
@@ -357,21 +375,21 @@
         </form>
     </div>
 
-    <!-- Right Column - Conversation History -->
+    <!-- Conversation History -->
     <div class="card">
-        <h2><i class="fas fa-comments"></i> Conversation History</h2>
+        <h2><i class="fas fa-comments"></i> Conversation</h2>
 
-        <div class="conversation-history" style="max-height: 450px; overflow-y: auto;">
+        <div class="conversation-history">
             {% for message in conversation_history %}
-            <div class="message {% if message.role  ==  'user' %}user{% else %}assistant{% endif %}">
+            <div class="message {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
                 <div class="message-header">
-                    {% if message.role  ==  'user' %}
+                    {% if message.role == 'user' %}
                     Customer
                     {% else %}
                     Bot
                     {% endif %}
                     {% if message.timestamp %}
-                    <small>{{ message.timestamp|date:"M d, Y H:i" }}</small>
+                    <small>{{ message.timestamp|date:"M d, H:i" }}</small>
                     {% endif %}
                 </div>
                 <p>{{ message.content|default:"(no content)" }}</p>
@@ -384,198 +402,94 @@
             {% endfor %}
         </div>
 
-        <form method="post" action="{% url 'send_followup' appointment.pk %}" style="margin-top: 20px;">
+        <form method="post" action="{% url 'send_followup' appointment.pk %}" class="followup-form">
             {% csrf_token %}
             <div class="form-group">
                 <label for="followup_message">Send Follow-up</label>
                 <textarea id="followup_message" name="message" class="form-control" rows="3"
-                    placeholder="Type your follow-up message..."></textarea>
+                    placeholder="Type message..."></textarea>
             </div>
             <button type="submit" class="btn btn-primary">
-                <i class="fas fa-paper-plane"></i> Send Message
+                <i class="fas fa-paper-plane"></i> Send
             </button>
         </form>
     </div>
 </div>
 
 <script>
-function updateJobStatus(jobId, newStatus) {
-    if (confirm(`Are you sure you want to change the job status to ${newStatus.replace('_', ' ')}?`)) {
-        fetch(`/jobs/${jobId}/update-status/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: `status=${newStatus}`
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert('Error updating status: ' + data.error);
-            }
-        })
-        .catch(error => {
-            alert('Error updating status: ' + error);
-        });
+    function updateJobStatus(jobId, newStatus) {
+        if (confirm(`Change job status to ${newStatus.replace('_', ' ')}?`)) {
+            fetch(`/jobs/${jobId}/update-status/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: `status=${newStatus}`
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                });
+        }
     }
-}
 </script>
 
 <style>
-
-    /* Base responsive typography */
-body {
-    font-size: 16px;
-    line-height: 1.5;
-    word-wrap: break-word;
-}
-
-/* Ensure headers scale down */
-h1, h2, h3, h4 {
-    font-weight: 600;
-    line-height: 1.3;
-    word-break: break-word;
-}
-
-/* Make cards mobile-friendly */
-.card {
-    margin-bottom: 20px;
-    border-radius: 10px;
-    overflow: hidden;
-}
-
-/* Form inputs */
-.form-control {
-    width: 100%;
-    padding: 10px 12px;
-    font-size: 1rem;
-    border-radius: 6px;
-}
-
-/* Buttons: touch-friendly */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 12px 18px;
-    font-size: 0.95rem;
-    border-radius: 8px;
-    flex-wrap: nowrap;
-}
-
-/* Conversation history - scrollable and compact on mobile */
-.conversation-history {
-    max-height: 400px;
-    overflow-y: auto;
-    padding: 10px;
-    border-radius: 8px;
-    background: #fafafa;
-}
-
-/* Messages stack well */
-.message {
-    padding: 8px 12px;
-    margin-bottom: 10px;
-    border-radius: 6px;
-    font-size: 0.9rem;
-}
-.message.user {
-    background: #e3f2fd;
-    align-self: flex-start;
-}
-.message.assistant {
-    background: #f1f8e9;
-    align-self: flex-end;
-}
-
-/* Dashboard grid responsive */
-.dashboard-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-}
-@media (max-width: 992px) {
-    .dashboard-grid {
-        grid-template-columns: 1fr;
+    /* Base Styles */
+    * {
+        box-sizing: border-box;
     }
-}
 
-/* Job details grid responsive */
-.job-detail-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-}
-@media (max-width: 768px) {
-    .job-detail-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* Quotations list responsive */
-.quotations-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-.quotation-item {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-/* Make action buttons wrap neatly */
-.quotation-actions,
-.job-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-/* Prevent overflow in long words/numbers */
-.card-body, .job-summary, .document-summary {
-    word-wrap: break-word;
-    overflow-wrap: anywhere;
-}
-
-/* Mobile tweaks for small devices */
-@media (max-width: 576px) {
-    h1 {
-        font-size: 1.4rem;
-    }
-    h2 {
-        font-size: 1.2rem;
-    }
-    .btn {
-        width: 100%; /* full-width buttons for thumb tapping */
-    }
-    .job-summary {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
-    }
-    .quotation-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 5px;
-    }
-    .document-summary {
-        flex-direction: column;
-        align-items: flex-start;
+    .header h1 {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
         gap: 10px;
+        font-size: clamp(1.5rem, 4vw, 2rem);
     }
-}
 
-    /* Appointment type badges */
+    .header-text {
+        word-break: break-word;
+    }
+
+    /* Messages */
+    .messages-container {
+        margin-bottom: 20px;
+    }
+
+    .alert {
+        padding: 12px 15px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+
+    .alert-success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+
+    .alert-error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+
+    /* Appointment Type Badges */
     .appointment-type-badge {
-        font-size: 0.7em;
+        font-size: 0.6em;
         padding: 4px 8px;
         border-radius: 12px;
         font-weight: bold;
-        margin-left: 10px;
+        white-space: nowrap;
     }
 
     .appointment-type-badge.site-visit {
@@ -588,18 +502,55 @@ h1, h2, h3, h4 {
         color: #f57c00;
     }
 
-    /* Job scheduling panel */
-    .job-scheduling-panel {
+    /* Cards */
+    .card {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         margin-bottom: 20px;
+        overflow: hidden;
     }
 
-    .scheduling-status {
+    .card-header {
+        background: #f8f9fa;
+        padding: 15px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .card-header h3 {
+        margin: 0;
+        font-size: 1.1rem;
         display: flex;
         align-items: center;
+        gap: 8px;
+    }
+
+    .card-body {
+        padding: 15px;
+    }
+
+    /* Scheduling Status */
+    .scheduling-status {
+        display: flex;
         gap: 15px;
         padding: 15px;
         border-radius: 8px;
         margin-bottom: 15px;
+    }
+
+    .scheduling-status i {
+        font-size: 1.5em;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .status-content {
+        flex: 1;
+    }
+
+    .status-content p {
+        margin: 0 0 10px 0;
+        font-weight: 500;
     }
 
     .scheduling-status.pending {
@@ -620,32 +571,16 @@ h1, h2, h3, h4 {
         color: #004085;
     }
 
-    .scheduling-status i {
-        font-size: 1.5em;
-        flex-shrink: 0;
-    }
-
-    .scheduling-status p {
-        flex: 1;
-        margin: 0;
-        font-weight: 500;
-    }
-
     .completion-details {
         font-size: 0.9em;
-        margin-top: 8px;
+        margin: 8px 0;
         color: #666;
     }
 
-    /* Job details panel */
-    .job-details-panel {
-        margin-bottom: 20px;
-    }
-
+    /* Job Details */
     .job-detail-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
+        gap: 15px;
         margin-bottom: 20px;
     }
 
@@ -659,25 +594,19 @@ h1, h2, h3, h4 {
 
     .job-info-section h4,
     .job-work-section h4 {
-        margin-bottom: 10px;
+        margin: 0 0 10px 0;
         color: #333;
-        font-size: 1.1em;
+        font-size: 1rem;
     }
 
     .job-info-section p,
     .job-work-section p {
         margin: 5px 0;
+        font-size: 0.9rem;
     }
 
-    /* Related jobs panel */
-    .related-jobs-panel {
-        margin-bottom: 20px;
-    }
-
+    /* Job Summary */
     .job-summary {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
         padding: 15px;
         background: #f8f9fa;
         border-radius: 5px;
@@ -686,13 +615,14 @@ h1, h2, h3, h4 {
     }
 
     .job-summary h4 {
-        margin: 0 0 5px 0;
+        margin: 0 0 8px 0;
         color: #333;
+        font-size: 1rem;
     }
 
     .job-summary p {
-        margin: 2px 0;
-        font-size: 0.9em;
+        margin: 4px 0;
+        font-size: 0.85rem;
         color: #666;
     }
 
@@ -703,18 +633,19 @@ h1, h2, h3, h4 {
 
     .job-actions {
         display: flex;
-        gap: 10px;
+        gap: 8px;
         flex-wrap: wrap;
         margin-top: 15px;
     }
 
-    /* Status badges */
+    /* Status Badges */
     .status-badge {
         padding: 4px 8px;
         border-radius: 12px;
-        font-size: 0.8em;
+        font-size: 0.75em;
         font-weight: bold;
         display: inline-block;
+        white-space: nowrap;
     }
 
     .status-pending_schedule {
@@ -752,11 +683,24 @@ h1, h2, h3, h4 {
         color: #721c24;
     }
 
-    /* Quotation styles */
-    .quotation-section {
-        margin-bottom: 20px;
+    /* Documents */
+    .document-summary {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 5px;
     }
 
+    .document-summary div {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* Quotations */
     .quotation-item {
         border: 1px solid #ddd;
         border-radius: 5px;
@@ -769,16 +713,29 @@ h1, h2, h3, h4 {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
         margin-bottom: 10px;
+    }
+
+    .quotation-header h4 {
+        margin: 0;
+        font-size: 1rem;
     }
 
     .quotation-details {
         margin-bottom: 10px;
+        font-size: 0.9rem;
+    }
+
+    .quotation-details p {
+        margin: 4px 0;
     }
 
     .quotation-actions {
         display: flex;
-        gap: 10px;
+        gap: 8px;
+        flex-wrap: wrap;
     }
 
     .status-accepted {
@@ -793,49 +750,136 @@ h1, h2, h3, h4 {
         border-left: 4px solid #6c757d;
     }
 
-    .empty-state {
-        text-align: center;
-        padding: 20px;
-        color: #6c757d;
+    /* Dashboard Grid */
+    .dashboard-grid {
+        display: grid;
+        gap: 20px;
     }
 
-    .document-access-panel {
-        margin-bottom: 20px;
+    /* Forms */
+    .form-group {
+        margin-bottom: 15px;
     }
 
-    .document-summary {
+    .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 1rem;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+    }
+
+    textarea.form-control {
+        resize: vertical;
+        min-height: 80px;
+    }
+
+    /* Conversation */
+    .conversation-history {
+        max-height: 400px;
+        overflow-y: auto;
+        margin-bottom: 15px;
+        padding-right: 5px;
+    }
+
+    .message {
+        padding: 10px;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        font-size: 0.9rem;
+    }
+
+    .message.user {
+        background: #e3f2fd;
+        margin-left: 20px;
+    }
+
+    .message.assistant {
+        background: #f5f5f5;
+        margin-right: 20px;
+    }
+
+    .message-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 15px;
-        background: #f8f9fa;
-        border-radius: 5px;
+        margin-bottom: 5px;
+        font-weight: 600;
+        font-size: 0.85rem;
     }
 
-    .document-status .status-badge {
-        padding: 5px 10px;
-        border-radius: 15px;
-        font-size: 0.9em;
-        font-weight: bold;
+    .message-header small {
+        font-weight: normal;
+        color: #666;
+    }
+
+    .message p {
+        margin: 0;
+        word-wrap: break-word;
+    }
+
+    .followup-form {
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #dee2e6;
+    }
+
+    /* Actions */
+    .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 20px;
+    }
+
+    /* Buttons */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 5px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+    }
+
+    .btn:hover {
+        text-decoration: none;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn:active {
+        transform: translateY(0);
     }
 
     .btn-primary {
         background: #007bff;
         color: white;
-        padding: 10px 20px;
-        border-radius: 5px;
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        text-decoration: none;
-        border: none;
-        cursor: pointer;
     }
 
     .btn-primary:hover {
         background: #0056b3;
         color: white;
-        text-decoration: none;
     }
 
     .btn-success {
@@ -845,6 +889,7 @@ h1, h2, h3, h4 {
 
     .btn-success:hover {
         background: #218838;
+        color: white;
     }
 
     .btn-warning {
@@ -863,6 +908,7 @@ h1, h2, h3, h4 {
 
     .btn-danger:hover {
         background: #c82333;
+        color: white;
     }
 
     .btn-secondary {
@@ -872,6 +918,7 @@ h1, h2, h3, h4 {
 
     .btn-secondary:hover {
         background: #5a6268;
+        color: white;
     }
 
     .btn-outline-primary {
@@ -885,24 +932,228 @@ h1, h2, h3, h4 {
         color: white;
     }
 
-    .btn-sm {
-        padding: 5px 10px;
-        font-size: 0.875em;
+    .btn-outline-secondary {
+        background: transparent;
+        color: #6c757d;
+        border: 1px solid #6c757d;
     }
 
-    @media (max-width: 768px) {
-        .job-detail-grid {
-            grid-template-columns: 1fr;
+    .btn-outline-secondary:hover {
+        background: #6c757d;
+        color: white;
+    }
+
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+
+    .btn i {
+        font-size: 0.9em;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6c757d;
+    }
+
+    .empty-state i {
+        margin-bottom: 15px;
+        color: #dee2e6;
+    }
+
+    .empty-state p {
+        margin: 10px 0;
+    }
+
+    .mt-2 {
+        margin-top: 10px;
+    }
+
+    /* Tablet & Desktop */
+    @media (min-width: 768px) {
+        .dashboard-grid {
+            grid-template-columns: 1fr 1fr;
         }
 
-        .job-summary {
+        .job-detail-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+        }
+
+        .appointment-type-badge {
+            font-size: 0.7em;
+        }
+
+        .conversation-history {
+            max-height: 450px;
+        }
+    }
+
+    /* Mobile Optimizations */
+    @media (max-width: 767px) {
+        .header {
+            padding: 15px;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+        }
+
+        .header p {
+            font-size: 0.9rem;
+        }
+
+        .card-body {
+            padding: 12px;
+        }
+
+        .scheduling-status {
             flex-direction: column;
-            align-items: flex-start;
             gap: 10px;
         }
 
+        .scheduling-status i {
+            font-size: 1.2em;
+        }
+
+        .job-summary {
+            padding: 12px;
+        }
+
         .job-actions {
-            justify-content: flex-start;
+            width: 100%;
+        }
+
+        .job-actions .btn {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .actions {
+            flex-direction: column;
+        }
+
+        .actions .btn {
+            width: 100%;
+        }
+
+        .quotation-actions {
+            flex-direction: column;
+        }
+
+        .quotation-actions .btn {
+            width: 100%;
+        }
+
+        .document-summary {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .document-summary .btn {
+            width: 100%;
+        }
+
+        .message.user {
+            margin-left: 10px;
+        }
+
+        .message.assistant {
+            margin-right: 10px;
+        }
+
+        /* Make form inputs more touch-friendly */
+        .form-control {
+            font-size: 16px;
+            /* Prevents zoom on iOS */
+            padding: 12px;
+        }
+
+        .btn {
+            padding: 12px 16px;
+            font-size: 1rem;
+        }
+
+        .btn-sm {
+            padding: 8px 12px;
+            font-size: 0.85rem;
+        }
+    }
+
+    /* Very small screens */
+    @media (max-width: 400px) {
+        .quotation-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .job-summary {
+            font-size: 0.9rem;
+        }
+
+        .card-header h3 {
+            font-size: 1rem;
+        }
+    }
+
+    /* Accessibility */
+    .btn:focus,
+    .form-control:focus {
+        outline: 2px solid #007bff;
+        outline-offset: 2px;
+    }
+
+    /* Loading state for save button */
+    .btn-primary:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+
+    /* Smooth scrolling for conversation */
+    .conversation-history {
+        scroll-behavior: smooth;
+    }
+
+    /* Better touch targets */
+    @media (hover: none) and (pointer: coarse) {
+        .btn {
+            min-height: 44px;
+        }
+
+        .btn-sm {
+            min-height: 36px;
+        }
+    }
+
+    /* Print styles */
+    @media print {
+
+        .btn,
+        .actions,
+        .followup-form,
+        .job-actions {
+            display: none;
+        }
+
+        .card {
+            break-inside: avoid;
+            box-shadow: none;
+            border: 1px solid #ddd;
+        }
+
+        .dashboard-grid {
+            display: block;
+        }
+
+        .conversation-history {
+            max-height: none;
         }
     }
 </style>

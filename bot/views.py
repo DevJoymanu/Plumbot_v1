@@ -515,13 +515,43 @@ class AppointmentDetailView(DetailView):
         context.update({
             'conversation_history': conversation_history,
             'completeness': appointment.get_customer_info_completeness(),
-            # Add these lines for documents
             'documents': appointment.get_uploaded_documents(),
             'has_documents': appointment.has_uploaded_documents(),
             'document_count': appointment.get_document_count(),
         })
         return context
+
+    def post(self, request, *args, **kwargs):
+        """Handle form submission for updating appointment"""
+        appointment = self.get_object()
         
+        try:
+            # Update fields from POST data
+            appointment.customer_name = request.POST.get('customer_name', appointment.customer_name)
+            appointment.project_type = request.POST.get('project_type', appointment.project_type)
+            appointment.property_type = request.POST.get('property_type', appointment.property_type)
+            appointment.customer_area = request.POST.get('customer_area', appointment.customer_area)
+            appointment.timeline = request.POST.get('timeline', appointment.timeline)
+            
+            # Handle datetime fields based on appointment type
+            if appointment.appointment_type == 'job_appointment':
+                job_datetime = request.POST.get('job_scheduled_datetime')
+                if job_datetime:
+                    appointment.job_scheduled_datetime = job_datetime
+            else:
+                scheduled_datetime = request.POST.get('scheduled_datetime')
+                if scheduled_datetime:
+                    appointment.scheduled_datetime = scheduled_datetime
+            
+            appointment.save()
+            
+            messages.success(request, 'Appointment updated successfully!')
+            
+        except Exception as e:
+            messages.error(request, f'Error updating appointment: {str(e)}')
+        
+        return redirect('appointment_detail', pk=appointment.pk)
+                
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDocumentsView(DetailView):
     template_name = 'appointment_documents.html'
