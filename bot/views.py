@@ -2150,34 +2150,32 @@ I understand this is time-sensitive!"""
 
 
     def get_next_question_to_ask(self):
-        """Determine which question to ask next - FIXED to not re-ask plan status"""
+        """Determine which question to ask next - FIXED plan upload flow"""
         
-        # Step 1: Service type always comes first
         if not self.appointment.project_type:
             return "service_type"
-
-        # Step 2: Handle plan flow
-        if self.appointment.has_plan is None:
-            # We don’t know yet — ask once
+        
+        if not self.appointment.has_plan:
             return "plan_or_visit"
 
-        if self.appointment.has_plan:
-            # They said they have a plan
+        # If they have a plan, handle plan upload flow
+        if self.appointment.has_plan is True:
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.property_type:
                 return "property_type"
-            
-            # Only deal with plan upload flow once area + property type are filled
-            if self.appointment.plan_status is None:
+            # FIXED: Check if we have basic info for plan upload but haven't started
+            if (self.appointment.customer_area and 
+                self.appointment.property_type and 
+                self.appointment.plan_status is None):
                 return "initiate_plan_upload"
             if self.appointment.plan_status == 'pending_upload':
                 return "awaiting_plan_upload"
             if self.appointment.plan_status == 'plan_uploaded':
                 return "plan_with_plumber"
 
-        else:
-            # They don’t have a plan
+        # If they don't have a plan, continue normal flow
+        if self.appointment.has_plan is False:
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.timeline:
@@ -2188,8 +2186,7 @@ I understand this is time-sensitive!"""
                 return "availability"
             if not self.appointment.customer_name and self.appointment.status == 'confirmed':
                 return "name"
-
-        # If nothing left, conversation is complete
+                
         return "complete"
 
 
