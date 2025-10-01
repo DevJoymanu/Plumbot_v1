@@ -3060,6 +3060,24 @@ I understand this is time-sensitive!"""
             
             print(f"💾 Appointment confirmed and saved: {appointment_datetime}")
             
+            # ✅ ADD THIS: Extract appointment details
+            appointment_details = self.extract_appointment_details()
+            
+            # ✅ ADD THIS: Send notifications
+            try:
+                print("📤 Sending team notifications...")
+                self.notify_team(appointment_details, appointment_datetime)
+                print("✅ Team notifications sent")
+            except Exception as notify_error:
+                print(f"⚠️ Notification error: {notify_error}")
+            
+            # ✅ ADD THIS: Add to calendar (optional)
+            try:
+                if GOOGLE_CALENDAR_CREDENTIALS:
+                    self.add_to_google_calendar(appointment_details, appointment_datetime)
+            except Exception as cal_error:
+                print(f"⚠️ Calendar error: {cal_error}")
+            
             return {
                 'success': True,
                 'datetime': appointment_datetime.strftime('%B %d, %Y at %I:%M %p')
@@ -3895,46 +3913,47 @@ Thank you for choosing us.
             print(f"Confirmation message error: {str(e)}")
 
     def notify_team(self, appointment_info, appointment_datetime):
-        """Notify team about new appointment"""
+        """Notify team about new appointment - FIXED VERSION"""
         try:
-            # Build service description for team
-            service_name = "General plumbing"
-            if appointment_info.get('project_type'):
+            # Get service name with fallback
+            service_name = appointment_info.get('project_type', 'Plumbing service')
+            if service_name:
                 service_map = {
-                    'bathroom': 'Bathroom Renovation',
-                    'installation': 'New Plumbing Installation',
-                    'kitchen': 'Kitchen Renovation'
+                    'bathroom_renovation': 'Bathroom Renovation',
+                    'new_plumbing_installation': 'New Plumbing Installation',
+                    'kitchen_renovation': 'Kitchen Renovation'
                 }
-                service_name = service_map.get(appointment_info['project_type'], service_name)
+                service_name = service_map.get(service_name, service_name.replace('_', ' ').title())
             
             # Plan status for team
             plan_status = "Not specified"
             if appointment_info.get('has_plan') is not None:
                 plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
             
+            # Format the team notification message
             team_message = f"""🚨 NEW APPOINTMENT BOOKED!
 
-Customer: {appointment_info.get('name', 'Unknown')}
-Phone: {self.phone_number.replace('whatsapp:', '')}
-Date/Time: {appointment_datetime.strftime('%A, %B %d at %I:%M %p')}
-Area: {appointment_info.get('area', 'Not provided')}
-Service: {project_type}
-Property: {appointment_info.get('property_type', 'Not specified')}
-Timeline: {appointment_info.get('timeline', 'Not specified')}
-Plan Status: {plan_status}
+    Customer: {appointment_info.get('name', 'Unknown')}
+    Phone: {self.phone_number.replace('whatsapp:', '')}
+    Date/Time: {appointment_datetime.strftime('%A, %B %d at %I:%M %p')}
+    Area: {appointment_info.get('area', 'Not provided')}
+    Service: {service_name}
+    Property: {appointment_info.get('property_type', 'Not specified')}
+    Timeline: {appointment_info.get('timeline', 'Not specified')}
+    Plan Status: {plan_status}
 
-View appointment: https://plumbotv1-production.up.railway.app/appointments/{self.id}/
+    View appointment: https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/
 
-Check calendar for details."""
+    Check calendar for details."""
 
-            # Send to team WhatsApp numbers
+            # Team numbers to notify
             TEAM_NUMBERS = [
-                'whatsapp:+27610318200',  # Replace with actual team numbers
-                # Add more team numbers here as needed
+                'whatsapp:+27610318200',  # Your plumber's number
             ]
             
             print(f"📤 Attempting to send notifications to {len(TEAM_NUMBERS)} team members...")
             
+            sent_count = 0
             for number in TEAM_NUMBERS:
                 try:
                     message = twilio_client.messages.create(
@@ -3943,12 +3962,20 @@ Check calendar for details."""
                         to=number
                     )
                     print(f"✅ Team notification sent successfully to {number}. Message SID: {message.sid}")
+                    sent_count += 1
                 except Exception as msg_error:
                     print(f"❌ Failed to send team notification to {number}: {str(msg_error)}")
+            
+            if sent_count > 0:
+                print(f"✅ Successfully sent {sent_count} team notifications")
+            else:
+                print(f"❌ Failed to send any team notifications")
                     
         except Exception as e:
             print(f"❌ Team notification error: {str(e)}")
-
+            import traceback
+            print(traceback.format_exc())
+            
     def send_reminder_message(appointment, reminder_type):
         """Send reminder message based on reminder type"""
         try:
