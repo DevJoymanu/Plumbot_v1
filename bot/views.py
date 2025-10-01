@@ -551,7 +551,7 @@ class AppointmentDetailView(DetailView):
             messages.error(request, f'Error updating appointment: {str(e)}')
         
         return redirect('appointment_detail', pk=appointment.pk)
-                
+
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDocumentsView(DetailView):
     template_name = 'appointment_documents.html'
@@ -900,7 +900,7 @@ def schedule_job(request, pk):
             job_phone = f"job_{uuid.uuid4().hex[:8]}_{site_visit.phone_number}"
             
             job_appointment = Appointment.objects.create(
-                phone_number=site_visit.phone_number,  # Unique identifier for the job
+                job_phone=site_visit.phone_number,  # Unique identifier for the job
                 customer_name=site_visit.customer_name,
                 customer_email=site_visit.customer_email or '',
                 customer_area=site_visit.customer_area,
