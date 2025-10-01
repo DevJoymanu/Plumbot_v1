@@ -9,7 +9,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>Construction Quotation Generator</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    {% load static %}
     <style>
         :root {
             --primary: #667eea;
@@ -38,13 +38,15 @@
             min-height: 100vh;
             color: #333;
             line-height: 1.5;
+            /* Prevent horizontal scroll */
+            overflow-x: hidden;
         }
 
         .container {
             width: 100%;
             max-width: 1200px;
             margin: 0 auto;
-            padding: 15px;
+            padding: 10px;
         }
 
         /* Header Styles */
@@ -129,7 +131,7 @@
         .quotation-card {
             background: rgba(255, 255, 255, 0.98);
             border-radius: 12px;
-            padding: 20px;
+            padding: 15px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.2);
             margin-bottom: 20px;
@@ -183,6 +185,8 @@
             font-size: clamp(0.9rem, 3.5vw, 1rem);
             transition: border-color 0.2s ease;
             background: white;
+            /* Prevent zoom on iOS */
+            font-size: 16px;
         }
 
         .form-group input:focus,
@@ -238,6 +242,25 @@
             -webkit-overflow-scrolling: touch;
             border-radius: 8px;
             border: 1px solid #e5e7eb;
+            /* Visual indicator for horizontal scroll */
+            position: relative;
+        }
+
+        .table-responsive::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 20px;
+            background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.05));
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .table-responsive.scrolling::after {
+            opacity: 1;
         }
 
         .items-table {
@@ -268,32 +291,34 @@
 
         .items-table input {
             width: 100%;
-            min-width: 80px;
+            min-width: 60px;
             padding: 8px 10px;
             border: 1px solid #dfe6f3;
             border-radius: 6px;
             font-size: clamp(0.8rem, 3vw, 0.9rem);
+            /* Prevent zoom on iOS */
+            font-size: 16px;
         }
 
         .item-name {
-            min-width: 200px;
+            min-width: 180px;
             width: 40%;
         }
 
         .qty-col {
-            width: 80px;
+            width: 70px;
         }
 
         .unit-col {
-            width: 100px;
+            width: 90px;
         }
 
         .total-col {
-            width: 120px;
+            width: 100px;
         }
 
         .action-col {
-            width: 80px;
+            width: 70px;
         }
 
         .line-total {
@@ -393,6 +418,9 @@
             -webkit-user-select: none;
             user-select: none;
             font-weight: 600;
+            /* Better touch targets */
+            min-height: 44px;
+            min-width: 44px;
         }
 
         .btn:active {
@@ -402,6 +430,8 @@
         .btn-sm {
             padding: 6px 12px;
             font-size: clamp(0.8rem, 3vw, 0.9rem);
+            min-height: 36px;
+            min-width: 36px;
         }
 
         .btn-secondary {
@@ -542,11 +572,11 @@
         /* Mobile Responsiveness */
         @media (max-width: 768px) {
             .container {
-                padding: 10px;
+                padding: 8px;
             }
 
             .quotation-card {
-                padding: 15px;
+                padding: 12px;
             }
 
             .form-grid {
@@ -580,7 +610,7 @@
             }
 
             .items-table input {
-                min-width: 60px;
+                min-width: 50px;
             }
 
             .qty-col {
@@ -598,9 +628,7 @@
             .action-col {
                 width: 60px;
             }
-        }
 
-        @media (max-width: 480px) {
             .company-info {
                 flex-direction: column;
                 text-align: center;
@@ -608,6 +636,35 @@
 
             .totals-input {
                 width: 80px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .navbar-nav a {
+                padding: 8px;
+            }
+
+            .navbar-nav a .nav-text {
+                display: none;
+            }
+
+            .form-group input,
+            .form-group select,
+            .form-group textarea {
+                padding: 10px 12px;
+            }
+
+            .items-table td,
+            .items-table th {
+                padding: 8px 6px;
+            }
+
+            .totals-table {
+                padding: 15px;
+            }
+
+            .preview-container {
+                padding: 15px;
             }
         }
 
@@ -728,7 +785,7 @@
                     <i class="fas fa-list"></i> Items & Materials
                 </h2>
 
-                <div class="table-responsive">
+                <div class="table-responsive" id="itemsTableContainer">
                     <table class="items-table" id="itemsTable">
                         <thead>
                             <tr>
@@ -973,6 +1030,7 @@
         const transportCost = document.getElementById('transportCost');
         const projectTypeInput = document.getElementById('projectType');
         const projectSuggestions = document.getElementById('projectSuggestions');
+        const itemsTableContainer = document.getElementById('itemsTableContainer');
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function () {
@@ -981,6 +1039,7 @@
             setupProjectTypeSuggestions();
             updatePreviewDate();
             loadAppointmentFromUrl();
+            setupTableScrollIndicator();
         });
 
         function initializeForm() {
@@ -1013,6 +1072,18 @@
                     updateItemFromInput(e.target);
                 }
             });
+        }
+
+        function setupTableScrollIndicator() {
+            if (itemsTableContainer) {
+                itemsTableContainer.addEventListener('scroll', function () {
+                    if (this.scrollLeft > 0) {
+                        this.classList.add('scrolling');
+                    } else {
+                        this.classList.remove('scrolling');
+                    }
+                });
+            }
         }
 
         function setupProjectTypeSuggestions() {
@@ -1630,18 +1701,6 @@
 
             window.addEventListener('resize', handleNavText);
             handleNavText();
-
-            // Make table scrollable indicator more visible on mobile
-            const tableContainer = document.querySelector('.table-responsive');
-            if (tableContainer) {
-                tableContainer.addEventListener('scroll', function () {
-                    if (this.scrollLeft > 0) {
-                        this.style.boxShadow = 'inset 5px 0 5px -5px rgba(102, 126, 234, 0.3)';
-                    } else {
-                        this.style.boxShadow = 'none';
-                    }
-                });
-            }
         });
 
         // Global functions for onclick handlers
