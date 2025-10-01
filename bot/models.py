@@ -89,6 +89,8 @@ class QuotationItem(models.Model):
         return f"{self.description} - R{self.total_price}"
 
 
+
+
 class Appointment(models.Model):
     """Model to store plumbing appointment information and conversation history"""
     
@@ -1038,4 +1040,19 @@ class ConversationMessage(models.Model):
     def __str__(self):
         return f"{self.get_role_display()} message at {self.timestamp}"
 
-
+class Job(models.Model):
+    site_visit = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='jobs')
+    scheduled_datetime = models.DateTimeField()
+    duration_hours = models.IntegerField(default=4)
+    description = models.TextField()
+    materials_needed = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=[
+        ('scheduled', 'Scheduled'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ])
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-scheduled_datetime']

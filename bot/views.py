@@ -809,6 +809,7 @@ def complete_site_visit(request, pk):
         'appointment': appointment
     })
 
+
 @staff_required
 def schedule_job(request, pk):
     """Schedule job appointment after site visit"""
@@ -863,9 +864,13 @@ def schedule_job(request, pk):
                     'site_visit': site_visit,
                 })
             
-            # Create job appointment (duplicate the original appointment)
-            job_appointment = Appointment.objects.update_or_create(
-   #             phone_number=site_visit.phone_number,
+            # FIXED: Create job appointment properly
+            # Generate unique phone number for job (since phone_number is unique)
+            import uuid
+            job_phone = f"job_{uuid.uuid4().hex[:8]}_{site_visit.phone_number}"
+            
+            job_appointment = Appointment.objects.create(
+                phone_number=job_phone,  # Unique identifier for the job
                 customer_name=site_visit.customer_name,
                 customer_email=site_visit.customer_email or '',
                 customer_area=site_visit.customer_area,
@@ -879,8 +884,8 @@ def schedule_job(request, pk):
                 timeline=f'{duration_hours} hours',
             )
             
-            # Link back to original site visit if you have a field for it
-            # job_appointment.related_site_visit = site_visit
+            # Store reference to original site visit if you have a field for it
+            # job_appointment.related_site_visit_id = site_visit.id
             # job_appointment.save()
             
             # Send notifications
@@ -891,7 +896,7 @@ def schedule_job(request, pk):
             
             messages.success(
                 request, 
-                f'Job appointment scheduled for {job_datetime.strftime("%B %d, %Y at %I:%M %p")}'
+                f'Job scheduled for {job_datetime.strftime("%B %d, %Y at %I:%M %p")}'
             )
             return redirect('appointment_detail', pk=job_appointment.pk)
             

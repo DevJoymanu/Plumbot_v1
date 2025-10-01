@@ -85,8 +85,8 @@
 
                         <div class="job-details">
                             <div class="job-info">
-                                <p><i class="fas fa-calendar"></i> {{ job.job_scheduled_datetime|date:"M d, Y" }}</p>
-                                <p><i class="fas fa-clock"></i> {{ job.job_scheduled_datetime|date:"H:i" }}</p>
+                                <p><i class="fas fa-calendar"></i> {{ job.scheduled_datetime|date:"M d, Y" }}</p>
+                                <p><i class="fas fa-clock"></i> {{ job.scheduled_datetime|date:"H:i" }}</p>
                                 <p><i class="fas fa-map-marker-alt"></i> {{ job.customer_area }}</p>
                                 <p><i class="fas fa-user"></i> {{
                                     job.assigned_plumber.get_full_name|default:"Unassigned" }}</p>
