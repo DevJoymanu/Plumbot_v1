@@ -2155,8 +2155,7 @@ I understand this is time-sensitive!"""
         if not self.appointment.project_type:
             return "service_type"
         
-        # FIXED: Check if has_plan is explicitly False (not None)
-        # Don't ask about plan if we already have an answer
+        # FIXED: Ask about plan if we don't have a clear answer (None or explicitly needs asking)
         if self.appointment.has_plan is None:
             return "plan_or_visit"
 
@@ -2166,7 +2165,6 @@ I understand this is time-sensitive!"""
                 return "area"
             if not self.appointment.property_type:
                 return "property_type"
-            # Check if we have basic info for plan upload but haven't started
             if (self.appointment.customer_area and 
                 self.appointment.property_type and 
                 self.appointment.plan_status is None):
@@ -2190,7 +2188,6 @@ I understand this is time-sensitive!"""
                 return "name"
                 
         return "complete"
-
 
 
 
