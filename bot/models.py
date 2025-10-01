@@ -20,7 +20,8 @@ ROLE_CHOICES = [
     ('user', 'Customer'),
     ('assistant', 'Bot')
 ]
-    REMINDER_TYPE_CHOICES = [
+
+REMINDER_TYPE_CHOICES = [
     ('sms', 'SMS'),
     ('whatsapp', 'WhatsApp'),
     ('email', 'Email'),
