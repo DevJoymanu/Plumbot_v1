@@ -1778,7 +1778,7 @@ I understand this is time-sensitive!"""
                 self.appointment.project_type = extracted_data['service_type']
                 updated_fields.append('service_type')
             
-            # FIXED: Plan status - update if AI found one (remove the None check)
+            # FIXED: Plan status - update ALWAYS when AI finds one (removed the None check)
             if (extracted_data.get('plan_status') and 
                 extracted_data.get('plan_status') != 'null'):
                 # Convert string to boolean
@@ -1847,7 +1847,6 @@ I understand this is time-sensitive!"""
         except Exception as e:
             print(f"❌ Error updating appointment: {str(e)}")
             return []
-
 
 
     def get_information_summary(self):
