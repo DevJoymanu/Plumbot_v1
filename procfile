@@ -1,2 +1,2 @@
-release: python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py create_admin || echo "create_admin failed"
+release: python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py create_staff_user
 web: gunicorn Plumbing_CRM.wsgi --log-file -
