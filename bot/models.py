@@ -119,10 +119,7 @@ class Appointment(models.Model):
     customer_rating = models.IntegerField(blank=True, null=True, help_text="Customer rating 1-5")
     completion_notes = models.TextField(blank=True, null=True, help_text="Notes after job completion")
 
-    Appointment.objects.filter(
-        has_plan=False,
-        customer_area__isnull=True
-    ).update(has_plan=None)
+
 
     # Plan upload fields
     plan_file = models.FileField(
