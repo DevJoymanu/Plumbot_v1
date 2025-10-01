@@ -9,23 +9,23 @@ import uuid
 
 
 
-    STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('sent', 'Sent'),
-        ('accepted', 'Accepted'),
-        ('rejected', 'Rejected'),
-    ]
+STATUS_CHOICES = [
+    ('draft', 'Draft'),
+    ('sent', 'Sent'),
+    ('accepted', 'Accepted'),
+    ('rejected', 'Rejected'),
+]
 
-    ROLE_CHOICES = [
-        ('user', 'Customer'),
-        ('assistant', 'Bot')
-    ]
-        REMINDER_TYPE_CHOICES = [
-        ('sms', 'SMS'),
-        ('whatsapp', 'WhatsApp'),
-        ('email', 'Email'),
-        ('call', 'Phone Call'),
-    ]
+ROLE_CHOICES = [
+    ('user', 'Customer'),
+    ('assistant', 'Bot')
+]
+    REMINDER_TYPE_CHOICES = [
+    ('sms', 'SMS'),
+    ('whatsapp', 'WhatsApp'),
+    ('email', 'Email'),
+    ('call', 'Phone Call'),
+]
 
 
 class Appointment(models.Model):
