@@ -127,13 +127,15 @@ def change_password_view(request):
 # ====== Twilio Setup ======
 import os
 
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
+# Load environment variables
 TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
-twilio_client = Client(ACCOUNT_SID, AUTH_TOKEN)
+TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER')
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
 
-# ====== DeepSeek Setup ======
-DEEPSEEK_API_KEY = "DEEPSEEK_API_KEY"
+# Initialize clients
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com/v1")
 
 # Initialize OpenAI client for DeepSeek
 deepseek_client = OpenAI(
