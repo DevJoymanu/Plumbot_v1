@@ -899,8 +899,8 @@ def schedule_job(request, pk):
             import uuid
             job_phone = f"job_{uuid.uuid4().hex[:8]}_{site_visit.phone_number}"
             
-            job_appointment = Appointment.objects.create(
-                job_phone=site_visit.phone_number,  # Unique identifier for the job
+            job_appointment = Appointment.objects.update(
+                phone_number=site_visit.phone_number,  # Unique identifier for the job
                 customer_name=site_visit.customer_name,
                 customer_email=site_visit.customer_email or '',
                 customer_area=site_visit.customer_area,
