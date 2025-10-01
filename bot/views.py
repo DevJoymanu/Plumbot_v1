@@ -2150,12 +2150,13 @@ I understand this is time-sensitive!"""
 
 
     def get_next_question_to_ask(self):
-        """Determine which question to ask next - FIXED plan upload flow"""
+        """Determine which question to ask next - FIXED"""
         
         if not self.appointment.project_type:
             return "service_type"
         
-        if not self.appointment.has_plan:
+        # FIXED: Check if has_plan has been answered (not just if it's False)
+        if self.appointment.has_plan is None:  # ✅ Check for None, not False
             return "plan_or_visit"
 
         # If they have a plan, handle plan upload flow
@@ -2164,7 +2165,6 @@ I understand this is time-sensitive!"""
                 return "area"
             if not self.appointment.property_type:
                 return "property_type"
-            # FIXED: Check if we have basic info for plan upload but haven't started
             if (self.appointment.customer_area and 
                 self.appointment.property_type and 
                 self.appointment.plan_status is None):
@@ -2174,8 +2174,8 @@ I understand this is time-sensitive!"""
             if self.appointment.plan_status == 'plan_uploaded':
                 return "plan_with_plumber"
 
-        # If they don't have a plan, continue normal flow
-        if self.appointment.has_plan is False:
+        # If they don't have a plan (False), continue normal flow
+        if self.appointment.has_plan is False:  # ✅ Explicitly check for False
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.timeline:
@@ -2194,10 +2194,9 @@ I understand this is time-sensitive!"""
 
     def smart_booking_check(self):
         """Check if we have enough information to attempt booking - FIXED"""
-        # Required fields for booking
         required_for_booking = [
             self.appointment.project_type,
-            self.appointment.has_plan is not None,  # Must have an answer (True or False)
+            self.appointment.has_plan is not None,  # ✅ Must be answered (True or False)
             self.appointment.customer_area,
             self.appointment.timeline,
             self.appointment.property_type,
@@ -2209,7 +2208,7 @@ I understand this is time-sensitive!"""
         
         if not self.appointment.project_type:
             missing_fields.append("service type")
-        if self.appointment.has_plan is None:
+        if self.appointment.has_plan is None:  # ✅ Check for None
             missing_fields.append("plan preference")
         if not self.appointment.customer_area:
             missing_fields.append("area")
