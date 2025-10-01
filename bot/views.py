@@ -3859,7 +3859,7 @@ Property: {appointment_info.get('property_type', 'Not specified')}
 Timeline: {appointment_info.get('timeline', 'Not specified')}
 Plan Status: {plan_status}
 
-View appointemnt: http://127.0.0.1:8000/appointments/84/
+View appointment: https://plumbotv1-production.up.railway.app/appointments/{self.id}/
 
 Check calendar for details."""
 
