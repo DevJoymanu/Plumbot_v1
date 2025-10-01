@@ -78,7 +78,7 @@ class Appointment(models.Model):
     phone_number = models.CharField(max_length=50, unique=True, help_text="Customer's WhatsApp number")
     customer_name = models.CharField(max_length=100, blank=True, null=True, help_text="Customer's full name")
     customer_email = models.EmailField(blank=True, null=True, help_text="Customer's email address")
-    has_plan = models.BooleanField(default=False, help_text="Customer has existing plans")
+    has_plan = models.BooleanField(null=True, blank=True, default=None, help_text="Customer has existing plans")
     site_visit = models.BooleanField(default=False, help_text="Customer requested site visit")
     
     # Appointment Details
@@ -118,6 +118,11 @@ class Appointment(models.Model):
     is_emergency = models.BooleanField(default=False)
     customer_rating = models.IntegerField(blank=True, null=True, help_text="Customer rating 1-5")
     completion_notes = models.TextField(blank=True, null=True, help_text="Notes after job completion")
+
+    Appointment.objects.filter(
+        has_plan=False,
+        customer_area__isnull=True
+    ).update(has_plan=None)
 
     # Plan upload fields
     plan_file = models.FileField(
