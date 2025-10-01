@@ -125,10 +125,11 @@ def change_password_view(request):
     })
 
 # ====== Twilio Setup ======
-ACCOUNT_SID = 'TWILIO_REMOVED'
-AUTH_TOKEN = 'TWILIO_AUTH_REMOVED'
-TWILIO_WHATSAPP_NUMBER = 'whatsapp:+14155238886'
+import os
 
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
 twilio_client = Client(ACCOUNT_SID, AUTH_TOKEN)
 
 # ====== DeepSeek Setup ======
