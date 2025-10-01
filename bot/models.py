@@ -27,6 +27,11 @@ REMINDER_TYPE_CHOICES = [
     ('email', 'Email'),
     ('call', 'Phone Call'),
 ]
+# NEW: Appointment type choices for job scheduling
+APPOINTMENT_TYPE_CHOICES = [
+    ('site_visit', 'Site Visit'),
+    ('job_appointment', 'Job Appointment'),
+]
 
 
 class Appointment(models.Model):
@@ -78,11 +83,6 @@ class Appointment(models.Model):
         ('occupied', 'Occupied'),
     ]
     
-    # NEW: Appointment type choices for job scheduling
-    APPOINTMENT_TYPE_CHOICES = [
-        ('site_visit', 'Site Visit'),
-        ('job_appointment', 'Job Appointment'),
-    ]
     
     # NEW: Job status choices for job scheduling
     JOB_STATUS_CHOICES = [
