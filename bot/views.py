@@ -865,7 +865,7 @@ def schedule_job(request, pk):
             
             # Create job appointment (duplicate the original appointment)
             job_appointment = Appointment.objects.update_or_create(
-                phone_number=site_visit.phone_number,
+   #             phone_number=site_visit.phone_number,
                 customer_name=site_visit.customer_name,
                 customer_email=site_visit.customer_email or '',
                 customer_area=site_visit.customer_area,
