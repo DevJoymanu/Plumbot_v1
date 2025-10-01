@@ -33,66 +33,67 @@ APPOINTMENT_TYPE_CHOICES = [
     ('job_appointment', 'Job Appointment'),
 ]
 
+# Status choices
+STATUS_CHOICES = [
+    ('pending', 'Pending'),
+    ('in_progress', 'In Progress'),
+    ('confirmed', 'Confirmed'),
+    ('completed', 'Completed'),
+    ('cancelled', 'Cancelled'),
+    ('no_show', 'No Show'),
+]
+
+# Property type choices
+PROPERTY_TYPE_CHOICES = [
+    ('house', 'House'),
+    ('business', 'Business'),
+    ('apartment', 'Apartment'),
+    ('condo', 'Condominium'),
+    ('townhouse', 'Townhouse'),
+    ('commercial', 'Commercial'),
+    ('office', 'Office'),
+    ('other', 'Other'),
+]
+
+# Project type choices (updated to match service list)
+PROJECT_TYPE_CHOICES = [
+    ('bathroom_renovation', 'Bathroom Renovation'),
+    ('new_plumbing_installation', 'New Plumbing Installation'),
+    ('kitchen_renovation', 'Kitchen Renovation'),
+    ('other', 'Other'),
+]
+
+# House stage choices
+HOUSE_STAGE_CHOICES = [
+    ('foundation', 'Foundation'),
+    ('framing', 'Framing'),
+    ('roof_level', 'Roof Level'),
+    ('rough_plumbing', 'Rough Plumbing'),
+    ('electrical', 'Electrical'),
+    ('insulation', 'Insulation'),
+    ('drywall', 'Drywall'),
+    ('not_plastered', 'Not Plastered'),
+    ('plastered', 'Plastered'),
+    ('painted', 'Painted'),
+    ('finished', 'Finished'),
+    ('occupied', 'Occupied'),
+]
+
+
+# NEW: Job status choices for job scheduling
+JOB_STATUS_CHOICES = [
+    ('not_applicable', 'Not Applicable'),
+    ('pending_schedule', 'Pending Schedule'),
+    ('scheduled', 'Scheduled'),
+    ('in_progress', 'In Progress'), 
+    ('completed', 'Completed'),
+    ('cancelled', 'Cancelled'),
+]
+
 
 class Appointment(models.Model):
     """Model to store plumbing appointment information and conversation history"""
     
-    # Status choices
-    STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('in_progress', 'In Progress'),
-        ('confirmed', 'Confirmed'),
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
-        ('no_show', 'No Show'),
-    ]
-    
-    # Property type choices
-    PROPERTY_TYPE_CHOICES = [
-        ('house', 'House'),
-        ('business', 'Business'),
-        ('apartment', 'Apartment'),
-        ('condo', 'Condominium'),
-        ('townhouse', 'Townhouse'),
-        ('commercial', 'Commercial'),
-        ('office', 'Office'),
-        ('other', 'Other'),
-    ]
-    
-    # Project type choices (updated to match service list)
-    PROJECT_TYPE_CHOICES = [
-        ('bathroom_renovation', 'Bathroom Renovation'),
-        ('new_plumbing_installation', 'New Plumbing Installation'),
-        ('kitchen_renovation', 'Kitchen Renovation'),
-        ('other', 'Other'),
-    ]
-    
-    # House stage choices
-    HOUSE_STAGE_CHOICES = [
-        ('foundation', 'Foundation'),
-        ('framing', 'Framing'),
-        ('roof_level', 'Roof Level'),
-        ('rough_plumbing', 'Rough Plumbing'),
-        ('electrical', 'Electrical'),
-        ('insulation', 'Insulation'),
-        ('drywall', 'Drywall'),
-        ('not_plastered', 'Not Plastered'),
-        ('plastered', 'Plastered'),
-        ('painted', 'Painted'),
-        ('finished', 'Finished'),
-        ('occupied', 'Occupied'),
-    ]
-    
-    
-    # NEW: Job status choices for job scheduling
-    JOB_STATUS_CHOICES = [
-        ('not_applicable', 'Not Applicable'),
-        ('pending_schedule', 'Pending Schedule'),
-        ('scheduled', 'Scheduled'),
-        ('in_progress', 'In Progress'), 
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
-    ]
 
     # Basic Information
     phone_number = models.CharField(max_length=50, unique=True, help_text="Customer's WhatsApp number")
