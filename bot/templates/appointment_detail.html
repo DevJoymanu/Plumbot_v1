@@ -324,7 +324,7 @@
                 <label for="property_type">Property Type</label>
                 <select id="property_type" name="property_type" class="form-control">
                     {% for value, display in appointment.PROPERTY_TYPE_CHOICES %}
-                    <option value="{{ value }}" {% if appointment.property_type==value %}selected{% endif %}>
+                    <option value="{{ value }}" {% if appointment.property_type == value %}selected{% endif %}>
                         {{ display }}
                     </option>
                     {% endfor %}
