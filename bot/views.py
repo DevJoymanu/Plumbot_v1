@@ -1767,7 +1767,7 @@ I understand this is time-sensitive!"""
 
 
     def update_appointment_with_extracted_data(self, extracted_data):
-        """Update appointment with extracted data, preserving existing information - FIXED VERSION"""
+        """Update appointment with extracted data - COMPLETE FIX"""
         try:
             updated_fields = []
             
@@ -1778,18 +1778,19 @@ I understand this is time-sensitive!"""
                 self.appointment.project_type = extracted_data['service_type']
                 updated_fields.append('service_type')
             
-            # FIXED: Plan status - update ALWAYS when AI finds one (removed the None check)
+            # FIXED: Plan status - ALWAYS update when AI finds one (was being blocked)
             if (extracted_data.get('plan_status') and 
                 extracted_data.get('plan_status') != 'null'):
+                old_value = self.appointment.has_plan
                 # Convert string to boolean
                 if extracted_data['plan_status'] == 'has_plan':
                     self.appointment.has_plan = True
                     updated_fields.append('plan_status')
-                    print(f"✅ Updated plan status: has_plan -> True")
+                    print(f"✅ Updated plan status: {old_value} -> True")
                 elif extracted_data['plan_status'] == 'needs_visit':
                     self.appointment.has_plan = False
                     updated_fields.append('plan_status')
-                    print(f"✅ Updated plan status: needs_visit -> False")
+                    print(f"✅ Updated plan status: {old_value} -> False")
             
             # Area - only update if we don't have one and AI found one
             if (extracted_data.get('area') and 
@@ -1812,19 +1813,20 @@ I understand this is time-sensitive!"""
                 self.appointment.property_type = extracted_data['property_type']
                 updated_fields.append('property_type')
             
-            # Availability/DateTime - only update if we don't have one and AI found one
+            # FIXED: Availability/DateTime - ALLOW UPDATES (was being blocked)
             if (extracted_data.get('availability') and 
-                extracted_data.get('availability') != 'null' and
-                not self.appointment.scheduled_datetime):
+                extracted_data.get('availability') != 'null'):
                 try:
                     # Parse AI datetime format
                     parsed_dt = datetime.strptime(extracted_data['availability'], '%Y-%m-%dT%H:%M')
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
                     localized_dt = sa_timezone.localize(parsed_dt)
                     
+                    # Update even if we already have a datetime (to handle time changes)
+                    old_dt = self.appointment.scheduled_datetime
                     self.appointment.scheduled_datetime = localized_dt
                     updated_fields.append('availability')
-                    print(f"📅 Stored complete datetime: {localized_dt}")
+                    print(f"📅 Updated datetime: {old_dt} -> {localized_dt}")
                     
                 except ValueError as e:
                     print(f"❌ Failed to parse AI datetime: {extracted_data['availability']}")
@@ -1847,6 +1849,7 @@ I understand this is time-sensitive!"""
         except Exception as e:
             print(f"❌ Error updating appointment: {str(e)}")
             return []
+
 
 
     def get_information_summary(self):
@@ -2084,12 +2087,14 @@ I understand this is time-sensitive!"""
 
 
     def get_next_question_to_ask(self):
-        """Determine which question to ask next - FIXED plan upload flow"""
+        """Determine which question to ask next - FIXED to not re-ask plan status"""
         
         if not self.appointment.project_type:
             return "service_type"
         
-        if not self.appointment.has_plan:
+        # FIXED: Check if has_plan is explicitly False (not None)
+        # Don't ask about plan if we already have an answer
+        if self.appointment.has_plan is None:
             return "plan_or_visit"
 
         # If they have a plan, handle plan upload flow
@@ -2098,7 +2103,7 @@ I understand this is time-sensitive!"""
                 return "area"
             if not self.appointment.property_type:
                 return "property_type"
-            # FIXED: Check if we have basic info for plan upload but haven't started
+            # Check if we have basic info for plan upload but haven't started
             if (self.appointment.customer_area and 
                 self.appointment.property_type and 
                 self.appointment.plan_status is None):
@@ -2108,7 +2113,7 @@ I understand this is time-sensitive!"""
             if self.appointment.plan_status == 'plan_uploaded':
                 return "plan_with_plumber"
 
-        # If they don't have a plan, continue normal flow
+        # If they don't have a plan (has_plan == False), continue normal flow
         if self.appointment.has_plan is False:
             if not self.appointment.customer_area:
                 return "area"
@@ -2128,10 +2133,11 @@ I understand this is time-sensitive!"""
 
 
     def smart_booking_check(self):
-        """Check if we have enough information to attempt booking"""
+        """Check if we have enough information to attempt booking - FIXED"""
+        # Required fields for booking
         required_for_booking = [
             self.appointment.project_type,
-            self.appointment.has_plan is not None,
+            self.appointment.has_plan is not None,  # Must have an answer (True or False)
             self.appointment.customer_area,
             self.appointment.timeline,
             self.appointment.property_type,
