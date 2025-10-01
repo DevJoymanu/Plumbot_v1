@@ -9,91 +9,70 @@ import uuid
 
 
 
-STATUS_CHOICES = [
-    ('draft', 'Draft'),
-    ('sent', 'Sent'),
-    ('accepted', 'Accepted'),
-    ('rejected', 'Rejected'),
-]
-
-ROLE_CHOICES = [
-    ('user', 'Customer'),
-    ('assistant', 'Bot')
-]
-
-REMINDER_TYPE_CHOICES = [
-    ('sms', 'SMS'),
-    ('whatsapp', 'WhatsApp'),
-    ('email', 'Email'),
-    ('call', 'Phone Call'),
-]
-# NEW: Appointment type choices for job scheduling
-APPOINTMENT_TYPE_CHOICES = [
-    ('site_visit', 'Site Visit'),
-    ('job_appointment', 'Job Appointment'),
-]
-
-# Status choices
-STATUS_CHOICES = [
-    ('pending', 'Pending'),
-    ('in_progress', 'In Progress'),
-    ('confirmed', 'Confirmed'),
-    ('completed', 'Completed'),
-    ('cancelled', 'Cancelled'),
-    ('no_show', 'No Show'),
-]
-
-# Property type choices
-PROPERTY_TYPE_CHOICES = [
-    ('house', 'House'),
-    ('business', 'Business'),
-    ('apartment', 'Apartment'),
-    ('condo', 'Condominium'),
-    ('townhouse', 'Townhouse'),
-    ('commercial', 'Commercial'),
-    ('office', 'Office'),
-    ('other', 'Other'),
-]
-
-# Project type choices (updated to match service list)
-PROJECT_TYPE_CHOICES = [
-    ('bathroom_renovation', 'Bathroom Renovation'),
-    ('new_plumbing_installation', 'New Plumbing Installation'),
-    ('kitchen_renovation', 'Kitchen Renovation'),
-    ('other', 'Other'),
-]
-
-# House stage choices
-HOUSE_STAGE_CHOICES = [
-    ('foundation', 'Foundation'),
-    ('framing', 'Framing'),
-    ('roof_level', 'Roof Level'),
-    ('rough_plumbing', 'Rough Plumbing'),
-    ('electrical', 'Electrical'),
-    ('insulation', 'Insulation'),
-    ('drywall', 'Drywall'),
-    ('not_plastered', 'Not Plastered'),
-    ('plastered', 'Plastered'),
-    ('painted', 'Painted'),
-    ('finished', 'Finished'),
-    ('occupied', 'Occupied'),
-]
-
-
-# NEW: Job status choices for job scheduling
-JOB_STATUS_CHOICES = [
-    ('not_applicable', 'Not Applicable'),
-    ('pending_schedule', 'Pending Schedule'),
-    ('scheduled', 'Scheduled'),
-    ('in_progress', 'In Progress'), 
-    ('completed', 'Completed'),
-    ('cancelled', 'Cancelled'),
-]
-
-
 class Appointment(models.Model):
     """Model to store plumbing appointment information and conversation history"""
     
+    # Status choices
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('confirmed', 'Confirmed'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+        ('no_show', 'No Show'),
+    ]
+    
+    # Property type choices
+    PROPERTY_TYPE_CHOICES = [
+        ('house', 'House'),
+        ('business', 'Business'),
+        ('apartment', 'Apartment'),
+        ('condo', 'Condominium'),
+        ('townhouse', 'Townhouse'),
+        ('commercial', 'Commercial'),
+        ('office', 'Office'),
+        ('other', 'Other'),
+    ]
+    
+    # Project type choices (updated to match service list)
+    PROJECT_TYPE_CHOICES = [
+        ('bathroom_renovation', 'Bathroom Renovation'),
+        ('new_plumbing_installation', 'New Plumbing Installation'),
+        ('kitchen_renovation', 'Kitchen Renovation'),
+        ('other', 'Other'),
+    ]
+    
+    # House stage choices
+    HOUSE_STAGE_CHOICES = [
+        ('foundation', 'Foundation'),
+        ('framing', 'Framing'),
+        ('roof_level', 'Roof Level'),
+        ('rough_plumbing', 'Rough Plumbing'),
+        ('electrical', 'Electrical'),
+        ('insulation', 'Insulation'),
+        ('drywall', 'Drywall'),
+        ('not_plastered', 'Not Plastered'),
+        ('plastered', 'Plastered'),
+        ('painted', 'Painted'),
+        ('finished', 'Finished'),
+        ('occupied', 'Occupied'),
+    ]
+    
+    # NEW: Appointment type choices for job scheduling
+    APPOINTMENT_TYPE_CHOICES = [
+        ('site_visit', 'Site Visit'),
+        ('job_appointment', 'Job Appointment'),
+    ]
+    
+    # NEW: Job status choices for job scheduling
+    JOB_STATUS_CHOICES = [
+        ('not_applicable', 'Not Applicable'),
+        ('pending_schedule', 'Pending Schedule'),
+        ('scheduled', 'Scheduled'),
+        ('in_progress', 'In Progress'), 
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
 
     # Basic Information
     phone_number = models.CharField(max_length=50, unique=True, help_text="Customer's WhatsApp number")
@@ -141,6 +120,12 @@ class Appointment(models.Model):
     completion_notes = models.TextField(blank=True, null=True, help_text="Notes after job completion")
 
 class Quotation(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('sent', 'Sent'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+    ]
     
     appointment = models.ForeignKey('Appointment', on_delete=models.CASCADE, related_name='quotations')
     plumber = models.ForeignKey('auth.User', on_delete=models.CASCADE, null=True, blank=True)
@@ -206,6 +191,8 @@ class QuotationItem(models.Model):
     def save(self, *args, **kwargs):
         self.total_price = self.quantity * self.unit_price
         super().save(*args, **kwargs)
+        
+        # Update parent quotation total
         if self.quotation:
             self.quotation.save()
     
@@ -997,6 +984,12 @@ class AppointmentNote(models.Model):
 
 class AppointmentReminder(models.Model):
     """Track reminders sent for appointments"""
+    REMINDER_TYPE_CHOICES = [
+        ('sms', 'SMS'),
+        ('whatsapp', 'WhatsApp'),
+        ('email', 'Email'),
+        ('call', 'Phone Call'),
+    ]
     
     appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='reminders')
     reminder_type = models.CharField(max_length=20, choices=REMINDER_TYPE_CHOICES)
@@ -1029,7 +1022,10 @@ from django.db import models
 from django.utils import timezone
 
 class ConversationMessage(models.Model):
-
+    ROLE_CHOICES = [
+        ('user', 'Customer'),
+        ('assistant', 'Bot')
+    ]
     
     appointment = models.ForeignKey(
         'Appointment',
