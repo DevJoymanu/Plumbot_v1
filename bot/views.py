@@ -2152,30 +2152,32 @@ I understand this is time-sensitive!"""
     def get_next_question_to_ask(self):
         """Determine which question to ask next - FIXED to not re-ask plan status"""
         
+        # Step 1: Service type always comes first
         if not self.appointment.project_type:
             return "service_type"
-        
-        # FIXED: Ask about plan if we don't have a clear answer (None or explicitly needs asking)
+
+        # Step 2: Handle plan flow
         if self.appointment.has_plan is None:
+            # We don’t know yet — ask once
             return "plan_or_visit"
 
-        # If they have a plan, handle plan upload flow
-        if self.appointment.has_plan is True:
+        if self.appointment.has_plan:
+            # They said they have a plan
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.property_type:
                 return "property_type"
-            if (self.appointment.customer_area and 
-                self.appointment.property_type and 
-                self.appointment.plan_status is None):
+            
+            # Only deal with plan upload flow once area + property type are filled
+            if self.appointment.plan_status is None:
                 return "initiate_plan_upload"
             if self.appointment.plan_status == 'pending_upload':
                 return "awaiting_plan_upload"
             if self.appointment.plan_status == 'plan_uploaded':
                 return "plan_with_plumber"
 
-        # If they don't have a plan (has_plan == False), continue normal flow
-        if self.appointment.has_plan is False:
+        else:
+            # They don’t have a plan
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.timeline:
@@ -2186,7 +2188,8 @@ I understand this is time-sensitive!"""
                 return "availability"
             if not self.appointment.customer_name and self.appointment.status == 'confirmed':
                 return "name"
-                
+
+        # If nothing left, conversation is complete
         return "complete"
 
 
