@@ -814,19 +814,22 @@ def schedule_job(request, pk):
     """Schedule job appointment after site visit"""
     site_visit = get_object_or_404(Appointment, pk=pk)
     
-    if not site_visit.can_schedule_job():
-        messages.error(request, 'Cannot schedule job - site visit must be completed first')
-        return redirect('appointment_detail', pk=site_visit.pk)
-    
     if request.method == 'POST':
         try:
             # Get form data
             job_date = request.POST.get('job_date')
             job_time = request.POST.get('job_time')
             duration_hours = int(request.POST.get('duration_hours', 4))
-            job_description = request.POST.get('job_description', '')
-            materials_needed = request.POST.get('materials_needed', '')
-            plumber_id = request.POST.get('assigned_plumber')
+            job_description = request.POST.get('job_description', '').strip()
+            materials_needed = request.POST.get('materials_needed', '').strip()
+            
+            # Validate required fields
+            if not job_date or not job_time:
+                messages.error(request, 'Please provide both date and time')
+                return render(request, 'schedule_job.html', {
+                    'site_visit': site_visit,
+                    'today': timezone.now().date(),
+                })
             
             # Parse datetime
             job_datetime_str = f"{job_date} {job_time}"
@@ -836,46 +839,185 @@ def schedule_job(request, pk):
             sa_timezone = pytz.timezone('Africa/Johannesburg')
             job_datetime = sa_timezone.localize(job_datetime)
             
-            # Get assigned plumber
-            assigned_plumber = None
-    #        if plumber_id:
-    #            assigned_plumber = User.objects.get(id=plumber_id)
-            
-            # Check availability
-            is_available = check_job_availability(job_datetime, duration_hours, site_visit.id)
-            
-            if not is_available:
-                messages.error(request, 'Selected time slot is not available')
+            # Validation checks
+            if job_datetime <= timezone.now():
+                messages.error(request, 'Job time must be in the future')
                 return render(request, 'schedule_job.html', {
                     'site_visit': site_visit,
-                #    'plumbers': User.objects.filter(groups__name='Plumbers'),
+                    'today': timezone.now().date(),
                 })
             
-            # Create job appointment
-            job_appointment = site_visit.create_job_appointment(
-                job_datetime=job_datetime,
-                duration_hours=duration_hours,
-                description=job_description,
-                materials=materials_needed,
-          #      plumber=assigned_plumber
+            # Check if weekend
+            if job_datetime.weekday() >= 5:
+                messages.error(request, 'Jobs can only be scheduled Monday-Friday')
+                return render(request, 'schedule_job.html', {
+                    'site_visit': site_visit,
+                    'today': timezone.now().date(),
+                })
+            
+            # Check business hours (8 AM - 6 PM)
+            job_end_time = job_datetime + timedelta(hours=duration_hours)
+            if job_datetime.hour < 8 or job_end_time.hour > 18:
+                messages.error(request, 'Jobs must be scheduled between 8 AM and 6 PM and finish by 6 PM')
+                return render(request, 'schedule_job.html', {
+                    'site_visit': site_visit,
+                    'today': timezone.now().date(),
+                })
+            
+            # Check for conflicts with existing appointments
+            conflicting_appointments = Appointment.objects.filter(
+                status='confirmed',
+                scheduled_datetime__isnull=False,
+                scheduled_datetime__date=job_datetime.date()
+            ).exclude(id=site_visit.id)
+            
+            for existing in conflicting_appointments:
+                existing_end = existing.scheduled_datetime + timedelta(hours=duration_hours)
+                if (job_datetime < existing_end and job_end_time > existing.scheduled_datetime):
+                    messages.error(
+                        request, 
+                        f'Time slot conflicts with existing appointment at {existing.scheduled_datetime.strftime("%I:%M %p")}'
+                    )
+                    return render(request, 'schedule_job.html', {
+                        'site_visit': site_visit,
+                        'today': timezone.now().date(),
+                    })
+            
+            # Create job appointment (new appointment based on site visit)
+            job_appointment = Appointment.objects.create(
+                phone_number=site_visit.phone_number,
+                customer_name=site_visit.customer_name,
+                customer_email=getattr(site_visit, 'customer_email', ''),
+                customer_area=site_visit.customer_area,
+                project_type=site_visit.project_type,
+                property_type=site_visit.property_type,
+                project_description=job_description or getattr(site_visit, 'project_description', ''),
+                scheduled_datetime=job_datetime,
+                appointment_type='job',  # Mark as job type
+                status='confirmed',  # Confirmed job
+                has_plan=site_visit.has_plan,
+                timeline=f'{duration_hours} hours',
+            )
+            
+            # Add conversation note about job scheduling
+            job_appointment.add_conversation_message(
+                'assistant',
+                f'Job appointment scheduled by {request.user.get_full_name() or request.user.username} for {job_datetime.strftime("%B %d, %Y at %I:%M %p")} ({duration_hours} hours)'
             )
             
             # Send notifications
-            send_job_appointment_notifications(job_appointment)
+            try:
+                send_job_scheduling_notifications(
+                    job_appointment, 
+                    site_visit, 
+                    materials_needed
+                )
+            except Exception as notify_error:
+                print(f"⚠️ Notification error: {notify_error}")
+                # Don't fail the whole operation if notification fails
             
-            messages.success(request, f'Job appointment scheduled for {job_datetime.strftime("%B %d, %Y at %I:%M %p")}')
+            messages.success(
+                request, 
+                f'Job appointment scheduled for {job_datetime.strftime("%B %d, %Y at %I:%M %p")} (Duration: {duration_hours} hours)'
+            )
             return redirect('appointment_detail', pk=job_appointment.pk)
             
+        except ValueError as e:
+            messages.error(request, f'Invalid date/time format: {str(e)}')
+            print(f"❌ ValueError: {str(e)}")
         except Exception as e:
             messages.error(request, f'Error scheduling job: {str(e)}')
+            print(f"❌ Schedule job error: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
     
-    # Get available plumbers
-#    plumbers = User.objects.filter(groups__name='Plumbers').order_by('first_name', 'last_name')
-    
+    # GET request - show form
     return render(request, 'schedule_job.html', {
         'site_visit': site_visit,
-   #     'plumbers': plumbers,
+        'today': timezone.now().date(),
     })
+
+def send_job_scheduling_notifications(job_appointment, site_visit, materials_needed):
+    """Send notifications about newly scheduled job"""
+    try:
+        job_date = job_appointment.scheduled_datetime.strftime('%A, %B %d, %Y')
+        job_time = job_appointment.scheduled_datetime.strftime('%I:%M %p')
+        duration = job_appointment.timeline or '4 hours'
+        
+        # Customer notification
+        customer_message = f"""🔧 JOB APPOINTMENT SCHEDULED
+
+Hi {job_appointment.customer_name or 'Customer'},
+
+Your plumbing job has been scheduled:
+
+📅 Date: {job_date}
+🕐 Time: {job_time}
+⏱️ Duration: {duration}
+📍 Location: {job_appointment.customer_area}
+🔨 Service: {job_appointment.project_type.replace('_', ' ').title() if job_appointment.project_type else 'Plumbing service'}
+
+{f"Work to be done: {job_appointment.project_description}" if job_appointment.project_description else ""}
+
+Our plumber will contact you before arrival.
+
+{f"Materials needed: {materials_needed}" if materials_needed else ""}
+
+Questions? Reply to this message.
+
+- Plumbing Team"""
+        
+        # Send to customer
+        try:
+            msg = twilio_client.messages.create(
+                body=customer_message,
+                from_=TWILIO_WHATSAPP_NUMBER,
+                to=job_appointment.phone_number
+            )
+            print(f"✅ Customer notification sent. SID: {msg.sid}")
+        except Exception as e:
+            print(f"❌ Failed to send customer notification: {str(e)}")
+        
+        # Team notification
+        team_message = f"""👷 NEW JOB SCHEDULED
+
+Customer: {job_appointment.customer_name or 'Unknown'}
+Phone: {job_appointment.phone_number.replace('whatsapp:', '')}
+Date/Time: {job_date} at {job_time}
+Duration: {duration}
+Location: {job_appointment.customer_area or 'Not specified'}
+Service: {job_appointment.project_type.replace('_', ' ').title() if job_appointment.project_type else 'Plumbing'}
+
+{f"Job Description:\n{job_appointment.project_description}" if job_appointment.project_description else ""}
+
+{f"Materials Needed:\n{materials_needed}" if materials_needed else ""}
+
+Original Site Visit ID: {site_visit.id}
+New Job Appointment ID: {job_appointment.id}
+
+View job: https://plumbotv1-production.up.railway.app/appointments/{job_appointment.id}/"""
+        
+        # Send to team members
+        TEAM_NUMBERS = ['whatsapp:+27610318200']
+        for number in TEAM_NUMBERS:
+            try:
+                msg = twilio_client.messages.create(
+                    body=team_message,
+                    from_=TWILIO_WHATSAPP_NUMBER,
+                    to=number
+                )
+                print(f"✅ Team notification sent to {number}. SID: {msg.sid}")
+            except Exception as e:
+                print(f"❌ Failed to send team notification to {number}: {str(e)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error sending job scheduling notifications: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return False
+
 
 @staff_required
 def job_appointments_list(request):
