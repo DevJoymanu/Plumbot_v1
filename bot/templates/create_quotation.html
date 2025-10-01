@@ -838,26 +838,27 @@
                 </div>
             </div>
 
-            <!-- Actions -->
-            <div class="actions">
-                <button class="btn" id="loadAppointmentBtn">
-                    <i class="fas fa-download"></i> Load From Appointment
-                    <div class="loading-spinner"></div>
-                </button>
-                <button class="btn btn-secondary" id="clearAllBtn">
-                    <i class="fas fa-trash"></i> Clear All
-                </button>
-                <button class="btn btn-success" id="previewBtn">
-                    <i class="fas fa-eye"></i> Preview
-                </button>
-                <button class="btn btn-outline" id="printBtn">
-                    <i class="fas fa-print"></i> Print / Save PDF
-                </button>
-                <button class="btn btn-success" id="saveQuotationBtn">
-                    <i class="fas fa-save"></i> Save Quotation
-                    <div class="loading-spinner"></div>
-                </button>
-            </div>
+                <!-- Actions -->
+                <div class="actions">
+                    <button class="btn" id="loadAppointmentBtn">
+                        <i class="fas fa-download"></i> Load From Appointment
+                        <div class="loading-spinner"></div>
+                    </button>
+                    <button class="btn btn-secondary" id="clearAllBtn">
+                        <i class="fas fa-trash"></i> Clear All
+                    </button>
+                    <button class="btn btn-success" id="previewBtn">
+                        <i class="fas fa-eye"></i> Preview
+                    </button>
+                    <!-- Export buttons will be added here automatically -->
+                    <button class="btn btn-outline" id="printBtn">
+                        <i class="fas fa-print"></i> Print Preview
+                    </button>
+                    <button class="btn btn-success" id="saveQuotationBtn">
+                        <i class="fas fa-save"></i> Save Quotation
+                        <div class="loading-spinner"></div>
+                    </button>
+                </div>
         </div>
 
         <!-- Preview Section -->
@@ -955,757 +956,904 @@
         </div>
     </div>
 
-    <script>
-        // Project type suggestions from Django models
-        const projectTypeSuggestions = [
-            "Bathroom Renovation",
-            "Kitchen Renovation",
-            "New Plumbing Installation",
-            "Electrical Installation",
-            "Roof Repair",
-            "Foundation Work",
-            "Interior Painting",
-            "Exterior Painting",
-            "Flooring Installation",
-            "Window Installation",
-            "Door Installation",
-            "Deck Construction",
-            "Driveway Construction",
-            "Fence Installation",
-            "HVAC Installation",
-            "Solar Panel Installation",
-            "Swimming Pool Construction",
-            "Landscaping",
-            "General Construction",
-            "Emergency Repairs"
-        ];
-
-        // Sample data from Django models
-        const sampleData = {
-            client: {
-                name: "Tinaye Nhemachena",
-                email: "tinaye@example.com",
-                phone: "+263 774 819 901",
-                address: "Hatfield, Harare"
-            },
-            project: {
-                type: "Bathroom Renovation",
-                location: "Residential Property - Hatfield",
-                notes: "Fix and supply — Complete bathroom renovation including plumbing, tiling, and fixtures."
-            },
-            items: [
-                { name: '500ml prodorite solvent cement', qty: 1, unit: 4 },
-                { name: '50mm pvc waste pipe', qty: 2, unit: 6 },
-                { name: '50mm pvc bends', qty: 15, unit: 0.5 },
-                { name: '50x45deg pvc bends', qty: 6, unit: 0.5 },
-                { name: '50x45deg pvc junction', qty: 3, unit: 1 },
-                { name: '50mm pvc tee', qty: 3, unit: 1 },
-                { name: 'Tub Waste', qty: 1, unit: 12 },
-                { name: 'Angle valve', qty: 3, unit: 3 },
-                { name: 'Rubber p trap', qty: 1, unit: 3 },
-                { name: 'Cabinet and basin set', qty: 1, unit: 170 },
-                { name: 'Basin mixer', qty: 1, unit: 40 },
-                { name: 'Shower p trap', qty: 1, unit: 3 }
-            ],
-            costs: {
-                labour: 280,
-                transport: 20
-            }
-        };
-
-        let items = [];
-        let itemCounter = 0;
-        let currentAppointmentId = null;
-
-        // DOM Elements
-        const itemsTableBody = document.getElementById('itemsTableBody');
-        const emptyItemsRow = document.getElementById('emptyItemsRow');
-        const addItemBtn = document.getElementById('addItemBtn');
-        const loadAppointmentBtn = document.getElementById('loadAppointmentBtn');
-        const clearAllBtn = document.getElementById('clearAllBtn');
-        const previewBtn = document.getElementById('previewBtn');
-        const printBtn = document.getElementById('printBtn');
-        const saveQuotationBtn = document.getElementById('saveQuotationBtn');
-        const labourCost = document.getElementById('labourCost');
-        const transportCost = document.getElementById('transportCost');
-        const projectTypeInput = document.getElementById('projectType');
-        const projectSuggestions = document.getElementById('projectSuggestions');
-        const itemsTableContainer = document.getElementById('itemsTableContainer');
-
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function () {
-            initializeForm();
-            setupEventListeners();
-            setupProjectTypeSuggestions();
-            updatePreviewDate();
-            loadAppointmentFromUrl();
-            setupTableScrollIndicator();
-        });
-
-        function initializeForm() {
-            // Set default dates
-            const today = new Date();
-            const validUntil = new Date();
-            validUntil.setDate(today.getDate() + 30); // Valid for 30 days
-
-            document.getElementById('quotationDate').value = today.toISOString().split('T')[0];
-            document.getElementById('validUntil').value = validUntil.toISOString().split('T')[0];
-
-            // Initialize empty state
-            showEmptyState();
-            calculateTotals();
-        }
-
-        function setupEventListeners() {
-            addItemBtn.addEventListener('click', addNewItem);
-            loadAppointmentBtn.addEventListener('click', showAppointmentSelector);
-            clearAllBtn.addEventListener('click', clearAllData);
-            previewBtn.addEventListener('click', showPreview);
-            printBtn.addEventListener('click', () => window.print());
-            saveQuotationBtn.addEventListener('click', saveQuotation);
-            labourCost.addEventListener('input', calculateTotals);
-            transportCost.addEventListener('input', calculateTotals);
-
-            // Auto-calculate on any input change
-            document.addEventListener('input', function (e) {
-                if (e.target.classList.contains('item-input')) {
-                    updateItemFromInput(e.target);
-                }
-            });
-        }
-
-        function setupTableScrollIndicator() {
-            if (itemsTableContainer) {
-                itemsTableContainer.addEventListener('scroll', function () {
-                    if (this.scrollLeft > 0) {
-                        this.classList.add('scrolling');
-                    } else {
-                        this.classList.remove('scrolling');
-                    }
-                });
-            }
-        }
-
-        function setupProjectTypeSuggestions() {
-            projectTypeInput.addEventListener('input', function () {
-                const value = this.value.toLowerCase();
-                const suggestions = projectTypeSuggestions.filter(suggestion =>
-                    suggestion.toLowerCase().includes(value)
-                );
-
-                if (value && suggestions.length > 0) {
-                    showSuggestions(suggestions);
-                } else {
-                    hideSuggestions();
-                }
-            });
-
-            projectTypeInput.addEventListener('blur', function () {
-                setTimeout(hideSuggestions, 200); // Delay to allow clicking on suggestions
-            });
-
-            projectTypeInput.addEventListener('focus', function () {
-                if (this.value) {
-                    const value = this.value.toLowerCase();
-                    const suggestions = projectTypeSuggestions.filter(suggestion =>
-                        suggestion.toLowerCase().includes(value)
-                    );
-                    if (suggestions.length > 0) {
-                        showSuggestions(suggestions);
-                    }
-                }
-            });
-        }
-
-        function showSuggestions(suggestions) {
-            projectSuggestions.innerHTML = '';
-            suggestions.forEach(suggestion => {
-                const div = document.createElement('div');
-                div.className = 'suggestion-item';
-                div.textContent = suggestion;
-                div.addEventListener('click', function () {
-                    projectTypeInput.value = suggestion;
-                    hideSuggestions();
-                });
-                projectSuggestions.appendChild(div);
-            });
-            projectSuggestions.style.display = 'block';
-        }
-
-        function hideSuggestions() {
-            projectSuggestions.style.display = 'none';
-        }
-
-        function loadAppointmentFromUrl() {
-            // Check if appointment_id is in URL parameters
-            const urlParams = new URLSearchParams(window.location.search);
-            const appointmentId = urlParams.get('appointment_id');
-
-            if (appointmentId) {
-                currentAppointmentId = appointmentId;
-                loadAppointmentData(appointmentId);
-            }
-        }
-
-        function showAppointmentSelector() {
-            // Create appointment selector modal
-            const modal = document.createElement('div');
-            modal.style.cssText = `
-                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-                background: rgba(0,0,0,0.5); z-index: 1000; display: flex;
-                align-items: center; justify-content: center; padding: 20px;
-            `;
-
-            const modalContent = document.createElement('div');
-            modalContent.style.cssText = `
-                background: white; border-radius: 12px; padding: 20px;
-                max-width: 600px; width: 100%; max-height: 80vh; overflow-y: auto;
-            `;
-
-            modalContent.innerHTML = `
-                <h3 style="margin: 0 0 15px 0;">Select Appointment</h3>
-                <div id="appointmentsList">Loading appointments...</div>
-                <div style="margin-top: 20px; text-align: right;">
-                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
-                </div>
-            `;
-
-            modal.className = 'modal';
-            modal.appendChild(modalContent);
-            document.body.appendChild(modal);
-
-            // Load appointments
-            loadAppointmentsList();
-        }
-
-        async function loadAppointmentsList() {
-            try {
-                const response = await fetch('/api/appointments/');
-                const appointments = await response.json();
-
-                const appointmentsList = document.getElementById('appointmentsList');
-
-                if (appointments.length === 0) {
-                    appointmentsList.innerHTML = '<p>No appointments found.</p>';
-                    return;
-                }
-
-                let html = '';
-                appointments.forEach(appointment => {
-                    html += `
-                        <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: background 0.2s;"
-                             onclick="selectAppointment(${appointment.id})"
-                             onmouseover="this.style.background='#f8f9fa'"
-                             onmouseout="this.style.background='white'">
-                            <div style="font-weight: 600;">${appointment.customer_name || 'Unknown Customer'}</div>
-                            <div style="color: #666; font-size: 0.9em;">
-                                ${appointment.project_type || 'No project type'} • ${appointment.customer_area || 'No area'}
-                            </div>
-                            <div style="color: #666; font-size: 0.8em;">
-                                Phone: ${appointment.phone_number} • Status: ${appointment.status}
-                            </div>
-                        </div>
-                    `;
-                });
-
-                appointmentsList.innerHTML = html;
-
-            } catch (error) {
-                document.getElementById('appointmentsList').innerHTML = '<p>Error loading appointments.</p>';
-                console.error('Error loading appointments:', error);
-            }
-        }
-
-        async function selectAppointment(appointmentId) {
-            document.querySelector('.modal').remove();
-            currentAppointmentId = appointmentId;
-            await loadAppointmentData(appointmentId);
-        }
-
-        async function loadAppointmentData(appointmentId) {
-            try {
-                showLoading(loadAppointmentBtn, true);
-
-                const response = await fetch(`/api/appointments/${appointmentId}/`);
-                const appointment = await response.json();
-
-                if (appointment.error) {
-                    showAlert('Error loading appointment: ' + appointment.error, 'error');
-                    return;
-                }
-
-                // Load client data
-                document.getElementById('clientName').value = appointment.customer_name || '';
-                document.getElementById('clientEmail').value = appointment.customer_email || '';
-                document.getElementById('clientPhone').value = appointment.phone_number || '';
-                document.getElementById('clientAddress').value = appointment.customer_area || '';
-
-                // Load project data
-                document.getElementById('projectType').value = formatProjectType(appointment.project_type) || '';
-                document.getElementById('projectLocation').value = appointment.customer_area || '';
-                document.getElementById('projectNotes').value = appointment.project_description || '';
-
-                // Load default items if available
-                if (appointment.project_type === 'bathroom_renovation') {
-                    items = [...sampleData.items];
-                    document.getElementById('labourCost').value = sampleData.costs.labour;
-                    document.getElementById('transportCost').value = sampleData.costs.transport;
-                }
-
-                renderItems();
-                calculateTotals();
-
-                showAlert('Appointment data loaded successfully!', 'success');
-
-            } catch (error) {
-                console.error('Error loading appointment:', error);
-                showAlert('Failed to load appointment data', 'error');
-            } finally {
-                showLoading(loadAppointmentBtn, false);
-            }
-        }
-
-        function formatProjectType(projectType) {
-            if (!projectType) return '';
-
-            const typeMap = {
-                'bathroom_renovation': 'Bathroom Renovation',
-                'kitchen_renovation': 'Kitchen Renovation',
-                'new_plumbing_installation': 'New Plumbing Installation'
-            };
-
-            return typeMap[projectType] || projectType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        }
-
-        function showLoading(button, loading) {
-            if (loading) {
-                button.classList.add('loading');
-                button.disabled = true;
-            } else {
-                button.classList.remove('loading');
-                button.disabled = false;
-            }
-        }
-
-        function showAlert(message, type) {
-            const alertContainer = document.getElementById('alertContainer');
-            const alert = document.createElement('div');
-            alert.className = `alert alert-${type}`;
-            alert.innerHTML = `
-                ${message}
-                <button onclick="this.parentElement.remove()" style="float: right; background: none; border: none; font-size: 1.2em; cursor: pointer;">&times;</button>
-            `;
-
-            alertContainer.appendChild(alert);
-
-            // Auto-remove after 5 seconds
-            setTimeout(() => {
-                if (alert.parentElement) {
-                    alert.remove();
-                }
-            }, 5000);
-        }
-
-        function showEmptyState() {
-            emptyItemsRow.style.display = 'table-row';
-        }
-
-        function hideEmptyState() {
-            emptyItemsRow.style.display = 'none';
-        }
-
-        function renderItems() {
-            // Clear existing rows except empty state
-            const rows = itemsTableBody.querySelectorAll('tr:not(.empty-items)');
-            rows.forEach(row => row.remove());
-
-            if (items.length === 0) {
-                showEmptyState();
-                return;
-            }
-
-            hideEmptyState();
-
-            items.forEach((item, index) => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td class="item-name">
-                        <input type="text" class="item-input" data-index="${index}" data-field="name" 
-                               value="${item.name}" placeholder="Item description">
-                    </td>
-                    <td class="qty-col">
-                        <input type="number" class="item-input" data-index="${index}" data-field="qty" 
-                               value="${item.qty}" min="0" step="1">
-                    </td>
-                    <td class="unit-col">
-                        <input type="number" class="item-input" data-index="${index}" data-field="unit" 
-                               value="${item.unit}" min="0" step="0.01">
-                    </td>
-                    <td class="total-col">
-                        <div class="line-total">${(item.qty * item.unit).toFixed(2)}</div>
-                    </td>
-                    <td class="action-col">
-                        <button class="btn btn-danger btn-sm" onclick="removeItem(${index})" 
-                                style="padding: 4px 8px;" title="Remove item">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </td>
-                `;
-                itemsTableBody.appendChild(row);
-            });
-        }
-
-        function updateItemFromInput(input) {
-            const index = parseInt(input.dataset.index);
-            const field = input.dataset.field;
-            const value = field === 'name' ? input.value : (parseFloat(input.value) || 0);
-
-            if (items[index]) {
-                items[index][field] = value;
-
-                // Update line total if qty or unit changed
-                if (field === 'qty' || field === 'unit') {
-                    const row = input.closest('tr');
-                    const lineTotal = row.querySelector('.line-total');
-                    lineTotal.textContent = `${(items[index].qty * items[index].unit).toFixed(2)}`;
-                    calculateTotals();
-                }
-            }
-        }
-
-        function addNewItem() {
-            items.push({
-                name: '',
-                qty: 1,
-                unit: 0
-            });
-            renderItems();
-            calculateTotals();
-
-            // Focus on the new item's name input
-            setTimeout(() => {
-                const newRow = itemsTableBody.lastElementChild;
-                if (newRow && !newRow.classList.contains('empty-items')) {
-                    const nameInput = newRow.querySelector('input[data-field="name"]');
-                    if (nameInput) nameInput.focus();
-                }
-            }, 100);
-        }
-
-        function removeItem(index) {
-            if (confirm('Are you sure you want to remove this item?')) {
-                items.splice(index, 1);
-                renderItems();
-                calculateTotals();
-            }
-        }
-
-        function calculateTotals() {
-            const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
-            const labour = parseFloat(labourCost.value) || 0;
-            const transport = parseFloat(transportCost.value) || 0;
-            const grandTotal = materialTotal + labour + transport;
-
-            document.getElementById('materialsTotal').textContent = `${materialTotal.toFixed(2)}`;
-            document.getElementById('grandTotal').textContent = `${grandTotal.toFixed(2)}`;
-        }
-
-        function clearAllData() {
-            if (!confirm('This will clear all data. Are you sure?')) {
-                return;
-            }
-
-            // Clear all form fields
-            document.querySelectorAll('input, textarea').forEach(input => {
-                if (input.type === 'number') {
-                    input.value = 0;
-                } else if (input.type === 'date') {
-                    // Keep dates as they are
-                } else {
-                    input.value = '';
-                }
-            });
-
-            // Reset costs
-            document.getElementById('labourCost').value = 0;
-            document.getElementById('transportCost').value = 0;
-
-            // Clear items
-            items = [];
-            currentAppointmentId = null;
-            renderItems();
-            calculateTotals();
-
-            // Re-initialize dates
-            initializeForm();
-
-            showAlert('All data cleared', 'info');
-        }
-
-        function updatePreviewDate() {
-            const today = new Date();
-            const dateStr = today.toLocaleDateString('en-GB');
-            document.getElementById('previewDate').textContent = dateStr;
-        }
-
-        function showPreview() {
-            // Validate required fields
-            const clientName = document.getElementById('clientName').value.trim();
-            const projectType = document.getElementById('projectType').value.trim();
-
-            if (!clientName) {
-                showAlert('Please enter a client name before generating preview.', 'error');
-                document.getElementById('clientName').focus();
-                return;
-            }
-
-            if (!projectType) {
-                showAlert('Please enter a project type before generating preview.', 'error');
-                document.getElementById('projectType').focus();
-                return;
-            }
-
-            // Update preview with current data
-            document.getElementById('previewClientName').textContent = clientName;
-
-            // Build client details
-            const clientDetails = [];
-            const email = document.getElementById('clientEmail').value.trim();
-            const phone = document.getElementById('clientPhone').value.trim();
-            const address = document.getElementById('clientAddress').value.trim();
-
-            if (email) clientDetails.push(`Email: ${email}`);
-            if (phone) clientDetails.push(`Phone: ${phone}`);
-            if (address) clientDetails.push(`Address: ${address}`);
-
-            document.getElementById('previewClientDetails').innerHTML = clientDetails.join('<br>');
-
-            // Project details
-            const projectLocation = document.getElementById('projectLocation').value.trim();
-            const projectTypeDisplay = projectLocation ? `${projectType} - ${projectLocation}` : projectType;
-            document.getElementById('previewProjectType').textContent = projectTypeDisplay;
-
-            document.getElementById('previewNotes').textContent = document.getElementById('projectNotes').value || 'No additional notes provided.';
-            document.getElementById('previewPreparedFor').textContent = clientName;
-
-            // Update preview totals
-            const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
-            const labour = parseFloat(labourCost.value) || 0;
-            const transport = parseFloat(transportCost.value) || 0;
-            const grandTotal = materialTotal + labour + transport;
-
-            document.getElementById('previewMaterials').textContent = `${materialTotal.toFixed(2)}`;
-            document.getElementById('previewLabour').textContent = `${labour.toFixed(2)}`;
-            document.getElementById('previewTransport').textContent = `${transport.toFixed(2)}`;
-            document.getElementById('previewGrandTotal').textContent = `${grandTotal.toFixed(2)}`;
-
-            // Update preview items
-            const previewItemsBody = document.getElementById('previewItemsBody');
-            previewItemsBody.innerHTML = '';
-
-            if (items.length === 0) {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td colspan="4" style="text-align: center; padding: 30px; color: #666;">
-                        <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 10px; opacity: 0.5;"></i>
-                        <br>No items added to this quotation
-                    </td>
-                `;
-                previewItemsBody.appendChild(row);
-            } else {
-                items.forEach((item, index) => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>
-                            <div style="font-weight: 600;">${item.name || 'Unnamed Item'}</div>
-                            <div style="color: #666; font-size: 0.9em;">item #${index + 1}</div>
-                        </td>
-                        <td>${item.qty}</td>
-                        <td>${item.unit.toFixed(2)}</td>
-                        <td style="text-align: right;">${(item.qty * item.unit).toFixed(2)}</td>
-                    `;
-                    previewItemsBody.appendChild(row);
-                });
-            }
-
-            // Show preview and scroll to it
-            document.getElementById('previewContainer').style.display = 'block';
-            document.getElementById('previewContainer').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        async function saveQuotation() {
-            const clientName = document.getElementById('clientName').value.trim();
-            const projectType = document.getElementById('projectType').value.trim();
-
-            if (!clientName) {
-                showAlert('Please enter a client name before saving.', 'error');
-                document.getElementById('clientName').focus();
-                return;
-            }
-
-            if (!projectType) {
-                showAlert('Please enter a project type before saving.', 'error');
-                document.getElementById('projectType').focus();
-                return;
-            }
-
-            if (items.length === 0) {
-                showAlert('Please add at least one item before saving.', 'error');
-                return;
-            }
-
-            try {
-                showLoading(saveQuotationBtn, true);
-
-                const quotationData = {
-                    appointment_id: currentAppointmentId,
-                    client_name: clientName,
-                    client_email: document.getElementById('clientEmail').value.trim(),
-                    client_phone: document.getElementById('clientPhone').value.trim(),
-                    client_address: document.getElementById('clientAddress').value.trim(),
-                    project_type: projectType,
-                    project_location: document.getElementById('projectLocation').value.trim(),
-                    project_notes: document.getElementById('projectNotes').value.trim(),
-                    quotation_date: document.getElementById('quotationDate').value,
-                    valid_until: document.getElementById('validUntil').value,
-                    items: items,
-                    labour_cost: parseFloat(labourCost.value) || 0,
-                    transport_cost: parseFloat(transportCost.value) || 0,
-                    materials_cost: items.reduce((sum, item) => sum + (item.qty * item.unit), 0),
-                    total_amount: items.reduce((sum, item) => sum + (item.qty * item.unit), 0) +
-                        (parseFloat(labourCost.value) || 0) +
-                        (parseFloat(transportCost.value) || 0)
-                };
-
-                const response = await fetch('/quotations/create/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCsrfToken()
-                    },
-                    body: JSON.stringify(quotationData)
-                });
-
-                const result = await response.json();
-
-                if (response.ok && result.success) {
-                    showAlert('Quotation saved successfully!', 'success');
-
-                    // Optionally redirect to quotation detail page
-                    if (result.quotation_id) {
-                        setTimeout(() => {
-                            window.location.href = `/quotations/${result.quotation_id}/`;
-                        }, 2000);
-                    }
-                } else {
-                    showAlert('Failed to save quotation: ' + (result.error || 'Unknown error'), 'error');
-                }
-
-            } catch (error) {
-                console.error('Error saving quotation:', error);
-                showAlert('Failed to save quotation', 'error');
-            } finally {
-                showLoading(saveQuotationBtn, false);
-            }
-        }
-
-        function getCsrfToken() {
-            const cookies = document.cookie.split(';');
-            for (let cookie of cookies) {
-                const [name, value] = cookie.trim().split('=');
-                if (name === 'csrftoken') {
-                    return value;
-                }
-            }
-            return '';
-        }
-
-        // Export functionality
-        function exportToCSV() {
-            const clientName = document.getElementById('clientName').value || 'Unknown_Client';
-            let csv = 'Item,Quantity,Unit Price,Line Total\n';
-
-            items.forEach(item => {
-                csv += `"${item.name}",${item.qty},${item.unit},${(item.qty * item.unit).toFixed(2)}\n`;
-            });
-
-            // Add totals
-            const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
-            const labour = parseFloat(labourCost.value) || 0;
-            const transport = parseFloat(transportCost.value) || 0;
-
-            csv += '\nSUMMARY\n';
-            csv += `Material Cost,${materialTotal.toFixed(2)}\n`;
-            csv += `Labour Cost,${labour.toFixed(2)}\n`;
-            csv += `Transport Cost,${transport.toFixed(2)}\n`;
-            csv += `Total Amount,${(materialTotal + labour + transport).toFixed(2)}\n`;
-
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = `quotation_${clientName.replace(/\s+/g, '_')}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        }
-
-        // Add export button functionality
-        setTimeout(() => {
-            const exportBtn = document.createElement('button');
-            exportBtn.className = 'btn btn-secondary';
-            exportBtn.innerHTML = '<i class="fas fa-download"></i> Export CSV';
-            exportBtn.onclick = exportToCSV;
-
-            const actionsContainer = document.querySelector('.actions');
-            actionsContainer.appendChild(exportBtn);
-        }, 100);
-
-        // Mobile optimizations
-        document.addEventListener('DOMContentLoaded', function () {
-            // Better touch feedback for buttons
-            document.querySelectorAll('.btn').forEach(btn => {
-                btn.addEventListener('touchstart', function () {
-                    this.style.transform = 'scale(0.96)';
-                });
-
-                btn.addEventListener('touchend', function () {
-                    this.style.transform = 'scale(1)';
-                });
-            });
-
-            // Prevent zoom on form inputs on mobile
-            document.querySelectorAll('input, select, textarea').forEach(input => {
-                input.addEventListener('focus', function (e) {
-                    if (window.innerWidth <= 768) {
-                        this.style.fontSize = '16px';
-                    }
-                });
-            });
-
-            // Hide navbar text on very small screens
-            function handleNavText() {
-                const navTexts = document.querySelectorAll('.nav-text');
-                if (window.innerWidth < 400) {
-                    navTexts.forEach(text => {
-                        text.style.display = 'none';
-                    });
-                } else {
-                    navTexts.forEach(text => {
-                        text.style.display = 'inline';
-                    });
-                }
-            }
-
-            window.addEventListener('resize', handleNavText);
-            handleNavText();
-        });
-
-        // Global functions for onclick handlers
-        window.selectAppointment = selectAppointment;
-        window.removeItem = removeItem;
+<script>
+    // Global variables
+let items = [];
+let itemCounter = 0;
+let currentAppointmentId = null;
+let autoSaveTimeout = null;
+
+// Project type suggestions
+const projectTypeSuggestions = [
+"Bathroom Renovation", "Kitchen Renovation", "New Plumbing Installation",
+"Electrical Installation", "Roof Repair", "Foundation Work",
+"Interior Painting", "Exterior Painting", "Flooring Installation",
+"Window Installation", "Door Installation", "Deck Construction",
+"Driveway Construction", "Fence Installation", "HVAC Installation",
+"Solar Panel Installation", "Swimming Pool Construction",
+"Landscaping", "General Construction", "Emergency Repairs"
+];
+
+// DOM Elements
+const elements = {
+// Tables
+itemsTableBody: document.getElementById('itemsTableBody'),
+emptyItemsRow: document.getElementById('emptyItemsRow'),
+previewItemsBody: document.getElementById('previewItemsBody'),
+
+// Buttons
+addItemBtn: document.getElementById('addItemBtn'),
+loadAppointmentBtn: document.getElementById('loadAppointmentBtn'),
+clearAllBtn: document.getElementById('clearAllBtn'),
+previewBtn: document.getElementById('previewBtn'),
+printBtn: document.getElementById('printBtn'),
+saveQuotationBtn: document.getElementById('saveQuotationBtn'),
+
+// Cost inputs
+labourCost: document.getElementById('labourCost'),
+transportCost: document.getElementById('transportCost'),
+
+// Form inputs
+projectTypeInput: document.getElementById('projectType'),
+projectSuggestions: document.getElementById('projectSuggestions'),
+
+// Containers
+itemsTableContainer: document.getElementById('itemsTableContainer'),
+previewContainer: document.getElementById('previewContainer'),
+alertContainer: document.getElementById('alertContainer'),
+
+// Totals displays
+materialsTotal: document.getElementById('materialsTotal'),
+grandTotal: document.getElementById('grandTotal')
+};
+
+// Initialize application
+document.addEventListener('DOMContentLoaded', function () {
+initializeApplication();
+});
+
+function initializeApplication() {
+initializeForm();
+setupEventListeners();
+setupProjectTypeSuggestions();
+setupExportButtons();
+setupAutoSave();
+loadFromLocalStorage();
+loadAppointmentFromUrl();
+setupTableScrollIndicator();
+}
+
+function initializeForm() {
+// Set default dates
+const today = new Date();
+const validUntil = new Date();
+validUntil.setDate(today.getDate() + 30);
+
+document.getElementById('quotationDate').value = today.toISOString().split('T')[0];
+document.getElementById('validUntil').value = validUntil.toISOString().split('T')[0];
+updatePreviewDate();
+
+// Initialize empty state
+showEmptyState();
+calculateTotals();
+}
+
+function setupEventListeners() {
+// Button events
+elements.addItemBtn.addEventListener('click', addNewItem);
+elements.loadAppointmentBtn.addEventListener('click', showAppointmentSelector);
+elements.clearAllBtn.addEventListener('click', clearAllData);
+elements.previewBtn.addEventListener('click', showPreview);
+elements.printBtn.addEventListener('click', handlePrint);
+elements.saveQuotationBtn.addEventListener('click', saveQuotation);
+
+// Cost inputs
+elements.labourCost.addEventListener('input', calculateTotals);
+elements.transportCost.addEventListener('input', calculateTotals);
+
+// Auto-calculate items
+document.addEventListener('input', function (e) {
+if (e.target.classList.contains('item-input')) {
+updateItemFromInput(e.target);
+}
+});
+
+// Mobile optimizations
+setupMobileOptimizations();
+}
+
+function setupProjectTypeSuggestions() {
+elements.projectTypeInput.addEventListener('input', function () {
+const value = this.value.toLowerCase();
+const suggestions = projectTypeSuggestions.filter(suggestion =>
+suggestion.toLowerCase().includes(value)
+);
+
+if (value && suggestions.length > 0) {
+showSuggestions(suggestions);
+} else {
+hideSuggestions();
+}
+});
+
+elements.projectTypeInput.addEventListener('blur', function () {
+setTimeout(hideSuggestions, 200);
+});
+
+elements.projectTypeInput.addEventListener('focus', function () {
+if (this.value) {
+const value = this.value.toLowerCase();
+const suggestions = projectTypeSuggestions.filter(suggestion =>
+suggestion.toLowerCase().includes(value)
+);
+if (suggestions.length > 0) {
+showSuggestions(suggestions);
+}
+}
+});
+}
+
+function setupTableScrollIndicator() {
+if (elements.itemsTableContainer) {
+elements.itemsTableContainer.addEventListener('scroll', function () {
+if (this.scrollLeft > 0) {
+this.classList.add('scrolling');
+} else {
+this.classList.remove('scrolling');
+}
+});
+}
+}
+
+function setupMobileOptimizations() {
+// Better touch feedback for buttons
+document.querySelectorAll('.btn').forEach(btn => {
+btn.addEventListener('touchstart', function () {
+this.style.transform = 'scale(0.96)';
+});
+
+btn.addEventListener('touchend', function () {
+this.style.transform = 'scale(1)';
+});
+});
+
+// Prevent zoom on form inputs on mobile
+document.querySelectorAll('input, select, textarea').forEach(input => {
+input.addEventListener('focus', function () {
+if (window.innerWidth <= 768) { this.style.fontSize='16px' ; } }); }); // Handle navbar text on small screens function
+    handleNavText() { const navTexts=document.querySelectorAll('.nav-text'); if (window.innerWidth < 400) {
+    navTexts.forEach(text=> text.style.display = 'none');
+    } else {
+    navTexts.forEach(text => text.style.display = 'inline');
+    }
+    }
+
+    window.addEventListener('resize', handleNavText);
+    handleNavText();
+    }
+
+    // Project Type Suggestions
+    function showSuggestions(suggestions) {
+    elements.projectSuggestions.innerHTML = '';
+    suggestions.forEach(suggestion => {
+    const div = document.createElement('div');
+    div.className = 'suggestion-item';
+    div.textContent = suggestion;
+    div.addEventListener('click', function () {
+    elements.projectTypeInput.value = suggestion;
+    hideSuggestions();
+    });
+    elements.projectSuggestions.appendChild(div);
+    });
+    elements.projectSuggestions.style.display = 'block';
+    }
+
+    function hideSuggestions() {
+    elements.projectSuggestions.style.display = 'none';
+    }
+
+    // Appointment Management
+    function loadAppointmentFromUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const appointmentId = urlParams.get('appointment_id');
+
+    if (appointmentId) {
+    currentAppointmentId = appointmentId;
+    loadAppointmentData(appointmentId);
+    }
+    }
+
+    async function showAppointmentSelector() {
+    const modal = createModal('Select Appointment', 'Loading appointments...');
+    document.body.appendChild(modal);
+    await loadAppointmentsList();
+    }
+
+    function createModal(title, content) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5); z-index: 1000; display: flex;
+    align-items: center; justify-content: center; padding: 20px;
+    `;
+
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = `
+    background: white; border-radius: 12px; padding: 20px;
+    max-width: 600px; width: 100%; max-height: 80vh; overflow-y: auto;
+    `;
+
+    modalContent.innerHTML = `
+    <h3 style="margin: 0 0 15px 0;">${title}</h3>
+    <div id="appointmentsList">${content}</div>
+    <div style="margin-top: 20px; text-align: right;">
+        <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+    </div>
+    `;
+
+    modal.className = 'modal';
+    modal.appendChild(modalContent);
+    return modal;
+    }
+
+    async function loadAppointmentsList() {
+    try {
+    const response = await fetch('/api/appointments/');
+    const appointments = await response.json();
+    const appointmentsList = document.getElementById('appointmentsList');
+
+    if (appointments.length === 0) {
+    appointmentsList.innerHTML = '<p>No appointments found.</p>';
+    return;
+    }
+
+    let html = '';
+    appointments.forEach(appointment => {
+    html += `
+    <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: background 0.2s;"
+        onclick="selectAppointment(${appointment.id})" onmouseover="this.style.background='#f8f9fa'"
+        onmouseout="this.style.background='white'">
+        <div style="font-weight: 600;">${appointment.customer_name || 'Unknown Customer'}</div>
+        <div style="color: #666; font-size: 0.9em;">
+            ${appointment.project_type || 'No project type'} • ${appointment.customer_area || 'No area'}
+        </div>
+        <div style="color: #666; font-size: 0.8em;">
+            Phone: ${appointment.phone_number} • Status: ${appointment.status}
+        </div>
+    </div>
+    `;
+    });
+
+    appointmentsList.innerHTML = html;
+
+    } catch (error) {
+    document.getElementById('appointmentsList').innerHTML = '<p>Error loading appointments.</p>';
+    console.error('Error loading appointments:', error);
+    }
+    }
+
+    async function selectAppointment(appointmentId) {
+    document.querySelector('.modal').remove();
+    currentAppointmentId = appointmentId;
+    await loadAppointmentData(appointmentId);
+    }
+
+    async function loadAppointmentData(appointmentId) {
+    try {
+    showLoading(elements.loadAppointmentBtn, true);
+
+    const response = await fetch(`/api/appointments/${appointmentId}/`);
+    const appointment = await response.json();
+
+    if (appointment.error) {
+    showAlert('Error loading appointment: ' + appointment.error, 'error');
+    return;
+    }
+
+    // Load client data
+    document.getElementById('clientName').value = appointment.customer_name || '';
+    document.getElementById('clientEmail').value = appointment.customer_email || '';
+    document.getElementById('clientPhone').value = appointment.phone_number || '';
+    document.getElementById('clientAddress').value = appointment.customer_area || '';
+
+    // Load project data
+    document.getElementById('projectType').value = formatProjectType(appointment.project_type) || '';
+    document.getElementById('projectLocation').value = appointment.customer_area || '';
+    document.getElementById('projectNotes').value = appointment.project_description || '';
+
+    // Load default items if available
+    if (appointment.project_type === 'bathroom_renovation') {
+    loadSampleData();
+    }
+
+    renderItems();
+    calculateTotals();
+    showAlert('Appointment data loaded successfully!', 'success');
+
+    } catch (error) {
+    console.error('Error loading appointment:', error);
+    showAlert('Failed to load appointment data', 'error');
+    } finally {
+    showLoading(elements.loadAppointmentBtn, false);
+    }
+    }
+
+    function loadSampleData() {
+    const sampleData = {
+    items: [
+    { name: '500ml prodorite solvent cement', qty: 1, unit: 4 },
+    { name: '50mm pvc waste pipe', qty: 2, unit: 6 },
+    { name: '50mm pvc bends', qty: 15, unit: 0.5 },
+    { name: '50x45deg pvc bends', qty: 6, unit: 0.5 },
+    { name: '50x45deg pvc junction', qty: 3, unit: 1 },
+    { name: '50mm pvc tee', qty: 3, unit: 1 },
+    { name: 'Tub Waste', qty: 1, unit: 12 },
+    { name: 'Angle valve', qty: 3, unit: 3 },
+    { name: 'Rubber p trap', qty: 1, unit: 3 },
+    { name: 'Cabinet and basin set', qty: 1, unit: 170 },
+    { name: 'Basin mixer', qty: 1, unit: 40 },
+    { name: 'Shower p trap', qty: 1, unit: 3 }
+    ],
+    costs: { labour: 280, transport: 20 }
+    };
+
+    items = [...sampleData.items];
+    elements.labourCost.value = sampleData.costs.labour;
+    elements.transportCost.value = sampleData.costs.transport;
+    }
+
+    function formatProjectType(projectType) {
+    if (!projectType) return '';
+
+    const typeMap = {
+    'bathroom_renovation': 'Bathroom Renovation',
+    'kitchen_renovation': 'Kitchen Renovation',
+    'new_plumbing_installation': 'New Plumbing Installation'
+    };
+
+    return typeMap[projectType] || projectType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
+    // Items Management
+    function showEmptyState() {
+    elements.emptyItemsRow.style.display = 'table-row';
+    }
+
+    function hideEmptyState() {
+    elements.emptyItemsRow.style.display = 'none';
+    }
+
+    function renderItems() {
+    // Clear existing rows except empty state
+    const rows = elements.itemsTableBody.querySelectorAll('tr:not(.empty-items)');
+    rows.forEach(row => row.remove());
+
+    if (items.length === 0) {
+    showEmptyState();
+    return;
+    }
+
+    hideEmptyState();
+
+    items.forEach((item, index) => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+    <td class="item-name">
+        <input type="text" class="item-input" data-index="${index}" data-field="name" value="${item.name}"
+            placeholder="Item description">
+    </td>
+    <td class="qty-col">
+        <input type="number" class="item-input" data-index="${index}" data-field="qty" value="${item.qty}" min="0"
+            step="1">
+    </td>
+    <td class="unit-col">
+        <input type="number" class="item-input" data-index="${index}" data-field="unit" value="${item.unit}" min="0"
+            step="0.01">
+    </td>
+    <td class="total-col">
+        <div class="line-total">$${(item.qty * item.unit).toFixed(2)}</div>
+    </td>
+    <td class="action-col">
+        <button class="btn btn-danger btn-sm" onclick="removeItem(${index})" style="padding: 4px 8px;"
+            title="Remove item">
+            <i class="fas fa-trash"></i>
+        </button>
+    </td>
+    `;
+    elements.itemsTableBody.appendChild(row);
+    });
+    }
+
+    function updateItemFromInput(input) {
+    const index = parseInt(input.dataset.index);
+    const field = input.dataset.field;
+    const value = field === 'name' ? input.value : (parseFloat(input.value) || 0);
+
+    if (items[index]) {
+    items[index][field] = value;
+
+    // Update line total if qty or unit changed
+    if (field === 'qty' || field === 'unit') {
+    const row = input.closest('tr');
+    const lineTotal = row.querySelector('.line-total');
+    lineTotal.textContent = `$${(items[index].qty * items[index].unit).toFixed(2)}`;
+    calculateTotals();
+    }
+    }
+    }
+
+    function addNewItem() {
+    items.push({
+    name: '',
+    qty: 1,
+    unit: 0
+    });
+    renderItems();
+    calculateTotals();
+
+    // Focus on the new item's name input
+    setTimeout(() => {
+    const newRow = elements.itemsTableBody.lastElementChild;
+    if (newRow && !newRow.classList.contains('empty-items')) {
+    const nameInput = newRow.querySelector('input[data-field="name"]');
+    if (nameInput) nameInput.focus();
+    }
+    }, 100);
+    }
+
+    function removeItem(index) {
+    if (confirm('Are you sure you want to remove this item?')) {
+    items.splice(index, 1);
+    renderItems();
+    calculateTotals();
+    }
+    }
+
+    // Calculations
+    function calculateTotals() {
+    const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
+    const labour = parseFloat(elements.labourCost.value) || 0;
+    const transport = parseFloat(elements.transportCost.value) || 0;
+    const grandTotal = materialTotal + labour + transport;
+
+    elements.materialsTotal.textContent = `$${materialTotal.toFixed(2)}`;
+    elements.grandTotal.textContent = `$${grandTotal.toFixed(2)}`;
+    }
+
+    function calculateGrandTotal() {
+    const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
+    const labour = parseFloat(elements.labourCost.value) || 0;
+    const transport = parseFloat(elements.transportCost.value) || 0;
+    return materialTotal + labour + transport;
+    }
+
+    // Preview Functions
+    function showPreview() {
+    if (!validateForm()) return;
+
+    updatePreviewContent();
+    elements.previewContainer.style.display = 'block';
+    elements.previewContainer.scrollIntoView({ behavior: 'smooth' });
+    showAlert('Preview generated successfully!', 'success');
+    }
+
+    function validateForm() {
+    const clientName = document.getElementById('clientName').value.trim();
+    const projectType = document.getElementById('projectType').value.trim();
+
+    if (!clientName) {
+    showAlert('Please enter a client name before generating preview.', 'error');
+    document.getElementById('clientName').focus();
+    return false;
+    }
+
+    if (!projectType) {
+    showAlert('Please enter a project type before generating preview.', 'error');
+    document.getElementById('projectType').focus();
+    return false;
+    }
+
+    return true;
+    }
+
+    function updatePreviewContent() {
+    const clientName = document.getElementById('clientName').value.trim();
+
+    // Update client information
+    document.getElementById('previewClientName').textContent = clientName;
+
+    // Build client details
+    const clientDetails = [];
+    const email = document.getElementById('clientEmail').value.trim();
+    const phone = document.getElementById('clientPhone').value.trim();
+    const address = document.getElementById('clientAddress').value.trim();
+
+    if (email) clientDetails.push(`Email: ${email}`);
+    if (phone) clientDetails.push(`Phone: ${phone}`);
+    if (address) clientDetails.push(`Address: ${address}`);
+
+    document.getElementById('previewClientDetails').innerHTML = clientDetails.join('<br>');
+
+    // Project details
+    const projectType = document.getElementById('projectType').value.trim();
+    const projectLocation = document.getElementById('projectLocation').value.trim();
+    const projectTypeDisplay = projectLocation ? `${projectType} - ${projectLocation}` : projectType;
+    document.getElementById('previewProjectType').textContent = projectTypeDisplay;
+
+    document.getElementById('previewNotes').textContent = document.getElementById('projectNotes').value || 'No
+    additional notes provided.';
+    document.getElementById('previewPreparedFor').textContent = clientName;
+
+    // Update preview totals and items
+    updatePreviewTotals();
+    updatePreviewItems();
+    }
+
+    function updatePreviewTotals() {
+    const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
+    const labour = parseFloat(elements.labourCost.value) || 0;
+    const transport = parseFloat(elements.transportCost.value) || 0;
+    const grandTotal = materialTotal + labour + transport;
+
+    document.getElementById('previewMaterials').textContent = `$${materialTotal.toFixed(2)}`;
+    document.getElementById('previewLabour').textContent = `$${labour.toFixed(2)}`;
+    document.getElementById('previewTransport').textContent = `$${transport.toFixed(2)}`;
+    document.getElementById('previewGrandTotal').textContent = `$${grandTotal.toFixed(2)}`;
+    }
+
+    function updatePreviewItems() {
+    elements.previewItemsBody.innerHTML = '';
+
+    const validItems = items.filter(item => item.name.trim() !== '');
+
+    if (validItems.length === 0) {
+    elements.previewItemsBody.innerHTML = `
+    <tr>
+        <td colspan="4" style="text-align: center; padding: 30px; color: #666;">
+            <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 10px; opacity: 0.5;"></i>
+            <br>No items added to this quotation
+        </td>
+    </tr>
+    `;
+    return;
+    }
+
+    validItems.forEach((item, index) => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+    <td>
+        <div style="font-weight: 600;">${item.name}</div>
+        <div style="color: #666; font-size: 0.9em;">Item #${index + 1}</div>
+    </td>
+    <td>${item.qty}</td>
+    <td>$${item.unit.toFixed(2)}</td>
+    <td style="text-align: right;">$${(item.qty * item.unit).toFixed(2)}</td>
+    `;
+    elements.previewItemsBody.appendChild(row);
+    });
+    }
+
+    function updatePreviewDate() {
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('en-GB');
+    document.getElementById('previewDate').textContent = dateStr;
+    }
+
+    // Print/Export Functions
+    function handlePrint() {
+    if (!validateForm()) return;
+
+    updatePreviewContent();
+    elements.previewContainer.style.display = 'block';
+
+    setTimeout(() => {
+    window.print();
+    }, 500);
+    }
+
+    function setupExportButtons() {
+    // Add CSV export button
+    const exportCsvBtn = document.createElement('button');
+    exportCsvBtn.className = 'btn btn-secondary';
+    exportCsvBtn.innerHTML = '<i class="fas fa-file-csv"></i> Export CSV';
+    exportCsvBtn.onclick = exportToCSV;
+
+    // Add PDF export button
+    const exportPdfBtn = document.createElement('button');
+    exportPdfBtn.className = 'btn btn-secondary';
+    exportPdfBtn.innerHTML = '<i class="fas fa-file-pdf"></i> Save as PDF';
+    exportPdfBtn.onclick = handlePrint;
+
+    // Insert buttons before the print button
+    const actionsContainer = document.querySelector('.actions');
+    actionsContainer.insertBefore(exportCsvBtn, elements.printBtn);
+    actionsContainer.insertBefore(exportPdfBtn, elements.printBtn);
+    }
+
+    function exportToCSV() {
+    if (!validateForm()) return;
+
+    const clientName = document.getElementById('clientName').value || 'Unknown_Client';
+    const projectType = document.getElementById('projectType').value || 'Unknown_Project';
+
+    let csv = 'Construction Quotation\n';
+    csv += `Client: ${clientName}\n`;
+    csv += `Project: ${projectType}\n`;
+    csv += `Date: ${new Date().toLocaleDateString('en-GB')}\n\n`;
+
+    csv += 'Item,Quantity,Unit Price ($),Line Total ($)\n';
+
+    items.forEach(item => {
+    if (item.name.trim() !== '') {
+    csv += `"${item.name.replace(/"/g, '""')}",${item.qty},${item.unit.toFixed(2)},${(item.qty *
+    item.unit).toFixed(2)}\n`;
+    }
+    });
+
+    // Add totals
+    const materialTotal = items.reduce((sum, item) => sum + (item.qty * item.unit), 0);
+    const labour = parseFloat(elements.labourCost.value) || 0;
+    const transport = parseFloat(elements.transportCost.value) || 0;
+    const grandTotal = materialTotal + labour + transport;
+
+    csv += '\nSUMMARY\n';
+    csv += `Material Cost,$${materialTotal.toFixed(2)}\n`;
+    csv += `Labour Cost,$${labour.toFixed(2)}\n`;
+    csv += `Transport Cost,$${transport.toFixed(2)}\n`;
+    csv += `Total Amount,$${grandTotal.toFixed(2)}\n`;
+
+    downloadFile(csv, `quotation_${clientName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`,
+    'text/csv');
+    showAlert('CSV file downloaded successfully!', 'success');
+    }
+
+    function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    }
+
+    // Save Functions
+    async function saveQuotation() {
+    if (!validateSave()) return;
+
+    try {
+    showLoading(elements.saveQuotationBtn, true);
+
+    const quotationData = {
+    appointment_id: currentAppointmentId,
+    client_name: document.getElementById('clientName').value.trim(),
+    client_email: document.getElementById('clientEmail').value.trim(),
+    client_phone: document.getElementById('clientPhone').value.trim(),
+    client_address: document.getElementById('clientAddress').value.trim(),
+    project_type: document.getElementById('projectType').value.trim(),
+    project_location: document.getElementById('projectLocation').value.trim(),
+    project_notes: document.getElementById('projectNotes').value.trim(),
+    quotation_date: document.getElementById('quotationDate').value,
+    valid_until: document.getElementById('validUntil').value,
+    items: items.filter(item => item.name.trim() !== ''),
+    labour_cost: parseFloat(elements.labourCost.value) || 0,
+    transport_cost: parseFloat(elements.transportCost.value) || 0,
+    materials_cost: items.reduce((sum, item) => sum + (item.qty * item.unit), 0),
+    total_amount: calculateGrandTotal()
+    };
+
+    const response = await fetch('/quotations/create/', {
+    method: 'POST',
+    headers: {
+    'Content-Type': 'application/json',
+    'X-CSRFToken': getCsrfToken()
+    },
+    body: JSON.stringify(quotationData)
+    });
+
+    const result = await response.json();
+
+    if (response.ok && result.success) {
+    handleSaveSuccess(result);
+    } else {
+    showAlert('Failed to save quotation: ' + (result.error || 'Unknown error'), 'error');
+    }
+
+    } catch (error) {
+    console.error('Error saving quotation:', error);
+    showAlert('Failed to save quotation. Please try again.', 'error');
+    } finally {
+    showLoading(elements.saveQuotationBtn, false);
+    }
+    }
+
+    function validateSave() {
+    const clientName = document.getElementById('clientName').value.trim();
+    const projectType = document.getElementById('projectType').value.trim();
+
+    if (!clientName) {
+    showAlert('Please enter a client name before saving.', 'error');
+    document.getElementById('clientName').focus();
+    return false;
+    }
+
+    if (!projectType) {
+    showAlert('Please enter a project type before saving.', 'error');
+    document.getElementById('projectType').focus();
+    return false;
+    }
+
+    if (items.filter(item => item.name.trim() !== '').length === 0) {
+    showAlert('Please add at least one item before saving.', 'error');
+    return false;
+    }
+
+    return true;
+    }
+
+    function handleSaveSuccess(result) {
+    showAlert('Quotation saved successfully!', 'success');
+
+    // Update preview with saved quotation number if available
+    if (result.quotation_number) {
+    document.getElementById('previewDate').innerHTML =
+    `${new Date().toLocaleDateString('en-GB')} <br><strong>Quote #: ${result.quotation_number}</strong>`;
+    }
+
+    // Clear auto-save data
+    localStorage.removeItem('draftQuotation');
+
+    // Redirect to quotation detail page
+    if (result.quotation_id) {
+    setTimeout(() => {
+    window.location.href = `/quotations/${result.quotation_id}/`;
+    }, 2000);
+    }
+    }
+
+    // Auto-save functionality
+    function setupAutoSave() {
+    document.addEventListener('input', function() {
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(() => {
+    const clientName = document.getElementById('clientName').value.trim();
+    const projectType = document.getElementById('projectType').value.trim();
+
+    if (clientName && projectType) {
+    saveToLocalStorage();
+    }
+    }, 2000);
+    });
+    }
+
+    function saveToLocalStorage() {
+    const quotationData = {
+    clientName: document.getElementById('clientName').value,
+    clientEmail: document.getElementById('clientEmail').value,
+    clientPhone: document.getElementById('clientPhone').value,
+    clientAddress: document.getElementById('clientAddress').value,
+    projectType: document.getElementById('projectType').value,
+    projectLocation: document.getElementById('projectLocation').value,
+    projectNotes: document.getElementById('projectNotes').value,
+    quotationDate: document.getElementById('quotationDate').value,
+    validUntil: document.getElementById('validUntil').value,
+    items: items,
+    labourCost: elements.labourCost.value,
+    transportCost: elements.transportCost.value
+    };
+
+    localStorage.setItem('draftQuotation', JSON.stringify(quotationData));
+    }
+
+    function loadFromLocalStorage() {
+    const saved = localStorage.getItem('draftQuotation');
+    if (saved) {
+    const data = JSON.parse(saved);
+
+    // Load form data
+    document.getElementById('clientName').value = data.clientName || '';
+    document.getElementById('clientEmail').value = data.clientEmail || '';
+    document.getElementById('clientPhone').value = data.clientPhone || '';
+    document.getElementById('clientAddress').value = data.clientAddress || '';
+    document.getElementById('projectType').value = data.projectType || '';
+    document.getElementById('projectLocation').value = data.projectLocation || '';
+    document.getElementById('projectNotes').value = data.projectNotes || '';
+    document.getElementById('quotationDate').value = data.quotationDate || '';
+    document.getElementById('validUntil').value = data.validUntil || '';
+
+    // Load items
+    items = data.items || [];
+    renderItems();
+
+    // Load costs
+    elements.labourCost.value = data.labourCost || 0;
+    elements.transportCost.value = data.transportCost || 0;
+
+    calculateTotals();
+    showAlert('Draft quotation loaded from auto-save', 'info');
+    }
+    }
+
+    // Utility Functions
+    function showLoading(button, loading) {
+    if (loading) {
+    button.classList.add('loading');
+    button.disabled = true;
+    } else {
+    button.classList.remove('loading');
+    button.disabled = false;
+    }
+    }
+
+    function showAlert(message, type) {
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type}`;
+    alert.innerHTML = `
+    ${message}
+    <button onclick="this.parentElement.remove()"
+        style="float: right; background: none; border: none; font-size: 1.2em; cursor: pointer;">&times;</button>
+    `;
+
+    elements.alertContainer.appendChild(alert);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+    if (alert.parentElement) {
+    alert.remove();
+    }
+    }, 5000);
+    }
+
+    function getCsrfToken() {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'csrftoken') {
+    return value;
+    }
+    }
+    return '';
+    }
+
+    function clearAllData() {
+    if (!confirm('This will clear all data. Are you sure?')) {
+    return;
+    }
+
+    // Clear all form fields
+    document.querySelectorAll('input, textarea').forEach(input => {
+    if (input.type === 'number') {
+    input.value = 0;
+    } else if (input.type !== 'date') {
+    input.value = '';
+    }
+    });
+
+    // Reset costs
+    elements.labourCost.value = 0;
+    elements.transportCost.value = 0;
+
+    // Clear items
+    items = [];
+    currentAppointmentId = null;
+    renderItems();
+    calculateTotals();
+
+    // Re-initialize dates
+    initializeForm();
+
+    // Clear auto-save
+    localStorage.removeItem('draftQuotation');
+
+    showAlert('All data cleared', 'info');
+    }
+
+    // Global functions for onclick handlers
+    window.selectAppointment = selectAppointment;
+    window.removeItem = removeItem;
     </script>
 </body>
 

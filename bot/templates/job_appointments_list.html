@@ -43,12 +43,7 @@
                             </select>
                         </div>
 
-                        <div class="form-group">
-                            <label for="plumber">Plumber</label>
-                            <select id="plumber" name="plumber" class="form-control">
-                                <option value="">All plumbers</option>
-                            </select>
-                        </div>
+
 
                         <div class="form-group">
                             <button type="submit" class="btn btn-primary">
@@ -88,9 +83,6 @@
                                 <p><i class="fas fa-calendar"></i> {{ job.scheduled_datetime|date:"M d, Y" }}</p>
                                 <p><i class="fas fa-clock"></i> {{ job.scheduled_datetime|date:"H:i" }}</p>
                                 <p><i class="fas fa-map-marker-alt"></i> {{ job.customer_area }}</p>
-                                <p><i class="fas fa-user"></i> {{
-                                    job.assigned_plumber.get_full_name|default:"Unassigned" }}</p>
-                            </div>
 
                             {% if job.job_description %}
                             <div class="job-description">
