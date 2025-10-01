@@ -22,7 +22,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    path('webhook/', bot, name='whatsapp_webhook'),
+    path('plumbotv1-production.up.railway.app/webhook/', bot, name='whatsapp_webhook'),
 
     # Authentication URLs
     path('', login_view, name='login'),  # Root URL redirects to login
