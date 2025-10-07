@@ -1,318 +1,975 @@
-{% extends 'base.html' %}
-{% load static %}
+<!DOCTYPE html>
+<html lang="en">
 
-{% block title %}{% if object %}Edit{% else %}Create{% endif %} Quotation Template{% endblock %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>Construction Quotation Generator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #764ba2;
+            --success: #10b981;
+            --danger: #dc2626;
+            --secondary: #6b7280;
+            --light: #f8f9fa;
+            --dark: #2d3748;
+        }
 
-{% block content %}
-<div class="container-fluid py-4">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
-            <!-- Header -->
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <div>
-                    <h2 class="mb-1">{% if object %}✏️ Edit{% else %}➕ Create{% endif %} Template</h2>
-                    <p class="text-muted mb-0">{% if object %}Update existing template{% else %}Create a new reusable
-                        quotation template{% endif %}</p>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            min-height: 100vh;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 0.9rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-title {
+            color: var(--dark);
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: var(--dark);
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        /* Items Table - Mobile Optimized */
+        .items-section {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .items-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .item-card {
+            background: #f8f9fa;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px;
+            position: relative;
+        }
+
+        .item-card input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .item-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .item-total {
+            text-align: right;
+            font-weight: 600;
+            color: var(--primary);
+            padding: 8px;
+            background: white;
+            border-radius: 6px;
+            margin-top: 5px;
+        }
+
+        .remove-item {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--danger);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 30px 15px;
+            color: #999;
+        }
+
+        .empty-state i {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            opacity: 0.4;
+        }
+
+        .add-item-btn {
+            width: 100%;
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        /* Totals */
+        .totals-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px dashed #ddd;
+        }
+
+        .totals-row:last-child {
+            border-bottom: none;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--primary);
+            padding-top: 12px;
+            margin-top: 8px;
+            border-top: 2px solid #ddd;
+        }
+
+        .totals-row input {
+            width: 100px;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: right;
+            font-size: 16px;
+        }
+
+        /* Action Buttons - Mobile Fixed Bottom */
+        .action-buttons {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 10px;
+            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            z-index: 100;
+        }
+
+        .btn {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: transform 0.1s;
+        }
+
+        .btn:active {
+            transform: scale(0.97);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+            color: white;
+        }
+
+        .btn-outline {
+            background: white;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+
+        /* Add padding to bottom of content for fixed buttons */
+        .content-wrapper {
+            padding-bottom: 80px;
+        }
+
+        /* Alert */
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 0.9rem;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid var(--success);
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid var(--danger);
+        }
+
+        /* Preview Section */
+        .preview-section {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            padding: 20px 15px;
+            margin-bottom: 20px;
+        }
+
+        .preview-header {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .company-logo {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #0b5, #4cd);
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }
+
+        .preview-info {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 12px 0;
+            font-size: 0.9rem;
+        }
+
+        .preview-info strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .preview-table {
+            width: 100%;
+            margin: 15px 0;
+            border-collapse: collapse;
+        }
+
+        .preview-table th,
+        .preview-table td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 0.9rem;
+        }
+
+        .preview-table th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+
+        .preview-table td:last-child {
+            text-align: right;
+        }
+
+        /* Loading State */
+        .btn.loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Print Styles */
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+
+            .header,
+            .action-buttons,
+            .card:not(.preview-section) {
+                display: none !important;
+            }
+
+            .preview-section {
+                display: block !important;
+                box-shadow: none !important;
+            }
+        }
+
+        /* Larger screens */
+        @media (min-width: 768px) {
+            .container {
+                max-width: 800px;
+            }
+
+            .action-buttons {
+                position: relative;
+                box-shadow: none;
+                padding: 0;
+                margin-top: 20px;
+            }
+
+            .content-wrapper {
+                padding-bottom: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-calculator"></i> Quotation Generator</h1>
+            <p>"Quality Is Our Qualification"</p>
+        </div>
+
+        <div id="alertContainer"></div>
+
+        <div class="content-wrapper">
+            <!-- Client Information -->
+            <div class="card">
+                <h2 class="section-title">
+                    <i class="fas fa-user"></i> Client Information
+                </h2>
+                <div class="form-group">
+                    <label for="clientName">Client Name *</label>
+                    <input type="text" id="clientName" placeholder="Enter client name" required>
                 </div>
-                <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary">
-                    <i class="bi bi-arrow-left"></i> Back to Templates
-                </a>
+                <div class="form-group">
+                    <label for="clientEmail">Email</label>
+                    <input type="email" id="clientEmail" placeholder="client@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="clientPhone">Phone</label>
+                    <input type="tel" id="clientPhone" placeholder="+263 77 123 4567">
+                </div>
+                <div class="form-group">
+                    <label for="clientAddress">Address</label>
+                    <input type="text" id="clientAddress" placeholder="Client address">
+                </div>
             </div>
 
-            <form method="post" id="templateForm">
-                {% csrf_token %}
+            <!-- Project Information -->
+            <div class="card">
+                <h2 class="section-title">
+                    <i class="fas fa-project-diagram"></i> Project Information
+                </h2>
+                <div class="form-group">
+                    <label for="projectType">Project Type *</label>
+                    <input type="text" id="projectType" placeholder="e.g., Bathroom Renovation" required>
+                </div>
+                <div class="form-group">
+                    <label for="projectLocation">Project Location</label>
+                    <input type="text" id="projectLocation" placeholder="Project site address">
+                </div>
+                <div class="form-group">
+                    <label for="projectNotes">Project Notes</label>
+                    <textarea id="projectNotes" placeholder="Describe the project scope..."></textarea>
+                </div>
+            </div>
 
-                <!-- Template Basic Info -->
-                <div class="card border-0 shadow-sm mb-4">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-8 mb-3">
-                                <label class="form-label">Template Name *</label>
-                                {{ form.name }}
-                                {% if form.name.errors %}
-                                <div class="text-danger small">{{ form.name.errors }}</div>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Project Type *</label>
-                                {{ form.project_type }}
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Description</label>
-                            {{ form.description }}
-                            <small class="text-muted">Describe what this template is used for</small>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Default Labor Cost (R)</label>
-                                {{ form.default_labor_cost }}
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Default Transport Cost (R)</label>
-                                {{ form.default_transport_cost }}
-                            </div>
-                        </div>
-                        <div class="form-check">
-                            {{ form.is_active }}
-                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
-                                Active (available for use)
-                            </label>
+            <!-- Items Section -->
+            <div class="card">
+                <h2 class="section-title">
+                    <i class="fas fa-list"></i> Items & Materials
+                </h2>
+                <div class="items-section">
+                    <div class="items-list" id="itemsList">
+                        <div class="empty-state">
+                            <i class="fas fa-inbox"></i>
+                            <p>No items added yet</p>
                         </div>
                     </div>
                 </div>
+                <button class="add-item-btn" onclick="addItem()">
+                    <i class="fas fa-plus"></i> Add Item
+                </button>
+            </div>
 
-                <!-- Template Items -->
-                <div class="card border-0 shadow-sm mb-4">
-                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Template Items</h5>
-                        <button type="button" class="btn btn-sm btn-light" onclick="addItem()">
-                            <i class="bi bi-plus-lg"></i> Add Item
-                        </button>
+            <!-- Totals -->
+            <div class="card">
+                <h2 class="section-title">
+                    <i class="fas fa-calculator"></i> Totals
+                </h2>
+                <div class="totals-card">
+                    <div class="totals-row">
+                        <span>Material Cost:</span>
+                        <span id="materialsTotal">$0.00</span>
                     </div>
-                    <div class="card-body">
-                        {{ formset.management_form }}
-
-                        <div class="table-responsive">
-                            <table class="table table-hover" id="itemsTable">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width: 5%;">#</th>
-                                        <th style="width: 30%;">Description *</th>
-                                        <th style="width: 10%;">Qty *</th>
-                                        <th style="width: 12%;">Unit Price *</th>
-                                        <th style="width: 12%;">Category</th>
-                                        <th style="width: 12%;">Line Total</th>
-                                        <th style="width: 8%;">Optional</th>
-                                        <th style="width: 8%;">Sort</th>
-                                        <th style="width: 5%;"></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="itemsTableBody">
-                                    {% for item_form in formset %}
-                                    <tr class="item-row">
-                                        <td class="text-center">
-                                            <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
-                                        </td>
-                                        <td>
-                                            {{ item_form.description }}
-                                            {{ item_form.id }}
-                                        </td>
-                                        <td>
-                                            {{ item_form.quantity }}
-                                        </td>
-                                        <td>
-                                            {{ item_form.unit_price }}
-                                        </td>
-                                        <td>
-                                            {{ item_form.category }}
-                                        </td>
-                                        <td>
-                                            <input type="text" class="form-control line-total" readonly value="0.00">
-                                        </td>
-                                        <td class="text-center">
-                                            {{ item_form.is_optional }}
-                                        </td>
-                                        <td>
-                                            {{ item_form.sort_order }}
-                                        </td>
-                                        <td class="text-center">
-                                            {% if forloop.counter > 1 %}
-                                            {{ item_form.DELETE }}
-                                            <label for="{{ item_form.DELETE.id_for_label }}"
-                                                class="btn btn-sm btn-outline-danger">
-                                                <i class="bi bi-trash"></i>
-                                            </label>
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                                <tfoot class="table-light">
-                                    <tr>
-                                        <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
-                                        <td><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
-                                        <td><strong><span id="laborCost">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
-                                        <td><strong><span id="transportCost">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                    <tr class="table-success">
-                                        <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
-                                        <td><strong><span id="grandTotal" style="font-size: 1.2em;">R
-                                                    0.00</span></strong></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-
-                        <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Use the "Optional" checkbox for
-                            items that may not be needed in all quotations. Use "Sort" to control the display order.
-                        </div>
+                    <div class="totals-row">
+                        <span>Labour Cost:</span>
+                        <input type="number" id="labourCost" value="0" min="0" step="0.01" oninput="calculateTotals()">
+                    </div>
+                    <div class="totals-row">
+                        <span>Transport Cost:</span>
+                        <input type="number" id="transportCost" value="0" min="0" step="0.01"
+                            oninput="calculateTotals()">
+                    </div>
+                    <div class="totals-row">
+                        <span>Total Amount:</span>
+                        <span id="grandTotal">$0.00</span>
                     </div>
                 </div>
+            </div>
 
-                <!-- Action Buttons -->
-                <div class="card border-0 shadow-sm">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between">
-                            <button type="button" class="btn btn-outline-secondary" onclick="window.history.back()">
-                                <i class="bi bi-x-lg"></i> Cancel
-                            </button>
-                            <div>
-                                <button type="submit" name="save_and_continue" class="btn btn-outline-primary me-2">
-                                    <i class="bi bi-save"></i> Save & Continue Editing
-                                </button>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-check-lg"></i> Save Template
-                                </button>
-                            </div>
-                        </div>
+            <!-- Preview Section -->
+            <div class="card preview-section" id="previewSection">
+                <div class="preview-header">
+                    <div class="company-logo">HB</div>
+                    <h2>HOMEBASE CONSTRUCTION</h2>
+                    <p style="font-size: 0.85rem; color: #666;">150 Northway, Seke rd, Hatfield — Harare</p>
+                    <p style="font-size: 0.85rem; color: #666;">Cell: 0774 819 901 | Email: info@homebaseplumbers.co.zw
+                    </p>
+                </div>
+
+                <div class="preview-info">
+                    <strong>Client Information</strong>
+                    <div id="previewClient"></div>
+                </div>
+
+                <div class="preview-info">
+                    <strong>Project Details</strong>
+                    <div id="previewProject"></div>
+                </div>
+
+                <table class="preview-table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewItems"></tbody>
+                </table>
+
+                <div class="totals-card">
+                    <div class="totals-row">
+                        <span>Material cost:</span>
+                        <span id="previewMaterials">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span>Labour:</span>
+                        <span id="previewLabour">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span>Transport:</span>
+                        <span id="previewTransport">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span>Total Amount:</span>
+                        <span id="previewGrandTotal">$0.00</span>
                     </div>
                 </div>
-            </form>
+            </div>
+        </div>
+
+        <!-- Fixed Action Buttons -->
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="showPreview()">
+                <i class="fas fa-eye"></i> Preview
+            </button>
+            <button class="btn btn-outline" onclick="downloadPDF()">
+                <i class="fas fa-download"></i> Download
+            </button>
+            <button class="btn btn-secondary" onclick="clearAll()">
+                <i class="fas fa-trash"></i> Clear All
+            </button>
+            <button class="btn btn-success" onclick="saveQuotation()" id="saveBtn">
+                <i class="fas fa-save"></i> Save
+            </button>
         </div>
     </div>
-</div>
 
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        // Calculate line totals and grand total
-        function calculateTotals() {
-            let itemsSubtotal = 0;
+    <script>
+        let items = [];
+        let currentAppointmentId = null;
 
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                // Skip deleted rows
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                if (deleteCheckbox && deleteCheckbox.checked) {
+        // Auto-load appointment on page load
+        document.addEventListener('DOMContentLoaded', function () {
+            const urlParams = new URLSearchParams(window.location.search);
+            const appointmentId = urlParams.get('appointment_id');
+
+            if (appointmentId) {
+                loadAppointmentData(appointmentId);
+            }
+        });
+
+        // Sample data for bathroom renovation (default items)
+        const defaultBathroomItems = [
+            { name: '500ml prodorite solvent cement', qty: 1, price: 4 },
+            { name: '50mm pvc waste pipe', qty: 2, price: 6 },
+            { name: '50mm pvc bends', qty: 15, price: 0.5 },
+            { name: '50x45deg pvc bends', qty: 6, price: 0.5 },
+            { name: '50x45deg pvc junction', qty: 3, price: 1 },
+            { name: '50mm pvc tee', qty: 3, price: 1 },
+            { name: 'Tub Waste', qty: 1, price: 12 },
+            { name: 'Angle valve', qty: 3, price: 3 },
+            { name: 'Rubber p trap', qty: 1, price: 3 },
+            { name: 'Cabinet and basin set', qty: 1, price: 170 },
+            { name: 'Basin mixer', qty: 1, price: 40 },
+            { name: 'Shower p trap', qty: 1, price: 3 }
+        ];
+
+        async function loadAppointmentData(appointmentId) {
+            try {
+                showAlert('Loading appointment data...', 'success');
+
+                // Fetch appointment data from API
+                const response = await fetch(`/api/appointments/${appointmentId}/`);
+                const appointment = await response.json();
+
+                if (appointment.error) {
+                    showAlert('Error loading appointment: ' + appointment.error, 'error');
                     return;
                 }
 
-                const qtyInput = row.querySelector('input[id$="quantity"]');
-                const priceInput = row.querySelector('input[id$="unit_price"]');
-                const lineTotalInput = row.querySelector('.line-total');
+                // Auto-fill client information
+                document.getElementById('clientName').value = appointment.customer_name || '';
+                document.getElementById('clientEmail').value = appointment.customer_email || '';
+                document.getElementById('clientPhone').value = appointment.phone_number || '';
+                document.getElementById('clientAddress').value = appointment.customer_area || '';
 
-                if (qtyInput && priceInput && lineTotalInput) {
-                    const qty = parseFloat(qtyInput.value) || 0;
-                    const price = parseFloat(priceInput.value) || 0;
-                    const lineTotal = qty * price;
+                // Auto-fill project information
+                const projectType = formatProjectType(appointment.project_type);
+                document.getElementById('projectType').value = projectType || '';
+                document.getElementById('projectLocation').value = appointment.customer_area || '';
 
-                    lineTotalInput.value = lineTotal.toFixed(2);
-                    itemsSubtotal += lineTotal;
+                // Build project notes
+                let notes = appointment.project_description || '';
+                if (appointment.property_type) {
+                    notes += `\nProperty Type: ${appointment.property_type}`;
                 }
-            });
+                if (appointment.house_stage) {
+                    notes += `\nHouse Stage: ${appointment.house_stage}`;
+                }
+                document.getElementById('projectNotes').value = notes.trim();
 
-            // Get labor and transport costs
-            const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
-            const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
+                // Auto-fill items based on project type
+                if (appointment.project_type === 'bathroom_renovation' ||
+                    projectType.toLowerCase().includes('bathroom')) {
+                    items = defaultBathroomItems.map((item, index) => ({
+                        id: Date.now() + index,
+                        name: item.name,
+                        qty: item.qty,
+                        price: item.price
+                    }));
 
-            // Update displays
-            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
-            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
-            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
+                    // Set default costs for bathroom renovation
+                    document.getElementById('labourCost').value = 280;
+                    document.getElementById('transportCost').value = 20;
+                } else {
+                    // For other project types, add a few blank items to start
+                    items = [
+                        { id: Date.now(), name: '', qty: 1, price: 0 },
+                        { id: Date.now() + 1, name: '', qty: 1, price: 0 }
+                    ];
+                }
 
-            const grandTotal = itemsSubtotal + laborCost + transportCost;
-            document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
+                currentAppointmentId = appointmentId;
+                renderItems();
+                calculateTotals();
+
+                showAlert('Appointment data loaded successfully!', 'success');
+
+            } catch (error) {
+                console.error('Error loading appointment:', error);
+                showAlert('Failed to load appointment data', 'error');
+            }
         }
 
-        // Attach event listeners to all quantity and price inputs
-        document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
-            input.addEventListener('input', calculateTotals);
-        });
+        function formatProjectType(projectType) {
+            if (!projectType) return '';
 
-        // Handle delete checkboxes
-        document.querySelectorAll('input[type="checkbox"][id$="DELETE"]').forEach(function (checkbox) {
-            checkbox.addEventListener('change', function () {
-                const row = this.closest('.item-row');
-                if (this.checked) {
-                    row.style.opacity = '0.5';
-                    row.style.textDecoration = 'line-through';
-                } else {
-                    row.style.opacity = '1';
-                    row.style.textDecoration = 'none';
-                }
-                calculateTotals();
-            });
-        });
+            const typeMap = {
+                'bathroom_renovation': 'Bathroom Renovation',
+                'kitchen_renovation': 'Kitchen Renovation',
+                'new_plumbing_installation': 'New Plumbing Installation',
+                'electrical_installation': 'Electrical Installation',
+                'roof_repair': 'Roof Repair',
+                'foundation_work': 'Foundation Work',
+                'interior_painting': 'Interior Painting',
+                'exterior_painting': 'Exterior Painting',
+                'flooring_installation': 'Flooring Installation'
+            };
 
-        // Update item numbers
-        function updateItemNumbers() {
-            let counter = 1;
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                if (!deleteCheckbox || !deleteCheckbox.checked) {
-                    const numberBadge = row.querySelector('.item-number');
-                    if (numberBadge) {
-                        numberBadge.textContent = counter;
-                        counter++;
+            return typeMap[projectType] || projectType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
+
+        function addItem() {
+            const id = Date.now();
+            items.push({ id, name: '', qty: 1, price: 0 });
+            renderItems();
+        }
+
+        function removeItem(id) {
+            items = items.filter(item => item.id !== id);
+            renderItems();
+        }
+
+            function updateItem(id, field, value) {
+                const item = items.find(i => i.id === id);
+                if (item) {
+                    item[field] = field === 'name' ? value : parseFloat(value) || 0;
+                    // Only recalculate totals for numeric fields, don't re-render
+                    if (field === 'qty' || field === 'price') {
+                        updateItemTotal(id);
+                        calculateTotals();
                     }
                 }
-            });
+            }
+                    function updateItemTotal(id) {
+                            const item = items.find(i => i.id === id);
+                            if (item) {
+                                const itemCard = document.querySelector(`[data-item-id="${id}"]`);
+                                if (itemCard) {
+                                    const totalEl = itemCard.querySelector('.item-total');
+                                    if (totalEl) {
+                                        totalEl.textContent = `Total: $${(item.qty * item.price).toFixed(2)}`;
+                                    }
+                                }
+                            }
+                        }
+
+
+        function renderItems() {
+            const container = document.getElementById('itemsList');
+
+            if (items.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-inbox"></i>
+                        <p>No items added yet</p>
+                    </div>
+                `;
+                calculateTotals();
+                return;
+            }
+
+            container.innerHTML = items.map(item => `
+                <div class="item-card">
+                    <button class="remove-item" onclick="removeItem(${item.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <input type="text" placeholder="Item description" 
+                           value="${item.name}" 
+                           oninput="updateItem(${item.id}, 'name', this.value)">
+                    <div class="item-row">
+                        <div>
+                            <label style="font-size: 0.85rem; color: #666;">Quantity</label>
+                            <input type="number" value="${item.qty}" min="0" 
+                                   oninput="updateItem(${item.id}, 'qty', this.value)">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; color: #666;">Unit Price ($)</label>
+                            <input type="number" value="${item.price}" min="0" step="0.01"
+                                   oninput="updateItem(${item.id}, 'price', this.value)">
+                        </div>
+                    </div>
+                    <div class="item-total">
+                        Total: $${(item.qty * item.price).toFixed(2)}
+                    </div>
+                </div>
+            `).join('');
+
+            calculateTotals();
         }
 
-        // Initial calculations
-        calculateTotals();
-        updateItemNumbers();
+        function calculateTotals() {
+            const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
+            const labour = parseFloat(document.getElementById('labourCost').value) || 0;
+            const transport = parseFloat(document.getElementById('transportCost').value) || 0;
+            const total = materials + labour + transport;
 
-        // Form validation
-        document.getElementById('templateForm').addEventListener('submit', function (e) {
-            const templateName = document.querySelector('input[id$="name"]').value.trim();
+            document.getElementById('materialsTotal').textContent = `$${materials.toFixed(2)}`;
+            document.getElementById('grandTotal').textContent = `$${total.toFixed(2)}`;
+        }
 
-            if (!templateName) {
-                e.preventDefault();
-                alert('Please enter a template name');
-                return false;
+        function showPreview() {
+            const clientName = document.getElementById('clientName').value.trim();
+            const projectType = document.getElementById('projectType').value.trim();
+
+            if (!clientName || !projectType) {
+                showAlert('Please fill in client name and project type', 'error');
+                return;
             }
 
-            // Check if at least one item is provided
-            let hasValidItem = false;
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                const descInput = row.querySelector('input[id$="description"]');
+            // Update preview content
+            document.getElementById('previewClient').innerHTML = `
+                <strong>${clientName}</strong><br>
+                ${document.getElementById('clientEmail').value}<br>
+                ${document.getElementById('clientPhone').value}<br>
+                ${document.getElementById('clientAddress').value}
+            `;
 
-                if ((!deleteCheckbox || !deleteCheckbox.checked) && descInput && descInput.value.trim()) {
-                    hasValidItem = true;
+            document.getElementById('previewProject').innerHTML = `
+                <strong>${projectType}</strong><br>
+                ${document.getElementById('projectLocation').value}<br>
+                ${document.getElementById('projectNotes').value}
+            `;
+
+            const itemsHtml = items.map(item => `
+                <tr>
+                    <td>${item.name || 'Unnamed'}</td>
+                    <td>${item.qty}</td>
+                    <td>$${item.price.toFixed(2)}</td>
+                    <td>$${(item.qty * item.price).toFixed(2)}</td>
+                </tr>
+            `).join('');
+
+            document.getElementById('previewItems').innerHTML = itemsHtml ||
+                '<tr><td colspan="4" style="text-align: center; color: #999;">No items</td></tr>';
+
+            const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
+            const labour = parseFloat(document.getElementById('labourCost').value) || 0;
+            const transport = parseFloat(document.getElementById('transportCost').value) || 0;
+
+            document.getElementById('previewMaterials').textContent = `$${materials.toFixed(2)}`;
+            document.getElementById('previewLabour').textContent = `$${labour.toFixed(2)}`;
+            document.getElementById('previewTransport').textContent = `$${transport.toFixed(2)}`;
+            document.getElementById('previewGrandTotal').textContent = `$${(materials + labour + transport).toFixed(2)}`;
+
+            document.getElementById('previewSection').style.display = 'block';
+            document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function downloadPDF() {
+            showPreview();
+            setTimeout(() => window.print(), 500);
+        }
+
+        function clearAll() {
+            if (confirm('Clear all data? This cannot be undone.')) {
+                document.querySelectorAll('input, textarea').forEach(input => {
+                    if (input.type === 'number') {
+                        input.value = 0;
+                    } else {
+                        input.value = '';
+                    }
+                });
+                items = [];
+                renderItems();
+                document.getElementById('previewSection').style.display = 'none';
+                showAlert('All data cleared', 'success');
+            }
+        }
+
+        async function saveQuotation() {
+            const clientName = document.getElementById('clientName').value.trim();
+            const projectType = document.getElementById('projectType').value.trim();
+
+            if (!clientName || !projectType) {
+                showAlert('Please fill in required fields', 'error');
+                return;
+            }
+
+            if (items.length === 0) {
+                showAlert('Please add at least one item', 'error');
+                return;
+            }
+
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.classList.add('loading');
+            saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
+
+            const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
+            const labour = parseFloat(document.getElementById('labourCost').value) || 0;
+            const transport = parseFloat(document.getElementById('transportCost').value) || 0;
+
+            const quotationData = {
+                appointment_id: currentAppointmentId,
+                items: items.map(item => ({
+                    name: item.name,
+                    qty: item.qty,
+                    unit: item.price
+                })),
+                labour_cost: labour,
+                transport_cost: transport,
+                materials_cost: materials,
+                total_amount: materials + labour + transport,
+                notes: document.getElementById('projectNotes').value.trim()
+            };
+
+            try {
+                const response = await fetch('/quotations/create/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify(quotationData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
+
+                    // Optionally redirect after 2 seconds
+                    if (result.quotation_id) {
+                        setTimeout(() => {
+                            window.location.href = `/quotations/${result.quotation_id}/`;
+                        }, 2000);
+                    }
+                } else {
+                    showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
                 }
-            });
 
-            if (!hasValidItem) {
-                e.preventDefault();
-                alert('Please add at least one item to the template');
-                return false;
+            } catch (error) {
+                console.error('Error saving quotation:', error);
+                showAlert('Failed to save quotation. Please try again.', 'error');
+            } finally {
+                saveBtn.classList.remove('loading');
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
             }
-        });
-    });
+        }
 
-    // Add new item row (simplified - Django formset handles this better with JavaScript library)
-    function addItem() {
-        alert('To add more items, save the template first and then edit it to add additional items.');
-    }
-</script>
+        function getCsrfToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    return value;
+                }
+            }
+            return '';
+        }
 
-<style>
-    .item-row input[type="checkbox"] {
-        display: none;
-    }
+        function showAlert(message, type) {
+            const container = document.getElementById('alertContainer');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            container.appendChild(alert);
+            setTimeout(() => alert.remove(), 4000);
+        }
 
-    .table td,
-    .table th {
-        vertical-align: middle;
-    }
+        // Initialize
+        renderItems();
+    </script>
+</body>
 
-    .form-control-sm {
-        font-size: 0.875rem;
-    }
-</style>
-{% endblock %}
+</html>
