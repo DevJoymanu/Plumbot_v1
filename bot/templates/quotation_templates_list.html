@@ -79,22 +79,20 @@
                     <input type="text" name="search" class="form-control" placeholder="Search templates..."
                         value="{{ request.GET.search }}">
                 </div>
-                <div class="col-md-3">
+<!--                <div class="col-md-3">
                     <select name="project_type" class="form-select">
                         <option value="">All Project Types</option>
-                            <option value="bathroom_renovation" {% if request.GET.project_type=='bathroom_renovation' %}selected{% endif %}>Bathroom
-                                Renovation</option>
-
-                            <option value="kitchen_renovation" {% if request.GET.project_type=='kitchen_renovation' %}selected{% endif %}>Kitchen
-                                Renovation</option>
-
-                            <option value="new_plumbing_installation" {% if request.GET.project_type=='new_plumbing_installation' %}selected{% endif
-                                %}>New Installation</option>
-
-                            <option value="general" {% if request.GET.project_type=='general' %}selected{% endif %}>General</option>
+                        <option value="bathroom_renovation" {% if request.GET.project_type=='bathroom_renovation'
+                            %}selected{% endif %}>Bathroom Renovation</option>
+                        <option value="kitchen_renovation" {% if request.GET.project_type=='kitchen_renovation'
+                            %}selected{% endif %}>Kitchen Renovation</option>
+                        <option value="new_plumbing_installation" {% if
+                            request.GET.project_type=='new_plumbing_installation' %}selected{% endif %}>New Installation
+                        </option>
+                        <option value="general" {% if request.GET.project_type=='general' %}selected{% endif %}>General
                         </option>
                     </select>
-                </div>
+                </div> -->
                 <div class="col-md-3">
                     <select name="status" class="form-select">
                         <option value="">All Status</option>
