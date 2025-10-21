@@ -1057,3 +1057,96 @@ class QuotationItem(models.Model):
 
 
 
+class QuotationTemplate(models.Model):
+    """Template for creating quotations quickly"""
+    name = models.CharField(max_length=200, help_text="Template name (e.g., 'Standard Bathroom Renovation')")
+    description = models.TextField(blank=True, help_text="Description of what this template is for")
+    project_type = models.CharField(
+        max_length=50,
+        choices=[
+            ('bathroom_renovation', 'Bathroom Renovation'),
+            ('kitchen_renovation', 'Kitchen Renovation'),
+            ('new_plumbing_installation', 'New Plumbing Installation'),
+            ('general', 'General Plumbing'),
+        ],
+        default='general'
+    )
+    
+    # Default costs
+    default_labor_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    default_transport_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    # Template metadata
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_templates')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+    use_count = models.IntegerField(default=0, help_text="Number of times this template has been used")
+    
+    class Meta:
+        ordering = ['-use_count', '-updated_at']
+        
+    def __str__(self):
+        return f"{self.name} ({self.get_project_type_display()})"
+    
+    def get_total_estimated_cost(self):
+        """Calculate estimated total cost from template items"""
+        items_total = sum(item.get_line_total() for item in self.items.all())
+        return self.default_labor_cost + self.default_transport_cost + items_total
+    
+    def duplicate(self, new_name=None):
+        """Create a copy of this template"""
+        new_template = QuotationTemplate.objects.create(
+            name=new_name or f"{self.name} (Copy)",
+            description=self.description,
+            project_type=self.project_type,
+            default_labor_cost=self.default_labor_cost,
+            default_transport_cost=self.default_transport_cost,
+            created_by=self.created_by
+        )
+        
+        # Copy all items
+        for item in self.items.all():
+            QuotationTemplateItem.objects.create(
+                template=new_template,
+                description=item.description,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                category=item.category,
+                is_optional=item.is_optional,
+                notes=item.notes,
+                sort_order=item.sort_order
+            )
+        
+        return new_template
+
+
+class QuotationTemplateItem(models.Model):
+    """Individual items in a quotation template"""
+    CATEGORY_CHOICES = [
+        ('fixtures', 'Fixtures'),
+        ('pipes', 'Pipes & Fittings'),
+        ('labor', 'Labor'),
+        ('materials', 'Materials'),
+        ('hardware', 'Hardware'),
+        ('other', 'Other'),
+    ]
+    
+    template = models.ForeignKey(QuotationTemplate, on_delete=models.CASCADE, related_name='items')
+    description = models.CharField(max_length=300)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='materials')
+    is_optional = models.BooleanField(default=False, help_text="Mark if this item is optional")
+    notes = models.TextField(blank=True, help_text="Internal notes about this item")
+    sort_order = models.IntegerField(default=0)
+    
+    class Meta:
+        ordering = ['sort_order', 'category', 'description']
+    
+    def __str__(self):
+        return f"{self.description} - R{self.unit_price} x {self.quantity}"
+    
+    def get_line_total(self):
+        """Calculate line total"""
+        return self.quantity * self.unit_price

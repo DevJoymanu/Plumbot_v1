@@ -1,0 +1,318 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} Quotation Template{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="mb-1">{% if object %}✏️ Edit{% else %}➕ Create{% endif %} Template</h2>
+                    <p class="text-muted mb-0">{% if object %}Update existing template{% else %}Create a new reusable
+                        quotation template{% endif %}</p>
+                </div>
+                <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Templates
+                </a>
+            </div>
+
+            <form method="post" id="templateForm">
+                {% csrf_token %}
+
+                <!-- Template Basic Info -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8 mb-3">
+                                <label class="form-label">Template Name *</label>
+                                {{ form.name }}
+                                {% if form.name.errors %}
+                                <div class="text-danger small">{{ form.name.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Project Type *</label>
+                                {{ form.project_type }}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            {{ form.description }}
+                            <small class="text-muted">Describe what this template is used for</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Default Labor Cost (R)</label>
+                                {{ form.default_labor_cost }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Default Transport Cost (R)</label>
+                                {{ form.default_transport_cost }}
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            {{ form.is_active }}
+                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                Active (available for use)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Template Items -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Template Items</h5>
+                        <button type="button" class="btn btn-sm btn-light" onclick="addItem()">
+                            <i class="bi bi-plus-lg"></i> Add Item
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        {{ formset.management_form }}
+
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="itemsTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 5%;">#</th>
+                                        <th style="width: 30%;">Description *</th>
+                                        <th style="width: 10%;">Qty *</th>
+                                        <th style="width: 12%;">Unit Price *</th>
+                                        <th style="width: 12%;">Category</th>
+                                        <th style="width: 12%;">Line Total</th>
+                                        <th style="width: 8%;">Optional</th>
+                                        <th style="width: 8%;">Sort</th>
+                                        <th style="width: 5%;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="itemsTableBody">
+                                    {% for item_form in formset %}
+                                    <tr class="item-row">
+                                        <td class="text-center">
+                                            <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
+                                        </td>
+                                        <td>
+                                            {{ item_form.description }}
+                                            {{ item_form.id }}
+                                        </td>
+                                        <td>
+                                            {{ item_form.quantity }}
+                                        </td>
+                                        <td>
+                                            {{ item_form.unit_price }}
+                                        </td>
+                                        <td>
+                                            {{ item_form.category }}
+                                        </td>
+                                        <td>
+                                            <input type="text" class="form-control line-total" readonly value="0.00">
+                                        </td>
+                                        <td class="text-center">
+                                            {{ item_form.is_optional }}
+                                        </td>
+                                        <td>
+                                            {{ item_form.sort_order }}
+                                        </td>
+                                        <td class="text-center">
+                                            {% if forloop.counter > 1 %}
+                                            {{ item_form.DELETE }}
+                                            <label for="{{ item_form.DELETE.id_for_label }}"
+                                                class="btn btn-sm btn-outline-danger">
+                                                <i class="bi bi-trash"></i>
+                                            </label>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
+                                        <td><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
+                                        <td colspan="3"></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
+                                        <td><strong><span id="laborCost">R 0.00</span></strong></td>
+                                        <td colspan="3"></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
+                                        <td><strong><span id="transportCost">R 0.00</span></strong></td>
+                                        <td colspan="3"></td>
+                                    </tr>
+                                    <tr class="table-success">
+                                        <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
+                                        <td><strong><span id="grandTotal" style="font-size: 1.2em;">R
+                                                    0.00</span></strong></td>
+                                        <td colspan="3"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Use the "Optional" checkbox for
+                            items that may not be needed in all quotations. Use "Sort" to control the display order.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <button type="button" class="btn btn-outline-secondary" onclick="window.history.back()">
+                                <i class="bi bi-x-lg"></i> Cancel
+                            </button>
+                            <div>
+                                <button type="submit" name="save_and_continue" class="btn btn-outline-primary me-2">
+                                    <i class="bi bi-save"></i> Save & Continue Editing
+                                </button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-check-lg"></i> Save Template
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Calculate line totals and grand total
+        function calculateTotals() {
+            let itemsSubtotal = 0;
+
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                // Skip deleted rows
+                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
+                if (deleteCheckbox && deleteCheckbox.checked) {
+                    return;
+                }
+
+                const qtyInput = row.querySelector('input[id$="quantity"]');
+                const priceInput = row.querySelector('input[id$="unit_price"]');
+                const lineTotalInput = row.querySelector('.line-total');
+
+                if (qtyInput && priceInput && lineTotalInput) {
+                    const qty = parseFloat(qtyInput.value) || 0;
+                    const price = parseFloat(priceInput.value) || 0;
+                    const lineTotal = qty * price;
+
+                    lineTotalInput.value = lineTotal.toFixed(2);
+                    itemsSubtotal += lineTotal;
+                }
+            });
+
+            // Get labor and transport costs
+            const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
+            const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
+
+            // Update displays
+            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
+            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
+            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
+
+            const grandTotal = itemsSubtotal + laborCost + transportCost;
+            document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
+        }
+
+        // Attach event listeners to all quantity and price inputs
+        document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
+            input.addEventListener('input', calculateTotals);
+        });
+
+        // Handle delete checkboxes
+        document.querySelectorAll('input[type="checkbox"][id$="DELETE"]').forEach(function (checkbox) {
+            checkbox.addEventListener('change', function () {
+                const row = this.closest('.item-row');
+                if (this.checked) {
+                    row.style.opacity = '0.5';
+                    row.style.textDecoration = 'line-through';
+                } else {
+                    row.style.opacity = '1';
+                    row.style.textDecoration = 'none';
+                }
+                calculateTotals();
+            });
+        });
+
+        // Update item numbers
+        function updateItemNumbers() {
+            let counter = 1;
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
+                if (!deleteCheckbox || !deleteCheckbox.checked) {
+                    const numberBadge = row.querySelector('.item-number');
+                    if (numberBadge) {
+                        numberBadge.textContent = counter;
+                        counter++;
+                    }
+                }
+            });
+        }
+
+        // Initial calculations
+        calculateTotals();
+        updateItemNumbers();
+
+        // Form validation
+        document.getElementById('templateForm').addEventListener('submit', function (e) {
+            const templateName = document.querySelector('input[id$="name"]').value.trim();
+
+            if (!templateName) {
+                e.preventDefault();
+                alert('Please enter a template name');
+                return false;
+            }
+
+            // Check if at least one item is provided
+            let hasValidItem = false;
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
+                const descInput = row.querySelector('input[id$="description"]');
+
+                if ((!deleteCheckbox || !deleteCheckbox.checked) && descInput && descInput.value.trim()) {
+                    hasValidItem = true;
+                }
+            });
+
+            if (!hasValidItem) {
+                e.preventDefault();
+                alert('Please add at least one item to the template');
+                return false;
+            }
+        });
+    });
+
+    // Add new item row (simplified - Django formset handles this better with JavaScript library)
+    function addItem() {
+        alert('To add more items, save the template first and then edit it to add additional items.');
+    }
+</script>
+
+<style>
+    .item-row input[type="checkbox"] {
+        display: none;
+    }
+
+    .table td,
+    .table th {
+        vertical-align: middle;
+    }
+
+    .form-control-sm {
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}

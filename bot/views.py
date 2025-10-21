@@ -4,7 +4,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
 from twilio.rest import Client
-from .models import Appointment, Quotation, QuotationItem
+from .models import Appointment, Quotation, QuotationItem, QuotationTemplate, QuotationTemplateItem
 import requests
 import datetime
 import pytz
@@ -47,6 +47,16 @@ from .decorators import staff_required, anonymous_required, StaffRequiredMixin
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth import update_session_auth_hash
+
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
+from django.contrib import messages
+from django.urls import reverse, reverse_lazy
+from django.db.models import Q
+from .models import , Quotation, QuotationItem
+from .decorators import staff_required
+from django.utils.decorators import method_decorator
+
+
 
 @anonymous_required
 def login_view(request):
@@ -152,6 +162,211 @@ GOOGLE_CALENDAR_CREDENTIALS = {
 
 # Decorator to ensure user is logged in
 staff_required = login_required
+
+
+@method_decorator(staff_required, name='dispatch')
+class QuotationTemplatesListView(ListView):
+    """List all quotation templates"""
+    model = QuotationTemplate
+    template_name = 'quotation_templates_list.html'
+    context_object_name = 'templates'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        queryset = QuotationTemplate.objects.all()
+        
+        # Filter by project type
+        project_type = self.request.GET.get('project_type')
+        if project_type:
+            queryset = queryset.filter(project_type=project_type)
+        
+        # Filter by active status
+        status = self.request.GET.get('status')
+        if status == 'active':
+            queryset = queryset.filter(is_active=True)
+        elif status == 'inactive':
+            queryset = queryset.filter(is_active=False)
+        
+        # Search
+        search = self.request.GET.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) | 
+                Q(description__icontains=search)
+            )
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['total_templates'] = QuotationTemplate.objects.count()
+        context['active_templates'] = QuotationTemplate.objects.filter(is_active=True).count()
+        return context
+
+
+@method_decorator(staff_required, name='dispatch')
+class CreateQuotationTemplateView(CreateView):
+    """Create a new quotation template"""
+    model = QuotationTemplate
+    form_class = QuotationTemplateForm
+    template_name = 'create_quotation_template.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.POST:
+            context['formset'] = QuotationTemplateItemFormSet(self.request.POST)
+        else:
+            context['formset'] = QuotationTemplateItemFormSet()
+        return context
+    
+    def form_valid(self, form):
+        context = self.get_context_data()
+        formset = context['formset']
+        
+        form.instance.created_by = self.request.user
+        
+        if formset.is_valid():
+            self.object = form.save()
+            formset.instance = self.object
+            formset.save()
+            
+            messages.success(self.request, f'Template "{self.object.name}" created successfully!')
+            return redirect('quotation_templates_list')
+        else:
+            return self.render_to_response(self.get_context_data(form=form))
+    
+    def get_success_url(self):
+        return reverse('quotation_templates_list')
+
+
+@method_decorator(staff_required, name='dispatch')
+class EditQuotationTemplateView(UpdateView):
+    """Edit an existing quotation template"""
+    model = QuotationTemplate
+    form_class = QuotationTemplateForm
+    template_name = 'edit_quotation_template.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.POST:
+            context['formset'] = QuotationTemplateItemFormSet(self.request.POST, instance=self.object)
+        else:
+            context['formset'] = QuotationTemplateItemFormSet(instance=self.object)
+        return context
+    
+    def form_valid(self, form):
+        context = self.get_context_data()
+        formset = context['formset']
+        
+        if formset.is_valid():
+            self.object = form.save()
+            formset.instance = self.object
+            formset.save()
+            
+            messages.success(self.request, f'Template "{self.object.name}" updated successfully!')
+            return redirect('quotation_templates_list')
+        else:
+            return self.render_to_response(self.get_context_data(form=form))
+    
+    def get_success_url(self):
+        return reverse('quotation_templates_list')
+
+
+@method_decorator(staff_required, name='dispatch')
+class QuotationTemplateDetailView(DetailView):
+    """View template details"""
+    model = QuotationTemplate
+    template_name = 'quotation_template_detail.html'
+    context_object_name = 'template'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['items'] = self.object.items.all()
+        context['total_cost'] = self.object.get_total_estimated_cost()
+        return context
+
+
+@staff_required
+def duplicate_template(request, pk):
+    """Duplicate an existing template"""
+    template = get_object_or_404(QuotationTemplate, pk=pk)
+    
+    if request.method == 'POST':
+        new_name = request.POST.get('new_name', f"{template.name} (Copy)")
+        new_template = template.duplicate(new_name=new_name)
+        
+        messages.success(request, f'Template duplicated as "{new_template.name}"')
+        return redirect('edit_quotation_template', pk=new_template.pk)
+    
+    return render(request, 'duplicate_template.html', {
+        'template': template
+    })
+
+
+@staff_required
+def delete_template(request, pk):
+    """Delete a template"""
+    template = get_object_or_404(QuotationTemplate, pk=pk)
+    
+    if request.method == 'POST':
+        template_name = template.name
+        template.delete()
+        messages.success(request, f'Template "{template_name}" deleted successfully')
+        return redirect('quotation_templates_list')
+    
+    return render(request, 'delete_template.html', {
+        'template': template
+    })
+
+
+@staff_required
+def use_template(request, template_pk, appointment_pk=None):
+    """Create a quotation from a template"""
+    template = get_object_or_404(QuotationTemplate, pk=template_pk)
+    
+    # Increment use count
+    template.use_count += 1
+    template.save()
+    
+    # Create new quotation from template
+    quotation = Quotation.objects.create(
+        appointment_id=appointment_pk if appointment_pk else None,
+        labor_cost=template.default_labor_cost,
+        materials_cost=sum(item.get_line_total() for item in template.items.filter(category='materials')),
+        notes=f"Created from template: {template.name}\n\n{template.description}",
+        status='draft'
+    )
+    
+    # Copy items from template
+    for template_item in template.items.all():
+        QuotationItem.objects.create(
+            quotation=quotation,
+            description=template_item.description,
+            quantity=template_item.quantity,
+            unit_price=template_item.unit_price
+        )
+    
+    messages.success(request, f'Quotation created from template "{template.name}"')
+    return redirect('edit_quotation', pk=quotation.pk)
+
+
+@staff_required
+def toggle_template_status(request, pk):
+    """Toggle template active status"""
+    if request.method == 'POST':
+        template = get_object_or_404(QuotationTemplate, pk=pk)
+        template.is_active = not template.is_active
+        template.save()
+        
+        status_text = "activated" if template.is_active else "deactivated"
+        messages.success(request, f'Template "{template.name}" {status_text}')
+        
+        return JsonResponse({
+            'success': True,
+            'is_active': template.is_active
+        })
+    
+    return JsonResponse({'success': False}, status=400)
 
 
 # Quotation Views

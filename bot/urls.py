@@ -9,13 +9,16 @@ from .views import (
     # Import the new document views
     AppointmentDocumentsView, download_document,
     # Import the new quotation views
-    CreateQuotationView, ViewQuotationView, EditQuotationView, send_quotation,create_quotation_api,  # Add this line
- # Import job scheduling views
+    CreateQuotationView, ViewQuotationView, EditQuotationView, send_quotation,create_quotation_api,
+    # Import job scheduling views
     complete_site_visit, schedule_job, job_appointments_list, update_job_status, reschedule_job,
-    login_view, logout_view, profile_view, change_password_view
+    login_view, logout_view, profile_view, change_password_view,
+    # Import quotation template views
+    QuotationTemplatesListView, CreateQuotationTemplateView, EditQuotationTemplateView,
+    QuotationTemplateDetailView, duplicate_template, delete_template, 
+    use_template, toggle_template_status, quotation_templates_api
 )
 
-# In urls.py, add:
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -25,12 +28,11 @@ urlpatterns = [
     path('webhook/', bot, name='whatsapp_webhook'),
 
     # Authentication URLs
-    path('', login_view, name='login'),  # Root URL redirects to login
+    path('', login_view, name='login'),
     path('login/', login_view, name='login'),
     path('logout/', logout_view, name='logout'),
     path('profile/', profile_view, name='profile'),
     path('change-password/', change_password_view, name='change_password'),
-
 
     # Dashboard
     path('dashboard/', views.DashboardView.as_view(), name='dashboard'),
@@ -43,7 +45,7 @@ urlpatterns = [
     path('appointments/<int:pk>/confirm/', confirm_appointment, name='confirm_appointment'),
     path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),
     
-    # Job scheduling URLs - INTEGRATED HERE
+    # Job scheduling URLs
     path('appointments/<int:pk>/complete-site-visit/', complete_site_visit, name='complete_site_visit'),
     path('appointments/<int:pk>/schedule-job/', schedule_job, name='schedule_job'),
     path('jobs/', job_appointments_list, name='job_appointments_list'),
@@ -59,8 +61,21 @@ urlpatterns = [
     path('quotations/<int:pk>/', ViewQuotationView.as_view(), name='view_quotation'),
     path('quotations/<int:pk>/edit/', EditQuotationView.as_view(), name='edit_quotation'),
     path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),
-    
     path('quotations/create/', create_quotation_api, name='create_quotation_api'),
+
+    # ===== NEW: Quotation Templates URLs =====
+    path('templates/', QuotationTemplatesListView.as_view(), name='quotation_templates_list'),
+    path('templates/create/', CreateQuotationTemplateView.as_view(), name='create_quotation_template'),
+    path('templates/<int:pk>/', QuotationTemplateDetailView.as_view(), name='quotation_template_detail'),
+    path('templates/<int:pk>/edit/', EditQuotationTemplateView.as_view(), name='edit_quotation_template'),
+    path('templates/<int:pk>/duplicate/', duplicate_template, name='duplicate_template'),
+    path('templates/<int:pk>/delete/', delete_template, name='delete_template'),
+    path('templates/<int:template_pk>/use/', use_template, name='use_template'),
+    path('templates/<int:template_pk>/use/<int:appointment_pk>/', use_template, name='use_template_for_appointment'),
+    path('templates/<int:pk>/toggle-status/', toggle_template_status, name='toggle_template_status'),
+    
+    # Template API endpoint
+    path('api/quotation-templates/', quotation_templates_api, name='quotation_templates_api'),
 
     # Settings
     path('settings/', settings_view, name='settings'),
@@ -72,7 +87,6 @@ urlpatterns = [
     path('export-appointments/', export_appointments, name='export_appointments'),
 
     path('calendar/', CalendarView.as_view(), name='calendar'),
-
     path('media/', handle_whatsapp_media, name='whatsapp_media'),
 ]
 

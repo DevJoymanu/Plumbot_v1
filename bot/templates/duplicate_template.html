@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Duplicate Template</h5>
+                </div>
+                <div class="card-body">
+                    <p>Create a copy of "{{ template.name }}"?</p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">New Template Name:</label>
+                            <input type="text" name="new_name" class="form-control" value="{{ template.name }} (Copy)"
+                                required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Duplicate</button>
+                        <a href="{% url 'quotation_templates_list' %}" class="btn btn-secondary">Cancel</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
