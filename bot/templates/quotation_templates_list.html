@@ -4,5 +4,224 @@
 {% block title %}Quotation Templates{% endblock %}
 
 {% block content %}
-<H1>HELLO WORLD <H1>
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">📋 Quotation Templates</h2>
+            <p class="text-muted mb-0">Create and manage reusable quotation templates</p>
+        </div>
+        <a href="{% url 'create_quotation_template' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New Template
+        </a>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="bg-primary bg-opacity-10 rounded p-3">
+                                <i class="bi bi-file-earmark-text text-primary" style="font-size: 1.5rem;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <h6 class="text-muted mb-1">Total Templates</h6>
+                            <h3 class="mb-0">{{ total_templates }}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="bg-success bg-opacity-10 rounded p-3">
+                                <i class="bi bi-check-circle text-success" style="font-size: 1.5rem;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <h6 class="text-muted mb-1">Active Templates</h6>
+                            <h3 class="mb-0">{{ active_templates }}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="bg-info bg-opacity-10 rounded p-3">
+                                <i class="bi bi-star text-info" style="font-size: 1.5rem;"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <h6 class="text-muted mb-1">Most Used</h6>
+                            <h3 class="mb-0">{{ templates.first.use_count|default:0 }}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <input type="text" name="search" class="form-control" placeholder="Search templates..."
+                        value="{{ request.GET.search }}">
+                </div>
+                <div class="col-md-3">
+                    <select name="project_type" class="form-select">
+                        <option value="">All Project Types</option>
+                        <option value="bathroom_renovation" {% if request.GET.project_type=='bathroom_renovation'
+                            %}selected{% endif %}>Bathroom Renovation</option>
+                        <option value="kitchen_renovation" {% if request.GET.project_type=='kitchen_renovation'
+                            %}selected{% endif %}>Kitchen Renovation</option>
+                        <option value="new_plumbing_installation" {% if
+                            request.GET.project_type=='new_plumbing_installation' %}selected{% endif %}>New Installation
+                        </option>
+                        <option value="general" {% if request.GET.project_type=='general' %}selected{% endif %}>General
+                        </option>
+                    </select>
+                </div> 
+                <div class="col-md-3">
+                    <select name="status" class="form-select">
+                        <option value="">All Status</option>
+                        <option value="active" {% if request.GET.status=='active' %}selected{% endif %}>Active</option>
+                        <option value="inactive" {% if request.GET.status=='inactive' %}selected{% endif %}>Inactive
+                        </option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Filter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Templates List -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>Template Name</th>
+                            <th>Project Type</th>
+                            <th>Items</th>
+                            <th>Estimated Cost</th>
+                            <th>Times Used</th>
+                            <th>Status</th>
+                            <th>Last Updated</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for template in templates %}
+                        <tr>
+                            <td>
+                                <strong>{{ template.name }}</strong>
+                                {% if template.description %}
+                                <br><small class="text-muted">{{ template.description|truncatewords:10 }}</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ template.get_project_type_display }}</span>
+                            </td>
+                            <td>{{ template.items.count }} items</td>
+                            <td><strong>R{{ template.get_total_estimated_cost|floatformat:2 }}</strong></td>
+                            <td>
+                                <span class="badge bg-info">{{ template.use_count }}</span>
+                            </td>
+                            <td>
+                                {% if template.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ template.updated_at|date:"M d, Y" }}</td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'quotation_template_detail' template.pk %}"
+                                        class="btn btn-outline-primary" title="View">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <a href="{% url 'edit_quotation_template' template.pk %}"
+                                        class="btn btn-outline-secondary" title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a href="{% url 'duplicate_template' template.pk %}" class="btn btn-outline-info"
+                                        title="Duplicate">
+                                        <i class="bi bi-files"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-outline-success"
+                                        onclick="useTemplate({{ template.pk }})" title="Use Template">
+                                        <i class="bi bi-plus-circle"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5">
+                                <i class="bi bi-inbox" style="font-size: 3rem; color: #dee2e6;"></i>
+                                <p class="text-muted mt-3">No templates found</p>
+                                <a href="{% url 'create_quotation_template' %}" class="btn btn-primary">Create Your
+                                    First Template</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1">First</a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+            </li>
+            {% endif %}
+
+            <li class="page-item active">
+                <span class="page-link">{{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            </li>
+
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Last</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+
+<script>
+    function useTemplate(templateId) {
+        if (confirm('Create a new quotation from this template?')) {
+            window.location.href = `/quotations/templates/${templateId}/use/`;
+        }
+    }
+</script>
 {% endblock %}
