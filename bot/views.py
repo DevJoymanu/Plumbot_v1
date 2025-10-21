@@ -163,6 +163,67 @@ GOOGLE_CALENDAR_CREDENTIALS = {
 staff_required = login_required
 
 
+
+@staff_required
+@require_GET
+def quotation_templates_api(request):
+    """API endpoint to fetch templates for the selector modal"""
+    try:
+        # Get query parameters
+        project_type = request.GET.get('project_type')
+        search = request.GET.get('search')
+        active_only = request.GET.get('active_only', 'true').lower() == 'true'
+        
+        # Build queryset
+        templates = QuotationTemplate.objects.all()
+        
+        if active_only:
+            templates = templates.filter(is_active=True)
+        
+        if project_type:
+            templates = templates.filter(project_type=project_type)
+        
+        if search:
+            templates = templates.filter(
+                Q(name__icontains=search) | 
+                Q(description__icontains=search)
+            )
+        
+        # Order by usage and recency
+        templates = templates.order_by('-use_count', '-updated_at')
+        
+        # Serialize templates
+        templates_data = []
+        for template in templates:
+            templates_data.append({
+                'id': template.id,
+                'name': template.name,
+                'description': template.description,
+                'project_type': template.project_type,
+                'project_type_display': template.get_project_type_display(),
+                'items_count': template.items.count(),
+                'use_count': template.use_count,
+                'estimated_cost': float(template.get_total_estimated_cost()),
+                'labor_cost': float(template.default_labor_cost),
+                'transport_cost': float(template.default_transport_cost),
+                'is_active': template.is_active,
+                'created_at': template.created_at.isoformat(),
+                'updated_at': template.updated_at.isoformat(),
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'templates': templates_data,
+            'count': len(templates_data)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
 @method_decorator(staff_required, name='dispatch')
 class QuotationTemplatesListView(ListView):
     """List all quotation templates"""
