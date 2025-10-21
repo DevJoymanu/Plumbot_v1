@@ -1,6 +1,8 @@
 from django import forms
 from .models import Appointment, Quotation, QuotationItem, QuotationTemplate, QuotationTemplateItem
 import json
+from django.forms import inlineformset_factory
+
 # Add to your bot/forms.py (create the file if it doesn't exist)
 
 
