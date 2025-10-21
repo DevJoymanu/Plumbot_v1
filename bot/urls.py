@@ -16,7 +16,7 @@ from .views import (
     # Import quotation template views
     QuotationTemplatesListView, CreateQuotationTemplateView, EditQuotationTemplateView,
     QuotationTemplateDetailView, duplicate_template, delete_template, 
-    use_template, toggle_template_status, quotation_templates_api
+    use_template, toggle_template_status, quotation_templates_api, template_items_api
 )
 
 from django.conf import settings
