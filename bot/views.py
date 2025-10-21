@@ -4,7 +4,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
 from twilio.rest import Client
-from .models import Appointment, Quotation, QuotationItem, QuotationTemplate, QuotationTemplateItem
+from .models import Appointment, Quotation, QuotationItem, QuotationTemplate, QuotationTemplateItem, QuotationTemplateItemFormSet
 import requests
 import datetime
 import pytz
