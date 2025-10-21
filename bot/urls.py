@@ -12,7 +12,7 @@ from .views import (
     CreateQuotationView, ViewQuotationView, EditQuotationView, send_quotation,create_quotation_api,
     # Import job scheduling views
     complete_site_visit, schedule_job, job_appointments_list, update_job_status, reschedule_job,
-    login_view, logout_view, profile_view, change_password_view,
+    login_view, logout_view, profile_view, change_password_view,appointment_detail_api,
     # Import quotation template views
     QuotationTemplatesListView, CreateQuotationTemplateView, EditQuotationTemplateView,
     QuotationTemplateDetailView, duplicate_template, delete_template, 
