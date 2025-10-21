@@ -4,7 +4,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
 from twilio.rest import Client
-from .models import Appointment, Quotation, QuotationItem, QuotationTemplate, QuotationTemplateItem, QuotationTemplateItemFormSet
+from .models import Appointment, Quotation, QuotationItem, QuotationTemplate, QuotationTemplateItem
 import requests
 import datetime
 import pytz
@@ -27,7 +27,7 @@ from django.db.models import Count
 from django.conf import settings
 from django.forms import modelformset_factory
 from .models import Appointment, ConversationMessage
-from .forms import AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm, QuotationForm, QuotationItemFormSet, QuotationTemplateForm
+from .forms import AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm, QuotationForm, QuotationItemFormSet, QuotationTemplateForm, QuotationTemplateItemFormSet
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.views import View
