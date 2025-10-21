@@ -52,7 +52,6 @@ from django.views.generic import ListView, CreateView, UpdateView, DeleteView, D
 from django.contrib import messages
 from django.urls import reverse, reverse_lazy
 from django.db.models import Q
-from .models import , Quotation, QuotationItem
 from .decorators import staff_required
 from django.utils.decorators import method_decorator
 
