@@ -27,7 +27,7 @@ from django.db.models import Count
 from django.conf import settings
 from django.forms import modelformset_factory
 from .models import Appointment, ConversationMessage
-from .forms import AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm, QuotationForm, QuotationItemFormSet
+from .forms import AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm, QuotationForm, QuotationItemFormSet, QuotationTemplateForm
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.views import View
