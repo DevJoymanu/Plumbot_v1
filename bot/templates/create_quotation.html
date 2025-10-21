@@ -1152,7 +1152,6 @@
         };
 
         try {
-            // Get CSRF token
             const csrftoken = getCookie('csrftoken');
 
             const response = await fetch('/api/quotations/create/', {
@@ -1169,16 +1168,15 @@
             if (response.ok && result.success) {
                 showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
 
-                // Redirect after 2 seconds
-                if (result.quotation_id) {
-                    setTimeout(() => {
-                        if (currentAppointmentId) {
-                            window.location.href = `/appointments/${currentAppointmentId}/`;
-                        } else {
-                            window.location.href = `/quotations/${result.quotation_id}/`;
-                        }
-                    }, 2000);
-                }
+                // Redirect to the related appointment after 2 seconds
+                setTimeout(() => {
+                    if (result.appointment_id) {
+                        // FIXED: Redirect to appointment detail page
+                        window.location.href = `/appointments/${result.appointment_id}/`;
+                    } else if (result.quotation_id) {
+                        window.location.href = `/quotations/${result.quotation_id}/`;
+                    }
+                }, 2000);
             } else {
                 showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
             }
