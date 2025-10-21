@@ -92,8 +92,8 @@
                 <div class="col-md-3">
                     <select name="status" class="form-select">
                         <option value="">All Status</option>
-                        <option value="active" {% if request.GET.status=='active' %}selected{% endif %}>Active</option>
-                        <option value="inactive" {% if request.GET.status=='inactive' %}selected{% endif %}>Inactive
+                        <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive
                         </option>
                     </select>
                 </div>
