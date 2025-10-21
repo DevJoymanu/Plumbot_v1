@@ -220,6 +220,40 @@
         <div class="card-header">
             <h3><i class="fas fa-file-invoice-dollar"></i> Quotations</h3>
         </div>
+        <!-- Add this in the Quotations section of appointment_detail.html -->
+        <div class="quotation-section">
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-file-invoice-dollar"></i> Quotations</h3>
+                    <div style="display: flex; gap: 10px;">
+                        <a href="{% url 'create_quotation' appointment.pk %}" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> New Quotation
+                        </a>
+        
+                        <!-- Template Dropdown -->
+                        <div class="dropdown" style="position: relative;">
+                            <button class="btn btn-success" onclick="toggleTemplateDropdown()" id="templateDropdownBtn">
+                                <i class="fas fa-file-invoice"></i> From Template
+                                <i class="fas fa-chevron-down" style="margin-left: 5px; font-size: 0.8em;"></i>
+                            </button>
+                            <div id="templateDropdown"
+                                style="display: none; position: absolute; top: 100%; right: 0; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); min-width: 250px; max-height: 400px; overflow-y: auto; margin-top: 5px; z-index: 1000;">
+                                <div style="padding: 10px; border-bottom: 1px solid #eee;">
+                                    <input type="text" id="quickTemplateSearch" placeholder="Search templates..."
+                                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;"
+                                        oninput="quickSearchTemplates()">
+                                </div>
+                                <div id="quickTemplateList" style="padding: 5px;">
+                                    <!-- Templates loaded here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Rest of quotation section -->
+            </div>
+        </div>
+
         <div class="card-body">
             {% if appointment.quotations.exists %}
             <div class="quotations-list">
@@ -440,6 +474,79 @@
                 });
         }
     }
+// Quick template dropdown
+            let quickTemplates = [];
+
+            async function toggleTemplateDropdown() {
+    const dropdown = document.getElementById('templateDropdown');
+
+            if (dropdown.style.display === 'none') {
+                dropdown.style.display = 'block';
+            await loadQuickTemplates();
+    } else {
+                dropdown.style.display = 'none';
+    }
+}
+
+            async function loadQuickTemplates() {
+    const listEl = document.getElementById('quickTemplateList');
+            listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;"><i class="fas fa-spinner fa-spin"></i></div>';
+
+            try {
+        const response = await fetch('/api/quotation-templates/?active_only=true');
+            const data = await response.json();
+
+            if (data.success && data.templates) {
+                quickTemplates = data.templates;
+            displayQuickTemplates(quickTemplates);
+        }
+    } catch (error) {
+                console.error('Error loading templates:', error);
+            listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Failed to load</div>';
+    }
+}
+
+            function displayQuickTemplates(templates) {
+    const listEl = document.getElementById('quickTemplateList');
+
+            if (templates.length === 0) {
+                listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No templates found</div>';
+            return;
+    }
+    
+    listEl.innerHTML = templates.map(t => `
+            <a href="/templates/${t.id}/use/{{ appointment.pk }}/"
+                style="display: block; padding: 12px; text-decoration: none; color: #333; border-bottom: 1px solid #f0f0f0;"
+                onmouseover="this.style.background='#f8f9fa'"
+                onmouseout="this.style.background='white'">
+                <div style="font-weight: 600; margin-bottom: 4px;">${t.name}</div>
+                <div style="font-size: 0.85em; color: #666;">
+                    ${t.items_count} items • R${t.estimated_cost.toFixed(2)}
+                </div>
+            </a>
+    `).join('');
+}
+
+function quickSearchTemplates() {
+    const search = document.getElementById('quickTemplateSearch').value.toLowerCase();
+    const filtered = quickTemplates.filter(t =>
+        t.name.toLowerCase().includes(search) ||
+        (t.description && t.description.toLowerCase().includes(search))
+    );
+    displayQuickTemplates(filtered);
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('templateDropdown');
+    const btn = document.getElementById('templateDropdownBtn');
+
+    if (dropdown && btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
+        dropdown.style.display = 'none';
+    }
+});
+    
+
 </script>
 
 <style>

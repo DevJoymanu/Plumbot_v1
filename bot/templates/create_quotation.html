@@ -604,7 +604,237 @@
         </div>
     </div>
 
+<!-- Template Selector Modal -->
+<div id="templateModal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999;">
+    <div
+        style="background: white; margin: 50px auto; max-width: 800px; border-radius: 12px; padding: 30px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
+            <button onclick="closeTemplateModal()"
+                style="background: none; border: none; font-size: 1.5em; cursor: pointer;">&times;</button>
+        </div>
+
+        <!-- Search and Filters -->
+        <div style="margin-bottom: 20px;">
+            <input type="text" id="templateSearch" placeholder="Search templates..."
+                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;"
+                oninput="searchTemplates()">
+
+            <select id="templateProjectFilter" onchange="filterTemplates()"
+                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                <option value="">All Project Types</option>
+                <option value="bathroom_renovation">Bathroom Renovation</option>
+                <option value="kitchen_renovation">Kitchen Renovation</option>
+                <option value="new_plumbing_installation">New Plumbing Installation</option>
+            </select>
+        </div>
+
+        <!-- Templates List -->
+        <div id="templatesList" style="display: grid; gap: 15px;">
+            <!-- Templates will be loaded here -->
+        </div>
+
+        <div id="templatesLoading" style="text-align: center; padding: 40px; color: #666;">
+            <i class="fas fa-spinner fa-spin" style="font-size: 2em;"></i>
+            <p>Loading templates...</p>
+        </div>
+
+        <div id="templatesEmpty" style="display: none; text-align: center; padding: 40px; color: #666;">
+            <i class="fas fa-inbox" style="font-size: 3em; opacity: 0.3;"></i>
+            <p>No templates found</p>
+        </div>
+    </div>
+</div>
+
+
+
     <script>
+
+    let allTemplates = [];
+
+    // Add button to open template selector
+    document.addEventListener('DOMContentLoaded', function () {
+        // Add "Use Template" button to the header
+        const header = document.querySelector('.header');
+        if (header) {
+            const templateBtn = document.createElement('button');
+            templateBtn.className = 'btn btn-success';
+            templateBtn.innerHTML = '<i class="fas fa-file-invoice"></i> Use Template';
+            templateBtn.onclick = openTemplateModal;
+            templateBtn.style.marginTop = '10px';
+            header.appendChild(templateBtn);
+        }
+    });
+
+    async function openTemplateModal() {
+        document.getElementById('templateModal').style.display = 'block';
+        document.getElementById('templatesLoading').style.display = 'block';
+        document.getElementById('templatesList').innerHTML = '';
+        document.getElementById('templatesEmpty').style.display = 'none';
+
+        try {
+            const response = await fetch('/api/quotation-templates/?active_only=true');
+            const data = await response.json();
+
+            if (data.success && data.templates) {
+                allTemplates = data.templates;
+                displayTemplates(allTemplates);
+            } else {
+                showTemplatesEmpty();
+            }
+        } catch (error) {
+            console.error('Error loading templates:', error);
+            showAlert('Failed to load templates', 'error');
+            closeTemplateModal();
+        } finally {
+            document.getElementById('templatesLoading').style.display = 'none';
+        }
+    }
+
+    function closeTemplateModal() {
+        document.getElementById('templateModal').style.display = 'none';
+    }
+
+    function displayTemplates(templates) {
+        const container = document.getElementById('templatesList');
+
+        if (templates.length === 0) {
+            showTemplatesEmpty();
+            return;
+        }
+
+        container.innerHTML = templates.map(template => `
+        <div class="template-card" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.2s;"
+             onclick="useTemplate(${template.id})"
+             onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'"
+             onmouseout="this.style.boxShadow='none'">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                <div>
+                    <h3 style="margin: 0 0 5px 0; color: #2d3748;">${template.name}</h3>
+                    <p style="margin: 0; color: #666; font-size: 0.9em;">${template.description || 'No description'}</p>
+                </div>
+                <span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 12px; font-size: 0.8em; white-space: nowrap;">
+                    ${template.project_type_display}
+                </span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                <div>
+                    <div style="font-size: 0.8em; color: #666;">Items</div>
+                    <div style="font-weight: 600; color: #2d3748;">${template.items_count}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.8em; color: #666;">Estimated Cost</div>
+                    <div style="font-weight: 600; color: #10b981;">R${template.estimated_cost.toFixed(2)}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.8em; color: #666;">Used</div>
+                    <div style="font-weight: 600; color: #667eea;">${template.use_count}x</div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    }
+
+    function showTemplatesEmpty() {
+        document.getElementById('templatesList').innerHTML = '';
+        document.getElementById('templatesEmpty').style.display = 'block';
+    }
+
+    async function useTemplate(templateId) {
+        if (!confirm('Load this template? Your current items will be replaced.')) {
+            return;
+        }
+
+        try {
+            // Fetch template details
+            const response = await fetch(`/api/quotation-templates/?template_id=${templateId}`);
+            const data = await response.json();
+
+            if (!data.success || data.templates.length === 0) {
+                showAlert('Failed to load template', 'error');
+                return;
+            }
+
+            const template = data.templates[0];
+
+            // Clear existing items
+            items = [];
+
+            // Load template items
+            // Note: You'll need to add an endpoint that returns template items
+            const itemsResponse = await fetch(`/api/quotation-templates/${templateId}/items/`);
+            const itemsData = await itemsResponse.json();
+
+            if (itemsData.success && itemsData.items) {
+                items = itemsData.items.map((item, index) => ({
+                    id: Date.now() + index,
+                    name: item.description,
+                    qty: parseFloat(item.quantity),
+                    price: parseFloat(item.unit_price)
+                }));
+            }
+
+            // Set costs
+            document.getElementById('labourCost').value = template.labor_cost || 0;
+            document.getElementById('transportCost').value = template.transport_cost || 0;
+
+            // Set notes
+            if (template.description) {
+                const notesField = document.getElementById('projectNotes');
+                if (notesField) {
+                    notesField.value = `Template: ${template.name}\n\n${template.description}`;
+                }
+            }
+
+            // Render items and recalculate
+            renderItems();
+            calculateTotals();
+
+            closeTemplateModal();
+            showAlert(`Template "${template.name}" loaded successfully!`, 'success');
+
+        } catch (error) {
+            console.error('Error using template:', error);
+            showAlert('Failed to use template', 'error');
+        }
+    }
+
+    function searchTemplates() {
+        const searchTerm = document.getElementById('templateSearch').value.toLowerCase();
+        const filtered = allTemplates.filter(t =>
+            t.name.toLowerCase().includes(searchTerm) ||
+            (t.description && t.description.toLowerCase().includes(searchTerm))
+        );
+        displayTemplates(filtered);
+    }
+
+    function filterTemplates() {
+        const projectType = document.getElementById('templateProjectFilter').value;
+
+        if (!projectType) {
+            displayTemplates(allTemplates);
+            return;
+        }
+
+        const filtered = allTemplates.filter(t => t.project_type === projectType);
+        displayTemplates(filtered);
+    }
+
+    // Close modal when clicking outside
+    document.addEventListener('DOMContentLoaded', function () {
+        const modal = document.getElementById('templateModal');
+        if (modal) {
+            modal.addEventListener('click', function (e) {
+                if (e.target === modal) {
+                    closeTemplateModal();
+                }
+            });
+        }
+    });
+
+
         let items = [];
         let currentAppointmentId = null;
 
@@ -877,75 +1107,107 @@
             }
         }
 
-        async function saveQuotation() {
-            const clientName = document.getElementById('clientName').value.trim();
-            const projectType = document.getElementById('projectType').value.trim();
 
-            if (!clientName || !projectType) {
-                showAlert('Please fill in required fields', 'error');
-                return;
-            }
+    async function saveQuotation() {
+        const clientName = document.getElementById('clientName').value.trim();
+        const projectType = document.getElementById('projectType').value.trim();
 
-            if (items.length === 0) {
-                showAlert('Please add at least one item', 'error');
-                return;
-            }
+        if (!clientName || !projectType) {
+            showAlert('Please fill in required fields', 'error');
+            return;
+        }
 
-            const saveBtn = document.getElementById('saveBtn');
-            saveBtn.classList.add('loading');
-            saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
+        if (items.length === 0) {
+            showAlert('Please add at least one item', 'error');
+            return;
+        }
 
-            const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
-            const labour = parseFloat(document.getElementById('labourCost').value) || 0;
-            const transport = parseFloat(document.getElementById('transportCost').value) || 0;
+        const saveBtn = document.getElementById('saveBtn');
+        saveBtn.classList.add('loading');
+        saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
 
-            const quotationData = {
-                appointment_id: currentAppointmentId,
-                items: items.map(item => ({
-                    name: item.name,
-                    qty: item.qty,
-                    unit: item.price
-                })),
-                labour_cost: labour,
-                transport_cost: transport,
-                materials_cost: materials,
-                total_amount: materials + labour + transport,
-                notes: document.getElementById('projectNotes').value.trim()
-            };
+        const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
+        const labour = parseFloat(document.getElementById('labourCost').value) || 0;
+        const transport = parseFloat(document.getElementById('transportCost').value) || 0;
 
-            try {
-                const response = await fetch('/quotations/create/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCsrfToken()
-                    },
-                    body: JSON.stringify(quotationData)
-                });
+        const quotationData = {
+            appointment_id: currentAppointmentId,
+            client_name: clientName,
+            client_email: document.getElementById('clientEmail').value.trim(),
+            client_phone: document.getElementById('clientPhone').value.trim(),
+            client_address: document.getElementById('clientAddress').value.trim(),
+            project_type: projectType,
+            project_location: document.getElementById('projectLocation').value.trim(),
+            project_notes: document.getElementById('projectNotes').value.trim(),
+            items: items.map(item => ({
+                name: item.name,
+                qty: item.qty,
+                unit: item.price
+            })),
+            labour_cost: labour,
+            transport_cost: transport,
+            materials_cost: materials,
+            total_amount: materials + labour + transport,
+            notes: document.getElementById('projectNotes').value.trim()
+        };
 
-                const result = await response.json();
+        try {
+            // Get CSRF token
+            const csrftoken = getCookie('csrftoken');
 
-                if (response.ok && result.success) {
-                    showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
+            const response = await fetch('/api/quotations/create/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify(quotationData)
+            });
 
-                    // Optionally redirect after 2 seconds
-                    if (result.quotation_id) {
-                        setTimeout(() => {
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
+
+                // Redirect after 2 seconds
+                if (result.quotation_id) {
+                    setTimeout(() => {
+                        if (currentAppointmentId) {
+                            window.location.href = `/appointments/${currentAppointmentId}/`;
+                        } else {
                             window.location.href = `/quotations/${result.quotation_id}/`;
-                        }, 2000);
-                    }
-                } else {
-                    showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
+                        }
+                    }, 2000);
                 }
+            } else {
+                showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
+            }
 
-            } catch (error) {
-                console.error('Error saving quotation:', error);
-                showAlert('Failed to save quotation. Please try again.', 'error');
-            } finally {
-                saveBtn.classList.remove('loading');
-                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+        } catch (error) {
+            console.error('Error saving quotation:', error);
+            showAlert('Failed to save quotation. Please try again.', 'error');
+        } finally {
+            saveBtn.classList.remove('loading');
+            saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+        }
+    }
+
+    // Helper function to get CSRF token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
             }
         }
+        return cookieValue;
+    }
+
 
         function getCsrfToken() {
             const cookies = document.cookie.split(';');

@@ -6,6 +6,7 @@ import pytz
 import json
 import re
 import uuid
+from decimal import Decimal
 
 
 
@@ -975,6 +976,7 @@ class Job(models.Model):
     class Meta:
         ordering = ['-scheduled_datetime']
 
+
 class Quotation(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -985,57 +987,50 @@ class Quotation(models.Model):
     
     appointment = models.ForeignKey('Appointment', on_delete=models.CASCADE, related_name='quotations')
     plumber = models.ForeignKey('auth.User', on_delete=models.CASCADE, null=True, blank=True)
-    quotation_number = models.CharField(max_length=20, unique=True)
+    quotation_number = models.CharField(max_length=20, unique=True, blank=True)
+    
+    # Costs
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     labor_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     materials_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    transport_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # ADDED
+    
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    
+    # Tracking
     sent_via_whatsapp = models.BooleanField(default=False)
     sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    transport_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0),
-   
-    # Then update the save method to include it in total calculation:
-    def save(self, *args, **kwargs):
-        if not self.quotation_number:
-            # Generate quotation number
-            today = timezone.now().date()
-            quote_count = Quotation.objects.filter(
-                created_at__date=today
-            ).count() + 1
-            self.quotation_number = f"Q{today.strftime('%Y%m%d')}{quote_count:03d}"
-        
-        # Calculate total amount - handle case when quotation is new (no pk yet)
-        if self.pk:
-            # Quotation exists, can access related items
-            items_total = sum(item.total_price for item in self.items.all())
-        else:
-            # New quotation, no items yet
-            items_total = 0
-        
-        self.total_amount = items_total + self.labor_cost + self.materials_cost
-        
-        super().save(*args, **kwargs)
-        
-    def __str__(self):
-        return f"Quotation #{self.quotation_number} - {self.appointment.customer_name}"
+    
+    class Meta:
+        ordering = ['-created_at']
     
     def save(self, *args, **kwargs):
+        # Generate quotation number if not exists
         if not self.quotation_number:
-            # Generate quotation number
             today = timezone.now().date()
             quote_count = Quotation.objects.filter(
                 created_at__date=today
             ).count() + 1
             self.quotation_number = f"Q{today.strftime('%Y%m%d')}{quote_count:03d}"
         
-        # Calculate total amount
-        items_total = sum(item.total_price for item in self.items.all())
-        self.total_amount = items_total + self.labor_cost + self.materials_cost
+        # Calculate total - handle both new and existing quotations
+        if self.pk:
+            # Existing quotation - can access items
+            items_total = sum(item.total_price for item in self.items.all())
+        else:
+            # New quotation - no items yet
+            items_total = Decimal('0.00')
+        
+        self.total_amount = items_total + self.labor_cost + self.materials_cost + self.transport_cost
         
         super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"Quotation #{self.quotation_number} - {self.appointment.customer_name}"
+
 
 class QuotationItem(models.Model):
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='items')

@@ -44,6 +44,10 @@ urlpatterns = [
     path('appointments/<int:pk>/followup/', send_followup, name='send_followup'),
     path('appointments/<int:pk>/confirm/', confirm_appointment, name='confirm_appointment'),
     path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),
+
+        # API endpoints for fetching appointment data
+    path('api/appointments/<int:appointment_id>/', appointment_detail_api, name='appointment_detail_api'),
+
     
     # Job scheduling URLs
     path('appointments/<int:pk>/complete-site-visit/', complete_site_visit, name='complete_site_visit'),
@@ -56,12 +60,13 @@ urlpatterns = [
     path('appointments/<int:pk>/documents/', AppointmentDocumentsView.as_view(), name='appointment_documents'),
     path('appointments/<int:pk>/download/<str:document_type>/', download_document, name='download_document'),
     
-    # Quotation Routes
+    path('api/quotations/create/', create_quotation_api, name='create_quotation_api'),
+    
+    # Quotation Views
     path('appointments/<int:pk>/create-quotation/', CreateQuotationView.as_view(), name='create_quotation'),
     path('quotations/<int:pk>/', ViewQuotationView.as_view(), name='view_quotation'),
     path('quotations/<int:pk>/edit/', EditQuotationView.as_view(), name='edit_quotation'),
     path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),
-    path('quotations/create/', create_quotation_api, name='create_quotation_api'),
 
     # ===== NEW: Quotation Templates URLs =====
     path('templates/', QuotationTemplatesListView.as_view(), name='quotation_templates_list'),
@@ -88,6 +93,12 @@ urlpatterns = [
 
     path('calendar/', CalendarView.as_view(), name='calendar'),
     path('media/', handle_whatsapp_media, name='whatsapp_media'),
+
+        # Template Items API
+    path('api/quotation-templates/<int:template_id>/items/', 
+         template_items_api, 
+         name='template_items_api'),
+
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

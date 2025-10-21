@@ -147,24 +147,25 @@
                             </td>
                             <td>{{ template.updated_at|date:"M d, Y" }}</td>
                             <td class="text-end">
-                                <div class="btn-group btn-group-sm">
-                                    <a href="{% url 'quotation_template_detail' template.pk %}"
-                                        class="btn btn-outline-primary" title="View">
+                                <!-- Add to each template row -->
+                                <div class="template-actions" style="display: flex; gap: 8px;">
+                                    <a href="{% url 'quotation_template_detail' template.pk %}" class="btn btn-sm btn-outline-primary" title="View">
                                         <i class="bi bi-eye"></i>
                                     </a>
-                                    <a href="{% url 'edit_quotation_template' template.pk %}"
-                                        class="btn btn-outline-secondary" title="Edit">
+                                    <a href="{% url 'edit_quotation_template' template.pk %}" class="btn btn-sm btn-outline-secondary" title="Edit">
                                         <i class="bi bi-pencil"></i>
                                     </a>
-                                    <a href="{% url 'duplicate_template' template.pk %}" class="btn btn-outline-info"
-                                        title="Duplicate">
+                                    <a href="{% url 'duplicate_template' template.pk %}" class="btn btn-sm btn-outline-info" title="Duplicate">
                                         <i class="bi bi-files"></i>
                                     </a>
-                                    <button type="button" class="btn btn-outline-success"
-                                        onclick="useTemplate({{ template.pk }})" title="Use Template">
-                                        <i class="bi bi-plus-circle"></i>
+                                
+                                    <!-- Quick Use Button -->
+                                    <button type="button" class="btn btn-sm btn-success" onclick="quickUseTemplate({{ template.pk }})"
+                                        title="Use Template">
+                                        <i class="bi bi-plus-circle"></i> Use
                                     </button>
                                 </div>
+
                             </td>
                         </tr>
                         {% empty %}
@@ -214,10 +215,9 @@
 </div>
 
 <script>
-    function useTemplate(templateId) {
-        if (confirm('Create a new quotation from this template?')) {
-            window.location.href = `/quotations/templates/${templateId}/use/`;
-        }
+    function quickUseTemplate(templateId) {
+        // Redirect to create quotation with template
+        window.location.href = `/templates/${templateId}/use/`;
     }
 </script>
 {% endblock %}

@@ -430,14 +430,14 @@ def toggle_template_status(request, pk):
     return JsonResponse({'success': False}, status=400)
 
 
-# Quotation Views
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_quotation_api(request):
+    """Fixed API endpoint for creating quotations"""
     try:
         data = json.loads(request.body)
         
-        # Handle appointment - create one if not provided
+        # Get or create appointment
         appointment = None
         if data.get('appointment_id'):
             try:
@@ -448,63 +448,44 @@ def create_quotation_api(request):
                     'error': 'Appointment not found'
                 }, status=400)
         else:
-            # Create a temporary appointment for standalone quotations
-            # Generate a unique phone number to avoid conflicts
+            # Create standalone appointment
             import uuid
-            unique_phone = f"quotation_{uuid.uuid4().hex[:8]}_{data.get('client_phone', 'unknown')}"
+            unique_phone = f"quotation_{uuid.uuid4().hex[:8]}"
             
             appointment = Appointment.objects.create(
-                phone_number=unique_phone,  # Use unique phone number
+                phone_number=unique_phone,
                 customer_name=data.get('client_name', 'Unknown Customer'),
                 customer_email=data.get('client_email', ''),
                 customer_area=data.get('client_address', ''),
                 project_type=data.get('project_type', ''),
                 project_description=data.get('project_notes', ''),
-                status='pending'  # Use a valid status from your STATUS_CHOICES
+                status='pending'
             )
         
-        # Create the quotation with your actual model fields
-        # First save quotation without calculating totals
+        # Create quotation WITHOUT items first
         quotation = Quotation(
             appointment=appointment,
-            labor_cost=data.get('labour_cost', 0),
-            materials_cost=data.get('materials_cost', 0),
-            notes=data.get('project_notes', ''),
+            labor_cost=Decimal(str(data.get('labour_cost', 0))),
+            transport_cost=Decimal(str(data.get('transport_cost', 0))),
+            materials_cost=Decimal(str(data.get('materials_cost', 0))),
+            notes=data.get('notes', ''),
             status='draft'
         )
         
-        # Temporarily override the save method to avoid the items calculation
-        original_save = quotation.save
-        def temp_save(*args, **kwargs):
-            if not quotation.quotation_number:
-                # Generate quotation number
-                from django.utils import timezone
-                today = timezone.now().date()
-                quote_count = Quotation.objects.filter(
-                    created_at__date=today
-                ).count() + 1
-                quotation.quotation_number = f"Q{today.strftime('%Y%m%d')}{quote_count:03d}"
-            
-            # Skip items calculation on first save
-            quotation.total_amount = quotation.labor_cost + quotation.materials_cost
-            super(Quotation, quotation).save(*args, **kwargs)
-        
-        quotation.save = temp_save
+        # Save without triggering item calculation
         quotation.save()
         
-        # Now create quotation items
+        # Now create items
         for item_data in data.get('items', []):
-            if item_data.get('name'):  # Only create if name is provided
+            if item_data.get('name'):
                 QuotationItem.objects.create(
                     quotation=quotation,
                     description=item_data.get('name', ''),
-                    quantity=item_data.get('qty', 1),
-                    unit_price=item_data.get('unit', 0)
-                    # total_price gets calculated in QuotationItem.save()
+                    quantity=Decimal(str(item_data.get('qty', 1))),
+                    unit_price=Decimal(str(item_data.get('unit', 0)))
                 )
         
-        # Restore original save method and recalculate totals
-        quotation.save = original_save
+        # Recalculate total with items
         quotation.save()
         
         return JsonResponse({
@@ -516,11 +497,110 @@ def create_quotation_api(request):
         
     except Exception as e:
         import traceback
-        print(traceback.format_exc())  # This will help debug the exact error
+        print(traceback.format_exc())
         return JsonResponse({
             'success': False,
             'error': str(e)
         }, status=400)
+
+@staff_required
+def appointment_detail_api(request, appointment_id):
+    """API endpoint to get appointment details"""
+    try:
+        appointment = get_object_or_404(Appointment, id=appointment_id)
+        
+        data = {
+            'id': appointment.id,
+            'customer_name': appointment.customer_name or '',
+            'customer_email': appointment.customer_email or '',
+            'phone_number': appointment.phone_number or '',
+            'customer_area': appointment.customer_area or '',
+            'project_type': appointment.project_type or '',
+            'property_type': appointment.property_type or '',
+            'house_stage': appointment.house_stage or '',
+            'project_description': appointment.project_description or '',
+            'timeline': appointment.timeline or '',
+        }
+        
+        return JsonResponse(data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=404)
+
+
+@staff_required
+def use_template(request, template_pk, appointment_pk=None):
+    """Create a quotation from a template - ENHANCED"""
+    template = get_object_or_404(QuotationTemplate, pk=template_pk)
+    
+    # Increment use count
+    template.use_count += 1
+    template.save()
+    
+    # Get appointment if provided
+    appointment = None
+    if appointment_pk:
+        appointment = get_object_or_404(Appointment, pk=appointment_pk)
+    
+    # Create new quotation from template
+    quotation = Quotation.objects.create(
+        appointment=appointment,
+        labor_cost=template.default_labor_cost,
+        transport_cost=template.default_transport_cost,
+        materials_cost=0,  # Will be calculated from items
+        notes=f"Created from template: {template.name}\n\n{template.description}",
+        status='draft'
+    )
+    
+    # Copy items from template
+    for template_item in template.items.all():
+        QuotationItem.objects.create(
+            quotation=quotation,
+            description=template_item.description,
+            quantity=template_item.quantity,
+            unit_price=template_item.unit_price
+        )
+    
+    # Recalculate totals
+    quotation.save()
+    
+    messages.success(request, f'Quotation created from template "{template.name}"')
+    
+    # Redirect to edit page
+    return redirect('edit_quotation', pk=quotation.pk)
+
+
+@staff_required
+def template_items_api(request, template_id):
+    """Get template items for loading into quotation form"""
+    try:
+        template = get_object_or_404(QuotationTemplate, id=template_id)
+        
+        items = []
+        for item in template.items.all():
+            items.append({
+                'description': item.description,
+                'quantity': float(item.quantity),
+                'unit_price': float(item.unit_price),
+                'category': item.category,
+                'is_optional': item.is_optional,
+                'notes': item.notes or ''
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'items': items
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=404)
+
+
 
 # Alternative: Update your existing CreateQuotationView to handle both cases
 class CreateQuotationView(CreateView):
