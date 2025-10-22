@@ -439,16 +439,21 @@ def create_quotation_api(request):
         
         # Get or create appointment
         appointment = None
-        if data.get('appointment_id'):
+        appointment_id = data.get('appointment_id')
+        
+        if appointment_id:
+            # Use existing appointment
             try:
-                appointment = Appointment.objects.get(id=data['appointment_id'])
+                appointment = Appointment.objects.get(id=appointment_id)
+                print(f"✅ Using existing appointment: {appointment_id}")
             except Appointment.DoesNotExist:
                 return JsonResponse({
                     'success': False,
                     'error': 'Appointment not found'
                 }, status=400)
         else:
-            # Create standalone appointment
+            # For standalone quotations, still need an appointment record
+            # but mark it clearly as quotation-only
             import uuid
             unique_phone = f"quotation_{uuid.uuid4().hex[:8]}"
             
@@ -457,14 +462,17 @@ def create_quotation_api(request):
                 customer_name=data.get('client_name', 'Unknown Customer'),
                 customer_email=data.get('client_email', ''),
                 customer_area=data.get('client_address', ''),
-                project_type=data.get('project_type', ''),
+                project_type=data.get('project_type', 'other'),
                 project_description=data.get('project_notes', ''),
-                status='pending'
+                status='pending',  # Keep as pending since it's just for quotation
+                # Add a flag to identify quotation-only appointments
+                internal_notes='Quotation-only appointment (no site visit scheduled)'
             )
+            print(f"✅ Created new appointment for quotation: {appointment.id}")
         
-        # Create quotation WITHOUT items first
-        quotation = Quotation(
-            appointment=appointment,
+        # Create quotation linked to the appointment
+        quotation = Quotation.objects.create(
+            appointment=appointment,  # Link to appointment (not create AS appointment)
             labor_cost=Decimal(str(data.get('labour_cost', 0))),
             transport_cost=Decimal(str(data.get('transport_cost', 0))),
             materials_cost=Decimal(str(data.get('materials_cost', 0))),
@@ -472,14 +480,13 @@ def create_quotation_api(request):
             status='draft'
         )
         
-        # Save without triggering item calculation
-        quotation.save()
+        print(f"✅ Created quotation: {quotation.id} for appointment: {appointment.id}")
         
-        # Now create items
+        # Create quotation items
         for item_data in data.get('items', []):
             if item_data.get('name'):
                 QuotationItem.objects.create(
-                    quotation=quotation,
+                    quotation=quotation,  # Link items to quotation
                     description=item_data.get('name', ''),
                     quantity=Decimal(str(item_data.get('qty', 1))),
                     unit_price=Decimal(str(item_data.get('unit', 0)))
@@ -488,20 +495,27 @@ def create_quotation_api(request):
         # Recalculate total with items
         quotation.save()
         
+        print(f"✅ Quotation saved successfully with {quotation.items.count()} items")
+        
+        # Redirect to the related appointment after saving
         return JsonResponse({
             'success': True,
             'message': 'Quotation created successfully',
             'quotation_id': quotation.id,
-            'quotation_number': quotation.quotation_number
+            'quotation_number': quotation.quotation_number,
+            'appointment_id': appointment.id,
+            'redirect_url': f'/appointments/{appointment.id}/'  # Redirect to appointment
         })
         
     except Exception as e:
         import traceback
+        print(f"❌ Error creating quotation: {str(e)}")
         print(traceback.format_exc())
         return JsonResponse({
             'success': False,
             'error': str(e)
         }, status=400)
+
 
 @staff_required
 def appointment_detail_api(request, appointment_id):
