@@ -459,7 +459,7 @@
         <div class="header">
             <h1><i class="fas fa-calculator"></i> Quotation Generator</h1>
             <p>"Quality Is Our Qualification"</p>
-            
+
             <!-- Appointment Information Display -->
             <div id="appointmentInfo" class="appointment-info" style="display: none;">
                 <strong>Appointment Details</strong>
@@ -818,7 +818,7 @@
         function showAppointmentInfo(appointment) {
             const infoDiv = document.getElementById('appointmentInfo');
             const detailsDiv = document.getElementById('appointmentDetails');
-            
+
             if (appointment.customer_name || appointment.project_type) {
                 let details = '';
                 if (appointment.customer_name) {
@@ -830,7 +830,7 @@
                 if (appointment.customer_area) {
                     details += `Area: ${appointment.customer_area}`;
                 }
-                
+
                 detailsDiv.innerHTML = details;
                 infoDiv.style.display = 'block';
             }
@@ -856,7 +856,7 @@
 
         function getProjectKey(projectType) {
             if (!projectType) return '';
-            
+
             // Map common project types to template keys
             const keyMap = {
                 'bathroom_renovation': 'bathroom_renovation',
@@ -988,7 +988,7 @@
                 // Add template notes
                 const currentNotes = document.getElementById('projectNotes').value;
                 if (template.description) {
-                    const newNotes = currentNotes ? 
+                    const newNotes = currentNotes ?
                         `${currentNotes}\n\nTemplate: ${template.name}\n${template.description}` :
                         `Template: ${template.name}\n${template.description}`;
                     document.getElementById('projectNotes').value = newNotes;
@@ -1310,4 +1310,5 @@
         renderItems();
     </script>
 </body>
+
 </html>
