@@ -1,582 +1,225 @@
-{% extends 'base.html' %}
-{% load static %}
-
-{% block title %}{% if object %}Edit{% else %}Create{% endif %} Quotation Template{% endblock %}
-
-{% block extra_css %}
-<style>
-    :root {
-        --primary: #667eea;
-        --primary-dark: #764ba2;
-        --success: #10b981;
-        --danger: #dc2626;
-        --secondary: #6b7280;
-        --info: #3b82f6;
-        --warning: #f59e0b;
-        --light: #f8f9fa;
-        --dark: #2d3748;
-    }
-
-    body {
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        min-height: 100vh;
-    }
-
-    .page-header {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: white;
-    }
-
-    .page-header h2 {
-        color: white;
-        font-size: clamp(1.4rem, 4vw, 1.8rem);
-        margin-bottom: 5px;
-    }
-
-    .page-header p {
-        color: rgba(255, 255, 255, 0.9);
-        margin-bottom: 0;
-        font-size: clamp(0.9rem, 3vw, 1rem);
-    }
-
-    .card {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-        border: none;
-        margin-bottom: 20px;
-    }
-
-    .card-header {
-        background: transparent;
-        border-bottom: 2px solid #f0f0f0;
-        padding: 16px 20px;
-        font-weight: 600;
-        color: var(--dark);
-        font-size: 1.05rem;
-    }
-
-    .card-header.bg-primary {
-        background: linear-gradient(135deg, var(--primary), var(--primary-dark)) !important;
-        color: white;
-        border: none;
-    }
-
-    .card-header.bg-success {
-        background: var(--success) !important;
-        color: white;
-        border: none;
-    }
-
-    .form-label {
-        font-weight: 600;
-        color: var(--dark);
-        margin-bottom: 6px;
-        font-size: 0.95rem;
-    }
-
-    .form-control,
-    .form-select,
-    textarea {
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 10px 12px;
-        font-size: 0.95rem;
-        transition: all 0.2s ease-in-out;
-    }
-
-    .form-control:focus,
-    .form-select:focus,
-    textarea:focus {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        outline: none;
-    }
-
-    .table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    .table th,
-    .table td {
-        padding: 10px;
-        font-size: 0.9rem;
-        vertical-align: middle;
-    }
-
-    .table thead {
-        background: #f8f9fa;
-    }
-
-    .btn {
-        border-radius: 8px;
-        padding: 10px 20px;
-        font-weight: 600;
-        font-size: 0.95rem;
-        border: none;
-        transition: 0.2s ease-in-out;
-    }
-
-    .btn:hover {
-        transform: translateY(-1px);
-    }
-
-    .btn-primary {
-        background: var(--primary);
-        color: #fff;
-    }
-
-    .btn-primary:hover {
-        background: var(--primary-dark);
-        box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
-    }
-
-    .btn-success {
-        background: var(--success);
-        color: #fff;
-    }
-
-    .btn-outline-secondary {
-        border: 2px solid var(--secondary);
-        color: var(--secondary);
-        background: #fff;
-    }
-
-    .btn-outline-secondary:hover {
-        background: var(--secondary);
-        color: #fff;
-    }
-
-    .btn-outline-primary {
-        border: 2px solid var(--primary);
-        color: var(--primary);
-        background: #fff;
-    }
-
-    .btn-outline-primary:hover {
-        background: var(--primary);
-        color: #fff;
-    }
-
-    .alert {
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 15px;
-        border: none;
-    }
-
-    .alert-info {
-        background: #e0f2fe;
-        color: #0369a1;
-        border-left: 4px solid var(--info);
-    }
-
-    /* 📱 Responsive Tweaks */
-    @media (max-width: 992px) {
-
-        .col-md-6,
-        .col-md-4,
-        .col-md-8 {
-            flex: 0 0 100%;
-            max-width: 100%;
-        }
-
-        .card-body {
-            padding: 16px;
-        }
-
-        .btn {
-            font-size: 0.9rem;
-            padding: 10px 16px;
-        }
-    }
-
-    @media (max-width: 768px) {
-        .container-fluid {
-            padding: 0 10px;
-        }
-
-        .page-header {
-            padding: 15px;
-            text-align: center;
-        }
-
-        .page-header .d-flex {
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .page-header h2 {
-            font-size: 1.4rem;
-        }
-
-        .btn {
-            width: 100%;
-            margin-bottom: 10px;
-        }
-
-        .d-flex.justify-content-between {
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .table-responsive {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            border-radius: 10px;
-        }
-
-        .table th,
-        .table td {
-            white-space: nowrap;
-            padding: 8px 10px;
-        }
-
-        .alert {
-            font-size: 0.85rem;
-        }
-
-        .card-header h5 {
-            font-size: 1rem;
-        }
-
-        .d-flex.gap-2.flex-wrap {
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        input,
-        select,
-        textarea {
-            font-size: 0.9rem;
-        }
-    }
-
-    @media (max-width: 480px) {
-        h2 {
-            font-size: 1.2rem;
-        }
-
-        .btn {
-            font-size: 0.85rem;
-        }
-
-        .table th,
-        .table td {
-            font-size: 0.8rem;
-        }
-    }
-</style>
-{% endblock %}
-
 {% block content %}
-<div class="container-fluid py-4">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
-            <!-- Header -->
-            <div class="page-header">
-                <div class="d-flex justify-content-between align-items-center flex-wrap">
-                    <div>
-                        <h2>
-                            <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %}"></i>
-                            {% if object %}Edit{% else %}Create{% endif %} Template
-                        </h2>
-                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation template{% endif %}</p>
-                    </div>
-                    <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary mt-2 mt-md-0">
-                        <i class="bi bi-arrow-left"></i> Back to Templates
-                    </a>
-                </div>
+<div class="container-fluid py-5 px-3 px-md-5">
+
+    <!-- Header -->
+    <div class="page-header mb-5">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h2 class="mb-1">
+                    <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %} me-2"></i>
+                    {% if object %}Edit{% else %}Create{% endif %} Quotation Template
+                </h2>
+                <p class="mb-0 text-light opacity-90">
+                    {% if object %}
+                    Refine and update this quotation template to keep your pricing consistent.
+                    {% else %}
+                    Set up a new reusable quotation template to speed up your workflow.
+                    {% endif %}
+                </p>
             </div>
-
-            <form method="post" id="templateForm">
-                {% csrf_token %}
-
-                <!-- Template Basic Info -->
-                <div class="card">
-                    <div class="card-header bg-primary">
-                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-8 mb-3">
-                                <label class="form-label">Template Name *</label>
-                                {{ form.name }}
-                                {% if form.name.errors %}
-                                <div class="text-danger small mt-1">{{ form.name.errors }}</div>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Project Type *</label>
-                                {{ form.project_type }}
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Description</label>
-                            {{ form.description }}
-                            <small class="text-muted">Describe what this template is used for</small>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Default Labor Cost (R)</label>
-                                {{ form.default_labor_cost }}
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Default Transport Cost (R)</label>
-                                {{ form.default_transport_cost }}
-                            </div>
-                        </div>
-                        <div class="form-check">
-                            {{ form.is_active }}
-                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
-                                Active (available for use)
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Template Items -->
-                <div class="card">
-                    <div class="card-header bg-success d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Template Items</h5>
-                        <button type="button" class="btn btn-sm btn-light" onclick="addItem()">
-                            <i class="bi bi-plus-lg"></i> Add Item
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        {{ formset.management_form }}
-
-                        <div class="table-responsive">
-                            <table class="table table-hover" id="itemsTable">
-                                <thead>
-                                    <tr>
-                                        <th style="width: 5%;">#</th>
-                                        <th style="width: 28%;">Description *</th>
-                                        <th style="width: 10%;">Qty *</th>
-                                        <th style="width: 12%;">Unit Price *</th>
-                                        <th style="width: 12%;">Category</th>
-                                        <th style="width: 12%;">Line Total</th>
-                                        <th style="width: 8%;">Optional</th>
-                                        <th style="width: 8%;">Sort</th>
-                                        <th style="width: 5%;"></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="itemsTableBody">
-                                    {% for item_form in formset %}
-                                    <tr class="item-row" data-item-id="{{ forloop.counter }}">
-                                        <td class="text-center">
-                                            <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
-                                        </td>
-                                        <td>
-                                            {{ item_form.description }}
-                                            {{ item_form.id }}
-                                        </td>
-                                        <td>
-                                            {{ item_form.quantity }}
-                                        </td>
-                                        <td>
-                                            {{ item_form.unit_price }}
-                                        </td>
-                                        <td>
-                                            {{ item_form.category }}
-                                        </td>
-                                        <td>
-                                            <input type="text" class="form-control form-control-sm line-total" readonly
-                                                value="0.00">
-                                        </td>
-                                        <td class="text-center">
-                                            {{ item_form.is_optional }}
-                                        </td>
-                                        <td>
-                                            {{ item_form.sort_order }}
-                                        </td>
-                                        <td class="text-center">
-                                            {% if forloop.counter > 1 %}
-                                            {{ item_form.DELETE }}
-                                            <label for="{{ item_form.DELETE.id_for_label }}"
-                                                class="btn btn-sm btn-outline-danger mb-0">
-                                                <i class="bi bi-trash"></i>
-                                            </label>
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
-                                        <td><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
-                                        <td><strong><span id="laborCost">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
-                                        <td><strong><span id="transportCost">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
-                                        <td><strong><span id="grandTotal"
-                                                    style="font-size: 1.1em; color: var(--success);">R
-                                                    0.00</span></strong></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-
-                        <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Use the "Optional" checkbox for
-                            items that may not be needed in all quotations. Use "Sort" to control the display order.
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="card">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between flex-wrap gap-2">
-                            <button type="button" class="btn btn-outline-secondary" onclick="window.history.back()">
-                                <i class="bi bi-x-lg"></i> Cancel
-                            </button>
-                            <div class="d-flex gap-2 flex-wrap">
-                                <button type="submit" name="save_and_continue" class="btn btn-outline-primary">
-                                    <i class="bi bi-save"></i> Save & Continue Editing
-                                </button>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-check-lg"></i> Save Template
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </form>
+            <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-light">
+                <i class="bi bi-arrow-left"></i> Back to Templates
+            </a>
         </div>
     </div>
+
+    <form method="post" id="templateForm">
+        {% csrf_token %}
+
+        <!-- Basic Info -->
+        <div class="card shadow-sm mb-4 border-0">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Template Information</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="row g-4">
+                    <div class="col-md-8">
+                        <label class="form-label">Template Name *</label>
+                        {{ form.name }}
+                        {% if form.name.errors %}
+                        <small class="text-danger">{{ form.name.errors }}</small>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Project Type *</label>
+                        {{ form.project_type }}
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <label class="form-label">Description</label>
+                    {{ form.description }}
+                    <small class="text-muted">Briefly describe what this template covers.</small>
+                </div>
+
+                <div class="row g-4 mt-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Default Labor Cost (R)</label>
+                        {{ form.default_labor_cost }}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Default Transport Cost (R)</label>
+                        {{ form.default_transport_cost }}
+                    </div>
+                </div>
+
+                <div class="form-check mt-4">
+                    {{ form.is_active }}
+                    <label for="{{ form.is_active.id_for_label }}" class="form-check-label">
+                        Mark this template as active (available for use)
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Template Items -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Template Items</h5>
+                <button type="button" class="btn btn-light btn-sm" onclick="addItem()">
+                    <i class="bi bi-plus-lg"></i> Add Item
+                </button>
+            </div>
+            <div class="card-body p-4">
+                {{ formset.management_form }}
+
+                <div class="table-responsive">
+                    <table class="table align-middle table-hover mb-0" id="itemsTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Description *</th>
+                                <th>Qty *</th>
+                                <th>Unit Price *</th>
+                                <th>Category</th>
+                                <th>Line Total</th>
+                                <th>Optional</th>
+                                <th>Sort</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsTableBody">
+                            {% for item_form in formset %}
+                            <tr class="item-row" data-item-id="{{ forloop.counter }}">
+                                <td class="text-center">
+                                    <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
+                                </td>
+                                <td>{{ item_form.description }}{{ item_form.id }}</td>
+                                <td>{{ item_form.quantity }}</td>
+                                <td>{{ item_form.unit_price }}</td>
+                                <td>{{ item_form.category }}</td>
+                                <td><input type="text" class="form-control form-control-sm line-total text-end" readonly
+                                        value="0.00"></td>
+                                <td class="text-center">{{ item_form.is_optional }}</td>
+                                <td>{{ item_form.sort_order }}</td>
+                                <td class="text-center">
+                                    {% if forloop.counter > 1 %}
+                                    {{ item_form.DELETE }}
+                                    <label for="{{ item_form.DELETE.id_for_label }}"
+                                        class="btn btn-sm btn-outline-danger mb-0">
+                                        <i class="bi bi-trash"></i>
+                                    </label>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
+                                <td><strong id="itemsSubtotal">R 0.00</strong></td>
+                                <td colspan="3"></td>
+                            </tr>
+                            <tr>
+                                <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
+                                <td><strong id="laborCost">R 0.00</strong></td>
+                                <td colspan="3"></td>
+                            </tr>
+                            <tr>
+                                <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
+                                <td><strong id="transportCost">R 0.00</strong></td>
+                                <td colspan="3"></td>
+                            </tr>
+                            <tr>
+                                <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
+                                <td>
+                                    <strong id="grandTotal" class="text-success" style="font-size:1.2em;">R
+                                        0.00</strong>
+                                </td>
+                                <td colspan="3"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <div class="alert alert-info mt-3 mb-0">
+                    <i class="bi bi-lightbulb me-1"></i>
+                    <strong>Tip:</strong> Mark optional items for flexibility and use the "Sort" field to arrange your
+                    quotation order.
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="d-flex justify-content-between flex-wrap gap-3 mt-4">
+            <button type="button" class="btn btn-outline-secondary" onclick="window.history.back()">
+                <i class="bi bi-x-lg me-1"></i> Cancel
+            </button>
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="submit" name="save_and_continue" class="btn btn-outline-primary">
+                    <i class="bi bi-arrow-repeat me-1"></i> Save & Continue
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg me-1"></i> Save Template
+                </button>
+            </div>
+        </div>
+    </form>
 </div>
 
+<!-- JS: Interactive UX -->
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        // Calculate line totals and grand total
+    document.addEventListener('DOMContentLoaded', () => {
+        const qtyInputs = document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]');
+        const deleteBoxes = document.querySelectorAll('input[type="checkbox"][id$="DELETE"]');
+
+        function animateValue(el, value) {
+            el.style.transition = 'all 0.2s ease-in-out';
+            el.style.transform = 'scale(1.05)';
+            setTimeout(() => el.style.transform = 'scale(1)', 150);
+            el.textContent = 'R ' + value.toFixed(2);
+        }
+
         function calculateTotals() {
-            let itemsSubtotal = 0;
+            let subtotal = 0;
+            document.querySelectorAll('.item-row').forEach(row => {
+                const del = row.querySelector('input[id$="DELETE"]');
+                if (del && del.checked) return;
 
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                // Skip deleted rows
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                if (deleteCheckbox && deleteCheckbox.checked) {
-                    return;
-                }
-
-                const qtyInput = row.querySelector('input[id$="quantity"]');
-                const priceInput = row.querySelector('input[id$="unit_price"]');
-                const lineTotalInput = row.querySelector('.line-total');
-
-                if (qtyInput && priceInput && lineTotalInput) {
-                    const qty = parseFloat(qtyInput.value) || 0;
-                    const price = parseFloat(priceInput.value) || 0;
-                    const lineTotal = qty * price;
-
-                    lineTotalInput.value = lineTotal.toFixed(2);
-                    itemsSubtotal += lineTotal;
-                }
+                const qty = parseFloat(row.querySelector('input[id$="quantity"]').value) || 0;
+                const price = parseFloat(row.querySelector('input[id$="unit_price"]').value) || 0;
+                const lineTotal = qty * price;
+                row.querySelector('.line-total').value = lineTotal.toFixed(2);
+                subtotal += lineTotal;
             });
 
-            // Get labor and transport costs
-            const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
-            const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
+            const labor = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
+            const transport = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
+            const grand = subtotal + labor + transport;
 
-            // Update displays
-            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
-            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
-            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
-
-            const grandTotal = itemsSubtotal + laborCost + transportCost;
-            document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
+            animateValue(document.getElementById('itemsSubtotal'), subtotal);
+            animateValue(document.getElementById('laborCost'), labor);
+            animateValue(document.getElementById('transportCost'), transport);
+            animateValue(document.getElementById('grandTotal'), grand);
         }
 
-        // Attach event listeners to all quantity and price inputs
-        document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
-            input.addEventListener('input', calculateTotals);
-        });
-
-        // Handle delete checkboxes
-        document.querySelectorAll('input[type="checkbox"][id$="DELETE"]').forEach(function (checkbox) {
-            checkbox.addEventListener('change', function () {
-                const row = this.closest('.item-row');
-                if (this.checked) {
-                    row.style.opacity = '0.5';
-                    row.style.textDecoration = 'line-through';
-                } else {
-                    row.style.opacity = '1';
-                    row.style.textDecoration = 'none';
-                }
-                calculateTotals();
-            });
-        });
-
-        // Update item numbers
-        function updateItemNumbers() {
-            let counter = 1;
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                if (!deleteCheckbox || !deleteCheckbox.checked) {
-                    const numberBadge = row.querySelector('.item-number');
-                    if (numberBadge) {
-                        numberBadge.textContent = counter;
-                        counter++;
-                    }
-                }
-            });
-        }
-
-        // Initial calculations
+        qtyInputs.forEach(i => i.addEventListener('input', calculateTotals));
+        deleteBoxes.forEach(b => b.addEventListener('change', calculateTotals));
         calculateTotals();
-        updateItemNumbers();
-
-        // Form validation
-        document.getElementById('templateForm').addEventListener('submit', function (e) {
-            const templateName = document.querySelector('input[id$="name"]').value.trim();
-
-            if (!templateName) {
-                e.preventDefault();
-                alert('Please enter a template name');
-                return false;
-            }
-
-            // Check if at least one item is provided
-            let hasValidItem = false;
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                const descInput = row.querySelector('input[id$="description"]');
-
-                if ((!deleteCheckbox || !deleteCheckbox.checked) && descInput && descInput.value.trim()) {
-                    hasValidItem = true;
-                }
-            });
-
-            if (!hasValidItem) {
-                e.preventDefault();
-                alert('Please add at least one item to the template');
-                return false;
-            }
-        });
     });
 
-    // Add new item row
     function addItem() {
-        alert('To add more items, save the template first and then edit it to add additional items.');
+        alert('💡 Save the template first, then reopen to add new items.');
     }
 </script>
 {% endblock %}
