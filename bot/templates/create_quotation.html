@@ -455,7 +455,10 @@
                 </h2>
                 <div class="form-group">
                     <label for="clientName">Client Name *</label>
-                    <input type="text" id="clientName" placeholder="Enter client name" required>
+                    <input type="text" id="clientName" placeholder="Enter client name" required value="{{ quotation.appointment.customer_name|default:'' }}"
+                    class="form-control">
+                </div>
+
                 </div>
                 <div class="form-group">
                     <label for="clientEmail">Email</label>
