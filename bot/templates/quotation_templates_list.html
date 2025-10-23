@@ -20,6 +20,7 @@
     body {
         background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
         min-height: 100vh;
+        padding-bottom: 20px;
     }
 
     .page-header {
@@ -126,9 +127,11 @@
     .form-select {
         border: 1px solid #e5e7eb;
         border-radius: 8px;
-        padding: 10px 12px;
-        font-size: 0.95rem;
+        padding: 12px;
+        font-size: 16px;
         transition: border-color 0.2s;
+        width: 100%;
+        min-height: 48px;
     }
 
     .form-control:focus,
@@ -140,12 +143,17 @@
 
     .btn {
         border-radius: 8px;
-        padding: 10px 20px;
+        padding: 12px 20px;
         font-weight: 600;
         font-size: 0.95rem;
         transition: all 0.2s;
         border: none;
         white-space: nowrap;
+        min-height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
     }
 
     .btn-primary {
@@ -207,8 +215,9 @@
     }
 
     .btn-sm {
-        padding: 6px 12px;
+        padding: 8px 12px;
         font-size: 0.85rem;
+        min-height: 36px;
     }
 
     /* Mobile Template Card */
@@ -308,9 +317,94 @@
         color: white;
     }
 
-    /* Desktop Table (hidden on mobile) */
+    /* Desktop Table */
     .desktop-table {
         display: none;
+    }
+
+    .table {
+        margin-bottom: 0;
+        font-size: 0.85rem;
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    .table th {
+        font-weight: 600;
+        color: var(--dark);
+        padding: 15px 12px;
+        border-bottom: 2px solid #e5e7eb;
+        vertical-align: middle;
+    }
+
+    .table td {
+        padding: 15px 12px;
+        vertical-align: middle;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .table tbody tr {
+        transition: background-color 0.2s;
+    }
+
+    .table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    .template-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+    }
+
+    /* Table column width fixes for proper horizontal layout */
+    .table th:nth-child(1),
+    .table td:nth-child(1) {
+        width: 20%;
+        /* Template Name */
+    }
+
+    .table th:nth-child(2),
+    .table td:nth-child(2) {
+        width: 15%;
+        /* Project Type */
+    }
+
+    .table th:nth-child(3),
+    .table td:nth-child(3) {
+        width: 10%;
+        /* Items */
+    }
+
+    .table th:nth-child(4),
+    .table td:nth-child(4) {
+        width: 15%;
+        /* Estimated Cost */
+    }
+
+    .table th:nth-child(5),
+    .table td:nth-child(5) {
+        width: 10%;
+        /* Times Used */
+    }
+
+    .table th:nth-child(6),
+    .table td:nth-child(6) {
+        width: 10%;
+        /* Status */
+    }
+
+    .table th:nth-child(7),
+    .table td:nth-child(7) {
+        width: 15%;
+        /* Last Updated */
+    }
+
+    .table th:nth-child(8),
+    .table td:nth-child(8) {
+        width: 15%;
+        /* Actions */
     }
 
     .empty-state {
@@ -372,31 +466,8 @@
             display: block;
         }
 
-        .table th {
-            font-weight: 600;
-            color: var(--dark);
-            padding: 15px;
-            border-bottom: 2px solid #e5e7eb;
-        }
-
-        .table td {
-            padding: 15px;
-            vertical-align: middle;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .table tbody tr {
-            transition: background-color 0.2s;
-        }
-
-        .table tbody tr:hover {
-            background-color: #f8f9fa;
-        }
-
-        .template-actions {
-            display: flex;
-            gap: 8px;
-            justify-content: flex-end;
+        .table-responsive {
+            overflow-x: visible;
         }
     }
 
@@ -440,6 +511,93 @@
             width: 100%;
             display: block;
         }
+
+        /* Mobile table responsive */
+        .table-responsive {
+            font-size: 0.8rem;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .table {
+            table-layout: auto;
+            min-width: 800px;
+        }
+
+        .table th,
+        .table td {
+            white-space: nowrap;
+            padding: 10px 8px;
+        }
+
+        /* Hide less important columns on mobile */
+        .table th:nth-child(5),
+        /* Times Used */
+        .table td:nth-child(5),
+        .table th:nth-child(7),
+        /* Last Updated */
+        .table td:nth-child(7) {
+            display: none;
+        }
+    }
+
+    /* Extra small devices */
+    @media (max-width: 576px) {
+        .page-header h2 {
+            font-size: 1.3rem;
+        }
+
+        .stat-card {
+            padding: 12px;
+        }
+
+        .stat-card h3 {
+            font-size: 1.3rem;
+        }
+
+        .template-card-actions {
+            grid-template-columns: 1fr;
+            gap: 6px;
+        }
+
+        .template-card-stats {
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
+        /* Hide more columns on very small screens */
+        .table th:nth-child(3),
+        /* Items */
+        .table td:nth-child(3) {
+            display: none;
+        }
+
+        .table {
+            min-width: 700px;
+        }
+    }
+
+    /* Desktop enhancements */
+    @media (min-width: 992px) {
+        .template-actions {
+            flex-wrap: nowrap;
+        }
+
+        .table th,
+        .table td {
+            padding: 15px;
+        }
+    }
+
+    /* Fix for iOS form elements */
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+        -webkit-appearance: none;
+        border-radius: 8px;
     }
 </style>
 {% endblock %}
@@ -501,13 +659,16 @@
                 <div class="col-12 col-md-3">
                     <select name="project_type" class="form-select">
                         <option value="">All Project Types</option>
-                        <option value="bathroom_renovation" {% if request.GET.project_type == 'bathroom_renovation'%}selected{% endif %}>
+                        <option value="bathroom_renovation" {% if request.GET.project_type=='bathroom_renovation'
+                            %}selected{% endif %}>
                             Bathroom Renovation
                         </option>
-                        <option value="kitchen_renovation" {% if request.GET.project_type == 'kitchen_renovation'%}selected{% endif %}>
+                        <option value="kitchen_renovation" {% if request.GET.project_type=='kitchen_renovation'
+                            %}selected{% endif %}>
                             Kitchen Renovation
                         </option>
-                        <option value="new_plumbing_installation" {% if request.GET.project_type == 'new_plumbing_installation' %}selected{% endif %}>
+                        <option value="new_plumbing_installation" {% if
+                            request.GET.project_type=='new_plumbing_installation' %}selected{% endif %}>
                             New Installation
                         </option>
                     </select>
@@ -515,8 +676,8 @@
                 <div class="col-12 col-md-3">
                     <select name="status" class="form-select">
                         <option value="">All Status</option>
-                        <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
-                        <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive
+                        <option value="active" {% if request.GET.status=='active' %}selected{% endif %}>Active</option>
+                        <option value="inactive" {% if request.GET.status=='inactive' %}selected{% endif %}>Inactive
                         </option>
                     </select>
                 </div>
