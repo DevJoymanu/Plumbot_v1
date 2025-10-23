@@ -45,6 +45,7 @@
             margin-bottom: 15px;
             text-align: center;
             border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
         }
 
         .header h1 {
@@ -56,6 +57,21 @@
         .header p {
             color: rgba(255, 255, 255, 0.9);
             font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+
+        .appointment-info {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            color: white;
+            font-size: 0.85rem;
+        }
+
+        .appointment-info strong {
+            display: block;
+            margin-bottom: 5px;
         }
 
         .card {
@@ -443,6 +459,17 @@
         <div class="header">
             <h1><i class="fas fa-calculator"></i> Quotation Generator</h1>
             <p>"Quality Is Our Qualification"</p>
+            
+            <!-- Appointment Information Display -->
+            <div id="appointmentInfo" class="appointment-info" style="display: none;">
+                <strong>Appointment Details</strong>
+                <div id="appointmentDetails"></div>
+            </div>
+
+            <!-- Template Button -->
+            <button class="btn btn-success" onclick="openTemplateModal()" style="margin-top: 10px;">
+                <i class="fas fa-file-invoice"></i> Use Template
+            </button>
         </div>
 
         <div id="alertContainer"></div>
@@ -604,239 +631,53 @@
         </div>
     </div>
 
-<!-- Template Selector Modal -->
-<div id="templateModal"
-    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999;">
-    <div
-        style="background: white; margin: 50px auto; max-width: 800px; border-radius: 12px; padding: 30px; max-height: 80vh; overflow-y: auto;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
-            <button onclick="closeTemplateModal()"
-                style="background: none; border: none; font-size: 1.5em; cursor: pointer;">&times;</button>
-        </div>
+    <!-- Template Selector Modal -->
+    <div id="templateModal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999;">
+        <div
+            style="background: white; margin: 50px auto; max-width: 800px; border-radius: 12px; padding: 30px; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
+                <button onclick="closeTemplateModal()"
+                    style="background: none; border: none; font-size: 1.5em; cursor: pointer;">&times;</button>
+            </div>
 
-        <!-- Search and Filters -->
-        <div style="margin-bottom: 20px;">
-            <input type="text" id="templateSearch" placeholder="Search templates..."
-                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;"
-                oninput="searchTemplates()">
+            <!-- Search and Filters -->
+            <div style="margin-bottom: 20px;">
+                <input type="text" id="templateSearch" placeholder="Search templates..."
+                    style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;"
+                    oninput="searchTemplates()">
 
-            <select id="templateProjectFilter" onchange="filterTemplates()"
-                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
-                <option value="">All Project Types</option>
-                <option value="bathroom_renovation">Bathroom Renovation</option>
-                <option value="kitchen_renovation">Kitchen Renovation</option>
-                <option value="new_plumbing_installation">New Plumbing Installation</option>
-            </select>
-        </div>
+                <select id="templateProjectFilter" onchange="filterTemplates()"
+                    style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                    <option value="">All Project Types</option>
+                    <option value="bathroom_renovation">Bathroom Renovation</option>
+                    <option value="kitchen_renovation">Kitchen Renovation</option>
+                    <option value="new_plumbing_installation">New Plumbing Installation</option>
+                </select>
+            </div>
 
-        <!-- Templates List -->
-        <div id="templatesList" style="display: grid; gap: 15px;">
-            <!-- Templates will be loaded here -->
-        </div>
+            <!-- Templates List -->
+            <div id="templatesList" style="display: grid; gap: 15px;">
+                <!-- Templates will be loaded here -->
+            </div>
 
-        <div id="templatesLoading" style="text-align: center; padding: 40px; color: #666;">
-            <i class="fas fa-spinner fa-spin" style="font-size: 2em;"></i>
-            <p>Loading templates...</p>
-        </div>
+            <div id="templatesLoading" style="text-align: center; padding: 40px; color: #666;">
+                <i class="fas fa-spinner fa-spin" style="font-size: 2em;"></i>
+                <p>Loading templates...</p>
+            </div>
 
-        <div id="templatesEmpty" style="display: none; text-align: center; padding: 40px; color: #666;">
-            <i class="fas fa-inbox" style="font-size: 3em; opacity: 0.3;"></i>
-            <p>No templates found</p>
+            <div id="templatesEmpty" style="display: none; text-align: center; padding: 40px; color: #666;">
+                <i class="fas fa-inbox" style="font-size: 3em; opacity: 0.3;"></i>
+                <p>No templates found</p>
+            </div>
         </div>
     </div>
-</div>
-
-
 
     <script>
-
-    let allTemplates = [];
-
-    // Add button to open template selector
-    document.addEventListener('DOMContentLoaded', function () {
-        // Add "Use Template" button to the header
-        const header = document.querySelector('.header');
-        if (header) {
-            const templateBtn = document.createElement('button');
-            templateBtn.className = 'btn btn-success';
-            templateBtn.innerHTML = '<i class="fas fa-file-invoice"></i> Use Template';
-            templateBtn.onclick = openTemplateModal;
-            templateBtn.style.marginTop = '10px';
-            header.appendChild(templateBtn);
-        }
-    });
-
-    async function openTemplateModal() {
-        document.getElementById('templateModal').style.display = 'block';
-        document.getElementById('templatesLoading').style.display = 'block';
-        document.getElementById('templatesList').innerHTML = '';
-        document.getElementById('templatesEmpty').style.display = 'none';
-
-        try {
-            const response = await fetch('/api/quotation-templates/?active_only=true');
-            const data = await response.json();
-
-            if (data.success && data.templates) {
-                allTemplates = data.templates;
-                displayTemplates(allTemplates);
-            } else {
-                showTemplatesEmpty();
-            }
-        } catch (error) {
-            console.error('Error loading templates:', error);
-            showAlert('Failed to load templates', 'error');
-            closeTemplateModal();
-        } finally {
-            document.getElementById('templatesLoading').style.display = 'none';
-        }
-    }
-
-    function closeTemplateModal() {
-        document.getElementById('templateModal').style.display = 'none';
-    }
-
-    function displayTemplates(templates) {
-        const container = document.getElementById('templatesList');
-
-        if (templates.length === 0) {
-            showTemplatesEmpty();
-            return;
-        }
-
-        container.innerHTML = templates.map(template => `
-        <div class="template-card" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.2s;"
-             onclick="useTemplate(${template.id})"
-             onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'"
-             onmouseout="this.style.boxShadow='none'">
-            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
-                <div>
-                    <h3 style="margin: 0 0 5px 0; color: #2d3748;">${template.name}</h3>
-                    <p style="margin: 0; color: #666; font-size: 0.9em;">${template.description || 'No description'}</p>
-                </div>
-                <span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 12px; font-size: 0.8em; white-space: nowrap;">
-                    ${template.project_type_display}
-                </span>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
-                <div>
-                    <div style="font-size: 0.8em; color: #666;">Items</div>
-                    <div style="font-weight: 600; color: #2d3748;">${template.items_count}</div>
-                </div>
-                <div>
-                    <div style="font-size: 0.8em; color: #666;">Estimated Cost</div>
-                    <div style="font-weight: 600; color: #10b981;">R${template.estimated_cost.toFixed(2)}</div>
-                </div>
-                <div>
-                    <div style="font-size: 0.8em; color: #666;">Used</div>
-                    <div style="font-weight: 600; color: #667eea;">${template.use_count}x</div>
-                </div>
-            </div>
-        </div>
-    `).join('');
-    }
-
-    function showTemplatesEmpty() {
-        document.getElementById('templatesList').innerHTML = '';
-        document.getElementById('templatesEmpty').style.display = 'block';
-    }
-
-    async function useTemplate(templateId) {
-        if (!confirm('Load this template? Your current items will be replaced.')) {
-            return;
-        }
-
-        try {
-            // Fetch template details
-            const response = await fetch(`/api/quotation-templates/?template_id=${templateId}`);
-            const data = await response.json();
-
-            if (!data.success || data.templates.length === 0) {
-                showAlert('Failed to load template', 'error');
-                return;
-            }
-
-            const template = data.templates[0];
-
-            // Clear existing items
-            items = [];
-
-            // Load template items
-            // Note: You'll need to add an endpoint that returns template items
-            const itemsResponse = await fetch(`/api/quotation-templates/${templateId}/items/`);
-            const itemsData = await itemsResponse.json();
-
-            if (itemsData.success && itemsData.items) {
-                items = itemsData.items.map((item, index) => ({
-                    id: Date.now() + index,
-                    name: item.description,
-                    qty: parseFloat(item.quantity),
-                    price: parseFloat(item.unit_price)
-                }));
-            }
-
-            // Set costs
-            document.getElementById('labourCost').value = template.labor_cost || 0;
-            document.getElementById('transportCost').value = template.transport_cost || 0;
-
-            // Set notes
-            if (template.description) {
-                const notesField = document.getElementById('projectNotes');
-                if (notesField) {
-                    notesField.value = `Template: ${template.name}\n\n${template.description}`;
-                }
-            }
-
-            // Render items and recalculate
-            renderItems();
-            calculateTotals();
-
-            closeTemplateModal();
-            showAlert(`Template "${template.name}" loaded successfully!`, 'success');
-
-        } catch (error) {
-            console.error('Error using template:', error);
-            showAlert('Failed to use template', 'error');
-        }
-    }
-
-    function searchTemplates() {
-        const searchTerm = document.getElementById('templateSearch').value.toLowerCase();
-        const filtered = allTemplates.filter(t =>
-            t.name.toLowerCase().includes(searchTerm) ||
-            (t.description && t.description.toLowerCase().includes(searchTerm))
-        );
-        displayTemplates(filtered);
-    }
-
-    function filterTemplates() {
-        const projectType = document.getElementById('templateProjectFilter').value;
-
-        if (!projectType) {
-            displayTemplates(allTemplates);
-            return;
-        }
-
-        const filtered = allTemplates.filter(t => t.project_type === projectType);
-        displayTemplates(filtered);
-    }
-
-    // Close modal when clicking outside
-    document.addEventListener('DOMContentLoaded', function () {
-        const modal = document.getElementById('templateModal');
-        if (modal) {
-            modal.addEventListener('click', function (e) {
-                if (e.target === modal) {
-                    closeTemplateModal();
-                }
-            });
-        }
-    });
-
-
         let items = [];
         let currentAppointmentId = null;
+        let allTemplates = [];
 
         // Auto-load appointment on page load
         document.addEventListener('DOMContentLoaded', function () {
@@ -845,24 +686,54 @@
 
             if (appointmentId) {
                 loadAppointmentData(appointmentId);
+            } else {
+                // Check if we have appointment data in localStorage (for template usage)
+                const savedAppointment = localStorage.getItem('currentAppointment');
+                if (savedAppointment) {
+                    const appointment = JSON.parse(savedAppointment);
+                    prefillAppointmentData(appointment);
+                }
             }
         });
 
-        // Sample data for bathroom renovation (default items)
-        const defaultBathroomItems = [
-            { name: '500ml prodorite solvent cement', qty: 1, price: 4 },
-            { name: '50mm pvc waste pipe', qty: 2, price: 6 },
-            { name: '50mm pvc bends', qty: 15, price: 0.5 },
-            { name: '50x45deg pvc bends', qty: 6, price: 0.5 },
-            { name: '50x45deg pvc junction', qty: 3, price: 1 },
-            { name: '50mm pvc tee', qty: 3, price: 1 },
-            { name: 'Tub Waste', qty: 1, price: 12 },
-            { name: 'Angle valve', qty: 3, price: 3 },
-            { name: 'Rubber p trap', qty: 1, price: 3 },
-            { name: 'Cabinet and basin set', qty: 1, price: 170 },
-            { name: 'Basin mixer', qty: 1, price: 40 },
-            { name: 'Shower p trap', qty: 1, price: 3 }
-        ];
+        // Sample data for different project types
+        const projectTemplates = {
+            'bathroom_renovation': [
+                { name: '500ml prodorite solvent cement', qty: 1, price: 4 },
+                { name: '50mm pvc waste pipe', qty: 2, price: 6 },
+                { name: '50mm pvc bends', qty: 15, price: 0.5 },
+                { name: '50x45deg pvc bends', qty: 6, price: 0.5 },
+                { name: '50x45deg pvc junction', qty: 3, price: 1 },
+                { name: '50mm pvc tee', qty: 3, price: 1 },
+                { name: 'Tub Waste', qty: 1, price: 12 },
+                { name: 'Angle valve', qty: 3, price: 3 },
+                { name: 'Rubber p trap', qty: 1, price: 3 },
+                { name: 'Cabinet and basin set', qty: 1, price: 170 },
+                { name: 'Basin mixer', qty: 1, price: 40 },
+                { name: 'Shower p trap', qty: 1, price: 3 }
+            ],
+            'kitchen_renovation': [
+                { name: 'Kitchen sink', qty: 1, price: 120 },
+                { name: 'Kitchen mixer tap', qty: 1, price: 45 },
+                { name: '40mm waste pipe', qty: 3, price: 4 },
+                { name: 'Angle valves', qty: 2, price: 3 },
+                { name: 'Pipe connectors', qty: 6, price: 1.5 },
+                { name: 'Pipe brackets', qty: 8, price: 0.5 }
+            ],
+            'new_plumbing_installation': [
+                { name: 'Main water connection', qty: 1, price: 150 },
+                { name: 'Copper pipes 15mm', qty: 20, price: 8 },
+                { name: 'Pipe fittings', qty: 15, price: 2 },
+                { name: 'Stop valves', qty: 3, price: 12 },
+                { name: 'Pressure reducer', qty: 1, price: 45 }
+            ]
+        };
+
+        const defaultCosts = {
+            'bathroom_renovation': { labour: 280, transport: 20 },
+            'kitchen_renovation': { labour: 200, transport: 15 },
+            'new_plumbing_installation': { labour: 350, transport: 25 }
+        };
 
         async function loadAppointmentData(appointmentId) {
             try {
@@ -877,57 +748,91 @@
                     return;
                 }
 
-                // Auto-fill client information
-                document.getElementById('clientName').value = appointment.customer_name || '';
-                document.getElementById('clientEmail').value = appointment.customer_email || '';
-                document.getElementById('clientPhone').value = appointment.phone_number || '';
-                document.getElementById('clientAddress').value = appointment.customer_area || '';
-
-                // Auto-fill project information
-                const projectType = formatProjectType(appointment.project_type);
-                document.getElementById('projectType').value = projectType || '';
-                document.getElementById('projectLocation').value = appointment.customer_area || '';
-
-                // Build project notes
-                let notes = appointment.project_description || '';
-                if (appointment.property_type) {
-                    notes += `\nProperty Type: ${appointment.property_type}`;
-                }
-                if (appointment.house_stage) {
-                    notes += `\nHouse Stage: ${appointment.house_stage}`;
-                }
-                document.getElementById('projectNotes').value = notes.trim();
-
-                // Auto-fill items based on project type
-                if (appointment.project_type === 'bathroom_renovation' ||
-                    projectType.toLowerCase().includes('bathroom')) {
-                    items = defaultBathroomItems.map((item, index) => ({
-                        id: Date.now() + index,
-                        name: item.name,
-                        qty: item.qty,
-                        price: item.price
-                    }));
-
-                    // Set default costs for bathroom renovation
-                    document.getElementById('labourCost').value = 280;
-                    document.getElementById('transportCost').value = 20;
-                } else {
-                    // For other project types, add a few blank items to start
-                    items = [
-                        { id: Date.now(), name: '', qty: 1, price: 0 },
-                        { id: Date.now() + 1, name: '', qty: 1, price: 0 }
-                    ];
-                }
-
+                prefillAppointmentData(appointment);
                 currentAppointmentId = appointmentId;
-                renderItems();
-                calculateTotals();
 
-                showAlert('Appointment data loaded successfully!', 'success');
+                // Save appointment data for template usage
+                localStorage.setItem('currentAppointment', JSON.stringify(appointment));
 
             } catch (error) {
                 console.error('Error loading appointment:', error);
                 showAlert('Failed to load appointment data', 'error');
+            }
+        }
+
+        function prefillAppointmentData(appointment) {
+            // Auto-fill client information
+            document.getElementById('clientName').value = appointment.customer_name || '';
+            document.getElementById('clientEmail').value = appointment.customer_email || '';
+            document.getElementById('clientPhone').value = appointment.phone_number || '';
+            document.getElementById('clientAddress').value = appointment.customer_area || '';
+
+            // Auto-fill project information
+            const projectType = formatProjectType(appointment.project_type);
+            document.getElementById('projectType').value = projectType || '';
+            document.getElementById('projectLocation').value = appointment.customer_area || '';
+
+            // Build project notes
+            let notes = appointment.project_description || '';
+            if (appointment.property_type) {
+                notes += `\nProperty Type: ${appointment.property_type}`;
+            }
+            if (appointment.house_stage) {
+                notes += `\nHouse Stage: ${appointment.house_stage}`;
+            }
+            if (appointment.timeline) {
+                notes += `\nTimeline: ${appointment.timeline}`;
+            }
+            document.getElementById('projectNotes').value = notes.trim();
+
+            // Auto-fill items based on project type
+            const projectKey = getProjectKey(appointment.project_type);
+            if (projectTemplates[projectKey]) {
+                items = projectTemplates[projectKey].map((item, index) => ({
+                    id: Date.now() + index,
+                    name: item.name,
+                    qty: item.qty,
+                    price: item.price
+                }));
+
+                // Set default costs
+                const costs = defaultCosts[projectKey] || { labour: 200, transport: 15 };
+                document.getElementById('labourCost').value = costs.labour;
+                document.getElementById('transportCost').value = costs.transport;
+            } else {
+                // For other project types, add a few blank items to start
+                items = [
+                    { id: Date.now(), name: '', qty: 1, price: 0 },
+                    { id: Date.now() + 1, name: '', qty: 1, price: 0 }
+                ];
+            }
+
+            // Show appointment info in header
+            showAppointmentInfo(appointment);
+
+            renderItems();
+            calculateTotals();
+            showAlert('Appointment data loaded successfully!', 'success');
+        }
+
+        function showAppointmentInfo(appointment) {
+            const infoDiv = document.getElementById('appointmentInfo');
+            const detailsDiv = document.getElementById('appointmentDetails');
+            
+            if (appointment.customer_name || appointment.project_type) {
+                let details = '';
+                if (appointment.customer_name) {
+                    details += `Client: ${appointment.customer_name}<br>`;
+                }
+                if (appointment.project_type) {
+                    details += `Service: ${formatProjectType(appointment.project_type)}<br>`;
+                }
+                if (appointment.customer_area) {
+                    details += `Area: ${appointment.customer_area}`;
+                }
+                
+                detailsDiv.innerHTML = details;
+                infoDiv.style.display = 'block';
             }
         }
 
@@ -949,6 +854,195 @@
             return typeMap[projectType] || projectType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         }
 
+        function getProjectKey(projectType) {
+            if (!projectType) return '';
+            
+            // Map common project types to template keys
+            const keyMap = {
+                'bathroom_renovation': 'bathroom_renovation',
+                'kitchen_renovation': 'kitchen_renovation',
+                'new_plumbing_installation': 'new_plumbing_installation',
+                'plumbing_repair': 'bathroom_renovation', // Fallback to bathroom template
+                'electrical_work': 'new_plumbing_installation' // Fallback to new installation template
+            };
+
+            return keyMap[projectType] || projectType;
+        }
+
+        // Template Modal Functions
+        async function openTemplateModal() {
+            document.getElementById('templateModal').style.display = 'block';
+            document.getElementById('templatesLoading').style.display = 'block';
+            document.getElementById('templatesList').innerHTML = '';
+            document.getElementById('templatesEmpty').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/quotation-templates/?active_only=true');
+                const data = await response.json();
+
+                if (data.success && data.templates) {
+                    allTemplates = data.templates;
+                    displayTemplates(allTemplates);
+                } else {
+                    showTemplatesEmpty();
+                }
+            } catch (error) {
+                console.error('Error loading templates:', error);
+                showAlert('Failed to load templates', 'error');
+                closeTemplateModal();
+            } finally {
+                document.getElementById('templatesLoading').style.display = 'none';
+            }
+        }
+
+        function closeTemplateModal() {
+            document.getElementById('templateModal').style.display = 'none';
+        }
+
+        function displayTemplates(templates) {
+            const container = document.getElementById('templatesList');
+
+            if (templates.length === 0) {
+                showTemplatesEmpty();
+                return;
+            }
+
+            container.innerHTML = templates.map(template => `
+                <div class="template-card" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.2s;"
+                     onclick="useTemplate(${template.id})"
+                     onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'"
+                     onmouseout="this.style.boxShadow='none'">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                        <div>
+                            <h3 style="margin: 0 0 5px 0; color: #2d3748;">${template.name}</h3>
+                            <p style="margin: 0; color: #666; font-size: 0.9em;">${template.description || 'No description'}</p>
+                        </div>
+                        <span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 12px; font-size: 0.8em; white-space: nowrap;">
+                            ${template.project_type_display}
+                        </span>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                        <div>
+                            <div style="font-size: 0.8em; color: #666;">Items</div>
+                            <div style="font-weight: 600; color: #2d3748;">${template.items_count}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8em; color: #666;">Estimated Cost</div>
+                            <div style="font-weight: 600; color: #10b981;">R${template.estimated_cost.toFixed(2)}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8em; color: #666;">Used</div>
+                            <div style="font-weight: 600; color: #667eea;">${template.use_count}x</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showTemplatesEmpty() {
+            document.getElementById('templatesList').innerHTML = '';
+            document.getElementById('templatesEmpty').style.display = 'block';
+        }
+
+        async function useTemplate(templateId) {
+            if (!confirm('Load this template? Your current items will be replaced.')) {
+                return;
+            }
+
+            try {
+                // Fetch template details
+                const response = await fetch(`/api/quotation-templates/${templateId}/`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    showAlert('Failed to load template', 'error');
+                    return;
+                }
+
+                const template = data.template;
+
+                // Clear existing items
+                items = [];
+
+                // Load template items
+                if (template.items && template.items.length > 0) {
+                    items = template.items.map((item, index) => ({
+                        id: Date.now() + index,
+                        name: item.description,
+                        qty: parseFloat(item.quantity),
+                        price: parseFloat(item.unit_price)
+                    }));
+                }
+
+                // Set costs
+                document.getElementById('labourCost').value = template.default_labor_cost || 0;
+                document.getElementById('transportCost').value = template.default_transport_cost || 0;
+
+                // Update project type if not already set
+                const currentProjectType = document.getElementById('projectType').value;
+                if (!currentProjectType && template.project_type_display) {
+                    document.getElementById('projectType').value = template.project_type_display;
+                }
+
+                // Add template notes
+                const currentNotes = document.getElementById('projectNotes').value;
+                if (template.description) {
+                    const newNotes = currentNotes ? 
+                        `${currentNotes}\n\nTemplate: ${template.name}\n${template.description}` :
+                        `Template: ${template.name}\n${template.description}`;
+                    document.getElementById('projectNotes').value = newNotes;
+                }
+
+                // Render items and recalculate
+                renderItems();
+                calculateTotals();
+
+                closeTemplateModal();
+                showAlert(`Template "${template.name}" loaded successfully!`, 'success');
+
+            } catch (error) {
+                console.error('Error using template:', error);
+                showAlert('Failed to use template', 'error');
+            }
+        }
+
+        function searchTemplates() {
+            const searchTerm = document.getElementById('templateSearch').value.toLowerCase();
+            const filtered = allTemplates.filter(t =>
+                t.name.toLowerCase().includes(searchTerm) ||
+                (t.description && t.description.toLowerCase().includes(searchTerm))
+            );
+            displayTemplates(filtered);
+        }
+
+        function filterTemplates() {
+            const projectType = document.getElementById('templateProjectFilter').value;
+
+            if (!projectType) {
+                displayTemplates(allTemplates);
+                return;
+            }
+
+            const filtered = allTemplates.filter(t => t.project_type === projectType);
+            displayTemplates(filtered);
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('DOMContentLoaded', function () {
+            const modal = document.getElementById('templateModal');
+            if (modal) {
+                modal.addEventListener('click', function (e) {
+                    if (e.target === modal) {
+                        closeTemplateModal();
+                    }
+                });
+            }
+        });
+
+        // Rest of the functions (addItem, removeItem, updateItem, renderItems, calculateTotals, etc.)
+        // ... [Previous JavaScript functions remain the same] ...
+
         function addItem() {
             const id = Date.now();
             items.push({ id, name: '', qty: 1, price: 0 });
@@ -960,30 +1054,29 @@
             renderItems();
         }
 
-            function updateItem(id, field, value) {
-                const item = items.find(i => i.id === id);
-                if (item) {
-                    item[field] = field === 'name' ? value : parseFloat(value) || 0;
-                    // Only recalculate totals for numeric fields, don't re-render
-                    if (field === 'qty' || field === 'price') {
-                        updateItemTotal(id);
-                        calculateTotals();
+        function updateItem(id, field, value) {
+            const item = items.find(i => i.id === id);
+            if (item) {
+                item[field] = field === 'name' ? value : parseFloat(value) || 0;
+                if (field === 'qty' || field === 'price') {
+                    updateItemTotal(id);
+                    calculateTotals();
+                }
+            }
+        }
+
+        function updateItemTotal(id) {
+            const item = items.find(i => i.id === id);
+            if (item) {
+                const itemCard = document.querySelector(`[data-item-id="${id}"]`);
+                if (itemCard) {
+                    const totalEl = itemCard.querySelector('.item-total');
+                    if (totalEl) {
+                        totalEl.textContent = `Total: $${(item.qty * item.price).toFixed(2)}`;
                     }
                 }
             }
-                    function updateItemTotal(id) {
-                            const item = items.find(i => i.id === id);
-                            if (item) {
-                                const itemCard = document.querySelector(`[data-item-id="${id}"]`);
-                                if (itemCard) {
-                                    const totalEl = itemCard.querySelector('.item-total');
-                                    if (totalEl) {
-                                        totalEl.textContent = `Total: $${(item.qty * item.price).toFixed(2)}`;
-                                    }
-                                }
-                            }
-                        }
-
+        }
 
         function renderItems() {
             const container = document.getElementById('itemsList');
@@ -1000,7 +1093,7 @@
             }
 
             container.innerHTML = items.map(item => `
-                <div class="item-card">
+                <div class="item-card" data-item-id="${item.id}">
                     <button class="remove-item" onclick="removeItem(${item.id})">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -1107,115 +1200,101 @@
             }
         }
 
+        async function saveQuotation() {
+            const clientName = document.getElementById('clientName').value.trim();
+            const projectType = document.getElementById('projectType').value.trim();
 
-    async function saveQuotation() {
-        const clientName = document.getElementById('clientName').value.trim();
-        const projectType = document.getElementById('projectType').value.trim();
+            if (!clientName || !projectType) {
+                showAlert('Please fill in required fields', 'error');
+                return;
+            }
 
-        if (!clientName || !projectType) {
-            showAlert('Please fill in required fields', 'error');
-            return;
+            if (items.length === 0) {
+                showAlert('Please add at least one item', 'error');
+                return;
+            }
+
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.classList.add('loading');
+            saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
+
+            const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
+            const labour = parseFloat(document.getElementById('labourCost').value) || 0;
+            const transport = parseFloat(document.getElementById('transportCost').value) || 0;
+
+            const quotationData = {
+                appointment_id: currentAppointmentId,
+                client_name: clientName,
+                client_email: document.getElementById('clientEmail').value.trim(),
+                client_phone: document.getElementById('clientPhone').value.trim(),
+                client_address: document.getElementById('clientAddress').value.trim(),
+                project_type: projectType,
+                project_location: document.getElementById('projectLocation').value.trim(),
+                project_notes: document.getElementById('projectNotes').value.trim(),
+                items: items.map(item => ({
+                    name: item.name,
+                    qty: item.qty,
+                    unit: item.price
+                })),
+                labour_cost: labour,
+                transport_cost: transport,
+                materials_cost: materials,
+                total_amount: materials + labour + transport,
+                notes: document.getElementById('projectNotes').value.trim()
+            };
+
+            try {
+                const csrftoken = getCookie('csrftoken');
+
+                const response = await fetch('/api/quotations/create/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: JSON.stringify(quotationData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
+
+                    // Redirect to the related appointment after 2 seconds
+                    setTimeout(() => {
+                        if (result.appointment_id) {
+                            window.location.href = `/appointments/${result.appointment_id}/`;
+                        } else if (result.quotation_id) {
+                            window.location.href = `/quotations/${result.quotation_id}/`;
+                        }
+                    }, 2000);
+                } else {
+                    showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
+                }
+
+            } catch (error) {
+                console.error('Error saving quotation:', error);
+                showAlert('Failed to save quotation. Please try again.', 'error');
+            } finally {
+                saveBtn.classList.remove('loading');
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+            }
         }
 
-        if (items.length === 0) {
-            showAlert('Please add at least one item', 'error');
-            return;
-        }
-
-        const saveBtn = document.getElementById('saveBtn');
-        saveBtn.classList.add('loading');
-        saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
-
-        const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
-        const labour = parseFloat(document.getElementById('labourCost').value) || 0;
-        const transport = parseFloat(document.getElementById('transportCost').value) || 0;
-
-        const quotationData = {
-            appointment_id: currentAppointmentId,
-            client_name: clientName,
-            client_email: document.getElementById('clientEmail').value.trim(),
-            client_phone: document.getElementById('clientPhone').value.trim(),
-            client_address: document.getElementById('clientAddress').value.trim(),
-            project_type: projectType,
-            project_location: document.getElementById('projectLocation').value.trim(),
-            project_notes: document.getElementById('projectNotes').value.trim(),
-            items: items.map(item => ({
-                name: item.name,
-                qty: item.qty,
-                unit: item.price
-            })),
-            labour_cost: labour,
-            transport_cost: transport,
-            materials_cost: materials,
-            total_amount: materials + labour + transport,
-            notes: document.getElementById('projectNotes').value.trim()
-        };
-
-        try {
-            const csrftoken = getCookie('csrftoken');
-
-            const response = await fetch('/api/quotations/create/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrftoken
-                },
-                body: JSON.stringify(quotationData)
-            });
-
-            const result = await response.json();
-
-            if (response.ok && result.success) {
-                showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
-
-                // Redirect to the related appointment after 2 seconds
-                setTimeout(() => {
-                    if (result.appointment_id) {
-                        // FIXED: Redirect to appointment detail page
-                        window.location.href = `/appointments/${result.appointment_id}/`;
-                    } else if (result.quotation_id) {
-                        window.location.href = `/quotations/${result.quotation_id}/`;
+        // Helper function to get CSRF token
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
                     }
-                }, 2000);
-            } else {
-                showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
-            }
-
-        } catch (error) {
-            console.error('Error saving quotation:', error);
-            showAlert('Failed to save quotation. Please try again.', 'error');
-        } finally {
-            saveBtn.classList.remove('loading');
-            saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
-        }
-    }
-
-    // Helper function to get CSRF token
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
                 }
             }
-        }
-        return cookieValue;
-    }
-
-
-        function getCsrfToken() {
-            const cookies = document.cookie.split(';');
-            for (let cookie of cookies) {
-                const [name, value] = cookie.trim().split('=');
-                if (name === 'csrftoken') {
-                    return value;
-                }
-            }
-            return '';
+            return cookieValue;
         }
 
         function showAlert(message, type) {
@@ -1231,5 +1310,4 @@
         renderItems();
     </script>
 </body>
-
 </html>
