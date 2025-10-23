@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>Construction Quotation Generator</title>
+    <title>Appointment Information Form</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
@@ -45,7 +45,6 @@
             margin-bottom: 15px;
             text-align: center;
             border: 1px solid rgba(255, 255, 255, 0.2);
-            position: relative;
         }
 
         .header h1 {
@@ -57,21 +56,6 @@
         .header p {
             color: rgba(255, 255, 255, 0.9);
             font-size: 0.9rem;
-            margin-bottom: 10px;
-        }
-
-        .appointment-info {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            padding: 10px;
-            margin-top: 10px;
-            color: white;
-            font-size: 0.85rem;
-        }
-
-        .appointment-info strong {
-            display: block;
-            margin-bottom: 5px;
         }
 
         .card {
@@ -107,7 +91,8 @@
         }
 
         .form-group input,
-        .form-group textarea {
+        .form-group textarea,
+        .form-group select {
             width: 100%;
             padding: 12px;
             border: 1px solid #e5e7eb;
@@ -117,7 +102,8 @@
         }
 
         .form-group input:focus,
-        .form-group textarea:focus {
+        .form-group textarea:focus,
+        .form-group select:focus {
             outline: none;
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
@@ -128,126 +114,133 @@
             min-height: 80px;
         }
 
-        /* Items Table - Mobile Optimized */
-        .items-section {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .items-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .item-card {
-            background: #f8f9fa;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 12px;
-            position: relative;
-        }
-
-        .item-card input {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 16px;
-            margin-bottom: 8px;
-        }
-
-        .item-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-
-        .item-total {
-            text-align: right;
+        /* Status Badges */
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
             font-weight: 600;
-            color: var(--primary);
-            padding: 8px;
-            background: white;
-            border-radius: 6px;
-            margin-top: 5px;
+            display: inline-block;
+            margin-left: 10px;
         }
 
-        .remove-item {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            background: var(--danger);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 10px;
-            cursor: pointer;
-            font-size: 0.85rem;
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
         }
 
-        .empty-state {
-            text-align: center;
-            padding: 30px 15px;
-            color: #999;
+        .status-confirmed {
+            background: #d1fae5;
+            color: #065f46;
         }
 
-        .empty-state i {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            opacity: 0.4;
+        .status-completed {
+            background: #dbeafe;
+            color: #1e40af;
         }
 
-        .add-item-btn {
-            width: 100%;
-            background: var(--success);
-            color: white;
-            border: none;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-top: 10px;
+        .status-cancelled {
+            background: #fee2e2;
+            color: #991b1b;
         }
 
-        /* Totals */
-        .totals-card {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-
-        .totals-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px dashed #ddd;
-        }
-
-        .totals-row:last-child {
-            border-bottom: none;
-            font-size: 1.2rem;
+        /* Appointment Type Badges */
+        .appointment-type-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
             font-weight: bold;
-            color: var(--primary);
-            padding-top: 12px;
-            margin-top: 8px;
-            border-top: 2px solid #ddd;
+            white-space: nowrap;
         }
 
-        .totals-row input {
-            width: 100px;
-            padding: 6px 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            text-align: right;
-            font-size: 16px;
+        .appointment-type-badge.site-visit {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .appointment-type-badge.job {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        /* Job Scheduling Panel */
+        .job-scheduling-panel {
+            margin-bottom: 15px;
+        }
+
+        .scheduling-status {
+            display: flex;
+            gap: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .scheduling-status i {
+            font-size: 1.5em;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .status-content {
+            flex: 1;
+        }
+
+        .status-content p {
+            margin: 0 0 10px 0;
+            font-weight: 500;
+        }
+
+        .scheduling-status.pending {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+
+        .scheduling-status.ready {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .scheduling-status.scheduled {
+            background: #cce5ff;
+            border: 1px solid #b3d9ff;
+            color: #004085;
+        }
+
+        .completion-details {
+            font-size: 0.9em;
+            margin: 8px 0;
+            color: #666;
+        }
+
+        /* Job Details */
+        .job-detail-grid {
+            display: grid;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .job-info-section,
+        .job-work-section {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+
+        .job-info-section h4,
+        .job-work-section h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 1rem;
+        }
+
+        .job-info-section p,
+        .job-work-section p {
+            margin: 5px 0;
+            font-size: 0.9rem;
         }
 
         /* Action Buttons - Mobile Fixed Bottom */
@@ -293,6 +286,11 @@
             color: white;
         }
 
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
         .btn-secondary {
             background: var(--secondary);
             color: white;
@@ -329,68 +327,48 @@
             border: 1px solid var(--danger);
         }
 
-        /* Preview Section */
-        .preview-section {
-            display: none;
-            background: white;
-            border-radius: 12px;
-            padding: 20px 15px;
-            margin-bottom: 20px;
+        /* Conversation History */
+        .conversation-history {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            padding-right: 5px;
         }
 
-        .preview-header {
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .company-logo {
-            width: 50px;
-            height: 50px;
-            background: linear-gradient(135deg, #0b5, #4cd);
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-size: 1.2rem;
+        .message {
+            padding: 10px;
             margin-bottom: 10px;
-        }
-
-        .preview-info {
-            background: #f8f9fa;
-            padding: 12px;
             border-radius: 8px;
-            margin: 12px 0;
             font-size: 0.9rem;
         }
 
-        .preview-info strong {
-            display: block;
+        .message.user {
+            background: #e3f2fd;
+            margin-left: 20px;
+        }
+
+        .message.assistant {
+            background: #f5f5f5;
+            margin-right: 20px;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 5px;
-        }
-
-        .preview-table {
-            width: 100%;
-            margin: 15px 0;
-            border-collapse: collapse;
-        }
-
-        .preview-table th,
-        .preview-table td {
-            padding: 10px 8px;
-            text-align: left;
-            border-bottom: 1px solid #e5e7eb;
-            font-size: 0.9rem;
-        }
-
-        .preview-table th {
-            background: #f3f4f6;
             font-weight: 600;
+            font-size: 0.85rem;
         }
 
-        .preview-table td:last-child {
-            text-align: right;
+        .message-header small {
+            font-weight: normal;
+            color: #666;
+        }
+
+        .message p {
+            margin: 0;
+            word-wrap: break-word;
         }
 
         /* Loading State */
@@ -415,25 +393,6 @@
             }
         }
 
-        /* Print Styles */
-        @media print {
-            body {
-                background: white;
-                padding: 0;
-            }
-
-            .header,
-            .action-buttons,
-            .card:not(.preview-section) {
-                display: none !important;
-            }
-
-            .preview-section {
-                display: block !important;
-                box-shadow: none !important;
-            }
-        }
-
         /* Larger screens */
         @media (min-width: 768px) {
             .container {
@@ -450,6 +409,16 @@
             .content-wrapper {
                 padding-bottom: 0;
             }
+
+            .dashboard-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+            }
+
+            .job-detail-grid {
+                grid-template-columns: 1fr 1fr;
+            }
         }
     </style>
 </head>
@@ -457,227 +426,194 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1><i class="fas fa-calculator"></i> Quotation Generator</h1>
-            <p>"Quality Is Our Qualification"</p>
-
-            <!-- Appointment Information Display -->
-            <div id="appointmentInfo" class="appointment-info" style="display: none;">
-                <strong>Appointment Details</strong>
-                <div id="appointmentDetails"></div>
-            </div>
-
-            <!-- Template Button -->
-            <button class="btn btn-success" onclick="openTemplateModal()" style="margin-top: 10px;">
-                <i class="fas fa-file-invoice"></i> Use Template
-            </button>
+            <h1>
+                <i class="fas fa-calendar-alt"></i>
+                <span id="headerCustomerName">Appointment Details</span>
+                <span id="appointmentTypeBadge" class="appointment-type-badge site-visit" style="display: none;">Site
+                    Visit</span>
+            </h1>
+            <p>Manage this customer appointment</p>
         </div>
 
         <div id="alertContainer"></div>
 
         <div class="content-wrapper">
-            <!-- Client Information -->
-            <div class="card">
-                <h2 class="section-title">
-                    <i class="fas fa-user"></i> Client Information
-                </h2>
-                <div class="form-group">
-                    <label for="clientName">Client Name *</label>
-                    <input type="text" id="clientName" placeholder="Enter client name" required>
-                </div>
-                <div class="form-group">
-                    <label for="clientEmail">Email</label>
-                    <input type="email" id="clientEmail" placeholder="client@example.com">
-                </div>
-                <div class="form-group">
-                    <label for="clientPhone">Phone</label>
-                    <input type="tel" id="clientPhone" placeholder="+263 77 123 4567">
-                </div>
-                <div class="form-group">
-                    <label for="clientAddress">Address</label>
-                    <input type="text" id="clientAddress" placeholder="Client address">
-                </div>
-            </div>
-
-            <!-- Project Information -->
-            <div class="card">
-                <h2 class="section-title">
-                    <i class="fas fa-project-diagram"></i> Project Information
-                </h2>
-                <div class="form-group">
-                    <label for="projectType">Project Type *</label>
-                    <input type="text" id="projectType" placeholder="e.g., Bathroom Renovation" required>
-                </div>
-                <div class="form-group">
-                    <label for="projectLocation">Project Location</label>
-                    <input type="text" id="projectLocation" placeholder="Project site address">
-                </div>
-                <div class="form-group">
-                    <label for="projectNotes">Project Notes</label>
-                    <textarea id="projectNotes" placeholder="Describe the project scope..."></textarea>
-                </div>
-            </div>
-
-            <!-- Items Section -->
-            <div class="card">
-                <h2 class="section-title">
-                    <i class="fas fa-list"></i> Items & Materials
-                </h2>
-                <div class="items-section">
-                    <div class="items-list" id="itemsList">
-                        <div class="empty-state">
-                            <i class="fas fa-inbox"></i>
-                            <p>No items added yet</p>
+            <!-- Job Scheduling Panel -->
+            <div id="jobSchedulingPanel" class="job-scheduling-panel" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-calendar-plus"></i> Job Scheduling</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="schedulingStatus" class="scheduling-status pending">
+                            <i class="fas fa-clock"></i>
+                            <div class="status-content">
+                                <p>Site visit must be completed before scheduling job appointment</p>
+                                <button class="btn btn-primary" onclick="completeSiteVisit()">
+                                    <i class="fas fa-clipboard-check"></i> Complete Site Visit
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <button class="add-item-btn" onclick="addItem()">
-                    <i class="fas fa-plus"></i> Add Item
-                </button>
             </div>
 
-            <!-- Totals -->
+            <!-- Job Details Panel -->
+            <div id="jobDetailsPanel" class="job-details-panel" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-wrench"></i> Job Details</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="job-detail-grid">
+                            <div class="job-info-section">
+                                <h4>Schedule Information</h4>
+                                <p><strong>Scheduled:</strong> <span id="jobScheduledDateTime">Not set</span></p>
+                                <p><strong>Duration:</strong> <span id="jobDurationHours">0</span> hours</p>
+                                <p><strong>Status:</strong> <span id="jobStatus"
+                                        class="status-badge status-pending">Pending</span></p>
+                                <p><strong>Plumber:</strong> <span id="assignedPlumber">Unassigned</span></p>
+                                <p><strong>Completed:</strong> <span id="jobCompletedAt">Not completed</span></p>
+                            </div>
+
+                            <div class="job-work-section">
+                                <h4>Work Description</h4>
+                                <p id="jobDescription">No description provided</p>
+
+                                <h4>Materials Needed</h4>
+                                <p id="jobMaterialsNeeded">No materials listed</p>
+                            </div>
+                        </div>
+
+                        <!-- Job Actions -->
+                        <div class="job-actions">
+                            <button id="startJobBtn" class="btn btn-warning" style="display: none;"
+                                onclick="updateJobStatus('in_progress')">
+                                <i class="fas fa-play"></i> Start Job
+                            </button>
+                            <button id="completeJobBtn" class="btn btn-success" style="display: none;"
+                                onclick="updateJobStatus('completed')">
+                                <i class="fas fa-check"></i> Complete
+                            </button>
+                            <button id="rescheduleJobBtn" class="btn btn-secondary" style="display: none;"
+                                onclick="rescheduleJob()">
+                                <i class="fas fa-calendar-alt"></i> Reschedule
+                            </button>
+                            <button id="cancelJobBtn" class="btn btn-danger" style="display: none;"
+                                onclick="updateJobStatus('cancelled')">
+                                <i class="fas fa-times"></i> Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Appointment Information -->
             <div class="card">
                 <h2 class="section-title">
-                    <i class="fas fa-calculator"></i> Totals
+                    <i class="fas fa-info-circle"></i> Appointment Information
                 </h2>
-                <div class="totals-card">
-                    <div class="totals-row">
-                        <span>Material Cost:</span>
-                        <span id="materialsTotal">$0.00</span>
-                    </div>
-                    <div class="totals-row">
-                        <span>Labour Cost:</span>
-                        <input type="number" id="labourCost" value="0" min="0" step="0.01" oninput="calculateTotals()">
-                    </div>
-                    <div class="totals-row">
-                        <span>Transport Cost:</span>
-                        <input type="number" id="transportCost" value="0" min="0" step="0.01"
-                            oninput="calculateTotals()">
-                    </div>
-                    <div class="totals-row">
-                        <span>Total Amount:</span>
-                        <span id="grandTotal">$0.00</span>
-                    </div>
+
+                <div class="form-group">
+                    <label>Appointment Status</label>
+                    <div id="appointmentStatus" class="status-badge status-pending">Pending</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="customerName">Customer Name *</label>
+                    <input type="text" id="customerName" placeholder="Enter customer name" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="phoneNumber">Phone Number</label>
+                    <input type="tel" id="phoneNumber" placeholder="+263 77 123 4567">
+                </div>
+
+                <div class="form-group">
+                    <label for="customerEmail">Email</label>
+                    <input type="email" id="customerEmail" placeholder="customer@example.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="customerArea">Area</label>
+                    <input type="text" id="customerArea" placeholder="Customer area">
+                </div>
+
+                <div class="form-group">
+                    <label for="projectType">Service Type *</label>
+                    <input type="text" id="projectType" placeholder="e.g., Bathroom Renovation" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="propertyType">Property Type</label>
+                    <select id="propertyType">
+                        <option value="">Select property type</option>
+                        <option value="house">House</option>
+                        <option value="apartment">Apartment</option>
+                        <option value="commercial">Commercial</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="timeline">Timeline</label>
+                    <input type="text" id="timeline" placeholder="e.g., ASAP, Next week">
+                </div>
+
+                <div class="form-group">
+                    <label for="scheduledDatetime">Scheduled Date/Time</label>
+                    <input type="datetime-local" id="scheduledDatetime">
+                </div>
+
+                <div class="form-group">
+                    <label for="projectDescription">Project Description</label>
+                    <textarea id="projectDescription" placeholder="Describe the project..."></textarea>
                 </div>
             </div>
 
-            <!-- Preview Section -->
-            <div class="card preview-section" id="previewSection">
-                <div class="preview-header">
-                    <div class="company-logo">HB</div>
-                    <h2>HOMEBASE CONSTRUCTION</h2>
-                    <p style="font-size: 0.85rem; color: #666;">150 Northway, Seke rd, Hatfield — Harare</p>
-                    <p style="font-size: 0.85rem; color: #666;">Cell: 0774 819 901 | Email: info@homebaseplumbers.co.zw
-                    </p>
-                </div>
+            <!-- Conversation History -->
+            <div class="card">
+                <h2 class="section-title">
+                    <i class="fas fa-comments"></i> Conversation History
+                </h2>
 
-                <div class="preview-info">
-                    <strong>Client Information</strong>
-                    <div id="previewClient"></div>
-                </div>
-
-                <div class="preview-info">
-                    <strong>Project Details</strong>
-                    <div id="previewProject"></div>
-                </div>
-
-                <table class="preview-table">
-                    <thead>
-                        <tr>
-                            <th>Item</th>
-                            <th>Qty</th>
-                            <th>Price</th>
-                            <th>Total</th>
-                        </tr>
-                    </thead>
-                    <tbody id="previewItems"></tbody>
-                </table>
-
-                <div class="totals-card">
-                    <div class="totals-row">
-                        <span>Material cost:</span>
-                        <span id="previewMaterials">$0.00</span>
-                    </div>
-                    <div class="totals-row">
-                        <span>Labour:</span>
-                        <span id="previewLabour">$0.00</span>
-                    </div>
-                    <div class="totals-row">
-                        <span>Transport:</span>
-                        <span id="previewTransport">$0.00</span>
-                    </div>
-                    <div class="totals-row">
-                        <span>Total Amount:</span>
-                        <span id="previewGrandTotal">$0.00</span>
+                <div class="conversation-history" id="conversationHistory">
+                    <div class="empty-state">
+                        <i class="fas fa-comment-slash"></i>
+                        <p>No conversation history</p>
                     </div>
                 </div>
+
+                <div class="form-group">
+                    <label for="followupMessage">Send Follow-up</label>
+                    <textarea id="followupMessage" placeholder="Type message..." rows="3"></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="sendFollowup()">
+                    <i class="fas fa-paper-plane"></i> Send Message
+                </button>
             </div>
         </div>
 
         <!-- Fixed Action Buttons -->
         <div class="action-buttons">
-            <button class="btn btn-primary" onclick="showPreview()">
-                <i class="fas fa-eye"></i> Preview
-            </button>
-            <button class="btn btn-outline" onclick="downloadPDF()">
-                <i class="fas fa-download"></i> Download
-            </button>
-            <button class="btn btn-secondary" onclick="clearAll()">
-                <i class="fas fa-trash"></i> Clear All
-            </button>
-            <button class="btn btn-success" onclick="saveQuotation()" id="saveBtn">
+            <button class="btn btn-primary" onclick="saveAppointment()" id="saveBtn">
                 <i class="fas fa-save"></i> Save
             </button>
-        </div>
-    </div>
-
-    <!-- Template Selector Modal -->
-    <div id="templateModal"
-        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999;">
-        <div
-            style="background: white; margin: 50px auto; max-width: 800px; border-radius: 12px; padding: 30px; max-height: 80vh; overflow-y: auto;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
-                <button onclick="closeTemplateModal()"
-                    style="background: none; border: none; font-size: 1.5em; cursor: pointer;">&times;</button>
-            </div>
-
-            <!-- Search and Filters -->
-            <div style="margin-bottom: 20px;">
-                <input type="text" id="templateSearch" placeholder="Search templates..."
-                    style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;"
-                    oninput="searchTemplates()">
-
-                <select id="templateProjectFilter" onchange="filterTemplates()"
-                    style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
-                    <option value="">All Project Types</option>
-                    <option value="bathroom_renovation">Bathroom Renovation</option>
-                    <option value="kitchen_renovation">Kitchen Renovation</option>
-                    <option value="new_plumbing_installation">New Plumbing Installation</option>
-                </select>
-            </div>
-
-            <!-- Templates List -->
-            <div id="templatesList" style="display: grid; gap: 15px;">
-                <!-- Templates will be loaded here -->
-            </div>
-
-            <div id="templatesLoading" style="text-align: center; padding: 40px; color: #666;">
-                <i class="fas fa-spinner fa-spin" style="font-size: 2em;"></i>
-                <p>Loading templates...</p>
-            </div>
-
-            <div id="templatesEmpty" style="display: none; text-align: center; padding: 40px; color: #666;">
-                <i class="fas fa-inbox" style="font-size: 3em; opacity: 0.3;"></i>
-                <p>No templates found</p>
-            </div>
+            <button class="btn btn-success" onclick="confirmAppointment()" id="confirmBtn">
+                <i class="fas fa-check"></i> Confirm
+            </button>
+            <button class="btn btn-secondary" onclick="clearForm()">
+                <i class="fas fa-times"></i> Clear
+            </button>
+            <button class="btn btn-danger" onclick="cancelAppointment()" id="cancelBtn">
+                <i class="fas fa-ban"></i> Cancel
+            </button>
         </div>
     </div>
 
     <script>
-        let items = [];
         let currentAppointmentId = null;
-        let allTemplates = [];
+        let appointmentData = null;
 
         // Auto-load appointment on page load
         document.addEventListener('DOMContentLoaded', function () {
@@ -686,73 +622,49 @@
 
             if (appointmentId) {
                 loadAppointmentData(appointmentId);
-            } else {
-                // Check if we have appointment data in localStorage (for template usage)
-                const savedAppointment = localStorage.getItem('currentAppointment');
-                if (savedAppointment) {
-                    const appointment = JSON.parse(savedAppointment);
-                    prefillAppointmentData(appointment);
-                }
             }
         });
-
-        // Sample data for different project types
-        const projectTemplates = {
-            'bathroom_renovation': [
-                { name: '500ml prodorite solvent cement', qty: 1, price: 4 },
-                { name: '50mm pvc waste pipe', qty: 2, price: 6 },
-                { name: '50mm pvc bends', qty: 15, price: 0.5 },
-                { name: '50x45deg pvc bends', qty: 6, price: 0.5 },
-                { name: '50x45deg pvc junction', qty: 3, price: 1 },
-                { name: '50mm pvc tee', qty: 3, price: 1 },
-                { name: 'Tub Waste', qty: 1, price: 12 },
-                { name: 'Angle valve', qty: 3, price: 3 },
-                { name: 'Rubber p trap', qty: 1, price: 3 },
-                { name: 'Cabinet and basin set', qty: 1, price: 170 },
-                { name: 'Basin mixer', qty: 1, price: 40 },
-                { name: 'Shower p trap', qty: 1, price: 3 }
-            ],
-            'kitchen_renovation': [
-                { name: 'Kitchen sink', qty: 1, price: 120 },
-                { name: 'Kitchen mixer tap', qty: 1, price: 45 },
-                { name: '40mm waste pipe', qty: 3, price: 4 },
-                { name: 'Angle valves', qty: 2, price: 3 },
-                { name: 'Pipe connectors', qty: 6, price: 1.5 },
-                { name: 'Pipe brackets', qty: 8, price: 0.5 }
-            ],
-            'new_plumbing_installation': [
-                { name: 'Main water connection', qty: 1, price: 150 },
-                { name: 'Copper pipes 15mm', qty: 20, price: 8 },
-                { name: 'Pipe fittings', qty: 15, price: 2 },
-                { name: 'Stop valves', qty: 3, price: 12 },
-                { name: 'Pressure reducer', qty: 1, price: 45 }
-            ]
-        };
-
-        const defaultCosts = {
-            'bathroom_renovation': { labour: 280, transport: 20 },
-            'kitchen_renovation': { labour: 200, transport: 15 },
-            'new_plumbing_installation': { labour: 350, transport: 25 }
-        };
 
         async function loadAppointmentData(appointmentId) {
             try {
                 showAlert('Loading appointment data...', 'success');
 
-                // Fetch appointment data from API
-                const response = await fetch(`/api/appointments/${appointmentId}/`);
-                const appointment = await response.json();
+                // In a real app, this would fetch from your API
+                // For demo purposes, we'll use mock data
+                const mockAppointment = {
+                    id: appointmentId,
+                    customer_name: "John Smith",
+                    phone_number: "+263 77 123 4567",
+                    customer_email: "john.smith@example.com",
+                    customer_area: "Harare, Borrowdale",
+                    project_type: "bathroom_renovation",
+                    property_type: "house",
+                    timeline: "ASAP",
+                    scheduled_datetime: "2023-12-15T10:00",
+                    project_description: "Complete bathroom renovation including new tiles, fixtures, and plumbing",
+                    status: "pending",
+                    appointment_type: "site_visit",
+                    site_visit_completed: false,
+                    conversation_history: [
+                        {
+                            role: "user",
+                            content: "Hi, I need a bathroom renovation quote",
+                            timestamp: "2023-11-20T14:30:00"
+                        },
+                        {
+                            role: "assistant",
+                            content: "Hello! I'd be happy to help with your bathroom renovation. Could you provide more details about what you need?",
+                            timestamp: "2023-11-20T14:32:00"
+                        }
+                    ]
+                };
 
-                if (appointment.error) {
-                    showAlert('Error loading appointment: ' + appointment.error, 'error');
-                    return;
-                }
-
-                prefillAppointmentData(appointment);
+                appointmentData = mockAppointment;
                 currentAppointmentId = appointmentId;
+                populateForm(mockAppointment);
+                updateUIForAppointmentType(mockAppointment);
 
-                // Save appointment data for template usage
-                localStorage.setItem('currentAppointment', JSON.stringify(appointment));
+                showAlert('Appointment data loaded successfully!', 'success');
 
             } catch (error) {
                 console.error('Error loading appointment:', error);
@@ -760,80 +672,105 @@
             }
         }
 
-        function prefillAppointmentData(appointment) {
-            // Auto-fill client information
-            document.getElementById('clientName').value = appointment.customer_name || '';
-            document.getElementById('clientEmail').value = appointment.customer_email || '';
-            document.getElementById('clientPhone').value = appointment.phone_number || '';
-            document.getElementById('clientAddress').value = appointment.customer_area || '';
+        function populateForm(appointment) {
+            // Basic information
+            document.getElementById('customerName').value = appointment.customer_name || '';
+            document.getElementById('phoneNumber').value = appointment.phone_number || '';
+            document.getElementById('customerEmail').value = appointment.customer_email || '';
+            document.getElementById('customerArea').value = appointment.customer_area || '';
+            document.getElementById('projectType').value = formatProjectType(appointment.project_type) || '';
+            document.getElementById('propertyType').value = appointment.property_type || '';
+            document.getElementById('timeline').value = appointment.timeline || '';
+            document.getElementById('scheduledDatetime').value = appointment.scheduled_datetime || '';
+            document.getElementById('projectDescription').value = appointment.project_description || '';
 
-            // Auto-fill project information
-            const projectType = formatProjectType(appointment.project_type);
-            document.getElementById('projectType').value = projectType || '';
-            document.getElementById('projectLocation').value = appointment.customer_area || '';
+            // Update header
+            document.getElementById('headerCustomerName').textContent = appointment.customer_name || 'Appointment Details';
 
-            // Build project notes
-            let notes = appointment.project_description || '';
-            if (appointment.property_type) {
-                notes += `\nProperty Type: ${appointment.property_type}`;
-            }
-            if (appointment.house_stage) {
-                notes += `\nHouse Stage: ${appointment.house_stage}`;
-            }
-            if (appointment.timeline) {
-                notes += `\nTimeline: ${appointment.timeline}`;
-            }
-            document.getElementById('projectNotes').value = notes.trim();
+            // Update status
+            updateStatusDisplay(appointment.status);
 
-            // Auto-fill items based on project type
-            const projectKey = getProjectKey(appointment.project_type);
-            if (projectTemplates[projectKey]) {
-                items = projectTemplates[projectKey].map((item, index) => ({
-                    id: Date.now() + index,
-                    name: item.name,
-                    qty: item.qty,
-                    price: item.price
-                }));
-
-                // Set default costs
-                const costs = defaultCosts[projectKey] || { labour: 200, transport: 15 };
-                document.getElementById('labourCost').value = costs.labour;
-                document.getElementById('transportCost').value = costs.transport;
-            } else {
-                // For other project types, add a few blank items to start
-                items = [
-                    { id: Date.now(), name: '', qty: 1, price: 0 },
-                    { id: Date.now() + 1, name: '', qty: 1, price: 0 }
-                ];
-            }
-
-            // Show appointment info in header
-            showAppointmentInfo(appointment);
-
-            renderItems();
-            calculateTotals();
-            showAlert('Appointment data loaded successfully!', 'success');
+            // Load conversation history
+            loadConversationHistory(appointment.conversation_history || []);
         }
 
-        function showAppointmentInfo(appointment) {
-            const infoDiv = document.getElementById('appointmentInfo');
-            const detailsDiv = document.getElementById('appointmentDetails');
+        function updateUIForAppointmentType(appointment) {
+            const typeBadge = document.getElementById('appointmentTypeBadge');
+            const jobSchedulingPanel = document.getElementById('jobSchedulingPanel');
+            const jobDetailsPanel = document.getElementById('jobDetailsPanel');
 
-            if (appointment.customer_name || appointment.project_type) {
-                let details = '';
-                if (appointment.customer_name) {
-                    details += `Client: ${appointment.customer_name}<br>`;
-                }
-                if (appointment.project_type) {
-                    details += `Service: ${formatProjectType(appointment.project_type)}<br>`;
-                }
-                if (appointment.customer_area) {
-                    details += `Area: ${appointment.customer_area}`;
+            if (appointment.appointment_type === 'site_visit') {
+                typeBadge.textContent = 'Site Visit';
+                typeBadge.className = 'appointment-type-badge site-visit';
+                typeBadge.style.display = 'inline-block';
+
+                // Show job scheduling if site visit is not completed
+                if (!appointment.site_visit_completed) {
+                    jobSchedulingPanel.style.display = 'block';
+                    document.getElementById('schedulingStatus').className = 'scheduling-status pending';
+                    document.getElementById('schedulingStatus').innerHTML = `
+                        <i class="fas fa-clock"></i>
+                        <div class="status-content">
+                            <p>Site visit must be completed before scheduling job appointment</p>
+                            <button class="btn btn-primary" onclick="completeSiteVisit()">
+                                <i class="fas fa-clipboard-check"></i> Complete Site Visit
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    jobSchedulingPanel.style.display = 'block';
+                    document.getElementById('schedulingStatus').className = 'scheduling-status ready';
+                    document.getElementById('schedulingStatus').innerHTML = `
+                        <i class="fas fa-check-circle"></i>
+                        <div class="status-content">
+                            <p>Site visit completed. Ready to schedule job appointment.</p>
+                            <div class="completion-details">
+                                <p><strong>Completed:</strong> ${appointment.site_visit_completed_at || 'Recently'}</p>
+                                ${appointment.site_visit_notes ? `<p><strong>Notes:</strong> ${appointment.site_visit_notes}</p>` : ''}
+                            </div>
+                            <button class="btn btn-success" onclick="scheduleJob()">
+                                <i class="fas fa-calendar-plus"></i> Schedule Job
+                            </button>
+                        </div>
+                    `;
                 }
 
-                detailsDiv.innerHTML = details;
-                infoDiv.style.display = 'block';
+                jobDetailsPanel.style.display = 'none';
+            } else if (appointment.appointment_type === 'job_appointment') {
+                typeBadge.textContent = 'Job';
+                typeBadge.className = 'appointment-type-badge job';
+                typeBadge.style.display = 'inline-block';
+
+                jobSchedulingPanel.style.display = 'none';
+                jobDetailsPanel.style.display = 'block';
+
+                // Populate job details
+                document.getElementById('jobScheduledDateTime').textContent =
+                    formatDateTime(appointment.job_scheduled_datetime) || 'Not set';
+                document.getElementById('jobDurationHours').textContent =
+                    appointment.job_duration_hours || '0';
+                document.getElementById('jobStatus').textContent =
+                    formatJobStatus(appointment.job_status);
+                document.getElementById('jobStatus').className =
+                    `status-badge status-${appointment.job_status || 'pending'}`;
+                document.getElementById('assignedPlumber').textContent =
+                    appointment.assigned_plumber || 'Unassigned';
+                document.getElementById('jobCompletedAt').textContent =
+                    formatDateTime(appointment.job_completed_at) || 'Not completed';
+                document.getElementById('jobDescription').textContent =
+                    appointment.job_description || 'No description provided';
+                document.getElementById('jobMaterialsNeeded').textContent =
+                    appointment.job_materials_needed || 'No materials listed';
+
+                // Show appropriate job action buttons
+                updateJobActionButtons(appointment.job_status);
             }
+        }
+
+        function updateStatusDisplay(status) {
+            const statusElement = document.getElementById('appointmentStatus');
+            statusElement.textContent = formatStatus(status);
+            statusElement.className = `status-badge status-${status}`;
         }
 
         function formatProjectType(projectType) {
@@ -854,447 +791,204 @@
             return typeMap[projectType] || projectType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         }
 
-        function getProjectKey(projectType) {
-            if (!projectType) return '';
-
-            // Map common project types to template keys
-            const keyMap = {
-                'bathroom_renovation': 'bathroom_renovation',
-                'kitchen_renovation': 'kitchen_renovation',
-                'new_plumbing_installation': 'new_plumbing_installation',
-                'plumbing_repair': 'bathroom_renovation', // Fallback to bathroom template
-                'electrical_work': 'new_plumbing_installation' // Fallback to new installation template
+        function formatStatus(status) {
+            const statusMap = {
+                'pending': 'Pending',
+                'confirmed': 'Confirmed',
+                'completed': 'Completed',
+                'cancelled': 'Cancelled'
             };
 
-            return keyMap[projectType] || projectType;
+            return statusMap[status] || status;
         }
 
-        // Template Modal Functions
-        async function openTemplateModal() {
-            document.getElementById('templateModal').style.display = 'block';
-            document.getElementById('templatesLoading').style.display = 'block';
-            document.getElementById('templatesList').innerHTML = '';
-            document.getElementById('templatesEmpty').style.display = 'none';
+        function formatJobStatus(status) {
+            const statusMap = {
+                'pending_schedule': 'Pending Schedule',
+                'scheduled': 'Scheduled',
+                'in_progress': 'In Progress',
+                'completed': 'Completed',
+                'cancelled': 'Cancelled'
+            };
 
-            try {
-                const response = await fetch('/api/quotation-templates/?active_only=true');
-                const data = await response.json();
-
-                if (data.success && data.templates) {
-                    allTemplates = data.templates;
-                    displayTemplates(allTemplates);
-                } else {
-                    showTemplatesEmpty();
-                }
-            } catch (error) {
-                console.error('Error loading templates:', error);
-                showAlert('Failed to load templates', 'error');
-                closeTemplateModal();
-            } finally {
-                document.getElementById('templatesLoading').style.display = 'none';
-            }
+            return statusMap[status] || status;
         }
 
-        function closeTemplateModal() {
-            document.getElementById('templateModal').style.display = 'none';
+        function formatDateTime(dateTimeString) {
+            if (!dateTimeString) return '';
+
+            const date = new Date(dateTimeString);
+            return date.toLocaleString();
         }
 
-        function displayTemplates(templates) {
-            const container = document.getElementById('templatesList');
+        function loadConversationHistory(conversation) {
+            const container = document.getElementById('conversationHistory');
 
-            if (templates.length === 0) {
-                showTemplatesEmpty();
-                return;
-            }
-
-            container.innerHTML = templates.map(template => `
-                <div class="template-card" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.2s;"
-                     onclick="useTemplate(${template.id})"
-                     onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'"
-                     onmouseout="this.style.boxShadow='none'">
-                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
-                        <div>
-                            <h3 style="margin: 0 0 5px 0; color: #2d3748;">${template.name}</h3>
-                            <p style="margin: 0; color: #666; font-size: 0.9em;">${template.description || 'No description'}</p>
-                        </div>
-                        <span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 12px; font-size: 0.8em; white-space: nowrap;">
-                            ${template.project_type_display}
-                        </span>
-                    </div>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
-                        <div>
-                            <div style="font-size: 0.8em; color: #666;">Items</div>
-                            <div style="font-weight: 600; color: #2d3748;">${template.items_count}</div>
-                        </div>
-                        <div>
-                            <div style="font-size: 0.8em; color: #666;">Estimated Cost</div>
-                            <div style="font-weight: 600; color: #10b981;">R${template.estimated_cost.toFixed(2)}</div>
-                        </div>
-                        <div>
-                            <div style="font-size: 0.8em; color: #666;">Used</div>
-                            <div style="font-weight: 600; color: #667eea;">${template.use_count}x</div>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function showTemplatesEmpty() {
-            document.getElementById('templatesList').innerHTML = '';
-            document.getElementById('templatesEmpty').style.display = 'block';
-        }
-
-        async function useTemplate(templateId) {
-            if (!confirm('Load this template? Your current items will be replaced.')) {
-                return;
-            }
-
-            try {
-                // Fetch template details
-                const response = await fetch(`/api/quotation-templates/${templateId}/`);
-                const data = await response.json();
-
-                if (!data.success) {
-                    showAlert('Failed to load template', 'error');
-                    return;
-                }
-
-                const template = data.template;
-
-                // Clear existing items
-                items = [];
-
-                // Load template items
-                if (template.items && template.items.length > 0) {
-                    items = template.items.map((item, index) => ({
-                        id: Date.now() + index,
-                        name: item.description,
-                        qty: parseFloat(item.quantity),
-                        price: parseFloat(item.unit_price)
-                    }));
-                }
-
-                // Set costs
-                document.getElementById('labourCost').value = template.default_labor_cost || 0;
-                document.getElementById('transportCost').value = template.default_transport_cost || 0;
-
-                // Update project type if not already set
-                const currentProjectType = document.getElementById('projectType').value;
-                if (!currentProjectType && template.project_type_display) {
-                    document.getElementById('projectType').value = template.project_type_display;
-                }
-
-                // Add template notes
-                const currentNotes = document.getElementById('projectNotes').value;
-                if (template.description) {
-                    const newNotes = currentNotes ?
-                        `${currentNotes}\n\nTemplate: ${template.name}\n${template.description}` :
-                        `Template: ${template.name}\n${template.description}`;
-                    document.getElementById('projectNotes').value = newNotes;
-                }
-
-                // Render items and recalculate
-                renderItems();
-                calculateTotals();
-
-                closeTemplateModal();
-                showAlert(`Template "${template.name}" loaded successfully!`, 'success');
-
-            } catch (error) {
-                console.error('Error using template:', error);
-                showAlert('Failed to use template', 'error');
-            }
-        }
-
-        function searchTemplates() {
-            const searchTerm = document.getElementById('templateSearch').value.toLowerCase();
-            const filtered = allTemplates.filter(t =>
-                t.name.toLowerCase().includes(searchTerm) ||
-                (t.description && t.description.toLowerCase().includes(searchTerm))
-            );
-            displayTemplates(filtered);
-        }
-
-        function filterTemplates() {
-            const projectType = document.getElementById('templateProjectFilter').value;
-
-            if (!projectType) {
-                displayTemplates(allTemplates);
-                return;
-            }
-
-            const filtered = allTemplates.filter(t => t.project_type === projectType);
-            displayTemplates(filtered);
-        }
-
-        // Close modal when clicking outside
-        document.addEventListener('DOMContentLoaded', function () {
-            const modal = document.getElementById('templateModal');
-            if (modal) {
-                modal.addEventListener('click', function (e) {
-                    if (e.target === modal) {
-                        closeTemplateModal();
-                    }
-                });
-            }
-        });
-
-        // Rest of the functions (addItem, removeItem, updateItem, renderItems, calculateTotals, etc.)
-        // ... [Previous JavaScript functions remain the same] ...
-
-        function addItem() {
-            const id = Date.now();
-            items.push({ id, name: '', qty: 1, price: 0 });
-            renderItems();
-        }
-
-        function removeItem(id) {
-            items = items.filter(item => item.id !== id);
-            renderItems();
-        }
-
-        function updateItem(id, field, value) {
-            const item = items.find(i => i.id === id);
-            if (item) {
-                item[field] = field === 'name' ? value : parseFloat(value) || 0;
-                if (field === 'qty' || field === 'price') {
-                    updateItemTotal(id);
-                    calculateTotals();
-                }
-            }
-        }
-
-        function updateItemTotal(id) {
-            const item = items.find(i => i.id === id);
-            if (item) {
-                const itemCard = document.querySelector(`[data-item-id="${id}"]`);
-                if (itemCard) {
-                    const totalEl = itemCard.querySelector('.item-total');
-                    if (totalEl) {
-                        totalEl.textContent = `Total: $${(item.qty * item.price).toFixed(2)}`;
-                    }
-                }
-            }
-        }
-
-        function renderItems() {
-            const container = document.getElementById('itemsList');
-
-            if (items.length === 0) {
+            if (conversation.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <i class="fas fa-inbox"></i>
-                        <p>No items added yet</p>
+                        <i class="fas fa-comment-slash"></i>
+                        <p>No conversation history</p>
                     </div>
                 `;
-                calculateTotals();
                 return;
             }
 
-            container.innerHTML = items.map(item => `
-                <div class="item-card" data-item-id="${item.id}">
-                    <button class="remove-item" onclick="removeItem(${item.id})">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                    <input type="text" placeholder="Item description" 
-                           value="${item.name}" 
-                           oninput="updateItem(${item.id}, 'name', this.value)">
-                    <div class="item-row">
-                        <div>
-                            <label style="font-size: 0.85rem; color: #666;">Quantity</label>
-                            <input type="number" value="${item.qty}" min="0" 
-                                   oninput="updateItem(${item.id}, 'qty', this.value)">
-                        </div>
-                        <div>
-                            <label style="font-size: 0.85rem; color: #666;">Unit Price ($)</label>
-                            <input type="number" value="${item.price}" min="0" step="0.01"
-                                   oninput="updateItem(${item.id}, 'price', this.value)">
-                        </div>
+            container.innerHTML = conversation.map(msg => `
+                <div class="message ${msg.role === 'user' ? 'user' : 'assistant'}">
+                    <div class="message-header">
+                        ${msg.role === 'user' ? 'Customer' : 'Assistant'}
+                        <small>${formatDateTime(msg.timestamp)}</small>
                     </div>
-                    <div class="item-total">
-                        Total: $${(item.qty * item.price).toFixed(2)}
-                    </div>
+                    <p>${msg.content}</p>
                 </div>
             `).join('');
 
-            calculateTotals();
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
         }
 
-        function calculateTotals() {
-            const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
-            const labour = parseFloat(document.getElementById('labourCost').value) || 0;
-            const transport = parseFloat(document.getElementById('transportCost').value) || 0;
-            const total = materials + labour + transport;
+        function updateJobActionButtons(jobStatus) {
+            // Hide all buttons first
+            document.getElementById('startJobBtn').style.display = 'none';
+            document.getElementById('completeJobBtn').style.display = 'none';
+            document.getElementById('rescheduleJobBtn').style.display = 'none';
+            document.getElementById('cancelJobBtn').style.display = 'none';
 
-            document.getElementById('materialsTotal').textContent = `$${materials.toFixed(2)}`;
-            document.getElementById('grandTotal').textContent = `$${total.toFixed(2)}`;
-        }
-
-        function showPreview() {
-            const clientName = document.getElementById('clientName').value.trim();
-            const projectType = document.getElementById('projectType').value.trim();
-
-            if (!clientName || !projectType) {
-                showAlert('Please fill in client name and project type', 'error');
-                return;
-            }
-
-            // Update preview content
-            document.getElementById('previewClient').innerHTML = `
-                <strong>${clientName}</strong><br>
-                ${document.getElementById('clientEmail').value}<br>
-                ${document.getElementById('clientPhone').value}<br>
-                ${document.getElementById('clientAddress').value}
-            `;
-
-            document.getElementById('previewProject').innerHTML = `
-                <strong>${projectType}</strong><br>
-                ${document.getElementById('projectLocation').value}<br>
-                ${document.getElementById('projectNotes').value}
-            `;
-
-            const itemsHtml = items.map(item => `
-                <tr>
-                    <td>${item.name || 'Unnamed'}</td>
-                    <td>${item.qty}</td>
-                    <td>$${item.price.toFixed(2)}</td>
-                    <td>$${(item.qty * item.price).toFixed(2)}</td>
-                </tr>
-            `).join('');
-
-            document.getElementById('previewItems').innerHTML = itemsHtml ||
-                '<tr><td colspan="4" style="text-align: center; color: #999;">No items</td></tr>';
-
-            const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
-            const labour = parseFloat(document.getElementById('labourCost').value) || 0;
-            const transport = parseFloat(document.getElementById('transportCost').value) || 0;
-
-            document.getElementById('previewMaterials').textContent = `$${materials.toFixed(2)}`;
-            document.getElementById('previewLabour').textContent = `$${labour.toFixed(2)}`;
-            document.getElementById('previewTransport').textContent = `$${transport.toFixed(2)}`;
-            document.getElementById('previewGrandTotal').textContent = `$${(materials + labour + transport).toFixed(2)}`;
-
-            document.getElementById('previewSection').style.display = 'block';
-            document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function downloadPDF() {
-            showPreview();
-            setTimeout(() => window.print(), 500);
-        }
-
-        function clearAll() {
-            if (confirm('Clear all data? This cannot be undone.')) {
-                document.querySelectorAll('input, textarea').forEach(input => {
-                    if (input.type === 'number') {
-                        input.value = 0;
-                    } else {
-                        input.value = '';
-                    }
-                });
-                items = [];
-                renderItems();
-                document.getElementById('previewSection').style.display = 'none';
-                showAlert('All data cleared', 'success');
+            // Show appropriate buttons based on status
+            if (jobStatus === 'scheduled') {
+                document.getElementById('startJobBtn').style.display = 'inline-flex';
+                document.getElementById('rescheduleJobBtn').style.display = 'inline-flex';
+                document.getElementById('cancelJobBtn').style.display = 'inline-flex';
+            } else if (jobStatus === 'in_progress') {
+                document.getElementById('completeJobBtn').style.display = 'inline-flex';
+                document.getElementById('cancelJobBtn').style.display = 'inline-flex';
+            } else if (jobStatus === 'pending_schedule') {
+                document.getElementById('cancelJobBtn').style.display = 'inline-flex';
             }
         }
 
-        async function saveQuotation() {
-            const clientName = document.getElementById('clientName').value.trim();
-            const projectType = document.getElementById('projectType').value.trim();
+        // Action functions
+        function saveAppointment() {
+            // Collect form data
+            const formData = {
+                customer_name: document.getElementById('customerName').value,
+                phone_number: document.getElementById('phoneNumber').value,
+                customer_email: document.getElementById('customerEmail').value,
+                customer_area: document.getElementById('customerArea').value,
+                project_type: document.getElementById('projectType').value,
+                property_type: document.getElementById('propertyType').value,
+                timeline: document.getElementById('timeline').value,
+                scheduled_datetime: document.getElementById('scheduledDatetime').value,
+                project_description: document.getElementById('projectDescription').value
+            };
 
-            if (!clientName || !projectType) {
+            // Validate required fields
+            if (!formData.customer_name || !formData.project_type) {
                 showAlert('Please fill in required fields', 'error');
                 return;
             }
 
-            if (items.length === 0) {
-                showAlert('Please add at least one item', 'error');
+            // In a real app, this would send data to your API
+            console.log('Saving appointment:', formData);
+            showAlert('Appointment saved successfully!', 'success');
+        }
+
+        function confirmAppointment() {
+            if (!document.getElementById('customerName').value) {
+                showAlert('Please enter customer name first', 'error');
                 return;
             }
 
-            const saveBtn = document.getElementById('saveBtn');
-            saveBtn.classList.add('loading');
-            saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
+            // In a real app, this would update status via API
+            updateStatusDisplay('confirmed');
+            showAlert('Appointment confirmed!', 'success');
+        }
 
-            const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
-            const labour = parseFloat(document.getElementById('labourCost').value) || 0;
-            const transport = parseFloat(document.getElementById('transportCost').value) || 0;
-
-            const quotationData = {
-                appointment_id: currentAppointmentId,
-                client_name: clientName,
-                client_email: document.getElementById('clientEmail').value.trim(),
-                client_phone: document.getElementById('clientPhone').value.trim(),
-                client_address: document.getElementById('clientAddress').value.trim(),
-                project_type: projectType,
-                project_location: document.getElementById('projectLocation').value.trim(),
-                project_notes: document.getElementById('projectNotes').value.trim(),
-                items: items.map(item => ({
-                    name: item.name,
-                    qty: item.qty,
-                    unit: item.price
-                })),
-                labour_cost: labour,
-                transport_cost: transport,
-                materials_cost: materials,
-                total_amount: materials + labour + transport,
-                notes: document.getElementById('projectNotes').value.trim()
-            };
-
-            try {
-                const csrftoken = getCookie('csrftoken');
-
-                const response = await fetch('/api/quotations/create/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrftoken
-                    },
-                    body: JSON.stringify(quotationData)
-                });
-
-                const result = await response.json();
-
-                if (response.ok && result.success) {
-                    showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
-
-                    // Redirect to the related appointment after 2 seconds
-                    setTimeout(() => {
-                        if (result.appointment_id) {
-                            window.location.href = `/appointments/${result.appointment_id}/`;
-                        } else if (result.quotation_id) {
-                            window.location.href = `/quotations/${result.quotation_id}/`;
-                        }
-                    }, 2000);
-                } else {
-                    showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
-                }
-
-            } catch (error) {
-                console.error('Error saving quotation:', error);
-                showAlert('Failed to save quotation. Please try again.', 'error');
-            } finally {
-                saveBtn.classList.remove('loading');
-                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+        function cancelAppointment() {
+            if (confirm('Are you sure you want to cancel this appointment?')) {
+                // In a real app, this would update status via API
+                updateStatusDisplay('cancelled');
+                showAlert('Appointment cancelled', 'success');
             }
         }
 
-        // Helper function to get CSRF token
-        function getCookie(name) {
-            let cookieValue = null;
-            if (document.cookie && document.cookie !== '') {
-                const cookies = document.cookie.split(';');
-                for (let i = 0; i < cookies.length; i++) {
-                    const cookie = cookies[i].trim();
-                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                        break;
+        function clearForm() {
+            if (confirm('Clear all form data? This cannot be undone.')) {
+                document.querySelectorAll('input, textarea, select').forEach(element => {
+                    if (element.type !== 'button') {
+                        element.value = '';
                     }
+                });
+                showAlert('Form cleared', 'success');
+            }
+        }
+
+        function sendFollowup() {
+            const message = document.getElementById('followupMessage').value.trim();
+
+            if (!message) {
+                showAlert('Please enter a message', 'error');
+                return;
+            }
+
+            // In a real app, this would send via your API
+            console.log('Sending follow-up:', message);
+
+            // Add to conversation history
+            const newMessage = {
+                role: 'assistant',
+                content: message,
+                timestamp: new Date().toISOString()
+            };
+
+            if (appointmentData) {
+                if (!appointmentData.conversation_history) {
+                    appointmentData.conversation_history = [];
+                }
+                appointmentData.conversation_history.push(newMessage);
+                loadConversationHistory(appointmentData.conversation_history);
+            }
+
+            // Clear the input
+            document.getElementById('followupMessage').value = '';
+            showAlert('Message sent!', 'success');
+        }
+
+        function completeSiteVisit() {
+            // In a real app, this would update via API
+            if (appointmentData) {
+                appointmentData.site_visit_completed = true;
+                appointmentData.site_visit_completed_at = new Date().toISOString();
+                appointmentData.site_visit_notes = "Site visit completed successfully";
+                updateUIForAppointmentType(appointmentData);
+                showAlert('Site visit marked as completed!', 'success');
+            }
+        }
+
+        function scheduleJob() {
+            // In a real app, this would redirect to job scheduling
+            showAlert('Redirecting to job scheduling...', 'success');
+            // window.location.href = `/schedule-job/${currentAppointmentId}/`;
+        }
+
+        function updateJobStatus(newStatus) {
+            if (confirm(`Change job status to ${formatJobStatus(newStatus)}?`)) {
+                // In a real app, this would update via API
+                if (appointmentData) {
+                    appointmentData.job_status = newStatus;
+                    if (newStatus === 'completed') {
+                        appointmentData.job_completed_at = new Date().toISOString();
+                    }
+                    updateUIForAppointmentType(appointmentData);
+                    showAlert(`Job status updated to ${formatJobStatus(newStatus)}`, 'success');
                 }
             }
-            return cookieValue;
+        }
+
+        function rescheduleJob() {
+            // In a real app, this would open a rescheduling dialog
+            showAlert('Opening rescheduling options...', 'success');
         }
 
         function showAlert(message, type) {
@@ -1305,9 +999,6 @@
             container.appendChild(alert);
             setTimeout(() => alert.remove(), 4000);
         }
-
-        // Initialize
-        renderItems();
     </script>
 </body>
 
