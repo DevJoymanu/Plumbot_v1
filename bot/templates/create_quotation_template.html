@@ -295,6 +295,29 @@
         color: var(--info);
     }
 
+    /* Delete button styles */
+    .delete-btn {
+        background: transparent;
+        border: none;
+        color: var(--danger);
+        padding: 6px;
+        border-radius: 4px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 32px;
+        min-width: 32px;
+    }
+
+    .delete-btn:hover {
+        background: rgba(220, 38, 38, 0.1);
+    }
+
+    .delete-btn i {
+        font-size: 1rem;
+    }
+
     /* Mobile-specific styles */
     @media (max-width: 768px) {
         .container-fluid {
@@ -377,6 +400,12 @@
         .table td:nth-child(8) {
             display: none;
         }
+
+        /* Adjust delete button for mobile */
+        .delete-btn {
+            min-height: 36px;
+            min-width: 36px;
+        }
     }
 
     /* Extra small devices */
@@ -400,6 +429,12 @@
         .table td {
             padding: 6px 4px;
         }
+
+        /* Make delete button more prominent on mobile */
+        .delete-btn {
+            background: rgba(220, 38, 38, 0.1);
+            border: 1px solid rgba(220, 38, 38, 0.3);
+        }
     }
 
     /* Fix for iOS form elements */
@@ -420,6 +455,13 @@
 
     .form-check-input {
         margin-top: 0;
+    }
+
+    /* Row deletion styling */
+    .deleted-row {
+        opacity: 0.5;
+        text-decoration: line-through;
+        background-color: #f8f9fa !important;
     }
 </style>
 {% endblock %}
@@ -514,12 +556,13 @@
                                         <th style="width: 12%;">Line Total</th>
                                         <th style="width: 8%;" class="d-none d-sm-table-cell">Optional</th>
                                         <th style="width: 8%;" class="d-none d-md-table-cell">Sort</th>
-                                        <th style="width: 5%;"></th>
+                                        <th style="width: 5%;">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody id="itemsTableBody">
                                     {% for item_form in formset %}
-                                    <tr class="item-row" data-item-id="{{ forloop.counter }}">
+                                    <tr class="item-row" data-item-id="{{ forloop.counter }}"
+                                        id="row-{{ forloop.counter }}">
                                         <td class="text-center">
                                             <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
                                         </td>
@@ -549,10 +592,12 @@
                                         <td class="text-center">
                                             {% if forloop.counter > 1 %}
                                             {{ item_form.DELETE }}
-                                            <label for="{{ item_form.DELETE.id_for_label }}"
-                                                class="btn btn-sm btn-outline-danger mb-0">
+                                            <button type="button" class="delete-btn"
+                                                data-row-id="{{ forloop.counter }}">
                                                 <i class="bi bi-trash"></i>
-                                            </label>
+                                            </button>
+                                            {% else %}
+                                            <span class="text-muted">—</span>
                                             {% endif %}
                                         </td>
                                     </tr>
@@ -624,8 +669,7 @@
 
             document.querySelectorAll('.item-row').forEach(function (row) {
                 // Skip deleted rows
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                if (deleteCheckbox && deleteCheckbox.checked) {
+                if (row.classList.contains('deleted-row')) {
                     return;
                 }
 
@@ -656,34 +700,51 @@
             document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
         }
 
+        // Delete row function
+        function deleteRow(rowId) {
+            const row = document.getElementById('row-' + rowId);
+            const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
+
+            if (deleteCheckbox) {
+                deleteCheckbox.checked = !deleteCheckbox.checked;
+
+                if (deleteCheckbox.checked) {
+                    row.classList.add('deleted-row');
+                } else {
+                    row.classList.remove('deleted-row');
+                }
+
+                calculateTotals();
+                updateItemNumbers();
+            }
+        }
+
+        // Attach event listeners to delete buttons
+        document.querySelectorAll('.delete-btn').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const rowId = this.getAttribute('data-row-id');
+                deleteRow(rowId);
+            });
+
+            // Add touch event for better mobile experience
+            button.addEventListener('touchstart', function (e) {
+                e.preventDefault();
+                const rowId = this.getAttribute('data-row-id');
+                deleteRow(rowId);
+            });
+        });
+
         // Attach event listeners to all quantity and price inputs
         document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
             input.addEventListener('input', calculateTotals);
             input.addEventListener('change', calculateTotals);
         });
 
-        // Handle delete checkboxes
-        document.querySelectorAll('input[type="checkbox"][id$="DELETE"]').forEach(function (checkbox) {
-            checkbox.addEventListener('change', function () {
-                const row = this.closest('.item-row');
-                if (this.checked) {
-                    row.style.opacity = '0.5';
-                    row.style.textDecoration = 'line-through';
-                } else {
-                    row.style.opacity = '1';
-                    row.style.textDecoration = 'none';
-                }
-                calculateTotals();
-                updateItemNumbers();
-            });
-        });
-
         // Update item numbers
         function updateItemNumbers() {
             let counter = 1;
             document.querySelectorAll('.item-row').forEach(function (row) {
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                if (!deleteCheckbox || !deleteCheckbox.checked) {
+                if (!row.classList.contains('deleted-row')) {
                     const numberBadge = row.querySelector('.item-number');
                     if (numberBadge) {
                         numberBadge.textContent = counter;
@@ -710,11 +771,11 @@
             // Check if at least one item is provided
             let hasValidItem = false;
             document.querySelectorAll('.item-row').forEach(function (row) {
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-                const descInput = row.querySelector('input[id$="description"]');
-
-                if ((!deleteCheckbox || !deleteCheckbox.checked) && descInput && descInput.value.trim()) {
-                    hasValidItem = true;
+                if (!row.classList.contains('deleted-row')) {
+                    const descInput = row.querySelector('input[id$="description"]');
+                    if (descInput && descInput.value.trim()) {
+                        hasValidItem = true;
+                    }
                 }
             });
 
