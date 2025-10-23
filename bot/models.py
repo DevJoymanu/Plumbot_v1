@@ -1016,20 +1016,18 @@ class Quotation(models.Model):
             ).count() + 1
             self.quotation_number = f"Q{today.strftime('%Y%m%d')}{quote_count:03d}"
         
-        # Calculate total - handle both new and existing quotations
+        # Calculate total
         if self.pk:
             # Existing quotation - can access items
             items_total = sum(item.total_price for item in self.items.all())
         else:
-            # New quotation - no items yet
+            # New quotation - save first, then update total
+            super().save(*args, **kwargs)
             items_total = Decimal('0.00')
         
         self.total_amount = items_total + self.labor_cost + self.materials_cost + self.transport_cost
         
         super().save(*args, **kwargs)
-    
-    def __str__(self):
-        return f"Quotation #{self.quotation_number} - {self.appointment.customer_name}"
 
 
 class QuotationItem(models.Model):

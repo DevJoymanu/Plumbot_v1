@@ -60,10 +60,10 @@ urlpatterns = [
     path('appointments/<int:pk>/documents/', AppointmentDocumentsView.as_view(), name='appointment_documents'),
     path('appointments/<int:pk>/download/<str:document_type>/', download_document, name='download_document'),
     
-   # path('api/quotations/create/', create_quotation_api, name='create_quotation_api'),
+    path('api/quotations/create/', create_quotation_api, name='create_quotation_api'),
     
     # Quotation Views
-    path('appointments/<int:pk>/create-quotation/', CreateQuotationView.as_view(), name='create_quotation'),
+   # path('appointments/<int:pk>/create-quotation/', CreateQuotationView.as_view(), name='create_quotation'),
     path('quotations/<int:pk>/', ViewQuotationView.as_view(), name='view_quotation'),
     path('quotations/<int:pk>/edit/', EditQuotationView.as_view(), name='edit_quotation'),
     path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),

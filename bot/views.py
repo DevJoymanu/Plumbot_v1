@@ -534,80 +534,36 @@ def template_items_api(request, template_id):
 
 
 # Alternative: Update your existing CreateQuotationView to handle both cases
+# Replace your CreateQuotationView with this fixed version:
+
+@method_decorator(staff_required, name='dispatch')
 class CreateQuotationView(CreateView):
     model = Quotation
     form_class = QuotationForm
     template_name = 'create_quotation.html'
     
-    def dispatch(self, request, *args, **kwargs):
-        # Handle API POST requests
-        if request.method == 'POST' and request.content_type == 'application/json':
-            return self.handle_api_post(request)
-        return super().dispatch(request, *args, **kwargs)
-    
-    def handle_api_post(self, request):
-        try:
-            data = json.loads(request.body)
-            
-            # Create the quotation (same logic as above)
-            quotation = Quotation.objects.create(
-                appointment_id=data.get('appointment_id') if data.get('appointment_id') else None,
-                client_name=data.get('client_name', ''),
-                client_email=data.get('client_email', ''),
-                client_phone=data.get('client_phone', ''),
-                client_address=data.get('client_address', ''),
-                project_type=data.get('project_type', ''),
-                project_location=data.get('project_location', ''),
-                project_notes=data.get('project_notes', ''),
-                quotation_date=data.get('quotation_date'),
-                valid_until=data.get('valid_until'),
-                labour_cost=data.get('labour_cost', 0),
-                transport_cost=data.get('transport_cost', 0),
-                materials_cost=data.get('materials_cost', 0),
-                total_amount=data.get('total_amount', 0),
-                status='draft'
-            )
-            
-            # Create quotation items
-            for item_data in data.get('items', []):
-                if item_data.get('name'):
-                    QuotationItem.objects.create(
-                        quotation=quotation,
-                        description=item_data.get('name', ''),
-                        quantity=item_data.get('qty', 1),
-                        unit_price=item_data.get('unit', 0),
-                        line_total=item_data.get('qty', 1) * item_data.get('unit', 0)
-                    )
-            
-            return JsonResponse({
-                'success': True,
-                'message': 'Quotation created successfully',
-                'quotation_id': quotation.id
-            })
-            
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=400)
-    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Only get appointment if pk is provided
+        # Get appointment if pk is provided
+        appointment = None
         if 'pk' in self.kwargs:
-            context['appointment'] = get_object_or_404(Appointment, pk=self.kwargs['pk'])
+            appointment = get_object_or_404(Appointment, pk=self.kwargs['pk'])
+            context['appointment'] = appointment
         
+        # Add formset
         if self.request.POST:
             context['formset'] = QuotationItemFormSet(self.request.POST)
         else:
             context['formset'] = QuotationItemFormSet()
+        
         return context
     
     def form_valid(self, form):
         context = self.get_context_data()
         formset = context['formset']
         
+        # Get appointment if pk provided
         if 'pk' in self.kwargs:
             appointment = get_object_or_404(Appointment, pk=self.kwargs['pk'])
             form.instance.appointment = appointment
@@ -625,6 +581,79 @@ class CreateQuotationView(CreateView):
                 return redirect('view_quotation', pk=self.object.pk)
         else:
             return self.render_to_response(self.get_context_data(form=form))
+    
+    def get_success_url(self):
+        if 'pk' in self.kwargs:
+            return reverse('appointment_detail', kwargs={'pk': self.kwargs['pk']})
+        return reverse('view_quotation', kwargs={'pk': self.object.pk})
+
+
+# Add this separate view for API-based quotation creation
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_quotation_api(request):
+    """API endpoint for creating quotations from the quotation generator page"""
+    try:
+        data = json.loads(request.body)
+        
+        # Get appointment if provided
+        appointment = None
+        appointment_id = data.get('appointment_id')
+        if appointment_id:
+            try:
+                appointment = Appointment.objects.get(id=appointment_id)
+            except Appointment.DoesNotExist:
+                pass
+        
+        # Create the quotation
+        quotation = Quotation.objects.create(
+            appointment=appointment,
+            labor_cost=data.get('labour_cost', 0),
+            transport_cost=data.get('transport_cost', 0),
+            materials_cost=data.get('materials_cost', 0),
+            notes=data.get('notes', ''),
+            status='draft'
+        )
+        
+        # Create quotation items
+        items_created = 0
+        for item_data in data.get('items', []):
+            if item_data.get('name'):  # Only create if name is provided
+                QuotationItem.objects.create(
+                    quotation=quotation,
+                    description=item_data.get('name', ''),
+                    quantity=item_data.get('qty', 1),
+                    unit_price=item_data.get('unit', 0)
+                )
+                items_created += 1
+        
+        # Recalculate total
+        quotation.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Quotation created successfully',
+            'quotation_id': quotation.id,
+            'quotation_number': quotation.quotation_number,
+            'appointment_id': appointment.id if appointment else None,
+            'items_created': items_created,
+            'total_amount': float(quotation.total_amount)
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON data'
+        }, status=400)
+    except Exception as e:
+        print(f"❌ Error creating quotation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
 
 @method_decorator(staff_required, name='dispatch')
 class ViewQuotationView(DetailView):

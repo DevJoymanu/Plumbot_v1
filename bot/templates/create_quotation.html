@@ -1111,6 +1111,8 @@
         }
 
 
+    // Replace the saveQuotation function in create_quotation.html with this:
+
     async function saveQuotation() {
         const clientName = document.getElementById('clientName').value.trim();
         const projectType = document.getElementById('projectType').value.trim();
@@ -1135,13 +1137,6 @@
 
         const quotationData = {
             appointment_id: currentAppointmentId,
-            client_name: clientName,
-            client_email: document.getElementById('clientEmail').value.trim(),
-            client_phone: document.getElementById('clientPhone').value.trim(),
-            client_address: document.getElementById('clientAddress').value.trim(),
-            project_type: projectType,
-            project_location: document.getElementById('projectLocation').value.trim(),
-            project_notes: document.getElementById('projectNotes').value.trim(),
             items: items.map(item => ({
                 name: item.name,
                 qty: item.qty,
@@ -1171,15 +1166,14 @@
             if (response.ok && result.success) {
                 showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
 
-                // Redirect to the related appointment after 2 seconds
+                // Redirect to the appointment detail page after 1.5 seconds
                 setTimeout(() => {
                     if (result.appointment_id) {
-                        // FIXED: Redirect to appointment detail page
                         window.location.href = `/appointments/${result.appointment_id}/`;
                     } else if (result.quotation_id) {
                         window.location.href = `/quotations/${result.quotation_id}/`;
                     }
-                }, 2000);
+                }, 1500);
             } else {
                 showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
             }
@@ -1191,6 +1185,22 @@
             saveBtn.classList.remove('loading');
             saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
         }
+    }
+
+    // Helper function to get CSRF token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
     }
 
     // Helper function to get CSRF token
