@@ -3,162 +3,466 @@
 
 {% block title %}{{ template.name }} - Template Details{% endblock %}
 
+{% block extra_css %}
+<style>
+    :root {
+        --primary: #667eea;
+        --primary-dark: #764ba2;
+        --success: #10b981;
+        --danger: #dc2626;
+        --secondary: #6b7280;
+        --info: #3b82f6;
+        --warning: #f59e0b;
+        --light: #f8f9fa;
+        --dark: #2d3748;
+    }
+
+    body {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        min-height: 100vh;
+    }
+
+    .page-header {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
+    }
+
+    .page-header h2 {
+        color: white;
+        font-size: 1.8rem;
+        margin-bottom: 5px;
+    }
+
+    .page-header p {
+        color: rgba(255, 255, 255, 0.9);
+        margin-bottom: 0;
+    }
+
+    .card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        border: none;
+        margin-bottom: 20px;
+    }
+
+    .card-header {
+        background: transparent;
+        border-bottom: 2px solid #f0f0f0;
+        padding: 20px;
+        font-weight: 600;
+        color: var(--dark);
+    }
+
+    .info-row {
+        padding: 12px 0;
+        border-bottom: 1px dashed #e5e7eb;
+    }
+
+    .info-row:last-child {
+        border-bottom: none;
+    }
+
+    .info-label {
+        color: #6b7280;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+
+    .info-value {
+        color: var(--dark);
+        font-weight: 600;
+    }
+
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+        height: 100%;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .stat-card .icon {
+        font-size: 3rem;
+        margin-bottom: 15px;
+    }
+
+    .stat-card.primary .icon {
+        color: var(--primary);
+    }
+
+    .stat-card.success .icon {
+        color: var(--success);
+    }
+
+    .stat-card h3 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--dark);
+        margin: 10px 0;
+    }
+
+    .stat-card p {
+        color: #6b7280;
+        margin: 0;
+        font-size: 0.9rem;
+    }
+
+    .cost-breakdown-card {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 15px;
+        border: 2px solid #e5e7eb;
+        transition: all 0.2s;
+    }
+
+    .cost-breakdown-card:hover {
+        border-color: var(--primary);
+        background: white;
+    }
+
+    .cost-breakdown-card .icon {
+        font-size: 2.5rem;
+        opacity: 0.8;
+    }
+
+    .cost-breakdown-card.labor .icon {
+        color: var(--primary);
+    }
+
+    .cost-breakdown-card.transport .icon {
+        color: var(--warning);
+    }
+
+    .cost-breakdown-card.materials .icon {
+        color: var(--info);
+    }
+
+    .cost-breakdown-card small {
+        color: #6b7280;
+        font-size: 0.85rem;
+    }
+
+    .cost-breakdown-card h4 {
+        color: var(--dark);
+        font-weight: 700;
+        margin: 5px 0;
+    }
+
+    .btn {
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        transition: all 0.2s;
+        border: none;
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-dark);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-outline-secondary {
+        background: white;
+        border: 2px solid var(--secondary);
+        color: var(--secondary);
+    }
+
+    .btn-outline-secondary:hover {
+        background: var(--secondary);
+        color: white;
+    }
+
+    .badge {
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8rem;
+    }
+
+    .badge.bg-success {
+        background: var(--success) !important;
+    }
+
+    .badge.bg-secondary {
+        background: var(--secondary) !important;
+    }
+
+    .badge.bg-info {
+        background: var(--info) !important;
+    }
+
+    .badge.bg-warning {
+        background: var(--warning) !important;
+    }
+
+    .table {
+        margin-bottom: 0;
+    }
+
+    .table thead {
+        background: #f8f9fa;
+    }
+
+    .table th {
+        font-weight: 600;
+        color: var(--dark);
+        padding: 15px;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .table td {
+        padding: 15px;
+        vertical-align: middle;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    .table tfoot {
+        background: #f8f9fa;
+        font-weight: 600;
+    }
+
+    .table tfoot tr.total-row {
+        background: #e7f5ed;
+        color: var(--success);
+    }
+
+    .dropdown-menu {
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        border: none;
+        padding: 8px;
+    }
+
+    .dropdown-item {
+        border-radius: 6px;
+        padding: 10px 15px;
+        transition: all 0.2s;
+    }
+
+    .dropdown-item:hover {
+        background: #f8f9fa;
+    }
+
+    .dropdown-item.text-danger:hover {
+        background: #fee2e2;
+        color: var(--danger) !important;
+    }
+
+    @media (max-width: 768px) {
+        .page-header .d-flex {
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .btn-group {
+            width: 100%;
+        }
+
+        .stat-card {
+            margin-bottom: 15px;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid py-4">
     <div class="row justify-content-center">
         <div class="col-lg-10">
             <!-- Header -->
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <div>
-                    <h2 class="mb-1">📋 {{ template.name }}</h2>
-                    <p class="text-muted mb-0">Template Details</p>
-                </div>
-                <div>
-                    <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary me-2">
-                        <i class="bi bi-arrow-left"></i> Back
-                    </a>
-                    <div class="btn-group">
-                        <a href="{% url 'edit_quotation_template' template.pk %}" class="btn btn-primary">
-                            <i class="bi bi-pencil"></i> Edit
+            <div class="page-header">
+                <div class="d-flex justify-content-between align-items-center flex-wrap">
+                    <div>
+                        <h2><i class="bi bi-file-earmark-text"></i> {{ template.name }}</h2>
+                        <p>Template Details</p>
+                    </div>
+                    <div class="d-flex gap-2 mt-2 mt-md-0">
+                        <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Back
                         </a>
-                        <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split"
-                            data-bs-toggle="dropdown">
-                            <span class="visually-hidden">Toggle Dropdown</span>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="{% url 'use_template' template.pk %}">
-                                    <i class="bi bi-plus-circle"></i> Use Template
-                                </a></li>
-                            <li><a class="dropdown-item" href="{% url 'duplicate_template' template.pk %}">
-                                    <i class="bi bi-files"></i> Duplicate
-                                </a></li>
-                            <li>
-                                <hr class="dropdown-divider">
-                            </li>
-                            <li><a class="dropdown-item text-danger" href="{% url 'delete_template' template.pk %}">
-                                    <i class="bi bi-trash"></i> Delete
-                                </a></li>
-                        </ul>
+                        <div class="btn-group">
+                            <a href="{% url 'edit_quotation_template' template.pk %}" class="btn btn-primary">
+                                <i class="bi bi-pencil"></i> Edit
+                            </a>
+                            <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split"
+                                data-bs-toggle="dropdown">
+                                <span class="visually-hidden">Toggle Dropdown</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{% url 'use_template' template.pk %}">
+                                        <i class="bi bi-plus-circle"></i> Use Template
+                                    </a></li>
+                                <li><a class="dropdown-item" href="{% url 'duplicate_template' template.pk %}">
+                                        <i class="bi bi-files"></i> Duplicate
+                                    </a></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><a class="dropdown-item text-danger" href="{% url 'delete_template' template.pk %}">
+                                        <i class="bi bi-trash"></i> Delete
+                                    </a></li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Template Info Card -->
+            <!-- Template Info & Stats Row -->
             <div class="row mb-4">
                 <div class="col-md-8">
-                    <div class="card border-0 shadow-sm h-100">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
+                        </div>
                         <div class="card-body">
-                            <h5 class="card-title mb-3">Template Information</h5>
-
-                            <div class="row mb-3">
-                                <div class="col-sm-4 text-muted">Project Type:</div>
-                                <div class="col-sm-8">
-                                    <span class="badge bg-secondary">{{ template.get_project_type_display }}</span>
+                            <div class="info-row">
+                                <div class="row">
+                                    <div class="col-sm-4 info-label">Project Type:</div>
+                                    <div class="col-sm-8 info-value">
+                                        <span class="badge bg-secondary">{{ template.get_project_type_display }}</span>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div class="row mb-3">
-                                <div class="col-sm-4 text-muted">Status:</div>
-                                <div class="col-sm-8">
-                                    {% if template.is_active %}
-                                    <span class="badge bg-success">Active</span>
-                                    {% else %}
-                                    <span class="badge bg-secondary">Inactive</span>
-                                    {% endif %}
+                            <div class="info-row">
+                                <div class="row">
+                                    <div class="col-sm-4 info-label">Status:</div>
+                                    <div class="col-sm-8 info-value">
+                                        {% if template.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </div>
 
                             {% if template.description %}
-                            <div class="row mb-3">
-                                <div class="col-sm-4 text-muted">Description:</div>
-                                <div class="col-sm-8">{{ template.description }}</div>
+                            <div class="info-row">
+                                <div class="row">
+                                    <div class="col-sm-4 info-label">Description:</div>
+                                    <div class="col-sm-8 info-value">{{ template.description }}</div>
+                                </div>
                             </div>
                             {% endif %}
 
-                            <div class="row mb-3">
-                                <div class="col-sm-4 text-muted">Created By:</div>
-                                <div class="col-sm-8">
-                                    {% if template.created_by %}
-                                    {{ template.created_by.get_full_name|default:template.created_by.username }}
-                                    {% else %}
-                                    Unknown
-                                    {% endif %}
+                            <div class="info-row">
+                                <div class="row">
+                                    <div class="col-sm-4 info-label">Created By:</div>
+                                    <div class="col-sm-8 info-value">
+                                        {% if template.created_by %}
+                                        {{ template.created_by.get_full_name|default:template.created_by.username }}
+                                        {% else %}
+                                        Unknown
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </div>
 
-                            <div class="row mb-3">
-                                <div class="col-sm-4 text-muted">Created:</div>
-                                <div class="col-sm-8">{{ template.created_at|date:"M d, Y" }}</div>
+                            <div class="info-row">
+                                <div class="row">
+                                    <div class="col-sm-4 info-label">Created:</div>
+                                    <div class="col-sm-8 info-value">{{ template.created_at|date:"M d, Y" }}</div>
+                                </div>
                             </div>
 
-                            <div class="row">
-                                <div class="col-sm-4 text-muted">Last Updated:</div>
-                                <div class="col-sm-8">{{ template.updated_at|date:"M d, Y" }}</div>
+                            <div class="info-row">
+                                <div class="row">
+                                    <div class="col-sm-4 info-label">Last Updated:</div>
+                                    <div class="col-sm-8 info-value">{{ template.updated_at|date:"M d, Y" }}</div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-md-4">
-                    <div class="card border-0 shadow-sm mb-3">
-                        <div class="card-body text-center">
-                            <div class="display-4 text-primary mb-2">
-                                <i class="bi bi-star-fill"></i>
-                            </div>
-                            <h3 class="mb-1">{{ template.use_count }}</h3>
-                            <p class="text-muted mb-0">Times Used</p>
+                    <div class="stat-card primary mb-3">
+                        <div class="icon">
+                            <i class="bi bi-star-fill"></i>
                         </div>
+                        <h3>{{ template.use_count }}</h3>
+                        <p>Times Used</p>
                     </div>
 
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-body text-center">
-                            <div class="display-4 text-success mb-2">
-                                <i class="bi bi-currency-dollar"></i>
-                            </div>
-                            <h3 class="mb-1">R{{ total_cost|floatformat:2 }}</h3>
-                            <p class="text-muted mb-0">Estimated Total</p>
+                    <div class="stat-card success">
+                        <div class="icon">
+                            <i class="bi bi-currency-dollar"></i>
                         </div>
+                        <h3>R{{ total_cost|floatformat:2 }}</h3>
+                        <p>Estimated Total</p>
                     </div>
                 </div>
             </div>
 
             <!-- Cost Breakdown -->
-            <div class="card border-0 shadow-sm mb-4">
-                <div class="card-header bg-light">
+            <div class="card mb-4">
+                <div class="card-header">
                     <h5 class="mb-0"><i class="bi bi-calculator"></i> Cost Breakdown</h5>
                 </div>
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-4 mb-3">
-                            <div class="border rounded p-3">
+                            <div class="cost-breakdown-card labor">
                                 <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <small class="text-muted d-block">Labor Cost</small>
-                                        <h4 class="mb-0">R{{ template.default_labor_cost|floatformat:2 }}</h4>
+                                    <div class="text-start">
+                                        <small>Labor Cost</small>
+                                        <h4>R{{ template.default_labor_cost|floatformat:2 }}</h4>
                                     </div>
-                                    <i class="bi bi-person-workspace text-primary" style="font-size: 2rem;"></i>
+                                    <div class="icon">
+                                        <i class="bi bi-person-workspace"></i>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-4 mb-3">
-                            <div class="border rounded p-3">
+                            <div class="cost-breakdown-card transport">
                                 <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <small class="text-muted d-block">Transport Cost</small>
-                                        <h4 class="mb-0">R{{ template.default_transport_cost|floatformat:2 }}</h4>
+                                    <div class="text-start">
+                                        <small>Transport Cost</small>
+                                        <h4>R{{ template.default_transport_cost|floatformat:2 }}</h4>
                                     </div>
-                                    <i class="bi bi-truck text-warning" style="font-size: 2rem;"></i>
+                                    <div class="icon">
+                                        <i class="bi bi-truck"></i>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-4 mb-3">
-                            <div class="border rounded p-3">
+                            <div class="cost-breakdown-card materials">
                                 <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <small class="text-muted d-block">Materials/Items</small>
-                                        <h4 class="mb-0">R{{ template.get_total_estimated_cost|floatformat:2 }}</h4>
+                                    <div class="text-start">
+                                        <small>Materials/Items</small>
+                                        <h4>R{{ template.get_total_estimated_cost|floatformat:2 }}</h4>
                                     </div>
-                                    <i class="bi bi-box-seam text-info" style="font-size: 2rem;"></i>
+                                    <div class="icon">
+                                        <i class="bi bi-box-seam"></i>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -167,21 +471,23 @@
             </div>
 
             <!-- Template Items -->
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-list-ul"></i> Template Items ({{ items.count }})</h5>
-                    <span class="badge bg-light text-dark">{{ items.count }} items</span>
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Template Items</h5>
+                        <span class="badge bg-secondary">{{ items.count }} items</span>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover mb-0">
-                            <thead class="table-light">
+                            <thead>
                                 <tr>
                                     <th style="width: 5%;">#</th>
                                     <th style="width: 35%;">Description</th>
-                                    <th style="width: 10%;">Category</th>
+                                    <th style="width: 12%;">Category</th>
                                     <th style="width: 10%;">Quantity</th>
-                                    <th style="width: 15%;">Unit Price</th>
+                                    <th style="width: 13%;">Unit Price</th>
                                     <th style="width: 15%;">Line Total</th>
                                     <th style="width: 10%;">Status</th>
                                 </tr>
@@ -214,14 +520,15 @@
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="7" class="text-center py-4 text-muted">
-                                        No items in this template
+                                    <td colspan="7" class="text-center py-5 text-muted">
+                                        <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                                        <p class="mt-3">No items in this template</p>
                                     </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                             {% if items %}
-                            <tfoot class="table-light">
+                            <tfoot>
                                 <tr>
                                     <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
                                     <td colspan="2"><strong>R{{ template.get_total_estimated_cost|floatformat:2
@@ -237,7 +544,7 @@
                                     <td colspan="2"><strong>R{{ template.default_transport_cost|floatformat:2
                                             }}</strong></td>
                                 </tr>
-                                <tr class="table-success">
+                                <tr class="total-row">
                                     <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
                                     <td colspan="2"><strong style="font-size: 1.2em;">R{{ total_cost|floatformat:2
                                             }}</strong></td>

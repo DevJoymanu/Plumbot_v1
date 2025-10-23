@@ -73,7 +73,7 @@ def superuser_required(view_func=None, *, redirect_url='login', message=None):
         return decorator(view_func)
 
 
-def anonymous_required(view_func=None, *, redirect_url='dashboard'):
+def anonymous_required(view_func=None, *, redirect_url='dashboard/'):
     """
     Decorator to ensure user is NOT logged in.
     Useful for login/register pages.

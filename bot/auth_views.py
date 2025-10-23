@@ -26,7 +26,7 @@ def login_view(request):
     Custom login view with enhanced security and logging
     """
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        return redirect('dashboard/')
     
     if request.method == 'POST':
         form = AuthenticationForm(request, data=request.POST)
@@ -52,7 +52,7 @@ def login_view(request):
                 logger.info(f"User {username} logged in successfully")
                 
                 # Redirect to next page or dashboard
-                next_page = request.GET.get('next', 'dashboard')
+                next_page = request.GET.get('next', 'dashboard/')
                 return redirect(next_page)
             else:
                 messages.error(request, 'Invalid username or password.')
@@ -195,7 +195,7 @@ def change_password_view(request):
             update_session_auth_hash(request, user)  # Important!
             messages.success(request, 'Your password was successfully updated!')
             logger.info(f"User {request.user.username} changed password")
-            return redirect('dashboard')
+            return redirect('dashboard/')
         else:
             messages.error(request, 'Please correct the error below.')
     else:
