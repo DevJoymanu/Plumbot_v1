@@ -11,10 +11,10 @@
         --success: #10b981;
         --danger: #dc2626;
         --secondary: #6b7280;
-        --light: #f8f9fa;
-        --dark: #2d3748;
         --info: #3b82f6;
         --warning: #f59e0b;
+        --light: #f8f9fa;
+        --dark: #2d3748;
     }
 
     body {
@@ -26,28 +26,29 @@
         background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
+        padding: 15px;
+        margin-bottom: 15px;
         border: 1px solid rgba(255, 255, 255, 0.2);
         color: white;
     }
 
     .page-header h2 {
         color: white;
-        font-size: 1.8rem;
+        font-size: 1.5rem;
         margin-bottom: 5px;
     }
 
     .page-header p {
         color: rgba(255, 255, 255, 0.9);
         margin-bottom: 0;
+        font-size: 0.9rem;
     }
 
     .stat-card {
         background: white;
         border-radius: 12px;
         padding: 20px;
-        margin-bottom: 20px;
+        margin-bottom: 15px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         transition: transform 0.2s;
     }
@@ -58,14 +59,14 @@
     }
 
     .stat-card .icon-wrapper {
-        width: 60px;
-        height: 60px;
+        width: 50px;
+        height: 50px;
         border-radius: 12px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.8rem;
-        margin-bottom: 15px;
+        font-size: 1.5rem;
+        margin-bottom: 12px;
     }
 
     .stat-card.primary .icon-wrapper {
@@ -85,14 +86,14 @@
 
     .stat-card h6 {
         color: #6b7280;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         margin-bottom: 8px;
         font-weight: 500;
     }
 
     .stat-card h3 {
         color: var(--dark);
-        font-size: 2rem;
+        font-size: 1.8rem;
         font-weight: 700;
         margin: 0;
     }
@@ -102,13 +103,13 @@
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         border: none;
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
 
     .card-header {
         background: transparent;
         border-bottom: 2px solid #f0f0f0;
-        padding: 20px;
+        padding: 15px;
         font-weight: 600;
         color: var(--dark);
     }
@@ -116,8 +117,8 @@
     .filter-card {
         background: white;
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
+        padding: 15px;
+        margin-bottom: 15px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
 
@@ -144,6 +145,7 @@
         font-size: 0.95rem;
         transition: all 0.2s;
         border: none;
+        white-space: nowrap;
     }
 
     .btn-primary {
@@ -167,9 +169,15 @@
         transform: translateY(-1px);
     }
 
-    .btn-outline-primary {
+    .btn-outline-primary,
+    .btn-outline-secondary,
+    .btn-outline-info {
         background: white;
-        border: 2px solid var(--primary);
+        border: 2px solid;
+    }
+
+    .btn-outline-primary {
+        border-color: var(--primary);
         color: var(--primary);
     }
 
@@ -179,8 +187,7 @@
     }
 
     .btn-outline-secondary {
-        background: white;
-        border: 2px solid var(--secondary);
+        border-color: var(--secondary);
         color: var(--secondary);
     }
 
@@ -190,8 +197,7 @@
     }
 
     .btn-outline-info {
-        background: white;
-        border: 2px solid var(--info);
+        border-color: var(--info);
         color: var(--info);
     }
 
@@ -205,87 +211,136 @@
         font-size: 0.85rem;
     }
 
-    .table {
-        margin-bottom: 0;
+    /* Mobile Template Card */
+    .template-card {
+        background: white;
+        border-radius: 12px;
+        padding: 15px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s;
     }
 
-    .table thead {
-        background: #f8f9fa;
+    .template-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        transform: translateY(-2px);
     }
 
-    .table th {
+    .template-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 12px;
+    }
+
+    .template-card-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--dark);
+        margin: 0;
+        flex: 1;
+    }
+
+    .template-card-description {
+        color: #6b7280;
+        font-size: 0.9rem;
+        margin: 8px 0;
+    }
+
+    .template-card-stats {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin: 12px 0;
+    }
+
+    .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .stat-item i {
+        color: var(--primary);
+        font-size: 1rem;
+    }
+
+    .stat-item-label {
+        font-size: 0.8rem;
+        color: #6b7280;
+    }
+
+    .stat-item-value {
         font-weight: 600;
         color: var(--dark);
-        padding: 15px;
-        border-bottom: 2px solid #e5e7eb;
+        font-size: 0.9rem;
     }
 
-    .table td {
-        padding: 15px;
-        vertical-align: middle;
-        border-bottom: 1px solid #f0f0f0;
-    }
-
-    .table tbody tr {
-        transition: background-color 0.2s;
-    }
-
-    .table tbody tr:hover {
-        background-color: #f8f9fa;
+    .template-card-actions {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px dashed #e5e7eb;
     }
 
     .badge {
-        padding: 6px 12px;
+        padding: 4px 10px;
         border-radius: 6px;
         font-weight: 600;
-        font-size: 0.8rem;
+        font-size: 0.75rem;
+        display: inline-block;
     }
 
     .badge.bg-success {
         background: var(--success) !important;
+        color: white;
     }
 
     .badge.bg-secondary {
         background: var(--secondary) !important;
+        color: white;
     }
 
     .badge.bg-info {
         background: var(--info) !important;
+        color: white;
     }
 
-    .template-actions {
-        display: flex;
-        gap: 8px;
-        justify-content: flex-end;
+    /* Desktop Table (hidden on mobile) */
+    .desktop-table {
+        display: none;
     }
 
     .empty-state {
         text-align: center;
-        padding: 60px 20px;
+        padding: 40px 20px;
         color: #999;
     }
 
     .empty-state i {
-        font-size: 4rem;
-        margin-bottom: 20px;
+        font-size: 3rem;
+        margin-bottom: 15px;
         opacity: 0.3;
     }
 
     .empty-state p {
-        font-size: 1.1rem;
-        margin-bottom: 20px;
+        font-size: 1rem;
+        margin-bottom: 15px;
     }
 
     .pagination {
-        margin-top: 30px;
+        margin-top: 20px;
     }
 
     .page-link {
         border: 1px solid #e5e7eb;
         color: var(--primary);
-        padding: 10px 15px;
+        padding: 8px 12px;
         border-radius: 8px;
-        margin: 0 4px;
+        margin: 0 3px;
+        font-size: 0.9rem;
     }
 
     .page-link:hover {
@@ -299,41 +354,114 @@
         border-color: var(--primary);
     }
 
-    @media (max-width: 768px) {
+    /* Tablet and up */
+    @media (min-width: 768px) {
+        .page-header h2 {
+            font-size: 1.8rem;
+        }
+
+        .stat-card h3 {
+            font-size: 2rem;
+        }
+
+        .template-card {
+            display: none;
+        }
+
+        .desktop-table {
+            display: block;
+        }
+
+        .table th {
+            font-weight: 600;
+            color: var(--dark);
+            padding: 15px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .table td {
+            padding: 15px;
+            vertical-align: middle;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .table tbody tr {
+            transition: background-color 0.2s;
+        }
+
+        .table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
         .template-actions {
-            flex-direction: column;
-            gap: 5px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+    }
+
+    /* Mobile specific */
+    @media (max-width: 767px) {
+        .container-fluid {
+            padding-left: 10px;
+            padding-right: 10px;
         }
 
-        .btn-sm {
+        .page-header {
+            padding: 12px;
+        }
+
+        .filter-card .row {
+            gap: 10px;
+        }
+
+        .filter-card .col-md-4,
+        .filter-card .col-md-3,
+        .filter-card .col-md-2 {
             width: 100%;
+            padding-left: 0;
+            padding-right: 0;
         }
 
-        .table-responsive {
-            font-size: 0.85rem;
+        .stat-card {
+            padding: 15px;
+        }
+
+        .stat-card h3 {
+            font-size: 1.5rem;
+        }
+
+        .btn {
+            font-size: 0.9rem;
+            padding: 8px 16px;
+        }
+
+        .btn-block-mobile {
+            width: 100%;
+            display: block;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
+<div class="container-fluid py-3 py-md-4">
     <!-- Header -->
     <div class="page-header">
-        <div class="d-flex justify-content-between align-items-center flex-wrap">
-            <div>
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div class="flex-grow-1">
                 <h2><i class="bi bi-file-earmark-text"></i> Quotation Templates</h2>
                 <p>Create and manage reusable quotation templates</p>
             </div>
-            <a href="{% url 'create_quotation_template' %}" class="btn btn-success mt-2 mt-md-0">
+            <a href="{% url 'create_quotation_template' %}" class="btn btn-success">
                 <i class="bi bi-plus-lg"></i> New Template
             </a>
         </div>
     </div>
 
     <!-- Statistics Cards -->
-    <div class="row">
-        <div class="col-md-4">
+    <div class="row g-3">
+        <div class="col-6 col-md-4">
             <div class="stat-card primary">
                 <div class="icon-wrapper">
                     <i class="bi bi-file-earmark-text"></i>
@@ -342,7 +470,7 @@
                 <h3>{{ total_templates }}</h3>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-6 col-md-4">
             <div class="stat-card success">
                 <div class="icon-wrapper">
                     <i class="bi bi-check-circle"></i>
@@ -351,7 +479,7 @@
                 <h3>{{ active_templates }}</h3>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-12 col-md-4">
             <div class="stat-card info">
                 <div class="icon-wrapper">
                     <i class="bi bi-star-fill"></i>
@@ -364,43 +492,120 @@
 
     <!-- Filters -->
     <div class="filter-card">
-        <form method="get" class="row g-3">
-            <div class="col-md-4">
-                <input type="text" name="search" class="form-control" placeholder="🔍 Search templates..."
-                    value="{{ request.GET.search }}">
-            </div>
-            <div class="col-md-3">
-                <select name="project_type" class="form-select">
-                    <option value="">All Project Types</option>
-                    <option value="bathroom_renovation" {% if request.GET.project_type == 'bathroom_renovation' %}selected{% endif %}>
-                        Bathroom Renovation
-                    </option>
-                    <option value="kitchen_renovation" {% if request.GET.project_type == 'kitchen_renovation' %}selected{%endif %}>
-                        Kitchen Renovation
-                    </option>
-                    <option value="new_plumbing_installation" {% if request.GET.project_type == 'new_plumbing_installation' %}selected{% endif %}>
-                        New Installation
-                    </option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <select name="status" class="form-select">
-                    <option value="">All Status</option>
-                    <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
-                    <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive
-                    </option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-funnel"></i> Filter
-                </button>
+        <form method="get">
+            <div class="row g-2">
+                <div class="col-12 col-md-4">
+                    <input type="text" name="search" class="form-control" placeholder="🔍 Search templates..."
+                        value="{{ request.GET.search }}">
+                </div>
+                <div class="col-12 col-md-3">
+                    <select name="project_type" class="form-select">
+                        <option value="">All Project Types</option>
+                        <option value="bathroom_renovation" {% if request.GET.project_type == 'bathroom_renovation'%}selected{% endif %}>
+                            Bathroom Renovation
+                        </option>
+                        <option value="kitchen_renovation" {% if request.GET.project_type == 'kitchen_renovation'%}selected{% endif %}>
+                            Kitchen Renovation
+                        </option>
+                        <option value="new_plumbing_installation" {% if request.GET.project_type == 'new_plumbing_installation' %}selected{% endif %}>
+                            New Installation
+                        </option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <select name="status" class="form-select">
+                        <option value="">All Status</option>
+                        <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive
+                        </option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-funnel"></i> Filter
+                    </button>
+                </div>
             </div>
         </form>
     </div>
 
-    <!-- Templates List -->
-    <div class="card">
+    <!-- Mobile Template Cards -->
+    {% for template in templates %}
+    <div class="template-card d-md-none">
+        <div class="template-card-header">
+            <div class="flex-grow-1">
+                <h3 class="template-card-title">{{ template.name }}</h3>
+                {% if template.is_active %}
+                <span class="badge bg-success">Active</span>
+                {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+                {% endif %}
+                <span class="badge bg-info ms-1">{{ template.get_project_type_display }}</span>
+            </div>
+        </div>
+
+        {% if template.description %}
+        <p class="template-card-description">{{ template.description|truncatewords:15 }}</p>
+        {% endif %}
+
+        <div class="template-card-stats">
+            <div class="stat-item">
+                <i class="bi bi-box-seam"></i>
+                <div>
+                    <div class="stat-item-label">Items</div>
+                    <div class="stat-item-value">{{ template.items.count }}</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <i class="bi bi-currency-dollar"></i>
+                <div>
+                    <div class="stat-item-label">Est. Cost</div>
+                    <div class="stat-item-value">R{{ template.get_total_estimated_cost|floatformat:2 }}</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <i class="bi bi-star-fill"></i>
+                <div>
+                    <div class="stat-item-label">Times Used</div>
+                    <div class="stat-item-value">{{ template.use_count }}</div>
+                </div>
+            </div>
+            <div class="stat-item">
+                <i class="bi bi-calendar"></i>
+                <div>
+                    <div class="stat-item-label">Updated</div>
+                    <div class="stat-item-value">{{ template.updated_at|date:"M d" }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="template-card-actions">
+            <a href="{% url 'quotation_template_detail' template.pk %}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-eye"></i> View
+            </a>
+            <a href="{% url 'edit_quotation_template' template.pk %}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-pencil"></i> Edit
+            </a>
+            <a href="{% url 'duplicate_template' template.pk %}" class="btn btn-sm btn-outline-info">
+                <i class="bi bi-files"></i> Copy
+            </a>
+            <button type="button" class="btn btn-sm btn-success" onclick="quickUseTemplate({{ template.pk }})">
+                <i class="bi bi-plus-circle"></i> Use
+            </button>
+        </div>
+    </div>
+    {% empty %}
+    <div class="empty-state d-md-none">
+        <i class="bi bi-inbox"></i>
+        <p>No templates found</p>
+        <a href="{% url 'create_quotation_template' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> Create Your First Template
+        </a>
+    </div>
+    {% endfor %}
+
+    <!-- Desktop Table -->
+    <div class="card desktop-table">
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
@@ -484,7 +689,7 @@
     <!-- Pagination -->
     {% if is_paginated %}
     <nav>
-        <ul class="pagination justify-content-center">
+        <ul class="pagination justify-content-center flex-wrap">
             {% if page_obj.has_previous %}
             <li class="page-item">
                 <a class="page-link" href="?page=1">First</a>

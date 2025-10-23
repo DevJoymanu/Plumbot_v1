@@ -26,21 +26,23 @@
         background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
+        padding: 15px;
+        margin-bottom: 15px;
         border: 1px solid rgba(255, 255, 255, 0.2);
         color: white;
     }
 
     .page-header h2 {
         color: white;
-        font-size: 1.8rem;
+        font-size: 1.3rem;
         margin-bottom: 5px;
+        word-break: break-word;
     }
 
     .page-header p {
         color: rgba(255, 255, 255, 0.9);
         margin-bottom: 0;
+        font-size: 0.9rem;
     }
 
     .card {
@@ -48,15 +50,16 @@
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         border: none;
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
 
     .card-header {
         background: transparent;
         border-bottom: 2px solid #f0f0f0;
-        padding: 20px;
+        padding: 15px;
         font-weight: 600;
         color: var(--dark);
+        font-size: 1rem;
     }
 
     .info-row {
@@ -71,22 +74,24 @@
     .info-label {
         color: #6b7280;
         font-weight: 500;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
+        margin-bottom: 5px;
     }
 
     .info-value {
         color: var(--dark);
         font-weight: 600;
+        font-size: 0.95rem;
     }
 
     .stat-card {
         background: white;
         border-radius: 12px;
-        padding: 25px;
+        padding: 20px;
         text-align: center;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         transition: transform 0.2s;
-        height: 100%;
+        margin-bottom: 15px;
     }
 
     .stat-card:hover {
@@ -95,8 +100,8 @@
     }
 
     .stat-card .icon {
-        font-size: 3rem;
-        margin-bottom: 15px;
+        font-size: 2.5rem;
+        margin-bottom: 12px;
     }
 
     .stat-card.primary .icon {
@@ -108,23 +113,23 @@
     }
 
     .stat-card h3 {
-        font-size: 2rem;
+        font-size: 1.8rem;
         font-weight: 700;
         color: var(--dark);
-        margin: 10px 0;
+        margin: 8px 0;
     }
 
     .stat-card p {
         color: #6b7280;
         margin: 0;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
     }
 
     .cost-breakdown-card {
         background: #f8f9fa;
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 15px;
+        padding: 15px;
+        margin-bottom: 12px;
         border: 2px solid #e5e7eb;
         transition: all 0.2s;
     }
@@ -135,7 +140,7 @@
     }
 
     .cost-breakdown-card .icon {
-        font-size: 2.5rem;
+        font-size: 2rem;
         opacity: 0.8;
     }
 
@@ -153,20 +158,23 @@
 
     .cost-breakdown-card small {
         color: #6b7280;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+        display: block;
+        margin-bottom: 5px;
     }
 
     .cost-breakdown-card h4 {
         color: var(--dark);
         font-weight: 700;
-        margin: 5px 0;
+        margin: 0;
+        font-size: 1.3rem;
     }
 
     .btn {
         border-radius: 8px;
         padding: 10px 20px;
         font-weight: 600;
-        font-size: 0.95rem;
+        font-size: 0.9rem;
         transition: all 0.2s;
         border: none;
     }
@@ -194,10 +202,10 @@
     }
 
     .badge {
-        padding: 6px 12px;
+        padding: 5px 10px;
         border-radius: 6px;
         font-weight: 600;
-        font-size: 0.8rem;
+        font-size: 0.75rem;
     }
 
     .badge.bg-success {
@@ -216,39 +224,80 @@
         background: var(--warning) !important;
     }
 
-    .table {
-        margin-bottom: 0;
+    /* Mobile Item Card */
+    .item-card {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
     }
 
-    .table thead {
-        background: #f8f9fa;
+    .item-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 10px;
     }
 
-    .table th {
+    .item-number {
+        background: var(--secondary);
+        color: white;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+
+    .item-description {
+        flex: 1;
+        margin-left: 10px;
         font-weight: 600;
         color: var(--dark);
-        padding: 15px;
-        border-bottom: 2px solid #e5e7eb;
+        font-size: 0.95rem;
     }
 
-    .table td {
-        padding: 15px;
-        vertical-align: middle;
-        border-bottom: 1px solid #f0f0f0;
+    .item-details {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed #e5e7eb;
     }
 
-    .table tbody tr:hover {
-        background-color: #f8f9fa;
+    .item-detail {
+        font-size: 0.85rem;
     }
 
-    .table tfoot {
-        background: #f8f9fa;
+    .item-detail-label {
+        color: #6b7280;
+        display: block;
+        margin-bottom: 3px;
+    }
+
+    .item-detail-value {
+        color: var(--dark);
         font-weight: 600;
     }
 
-    .table tfoot tr.total-row {
-        background: #e7f5ed;
-        color: var(--success);
+    .item-notes {
+        margin-top: 8px;
+        padding: 8px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        color: #6b7280;
+    }
+
+    /* Desktop Table (hidden on mobile) */
+    .desktop-table {
+        display: none;
     }
 
     .dropdown-menu {
@@ -262,6 +311,7 @@
         border-radius: 6px;
         padding: 10px 15px;
         transition: all 0.2s;
+        font-size: 0.9rem;
     }
 
     .dropdown-item:hover {
@@ -273,143 +323,192 @@
         color: var(--danger) !important;
     }
 
-    @media (max-width: 768px) {
-        .page-header .d-flex {
-            flex-direction: column;
-            gap: 15px;
+    .summary-section {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 15px;
+        margin-top: 15px;
+    }
+
+    .summary-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        font-size: 0.9rem;
+    }
+
+    .summary-row.total {
+        border-top: 2px solid var(--success);
+        padding-top: 12px;
+        margin-top: 8px;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--success);
+    }
+
+    .summary-label {
+        color: #6b7280;
+    }
+
+    .summary-value {
+        font-weight: 600;
+        color: var(--dark);
+    }
+
+    .summary-row.total .summary-value {
+        color: var(--success);
+    }
+
+    /* Tablet and up */
+    @media (min-width: 768px) {
+        .page-header h2 {
+            font-size: 1.8rem;
+        }
+
+        .stat-card h3 {
+            font-size: 2rem;
+        }
+
+        .stat-card .icon {
+            font-size: 3rem;
+        }
+
+        .cost-breakdown-card h4 {
+            font-size: 1.5rem;
+        }
+
+        .item-card {
+            display: none;
+        }
+
+        .desktop-table {
+            display: block;
+        }
+
+        .summary-section {
+            display: none;
+        }
+
+        .table {
+            margin-bottom: 0;
+        }
+
+        .table thead {
+            background: #f8f9fa;
+        }
+
+        .table th {
+            font-weight: 600;
+            color: var(--dark);
+            padding: 15px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .table td {
+            padding: 15px;
+            vertical-align: middle;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .table tfoot {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .table tfoot tr.total-row {
+            background: #e7f5ed;
+            color: var(--success);
+        }
+    }
+
+    /* Mobile specific */
+    @media (max-width: 767px) {
+        .container-fluid {
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+
+        .page-header {
+            padding: 12px;
+        }
+
+        .card-header {
+            padding: 12px;
+            font-size: 0.95rem;
+        }
+
+        .btn {
+            font-size: 0.85rem;
+            padding: 8px 16px;
         }
 
         .btn-group {
             width: 100%;
         }
 
-        .stat-card {
-            margin-bottom: 15px;
+        .dropdown-toggle {
+            width: 100%;
+        }
+
+        .action-buttons-mobile {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .action-buttons-mobile .btn {
+            width: 100%;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
+<div class="container-fluid py-3 py-md-4">
     <div class="row justify-content-center">
         <div class="col-lg-10">
             <!-- Header -->
             <div class="page-header">
-                <div class="d-flex justify-content-between align-items-center flex-wrap">
-                    <div>
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div class="flex-grow-1">
                         <h2><i class="bi bi-file-earmark-text"></i> {{ template.name }}</h2>
                         <p>Template Details</p>
                     </div>
-                    <div class="d-flex gap-2 mt-2 mt-md-0">
-                        <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-left"></i> Back
-                        </a>
-                        <div class="btn-group">
-                            <a href="{% url 'edit_quotation_template' template.pk %}" class="btn btn-primary">
-                                <i class="bi bi-pencil"></i> Edit
-                            </a>
-                            <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split"
-                                data-bs-toggle="dropdown">
-                                <span class="visually-hidden">Toggle Dropdown</span>
-                            </button>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="{% url 'use_template' template.pk %}">
-                                        <i class="bi bi-plus-circle"></i> Use Template
-                                    </a></li>
-                                <li><a class="dropdown-item" href="{% url 'duplicate_template' template.pk %}">
-                                        <i class="bi bi-files"></i> Duplicate
-                                    </a></li>
-                                <li>
-                                    <hr class="dropdown-divider">
-                                </li>
-                                <li><a class="dropdown-item text-danger" href="{% url 'delete_template' template.pk %}">
-                                        <i class="bi bi-trash"></i> Delete
-                                    </a></li>
-                            </ul>
-                        </div>
-                    </div>
+                </div>
+                <div class="action-buttons-mobile mt-3">
+                    <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Back
+                    </a>
+                    <a href="{% url 'edit_quotation_template' template.pk %}" class="btn btn-primary">
+                        <i class="bi bi-pencil"></i> Edit Template
+                    </a>
+                    <a href="{% url 'use_template' template.pk %}" class="btn btn-success">
+                        <i class="bi bi-plus-circle"></i> Use Template
+                    </a>
+                    <a href="{% url 'duplicate_template' template.pk %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-files"></i> Duplicate
+                    </a>
                 </div>
             </div>
 
-            <!-- Template Info & Stats Row -->
-            <div class="row mb-4">
-                <div class="col-md-8">
-                    <div class="card h-100">
-                        <div class="card-header">
-                            <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="info-row">
-                                <div class="row">
-                                    <div class="col-sm-4 info-label">Project Type:</div>
-                                    <div class="col-sm-8 info-value">
-                                        <span class="badge bg-secondary">{{ template.get_project_type_display }}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="info-row">
-                                <div class="row">
-                                    <div class="col-sm-4 info-label">Status:</div>
-                                    <div class="col-sm-8 info-value">
-                                        {% if template.is_active %}
-                                        <span class="badge bg-success">Active</span>
-                                        {% else %}
-                                        <span class="badge bg-secondary">Inactive</span>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {% if template.description %}
-                            <div class="info-row">
-                                <div class="row">
-                                    <div class="col-sm-4 info-label">Description:</div>
-                                    <div class="col-sm-8 info-value">{{ template.description }}</div>
-                                </div>
-                            </div>
-                            {% endif %}
-
-                            <div class="info-row">
-                                <div class="row">
-                                    <div class="col-sm-4 info-label">Created By:</div>
-                                    <div class="col-sm-8 info-value">
-                                        {% if template.created_by %}
-                                        {{ template.created_by.get_full_name|default:template.created_by.username }}
-                                        {% else %}
-                                        Unknown
-                                        {% endif %}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="info-row">
-                                <div class="row">
-                                    <div class="col-sm-4 info-label">Created:</div>
-                                    <div class="col-sm-8 info-value">{{ template.created_at|date:"M d, Y" }}</div>
-                                </div>
-                            </div>
-
-                            <div class="info-row">
-                                <div class="row">
-                                    <div class="col-sm-4 info-label">Last Updated:</div>
-                                    <div class="col-sm-8 info-value">{{ template.updated_at|date:"M d, Y" }}</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-md-4">
-                    <div class="stat-card primary mb-3">
+            <!-- Stats Row -->
+            <div class="row g-3 mb-3">
+                <div class="col-6 col-md-6">
+                    <div class="stat-card primary">
                         <div class="icon">
                             <i class="bi bi-star-fill"></i>
                         </div>
                         <h3>{{ template.use_count }}</h3>
                         <p>Times Used</p>
                     </div>
+                </div>
 
+                <div class="col-6 col-md-6">
                     <div class="stat-card success">
                         <div class="icon">
                             <i class="bi bi-currency-dollar"></i>
@@ -420,50 +519,98 @@
                 </div>
             </div>
 
+            <!-- Template Info -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="info-row">
+                        <div class="info-label">Project Type:</div>
+                        <div class="info-value">
+                            <span class="badge bg-secondary">{{ template.get_project_type_display }}</span>
+                        </div>
+                    </div>
+
+                    <div class="info-row">
+                        <div class="info-label">Status:</div>
+                        <div class="info-value">
+                            {% if template.is_active %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if template.description %}
+                    <div class="info-row">
+                        <div class="info-label">Description:</div>
+                        <div class="info-value">{{ template.description }}</div>
+                    </div>
+                    {% endif %}
+
+                    <div class="info-row">
+                        <div class="info-label">Created By:</div>
+                        <div class="info-value">
+                            {% if template.created_by %}
+                            {{ template.created_by.get_full_name|default:template.created_by.username }}
+                            {% else %}
+                            Unknown
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="info-row">
+                        <div class="info-label">Created:</div>
+                        <div class="info-value">{{ template.created_at|date:"M d, Y" }}</div>
+                    </div>
+
+                    <div class="info-row">
+                        <div class="info-label">Last Updated:</div>
+                        <div class="info-value">{{ template.updated_at|date:"M d, Y" }}</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Cost Breakdown -->
-            <div class="card mb-4">
+            <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="bi bi-calculator"></i> Cost Breakdown</h5>
                 </div>
                 <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-4 mb-3">
-                            <div class="cost-breakdown-card labor">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div class="text-start">
-                                        <small>Labor Cost</small>
-                                        <h4>R{{ template.default_labor_cost|floatformat:2 }}</h4>
-                                    </div>
-                                    <div class="icon">
-                                        <i class="bi bi-person-workspace"></i>
-                                    </div>
-                                </div>
+                    <div class="cost-breakdown-card labor">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-start flex-grow-1">
+                                <small>Labor Cost</small>
+                                <h4>R{{ template.default_labor_cost|floatformat:2 }}</h4>
+                            </div>
+                            <div class="icon">
+                                <i class="bi bi-person-workspace"></i>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <div class="cost-breakdown-card transport">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div class="text-start">
-                                        <small>Transport Cost</small>
-                                        <h4>R{{ template.default_transport_cost|floatformat:2 }}</h4>
-                                    </div>
-                                    <div class="icon">
-                                        <i class="bi bi-truck"></i>
-                                    </div>
-                                </div>
+                    </div>
+
+                    <div class="cost-breakdown-card transport">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-start flex-grow-1">
+                                <small>Transport Cost</small>
+                                <h4>R{{ template.default_transport_cost|floatformat:2 }}</h4>
+                            </div>
+                            <div class="icon">
+                                <i class="bi bi-truck"></i>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <div class="cost-breakdown-card materials">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div class="text-start">
-                                        <small>Materials/Items</small>
-                                        <h4>R{{ template.get_total_estimated_cost|floatformat:2 }}</h4>
-                                    </div>
-                                    <div class="icon">
-                                        <i class="bi bi-box-seam"></i>
-                                    </div>
-                                </div>
+                    </div>
+
+                    <div class="cost-breakdown-card materials">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-start flex-grow-1">
+                                <small>Materials/Items</small>
+                                <h4>R{{ template.get_total_estimated_cost|floatformat:2 }}</h4>
+                            </div>
+                            <div class="icon">
+                                <i class="bi bi-box-seam"></i>
                             </div>
                         </div>
                     </div>
@@ -478,80 +625,163 @@
                         <span class="badge bg-secondary">{{ items.count }} items</span>
                     </div>
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead>
-                                <tr>
-                                    <th style="width: 5%;">#</th>
-                                    <th style="width: 35%;">Description</th>
-                                    <th style="width: 12%;">Category</th>
-                                    <th style="width: 10%;">Quantity</th>
-                                    <th style="width: 13%;">Unit Price</th>
-                                    <th style="width: 15%;">Line Total</th>
-                                    <th style="width: 10%;">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for item in items %}
-                                <tr>
-                                    <td class="text-center">
-                                        <span class="badge bg-secondary">{{ forloop.counter }}</span>
-                                    </td>
-                                    <td>
-                                        <strong>{{ item.description }}</strong>
-                                        {% if item.notes %}
-                                        <br><small class="text-muted">{{ item.notes }}</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-info">{{ item.get_category_display }}</span>
-                                    </td>
-                                    <td>{{ item.quantity }}</td>
-                                    <td>R{{ item.unit_price|floatformat:2 }}</td>
-                                    <td><strong>R{{ item.get_line_total|floatformat:2 }}</strong></td>
-                                    <td>
-                                        {% if item.is_optional %}
-                                        <span class="badge bg-warning">Optional</span>
-                                        {% else %}
-                                        <span class="badge bg-success">Required</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% empty %}
-                                <tr>
-                                    <td colspan="7" class="text-center py-5 text-muted">
-                                        <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
-                                        <p class="mt-3">No items in this template</p>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                            {% if items %}
-                            <tfoot>
-                                <tr>
-                                    <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
-                                    <td colspan="2"><strong>R{{ template.get_total_estimated_cost|floatformat:2
-                                            }}</strong></td>
-                                </tr>
-                                <tr>
-                                    <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
-                                    <td colspan="2"><strong>R{{ template.default_labor_cost|floatformat:2 }}</strong>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
-                                    <td colspan="2"><strong>R{{ template.default_transport_cost|floatformat:2
-                                            }}</strong></td>
-                                </tr>
-                                <tr class="total-row">
-                                    <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
-                                    <td colspan="2"><strong style="font-size: 1.2em;">R{{ total_cost|floatformat:2
-                                            }}</strong></td>
-                                </tr>
-                            </tfoot>
+                <div class="card-body p-0 p-md-3">
+                    <!-- Mobile Item Cards -->
+                    <div class="d-md-none p-3">
+                        {% for item in items %}
+                        <div class="item-card">
+                            <div class="item-card-header">
+                                <div class="item-number">{{ forloop.counter }}</div>
+                                <div class="item-description">
+                                    {{ item.description }}
+                                </div>
+                            </div>
+
+                            <div class="item-details">
+                                <div class="item-detail">
+                                    <span class="item-detail-label">Category</span>
+                                    <span class="badge bg-info">{{ item.get_category_display }}</span>
+                                </div>
+                                <div class="item-detail">
+                                    <span class="item-detail-label">Status</span>
+                                    {% if item.is_optional %}
+                                    <span class="badge bg-warning">Optional</span>
+                                    {% else %}
+                                    <span class="badge bg-success">Required</span>
+                                    {% endif %}
+                                </div>
+                                <div class="item-detail">
+                                    <span class="item-detail-label">Quantity</span>
+                                    <span class="item-detail-value">{{ item.quantity }}</span>
+                                </div>
+                                <div class="item-detail">
+                                    <span class="item-detail-label">Unit Price</span>
+                                    <span class="item-detail-value">R{{ item.unit_price|floatformat:2 }}</span>
+                                </div>
+                            </div>
+
+                            <div class="mt-2 pt-2" style="border-top: 1px dashed #e5e7eb;">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="item-detail-label">Line Total:</span>
+                                    <span class="item-detail-value" style="font-size: 1.1rem; color: var(--success);">
+                                        R{{ item.get_line_total|floatformat:2 }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {% if item.notes %}
+                            <div class="item-notes">
+                                <i class="bi bi-info-circle"></i> {{ item.notes }}
+                            </div>
                             {% endif %}
-                        </table>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                            <p class="mt-3">No items in this template</p>
+                        </div>
+                        {% endfor %}
+
+                        <!-- Mobile Summary -->
+                        {% if items %}
+                        <div class="summary-section">
+                            <div class="summary-row">
+                                <span class="summary-label">Items Subtotal:</span>
+                                <span class="summary-value">R{{ template.get_total_estimated_cost|floatformat:2
+                                    }}</span>
+                            </div>
+                            <div class="summary-row">
+                                <span class="summary-label">Labor Cost:</span>
+                                <span class="summary-value">R{{ template.default_labor_cost|floatformat:2 }}</span>
+                            </div>
+                            <div class="summary-row">
+                                <span class="summary-label">Transport Cost:</span>
+                                <span class="summary-value">R{{ template.default_transport_cost|floatformat:2 }}</span>
+                            </div>
+                            <div class="summary-row total">
+                                <span class="summary-label">Estimated Total:</span>
+                                <span class="summary-value">R{{ total_cost|floatformat:2 }}</span>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Desktop Table -->
+                    <div class="desktop-table">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 5%;">#</th>
+                                        <th style="width: 35%;">Description</th>
+                                        <th style="width: 12%;">Category</th>
+                                        <th style="width: 10%;">Quantity</th>
+                                        <th style="width: 13%;">Unit Price</th>
+                                        <th style="width: 15%;">Line Total</th>
+                                        <th style="width: 10%;">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in items %}
+                                    <tr>
+                                        <td class="text-center">
+                                            <span class="badge bg-secondary">{{ forloop.counter }}</span>
+                                        </td>
+                                        <td>
+                                            <strong>{{ item.description }}</strong>
+                                            {% if item.notes %}
+                                            <br><small class="text-muted">{{ item.notes }}</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-info">{{ item.get_category_display }}</span>
+                                        </td>
+                                        <td>{{ item.quantity }}</td>
+                                        <td>R{{ item.unit_price|floatformat:2 }}</td>
+                                        <td><strong>R{{ item.get_line_total|floatformat:2 }}</strong></td>
+                                        <td>
+                                            {% if item.is_optional %}
+                                            <span class="badge bg-warning">Optional</span>
+                                            {% else %}
+                                            <span class="badge bg-success">Required</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="7" class="text-center py-5 text-muted">
+                                            <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                                            <p class="mt-3">No items in this template</p>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                {% if items %}
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
+                                        <td colspan="2"><strong>R{{ template.get_total_estimated_cost|floatformat:2
+                                                }}</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
+                                        <td colspan="2"><strong>R{{ template.default_labor_cost|floatformat:2
+                                                }}</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
+                                        <td colspan="2"><strong>R{{ template.default_transport_cost|floatformat:2
+                                                }}</strong></td>
+                                    </tr>
+                                    <tr class="total-row">
+                                        <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
+                                        <td colspan="2"><strong style="font-size: 1.2em;">R{{ total_cost|floatformat:2
+                                                }}</strong></td>
+                                    </tr>
+                                </tfoot>
+                                {% endif %}
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
