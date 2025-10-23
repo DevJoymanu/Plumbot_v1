@@ -14,7 +14,7 @@ from .views import (
     complete_site_visit, schedule_job, job_appointments_list, update_job_status, reschedule_job,
     login_view, logout_view, profile_view, change_password_view,appointment_detail_api,
     # Import quotation template views
-    QuotationTemplatesListView, CreateQuotationTemplateView, EditQuotationTemplateView,
+    QuotationTemplatesListView, CreateQuotationTemplateView,CreateQuotationView, EditQuotationTemplateView,
     QuotationTemplateDetailView, duplicate_template, delete_template, 
     use_template, toggle_template_status, quotation_templates_api, template_items_api
 )
