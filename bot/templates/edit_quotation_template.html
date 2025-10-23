@@ -295,27 +295,62 @@
         color: var(--info);
     }
 
-    /* Delete button styles */
+    /* Delete button styles - Enhanced for better UX */
     .delete-btn {
-        background: transparent;
-        border: none;
+        background: rgba(220, 38, 38, 0.1);
+        border: 1px solid rgba(220, 38, 38, 0.3);
         color: var(--danger);
-        padding: 6px;
-        border-radius: 4px;
-        transition: all 0.2s;
-        display: flex;
+        padding: 8px 12px;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 32px;
-        min-width: 32px;
+        min-height: 36px;
+        min-width: 36px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        gap: 4px;
+        cursor: pointer;
     }
 
     .delete-btn:hover {
-        background: rgba(220, 38, 38, 0.1);
+        background: var(--danger);
+        color: white;
+        transform: scale(1.05);
+    }
+
+    .delete-btn:active {
+        transform: scale(0.95);
     }
 
     .delete-btn i {
-        font-size: 1rem;
+        font-size: 0.9rem;
+    }
+
+    /* Undo button styles */
+    .undo-btn {
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        color: var(--info);
+        padding: 8px 12px;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        min-width: 36px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        gap: 4px;
+        cursor: pointer;
+    }
+
+    .undo-btn:hover {
+        background: var(--info);
+        color: white;
+        transform: scale(1.05);
     }
 
     /* Mobile-specific styles */
@@ -402,9 +437,24 @@
         }
 
         /* Adjust delete button for mobile */
+        .delete-btn,
+        .undo-btn {
+            min-height: 40px;
+            min-width: 40px;
+            padding: 10px;
+            font-size: 0.75rem;
+        }
+
+        /* Make delete button more prominent on mobile */
         .delete-btn {
-            min-height: 36px;
-            min-width: 36px;
+            background: rgba(220, 38, 38, 0.15);
+            border: 1px solid rgba(220, 38, 38, 0.4);
+        }
+
+        /* Compact table on mobile */
+        .table th,
+        .table td {
+            padding: 8px 6px;
         }
     }
 
@@ -430,10 +480,26 @@
             padding: 6px 4px;
         }
 
-        /* Make delete button more prominent on mobile */
+        /* Text-only delete button on very small screens */
+        .delete-btn span.text {
+            display: none;
+        }
+
         .delete-btn {
-            background: rgba(220, 38, 38, 0.1);
-            border: 1px solid rgba(220, 38, 38, 0.3);
+            min-width: 32px;
+            min-height: 32px;
+            padding: 6px;
+        }
+    }
+
+    /* Desktop-specific enhancements */
+    @media (min-width: 769px) {
+        .delete-btn {
+            min-width: 80px;
+        }
+
+        .table tbody tr:hover .delete-btn {
+            background: rgba(220, 38, 38, 0.15);
         }
     }
 
@@ -459,9 +525,20 @@
 
     /* Row deletion styling */
     .deleted-row {
-        opacity: 0.5;
-        text-decoration: line-through;
+        opacity: 0.6;
         background-color: #f8f9fa !important;
+        position: relative;
+    }
+
+    .deleted-row::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: var(--danger);
+        transform: translateY(-50%);
     }
 
     /* Warning for minimum items */
@@ -470,6 +547,48 @@
         color: var(--warning);
         font-size: 0.8rem;
         margin-top: 5px;
+    }
+
+    /* Visual feedback for interactive elements */
+    .item-row {
+        transition: all 0.2s ease;
+    }
+
+    .item-row:not(.deleted-row):hover {
+        background-color: #f0f4ff !important;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Toast notification for undo */
+    .undo-toast {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%) translateY(100px);
+        background: var(--dark);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 1050;
+        transition: transform 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .undo-toast.show {
+        transform: translateX(-50%) translateY(0);
+    }
+
+    .undo-toast button {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
     }
 </style>
 {% endblock %}
@@ -567,7 +686,7 @@
                                         <th style="width: 12%;">Line Total</th>
                                         <th style="width: 8%;" class="d-none d-sm-table-cell">Optional</th>
                                         <th style="width: 8%;" class="d-none d-md-table-cell">Sort</th>
-                                        <th style="width: 8%;">Action</th>
+                                        <th style="width: 10%;">Delete</th>
                                     </tr>
                                 </thead>
                                 <tbody id="itemsTableBody">
@@ -603,8 +722,9 @@
                                         <td class="text-center">
                                             {{ item_form.DELETE }}
                                             <button type="button" class="delete-btn" data-row-id="{{ forloop.counter }}"
-                                                title="Delete item">
+                                                title="Delete this item">
                                                 <i class="bi bi-trash"></i>
+                                                <span class="text d-none d-md-inline">Delete</span>
                                             </button>
                                         </td>
                                     </tr>
@@ -668,7 +788,17 @@
     </div>
 </div>
 
+<!-- Undo Toast Notification -->
+<div class="undo-toast" id="undoToast">
+    <span>Item deleted</span>
+    <button type="button" id="undoButton">Undo</button>
+</div>
+
 <script>
+    // Store last deleted row for undo functionality
+    let lastDeletedRow = null;
+    let lastDeletedRowId = null;
+
     document.addEventListener('DOMContentLoaded', function () {
         // Calculate line totals and grand total
         function calculateTotals() {
@@ -726,23 +856,54 @@
             return activeItems > 0;
         }
 
+        // Show undo toast
+        function showUndoToast() {
+            const toast = document.getElementById('undoToast');
+            toast.classList.add('show');
+
+            // Auto hide after 5 seconds
+            setTimeout(() => {
+                hideUndoToast();
+            }, 5000);
+        }
+
+        // Hide undo toast
+        function hideUndoToast() {
+            const toast = document.getElementById('undoToast');
+            toast.classList.remove('show');
+        }
+
         // Delete row function
         function deleteRow(rowId) {
             const row = document.getElementById('row-' + rowId);
             const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
 
             if (deleteCheckbox) {
+                // Store for undo
+                lastDeletedRow = row;
+                lastDeletedRowId = rowId;
+
                 deleteCheckbox.checked = !deleteCheckbox.checked;
 
                 if (deleteCheckbox.checked) {
                     row.classList.add('deleted-row');
+                    showUndoToast();
                 } else {
                     row.classList.remove('deleted-row');
+                    hideUndoToast();
                 }
 
                 calculateTotals();
                 updateItemNumbers();
                 checkMinimumItems();
+            }
+        }
+
+        // Undo delete function
+        function undoDelete() {
+            if (lastDeletedRow && lastDeletedRowId) {
+                deleteRow(lastDeletedRowId);
+                hideUndoToast();
             }
         }
 
@@ -760,6 +921,9 @@
                 deleteRow(rowId);
             });
         });
+
+        // Attach event listener to undo button
+        document.getElementById('undoButton').addEventListener('click', undoDelete);
 
         // Attach event listeners to all quantity and price inputs
         document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
