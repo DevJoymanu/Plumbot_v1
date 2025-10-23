@@ -92,6 +92,8 @@
         transition: all 0.2s;
         min-height: 48px;
         /* Better touch target */
+        width: 100%;
+        /* Ensure full width */
     }
 
     .form-control:focus,
@@ -133,6 +135,10 @@
     .table {
         margin-bottom: 0;
         font-size: 0.85rem;
+        width: 100%;
+        /* Ensure table takes full width */
+        table-layout: fixed;
+        /* Consistent column widths */
     }
 
     .table thead {
@@ -142,13 +148,14 @@
     .table th {
         font-weight: 600;
         color: var(--dark);
-        padding: 10px 8px;
+        padding: 12px 8px;
         border-bottom: 2px solid #e5e7eb;
         font-size: 0.8rem;
+        vertical-align: middle;
     }
 
     .table td {
-        padding: 8px;
+        padding: 10px 8px;
         vertical-align: middle;
         border-bottom: 1px solid #f0f0f0;
     }
@@ -190,6 +197,8 @@
         background: #f8f9fa !important;
         font-weight: 600;
         color: var(--dark);
+        width: 100%;
+        text-align: center;
     }
 
     .btn {
@@ -312,6 +321,8 @@
         font-weight: 500;
         gap: 4px;
         cursor: pointer;
+        width: 100%;
+        /* Full width within table cell */
     }
 
     .delete-btn:hover {
@@ -328,29 +339,81 @@
         font-size: 0.9rem;
     }
 
-    /* Undo button styles */
-    .undo-btn {
-        background: rgba(59, 130, 246, 0.1);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        color: var(--info);
-        padding: 8px 12px;
-        border-radius: 6px;
-        transition: all 0.2s ease;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 36px;
-        min-width: 36px;
-        font-size: 0.8rem;
-        font-weight: 500;
-        gap: 4px;
-        cursor: pointer;
+    /* Table column width fixes for proper horizontal layout */
+    .table th:nth-child(1),
+    .table td:nth-child(1) {
+        width: 5%;
+        /* # column */
+        text-align: center;
     }
 
-    .undo-btn:hover {
-        background: var(--info);
-        color: white;
-        transform: scale(1.05);
+    .table th:nth-child(2),
+    .table td:nth-child(2) {
+        width: 25%;
+        /* Description column */
+    }
+
+    .table th:nth-child(3),
+    .table td:nth-child(3) {
+        width: 10%;
+        /* Qty column */
+    }
+
+    .table th:nth-child(4),
+    .table td:nth-child(4) {
+        width: 12%;
+        /* Unit Price column */
+    }
+
+    .table th:nth-child(5),
+    .table td:nth-child(5) {
+        width: 12%;
+        /* Category column */
+    }
+
+    .table th:nth-child(6),
+    .table td:nth-child(6) {
+        width: 12%;
+        /* Line Total column */
+        text-align: center;
+    }
+
+    .table th:nth-child(7),
+    .table td:nth-child(7) {
+        width: 8%;
+        /* Optional column */
+        text-align: center;
+    }
+
+    .table th:nth-child(8),
+    .table td:nth-child(8) {
+        width: 8%;
+        /* Sort column */
+    }
+
+    .table th:nth-child(9),
+    .table td:nth-child(9) {
+        width: 8%;
+        /* Delete column */
+        text-align: center;
+    }
+
+    /* Form inputs within table */
+    .table input[type="text"],
+    .table input[type="number"],
+    .table select {
+        width: 100%;
+        min-height: 40px;
+        padding: 8px 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: 0.85rem;
+    }
+
+    .table input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        margin: 0 auto;
     }
 
     /* Mobile-specific styles */
@@ -374,18 +437,26 @@
             border: 1px solid #dee2e6;
             border-radius: 8px;
             overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            /* Smooth scrolling on iOS */
+        }
+
+        /* Reset table layout for mobile */
+        .table {
+            table-layout: auto;
+            min-width: 800px;
+            /* Ensure table doesn't get too narrow */
         }
 
         .table th,
         .table td {
             white-space: nowrap;
-            min-width: 70px;
         }
 
         .table th:nth-child(2),
         /* Description */
         .table td:nth-child(2) {
-            min-width: 120px;
+            min-width: 150px;
         }
 
         .btn {
@@ -437,8 +508,7 @@
         }
 
         /* Adjust delete button for mobile */
-        .delete-btn,
-        .undo-btn {
+        .delete-btn {
             min-height: 40px;
             min-width: 40px;
             padding: 10px;
@@ -490,6 +560,11 @@
             min-height: 32px;
             padding: 6px;
         }
+
+        .table {
+            min-width: 700px;
+            /* Slightly smaller min-width for very small screens */
+        }
     }
 
     /* Desktop-specific enhancements */
@@ -500,6 +575,12 @@
 
         .table tbody tr:hover .delete-btn {
             background: rgba(220, 38, 38, 0.15);
+        }
+
+        /* Ensure proper horizontal alignment on desktop */
+        .table-responsive {
+            overflow-x: visible;
+            /* No horizontal scroll on desktop */
         }
     }
 
@@ -558,37 +639,6 @@
         background-color: #f0f4ff !important;
         transform: translateY(-1px);
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    }
-
-    /* Toast notification for undo */
-    .undo-toast {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%) translateY(100px);
-        background: var(--dark);
-        color: white;
-        padding: 12px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        z-index: 1050;
-        transition: transform 0.3s ease;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .undo-toast.show {
-        transform: translateX(-50%) translateY(0);
-    }
-
-    .undo-toast button {
-        background: transparent;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.8rem;
     }
 </style>
 {% endblock %}
@@ -678,15 +728,15 @@
                             <table class="table table-hover" id="itemsTable">
                                 <thead>
                                     <tr>
-                                        <th style="width: 5%;">#</th>
-                                        <th style="width: 25%;">Description *</th>
-                                        <th style="width: 10%;">Qty *</th>
-                                        <th style="width: 12%;">Unit Price *</th>
-                                        <th style="width: 12%;" class="d-none d-md-table-cell">Category</th>
-                                        <th style="width: 12%;">Line Total</th>
-                                        <th style="width: 8%;" class="d-none d-sm-table-cell">Optional</th>
-                                        <th style="width: 8%;" class="d-none d-md-table-cell">Sort</th>
-                                        <th style="width: 10%;">Delete</th>
+                                        <th>#</th>
+                                        <th>Description *</th>
+                                        <th>Qty *</th>
+                                        <th>Unit Price *</th>
+                                        <th class="d-none d-md-table-cell">Category</th>
+                                        <th>Line Total</th>
+                                        <th class="d-none d-sm-table-cell">Optional</th>
+                                        <th class="d-none d-md-table-cell">Sort</th>
+                                        <th>Delete</th>
                                     </tr>
                                 </thead>
                                 <tbody id="itemsTableBody">
@@ -709,12 +759,14 @@
                                         <td class="d-none d-md-table-cell">
                                             {{ item_form.category }}
                                         </td>
-                                        <td>
+                                        <td class="text-center">
                                             <input type="text" class="form-control form-control-sm line-total" readonly
                                                 value="0.00">
                                         </td>
                                         <td class="text-center d-none d-sm-table-cell">
-                                            {{ item_form.is_optional }}
+                                            <div class="d-flex justify-content-center">
+                                                {{ item_form.is_optional }}
+                                            </div>
                                         </td>
                                         <td class="d-none d-md-table-cell">
                                             {{ item_form.sort_order }}
@@ -788,17 +840,7 @@
     </div>
 </div>
 
-<!-- Undo Toast Notification -->
-<div class="undo-toast" id="undoToast">
-    <span>Item deleted</span>
-    <button type="button" id="undoButton">Undo</button>
-</div>
-
 <script>
-    // Store last deleted row for undo functionality
-    let lastDeletedRow = null;
-    let lastDeletedRowId = null;
-
     document.addEventListener('DOMContentLoaded', function () {
         // Calculate line totals and grand total
         function calculateTotals() {
@@ -856,54 +898,23 @@
             return activeItems > 0;
         }
 
-        // Show undo toast
-        function showUndoToast() {
-            const toast = document.getElementById('undoToast');
-            toast.classList.add('show');
-
-            // Auto hide after 5 seconds
-            setTimeout(() => {
-                hideUndoToast();
-            }, 5000);
-        }
-
-        // Hide undo toast
-        function hideUndoToast() {
-            const toast = document.getElementById('undoToast');
-            toast.classList.remove('show');
-        }
-
         // Delete row function
         function deleteRow(rowId) {
             const row = document.getElementById('row-' + rowId);
             const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
 
             if (deleteCheckbox) {
-                // Store for undo
-                lastDeletedRow = row;
-                lastDeletedRowId = rowId;
-
                 deleteCheckbox.checked = !deleteCheckbox.checked;
 
                 if (deleteCheckbox.checked) {
                     row.classList.add('deleted-row');
-                    showUndoToast();
                 } else {
                     row.classList.remove('deleted-row');
-                    hideUndoToast();
                 }
 
                 calculateTotals();
                 updateItemNumbers();
                 checkMinimumItems();
-            }
-        }
-
-        // Undo delete function
-        function undoDelete() {
-            if (lastDeletedRow && lastDeletedRowId) {
-                deleteRow(lastDeletedRowId);
-                hideUndoToast();
             }
         }
 
@@ -921,9 +932,6 @@
                 deleteRow(rowId);
             });
         });
-
-        // Attach event listener to undo button
-        document.getElementById('undoButton').addEventListener('click', undoDelete);
 
         // Attach event listeners to all quantity and price inputs
         document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
