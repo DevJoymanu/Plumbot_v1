@@ -77,10 +77,11 @@ class AISettingsForm(forms.Form):
 class QuotationForm(forms.ModelForm):
     class Meta:
         model = Quotation
-        fields = ['labor_cost', 'materials_cost', 'notes']
+        fields = ['labor_cost', 'materials_cost', 'transport_cost', 'notes']
         widgets = {
             'labor_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
             'materials_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+            'transport_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
             'notes': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Additional notes for the customer...'}),
         }
         labels = {
