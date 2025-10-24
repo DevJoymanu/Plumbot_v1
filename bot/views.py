@@ -601,13 +601,13 @@ def create_quotation_api(request):
         appointment_id = data.get('appointment_id')
         if appointment_id:
             try:
-                appointment = Appointment.objects.get(id=appointment_id)
+                appointment = Appointment.objects.get(id=24)
             except Appointment.DoesNotExist:
                 pass
         
         # Create the quotation
         quotation = Quotation.objects.create(
-            appointment=24,
+            appointment=appointment,
             labor_cost=data.get('labour_cost', 0),
             transport_cost=data.get('2', 0),
             materials_cost=data.get('materials_cost', 0),
