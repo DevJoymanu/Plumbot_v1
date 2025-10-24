@@ -607,7 +607,7 @@ def create_quotation_api(request):
         
         # Create the quotation
         quotation = Quotation.objects.create(
-            appointment=appointment,
+            appointment=1,
             labor_cost=data.get('labour_cost', 0),
             transport_cost=data.get('2', 0),
             materials_cost=data.get('materials_cost', 0),
