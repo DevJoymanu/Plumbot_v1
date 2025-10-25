@@ -841,39 +841,35 @@
         const tbody = document.getElementById('itemsTableBody');
         const totalForms = document.querySelector('input[name$="TOTAL_FORMS"]');
 
-        // Recalculate line totals and overall totals
         function calculateTotals() {
             let subtotal = 0;
-            tbody.querySelectorAll('.item-row:not(.deleted-row)').forEach(function (row) {
+            tbody.querySelectorAll('.item-row:not(.deleted-row)').forEach(row => {
                 const qtyInput = row.querySelector('input[id$="quantity"]');
                 const priceInput = row.querySelector('input[id$="unit_price"]');
                 const lineTotalInput = row.querySelector('.line-total');
 
                 const qty = parseFloat(qtyInput.value) || 0;
                 const price = parseFloat(priceInput.value) || 0;
-                const lineTotal = qty * price;
-                lineTotalInput.value = lineTotal.toFixed(2);
-                subtotal += lineTotal;
+                lineTotalInput.value = (qty * price).toFixed(2);
+                subtotal += qty * price;
             });
-
-            document.getElementById('itemsSubtotal').textContent = "R " + subtotal.toFixed(2);
 
             const labor = parseFloat(document.querySelector('[name$="default_labor_cost"]').value) || 0;
             const transport = parseFloat(document.querySelector('[name$="default_transport_cost"]').value) || 0;
             const grandTotal = subtotal + labor + transport;
 
+            document.getElementById('itemsSubtotal').textContent = "R " + subtotal.toFixed(2);
             document.getElementById('laborCost').textContent = "R " + labor.toFixed(2);
             document.getElementById('transportCost').textContent = "R " + transport.toFixed(2);
             document.getElementById('grandTotal').textContent = "R " + grandTotal.toFixed(2);
         }
 
-        // Check if all current rows are filled
         function checkAndAddNewRow() {
             const rows = tbody.querySelectorAll('.item-row:not(.deleted-row)');
-            if (rows.length === 0) return;
+            if (!rows.length) return;
 
             let allFilled = true;
-            rows.forEach(function (row) {
+            rows.forEach(row => {
                 const desc = row.querySelector('input[id$="description"]');
                 const qty = row.querySelector('input[id$="quantity"]');
                 const price = row.querySelector('input[id$="unit_price"]');
@@ -883,11 +879,9 @@
                 }
             });
 
-            // If all current rows are filled, auto-add one more blank row
             if (allFilled) addItem();
         }
 
-        // Function to create a new row
         function addItem() {
             const currentFormCount = parseInt(totalForms.value);
             const emptyRowTemplate = tbody.querySelector('.item-row:last-child');
@@ -896,14 +890,13 @@
             const newRow = emptyRowTemplate.cloneNode(true);
             const newIndex = currentFormCount;
 
-            // Update field names and IDs
-            newRow.querySelectorAll('input, select, textarea').forEach(function (field) {
-                if (field.name) field.name = field.name.replace(/items-\d+-/, 'items-' + newIndex + '-');
-                if (field.id) field.id = field.id.replace(/items-\d+-/, 'items-' + newIndex + '-');
+            newRow.querySelectorAll('input, select, textarea').forEach(field => {
+                if (field.name) field.name = field.name.replace(/items-\d+-/, `items-${newIndex}-`);
+                if (field.id) field.id = field.id.replace(/items-\d+-/, `items-${newIndex}-`);
 
-                // Clear field values
                 if (field.type === 'checkbox') field.checked = false;
                 else if (field.classList.contains('line-total')) field.value = '0.00';
+                else if (field.id.endsWith('quantity')) field.value = '1'; // Autofill quantity
                 else field.value = '';
             });
 
@@ -911,15 +904,14 @@
             const badge = newRow.querySelector('.item-number');
             if (badge) badge.textContent = newIndex + 1;
 
-            // Re-attach event listeners
-            newRow.querySelectorAll('input[id$="quantity"], input[id$="unit_price"]').forEach(function (input) {
+            // Reattach events
+            newRow.querySelectorAll('input[id$="quantity"], input[id$="unit_price"]').forEach(input => {
                 input.addEventListener('input', calculateTotals);
                 input.addEventListener('input', checkAndAddNewRow);
             });
             const desc = newRow.querySelector('input[id$="description"]');
             if (desc) desc.addEventListener('input', checkAndAddNewRow);
 
-            // Add delete button handler
             const deleteBtn = newRow.querySelector('.delete-btn');
             if (deleteBtn) {
                 deleteBtn.addEventListener('click', function () {
@@ -930,10 +922,12 @@
 
             tbody.appendChild(newRow);
             totalForms.value = currentFormCount + 1;
+
+            calculateTotals(); // Update totals immediately
         }
 
-        // Initial setup — attach events to existing rows
-        tbody.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="description"]').forEach(function (input) {
+        // Initial setup
+        tbody.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="description"]').forEach(input => {
             input.addEventListener('input', calculateTotals);
             input.addEventListener('input', checkAndAddNewRow);
         });
