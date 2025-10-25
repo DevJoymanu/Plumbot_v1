@@ -837,80 +837,123 @@
 </div>
 
 <script>
-    function addItem() {
+    document.addEventListener('DOMContentLoaded', function () {
+
         const tableBody = document.getElementById('itemsTableBody');
-        const totalForms = document.querySelector('#id_form-TOTAL_FORMS');
-        const formIndex = parseInt(totalForms.value);
+        const totalFormsInput = document.getElementById('id_form-TOTAL_FORMS');
 
-        // Clone the last row
-        const lastRow = tableBody.querySelector('.item-row:last-child');
-        const newRow = lastRow.cloneNode(true);
+        function calculateTotals() {
+            let itemsSubtotal = 0;
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (row.classList.contains('deleted-row')) return;
 
-        // Reset inputs
-        newRow.querySelectorAll('input, textarea, select').forEach(function (input) {
-            // Update the name and id to match the new form index
-            if (input.name) input.name = input.name.replace(/form-\d+-/, `form-${formIndex}-`);
-            if (input.id) input.id = input.id.replace(/form-\d+-/, `form-${formIndex}-`);
+                const qty = parseFloat(row.querySelector('input[id$="quantity"]').value) || 0;
+                const price = parseFloat(row.querySelector('input[id$="unit_price"]').value) || 0;
+                const lineTotalInput = row.querySelector('.line-total');
+                lineTotalInput.value = (qty * price).toFixed(2);
+                itemsSubtotal += qty * price;
+            });
 
-            // Reset value and delete checkbox
-            if (input.type === 'checkbox') {
-                input.checked = false;
-            } else {
-                input.value = '';
+            const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
+            const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
+
+            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
+            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
+            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
+            document.getElementById('grandTotal').textContent = 'R ' + (itemsSubtotal + laborCost + transportCost).toFixed(2);
+        }
+
+        function updateItemNumbers() {
+            let counter = 1;
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (!row.classList.contains('deleted-row')) {
+                    row.querySelector('.item-number').textContent = counter;
+                    counter++;
+                }
+            });
+        }
+
+        function deleteRow(rowId) {
+            const row = document.getElementById('row-' + rowId);
+            const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
+            if (deleteCheckbox) {
+                deleteCheckbox.checked = !deleteCheckbox.checked;
+                row.classList.toggle('deleted-row', deleteCheckbox.checked);
+                calculateTotals();
+                updateItemNumbers();
+            }
+        }
+
+        function addItem() {
+            const formIndex = parseInt(totalFormsInput.value);
+            const lastRow = tableBody.querySelector('.item-row:last-child');
+            const newRow = lastRow.cloneNode(true);
+
+            // Reset values and update ids/names
+            newRow.querySelectorAll('input, textarea, select').forEach(function (input) {
+                if (input.name) input.name = input.name.replace(/form-\d+-/, `form-${formIndex}-`);
+                if (input.id) input.id = input.id.replace(/form-\d+-/, `form-${formIndex}-`);
+                if (input.type === 'checkbox') input.checked = false;
+                else input.value = '';
+            });
+
+            newRow.classList.remove('deleted-row', 'triggered-add');
+            newRow.setAttribute('id', 'row-' + formIndex);
+            newRow.setAttribute('data-item-id', formIndex);
+
+            // Attach delete button listener
+            const deleteBtn = newRow.querySelector('.delete-btn');
+            deleteBtn.setAttribute('data-row-id', formIndex);
+            deleteBtn.addEventListener('click', function () { deleteRow(formIndex); });
+
+            tableBody.appendChild(newRow);
+
+            totalFormsInput.value = formIndex + 1;
+        }
+
+        function autoAddItemOnFill() {
+            const rows = document.querySelectorAll('.item-row');
+            if (!rows.length) return;
+
+            const lastRow = rows[rows.length - 1];
+            const description = lastRow.querySelector('input[id$="description"], textarea[id$="description"]');
+            const qty = lastRow.querySelector('input[id$="quantity"]');
+            const price = lastRow.querySelector('input[id$="unit_price"]');
+
+            if (!description || !qty || !price) return;
+
+            const allFilled = description.value.trim() !== '' &&
+                qty.value.trim() !== '' &&
+                price.value.trim() !== '';
+
+            if (allFilled && !lastRow.classList.contains('triggered-add')) {
+                lastRow.classList.add('triggered-add');
+                addItem();
+            }
+        }
+
+        // Recalculate totals on input
+        document.addEventListener('input', function (e) {
+            if (e.target.matches('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]')) {
+                calculateTotals();
+            }
+
+            if (e.target.matches('input[id$="description"], textarea[id$="description"], input[id$="quantity"], input[id$="unit_price"]')) {
+                autoAddItemOnFill();
             }
         });
 
-        // Remove triggered-add from cloned row
-        newRow.classList.remove('triggered-add');
-
-        // Update data-row-id
-        newRow.setAttribute('data-item-id', formIndex);
-        newRow.id = 'row-' + formIndex;
-
-        // Update delete button
-        const deleteBtn = newRow.querySelector('.delete-btn');
-        deleteBtn.setAttribute('data-row-id', formIndex);
-        deleteBtn.addEventListener('click', function () {
-            deleteRow(formIndex);
+        // Attach existing delete buttons
+        document.querySelectorAll('.delete-btn').forEach(function (button) {
+            const rowId = button.getAttribute('data-row-id');
+            button.addEventListener('click', function () { deleteRow(rowId); });
         });
 
-        tableBody.appendChild(newRow);
-
-        // Increment TOTAL_FORMS
-        totalForms.value = formIndex + 1;
-
-        // Recalculate totals
+        // Initial calculation
         calculateTotals();
-    }
-
-    // Auto-add on last row filled
-    function autoAddItemOnFill() {
-        const rows = document.querySelectorAll('.item-row');
-        if (!rows.length) return;
-
-        const lastRow = rows[rows.length - 1];
-        const description = lastRow.querySelector('input[id$="description"], textarea[id$="description"]');
-        const qty = lastRow.querySelector('input[id$="quantity"]');
-        const price = lastRow.querySelector('input[id$="unit_price"]');
-
-        if (!description || !qty || !price) return;
-
-        const allFilled = description.value.trim() !== '' &&
-            qty.value.trim() !== '' &&
-            price.value.trim() !== '';
-
-        if (allFilled && !lastRow.classList.contains('triggered-add')) {
-            lastRow.classList.add('triggered-add');
-            addItem();
-        }
-    }
-
-    // Run auto-add whenever typing in the last row
-    document.addEventListener('input', function (e) {
-        if (e.target.matches('input[id$="description"], textarea[id$="description"], input[id$="quantity"], input[id$="unit_price"]')) {
-            autoAddItemOnFill();
-        }
+        updateItemNumbers();
     });
 </script>
+
 
 {% endblock %}
