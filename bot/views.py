@@ -601,7 +601,7 @@ def create_quotation_api(request):
         appointment_id = data.get('appointment_id')
         if appointment_id:
             try:
-                appointment = Appointment.objects.get(id=24)
+                appointment = Appointment.objects.get(id=appointment_id)
             except Appointment.DoesNotExist:
                 pass
         
