@@ -838,274 +838,109 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const tableBody = document.getElementById('itemsTableBody');
-        const totalFormsInput = document.getElementById('id_form-TOTAL_FORMS');
-
-        function calculateTotals() {
-            let itemsSubtotal = 0;
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                if (row.classList.contains('deleted-row')) return;
-
-                const qty = parseFloat(row.querySelector('input[id$="quantity"]').value) || 0;
-                const price = parseFloat(row.querySelector('input[id$="unit_price"]').value) || 0;
-                const lineTotalInput = row.querySelector('.line-total');
-                lineTotalInput.value = (qty * price).toFixed(2);
-                itemsSubtotal += qty * price;
-            });
-
-            const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
-            const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
-
-            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
-            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
-            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
-            document.getElementById('grandTotal').textContent = 'R ' + (itemsSubtotal + laborCost + transportCost).toFixed(2);
-        }
-
-        function updateItemNumbers() {
-            let counter = 1;
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                if (!row.classList.contains('deleted-row')) {
-                    row.querySelector('.item-number').textContent = counter;
-                    counter++;
-                }
-            });
-        }
-
-        function deleteRow(rowId) {
-            const row = document.getElementById('row-' + rowId);
-            const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-            if (deleteCheckbox) {
-                deleteCheckbox.checked = !deleteCheckbox.checked;
-                row.classList.toggle('deleted-row', deleteCheckbox.checked);
-                calculateTotals();
-                updateItemNumbers();
-            }
-        }
-
-        function addItem() {
-            const formIndex = parseInt(totalFormsInput.value);
-            const lastRow = tableBody.querySelector('.item-row:last-child');
-            const newRow = lastRow.cloneNode(true);
-
-            // Reset inputs properly for new row
-            newRow.querySelectorAll('input, textarea, select').forEach(function (input) {
-                if (input.name) input.name = input.name.replace(/form-\d+-/, `form-${formIndex}-`);
-                if (input.id) input.id = input.id.replace(/form-\d+-/, `form-${formIndex}-`);
-
-                // Make new row EMPTY for typing
-                if (input.type === 'checkbox') {
-                    input.checked = false;
-                } else if (input.classList.contains('line-total')) {
-                    input.value = '0.00'; // keep line total as 0.00
-                } else {
-                    input.value = ''; // everything else starts empty
-                }
-            });
-
-            newRow.classList.remove('deleted-row', 'triggered-add');
-            newRow.setAttribute('id', 'row-' + formIndex);
-            newRow.setAttribute('data-item-id', formIndex);
-
-            // Fix delete button
-            const deleteBtn = newRow.querySelector('.delete-btn');
-            deleteBtn.setAttribute('data-row-id', formIndex);
-            deleteBtn.removeEventListener('click', handleDeleteButton); // prevent duplicates
-            deleteBtn.addEventListener('click', handleDeleteButton);
-
-            tableBody.appendChild(newRow);
-            totalFormsInput.value = formIndex + 1;
-            updateItemNumbers();
-        }
-
-        // Handle delete separately to avoid duplicate bindings
-        function handleDeleteButton(e) {
-            const rowId = e.target.getAttribute('data-row-id');
-            deleteRow(rowId);
-        }
-
-        function autoAddItemOnFill() {
-            const rows = document.querySelectorAll('.item-row');
-            if (!rows.length) return;
-
-            const lastRow = rows[rows.length - 1];
-            const description = lastRow.querySelector('input[id$="description"], textarea[id$="description"]');
-            const qty = lastRow.querySelector('input[id$="quantity"]');
-            const price = lastRow.querySelector('input[id$="unit_price"]');
-
-            if (!description || !qty || !price) return;
-
-            const allFilled =
-                description.value.trim() !== '' &&
-                qty.value.trim() !== '' &&
-                price.value.trim() !== '';
-
-            // Only add if all filled AND not triggered already
-            if (allFilled && !lastRow.classList.contains('triggered-add')) {
-                lastRow.classList.add('triggered-add');
-                addItem();
-            }
-        }
-
-        // Listen for input events
-        document.addEventListener('input', function (e) {
-            const target = e.target;
-
-            if (
-                target.matches(
-                    'input[id$="description"], textarea[id$="description"], input[id$="quantity"], input[id$="unit_price"]'
-                )
-            ) {
-                // Recalculate totals if numbers changed
-                calculateTotals();
-                // Check if last row should auto-add
-                autoAddItemOnFill();
-            }
-
-            if (
-                target.matches(
-                    'input[id$="default_labor_cost"], input[id$="default_transport_cost"]'
-                )
-            ) {
-                calculateTotals();
-            }
-        });
-
-        // Attach existing delete buttons
-        document.querySelectorAll('.delete-btn').forEach(function (button) {
-            button.addEventListener('click', handleDeleteButton);
-        });
-
-        calculateTotals();
-        updateItemNumbers();
-    });
-    // Check if all rows are filled and add new row if needed
-    function checkAndAddNewRow() {
-        const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
-        let allFilled = true;
-
-        // Check if all rows have description filled
-        rows.forEach(function(row) {
-            const description = row.querySelector('input[id$="description"]');
-            if (!description || !description.value.trim()) {
-                allFilled = false;
-            }
-        });
-
-        // If all rows are filled, trigger add item
-        if (allFilled && rows.length > 0) {
-            addItem();
-        }
-    }
-
-    // Monitor description fields for changes
-    document.querySelectorAll('input[id$="description"]').forEach(function(input) {
-        input.addEventListener('input', function() {
-            // Debounce the check to avoid too many calls
-            clearTimeout(window.addRowTimeout);
-            window.addRowTimeout = setTimeout(checkAndAddNewRow, 500);
-        });
-    });
-
-    // Add new item row
-    function addItem() {
         const tbody = document.getElementById('itemsTableBody');
         const totalForms = document.querySelector('input[name$="TOTAL_FORMS"]');
-        const currentFormCount = parseInt(totalForms.value);
-        
-        // Get the last row to use as a template
-        const lastRow = tbody.querySelector('.item-row:last-child');
-        if (!lastRow) return;
-        
-        // Clone the last row
-        const newRow = lastRow.cloneNode(true);
-        const newRowId = currentFormCount + 1;
-        
-        // Update row attributes
-        newRow.id = 'row-' + newRowId;
-        newRow.setAttribute('data-item-id', newRowId);
-        newRow.classList.remove('deleted-row');
-        
-        // Update all form field names and IDs
-        newRow.querySelectorAll('input, select, textarea').forEach(function(field) {
-            const name = field.getAttribute('name');
-            const id = field.getAttribute('id');
-            
-            if (name) {
-                // Replace the form index (e.g., items-0-description becomes items-1-description)
-                const newName = name.replace(/items-\d+-/, 'items-' + currentFormCount + '-');
-                field.setAttribute('name', newName);
-            }
-            
-            if (id) {
-                const newId = id.replace(/items-\d+-/, 'items-' + currentFormCount + '-');
-                field.setAttribute('id', newId);
-            }
-            
-            // Clear the values
-            if (field.type === 'checkbox') {
-                field.checked = false;
-            } else if (field.classList.contains('line-total')) {
-                field.value = '0.00';
-            } else if (field.type === 'number') {
-                field.value = field.id.includes('sort_order') ? (currentFormCount + 1) : '';
-            } else {
-                field.value = '';
-            }
-        });
-        
-        // Update the item number badge
-        const numberBadge = newRow.querySelector('.item-number');
-        if (numberBadge) {
-            numberBadge.textContent = newRowId;
+
+        // Recalculate line totals and overall totals
+        function calculateTotals() {
+            let subtotal = 0;
+            tbody.querySelectorAll('.item-row:not(.deleted-row)').forEach(function (row) {
+                const qtyInput = row.querySelector('input[id$="quantity"]');
+                const priceInput = row.querySelector('input[id$="unit_price"]');
+                const lineTotalInput = row.querySelector('.line-total');
+
+                const qty = parseFloat(qtyInput.value) || 0;
+                const price = parseFloat(priceInput.value) || 0;
+                const lineTotal = qty * price;
+                lineTotalInput.value = lineTotal.toFixed(2);
+                subtotal += lineTotal;
+            });
+
+            document.getElementById('itemsSubtotal').textContent = "R " + subtotal.toFixed(2);
+
+            const labor = parseFloat(document.querySelector('[name$="default_labor_cost"]').value) || 0;
+            const transport = parseFloat(document.querySelector('[name$="default_transport_cost"]').value) || 0;
+            const grandTotal = subtotal + labor + transport;
+
+            document.getElementById('laborCost').textContent = "R " + labor.toFixed(2);
+            document.getElementById('transportCost').textContent = "R " + transport.toFixed(2);
+            document.getElementById('grandTotal').textContent = "R " + grandTotal.toFixed(2);
         }
-        
-        // Update delete button data attribute
-        const deleteBtn = newRow.querySelector('.delete-btn');
-        if (deleteBtn) {
-            deleteBtn.setAttribute('data-row-id', newRowId);
-            
+
+        // Check if all current rows are filled
+        function checkAndAddNewRow() {
+            const rows = tbody.querySelectorAll('.item-row:not(.deleted-row)');
+            if (rows.length === 0) return;
+
+            let allFilled = true;
+            rows.forEach(function (row) {
+                const desc = row.querySelector('input[id$="description"]');
+                const qty = row.querySelector('input[id$="quantity"]');
+                const price = row.querySelector('input[id$="unit_price"]');
+
+                if (!desc.value.trim() || !qty.value.trim() || !price.value.trim()) {
+                    allFilled = false;
+                }
+            });
+
+            // If all current rows are filled, auto-add one more blank row
+            if (allFilled) addItem();
+        }
+
+        // Function to create a new row
+        function addItem() {
+            const currentFormCount = parseInt(totalForms.value);
+            const emptyRowTemplate = tbody.querySelector('.item-row:last-child');
+            if (!emptyRowTemplate) return;
+
+            const newRow = emptyRowTemplate.cloneNode(true);
+            const newIndex = currentFormCount;
+
+            // Update field names and IDs
+            newRow.querySelectorAll('input, select, textarea').forEach(function (field) {
+                if (field.name) field.name = field.name.replace(/items-\d+-/, 'items-' + newIndex + '-');
+                if (field.id) field.id = field.id.replace(/items-\d+-/, 'items-' + newIndex + '-');
+
+                // Clear field values
+                if (field.type === 'checkbox') field.checked = false;
+                else if (field.classList.contains('line-total')) field.value = '0.00';
+                else field.value = '';
+            });
+
+            // Update badge number
+            const badge = newRow.querySelector('.item-number');
+            if (badge) badge.textContent = newIndex + 1;
+
             // Re-attach event listeners
-            deleteBtn.addEventListener('click', function() {
-                deleteRow(newRowId);
+            newRow.querySelectorAll('input[id$="quantity"], input[id$="unit_price"]').forEach(function (input) {
+                input.addEventListener('input', calculateTotals);
+                input.addEventListener('input', checkAndAddNewRow);
             });
-            
-            deleteBtn.addEventListener('touchstart', function(e) {
-                e.preventDefault();
-                deleteRow(newRowId);
-            });
+            const desc = newRow.querySelector('input[id$="description"]');
+            if (desc) desc.addEventListener('input', checkAndAddNewRow);
+
+            // Add delete button handler
+            const deleteBtn = newRow.querySelector('.delete-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', function () {
+                    newRow.remove();
+                    calculateTotals();
+                });
+            }
+
+            tbody.appendChild(newRow);
+            totalForms.value = currentFormCount + 1;
         }
-        
-        // Add event listeners to new inputs
-        newRow.querySelectorAll('input[id$="quantity"], input[id$="unit_price"]').forEach(function(input) {
+
+        // Initial setup — attach events to existing rows
+        tbody.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="description"]').forEach(function (input) {
             input.addEventListener('input', calculateTotals);
-            input.addEventListener('change', calculateTotals);
+            input.addEventListener('input', checkAndAddNewRow);
         });
-        
-        // Add description monitoring for auto-add
-        const newDescInput = newRow.querySelector('input[id$="description"]');
-        if (newDescInput) {
-            newDescInput.addEventListener('input', function() {
-                clearTimeout(window.addRowTimeout);
-                window.addRowTimeout = setTimeout(checkAndAddNewRow, 500);
-            });
-        }
-        
-        // Append to tbody
-        tbody.appendChild(newRow);
-        
-        // Update total forms count
-        totalForms.value = currentFormCount + 1;
-        
-        // Recalculate totals and update numbers
+
         calculateTotals();
-        updateItemNumbers();
-        checkMinimumItems();
-        
-        // Focus on the new description field
-        if (newDescInput) {
-            newDescInput.focus();
-        }
-    }
+    });
 </script>
+
+
 {% endblock %}
