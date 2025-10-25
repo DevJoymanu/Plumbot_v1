@@ -271,33 +271,34 @@ class CreateQuotationTemplateView(CreateView):
     model = QuotationTemplate
     form_class = QuotationTemplateForm
     template_name = 'create_quotation_template.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
-            context['formset'] = QuotationTemplateItemFormSet(self.request.POST)
+            context['formset'] = QuotationTemplateItemFormSet(
+                self.request.POST,
+                instance=self.object if hasattr(self, 'object') else None
+            )
         else:
-            context['formset'] = QuotationTemplateItemFormSet()
+            context['formset'] = QuotationTemplateItemFormSet(
+                instance=self.object if hasattr(self, 'object') else None
+            )
         return context
-    
+
     def form_valid(self, form):
-        context = self.get_context_data()
+        context = self.get_context_data(form=form)
         formset = context['formset']
-        
+
         form.instance.created_by = self.request.user
-        
-        if formset.is_valid():
+
+        if formset.is_valid() and form.is_valid():
             self.object = form.save()
             formset.instance = self.object
             formset.save()
-            
             messages.success(self.request, f'Template "{self.object.name}" created successfully!')
             return redirect('quotation_templates_list')
         else:
             return self.render_to_response(self.get_context_data(form=form))
-    
-    def get_success_url(self):
-        return reverse('quotation_templates_list')
 
 
 @method_decorator(staff_required, name='dispatch')
