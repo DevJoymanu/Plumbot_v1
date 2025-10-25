@@ -838,122 +838,491 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        let totalForms = document.getElementById('id_items-TOTAL_FORMS');
+        let formCount = parseInt(totalForms.value);
+        const maxForms = parseInt(document.getElementById('id_items-MAX_NUM_FORMS').value);
+        let autoAddEnabled = true;
 
-        const tableBody = document.getElementById('itemsTableBody');
-        const totalFormsInput = document.getElementById('id_form-TOTAL_FORMS');
+        // Debounce function to limit rapid firing of events
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
 
+        // Calculate line totals and grand total
         function calculateTotals() {
             let itemsSubtotal = 0;
+
             document.querySelectorAll('.item-row').forEach(function (row) {
                 if (row.classList.contains('deleted-row')) return;
 
-                const qty = parseFloat(row.querySelector('input[id$="quantity"]').value) || 0;
-                const price = parseFloat(row.querySelector('input[id$="unit_price"]').value) || 0;
+                const qtyInput = row.querySelector('input[id$="quantity"]');
+                const priceInput = row.querySelector('input[id$="unit_price"]');
                 const lineTotalInput = row.querySelector('.line-total');
-                lineTotalInput.value = (qty * price).toFixed(2);
-                itemsSubtotal += qty * price;
+
+                if (qtyInput && priceInput && lineTotalInput) {
+                    const qty = parseFloat(qtyInput.value) || 0;
+                    const price = parseFloat(priceInput.value) || 0;
+                    const lineTotal = qty * price;
+
+                    lineTotalInput.value = lineTotal.toFixed(2);
+                    itemsSubtotal += lineTotal;
+
+                    // Add visual feedback for calculated rows
+                    if (lineTotal > 0) {
+                        lineTotalInput.classList.add('text-success', 'fw-bold');
+                    } else {
+                        lineTotalInput.classList.remove('text-success', 'fw-bold');
+                    }
+                }
             });
 
             const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
             const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
 
-            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
-            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
-            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
-            document.getElementById('grandTotal').textContent = 'R ' + (itemsSubtotal + laborCost + transportCost).toFixed(2);
+            // Update displays with animation
+            animateValue('itemsSubtotal', itemsSubtotal.toFixed(2));
+            animateValue('laborCost', laborCost.toFixed(2));
+            animateValue('transportCost', transportCost.toFixed(2));
+
+            const grandTotal = itemsSubtotal + laborCost + transportCost;
+            animateValue('grandTotal', grandTotal.toFixed(2));
         }
 
+        // Animate value changes
+        function animateValue(elementId, newValue) {
+            const element = document.getElementById(elementId);
+            const oldValue = parseFloat(element.textContent.replace('R ', '')) || 0;
+            const newValueNum = parseFloat(newValue);
+
+            if (oldValue !== newValueNum) {
+                element.classList.add('value-changing');
+                setTimeout(() => {
+                    element.textContent = 'R ' + newValue;
+                    element.classList.remove('value-changing');
+                }, 300);
+            } else {
+                element.textContent = 'R ' + newValue;
+            }
+        }
+
+        // Check if we have at least one active item
+        function checkMinimumItems() {
+            let activeItems = 0;
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (!row.classList.contains('deleted-row')) {
+                    activeItems++;
+                }
+            });
+
+            const warning = document.getElementById('minItemsWarning');
+            const addItemBtn = document.getElementById('addItemBtn');
+
+            if (activeItems === 0) {
+                warning.style.display = 'block';
+                if (addItemBtn) addItemBtn.classList.add('btn-warning');
+            } else {
+                warning.style.display = 'none';
+                if (addItemBtn) addItemBtn.classList.remove('btn-warning');
+            }
+
+            return activeItems > 0;
+        }
+
+        // Check if a specific row is filled
+        function isRowFilled(row) {
+            if (row.classList.contains('deleted-row')) return false;
+
+            const description = row.querySelector('input[id$="description"]').value.trim();
+            const quantity = row.querySelector('input[id$="quantity"]').value.trim();
+            const unitPrice = row.querySelector('input[id$="unit_price"]').value.trim();
+
+            return description && quantity && unitPrice;
+        }
+
+        // Check if all current rows are filled
+        function areAllRowsFilled() {
+            if (!autoAddEnabled) return false;
+
+            let allFilled = true;
+            let hasRows = false;
+
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (row.classList.contains('deleted-row')) return;
+                hasRows = true;
+
+                if (!isRowFilled(row)) {
+                    allFilled = false;
+                }
+            });
+
+            return hasRows && allFilled;
+        }
+
+        // Delete row function
+        function deleteRow(rowId) {
+            const row = document.getElementById('row-' + rowId);
+            if (!row) return;
+
+            const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
+            if (!deleteCheckbox) return;
+
+            // Show confirmation for non-empty rows
+            if (isRowFilled(row) && !deleteCheckbox.checked) {
+                if (!confirm('Are you sure you want to delete this item?')) {
+                    return;
+                }
+            }
+
+            deleteCheckbox.checked = !deleteCheckbox.checked;
+
+            if (deleteCheckbox.checked) {
+                row.classList.add('deleted-row');
+                row.style.opacity = '0.5';
+                setTimeout(() => {
+                    row.style.opacity = '0.6';
+                }, 300);
+            } else {
+                row.classList.remove('deleted-row');
+                row.style.opacity = '1';
+            }
+
+            calculateTotals();
+            updateItemNumbers();
+            checkMinimumItems();
+
+            // Re-enable auto-add if it was disabled
+            autoAddEnabled = true;
+        }
+
+        // Add new item row
+        function addItemRow() {
+            if (formCount >= maxForms) {
+                showNotification('Maximum number of items reached.', 'warning');
+                return;
+            }
+
+            const tableBody = document.getElementById('itemsTableBody');
+            const newRow = document.createElement('tr');
+            newRow.className = 'item-row new-row';
+            newRow.id = 'row-' + formCount;
+            newRow.setAttribute('data-item-id', formCount);
+
+            // Create the new row HTML
+            newRow.innerHTML = `
+                <td class="text-center">
+                    <span class="badge bg-secondary item-number">${formCount}</span>
+                </td>
+                <td>
+                    <input type="text" name="items-${formCount}-description" class="form-control item-description" placeholder="Enter item description" id="id_items-${formCount}-description" maxlength="200">
+                    <input type="hidden" name="items-${formCount}-id" id="id_items-${formCount}-id">
+                </td>
+                <td>
+                    <input type="number" name="items-${formCount}-quantity" value="1" step="any" min="0" class="form-control item-quantity" placeholder="Qty" id="id_items-${formCount}-quantity">
+                </td>
+                <td>
+                    <input type="number" name="items-${formCount}-unit_price" value="0.00" step="0.01" min="0" class="form-control item-price" placeholder="0.00" id="id_items-${formCount}-unit_price">
+                </td>
+                <td class="d-none d-md-table-cell">
+                    <select name="items-${formCount}-category" class="form-select item-category" id="id_items-${formCount}-category">
+                        <option value="" selected>Select category</option>
+                        <option value="MATERIALS">Materials</option>
+                        <option value="LABOR">Labor</option>
+                        <option value="EQUIPMENT">Equipment</option>
+                        <option value="SERVICES">Services</option>
+                        <option value="OTHER">Other</option>
+                    </select>
+                </td>
+                <td class="text-center">
+                    <input type="text" class="form-control form-control-sm line-total" readonly value="0.00">
+                </td>
+                <td class="text-center d-none d-sm-table-cell">
+                    <div class="d-flex justify-content-center">
+                        <input type="checkbox" name="items-${formCount}-is_optional" class="form-check-input item-optional" id="id_items-${formCount}-is_optional" title="Mark as optional">
+                    </div>
+                </td>
+                <td class="d-none d-md-table-cell">
+                    <input type="number" name="items-${formCount}-sort_order" value="${formCount}" class="form-control item-sort" id="id_items-${formCount}-sort_order">
+                </td>
+                <td class="text-center">
+                    <input type="checkbox" name="items-${formCount}-DELETE" id="id_items-${formCount}-DELETE">
+                    <button type="button" class="delete-btn" data-row-id="${formCount}" title="Delete this item">
+                        <i class="bi bi-trash"></i>
+                        <span class="text d-none d-md-inline">Delete</span>
+                    </button>
+                </td>
+            `;
+
+            tableBody.appendChild(newRow);
+
+            // Update form count
+            formCount++;
+            totalForms.value = formCount;
+
+            // Add event listeners to new inputs
+            const newInputs = newRow.querySelectorAll('input, select');
+            newInputs.forEach(function (input) {
+                if (input.type === 'number' || input.classList.contains('item-description')) {
+                    input.addEventListener('input', debounce(function () {
+                        calculateTotals();
+                        if (autoAddEnabled) {
+                            checkAndAddRow();
+                        }
+                    }, 300));
+                }
+
+                // Add focus styling
+                input.addEventListener('focus', function () {
+                    this.closest('.item-row').classList.add('row-focused');
+                });
+
+                input.addEventListener('blur', function () {
+                    this.closest('.item-row').classList.remove('row-focused');
+                });
+            });
+
+            // Add event listener to delete button
+            const deleteBtn = newRow.querySelector('.delete-btn');
+            deleteBtn.addEventListener('click', function () {
+                deleteRow(formCount - 1);
+            });
+
+            // Add touch event for better mobile experience
+            deleteBtn.addEventListener('touchstart', function (e) {
+                e.preventDefault();
+                deleteRow(formCount - 1);
+            });
+
+            updateItemNumbers();
+            checkMinimumItems();
+
+            // Show brief notification
+            showNotification('New item added', 'success', 1500);
+
+            // Focus on the description field of the new row
+            setTimeout(() => {
+                const descInput = newRow.querySelector('.item-description');
+                if (descInput) {
+                    descInput.focus();
+                    // Scroll to the new row if it's not visible
+                    newRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }, 100);
+        }
+
+        // Check if we need to add a new row
+        function checkAndAddRow() {
+            if (areAllRowsFilled() && formCount < maxForms) {
+                // Small delay to improve UX
+                setTimeout(() => {
+                    addItemRow();
+                }, 500);
+            }
+        }
+
+        // Show notification
+        function showNotification(message, type = 'info', duration = 3000) {
+            // Remove existing notifications
+            const existingNotifications = document.querySelectorAll('.custom-notification');
+            existingNotifications.forEach(notification => notification.remove());
+
+            const notification = document.createElement('div');
+            notification.className = `custom-notification alert alert-${type}`;
+            notification.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-${type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+
+            // Add styles for notification
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                min-width: 250px;
+                animation: slideInRight 0.3s ease;
+            `;
+
+            document.body.appendChild(notification);
+
+            // Auto remove after duration
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.style.animation = 'slideOutRight 0.3s ease';
+                    setTimeout(() => {
+                        if (notification.parentNode) {
+                            notification.remove();
+                        }
+                    }, 300);
+                }
+            }, duration);
+        }
+
+        // Initialize event listeners
+        function initializeEventListeners() {
+            // Attach event listeners to delete buttons
+            document.querySelectorAll('.delete-btn').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const rowId = this.getAttribute('data-row-id');
+                    deleteRow(rowId);
+                });
+
+                button.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    const rowId = this.getAttribute('data-row-id');
+                    deleteRow(rowId);
+                });
+            });
+
+            // Attach event listeners to all inputs
+            document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"], input[id$="description"]').forEach(function (input) {
+                input.addEventListener('input', debounce(calculateTotals, 300));
+                input.addEventListener('change', calculateTotals);
+
+                if (input.id.includes('quantity') || input.id.includes('unit_price') || input.id.includes('description')) {
+                    input.addEventListener('input', debounce(checkAndAddRow, 500));
+                }
+            });
+
+            // Add Item button
+            const addItemBtn = document.getElementById('addItemBtn');
+            if (addItemBtn) {
+                addItemBtn.addEventListener('click', function () {
+                    addItemRow();
+                    // Temporarily disable auto-add to prevent double adding
+                    autoAddEnabled = false;
+                    setTimeout(() => {
+                        autoAddEnabled = true;
+                    }, 2000);
+                });
+            }
+
+            // Toggle auto-add feature
+            const toggleAutoAdd = document.createElement('button');
+            toggleAutoAdd.type = 'button';
+            toggleAutoAdd.className = 'btn btn-sm btn-outline-info ms-2';
+            toggleAutoAdd.innerHTML = `<i class="bi bi-${autoAddEnabled ? 'check' : 'x'}-circle"></i> Auto-add`;
+            toggleAutoAdd.title = 'Toggle automatic adding of new rows';
+            toggleAutoAdd.addEventListener('click', function () {
+                autoAddEnabled = !autoAddEnabled;
+                this.innerHTML = `<i class="bi bi-${autoAddEnabled ? 'check' : 'x'}-circle"></i> Auto-add`;
+                this.classList.toggle('btn-outline-info', autoAddEnabled);
+                this.classList.toggle('btn-outline-secondary', !autoAddEnabled);
+
+                showNotification(
+                    autoAddEnabled ? 'Auto-add enabled' : 'Auto-add disabled',
+                    autoAddEnabled ? 'success' : 'info',
+                    2000
+                );
+            });
+
+            // Add toggle button next to Add Item button
+            if (addItemBtn) {
+                addItemBtn.parentNode.appendChild(toggleAutoAdd);
+            }
+        }
+
+        // Update item numbers
         function updateItemNumbers() {
             let counter = 1;
             document.querySelectorAll('.item-row').forEach(function (row) {
                 if (!row.classList.contains('deleted-row')) {
-                    row.querySelector('.item-number').textContent = counter;
-                    counter++;
+                    const numberBadge = row.querySelector('.item-number');
+                    if (numberBadge) {
+                        numberBadge.textContent = counter;
+                        numberBadge.className = 'badge bg-secondary item-number';
+                        if (counter <= 3) {
+                            numberBadge.classList.add('bg-primary');
+                        }
+                        counter++;
+                    }
                 }
             });
         }
 
-        function deleteRow(rowId) {
-            const row = document.getElementById('row-' + rowId);
-            const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-            if (deleteCheckbox) {
-                deleteCheckbox.checked = !deleteCheckbox.checked;
-                row.classList.toggle('deleted-row', deleteCheckbox.checked);
-                calculateTotals();
-                updateItemNumbers();
+        // Add CSS for animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideInRight {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
             }
-        }
-
-        function addItem() {
-            const formIndex = parseInt(totalFormsInput.value);
-            const lastRow = tableBody.querySelector('.item-row:last-child');
-            const newRow = lastRow.cloneNode(true);
-
-            // Reset values and update ids/names
-            newRow.querySelectorAll('input, textarea, select').forEach(function (input) {
-                if (input.name) input.name = input.name.replace(/form-\d+-/, `form-${formIndex}-`);
-                if (input.id) input.id = input.id.replace(/form-\d+-/, `form-${formIndex}-`);
-                if (input.type === 'checkbox') input.checked = false;
-                else input.value = '';
-            });
-
-            newRow.classList.remove('deleted-row', 'triggered-add');
-            newRow.setAttribute('id', 'row-' + formIndex);
-            newRow.setAttribute('data-item-id', formIndex);
-
-            // Attach delete button listener
-            const deleteBtn = newRow.querySelector('.delete-btn');
-            deleteBtn.setAttribute('data-row-id', formIndex);
-            deleteBtn.addEventListener('click', function () { deleteRow(formIndex); });
-
-            tableBody.appendChild(newRow);
-
-            totalFormsInput.value = formIndex + 1;
-        }
-
-        function autoAddItemOnFill() {
-            const rows = document.querySelectorAll('.item-row');
-            if (!rows.length) return;
-
-            const lastRow = rows[rows.length - 1];
-            const description = lastRow.querySelector('input[id$="description"], textarea[id$="description"]');
-            const qty = lastRow.querySelector('input[id$="quantity"]');
-            const price = lastRow.querySelector('input[id$="unit_price"]');
-
-            if (!description || !qty || !price) return;
-
-            const allFilled = description.value.trim() !== '' &&
-                qty.value.trim() !== '' &&
-                price.value.trim() !== '';
-
-            if (allFilled && !lastRow.classList.contains('triggered-add')) {
-                lastRow.classList.add('triggered-add');
-                addItem();
+            @keyframes slideOutRight {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
             }
-        }
-
-        // Recalculate totals on input
-        document.addEventListener('input', function (e) {
-            if (e.target.matches('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]')) {
-                calculateTotals();
+            .value-changing {
+                color: var(--primary) !important;
+                font-weight: bold !important;
+                transition: all 0.3s ease;
             }
-
-            if (e.target.matches('input[id$="description"], textarea[id$="description"], input[id$="quantity"], input[id$="unit_price"]')) {
-                autoAddItemOnFill();
+            .row-focused {
+                background-color: rgba(102, 126, 234, 0.05) !important;
+                border-left: 3px solid var(--primary) !important;
             }
-        });
+            .new-row {
+                animation: highlightRow 2s ease;
+            }
+            @keyframes highlightRow {
+                0% { background-color: rgba(16, 185, 129, 0.2); }
+                100% { background-color: transparent; }
+            }
+            .btn-warning {
+                background-color: var(--warning) !important;
+                border-color: var(--warning) !important;
+                color: white !important;
+            }
+        `;
+        document.head.appendChild(style);
 
-        // Attach existing delete buttons
-        document.querySelectorAll('.delete-btn').forEach(function (button) {
-            const rowId = button.getAttribute('data-row-id');
-            button.addEventListener('click', function () { deleteRow(rowId); });
-        });
-
-        // Initial calculation
+        // Initialize everything
+        initializeEventListeners();
         calculateTotals();
         updateItemNumbers();
+        checkMinimumItems();
+
+        // Form validation
+        document.getElementById('templateForm').addEventListener('submit', function (e) {
+            const templateName = document.querySelector('input[id$="name"]').value.trim();
+
+            if (!templateName) {
+                e.preventDefault();
+                showNotification('Please enter a template name', 'warning');
+                document.querySelector('input[id$="name"]').focus();
+                return false;
+            }
+
+            if (!checkMinimumItems()) {
+                e.preventDefault();
+                showNotification('Please add at least one item to the template', 'warning');
+                return false;
+            }
+
+            // Validate that all non-deleted rows have required fields
+            let hasInvalidRows = false;
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (!row.classList.contains('deleted-row') && !isRowFilled(row)) {
+                    hasInvalidRows = true;
+                    row.classList.add('border', 'border-warning');
+                }
+            });
+
+            if (hasInvalidRows) {
+                e.preventDefault();
+                showNotification('Please fill all required fields in the items table', 'warning');
+                return false;
+            }
+        });
     });
 </script>
-
 
 {% endblock %}
