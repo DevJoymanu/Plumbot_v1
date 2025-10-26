@@ -838,177 +838,76 @@
 
 
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
+    function addItem() {
+        const formsetPrefix = 'form'; // Django default formset prefix
+        const totalFormsInput = document.querySelector(`#id_${formsetPrefix}-TOTAL_FORMS`);
+        const currentFormCount = parseInt(totalFormsInput.value);
         const tableBody = document.getElementById('itemsTableBody');
-        const totalFormsInput = document.querySelector('#id_form-TOTAL_FORMS');
+        const firstRow = document.querySelector('.item-row');
 
-        function calculateTotals() {
-            let itemsSubtotal = 0;
+        if (!firstRow) return;
 
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                if (row.classList.contains('deleted-row')) return;
+        // Clone the first row
+        const newRow = firstRow.cloneNode(true);
+        const newIndex = currentFormCount;
 
-                const qtyInput = row.querySelector('input[id$="quantity"]');
-                const priceInput = row.querySelector('input[id$="unit_price"]');
-                const lineTotalInput = row.querySelector('.line-total');
+        // Update attributes for all inputs/selects in the cloned row
+        newRow.querySelectorAll('input, select, textarea').forEach(input => {
+            const name = input.getAttribute('name');
+            const id = input.getAttribute('id');
 
-                const qty = parseFloat(qtyInput?.value) || 0;
-                const price = parseFloat(priceInput?.value) || 0;
-                const lineTotal = qty * price;
+            if (name) input.setAttribute('name', name.replace(/\d+/, newIndex));
+            if (id) input.setAttribute('id', id.replace(/\d+/, newIndex));
 
-                if (lineTotalInput) lineTotalInput.value = lineTotal.toFixed(2);
-                itemsSubtotal += lineTotal;
-            });
-
-            const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
-            const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
-
-            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
-            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
-            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
-
-            const grandTotal = itemsSubtotal + laborCost + transportCost;
-            document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
-        }
-
-        function checkMinimumItems() {
-            const rows = [...document.querySelectorAll('.item-row')].filter(r => !r.classList.contains('deleted-row'));
-            document.getElementById('minItemsWarning').style.display = rows.length === 0 ? 'block' : 'none';
-            return rows.length > 0;
-        }
-
-        function deleteRow(rowId) {
-            const row = document.getElementById('row-' + rowId);
-            const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-            if (!deleteCheckbox) return;
-
-            deleteCheckbox.checked = !deleteCheckbox.checked;
-            row.classList.toggle('deleted-row', deleteCheckbox.checked);
-            calculateTotals();
-            updateItemNumbers();
-            checkMinimumItems();
-        }
-
-        function updateItemNumbers() {
-            let counter = 1;
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                if (!row.classList.contains('deleted-row')) {
-                    const badge = row.querySelector('.item-number');
-                    if (badge) badge.textContent = counter++;
-                }
-            });
-        }
-
-        // ✨ Automatically add a new row when all are filled
-        function monitorRows() {
-            const rows = document.querySelectorAll('.item-row');
-            if (rows.length === 0) return;
-
-            let allFilled = true;
-            rows.forEach(row => {
-                if (row.classList.contains('deleted-row')) return;
-                const desc = row.querySelector('input[id$="description"], textarea[id$="description"]');
-                const qty = row.querySelector('input[id$="quantity"]');
-                const price = row.querySelector('input[id$="unit_price"]');
-                if (!desc?.value.trim() || !qty?.value || !price?.value) allFilled = false;
-            });
-
-            if (allFilled) addItem();
-        }
-
-        // 🧩 Create a new formset row dynamically
-        function addItem() {
-            const totalForms = parseInt(totalFormsInput.value);
-            const newIndex = totalForms;
-
-            const emptyRow = document.querySelector('.item-row');
-            if (!emptyRow) return;
-
-            const newRow = emptyRow.cloneNode(true);
-            newRow.id = `row-${newIndex + 1}`;
-            newRow.classList.remove('deleted-row');
-
-            // Update form input names and IDs
-            newRow.querySelectorAll('input, select, textarea').forEach(el => {
-                if (el.name) {
-                    el.name = el.name.replace(/\d+/, newIndex);
-                    el.id = el.id.replace(/\d+/, newIndex);
-                    if (el.type === 'text' || el.tagName === 'TEXTAREA' || el.type === 'number') el.value = '';
-                    if (el.type === 'checkbox') el.checked = false;
-                }
-            });
-
-            newRow.querySelector('.line-total').value = '0.00';
-            newRow.querySelector('input[type="checkbox"][id$="DELETE"]').checked = false;
-
-            tableBody.appendChild(newRow);
-            totalFormsInput.value = newIndex + 1;
-
-            attachRowEvents(newRow);
-            updateItemNumbers();
-        }
-
-        // Attach interactive events to new rows
-        function attachRowEvents(row) {
-            row.querySelectorAll('input[id$="quantity"], input[id$="unit_price"]').forEach(input => {
-                input.addEventListener('input', () => {
-                    calculateTotals();
-                    monitorRows(); // watch for full rows
-                });
-            });
-
-            const deleteButton = row.querySelector('.delete-btn');
-            if (deleteButton) {
-                deleteButton.addEventListener('click', () => deleteRow(row.dataset.itemId));
+            // Reset values
+            if (input.type === 'checkbox') {
+                input.checked = false;
+            } else {
+                input.value = '';
             }
-        }
 
-        // Attach listeners to existing rows
-        document.querySelectorAll('.item-row').forEach(row => attachRowEvents(row));
-
-        document.querySelectorAll('input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(input => {
-            input.addEventListener('input', calculateTotals);
+            // Special reset for DELETE checkboxes
+            if (input.name && input.name.endsWith('-DELETE')) {
+                input.checked = false;
+            }
         });
 
-        // ✨ Ensure Save Template always validates correctly
-        document.getElementById('templateForm').addEventListener('submit', function (e) {
-            const templateName = document.querySelector('input[id$="name"]').value.trim();
+        // Update row id and item number
+        newRow.id = `row-${newIndex + 1}`;
+        newRow.querySelector('.item-number').textContent = newIndex + 1;
 
-            if (!templateName) {
-                e.preventDefault();
-                alert('Please enter a template name');
-                return false;
+        // Reset visual classes
+        newRow.classList.remove('deleted-row');
+
+        // Append to table
+        tableBody.appendChild(newRow);
+
+        // Increment management form TOTAL_FORMS
+        totalFormsInput.value = newIndex + 1;
+
+        // Rebind input event listeners for the new row
+        const descInput = newRow.querySelector('input[id$="description"], textarea[id$="description"]');
+        const qtyInput = newRow.querySelector('input[id$="quantity"]');
+        const priceInput = newRow.querySelector('input[id$="unit_price"]');
+
+        [descInput, qtyInput, priceInput].forEach(function (input) {
+            if (input) {
+                input.addEventListener('input', checkAndAddRow);
+                input.addEventListener('change', checkAndAddRow);
             }
-
-            // Remove completely empty rows before saving
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                const desc = row.querySelector('input[id$="description"], textarea[id$="description"]');
-                const qty = row.querySelector('input[id$="quantity"]');
-                const price = row.querySelector('input[id$="unit_price"]');
-                const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
-
-                if (!desc?.value.trim() && !qty?.value && !price?.value) {
-                    if (deleteCheckbox) deleteCheckbox.checked = true;
-                    row.classList.add('deleted-row');
-                }
-            });
-
-            if (!checkMinimumItems()) {
-                e.preventDefault();
-                alert('Please add at least one item to the template.');
-                return false;
-            }
-
-            calculateTotals();
-            updateItemNumbers();
-            return true;
         });
 
-        // Initial setup
+        // Rebind delete button
+        const deleteBtn = newRow.querySelector('.delete-btn');
+        if (deleteBtn) {
+            deleteBtn.setAttribute('data-row-id', newIndex + 1);
+            deleteBtn.addEventListener('click', function () {
+                deleteRow(newIndex + 1);
+            });
+        }
+
         calculateTotals();
-        updateItemNumbers();
-        checkMinimumItems();
-    });
+    }
 </script>
 
 
