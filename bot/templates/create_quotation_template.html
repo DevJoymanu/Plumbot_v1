@@ -977,5 +977,133 @@
     function addItem() {
         alert('To add more items, save the template first and then edit it to add additional items.');
     }
+    // Check if all rows are filled
+        function checkIfAllRowsFilled() {
+            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
+            if (rows.length === 0) return false;
+
+            for (let row of rows) {
+                const description = row.querySelector('input[id$="description"]');
+                const quantity = row.querySelector('input[id$="quantity"]');
+                const unitPrice = row.querySelector('input[id$="unit_price"]');
+
+                // If any field is empty, not all rows are filled
+                if (!description || !quantity || !unitPrice ||
+                    !description.value.trim() ||
+                    !quantity.value ||
+                    !unitPrice.value) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Auto-add new row when all current rows are filled
+        function autoAddRowIfNeeded() {
+            if (checkIfAllRowsFilled()) {
+                addItem();
+            }
+        }
+
+        // Attach auto-add listeners to description, quantity, and unit_price fields
+        document.querySelectorAll('input[id$="description"], input[id$="quantity"], input[id$="unit_price"]').forEach(function (input) {
+            input.addEventListener('blur', autoAddRowIfNeeded);
+            input.addEventListener('change', autoAddRowIfNeeded);
+        });
+
+        // Add new item row
+        function addItem() {
+            const tbody = document.getElementById('itemsTableBody');
+            const totalForms = document.querySelector('input[name$="TOTAL_FORMS"]');
+            const currentFormCount = parseInt(totalForms.value);
+
+            // Get the prefix for the formset (usually 'items' or similar)
+            const prefix = totalForms.name.replace('-TOTAL_FORMS', '');
+
+            // Clone the last row as template
+            const lastRow = tbody.querySelector('.item-row:last-of-type');
+            if (!lastRow) return;
+
+            const newRow = lastRow.cloneNode(true);
+            const newRowId = currentFormCount + 1;
+
+            // Update row attributes
+            newRow.id = 'row-' + newRowId;
+            newRow.setAttribute('data-item-id', newRowId);
+            newRow.classList.remove('deleted-row');
+
+            // Update all form fields in the new row
+            newRow.querySelectorAll('input, select, textarea').forEach(function (field) {
+                const oldName = field.getAttribute('name');
+                const oldId = field.getAttribute('id');
+
+                if (oldName) {
+                    const newName = oldName.replace(/-\d+-/, '-' + currentFormCount + '-');
+                    field.setAttribute('name', newName);
+                }
+
+                if (oldId) {
+                    const newId = oldId.replace(/-\d+-/, '-' + currentFormCount + '-');
+                    field.setAttribute('id', newId);
+                }
+
+                // Clear values except for quantity (set to 1) and sort_order
+                if (field.type === 'checkbox') {
+                    field.checked = false;
+                } else if (field.id && field.id.includes('quantity')) {
+                    field.value = '1';
+                } else if (field.id && field.id.includes('sort_order')) {
+                    field.value = (currentFormCount + 1) * 10;
+                } else if (field.type !== 'hidden' || field.id && field.id.includes('id')) {
+                    field.value = '';
+                }
+            });
+
+            // Update item number badge
+            const badge = newRow.querySelector('.item-number');
+            if (badge) {
+                badge.textContent = newRowId;
+            }
+
+            // Update delete button
+            const deleteBtn = newRow.querySelector('.delete-btn');
+            if (deleteBtn) {
+                deleteBtn.setAttribute('data-row-id', newRowId);
+                deleteBtn.onclick = function () { deleteRow(newRowId); };
+            }
+
+            // Clear line total
+            const lineTotal = newRow.querySelector('.line-total');
+            if (lineTotal) {
+                lineTotal.value = '0.00';
+            }
+
+            // Add the new row to tbody
+            tbody.appendChild(newRow);
+
+            // Update form count
+            totalForms.value = currentFormCount + 1;
+
+            // Attach event listeners to new row's inputs
+            newRow.querySelectorAll('input[id$="quantity"], input[id$="unit_price"]').forEach(function (input) {
+                input.addEventListener('input', calculateTotals);
+                input.addEventListener('change', calculateTotals);
+            });
+
+            newRow.querySelectorAll('input[id$="description"], input[id$="quantity"], input[id$="unit_price"]').forEach(function (input) {
+                input.addEventListener('blur', autoAddRowIfNeeded);
+                input.addEventListener('change', autoAddRowIfNeeded);
+            });
+
+            // Focus on the description field of the new row
+            const descriptionField = newRow.querySelector('input[id$="description"]');
+            if (descriptionField) {
+                descriptionField.focus();
+            }
+
+            calculateTotals();
+            updateItemNumbers();
+            checkMinimumItems();
+        }
 </script>
 {% endblock %}
