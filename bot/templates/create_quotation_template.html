@@ -714,9 +714,6 @@
                 <div class="card">
                     <div class="card-header bg-success d-flex justify-content-between align-items-center flex-wrap">
                         <h5 class="mb-0 mb-md-2"><i class="bi bi-list-ul"></i> Template Items</h5>
-                        <button type="button" class="btn btn-sm btn-light" onclick="addItem()">
-                            <i class="bi bi-plus-lg"></i> Add Item
-                        </button>
                     </div>
                     <div class="card-body">
                         {{ formset.management_form }}
@@ -836,6 +833,8 @@
     </div>
 </div>
 
+
+<!-- Add this complete script section to replace the existing one -->
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // Calculate line totals and grand total
@@ -914,27 +913,6 @@
             }
         }
 
-        // Attach event listeners to delete buttons
-        document.querySelectorAll('.delete-btn').forEach(function (button) {
-            button.addEventListener('click', function () {
-                const rowId = this.getAttribute('data-row-id');
-                deleteRow(rowId);
-            });
-
-            // Add touch event for better mobile experience
-            button.addEventListener('touchstart', function (e) {
-                e.preventDefault();
-                const rowId = this.getAttribute('data-row-id');
-                deleteRow(rowId);
-            });
-        });
-
-        // Attach event listeners to all quantity and price inputs
-        document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
-            input.addEventListener('input', calculateTotals);
-            input.addEventListener('change', calculateTotals);
-        });
-
         // Update item numbers
         function updateItemNumbers() {
             let counter = 1;
@@ -949,35 +927,7 @@
             });
         }
 
-        // Initial calculations
-        calculateTotals();
-        updateItemNumbers();
-        checkMinimumItems();
-
-        // Form validation
-        document.getElementById('templateForm').addEventListener('submit', function (e) {
-            const templateName = document.querySelector('input[id$="name"]').value.trim();
-
-            if (!templateName) {
-                e.preventDefault();
-                alert('Please enter a template name');
-                return false;
-            }
-
-            // Check if at least one item is provided
-            if (!checkMinimumItems()) {
-                e.preventDefault();
-                alert('Please add at least one item to the template');
-                return false;
-            }
-        });
-    });
-
-    // Add new item row
-    function addItem() {
-        alert('To add more items, save the template first and then edit it to add additional items.');
-    }
-    // Check if all rows are filled
+        // Check if all rows are filled
         function checkIfAllRowsFilled() {
             const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
             if (rows.length === 0) return false;
@@ -1004,12 +954,6 @@
                 addItem();
             }
         }
-
-        // Attach auto-add listeners to description, quantity, and unit_price fields
-        document.querySelectorAll('input[id$="description"], input[id$="quantity"], input[id$="unit_price"]').forEach(function (input) {
-            input.addEventListener('blur', autoAddRowIfNeeded);
-            input.addEventListener('change', autoAddRowIfNeeded);
-        });
 
         // Add new item row
         function addItem() {
@@ -1054,7 +998,7 @@
                     field.value = '1';
                 } else if (field.id && field.id.includes('sort_order')) {
                     field.value = (currentFormCount + 1) * 10;
-                } else if (field.type !== 'hidden' || field.id && field.id.includes('id')) {
+                } else if (field.type !== 'hidden' || (field.id && field.id.includes('id'))) {
                     field.value = '';
                 }
             });
@@ -1069,7 +1013,20 @@
             const deleteBtn = newRow.querySelector('.delete-btn');
             if (deleteBtn) {
                 deleteBtn.setAttribute('data-row-id', newRowId);
-                deleteBtn.onclick = function () { deleteRow(newRowId); };
+
+                // Remove old event listeners by cloning
+                const newDeleteBtn = deleteBtn.cloneNode(true);
+                deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
+
+                // Add new event listener
+                newDeleteBtn.addEventListener('click', function () {
+                    deleteRow(newRowId);
+                });
+
+                newDeleteBtn.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    deleteRow(newRowId);
+                });
             }
 
             // Clear line total
@@ -1105,5 +1062,61 @@
             updateItemNumbers();
             checkMinimumItems();
         }
+
+        // Attach event listeners to delete buttons
+        document.querySelectorAll('.delete-btn').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const rowId = this.getAttribute('data-row-id');
+                deleteRow(rowId);
+            });
+
+            // Add touch event for better mobile experience
+            button.addEventListener('touchstart', function (e) {
+                e.preventDefault();
+                const rowId = this.getAttribute('data-row-id');
+                deleteRow(rowId);
+            });
+        });
+
+        // Attach event listeners to all quantity and price inputs
+        document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
+            input.addEventListener('input', calculateTotals);
+            input.addEventListener('change', calculateTotals);
+        });
+
+        // Attach auto-add listeners to description, quantity, and unit_price fields
+        document.querySelectorAll('input[id$="description"], input[id$="quantity"], input[id$="unit_price"]').forEach(function (input) {
+            input.addEventListener('blur', autoAddRowIfNeeded);
+            input.addEventListener('change', autoAddRowIfNeeded);
+        });
+
+        // Initial calculations
+        calculateTotals();
+        updateItemNumbers();
+        checkMinimumItems();
+
+        // Form validation
+        document.getElementById('templateForm').addEventListener('submit', function (e) {
+            const templateName = document.querySelector('input[id$="name"]').value.trim();
+
+            if (!templateName) {
+                e.preventDefault();
+                alert('Please enter a template name');
+                return false;
+            }
+
+            // Check if at least one item is provided
+            if (!checkMinimumItems()) {
+                e.preventDefault();
+                alert('Please add at least one item to the template');
+                return false;
+            }
+        });
+
+        // Make addItem and deleteRow globally accessible
+        window.addItem = addItem;
+        window.deleteRow = deleteRow;
+    });
 </script>
+
 {% endblock %}
