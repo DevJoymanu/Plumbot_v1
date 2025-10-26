@@ -740,62 +740,47 @@
                                     </tr>
                                 </thead>
                                 <tbody id="itemsTableBody">
-                                    <tr class="item-row" data-item-id="1" id="row-1">
+                                    {% for item_form in formset %}
+                                    <tr class="item-row" data-item-id="{{ forloop.counter }}"
+                                        id="row-{{ forloop.counter }}">
                                         <td class="text-center">
-                                            <span class="badge bg-secondary item-number">1</span>
+                                            <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
                                         </td>
-
-                                        <!-- Description -->
                                         <td>
-                                            <input type="text" name="description" class="form-control form-control-sm description"
-                                                placeholder="Enter item description">
-                                            <input type="hidden" name="id">
+                                            {{ item_form.description }}
+                                            {{ item_form.id }}
                                         </td>
-
-                                        <!-- Quantity -->
                                         <td>
-                                            <input type="number" name="quantity" class="form-control form-control-sm quantity" min="1" step="1"
-                                                placeholder="Qty">
+                                            {{ item_form.quantity }}
                                         </td>
-
-                                        <!-- Unit Price -->
                                         <td>
-                                            <input type="number" name="unit_price" class="form-control form-control-sm unit-price" min="0" step="0.01"
-                                                placeholder="">
+                                            {{ item_form.unit_price }}
                                         </td>
-
-                                        <!-- Category -->
                                         <td class="d-none d-md-table-cell">
-                                            <input type="text" name="category" class="form-control form-control-sm category" placeholder="Category">
+                                            {{ item_form.category }}
                                         </td>
-
-                                        <!-- Line Total -->
                                         <td class="text-center">
-                                            <input type="text" class="form-control form-control-sm line-total" readonly value="">
+                                            <input type="text" class="form-control form-control-sm line-total" readonly
+                                                value="0.00">
                                         </td>
-
-                                        <!-- Optional Checkbox -->
                                         <td class="text-center d-none d-sm-table-cell">
                                             <div class="d-flex justify-content-center">
-                                                <input type="checkbox" name="is_optional" class="form-check-input is-optional">
+                                                {{ item_form.is_optional }}
                                             </div>
                                         </td>
-
-                                        <!-- Sort Order -->
                                         <td class="d-none d-md-table-cell">
-                                            <input type="number" name="sort_order" class="form-control form-control-sm sort-order" min="1" step="1"
-                                                placeholder="">
+                                            {{ item_form.sort_order }}
                                         </td>
-
-                                        <!-- Delete -->
                                         <td class="text-center">
-                                            <input type="checkbox" name="DELETE" class="d-none delete-flag">
-                                            <button type="button" class="delete-btn" data-row-id="1" title="Delete this item">
+                                            {{ item_form.DELETE }}
+                                            <button type="button" class="delete-btn" data-row-id="{{ forloop.counter }}"
+                                                title="Delete this item">
                                                 <i class="bi bi-trash"></i>
                                                 <span class="text d-none d-md-inline">Delete</span>
                                             </button>
                                         </td>
                                     </tr>
+                                    {% endfor %}
                                 </tbody>
                                 <tfoot>
                                     <tr>
@@ -851,11 +836,8 @@
     </div>
 </div>
 
-
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        let itemCounter = 1; // Track the number of items for ID generation
-
         // Calculate line totals and grand total
         function calculateTotals() {
             let itemsSubtotal = 0;
@@ -932,201 +914,6 @@
             }
         }
 
-        // Add new item row
-        function addItem() {
-            itemCounter++;
-            const tableBody = document.getElementById('itemsTableBody');
-
-            const newRow = document.createElement('tr');
-            newRow.className = 'item-row';
-            newRow.id = 'row-' + itemCounter;
-            newRow.setAttribute('data-item-id', itemCounter);
-
-            newRow.innerHTML = `
-                <td class="text-center">
-                    <span class="badge bg-secondary item-number">${itemCounter}</span>
-                </td>
-
-                <!-- Description -->
-                <td>
-                    <input type="text" name="description" class="form-control form-control-sm description"
-                        placeholder="Enter item description">
-                    <input type="hidden" name="id">
-                </td>
-
-                <!-- Quantity -->
-                <td>
-                    <input type="number" name="quantity" class="form-control form-control-sm quantity" min="1" step="1"
-                        placeholder="Qty" value="1">
-                </td>
-
-                <!-- Unit Price -->
-                <td>
-                    <input type="number" name="unit_price" class="form-control form-control-sm unit-price" min="0" step="0.01"
-                        placeholder="">
-                </td>
-
-                <!-- Category -->
-                <td class="d-none d-md-table-cell">
-                    <input type="text" name="category" class="form-control form-control-sm category" placeholder="Category">
-                </td>
-
-                <!-- Line Total -->
-                <td class="text-center">
-                    <input type="text" class="form-control form-control-sm line-total" readonly value="0.00">
-                </td>
-
-                <!-- Optional Checkbox -->
-                <td class="text-center d-none d-sm-table-cell">
-                    <div class="d-flex justify-content-center">
-                        <input type="checkbox" name="is_optional" class="form-check-input is-optional">
-                    </div>
-                </td>
-
-                <!-- Sort Order -->
-                <td class="d-none d-md-table-cell">
-                    <input type="number" name="sort_order" class="form-control form-control-sm sort-order" min="1" step="1"
-                        placeholder="${itemCounter}" value="${itemCounter}">
-                </td>
-
-                <!-- Delete -->
-                <td class="text-center">
-                    <input type="checkbox" name="DELETE" class="d-none delete-flag">
-                    <button type="button" class="delete-btn" data-row-id="${itemCounter}" title="Delete this item">
-                        <i class="bi bi-trash"></i>
-                        <span class="text d-none d-md-inline">Delete</span>
-                    </button>
-                </td>
-            `;
-
-            tableBody.appendChild(newRow);
-
-            // Add event listeners to new inputs
-            const newQtyInput = newRow.querySelector('input[id$="quantity"]');
-            const newPriceInput = newRow.querySelector('input[id$="unit_price"]');
-
-            if (newQtyInput) {
-                newQtyInput.addEventListener('input', calculateTotals);
-                newQtyInput.addEventListener('change', calculateTotals);
-            }
-
-            if (newPriceInput) {
-                newPriceInput.addEventListener('input', calculateTotals);
-                newPriceInput.addEventListener('change', calculateTotals);
-            }
-
-            // Add event listener to delete button
-            const deleteBtn = newRow.querySelector('.delete-btn');
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', function () {
-                    const rowId = this.getAttribute('data-row-id');
-                    deleteRow(rowId);
-                });
-
-                deleteBtn.addEventListener('touchstart', function (e) {
-                    e.preventDefault();
-                    const rowId = this.getAttribute('data-row-id');
-                    deleteRow(rowId);
-                });
-            }
-
-            // Update formset management form
-            updateFormsetManagement();
-
-            // Update item numbers and calculate totals
-            updateItemNumbers();
-            calculateTotals();
-            checkMinimumItems();
-
-            // Focus on the description field of the new row
-            const descriptionInput = newRow.querySelector('.description');
-            if (descriptionInput) {
-                descriptionInput.focus();
-            }
-        }
-
-        // Check if all current rows are filled
-        function areAllRowsFilled() {
-            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
-
-            for (let row of rows) {
-                const description = row.querySelector('.description').value.trim();
-                const quantity = row.querySelector('.quantity').value.trim();
-                const unitPrice = row.querySelector('.unit-price').value.trim();
-
-                // If any required field is empty, return false
-                if (!description || !quantity || !unitPrice) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        // Auto-add new row when all current rows are filled
-        function setupAutoAddRow() {
-            document.querySelectorAll('.description, .quantity, .unit-price').forEach(input => {
-                input.addEventListener('blur', function () {
-                    // Small timeout to ensure the value has been updated
-                    setTimeout(() => {
-                        if (areAllRowsFilled()) {
-                            addItem();
-                        }
-                    }, 100);
-                });
-
-                // Also check on Enter key press
-                input.addEventListener('keypress', function (e) {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        this.blur(); // Trigger blur event
-                    }
-                });
-            });
-        }
-
-        // Update formset management form total forms count
-        function updateFormsetManagement() {
-            const totalForms = document.getElementById('id_items-TOTAL_FORMS');
-            if (totalForms) {
-                totalForms.value = itemCounter;
-            }
-        }
-
-        // Update item numbers
-        function updateItemNumbers() {
-            let counter = 1;
-            document.querySelectorAll('.item-row').forEach(function (row) {
-                if (!row.classList.contains('deleted-row')) {
-                    const numberBadge = row.querySelector('.item-number');
-                    if (numberBadge) {
-                        numberBadge.textContent = counter;
-
-                        // Also update sort order to match visual order
-                        const sortInput = row.querySelector('.sort-order');
-                        if (sortInput) {
-                            sortInput.value = counter;
-                        }
-
-                        counter++;
-                    }
-                }
-            });
-        }
-
-        // Initialize the first row with quantity 1
-        function initializeFirstRow() {
-            const firstQtyInput = document.querySelector('.item-row input[id$="quantity"]');
-            if (firstQtyInput && !firstQtyInput.value) {
-                firstQtyInput.value = '1';
-            }
-
-            const firstSortInput = document.querySelector('.item-row input[id$="sort_order"]');
-            if (firstSortInput && !firstSortInput.value) {
-                firstSortInput.value = '1';
-            }
-        }
-
         // Attach event listeners to delete buttons
         document.querySelectorAll('.delete-btn').forEach(function (button) {
             button.addEventListener('click', function () {
@@ -1148,18 +935,24 @@
             input.addEventListener('change', calculateTotals);
         });
 
-        // Initial setup
-        initializeFirstRow();
+        // Update item numbers
+        function updateItemNumbers() {
+            let counter = 1;
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (!row.classList.contains('deleted-row')) {
+                    const numberBadge = row.querySelector('.item-number');
+                    if (numberBadge) {
+                        numberBadge.textContent = counter;
+                        counter++;
+                    }
+                }
+            });
+        }
+
+        // Initial calculations
         calculateTotals();
         updateItemNumbers();
         checkMinimumItems();
-        setupAutoAddRow();
-
-        // Update the manual add button to use our new function
-        const manualAddBtn = document.querySelector('button[onclick="addItem()"]');
-        if (manualAddBtn) {
-            manualAddBtn.setAttribute('onclick', 'addItem()');
-        }
 
         // Form validation
         document.getElementById('templateForm').addEventListener('submit', function (e) {
@@ -1177,59 +970,42 @@
                 alert('Please add at least one item to the template');
                 return false;
             }
-
-            // Validate that all active rows have required fields
-            let isValid = true;
-            document.querySelectorAll('.item-row:not(.deleted-row)').forEach(function (row) {
-                const description = row.querySelector('.description').value.trim();
-                const quantity = row.querySelector('.quantity').value.trim();
-                const unitPrice = row.querySelector('.unit-price').value.trim();
-
-                if (!description || !quantity || !unitPrice) {
-                    isValid = false;
-                    // Highlight missing fields
-                    if (!description) row.querySelector('.description').style.borderColor = 'var(--danger)';
-                    if (!quantity) row.querySelector('.quantity').style.borderColor = 'var(--danger)';
-                    if (!unitPrice) row.querySelector('.unit-price').style.borderColor = 'var(--danger)';
-                }
-            });
-
-            if (!isValid) {
-                e.preventDefault();
-                alert('Please fill in all required fields (description, quantity, and unit price) for all items');
-                return false;
-            }
-        });
-
-        // Remove error highlighting when user starts typing
-        document.querySelectorAll('.description, .quantity, .unit-price').forEach(input => {
-            input.addEventListener('input', function () {
-                this.style.borderColor = '';
-            });
         });
     });
 
-    // Global function for manual adding
     function addItem() {
-        // This will be called by the button click
-        const event = new Event('DOMContentLoaded', {
-            bubbles: true,
-            cancelable: true
-        });
-        document.dispatchEvent(event);
+        const totalFormsInput = document.querySelector('#id_form-TOTAL_FORMS');
+        const formIdx = parseInt(totalFormsInput.value);
+        const newFormHtml = document.querySelector('.item-row').outerHTML.replace(/form-(\d)+-/g, `form-${formIdx}-`);
 
-        // Use the internal addItem function
-        setTimeout(() => {
-            if (window.addItemInternal) {
-                window.addItemInternal();
+        const tbody = document.querySelector('#itemsTableBody');
+        const newRow = document.createElement('tr');
+        newRow.classList.add('item-row');
+        newRow.setAttribute('id', `row-${formIdx + 1}`);
+        newRow.innerHTML = newFormHtml;
+
+        // Clear field values and reset for a blank new item
+        newRow.querySelectorAll('input, select, textarea').forEach(input => {
+            if (input.name.includes('id')) {
+                input.value = ''; // clear hidden id
+            } else if (input.name.includes('quantity')) {
+                input.value = 1; // default quantity
+            } else if (input.type === 'checkbox') {
+                input.checked = false;
+            } else {
+                input.value = '';
             }
-        }, 100);
+        });
+
+        // Append new row
+        tbody.appendChild(newRow);
+        totalFormsInput.value = formIdx + 1;
+
+        // Reattach events to new row
+        attachRowEvents(newRow);
+        updateItemNumbers();
+        calculateTotals();
     }
 
-    // Expose the internal addItem function to global scope
-    document.addEventListener('DOMContentLoaded', function () {
-        window.addItemInternal = addItem;
-    });
 </script>
-
 {% endblock %}
