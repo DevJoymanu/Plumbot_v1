@@ -874,6 +874,34 @@
             document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
         }
 
+        // Check if all rows are filled
+        function checkIfAllRowsFilled() {
+            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
+            if (rows.length === 0) return false;
+
+            for (let row of rows) {
+                const description = row.querySelector('input[id$="description"]');
+                const quantity = row.querySelector('input[id$="quantity"]');
+                const unitPrice = row.querySelector('input[id$="unit_price"]');
+
+                // If any field is empty, not all rows are filled
+                if (!description || !quantity || !unitPrice ||
+                    !description.value.trim() ||
+                    !quantity.value ||
+                    !unitPrice.value) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Auto-add new row when all current rows are filled
+        function autoAddRowIfNeeded() {
+            if (checkIfAllRowsFilled()) {
+                addItem();
+            }
+        }
+
         // Check if we have at least one active item
         function checkMinimumItems() {
             let activeItems = 0;
@@ -925,34 +953,6 @@
                     }
                 }
             });
-        }
-
-        // Check if all rows are filled
-        function checkIfAllRowsFilled() {
-            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
-            if (rows.length === 0) return false;
-
-            for (let row of rows) {
-                const description = row.querySelector('input[id$="description"]');
-                const quantity = row.querySelector('input[id$="quantity"]');
-                const unitPrice = row.querySelector('input[id$="unit_price"]');
-
-                // If any field is empty, not all rows are filled
-                if (!description || !quantity || !unitPrice ||
-                    !description.value.trim() ||
-                    !quantity.value ||
-                    !unitPrice.value) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        // Auto-add new row when all current rows are filled
-        function autoAddRowIfNeeded() {
-            if (checkIfAllRowsFilled()) {
-                addItem();
-            }
         }
 
         // Add new item row
@@ -1118,5 +1118,8 @@
         window.deleteRow = deleteRow;
     });
 </script>
+
+
+
 
 {% endblock %}
