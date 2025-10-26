@@ -271,34 +271,68 @@ class CreateQuotationTemplateView(CreateView):
     model = QuotationTemplate
     form_class = QuotationTemplateForm
     template_name = 'create_quotation_template.html'
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        if self.request.POST:
-            context['formset'] = QuotationTemplateItemFormSet(
-                self.request.POST,
-                instance=self.object if hasattr(self, 'object') else None
-            )
+        
+        # Check if formset was passed explicitly (from form_valid/form_invalid)
+        if 'formset' not in kwargs:
+            if self.request.POST:
+                context['formset'] = QuotationTemplateItemFormSet(
+                    self.request.POST,
+                    instance=self.object if hasattr(self, 'object') else None
+                )
+            else:
+                context['formset'] = QuotationTemplateItemFormSet(
+                    instance=self.object if hasattr(self, 'object') else None
+                )
         else:
-            context['formset'] = QuotationTemplateItemFormSet(
-                instance=self.object if hasattr(self, 'object') else None
-            )
+            context['formset'] = kwargs['formset']
+            
         return context
-
+    
     def form_valid(self, form):
-        context = self.get_context_data(form=form)
-        formset = context['formset']
-
+        # Get the formset with POST data
+        formset = QuotationTemplateItemFormSet(self.request.POST)
+        
+        # Set the created_by user
         form.instance.created_by = self.request.user
-
-        if formset.is_valid() and form.is_valid():
+        
+        # Validate formset
+        if formset.is_valid():
+            # Save the template first
             self.object = form.save()
+            
+            # Link formset to the saved template
             formset.instance = self.object
+            
+            # Save all items
             formset.save()
-            messages.success(self.request, f'Template "{self.object.name}" created successfully!')
+            
+            messages.success(
+                self.request, 
+                f'Template "{self.object.name}" created successfully!'
+            )
             return redirect('quotation_templates_list')
         else:
-            return self.render_to_response(self.get_context_data(form=form))
+            # If formset is invalid, render form with errors
+            # Pass formset with errors explicitly
+            return self.render_to_response(
+                self.get_context_data(form=form, formset=formset)
+            )
+    
+    def form_invalid(self, form):
+        """Handle invalid main form"""
+        # Get formset to show its errors too
+        formset = QuotationTemplateItemFormSet(self.request.POST)
+        formset.is_valid()  # Trigger validation to get errors
+        
+        return self.render_to_response(
+            self.get_context_data(form=form, formset=formset)
+        )
+    
+    def get_success_url(self):
+        return reverse('quotation_templates_list')
 
 
 @method_decorator(staff_required, name='dispatch')
@@ -306,29 +340,64 @@ class EditQuotationTemplateView(UpdateView):
     """Edit an existing quotation template"""
     model = QuotationTemplate
     form_class = QuotationTemplateForm
-    template_name = 'edit_quotation_template.html'
+    template_name = 'create_quotation_template.html'  # Reuse same template
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        if self.request.POST:
-            context['formset'] = QuotationTemplateItemFormSet(self.request.POST, instance=self.object)
+        
+        # Check if formset was passed explicitly
+        if 'formset' not in kwargs:
+            if self.request.POST:
+                context['formset'] = QuotationTemplateItemFormSet(
+                    self.request.POST,
+                    instance=self.object
+                )
+            else:
+                context['formset'] = QuotationTemplateItemFormSet(
+                    instance=self.object
+                )
         else:
-            context['formset'] = QuotationTemplateItemFormSet(instance=self.object)
+            context['formset'] = kwargs['formset']
+            
         return context
     
     def form_valid(self, form):
-        context = self.get_context_data()
-        formset = context['formset']
+        # Get the formset with POST data and link to existing object
+        formset = QuotationTemplateItemFormSet(
+            self.request.POST,
+            instance=self.object
+        )
         
+        # Validate formset
         if formset.is_valid():
+            # Save the template
             self.object = form.save()
-            formset.instance = self.object
+            
+            # Save all items (updates existing, creates new, deletes marked)
             formset.save()
             
-            messages.success(self.request, f'Template "{self.object.name}" updated successfully!')
+            messages.success(
+                self.request, 
+                f'Template "{self.object.name}" updated successfully!'
+            )
             return redirect('quotation_templates_list')
         else:
-            return self.render_to_response(self.get_context_data(form=form))
+            # If formset is invalid, render form with errors
+            return self.render_to_response(
+                self.get_context_data(form=form, formset=formset)
+            )
+    
+    def form_invalid(self, form):
+        """Handle invalid main form"""
+        formset = QuotationTemplateItemFormSet(
+            self.request.POST,
+            instance=self.object
+        )
+        formset.is_valid()  # Trigger validation to get errors
+        
+        return self.render_to_response(
+            self.get_context_data(form=form, formset=formset)
+        )
     
     def get_success_url(self):
         return reverse('quotation_templates_list')
