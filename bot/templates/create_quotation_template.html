@@ -1,9 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}
-{% if object %}Edit{% else %}Create{% endif %} Quotation Template
-{% endblock %}
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} Quotation Template{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -13,266 +11,739 @@
         --success: #10b981;
         --danger: #dc2626;
         --secondary: #6b7280;
+        --info: #3b82f6;
+        --warning: #f59e0b;
+        --light: #f8f9fa;
+        --dark: #2d3748;
+    }
+
+    body {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        min-height: 100vh;
+        padding-bottom: 20px;
     }
 
     .glass-card {
         background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
-        border-radius: 1rem;
-        padding: 1.5rem;
+        border-radius: 12px;
+        padding: 15px;
+        margin-bottom: 15px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
     }
 
-    .accent {
-        background: rgba(102, 126, 234, 0.05);
+    .card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        border: none;
+        margin-bottom: 15px;
+    }
+
+    .card-header {
+        background: transparent;
+        border-bottom: 2px solid #f0f0f0;
+        padding: 15px;
+        font-weight: 600;
+        color: var(--dark);
+        font-size: 1rem;
+    }
+
+    .card-header.bg-primary {
+        background: linear-gradient(135deg, var(--primary), var(--primary-dark)) !important;
+        border-bottom: none;
+        color: white;
+    }
+
+    .card-header.bg-success {
+        background: linear-gradient(135deg, var(--success), rgba(16, 185, 129, 0.9)) !important;
+        border-bottom: none;
+        color: white;
+    }
+
+    .form-label {
+        font-weight: 600;
+        color: var(--dark);
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+    }
+
+    .form-control,
+    .form-select,
+    textarea {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 16px;
+        transition: all 0.2s;
+        min-height: 48px;
+        width: 100%;
+    }
+
+    .form-control:focus,
+    .form-select:focus,
+    textarea:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        outline: none;
+    }
+
+    .form-check-input {
+        width: 1.2em;
+        height: 1.2em;
+        border: 2px solid #e5e7eb;
+        border-radius: 4px;
+    }
+
+    .form-check-input:checked {
+        background-color: var(--success);
+        border-color: var(--success);
+    }
+
+    .btn {
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        transition: all 0.2s;
+        border: none;
+        min-height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-dark);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-success {
+        background: var(--success);
+        color: white;
+    }
+
+    .btn-outline-secondary {
+        background: white;
+        border: 2px solid var(--secondary);
+        color: var(--secondary);
+    }
+
+    .btn-outline-secondary:hover {
+        background: var(--secondary);
+        color: white;
+    }
+
+    .btn-outline-danger {
+        background: white;
+        border: 2px solid var(--danger);
+        color: var(--danger);
+        padding: 8px 12px;
+    }
+
+    .btn-outline-danger:hover {
+        background: var(--danger);
+        color: white;
+    }
+
+    .btn-sm {
+        padding: 8px 12px;
+        font-size: 0.85rem;
+        min-height: 36px;
+    }
+
+    .btn-light {
+        background: white;
+        color: var(--dark);
+        border: 2px solid white;
+    }
+
+    .table {
+        margin-bottom: 0;
+        font-size: 0.85rem;
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    .table th {
+        font-weight: 600;
+        color: var(--dark);
+        padding: 12px 8px;
+        border-bottom: 2px solid #e5e7eb;
+        font-size: 0.8rem;
+        vertical-align: middle;
+    }
+
+    .table td {
+        padding: 10px 8px;
+        vertical-align: middle;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    .table tfoot {
+        background: #f8f9fa;
+        font-weight: 600;
+    }
+
+    .table tfoot tr:last-child {
+        background: #e7f5ed;
+    }
+
+    .item-number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        background: var(--secondary);
+        color: white;
+        border-radius: 50%;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .line-total-display {
+        background: #f8f9fa;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-weight: 600;
+        text-align: center;
+    }
+
+    .info-alert {
+        background: #e0f2fe;
+        color: #0369a1;
+        border-left: 4px solid var(--info);
+        border-radius: 8px;
+        padding: 12px;
+        margin-top: 15px;
+    }
+
+    /* Column widths */
+    .table th:nth-child(1),
+    .table td:nth-child(1) {
+        width: 5%;
+        text-align: center;
+    }
+
+    .table th:nth-child(2),
+    .table td:nth-child(2) {
+        width: 30%;
+    }
+
+    .table th:nth-child(3),
+    .table td:nth-child(3) {
+        width: 10%;
+    }
+
+    .table th:nth-child(4),
+    .table td:nth-child(4) {
+        width: 12%;
+    }
+
+    .table th:nth-child(5),
+    .table td:nth-child(5) {
+        width: 15%;
+    }
+
+    .table th:nth-child(6),
+    .table td:nth-child(6) {
+        width: 12%;
+        text-align: center;
+    }
+
+    .table th:nth-child(7),
+    .table td:nth-child(7) {
+        width: 8%;
+        text-align: center;
+    }
+
+    .table th:nth-child(8),
+    .table td:nth-child(8) {
+        width: 8%;
+        text-align: center;
+    }
+
+    @media (max-width: 768px) {
+
+        .table th:nth-child(5),
+        .table td:nth-child(5),
+        .table th:nth-child(7),
+        .table td:nth-child(7) {
+            display: none;
+        }
+
+        .table {
+            table-layout: auto;
+            min-width: 700px;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-gradient-to-br from-[var(--primary)] to-[var(--primary-dark)] py-6 px-4">
-    <div class="max-w-7xl mx-auto">
-
-        <!-- Header -->
-        <div class="glass-card mb-6 text-white">
-            <div class="flex justify-between items-center flex-wrap gap-4">
-                <div>
-                    <h1 class="text-3xl font-bold flex items-center gap-2">
-                        Create Template
-                    </h1>
-                    <p class="opacity-90 mt-1">Create a new reusable quotation template</p>
-                </div>
-                <a href="{% url 'quotation_template_list' %}"
-                    class="bg-white/10 border border-white/20 px-4 py-2 rounded-lg hover:bg-white/20 transition">Back
-                    to Templates</a>
-            </div>
-        </div>
-
-        <form method="POST" id="quotationForm" class="space-y-6">
-            {% csrf_token %}
-
-            <!-- Template Information -->
-            <div class="bg-white rounded-2xl shadow-md">
-                <div
-                    class="bg-gradient-to-r from-[var(--primary)] to-[var(--primary-dark)] text-white px-6 py-4 rounded-t-2xl">
-                    <h2 class="text-lg font-semibold">Template Information</h2>
-                </div>
-                <div class="p-6 space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="md:col-span-2">
-                            <label class="block text-sm font-medium">Template Name *</label>
-                            <input type="text" name="name" id="templateName" class="w-full border rounded-md px-3 py-2"
-                                placeholder="e.g., Standard Bathroom Renovation" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">Project Type *</label>
-                            <select name="projectType" id="projectType" class="w-full border rounded-md px-3 py-2"
-                                required>
-                                <option value="">Select type</option>
-                                <option>Bathroom</option>
-                                <option>Kitchen</option>
-                                <option>General Renovation</option>
-                                <option>Outdoor</option>
-                                <option>Custom</option>
-                            </select>
-                        </div>
-                    </div>
-
+<div class="container-fluid py-3">
+    <div class="row justify-content-center">
+        <div class="col-12">
+            <!-- Header -->
+            <div class="glass-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap">
                     <div>
-                        <label class="block text-sm font-medium">Description</label>
-                        <textarea name="description" id="description" rows="3"
-                            class="w-full border rounded-md px-3 py-2"
-                            placeholder="Describe what this template includes..."></textarea>
+                        <h1 class="h2 text-white mb-1">
+                            <i class="bi bi-plus-circle"></i>
+                            Create Template
+                        </h1>
+                        <p class="text-white mb-0">Create a new reusable quotation template</p>
                     </div>
+                    <a href="{% url 'quotation_templates_list' %}" class="btn btn-light">
+                        <i class="bi bi-arrow-left"></i> Back to Templates
+                    </a>
+                </div>
+            </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium">Default Labor Cost (R)</label>
-                            <input type="number" id="laborCost" name="defaultLaborCost" min="0" step="0.01"
-                                placeholder="0.00" class="w-full border rounded-md px-3 py-2" value="0.00">
+            <form method="post" id="templateForm">
+                {% csrf_token %}
+
+                <!-- Template Information -->
+                <div class="card">
+                    <div class="card-header bg-primary">
+                        <h5 class="mb-0 text-white">
+                            <i class="bi bi-info-circle"></i> Template Information
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8 mb-3">
+                                <label class="form-label">Template Name *</label>
+                                {{ form.name }}
+                                {% if form.name.errors %}
+                                <div class="text-danger small mt-1">{{ form.name.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Project Type *</label>
+                                {{ form.project_type }}
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium">Default Transport Cost (R)</label>
-                            <input type="number" id="transportCost" name="defaultTransportCost" min="0" step="0.01"
-                                placeholder="0.00" class="w-full border rounded-md px-3 py-2" value="0.00">
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            {{ form.description }}
+                            <small class="text-muted">Describe what this template is used for</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Default Labor Cost (R)</label>
+                                {{ form.default_labor_cost }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Default Transport Cost (R)</label>
+                                {{ form.default_transport_cost }}
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            {{ form.is_active }}
+                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                Active (available for use)
+                            </label>
                         </div>
                     </div>
+                </div>
 
-                    <div class="flex items-center space-x-2">
-                        <input type="checkbox" name="isActive" id="isActive" checked>
-                        <label for="isActive" class="text-sm cursor-pointer">Active (available for use)</label>
+                <!-- Template Items -->
+                <div class="card">
+                    <div class="card-header bg-success d-flex justify-content-between align-items-center flex-wrap">
+                        <h5 class="mb-0 text-white">Template Items</h5>
+                        <button type="button" class="btn btn-sm btn-light" onclick="addItem()">
+                            <i class="bi bi-plus-lg"></i> Add Item
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        {{ formset.management_form }}
+
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="itemsTable">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Description *</th>
+                                        <th>Qty *</th>
+                                        <th>Unit Price *</th>
+                                        <th class="d-none d-md-table-cell">Category</th>
+                                        <th>Line Total</th>
+                                        <th class="d-none d-sm-table-cell">Optional</th>
+                                        <th>Delete</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="itemsTableBody">
+                                    {% for item_form in formset %}
+                                    <tr class="item-row" data-item-id="{{ forloop.counter0 }}"
+                                        id="row-{{ forloop.counter0 }}">
+                                        <td class="text-center">
+                                            <span class="item-number">{{ forloop.counter }}</span>
+                                        </td>
+                                        <td>
+                                            {{ item_form.description }}
+                                            {{ item_form.id }}
+                                        </td>
+                                        <td>
+                                            {{ item_form.quantity }}
+                                        </td>
+                                        <td>
+                                            {{ item_form.unit_price }}
+                                        </td>
+                                        <td class="d-none d-md-table-cell">
+                                            {{ item_form.category }}
+                                        </td>
+                                        <td class="text-center">
+                                            <div class="line-total-display" data-row="{{ forloop.counter0 }}">
+                                                R 0.00
+                                            </div>
+                                        </td>
+                                        <td class="text-center d-none d-sm-table-cell">
+                                            <div class="d-flex justify-content-center">
+                                                {{ item_form.is_optional }}
+                                            </div>
+                                        </td>
+                                        <td class="text-center">
+                                            {{ item_form.DELETE }}
+                                            <button type="button" class="btn btn-outline-danger btn-sm delete-btn"
+                                                data-row-id="{{ forloop.counter0 }}" title="Delete this item">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
+                                        <td><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
+                                        <td><strong><span id="laborCost">R 0.00</span></strong></td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
+                                        <td><strong><span id="transportCost">R 0.00</span></strong></td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                    <tr class="bg-success bg-opacity-10">
+                                        <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
+                                        <td><strong><span id="grandTotal" class="text-success">R 0.00</span></strong>
+                                        </td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <div class="info-alert">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Tip:</strong> Use the "Optional" checkbox for items that may not be
+                            needed in all quotations. Rows will auto-add as you fill them in.
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Template Items -->
-            <div class="bg-white rounded-2xl shadow-md">
-                <div class="bg-green-600 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
-                    <h2 class="text-lg font-semibold">Template Items</h2>
-                    <button type="button" id="addRow"
-                        class="bg-white text-green-700 px-3 py-1.5 rounded-md font-semibold hover:bg-green-100 transition">
-                        + Add Item
-                    </button>
+                <!-- Action Buttons -->
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between flex-wrap gap-2">
+                            <button type="button" class="btn btn-outline-secondary" onclick="window.history.back()">
+                                <i class="bi bi-x-lg"></i> Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg"></i> Save Template
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div class="p-6 overflow-x-auto">
-                    <table class="w-full table-auto text-sm" id="itemTable">
-                        <thead>
-                            <tr class="border-b font-semibold">
-                                <th>#</th>
-                                <th>Description *</th>
-                                <th>Qty *</th>
-                                <th>Unit Price *</th>
-                                <th>Category</th>
-                                <th>Line Total</th>
-                                <th>Optional</th>
-                                <th>Delete</th>
-                            </tr>
-                        </thead>
-                        <tbody id="itemBody">
-                            <tr>
-                                <td class="text-center index">1</td>
-                                <td><input type="text" name="description_1"
-                                        class="w-full border rounded-md px-2 py-1 item-description"></td>
-                                <td><input type="number" min="1" step="1" value="1"
-                                        class="w-full border rounded-md px-2 py-1 item-qty"></td>
-                                <td><input type="number" min="0" step="0.01" placeholder="0.00"
-                                        class="w-full border rounded-md px-2 py-1 item-price"></td>
-                                <td>
-                                    <select class="border rounded-md px-2 py-1 item-category">
-                                        <option>Materials</option>
-                                        <option>Labor</option>
-                                        <option>Equipment</option>
-                                        <option>Other</option>
-                                    </select>
-                                </td>
-                                <td class="text-center line-total">R 0.00</td>
-                                <td class="text-center">
-                                    <input type="checkbox" class="item-optional">
-                                </td>
-                                <td class="text-center">
-                                    <button type="button" class="text-red-600 font-bold deleteRow">×</button>
-                                </td>
-                            </tr>
-                        </tbody>
-                        <tfoot class="font-semibold">
-                            <tr class="border-t">
-                                <td colspan="5" class="text-right pr-2">Items Subtotal:</td>
-                                <td id="subtotal" class="text-center">R 0.00</td>
-                            </tr>
-                            <tr>
-                                <td colspan="5" class="text-right pr-2">Labor Cost:</td>
-                                <td id="laborDisplay" class="text-center">R 0.00</td>
-                            </tr>
-                            <tr>
-                                <td colspan="5" class="text-right pr-2">Transport Cost:</td>
-                                <td id="transportDisplay" class="text-center">R 0.00</td>
-                            </tr>
-                            <tr class="bg-green-100 text-green-700">
-                                <td colspan="5" class="text-right pr-2 text-lg">Estimated Total:</td>
-                                <td id="grandTotal" class="text-center text-lg">R 0.00</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="bg-white rounded-2xl shadow-md p-6 flex justify-between">
-                <button type="button" onclick="window.history.back()"
-                    class="px-4 py-2 border rounded-md">Cancel</button>
-                <button type="submit"
-                    class="px-6 py-2 bg-[var(--primary)] text-white rounded-md hover:bg-[var(--primary-dark)]">Save
-                    Template</button>
-            </div>
-        </form>
+            </form>
+        </div>
     </div>
 </div>
 
 <script>
-    document.addEventListener("DOMContentLoaded", () => {
-        const tableBody = document.getElementById("itemBody");
-        const addRowBtn = document.getElementById("addRow");
-        const laborInput = document.getElementById("laborCost");
-        const transportInput = document.getElementById("transportCost");
+    document.addEventListener('DOMContentLoaded', function () {
+        const CATEGORIES = [
+            { value: 'materials', label: 'Materials' },
+            { value: 'labor', label: 'Labor' },
+            { value: 'equipment', label: 'Equipment' },
+            { value: 'other', label: 'Other' }
+        ];
 
-        function updateTotals() {
-            let subtotal = 0;
-            document.querySelectorAll("#itemBody tr").forEach(row => {
-                const qty = parseFloat(row.querySelector(".item-qty").value) || 0;
-                const price = parseFloat(row.querySelector(".item-price").value) || 0;
-                const total = qty * price;
-                row.querySelector(".line-total").textContent = "R " + total.toFixed(2);
-                subtotal += total;
-            });
-            const labor = parseFloat(laborInput.value) || 0;
-            const transport = parseFloat(transportInput.value) || 0;
-            document.getElementById("subtotal").textContent = "R " + subtotal.toFixed(2);
-            document.getElementById("laborDisplay").textContent = "R " + labor.toFixed(2);
-            document.getElementById("transportDisplay").textContent = "R " + transport.toFixed(2);
-            document.getElementById("grandTotal").textContent = "R " + (subtotal + labor + transport).toFixed(2);
-        }
+        // Calculate line totals and grand total
+        function calculateTotals() {
+            let itemsSubtotal = 0;
 
-        function autoAddRow() {
-            const allFilled = [...tableBody.querySelectorAll("tr")].every(row => {
-                const desc = row.querySelector(".item-description").value.trim();
-                const qty = parseFloat(row.querySelector(".item-qty").value);
-                const price = parseFloat(row.querySelector(".item-price").value);
-                return desc && qty > 0 && price > 0;
-            });
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (row.classList.contains('deleted-row')) return;
 
-            if (allFilled && tableBody.children.length < 50) {
-                addRow();
-            }
-        }
+                const qtyInput = row.querySelector('input[id$="quantity"]');
+                const priceInput = row.querySelector('input[id$="unit_price"]');
+                const lineTotalDisplay = row.querySelector('.line-total-display');
 
-        function addRow() {
-            const rowCount = tableBody.children.length + 1;
-            const row = document.createElement("tr");
-            row.innerHTML = `
-            <td class="text-center index">${rowCount}</td>
-            <td><input type="text" class="w-full border rounded-md px-2 py-1 item-description"></td>
-            <td><input type="number" min="1" step="1" value="1" class="w-full border rounded-md px-2 py-1 item-qty"></td>
-            <td><input type="number" min="0" step="0.01" placeholder="0.00" class="w-full border rounded-md px-2 py-1 item-price"></td>
-            <td>
-                <select class="border rounded-md px-2 py-1 item-category">
-                    <option>Materials</option>
-                    <option>Labor</option>
-                    <option>Equipment</option>
-                    <option>Other</option>
-                </select>
-            </td>
-            <td class="text-center line-total">R 0.00</td>
-            <td class="text-center"><input type="checkbox" class="item-optional"></td>
-            <td class="text-center"><button type="button" class="text-red-600 font-bold deleteRow">×</button></td>
-        `;
-            tableBody.appendChild(row);
-        }
+                if (qtyInput && priceInput && lineTotalDisplay) {
+                    const qty = parseFloat(qtyInput.value) || 0;
+                    const price = parseFloat(priceInput.value) || 0;
+                    const lineTotal = qty * price;
 
-        function updateIndexes() {
-            tableBody.querySelectorAll(".index").forEach((el, i) => el.textContent = i + 1);
-        }
-
-        tableBody.addEventListener("input", e => {
-            if (e.target.matches(".item-description, .item-qty, .item-price")) {
-                updateTotals();
-                autoAddRow();
-            }
-        });
-
-        tableBody.addEventListener("click", e => {
-            if (e.target.classList.contains("deleteRow")) {
-                if (tableBody.children.length > 1) {
-                    e.target.closest("tr").remove();
-                    updateIndexes();
-                    updateTotals();
-                } else {
-                    alert("You need at least one item in your template.");
+                    lineTotalDisplay.textContent = 'R ' + lineTotal.toFixed(2);
+                    itemsSubtotal += lineTotal;
                 }
+            });
+
+            const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
+            const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
+
+            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
+            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
+            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
+
+            const grandTotal = itemsSubtotal + laborCost + transportCost;
+            document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
+        }
+
+        // Check if all non-deleted rows are filled
+        function allRowsFilled() {
+            let allFilled = true;
+            let hasNonDeletedRows = false;
+
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (!row.classList.contains('deleted-row')) {
+                    hasNonDeletedRows = true;
+                    const descriptionInput = row.querySelector('input[id$="description"]');
+                    const quantityInput = row.querySelector('input[id$="quantity"]');
+                    const priceInput = row.querySelector('input[id$="unit_price"]');
+
+                    if (!descriptionInput?.value.trim() || !quantityInput?.value || !priceInput?.value) {
+                        allFilled = false;
+                    }
+                }
+            });
+
+            return hasNonDeletedRows && allFilled;
+        }
+
+        // Add new item row
+        function addItem() {
+            const tableBody = document.getElementById('itemsTableBody');
+            const totalForms = document.getElementById('id_quotationtemplateitem_set-TOTAL_FORMS');
+            const formCount = parseInt(totalForms.value);
+            const nextIndex = formCount;
+
+            const newRow = document.createElement('tr');
+            newRow.className = 'item-row';
+            newRow.id = 'row-' + nextIndex;
+            newRow.setAttribute('data-item-id', nextIndex);
+
+            // Create category options HTML
+            let categoryOptions = '<option value="">---------</option>';
+            CATEGORIES.forEach(cat => {
+                categoryOptions += `<option value="${cat.value}">${cat.label}</option>`;
+            });
+
+            newRow.innerHTML = `
+                <td class="text-center">
+                    <span class="item-number">${nextIndex + 1}</span>
+                </td>
+                <td>
+                    <input type="text" name="quotationtemplateitem_set-${nextIndex}-description" 
+                           class="form-control" placeholder="Item description" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-description">
+                    <input type="hidden" name="quotationtemplateitem_set-${nextIndex}-id" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-id">
+                </td>
+                <td>
+                    <input type="number" name="quotationtemplateitem_set-${nextIndex}-quantity" 
+                           value="1.00" step="0.01" min="0.01" class="form-control" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-quantity">
+                </td>
+                <td>
+                    <input type="number" name="quotationtemplateitem_set-${nextIndex}-unit_price" 
+                           value="0.00" step="0.01" min="0" class="form-control" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-unit_price">
+                </td>
+                <td class="d-none d-md-table-cell">
+                    <select name="quotationtemplateitem_set-${nextIndex}-category" 
+                            class="form-control" 
+                            id="id_quotationtemplateitem_set-${nextIndex}-category">
+                        ${categoryOptions}
+                    </select>
+                </td>
+                <td class="text-center">
+                    <div class="line-total-display" data-row="${nextIndex}">R 0.00</div>
+                </td>
+                <td class="text-center d-none d-sm-table-cell">
+                    <div class="d-flex justify-content-center">
+                        <input type="checkbox" name="quotationtemplateitem_set-${nextIndex}-is_optional" 
+                               class="form-check-input" 
+                               id="id_quotationtemplateitem_set-${nextIndex}-is_optional">
+                    </div>
+                </td>
+                <td class="text-center">
+                    <input type="checkbox" name="quotationtemplateitem_set-${nextIndex}-DELETE" 
+                           class="d-none">
+                    <button type="button" class="btn btn-outline-danger btn-sm delete-btn" 
+                            data-row-id="${nextIndex}" title="Delete this item">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            `;
+
+            tableBody.appendChild(newRow);
+            totalForms.value = formCount + 1;
+
+            attachEventListenersToRow(newRow);
+            updateItemNumbers();
+
+            const descriptionInput = newRow.querySelector('input[id$="description"]');
+            if (descriptionInput) descriptionInput.focus();
+        }
+
+        // Attach event listeners to a row
+        function attachEventListenersToRow(row) {
+            const inputs = row.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="description"]');
+            inputs.forEach(input => {
+                input.addEventListener('input', function () {
+                    calculateTotals();
+                    if (allRowsFilled()) {
+                        setTimeout(addItem, 100);
+                    }
+                });
+            });
+
+            const deleteBtn = row.querySelector('.delete-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', function () {
+                    deleteRow(this.getAttribute('data-row-id'));
+                });
+            }
+        }
+
+        // Delete row function
+        function deleteRow(rowId) {
+            const row = document.getElementById('row-' + rowId);
+            const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
+
+            if (deleteCheckbox) {
+                const isCurrentlyDeleted = deleteCheckbox.checked;
+
+                if (!isCurrentlyDeleted && document.querySelectorAll('.item-row:not(.deleted-row)').length <= 1) {
+                    alert('You need at least one item in your template.');
+                    return;
+                }
+
+                deleteCheckbox.checked = !isCurrentlyDeleted;
+
+                if (deleteCheckbox.checked) {
+                    row.classList.add('deleted-row');
+                } else {
+                    row.classList.remove('deleted-row');
+                }
+
+                calculateTotals();
+                updateItemNumbers();
+            }
+        }
+
+        // Update item numbers
+        function updateItemNumbers() {
+            let counter = 1;
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (!row.classList.contains('deleted-row')) {
+                    const numberBadge = row.querySelector('.item-number');
+                    if (numberBadge) {
+                        numberBadge.textContent = counter;
+                        counter++;
+                    }
+                }
+            });
+        }
+
+        // Attach event listeners to existing elements
+        function attachEventListeners() {
+            // Form inputs
+            document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
+                input.addEventListener('input', calculateTotals);
+            });
+
+            // Delete buttons
+            document.querySelectorAll('.delete-btn').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    deleteRow(this.getAttribute('data-row-id'));
+                });
+            });
+
+            // Auto-add functionality for description inputs
+            document.querySelectorAll('input[id$="description"]').forEach(function (input) {
+                input.addEventListener('input', function () {
+                    calculateTotals();
+                    if (allRowsFilled()) {
+                        setTimeout(addItem, 100);
+                    }
+                });
+            });
+        }
+
+        // Initial setup
+        attachEventListeners();
+        calculateTotals();
+        updateItemNumbers();
+
+        // Make addItem globally available
+        window.addItem = addItem;
+
+        // Form validation
+        document.getElementById('templateForm').addEventListener('submit', function (e) {
+            const templateName = document.querySelector('input[id$="name"]').value.trim();
+            const activeItems = document.querySelectorAll('.item-row:not(.deleted-row)').length;
+
+            if (!templateName) {
+                e.preventDefault();
+                alert('Please enter a template name');
+                return false;
+            }
+
+            if (activeItems === 0) {
+                e.preventDefault();
+                alert('Please add at least one item to the template');
+                return false;
+            }
+
+            // Validate that at least one item has required fields
+            let hasValidItem = false;
+            document.querySelectorAll('.item-row:not(.deleted-row)').forEach(function (row) {
+                const description = row.querySelector('input[id$="description"]')?.value.trim();
+                const quantity = parseFloat(row.querySelector('input[id$="quantity"]')?.value) || 0;
+                const unitPrice = parseFloat(row.querySelector('input[id$="unit_price"]')?.value) || 0;
+
+                if (description && quantity > 0 && unitPrice > 0) {
+                    hasValidItem = true;
+                }
+            });
+
+            if (!hasValidItem) {
+                e.preventDefault();
+                alert('Please add at least one valid item with description, quantity, and unit price');
+                return false;
             }
         });
-
-        addRowBtn.addEventListener("click", addRow);
-        laborInput.addEventListener("input", updateTotals);
-        transportInput.addEventListener("input", updateTotals);
     });
 </script>
 {% endblock %}
