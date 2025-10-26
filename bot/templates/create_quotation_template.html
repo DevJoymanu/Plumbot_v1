@@ -973,39 +973,9 @@
         });
     });
 
+    // Add new item row
     function addItem() {
-        const totalFormsInput = document.querySelector('#id_form-TOTAL_FORMS');
-        const formIdx = parseInt(totalFormsInput.value);
-        const newFormHtml = document.querySelector('.item-row').outerHTML.replace(/form-(\d)+-/g, `form-${formIdx}-`);
-
-        const tbody = document.querySelector('#itemsTableBody');
-        const newRow = document.createElement('tr');
-        newRow.classList.add('item-row');
-        newRow.setAttribute('id', `row-${formIdx + 1}`);
-        newRow.innerHTML = newFormHtml;
-
-        // Clear field values and reset for a blank new item
-        newRow.querySelectorAll('input, select, textarea').forEach(input => {
-            if (input.name.includes('id')) {
-                input.value = ''; // clear hidden id
-            } else if (input.name.includes('quantity')) {
-                input.value = 1; // default quantity
-            } else if (input.type === 'checkbox') {
-                input.checked = false;
-            } else {
-                input.value = '';
-            }
-        });
-
-        // Append new row
-        tbody.appendChild(newRow);
-        totalFormsInput.value = formIdx + 1;
-
-        // Reattach events to new row
-        attachRowEvents(newRow);
-        updateItemNumbers();
-        calculateTotals();
+        alert('To add more items, save the template first and then edit it to add additional items.');
     }
-
 </script>
 {% endblock %}
