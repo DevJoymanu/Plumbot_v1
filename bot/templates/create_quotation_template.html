@@ -693,11 +693,11 @@
                         </div>
                         <div class="row">
                             <div class="col-12 col-md-6 mb-3">
-                                <label class="form-label">Default Labor Cost (R)</label>
+                                <label class="form-label">Default Labor Cost ($)</label>
                                 {{ form.default_labor_cost }}
                             </div>
                             <div class="col-12 col-md-6 mb-3">
-                                <label class="form-label">Default Transport Cost (R)</label>
+                                <label class="form-label">Default Transport Cost ($)</label>
                                 {{ form.default_transport_cost }}
                             </div>
                         </div>
@@ -785,23 +785,23 @@
                                 <tfoot>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
-                                        <td><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
+                                        <td><strong><span id="itemsSubtotal">$ 0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
-                                        <td><strong><span id="laborCost">R 0.00</span></strong></td>
+                                        <td><strong><span id="laborCost">$ 0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
-                                        <td><strong><span id="transportCost">R 0.00</span></strong></td>
+                                        <td><strong><span id="transportCost">$ 0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
                                         <td><strong><span id="grandTotal"
-                                                    style="font-size: 1.1em; color: var(--success);">R
+                                                    style="font-size: 1.1em; color: var(--success);">$
                                                     0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
@@ -835,6 +835,7 @@
         </div>
     </div>
 </div>
+
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -894,6 +895,152 @@
             return activeItems > 0;
         }
 
+        // Check if all non-deleted rows have description filled
+        function allRowsFilled() {
+            let allFilled = true;
+            let hasNonDeletedRows = false;
+
+            document.querySelectorAll('.item-row').forEach(function (row) {
+                if (!row.classList.contains('deleted-row')) {
+                    hasNonDeletedRows = true;
+                    const descriptionInput = row.querySelector('input[id$="description"]');
+                    if (descriptionInput && !descriptionInput.value.trim()) {
+                        allFilled = false;
+                    }
+                }
+            });
+
+            return hasNonDeletedRows && allFilled;
+        }
+
+        // Add new item row
+        function addItem() {
+            const tableBody = document.getElementById('itemsTableBody');
+            const totalForms = document.getElementById('id_quotationtemplateitem_set-TOTAL_FORMS');
+            const formCount = parseInt(totalForms.value);
+
+            // Find the next available form index
+            let nextIndex = formCount;
+
+            // Create new row
+            const newRow = document.createElement('tr');
+            newRow.className = 'item-row';
+            newRow.id = 'row-' + nextIndex;
+            newRow.setAttribute('data-item-id', nextIndex);
+
+            newRow.innerHTML = `
+                <td class="text-center">
+                    <span class="badge bg-secondary item-number">${nextIndex + 1}</span>
+                </td>
+                <td>
+                    <input type="text" name="quotationtemplateitem_set-${nextIndex}-description" 
+                           class="form-control" placeholder="Item description" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-description">
+                    <input type="hidden" name="quotationtemplateitem_set-${nextIndex}-id" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-id">
+                </td>
+                <td>
+                    <input type="number" name="quotationtemplateitem_set-${nextIndex}-quantity" 
+                           value="1.00" step="0.01" min="0.01" class="form-control" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-quantity">
+                </td>
+                <td>
+                    <input type="number" name="quotationtemplateitem_set-${nextIndex}-unit_price" 
+                           value="0.00" step="0.01" min="0" class="form-control" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-unit_price">
+                </td>
+                <td class="d-none d-md-table-cell">
+                    <select name="quotationtemplateitem_set-${nextIndex}-category" 
+                            class="form-control" 
+                            id="id_quotationtemplateitem_set-${nextIndex}-category">
+                        <option value="" selected>---------</option>
+                        <option value="materials">Materials</option>
+                        <option value="labor">Labor</option>
+                        <option value="equipment">Equipment</option>
+                        <option value="subcontractor">Subcontractor</option>
+                        <option value="other">Other</option>
+                    </select>
+                </td>
+                <td class="text-center">
+                    <input type="text" class="form-control form-control-sm line-total" readonly value="0.00">
+                </td>
+                <td class="text-center d-none d-sm-table-cell">
+                    <div class="d-flex justify-content-center">
+                        <input type="checkbox" name="quotationtemplateitem_set-${nextIndex}-is_optional" 
+                               class="form-check-input" 
+                               id="id_quotationtemplateitem_set-${nextIndex}-is_optional">
+                    </div>
+                </td>
+                <td class="d-none d-md-table-cell">
+                    <input type="number" name="quotationtemplateitem_set-${nextIndex}-sort_order" 
+                           value="${nextIndex}" class="form-control" 
+                           id="id_quotationtemplateitem_set-${nextIndex}-sort_order">
+                </td>
+                <td class="text-center">
+                    <input type="checkbox" name="quotationtemplateitem_set-${nextIndex}-DELETE" 
+                           class="d-none">
+                    <button type="button" class="delete-btn" data-row-id="${nextIndex}" 
+                            title="Delete this item">
+                        <i class="bi bi-trash"></i>
+                        <span class="text d-none d-md-inline">Delete</span>
+                    </button>
+                </td>
+            `;
+
+            tableBody.appendChild(newRow);
+            totalForms.value = formCount + 1;
+
+            // Attach event listeners to new inputs
+            attachEventListenersToRow(newRow);
+
+            // Update item numbers
+            updateItemNumbers();
+
+            // Focus on the description field of the new row
+            const descriptionInput = newRow.querySelector('input[id$="description"]');
+            if (descriptionInput) {
+                descriptionInput.focus();
+            }
+        }
+
+        // Attach event listeners to a specific row
+        function attachEventListenersToRow(row) {
+            const quantityInput = row.querySelector('input[id$="quantity"]');
+            const priceInput = row.querySelector('input[id$="unit_price"]');
+            const descriptionInput = row.querySelector('input[id$="description"]');
+            const deleteButton = row.querySelector('.delete-btn');
+
+            if (quantityInput) {
+                quantityInput.addEventListener('input', calculateTotals);
+                quantityInput.addEventListener('change', calculateTotals);
+            }
+            if (priceInput) {
+                priceInput.addEventListener('input', calculateTotals);
+                priceInput.addEventListener('change', calculateTotals);
+            }
+            if (descriptionInput) {
+                descriptionInput.addEventListener('input', checkAndAddNewRow);
+            }
+            if (deleteButton) {
+                deleteButton.addEventListener('click', function () {
+                    const rowId = this.getAttribute('data-row-id');
+                    deleteRow(rowId);
+                });
+                deleteButton.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    const rowId = this.getAttribute('data-row-id');
+                    deleteRow(rowId);
+                });
+            }
+        }
+
+        // Check if we need to add a new row and add it automatically
+        function checkAndAddNewRow() {
+            if (allRowsFilled()) {
+                addItem();
+            }
+        }
+
         // Delete row function
         function deleteRow(rowId) {
             const row = document.getElementById('row-' + rowId);
@@ -911,29 +1058,9 @@
                 calculateTotals();
                 updateItemNumbers();
                 checkMinimumItems();
+                checkAndAddNewRow(); // Check if we need to add a new row after deletion
             }
         }
-
-        // Attach event listeners to delete buttons
-        document.querySelectorAll('.delete-btn').forEach(function (button) {
-            button.addEventListener('click', function () {
-                const rowId = this.getAttribute('data-row-id');
-                deleteRow(rowId);
-            });
-
-            // Add touch event for better mobile experience
-            button.addEventListener('touchstart', function (e) {
-                e.preventDefault();
-                const rowId = this.getAttribute('data-row-id');
-                deleteRow(rowId);
-            });
-        });
-
-        // Attach event listeners to all quantity and price inputs
-        document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
-            input.addEventListener('input', calculateTotals);
-            input.addEventListener('change', calculateTotals);
-        });
 
         // Update item numbers
         function updateItemNumbers() {
@@ -949,10 +1076,46 @@
             });
         }
 
-        // Initial calculations
+        // Attach event listeners to existing rows
+        function attachEventListeners() {
+            // Quantity and price inputs
+            document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
+                input.addEventListener('input', calculateTotals);
+                input.addEventListener('change', calculateTotals);
+            });
+
+            // Description inputs for auto-add functionality
+            document.querySelectorAll('input[id$="description"]').forEach(function (input) {
+                input.addEventListener('input', checkAndAddNewRow);
+            });
+
+            // Delete buttons
+            document.querySelectorAll('.delete-btn').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const rowId = this.getAttribute('data-row-id');
+                    deleteRow(rowId);
+                });
+
+                button.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    const rowId = this.getAttribute('data-row-id');
+                    deleteRow(rowId);
+                });
+            });
+        }
+
+        // Initial setup
+        attachEventListeners();
         calculateTotals();
         updateItemNumbers();
         checkMinimumItems();
+
+        // Check if we need to add an initial row (if all existing rows are filled)
+        setTimeout(function () {
+            if (allRowsFilled()) {
+                addItem();
+            }
+        }, 100);
 
         // Form validation
         document.getElementById('templateForm').addEventListener('submit', function (e) {
@@ -971,48 +1134,11 @@
                 return false;
             }
         });
+
+        // Make addItem function globally available for the "Add Item" button
+        window.addItem = addItem;
     });
-
-    // Clone the last row (the one with the highest index)
-    const lastRow = document.querySelector('.item-row:last-of-type');
-    const newRow = lastRow.cloneNode(true);
-
-    // Update the index of the new row to currentTotalForms
-    const newIndex = currentTotalForms;
-
-    // Update the IDs and names in the new row
-    newRow.innerHTML = newRow.innerHTML.replace(/-\d+-/g, '-' + newIndex + '-');
-    newRow.innerHTML = newRow.innerHTML.replace(/\[(\d+)\]/g, '[' + newIndex + ']');
-
-    // Reset the values (except quantity to 1)
-    newRow.querySelector('input[id$="description"]').value = '';
-    newRow.querySelector('input[id$="quantity"]').value = '1';
-    newRow.querySelector('input[id$="unit_price"]').value = '';
-    newRow.querySelector('input[id$="category"]').value = '';
-    newRow.querySelector('input[id$="is_optional"]').checked = false;
-    newRow.querySelector('input[id$="sort_order"]').value = newIndex;
-
-    // Update the row id and data-item-id
-    newRow.id = 'row-' + newIndex;
-    newRow.setAttribute('data-item-id', newIndex);
-
-    // Update the delete checkbox and button
-    const deleteCheckbox = newRow.querySelector('input[type="checkbox"][id$="DELETE"]');
-    deleteCheckbox.checked = false;
-    const deleteButton = newRow.querySelector('.delete-btn');
-    deleteButton.setAttribute('data-row-id', newIndex);
-
-    // Append the new row to the table body
-    document.getElementById('itemsTableBody').appendChild(newRow);
-
-    // Update the total forms count
-    totalFormsInput.value = currentTotalForms + 1;
-
-    // Reattach event listeners to the new row
-    attachEventListenersToRow(newRow);
-
-    // Update item numbers and totals
-    updateItemNumbers();
-    calculateTotals();    
 </script>
+
+
 {% endblock %}
