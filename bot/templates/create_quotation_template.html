@@ -23,7 +23,7 @@
         padding-bottom: 20px;
     }
 
-    .glass-card {
+    .page-header {
         background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
         border-radius: 12px;
@@ -31,6 +31,18 @@
         margin-bottom: 15px;
         border: 1px solid rgba(255, 255, 255, 0.2);
         color: white;
+    }
+
+    .page-header h2 {
+        color: white;
+        font-size: 1.5rem;
+        margin-bottom: 5px;
+    }
+
+    .page-header p {
+        color: rgba(255, 255, 255, 0.9);
+        margin-bottom: 0;
+        font-size: 0.9rem;
     }
 
     .card {
@@ -57,7 +69,7 @@
     }
 
     .card-header.bg-success {
-        background: linear-gradient(135deg, var(--success), rgba(16, 185, 129, 0.9)) !important;
+        background: var(--success) !important;
         border-bottom: none;
         color: white;
     }
@@ -76,9 +88,12 @@
         border-radius: 8px;
         padding: 12px;
         font-size: 16px;
+        /* Prevents zoom on iOS */
         transition: all 0.2s;
         min-height: 48px;
+        /* Better touch target */
         width: 100%;
+        /* Ensure full width */
     }
 
     .form-control:focus,
@@ -101,6 +116,91 @@
         border-color: var(--success);
     }
 
+    .form-check-label {
+        font-weight: 500;
+        color: var(--dark);
+        margin-left: 8px;
+    }
+
+    small.text-muted {
+        color: #6b7280 !important;
+        font-size: 0.8rem;
+    }
+
+    .text-danger {
+        color: var(--danger) !important;
+        font-size: 0.8rem;
+    }
+
+    .table {
+        margin-bottom: 0;
+        font-size: 0.85rem;
+        width: 100%;
+        /* Ensure table takes full width */
+        table-layout: fixed;
+        /* Consistent column widths */
+    }
+
+    .table thead {
+        background: #f8f9fa;
+    }
+
+    .table th {
+        font-weight: 600;
+        color: var(--dark);
+        padding: 12px 8px;
+        border-bottom: 2px solid #e5e7eb;
+        font-size: 0.8rem;
+        vertical-align: middle;
+    }
+
+    .table td {
+        padding: 10px 8px;
+        vertical-align: middle;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    .table tfoot {
+        background: #f8f9fa;
+        font-weight: 600;
+    }
+
+    .table tfoot tr:last-child {
+        background: #e7f5ed;
+    }
+
+    .item-row input[type="checkbox"] {
+        display: none;
+    }
+
+    .badge {
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.75rem;
+    }
+
+    .badge.bg-secondary {
+        background: var(--secondary) !important;
+    }
+
+    .item-number {
+        display: inline-block;
+        padding: 4px 10px;
+    }
+
+    .line-total {
+        background: #f8f9fa !important;
+        font-weight: 600;
+        color: var(--dark);
+        width: 100%;
+        text-align: center;
+    }
+
     .btn {
         border-radius: 8px;
         padding: 12px 20px;
@@ -109,6 +209,7 @@
         transition: all 0.2s;
         border: none;
         min-height: 48px;
+        /* Better touch target */
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -128,6 +229,21 @@
 
     .btn-success {
         background: var(--success);
+        color: white;
+    }
+
+    .btn-success:hover {
+        background: #059669;
+    }
+
+    .btn-outline-primary {
+        background: white;
+        border: 2px solid var(--primary);
+        color: var(--primary);
+    }
+
+    .btn-outline-primary:hover {
+        background: var(--primary);
         color: white;
     }
 
@@ -166,129 +282,363 @@
         border: 2px solid white;
     }
 
-    .table {
-        margin-bottom: 0;
-        font-size: 0.85rem;
-        width: 100%;
-        table-layout: fixed;
+    .btn-light:hover {
+        background: rgba(255, 255, 255, 0.9);
     }
 
-    .table th {
-        font-weight: 600;
-        color: var(--dark);
-        padding: 12px 8px;
-        border-bottom: 2px solid #e5e7eb;
-        font-size: 0.8rem;
-        vertical-align: middle;
+    .alert {
+        border-radius: 8px;
+        padding: 12px;
+        border: none;
+        margin-bottom: 15px;
+        font-size: 0.9rem;
     }
 
-    .table td {
-        padding: 10px 8px;
-        vertical-align: middle;
-        border-bottom: 1px solid #f0f0f0;
-    }
-
-    .table tbody tr:hover {
-        background-color: #f8f9fa;
-    }
-
-    .table tfoot {
-        background: #f8f9fa;
-        font-weight: 600;
-    }
-
-    .table tfoot tr:last-child {
-        background: #e7f5ed;
-    }
-
-    .item-number {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 28px;
-        height: 28px;
-        background: var(--secondary);
-        color: white;
-        border-radius: 50%;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-
-    .line-total-display {
-        background: #f8f9fa;
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-weight: 600;
-        text-align: center;
-    }
-
-    .info-alert {
+    .alert-info {
         background: #e0f2fe;
         color: #0369a1;
         border-left: 4px solid var(--info);
-        border-radius: 8px;
-        padding: 12px;
-        margin-top: 15px;
     }
 
-    /* Column widths */
+    .alert-info i {
+        color: var(--info);
+    }
+
+    /* Delete button styles - Enhanced for better UX */
+    .delete-btn {
+        background: rgba(220, 38, 38, 0.1);
+        border: 1px solid rgba(220, 38, 38, 0.3);
+        color: var(--danger);
+        padding: 8px 12px;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        min-width: 36px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        gap: 4px;
+        cursor: pointer;
+        width: 100%;
+        /* Full width within table cell */
+    }
+
+    .delete-btn:hover {
+        background: var(--danger);
+        color: white;
+        transform: scale(1.05);
+    }
+
+    .delete-btn:active {
+        transform: scale(0.95);
+    }
+
+    .delete-btn i {
+        font-size: 0.9rem;
+    }
+
+    /* Table column width fixes for proper horizontal layout */
     .table th:nth-child(1),
     .table td:nth-child(1) {
         width: 5%;
+        /* # column */
         text-align: center;
     }
 
     .table th:nth-child(2),
     .table td:nth-child(2) {
-        width: 30%;
+        width: 25%;
+        /* Description column */
     }
 
     .table th:nth-child(3),
     .table td:nth-child(3) {
         width: 10%;
+        /* Qty column */
     }
 
     .table th:nth-child(4),
     .table td:nth-child(4) {
         width: 12%;
+        /* Unit Price column */
     }
 
     .table th:nth-child(5),
     .table td:nth-child(5) {
-        width: 15%;
+        width: 12%;
+        /* Category column */
     }
 
     .table th:nth-child(6),
     .table td:nth-child(6) {
         width: 12%;
+        /* Line Total column */
         text-align: center;
     }
 
     .table th:nth-child(7),
     .table td:nth-child(7) {
         width: 8%;
+        /* Optional column */
         text-align: center;
     }
 
     .table th:nth-child(8),
     .table td:nth-child(8) {
         width: 8%;
+        /* Sort column */
+    }
+
+    .table th:nth-child(9),
+    .table td:nth-child(9) {
+        width: 8%;
+        /* Delete column */
         text-align: center;
     }
 
-    @media (max-width: 768px) {
+    /* Form inputs within table */
+    .table input[type="text"],
+    .table input[type="number"],
+    .table select {
+        width: 100%;
+        min-height: 40px;
+        padding: 8px 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: 0.85rem;
+    }
 
+    .table input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        margin: 0 auto;
+    }
+
+    /* Mobile-specific styles */
+    @media (max-width: 768px) {
+        .container-fluid {
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+
+        .page-header .d-flex {
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .page-header h2 {
+            font-size: 1.3rem;
+        }
+
+        .table-responsive {
+            font-size: 0.8rem;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            /* Smooth scrolling on iOS */
+        }
+
+        /* Reset table layout for mobile */
+        .table {
+            table-layout: auto;
+            min-width: 800px;
+            /* Ensure table doesn't get too narrow */
+        }
+
+        .table th,
+        .table td {
+            white-space: nowrap;
+        }
+
+        .table th:nth-child(2),
+        /* Description */
+        .table td:nth-child(2) {
+            min-width: 150px;
+        }
+
+        .btn {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .d-flex.justify-content-between {
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .card-header {
+            padding: 12px 15px;
+        }
+
+        .card-body {
+            padding: 15px;
+        }
+
+        .form-control,
+        .form-select,
+        textarea {
+            font-size: 16px;
+            /* Prevents zoom on iOS */
+        }
+
+        /* Stack form columns on mobile */
+        .row .col-md-6,
+        .row .col-md-4,
+        .row .col-md-8 {
+            margin-bottom: 15px;
+        }
+
+        /* Action buttons container */
+        .d-flex.gap-2 {
+            width: 100%;
+            flex-direction: column;
+        }
+
+        /* Hide less important columns on mobile */
         .table th:nth-child(5),
+        /* Category */
         .table td:nth-child(5),
+        .table th:nth-child(8),
+        /* Sort */
+        .table td:nth-child(8) {
+            display: none;
+        }
+
+        /* Adjust delete button for mobile */
+        .delete-btn {
+            min-height: 40px;
+            min-width: 40px;
+            padding: 10px;
+            font-size: 0.75rem;
+        }
+
+        /* Make delete button more prominent on mobile */
+        .delete-btn {
+            background: rgba(220, 38, 38, 0.15);
+            border: 1px solid rgba(220, 38, 38, 0.4);
+        }
+
+        /* Compact table on mobile */
+        .table th,
+        .table td {
+            padding: 8px 6px;
+        }
+    }
+
+    /* Extra small devices */
+    @media (max-width: 576px) {
+        .page-header {
+            padding: 12px;
+        }
+
+        .card-header h5 {
+            font-size: 0.95rem;
+        }
+
+        /* Hide more columns on very small screens */
         .table th:nth-child(7),
+        /* Optional */
         .table td:nth-child(7) {
             display: none;
         }
 
-        .table {
-            table-layout: auto;
-            min-width: 700px;
+        .table th,
+        .table td {
+            padding: 6px 4px;
         }
+
+        /* Text-only delete button on very small screens */
+        .delete-btn span.text {
+            display: none;
+        }
+
+        .delete-btn {
+            min-width: 32px;
+            min-height: 32px;
+            padding: 6px;
+        }
+
+        .table {
+            min-width: 700px;
+            /* Slightly smaller min-width for very small screens */
+        }
+    }
+
+    /* Desktop-specific enhancements */
+    @media (min-width: 769px) {
+        .delete-btn {
+            min-width: 80px;
+        }
+
+        .table tbody tr:hover .delete-btn {
+            background: rgba(220, 38, 38, 0.15);
+        }
+
+        /* Ensure proper horizontal alignment on desktop */
+        .table-responsive {
+            overflow-x: visible;
+            /* No horizontal scroll on desktop */
+        }
+    }
+
+    /* Fix for iOS form elements */
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+        -webkit-appearance: none;
+        border-radius: 8px;
+    }
+
+    /* Improve touch targets */
+    .form-check {
+        min-height: 24px;
+        display: flex;
+        align-items: center;
+    }
+
+    .form-check-input {
+        margin-top: 0;
+    }
+
+    /* Row deletion styling */
+    .deleted-row {
+        opacity: 0.6;
+        background-color: #f8f9fa !important;
+        position: relative;
+    }
+
+    .deleted-row::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: var(--danger);
+        transform: translateY(-50%);
+    }
+
+    /* Warning for minimum items */
+    .min-items-warning {
+        display: none;
+        color: var(--warning);
+        font-size: 0.8rem;
+        margin-top: 5px;
+    }
+
+    /* Visual feedback for interactive elements */
+    .item-row {
+        transition: all 0.2s ease;
+    }
+
+    .item-row:not(.deleted-row):hover {
+        background-color: #f0f4ff !important;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     }
 </style>
 {% endblock %}
@@ -298,16 +648,17 @@
     <div class="row justify-content-center">
         <div class="col-12">
             <!-- Header -->
-            <div class="glass-card">
+            <div class="page-header">
                 <div class="d-flex justify-content-between align-items-center flex-wrap">
                     <div>
-                        <h1 class="h2 text-white mb-1">
-                            <i class="bi bi-plus-circle"></i>
-                            Create Template
-                        </h1>
-                        <p class="text-white mb-0">Create a new reusable quotation template</p>
+                        <h2>
+                            <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %}"></i>
+                            {% if object %}Edit{% else %}Create{% endif %} Template
+                        </h2>
+                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation
+                            template{%endif %}</p>
                     </div>
-                    <a href="{% url 'quotation_templates_list' %}" class="btn btn-light">
+                    <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary mt-2 mt-md-0">
                         <i class="bi bi-arrow-left"></i> Back to Templates
                     </a>
                 </div>
@@ -316,23 +667,21 @@
             <form method="post" id="templateForm">
                 {% csrf_token %}
 
-                <!-- Template Information -->
+                <!-- Template Basic Info -->
                 <div class="card">
                     <div class="card-header bg-primary">
-                        <h5 class="mb-0 text-white">
-                            <i class="bi bi-info-circle"></i> Template Information
-                        </h5>
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
                     </div>
                     <div class="card-body">
                         <div class="row">
-                            <div class="col-md-8 mb-3">
+                            <div class="col-12 col-md-8 mb-3">
                                 <label class="form-label">Template Name *</label>
                                 {{ form.name }}
                                 {% if form.name.errors %}
                                 <div class="text-danger small mt-1">{{ form.name.errors }}</div>
                                 {% endif %}
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-12 col-md-4 mb-3">
                                 <label class="form-label">Project Type *</label>
                                 {{ form.project_type }}
                             </div>
@@ -343,11 +692,11 @@
                             <small class="text-muted">Describe what this template is used for</small>
                         </div>
                         <div class="row">
-                            <div class="col-md-6 mb-3">
+                            <div class="col-12 col-md-6 mb-3">
                                 <label class="form-label">Default Labor Cost (R)</label>
                                 {{ form.default_labor_cost }}
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-12 col-md-6 mb-3">
                                 <label class="form-label">Default Transport Cost (R)</label>
                                 {{ form.default_transport_cost }}
                             </div>
@@ -364,13 +713,16 @@
                 <!-- Template Items -->
                 <div class="card">
                     <div class="card-header bg-success d-flex justify-content-between align-items-center flex-wrap">
-                        <h5 class="mb-0 text-white">Template Items</h5>
+                        <h5 class="mb-0 mb-md-2"><i class="bi bi-list-ul"></i> Template Items</h5>
                         <button type="button" class="btn btn-sm btn-light" onclick="addItem()">
                             <i class="bi bi-plus-lg"></i> Add Item
                         </button>
                     </div>
                     <div class="card-body">
                         {{ formset.management_form }}
+                        <div class="min-items-warning alert alert-warning" id="minItemsWarning">
+                            <i class="bi bi-exclamation-triangle"></i> You need at least one item in your template.
+                        </div>
 
                         <div class="table-responsive">
                             <table class="table table-hover" id="itemsTable">
@@ -383,79 +735,98 @@
                                         <th class="d-none d-md-table-cell">Category</th>
                                         <th>Line Total</th>
                                         <th class="d-none d-sm-table-cell">Optional</th>
+                                        <th class="d-none d-md-table-cell">Sort</th>
                                         <th>Delete</th>
                                     </tr>
                                 </thead>
                                 <tbody id="itemsTableBody">
-                                    {% for item_form in formset %}
-                                    <tr class="item-row" data-item-id="{{ forloop.counter0 }}"
-                                        id="row-{{ forloop.counter0 }}">
+                                    <tr class="item-row" data-item-id="1" id="row-1">
                                         <td class="text-center">
-                                            <span class="item-number">{{ forloop.counter }}</span>
+                                            <span class="badge bg-secondary item-number">1</span>
                                         </td>
+
+                                        <!-- Description -->
                                         <td>
-                                            {{ item_form.description }}
-                                            {{ item_form.id }}
+                                            <input type="text" name="description" class="form-control form-control-sm description"
+                                                placeholder="Enter item description">
+                                            <input type="hidden" name="id">
                                         </td>
+
+                                        <!-- Quantity -->
                                         <td>
-                                            {{ item_form.quantity }}
+                                            <input type="number" name="quantity" class="form-control form-control-sm quantity" min="1" step="1"
+                                                placeholder="Qty">
                                         </td>
+
+                                        <!-- Unit Price -->
                                         <td>
-                                            {{ item_form.unit_price }}
+                                            <input type="number" name="unit_price" class="form-control form-control-sm unit-price" min="0" step="0.01"
+                                                placeholder="">
                                         </td>
+
+                                        <!-- Category -->
                                         <td class="d-none d-md-table-cell">
-                                            {{ item_form.category }}
+                                            <input type="text" name="category" class="form-control form-control-sm category" placeholder="Category">
                                         </td>
+
+                                        <!-- Line Total -->
                                         <td class="text-center">
-                                            <div class="line-total-display" data-row="{{ forloop.counter0 }}">
-                                                R 0.00
-                                            </div>
+                                            <input type="text" class="form-control form-control-sm line-total" readonly value="">
                                         </td>
+
+                                        <!-- Optional Checkbox -->
                                         <td class="text-center d-none d-sm-table-cell">
                                             <div class="d-flex justify-content-center">
-                                                {{ item_form.is_optional }}
+                                                <input type="checkbox" name="is_optional" class="form-check-input is-optional">
                                             </div>
                                         </td>
+
+                                        <!-- Sort Order -->
+                                        <td class="d-none d-md-table-cell">
+                                            <input type="number" name="sort_order" class="form-control form-control-sm sort-order" min="1" step="1"
+                                                placeholder="">
+                                        </td>
+
+                                        <!-- Delete -->
                                         <td class="text-center">
-                                            {{ item_form.DELETE }}
-                                            <button type="button" class="btn btn-outline-danger btn-sm delete-btn"
-                                                data-row-id="{{ forloop.counter0 }}" title="Delete this item">
+                                            <input type="checkbox" name="DELETE" class="d-none delete-flag">
+                                            <button type="button" class="delete-btn" data-row-id="1" title="Delete this item">
                                                 <i class="bi bi-trash"></i>
+                                                <span class="text d-none d-md-inline">Delete</span>
                                             </button>
                                         </td>
                                     </tr>
-                                    {% endfor %}
                                 </tbody>
                                 <tfoot>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
                                         <td><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
-                                        <td colspan="2"></td>
+                                        <td colspan="3"></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
                                         <td><strong><span id="laborCost">R 0.00</span></strong></td>
-                                        <td colspan="2"></td>
+                                        <td colspan="3"></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
                                         <td><strong><span id="transportCost">R 0.00</span></strong></td>
-                                        <td colspan="2"></td>
+                                        <td colspan="3"></td>
                                     </tr>
-                                    <tr class="bg-success bg-opacity-10">
+                                    <tr>
                                         <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
-                                        <td><strong><span id="grandTotal" class="text-success">R 0.00</span></strong>
-                                        </td>
-                                        <td colspan="2"></td>
+                                        <td><strong><span id="grandTotal"
+                                                    style="font-size: 1.1em; color: var(--success);">R
+                                                    0.00</span></strong></td>
+                                        <td colspan="3"></td>
                                     </tr>
                                 </tfoot>
                             </table>
                         </div>
 
-                        <div class="info-alert">
-                            <i class="bi bi-info-circle"></i>
-                            <strong>Tip:</strong> Use the "Optional" checkbox for items that may not be
-                            needed in all quotations. Rows will auto-add as you fill them in.
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Use the "Optional" checkbox for
+                            items that may not be needed in all quotations. Use "Sort" to control the display order.
                         </div>
                     </div>
                 </div>
@@ -467,9 +838,11 @@
                             <button type="button" class="btn btn-outline-secondary" onclick="window.history.back()">
                                 <i class="bi bi-x-lg"></i> Cancel
                             </button>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="bi bi-check-lg"></i> Save Template
-                            </button>
+                            <div class="d-flex gap-2 flex-wrap w-100 w-md-auto">
+                                <button type="submit" class="btn btn-primary flex-fill">
+                                    <i class="bi bi-check-lg"></i> Save Template
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -478,39 +851,40 @@
     </div>
 </div>
 
+
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const CATEGORIES = [
-            { value: 'materials', label: 'Materials' },
-            { value: 'labor', label: 'Labor' },
-            { value: 'equipment', label: 'Equipment' },
-            { value: 'other', label: 'Other' }
-        ];
+        let itemCounter = 1; // Track the number of items for ID generation
 
         // Calculate line totals and grand total
         function calculateTotals() {
             let itemsSubtotal = 0;
 
             document.querySelectorAll('.item-row').forEach(function (row) {
-                if (row.classList.contains('deleted-row')) return;
+                // Skip deleted rows
+                if (row.classList.contains('deleted-row')) {
+                    return;
+                }
 
                 const qtyInput = row.querySelector('input[id$="quantity"]');
                 const priceInput = row.querySelector('input[id$="unit_price"]');
-                const lineTotalDisplay = row.querySelector('.line-total-display');
+                const lineTotalInput = row.querySelector('.line-total');
 
-                if (qtyInput && priceInput && lineTotalDisplay) {
+                if (qtyInput && priceInput && lineTotalInput) {
                     const qty = parseFloat(qtyInput.value) || 0;
                     const price = parseFloat(priceInput.value) || 0;
                     const lineTotal = qty * price;
 
-                    lineTotalDisplay.textContent = 'R ' + lineTotal.toFixed(2);
+                    lineTotalInput.value = lineTotal.toFixed(2);
                     itemsSubtotal += lineTotal;
                 }
             });
 
+            // Get labor and transport costs
             const laborCost = parseFloat(document.querySelector('input[id$="default_labor_cost"]').value) || 0;
             const transportCost = parseFloat(document.querySelector('input[id$="default_transport_cost"]').value) || 0;
 
+            // Update displays
             document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
             document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
             document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
@@ -519,121 +893,23 @@
             document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
         }
 
-        // Check if all non-deleted rows are filled
-        function allRowsFilled() {
-            let allFilled = true;
-            let hasNonDeletedRows = false;
-
+        // Check if we have at least one active item
+        function checkMinimumItems() {
+            let activeItems = 0;
             document.querySelectorAll('.item-row').forEach(function (row) {
                 if (!row.classList.contains('deleted-row')) {
-                    hasNonDeletedRows = true;
-                    const descriptionInput = row.querySelector('input[id$="description"]');
-                    const quantityInput = row.querySelector('input[id$="quantity"]');
-                    const priceInput = row.querySelector('input[id$="unit_price"]');
-
-                    if (!descriptionInput?.value.trim() || !quantityInput?.value || !priceInput?.value) {
-                        allFilled = false;
-                    }
+                    activeItems++;
                 }
             });
 
-            return hasNonDeletedRows && allFilled;
-        }
-
-        // Add new item row
-        function addItem() {
-            const tableBody = document.getElementById('itemsTableBody');
-            const totalForms = document.getElementById('id_quotationtemplateitem_set-TOTAL_FORMS');
-            const formCount = parseInt(totalForms.value);
-            const nextIndex = formCount;
-
-            const newRow = document.createElement('tr');
-            newRow.className = 'item-row';
-            newRow.id = 'row-' + nextIndex;
-            newRow.setAttribute('data-item-id', nextIndex);
-
-            // Create category options HTML
-            let categoryOptions = '<option value="">---------</option>';
-            CATEGORIES.forEach(cat => {
-                categoryOptions += `<option value="${cat.value}">${cat.label}</option>`;
-            });
-
-            newRow.innerHTML = `
-                <td class="text-center">
-                    <span class="item-number">${nextIndex + 1}</span>
-                </td>
-                <td>
-                    <input type="text" name="quotationtemplateitem_set-${nextIndex}-description" 
-                           class="form-control" placeholder="Item description" 
-                           id="id_quotationtemplateitem_set-${nextIndex}-description">
-                    <input type="hidden" name="quotationtemplateitem_set-${nextIndex}-id" 
-                           id="id_quotationtemplateitem_set-${nextIndex}-id">
-                </td>
-                <td>
-                    <input type="number" name="quotationtemplateitem_set-${nextIndex}-quantity" 
-                           value="1.00" step="0.01" min="0.01" class="form-control" 
-                           id="id_quotationtemplateitem_set-${nextIndex}-quantity">
-                </td>
-                <td>
-                    <input type="number" name="quotationtemplateitem_set-${nextIndex}-unit_price" 
-                           value="0.00" step="0.01" min="0" class="form-control" 
-                           id="id_quotationtemplateitem_set-${nextIndex}-unit_price">
-                </td>
-                <td class="d-none d-md-table-cell">
-                    <select name="quotationtemplateitem_set-${nextIndex}-category" 
-                            class="form-control" 
-                            id="id_quotationtemplateitem_set-${nextIndex}-category">
-                        ${categoryOptions}
-                    </select>
-                </td>
-                <td class="text-center">
-                    <div class="line-total-display" data-row="${nextIndex}">R 0.00</div>
-                </td>
-                <td class="text-center d-none d-sm-table-cell">
-                    <div class="d-flex justify-content-center">
-                        <input type="checkbox" name="quotationtemplateitem_set-${nextIndex}-is_optional" 
-                               class="form-check-input" 
-                               id="id_quotationtemplateitem_set-${nextIndex}-is_optional">
-                    </div>
-                </td>
-                <td class="text-center">
-                    <input type="checkbox" name="quotationtemplateitem_set-${nextIndex}-DELETE" 
-                           class="d-none">
-                    <button type="button" class="btn btn-outline-danger btn-sm delete-btn" 
-                            data-row-id="${nextIndex}" title="Delete this item">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </td>
-            `;
-
-            tableBody.appendChild(newRow);
-            totalForms.value = formCount + 1;
-
-            attachEventListenersToRow(newRow);
-            updateItemNumbers();
-
-            const descriptionInput = newRow.querySelector('input[id$="description"]');
-            if (descriptionInput) descriptionInput.focus();
-        }
-
-        // Attach event listeners to a row
-        function attachEventListenersToRow(row) {
-            const inputs = row.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="description"]');
-            inputs.forEach(input => {
-                input.addEventListener('input', function () {
-                    calculateTotals();
-                    if (allRowsFilled()) {
-                        setTimeout(addItem, 100);
-                    }
-                });
-            });
-
-            const deleteBtn = row.querySelector('.delete-btn');
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', function () {
-                    deleteRow(this.getAttribute('data-row-id'));
-                });
+            const warning = document.getElementById('minItemsWarning');
+            if (activeItems === 0) {
+                warning.style.display = 'block';
+            } else {
+                warning.style.display = 'none';
             }
+
+            return activeItems > 0;
         }
 
         // Delete row function
@@ -642,14 +918,7 @@
             const deleteCheckbox = row.querySelector('input[type="checkbox"][id$="DELETE"]');
 
             if (deleteCheckbox) {
-                const isCurrentlyDeleted = deleteCheckbox.checked;
-
-                if (!isCurrentlyDeleted && document.querySelectorAll('.item-row:not(.deleted-row)').length <= 1) {
-                    alert('You need at least one item in your template.');
-                    return;
-                }
-
-                deleteCheckbox.checked = !isCurrentlyDeleted;
+                deleteCheckbox.checked = !deleteCheckbox.checked;
 
                 if (deleteCheckbox.checked) {
                     row.classList.add('deleted-row');
@@ -659,6 +928,168 @@
 
                 calculateTotals();
                 updateItemNumbers();
+                checkMinimumItems();
+            }
+        }
+
+        // Add new item row
+        function addItem() {
+            itemCounter++;
+            const tableBody = document.getElementById('itemsTableBody');
+
+            const newRow = document.createElement('tr');
+            newRow.className = 'item-row';
+            newRow.id = 'row-' + itemCounter;
+            newRow.setAttribute('data-item-id', itemCounter);
+
+            newRow.innerHTML = `
+                <td class="text-center">
+                    <span class="badge bg-secondary item-number">${itemCounter}</span>
+                </td>
+
+                <!-- Description -->
+                <td>
+                    <input type="text" name="description" class="form-control form-control-sm description"
+                        placeholder="Enter item description">
+                    <input type="hidden" name="id">
+                </td>
+
+                <!-- Quantity -->
+                <td>
+                    <input type="number" name="quantity" class="form-control form-control-sm quantity" min="1" step="1"
+                        placeholder="Qty" value="1">
+                </td>
+
+                <!-- Unit Price -->
+                <td>
+                    <input type="number" name="unit_price" class="form-control form-control-sm unit-price" min="0" step="0.01"
+                        placeholder="">
+                </td>
+
+                <!-- Category -->
+                <td class="d-none d-md-table-cell">
+                    <input type="text" name="category" class="form-control form-control-sm category" placeholder="Category">
+                </td>
+
+                <!-- Line Total -->
+                <td class="text-center">
+                    <input type="text" class="form-control form-control-sm line-total" readonly value="0.00">
+                </td>
+
+                <!-- Optional Checkbox -->
+                <td class="text-center d-none d-sm-table-cell">
+                    <div class="d-flex justify-content-center">
+                        <input type="checkbox" name="is_optional" class="form-check-input is-optional">
+                    </div>
+                </td>
+
+                <!-- Sort Order -->
+                <td class="d-none d-md-table-cell">
+                    <input type="number" name="sort_order" class="form-control form-control-sm sort-order" min="1" step="1"
+                        placeholder="${itemCounter}" value="${itemCounter}">
+                </td>
+
+                <!-- Delete -->
+                <td class="text-center">
+                    <input type="checkbox" name="DELETE" class="d-none delete-flag">
+                    <button type="button" class="delete-btn" data-row-id="${itemCounter}" title="Delete this item">
+                        <i class="bi bi-trash"></i>
+                        <span class="text d-none d-md-inline">Delete</span>
+                    </button>
+                </td>
+            `;
+
+            tableBody.appendChild(newRow);
+
+            // Add event listeners to new inputs
+            const newQtyInput = newRow.querySelector('input[id$="quantity"]');
+            const newPriceInput = newRow.querySelector('input[id$="unit_price"]');
+
+            if (newQtyInput) {
+                newQtyInput.addEventListener('input', calculateTotals);
+                newQtyInput.addEventListener('change', calculateTotals);
+            }
+
+            if (newPriceInput) {
+                newPriceInput.addEventListener('input', calculateTotals);
+                newPriceInput.addEventListener('change', calculateTotals);
+            }
+
+            // Add event listener to delete button
+            const deleteBtn = newRow.querySelector('.delete-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', function () {
+                    const rowId = this.getAttribute('data-row-id');
+                    deleteRow(rowId);
+                });
+
+                deleteBtn.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    const rowId = this.getAttribute('data-row-id');
+                    deleteRow(rowId);
+                });
+            }
+
+            // Update formset management form
+            updateFormsetManagement();
+
+            // Update item numbers and calculate totals
+            updateItemNumbers();
+            calculateTotals();
+            checkMinimumItems();
+
+            // Focus on the description field of the new row
+            const descriptionInput = newRow.querySelector('.description');
+            if (descriptionInput) {
+                descriptionInput.focus();
+            }
+        }
+
+        // Check if all current rows are filled
+        function areAllRowsFilled() {
+            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
+
+            for (let row of rows) {
+                const description = row.querySelector('.description').value.trim();
+                const quantity = row.querySelector('.quantity').value.trim();
+                const unitPrice = row.querySelector('.unit-price').value.trim();
+
+                // If any required field is empty, return false
+                if (!description || !quantity || !unitPrice) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // Auto-add new row when all current rows are filled
+        function setupAutoAddRow() {
+            document.querySelectorAll('.description, .quantity, .unit-price').forEach(input => {
+                input.addEventListener('blur', function () {
+                    // Small timeout to ensure the value has been updated
+                    setTimeout(() => {
+                        if (areAllRowsFilled()) {
+                            addItem();
+                        }
+                    }, 100);
+                });
+
+                // Also check on Enter key press
+                input.addEventListener('keypress', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur(); // Trigger blur event
+                    }
+                });
+            });
+        }
+
+        // Update formset management form total forms count
+        function updateFormsetManagement() {
+            const totalForms = document.getElementById('id_items-TOTAL_FORMS');
+            if (totalForms) {
+                totalForms.value = itemCounter;
             }
         }
 
@@ -670,49 +1101,69 @@
                     const numberBadge = row.querySelector('.item-number');
                     if (numberBadge) {
                         numberBadge.textContent = counter;
+
+                        // Also update sort order to match visual order
+                        const sortInput = row.querySelector('.sort-order');
+                        if (sortInput) {
+                            sortInput.value = counter;
+                        }
+
                         counter++;
                     }
                 }
             });
         }
 
-        // Attach event listeners to existing elements
-        function attachEventListeners() {
-            // Form inputs
-            document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
-                input.addEventListener('input', calculateTotals);
-            });
+        // Initialize the first row with quantity 1
+        function initializeFirstRow() {
+            const firstQtyInput = document.querySelector('.item-row input[id$="quantity"]');
+            if (firstQtyInput && !firstQtyInput.value) {
+                firstQtyInput.value = '1';
+            }
 
-            // Delete buttons
-            document.querySelectorAll('.delete-btn').forEach(function (button) {
-                button.addEventListener('click', function () {
-                    deleteRow(this.getAttribute('data-row-id'));
-                });
-            });
-
-            // Auto-add functionality for description inputs
-            document.querySelectorAll('input[id$="description"]').forEach(function (input) {
-                input.addEventListener('input', function () {
-                    calculateTotals();
-                    if (allRowsFilled()) {
-                        setTimeout(addItem, 100);
-                    }
-                });
-            });
+            const firstSortInput = document.querySelector('.item-row input[id$="sort_order"]');
+            if (firstSortInput && !firstSortInput.value) {
+                firstSortInput.value = '1';
+            }
         }
 
+        // Attach event listeners to delete buttons
+        document.querySelectorAll('.delete-btn').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const rowId = this.getAttribute('data-row-id');
+                deleteRow(rowId);
+            });
+
+            // Add touch event for better mobile experience
+            button.addEventListener('touchstart', function (e) {
+                e.preventDefault();
+                const rowId = this.getAttribute('data-row-id');
+                deleteRow(rowId);
+            });
+        });
+
+        // Attach event listeners to all quantity and price inputs
+        document.querySelectorAll('input[id$="quantity"], input[id$="unit_price"], input[id$="default_labor_cost"], input[id$="default_transport_cost"]').forEach(function (input) {
+            input.addEventListener('input', calculateTotals);
+            input.addEventListener('change', calculateTotals);
+        });
+
         // Initial setup
-        attachEventListeners();
+        initializeFirstRow();
         calculateTotals();
         updateItemNumbers();
+        checkMinimumItems();
+        setupAutoAddRow();
 
-        // Make addItem globally available
-        window.addItem = addItem;
+        // Update the manual add button to use our new function
+        const manualAddBtn = document.querySelector('button[onclick="addItem()"]');
+        if (manualAddBtn) {
+            manualAddBtn.setAttribute('onclick', 'addItem()');
+        }
 
         // Form validation
         document.getElementById('templateForm').addEventListener('submit', function (e) {
             const templateName = document.querySelector('input[id$="name"]').value.trim();
-            const activeItems = document.querySelectorAll('.item-row:not(.deleted-row)').length;
 
             if (!templateName) {
                 e.preventDefault();
@@ -720,30 +1171,65 @@
                 return false;
             }
 
-            if (activeItems === 0) {
+            // Check if at least one item is provided
+            if (!checkMinimumItems()) {
                 e.preventDefault();
                 alert('Please add at least one item to the template');
                 return false;
             }
 
-            // Validate that at least one item has required fields
-            let hasValidItem = false;
+            // Validate that all active rows have required fields
+            let isValid = true;
             document.querySelectorAll('.item-row:not(.deleted-row)').forEach(function (row) {
-                const description = row.querySelector('input[id$="description"]')?.value.trim();
-                const quantity = parseFloat(row.querySelector('input[id$="quantity"]')?.value) || 0;
-                const unitPrice = parseFloat(row.querySelector('input[id$="unit_price"]')?.value) || 0;
+                const description = row.querySelector('.description').value.trim();
+                const quantity = row.querySelector('.quantity').value.trim();
+                const unitPrice = row.querySelector('.unit-price').value.trim();
 
-                if (description && quantity > 0 && unitPrice > 0) {
-                    hasValidItem = true;
+                if (!description || !quantity || !unitPrice) {
+                    isValid = false;
+                    // Highlight missing fields
+                    if (!description) row.querySelector('.description').style.borderColor = 'var(--danger)';
+                    if (!quantity) row.querySelector('.quantity').style.borderColor = 'var(--danger)';
+                    if (!unitPrice) row.querySelector('.unit-price').style.borderColor = 'var(--danger)';
                 }
             });
 
-            if (!hasValidItem) {
+            if (!isValid) {
                 e.preventDefault();
-                alert('Please add at least one valid item with description, quantity, and unit price');
+                alert('Please fill in all required fields (description, quantity, and unit price) for all items');
                 return false;
             }
         });
+
+        // Remove error highlighting when user starts typing
+        document.querySelectorAll('.description, .quantity, .unit-price').forEach(input => {
+            input.addEventListener('input', function () {
+                this.style.borderColor = '';
+            });
+        });
+    });
+
+    // Global function for manual adding
+    function addItem() {
+        // This will be called by the button click
+        const event = new Event('DOMContentLoaded', {
+            bubbles: true,
+            cancelable: true
+        });
+        document.dispatchEvent(event);
+
+        // Use the internal addItem function
+        setTimeout(() => {
+            if (window.addItemInternal) {
+                window.addItemInternal();
+            }
+        }, 100);
+    }
+
+    // Expose the internal addItem function to global scope
+    document.addEventListener('DOMContentLoaded', function () {
+        window.addItemInternal = addItem;
     });
 </script>
+
 {% endblock %}
