@@ -833,8 +833,6 @@
     </div>
 </div>
 
-
-<!-- Add this complete script section to replace the existing one -->
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // Calculate line totals and grand total
@@ -960,9 +958,6 @@
             const tbody = document.getElementById('itemsTableBody');
             const totalForms = document.querySelector('input[name$="TOTAL_FORMS"]');
             const currentFormCount = parseInt(totalForms.value);
-
-            // Get the prefix for the formset (usually 'items' or similar)
-            const prefix = totalForms.name.replace('-TOTAL_FORMS', '');
 
             // Clone the last row as template
             const lastRow = tbody.querySelector('.item-row:last-of-type');
@@ -1118,7 +1113,6 @@
         window.deleteRow = deleteRow;
     });
 </script>
-
 
 
 {% endblock %}
