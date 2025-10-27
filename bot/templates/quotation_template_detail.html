@@ -513,7 +513,7 @@
                         <div class="icon">
                             <i class="bi bi-currency-dollar"></i>
                         </div>
-                        <h3>R{{ total_cost|floatformat:2 }}</h3>
+                        <h3>${{ total_cost|floatformat:2 }}</h3>
                         <p>Estimated Total</p>
                     </div>
                 </div>
@@ -583,7 +583,7 @@
                         <div class="d-flex justify-content-between align-items-center">
                             <div class="text-start flex-grow-1">
                                 <small>Labor Cost</small>
-                                <h4>R{{ template.default_labor_cost|floatformat:2 }}</h4>
+                                <h4>${{ template.default_labor_cost|floatformat:2 }}</h4>
                             </div>
                             <div class="icon">
                                 <i class="bi bi-person-workspace"></i>
@@ -595,7 +595,7 @@
                         <div class="d-flex justify-content-between align-items-center">
                             <div class="text-start flex-grow-1">
                                 <small>Transport Cost</small>
-                                <h4>R{{ template.default_transport_cost|floatformat:2 }}</h4>
+                                <h4>${{ template.default_transport_cost|floatformat:2 }}</h4>
                             </div>
                             <div class="icon">
                                 <i class="bi bi-truck"></i>
@@ -607,7 +607,7 @@
                         <div class="d-flex justify-content-between align-items-center">
                             <div class="text-start flex-grow-1">
                                 <small>Materials/Items</small>
-                                <h4>R{{ template.get_total_estimated_cost|floatformat:2 }}</h4>
+                                <h4>${{ template.get_total_estimated_cost|floatformat:2 }}</h4>
                             </div>
                             <div class="icon">
                                 <i class="bi bi-box-seam"></i>
@@ -656,7 +656,7 @@
                                 </div>
                                 <div class="item-detail">
                                     <span class="item-detail-label">Unit Price</span>
-                                    <span class="item-detail-value">R{{ item.unit_price|floatformat:2 }}</span>
+                                    <span class="item-detail-value">${{ item.unit_price|floatformat:2 }}</span>
                                 </div>
                             </div>
 
@@ -664,7 +664,7 @@
                                 <div class="d-flex justify-content-between align-items-center">
                                     <span class="item-detail-label">Line Total:</span>
                                     <span class="item-detail-value" style="font-size: 1.1rem; color: var(--success);">
-                                        R{{ item.get_line_total|floatformat:2 }}
+                                        ${{ item.get_line_total|floatformat:2 }}
                                     </span>
                                 </div>
                             </div>
@@ -687,20 +687,20 @@
                         <div class="summary-section">
                             <div class="summary-row">
                                 <span class="summary-label">Items Subtotal:</span>
-                                <span class="summary-value">R{{ template.get_total_estimated_cost|floatformat:2
+                                <span class="summary-value">${{ template.get_total_estimated_cost|floatformat:2
                                     }}</span>
                             </div>
                             <div class="summary-row">
                                 <span class="summary-label">Labor Cost:</span>
-                                <span class="summary-value">R{{ template.default_labor_cost|floatformat:2 }}</span>
+                                <span class="summary-value">${{ template.default_labor_cost|floatformat:2 }}</span>
                             </div>
                             <div class="summary-row">
                                 <span class="summary-label">Transport Cost:</span>
-                                <span class="summary-value">R{{ template.default_transport_cost|floatformat:2 }}</span>
+                                <span class="summary-value">${{ template.default_transport_cost|floatformat:2 }}</span>
                             </div>
                             <div class="summary-row total">
                                 <span class="summary-label">Estimated Total:</span>
-                                <span class="summary-value">R{{ total_cost|floatformat:2 }}</span>
+                                <span class="summary-value">${{ total_cost|floatformat:2 }}</span>
                             </div>
                         </div>
                         {% endif %}
@@ -737,8 +737,8 @@
                                             <span class="badge bg-info">{{ item.get_category_display }}</span>
                                         </td>
                                         <td>{{ item.quantity }}</td>
-                                        <td>R{{ item.unit_price|floatformat:2 }}</td>
-                                        <td><strong>R{{ item.get_line_total|floatformat:2 }}</strong></td>
+                                        <td>${{ item.unit_price|floatformat:2 }}</td>
+                                        <td><strong>${{ item.get_line_total|floatformat:2 }}</strong></td>
                                         <td>
                                             {% if item.is_optional %}
                                             <span class="badge bg-warning">Optional</span>
@@ -760,22 +760,22 @@
                                 <tfoot>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
-                                        <td colspan="2"><strong>R{{ template.get_total_estimated_cost|floatformat:2
+                                        <td colspan="2"><strong>${{ template.get_total_estimated_cost|floatformat:2
                                                 }}</strong></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
-                                        <td colspan="2"><strong>R{{ template.default_labor_cost|floatformat:2
+                                        <td colspan="2"><strong>${{ template.default_labor_cost|floatformat:2
                                                 }}</strong></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
-                                        <td colspan="2"><strong>R{{ template.default_transport_cost|floatformat:2
+                                        <td colspan="2"><strong>${{ template.default_transport_cost|floatformat:2
                                                 }}</strong></td>
                                     </tr>
                                     <tr class="total-row">
                                         <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
-                                        <td colspan="2"><strong style="font-size: 1.2em;">R{{ total_cost|floatformat:2
+                                        <td colspan="2"><strong style="font-size: 1.2em;">${{ total_cost|floatformat:2
                                                 }}</strong></td>
                                     </tr>
                                 </tfoot>

@@ -350,11 +350,11 @@
                         </div>
                         <div class="row">
                             <div class="col-12 col-md-6 mb-3">
-                                <label class="form-label">Default Labor Cost (R)</label>
+                                <label class="form-label">Default Labor Cost ($)</label>
                                 {{ form.default_labor_cost }}
                             </div>
                             <div class="col-12 col-md-6 mb-3">
-                                <label class="form-label">Default Transport Cost (R)</label>
+                                <label class="form-label">Default Transport Cost ($)</label>
                                 {{ form.default_transport_cost }}
                             </div>
                         </div>
@@ -436,22 +436,22 @@
                                 <tfoot>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
-                                        <td><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
+                                        <td><strong><span id="itemsSubtotal">$ 0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
-                                        <td><strong><span id="laborCost">R 0.00</span></strong></td>
+                                        <td><strong><span id="laborCost">$ 0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
-                                        <td><strong><span id="transportCost">R 0.00</span></strong></td>
+                                        <td><strong><span id="transportCost">$ 0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
-                                        <td><strong><span id="grandTotal" style="font-size: 1.1em; color: var(--success);">R 0.00</span></strong></td>
+                                        <td><strong><span id="grandTotal" style="font-size: 1.1em; color: var(--success);">$ 0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
                                 </tfoot>
@@ -558,10 +558,10 @@
             const transportCost = parseFloat(document.querySelector('#id_default_transport_cost').value) || 0;
             const grandTotal = itemsSubtotal + laborCost + transportCost;
 
-            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
-            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
-            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
-            document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
+            document.getElementById('itemsSubtotal').textContent = '$ ' + itemsSubtotal.toFixed(2);
+            document.getElementById('laborCost').textContent = '$ ' + laborCost.toFixed(2);
+            document.getElementById('transportCost').textContent = '$ ' + transportCost.toFixed(2);
+            document.getElementById('grandTotal').textContent = '$ ' + grandTotal.toFixed(2);
         }
 
         function checkIfNewRowNeeded() {
