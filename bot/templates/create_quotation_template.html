@@ -497,7 +497,6 @@
                 calculateLineTotal(row);
                 calculateAllTotals();
                 checkIfNewRowNeeded();
-                checkAndDeleteEmptyRows();
             }
         });
 
@@ -698,6 +697,10 @@
 
         // Form validation before submit
         document.getElementById('templateForm').addEventListener('submit', function (e) {
+
+                checkAndDeleteEmptyRows();
+
+
             const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
 
             if (visibleRows.length === 0) {
