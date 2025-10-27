@@ -25,6 +25,7 @@
         background: var(--gradient);
         min-height: 100vh;
         padding-bottom: 20px;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
     .dashboard-container {
@@ -44,7 +45,7 @@
         background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
         border-radius: var(--radius);
-        padding: 20px;
+        padding: 24px;
         border: 1px solid rgba(255, 255, 255, 0.2);
         color: white;
     }
@@ -53,7 +54,7 @@
         font-size: 28px;
         font-weight: 700;
         color: white;
-        margin-bottom: 4px;
+        margin-bottom: 8px;
         display: flex;
         align-items: center;
         gap: 12px;
@@ -228,6 +229,55 @@
         outline: none;
     }
 
+    /* Buttons */
+    .btn {
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+        min-height: 48px;
+        justify-content: center;
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-dark);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .btn-success {
+        background: var(--success);
+        color: white;
+    }
+
+    .btn-success:hover {
+        background: #059669;
+        transform: translateY(-2px);
+    }
+
+    .btn-outline {
+        background: transparent;
+        border: 1px solid #e5e7eb;
+        color: var(--dark);
+    }
+
+    .btn-outline:hover {
+        background: #f8fafc;
+        border-color: var(--secondary);
+    }
+
     .filter-btn {
         width: 100%;
         padding: 12px;
@@ -251,7 +301,7 @@
         transform: translateY(-1px);
     }
 
-    /* Templates Grid */
+    /* Templates Section */
     .templates-section {
         background: white;
         border-radius: var(--radius);
@@ -300,7 +350,7 @@
 
     .templates-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
         gap: 20px;
         padding: 24px;
     }
@@ -324,7 +374,7 @@
     }
 
     .template-header {
-        padding: 16px 20px 12px;
+        padding: 20px 20px 16px;
         border-bottom: 1px solid #e5e7eb;
     }
 
@@ -332,7 +382,7 @@
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        margin-bottom: 8px;
+        margin-bottom: 12px;
     }
 
     .template-name {
@@ -340,11 +390,14 @@
         font-weight: 600;
         color: var(--dark);
         margin: 0;
+        flex: 1;
     }
 
     .template-badges {
         display: flex;
         gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
     }
 
     .badge {
@@ -379,13 +432,14 @@
         color: var(--secondary);
         font-size: 14px;
         margin: 0;
+        line-height: 1.5;
     }
 
     .template-stats {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        padding: 16px 20px;
+        gap: 16px;
+        padding: 20px;
         border-bottom: 1px solid #e5e7eb;
     }
 
@@ -404,24 +458,26 @@
     .stat-label {
         font-size: 12px;
         color: var(--secondary);
+        font-weight: 500;
     }
 
     .template-footer {
-        padding: 16px 20px;
+        padding: 20px;
         display: flex;
-        justify-content: space-between;
-        align-items: center;
+        flex-direction: column;
+        gap: 12px;
     }
 
     .template-actions {
-        display: flex;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 8px;
     }
 
-    /* Enhanced Action Buttons */
+    /* Enhanced Action Buttons with Text Labels */
     .action-btn {
         border-radius: 8px;
-        padding: 8px 12px;
+        padding: 10px 16px;
         font-weight: 600;
         font-size: 0.8rem;
         transition: all 0.3s ease;
@@ -430,11 +486,13 @@
         align-items: center;
         justify-content: center;
         gap: 6px;
-        min-height: 36px;
+        min-height: 40px;
         text-decoration: none;
         cursor: pointer;
         position: relative;
         overflow: hidden;
+        min-width: 0;
+        flex: 1;
     }
 
     .action-btn::before {
@@ -455,6 +513,13 @@
     .action-btn:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .action-btn .btn-text {
+        display: inline-block;
+        font-size: 0.75rem;
+        font-weight: 600;
+        white-space: nowrap;
     }
 
     .btn-view {
@@ -497,15 +562,18 @@
         background: linear-gradient(135deg, var(--success), #059669);
         color: white;
         border: 2px solid var(--success);
-        padding: 8px 16px;
+        padding: 12px 20px;
         border-radius: 8px;
         font-weight: 600;
-        font-size: 14px;
+        font-size: 0.85rem;
         cursor: pointer;
         transition: all 0.3s;
-        display: flex;
+        display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 6px;
+        min-height: 44px;
+        width: 100%;
     }
 
     .btn-use:hover {
@@ -513,54 +581,13 @@
         color: white;
         border-color: #059669;
         transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
     }
 
-    /* Buttons */
-    .btn {
-        padding: 12px 20px;
-        border-radius: 8px;
+    .btn-use .btn-text {
+        display: inline-block;
+        font-size: 0.8rem;
         font-weight: 600;
-        font-size: 14px;
-        transition: all 0.2s;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        border: none;
-        cursor: pointer;
-        text-decoration: none;
-        min-height: 48px;
-    }
-
-    .btn-primary {
-        background: var(--primary);
-        color: white;
-    }
-
-    .btn-primary:hover {
-        background: var(--primary-dark);
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-lg);
-    }
-
-    .btn-success {
-        background: var(--success);
-        color: white;
-    }
-
-    .btn-success:hover {
-        background: #059669;
-        transform: translateY(-2px);
-    }
-
-    .btn-outline {
-        background: transparent;
-        border: 1px solid #e5e7eb;
-        color: var(--dark);
-    }
-
-    .btn-outline:hover {
-        background: #f8fafc;
-        border-color: var(--secondary);
     }
 
     /* Empty State */
@@ -635,6 +662,7 @@
     .page-btn-nav {
         background: #f8fafc;
         font-weight: 600;
+        min-width: 80px;
     }
 
     /* Desktop Table (Hidden by default) */
@@ -642,7 +670,7 @@
         display: none;
     }
 
-    /* Responsive */
+    /* Responsive Design */
     @media (max-width: 1024px) {
         .main-content {
             grid-template-columns: 1fr;
@@ -657,6 +685,7 @@
         .dashboard-header {
             flex-direction: column;
             align-items: flex-start;
+            padding: 20px;
         }
 
         .header-actions {
@@ -671,6 +700,7 @@
         .templates-grid {
             grid-template-columns: 1fr;
             padding: 16px;
+            gap: 16px;
         }
 
         .template-card {
@@ -679,6 +709,20 @@
 
         .dashboard-container {
             padding: 15px;
+        }
+
+        .template-actions {
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
+        .action-btn {
+            padding: 12px 16px;
+            min-height: 44px;
+        }
+
+        .action-btn .btn-text {
+            font-size: 0.8rem;
         }
     }
 
@@ -689,6 +733,26 @@
 
         .desktop-table {
             display: none !important;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .template-stats {
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        .action-btn {
+            padding: 10px 12px;
+        }
+
+        .action-btn .btn-text {
+            font-size: 0.75rem;
+        }
+
+        .btn-use {
+            padding: 10px 16px;
+            min-height: 42px;
         }
     }
 
@@ -707,6 +771,30 @@
 
     .template-card {
         animation: fadeIn 0.5s ease forwards;
+    }
+
+    .template-card:nth-child(1) {
+        animation-delay: 0.1s;
+    }
+
+    .template-card:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+
+    .template-card:nth-child(3) {
+        animation-delay: 0.3s;
+    }
+
+    .template-card:nth-child(4) {
+        animation-delay: 0.4s;
+    }
+
+    .template-card:nth-child(5) {
+        animation-delay: 0.5s;
+    }
+
+    .template-card:nth-child(6) {
+        animation-delay: 0.6s;
     }
 
     /* Button tooltip styles */
@@ -750,7 +838,7 @@
         </div>
         <div class="header-actions">
             <a href="{% url 'create_quotation_template' %}" class="btn btn-success">
-                <i class="bi bi-plus-lg"></i> New Template
+                <i class="bi bi-plus-lg"></i> Create New Template
             </a>
         </div>
     </header>
@@ -794,7 +882,7 @@
                 <h3>Filters</h3>
                 <button type="button" class="btn btn-outline" style="padding: 6px 12px; font-size: 12px;"
                     onclick="resetFilters()">
-                    Reset
+                    Reset All
                 </button>
             </div>
 
@@ -808,13 +896,16 @@
                     <h4>Project Type</h4>
                     <select name="project_type" class="form-select">
                         <option value="">All Project Types</option>
-                        <option value="bathroom_renovation" {% if request.GET.project_type == 'bathroom_renovation'%}selected{% endif %}>
+                        <option value="bathroom_renovation" {% if request.GET.project_type=='bathroom_renovation'
+                            %}selected{% endif %}>
                             Bathroom Renovation
                         </option>
-                        <option value="kitchen_renovation" {% if request.GET.project_type == 'kitchen_renovation'%}selected{% endif %}>
+                        <option value="kitchen_renovation" {% if request.GET.project_type=='kitchen_renovation'
+                            %}selected{% endif %}>
                             Kitchen Renovation
                         </option>
-                        <option value="new_plumbing_installation" {% if request.GET.project_type == 'new_plumbing_installation' %}selected{% endif %}>
+                        <option value="new_plumbing_installation" {% if
+                            request.GET.project_type=='new_plumbing_installation' %}selected{% endif %}>
                             New Installation
                         </option>
                     </select>
@@ -824,8 +915,8 @@
                     <h4>Status</h4>
                     <select name="status" class="form-select">
                         <option value="">All Status</option>
-                        <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
-                        <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive
+                        <option value="active" {% if request.GET.status=='active' %}selected{% endif %}>Active</option>
+                        <option value="inactive" {% if request.GET.status=='inactive' %}selected{% endif %}>Inactive
                         </option>
                     </select>
                 </div>
@@ -867,7 +958,7 @@
                             </div>
                         </div>
                         {% if template.description %}
-                        <p class="template-description">{{ template.description|truncatewords:15 }}</p>
+                        <p class="template-description">{{ template.description|truncatewords:20 }}</p>
                         {% endif %}
                     </div>
                     <div class="template-stats">
@@ -876,7 +967,7 @@
                             <div class="stat-label">Items</div>
                         </div>
                         <div class="stat">
-                            <div class="stat-value">${{ template.get_total_estimated_cost|floatformat:2 }}</div>
+                            <div class="stat-value">R{{ template.get_total_estimated_cost|floatformat:2 }}</div>
                             <div class="stat-label">Est. Cost</div>
                         </div>
                         <div class="stat">
@@ -884,8 +975,8 @@
                             <div class="stat-label">Times Used</div>
                         </div>
                         <div class="stat">
-                            <div class="stat-value">{{ template.updated_at|date:"M d" }}</div>
-                            <div class="stat-label">Updated</div>
+                            <div class="stat-value">{{ template.updated_at|date:"M d, Y" }}</div>
+                            <div class="stat-label">Last Updated</div>
                         </div>
                     </div>
                     <div class="template-footer">
@@ -893,19 +984,23 @@
                             <a href="{% url 'quotation_template_detail' template.pk %}" class="action-btn btn-view"
                                 title="View Template Details">
                                 <i class="bi bi-eye-fill"></i>
+                                <span class="btn-text">View</span>
                             </a>
                             <a href="{% url 'edit_quotation_template' template.pk %}" class="action-btn btn-edit"
                                 title="Edit Template">
                                 <i class="bi bi-pencil-square"></i>
+                                <span class="btn-text">Edit</span>
                             </a>
                             <a href="{% url 'duplicate_template' template.pk %}" class="action-btn btn-duplicate"
                                 title="Duplicate Template">
                                 <i class="bi bi-files"></i>
+                                <span class="btn-text">Copy</span>
                             </a>
                         </div>
                         <button type="button" class="btn-use" onclick="quickUseTemplate({{ template.pk }})"
                             title="Use Template">
-                            <i class="bi bi-plus-circle"></i> Use
+                            <i class="bi bi-plus-circle"></i>
+                            <span class="btn-text">Use Template</span>
                         </button>
                     </div>
                 </div>
@@ -915,7 +1010,7 @@
             <div class="empty-state">
                 <i class="bi bi-inbox empty-icon"></i>
                 <h3>No templates found</h3>
-                <p>Get started by creating your first quotation template</p>
+                <p>Get started by creating your first quotation template to streamline your workflow</p>
                 <a href="{% url 'create_quotation_template' %}" class="btn btn-primary">
                     <i class="bi bi-plus-lg"></i> Create Your First Template
                 </a>
@@ -929,15 +1024,17 @@
                 <a class="page-btn page-btn-nav"
                     href="?page=1{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
                     <i class="bi bi-chevron-double-left"></i>
+                    <span>First</span>
                 </a>
                 <a class="page-btn page-btn-nav"
                     href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
                     <i class="bi bi-chevron-left"></i>
+                    <span>Previous</span>
                 </a>
                 {% endif %}
 
                 {% for num in page_obj.paginator.page_range %}
-                {% if num  ==  page_obj.number %}
+                {% if num == page_obj.number %}
                 <span class="page-btn active">{{ num }}</span>
                 {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %} <a class="page-btn"
                     href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
@@ -949,102 +1046,18 @@
                     {% if page_obj.has_next %}
                     <a class="page-btn page-btn-nav"
                         href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                        <span>Next</span>
                         <i class="bi bi-chevron-right"></i>
                     </a>
                     <a class="page-btn page-btn-nav"
                         href="?page={{ page_obj.paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                        <span>Last</span>
                         <i class="bi bi-chevron-double-right"></i>
                     </a>
                     {% endif %}
             </div>
             {% endif %}
         </section>
-    </div>
-</div>
-
-<!-- Desktop Table (Hidden by default) -->
-<div class="card desktop-table">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead>
-                    <tr>
-                        <th>Template Name</th>
-                        <th>Project Type</th>
-                        <th>Items</th>
-                        <th>Estimated Cost</th>
-                        <th>Times Used</th>
-                        <th>Status</th>
-                        <th>Last Updated</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for template in templates %}
-                    <tr>
-                        <td>
-                            <strong>{{ template.name }}</strong>
-                            {% if template.description %}
-                            <br><small class="text-muted">{{ template.description|truncatewords:10 }}</small>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <span class="badge bg-secondary">{{ template.get_project_type_display }}</span>
-                        </td>
-                        <td>{{ template.items.count }} items</td>
-                        <td><strong>${{ template.get_total_estimated_cost|floatformat:2 }}</strong></td>
-                        <td>
-                            <span class="badge bg-info">{{ template.use_count }}</span>
-                        </td>
-                        <td>
-                            {% if template.is_active %}
-                            <span class="badge bg-success">Active</span>
-                            {% else %}
-                            <span class="badge bg-secondary">Inactive</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ template.updated_at|date:"M d, Y" }}</td>
-                        <td>
-                            <div class="template-actions">
-                                <a href="{% url 'quotation_template_detail' template.pk %}" class="action-btn btn-view"
-                                    title="View Template Details">
-                                    <i class="bi bi-eye-fill"></i>
-                                    <span class="btn-text">View</span>
-                                </a>
-                                <a href="{% url 'edit_quotation_template' template.pk %}" class="action-btn btn-edit"
-                                    title="Edit Template">
-                                    <i class="bi bi-pencil-square"></i>
-                                    <span class="btn-text">Edit</span>
-                                </a>
-                                <a href="{% url 'duplicate_template' template.pk %}" class="action-btn btn-duplicate"
-                                    title="Duplicate Template">
-                                    <i class="bi bi-files"></i>
-                                    <span class="btn-text">Copy</span>
-                                </a>
-                                <button type="button" class="action-btn btn-use"
-                                    onclick="quickUseTemplate({{ template.pk }})" title="Use Template">
-                                    <i class="bi bi-plus-circle"></i>
-                                    <span class="btn-text">Use</span>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="8">
-                            <div class="empty-state">
-                                <i class="bi bi-inbox"></i>
-                                <p>No templates found</p>
-                                <a href="{% url 'create_quotation_template' %}" class="btn btn-primary">
-                                    <i class="bi bi-plus-lg"></i> Create Your First Template
-                                </a>
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
     </div>
 </div>
 
@@ -1057,8 +1070,8 @@
         const form = document.getElementById('filterForm');
         const inputs = form.querySelectorAll('input, select');
         inputs.forEach(input => {
-            if (input.type  == = 'text') input.value = '';
-            if (input.type  == = 'select-one') input.selectedIndex = 0;
+            if (input.type === 'text') input.value = '';
+            if (input.type === 'select-one') input.selectedIndex = 0;
         });
         form.submit();
     }
@@ -1076,7 +1089,7 @@
                 viewOptions.forEach(opt => opt.classList.remove('active'));
                 this.classList.add('active');
 
-                if (viewType  == = 'grid') {
+                if (viewType === 'grid') {
                     templatesView.style.display = 'grid';
                     desktopTable.style.display = 'none';
                 } else {
