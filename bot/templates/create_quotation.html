@@ -441,10 +441,15 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1><i class="fas fa-calculator"></i> Quotation Generator</h1>
-            <p>"Quality Is Our Qualification"</p>
+            <div class="header-logo-container"
+                style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+                <img src="/static/images/logo.jpg" alt="HOMEBASE CONSTRUCTION" style="height: 50px; width: auto;">
+                <div style="text-align: center;">
+                    <h1><i class="fas fa-calculator"></i> Quotation Generator</h1>
+                    <p>"Quality Is Our Qualification"</p>
+                </div>
+            </div>
         </div>
-
         <div id="alertContainer"></div>
 
         <div class="content-wrapper">
@@ -538,66 +543,61 @@
             </div>
 
             <!-- Preview Section -->
-            <div class="card preview-section" id="previewSection">
-                <div class="preview-header">
-<div class="header">
-    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
-        <img src="/static/images/logo.jpg" alt="HOMEBASE CONSTRUCTION" style="height: 40px; width: auto;">
-        <div>
-            <h1><i class="fas fa-calculator"></i> Quotation Generator</h1>
-            <p>"Quality Is Our Qualification"</p>
-        </div>
-    </div>
-    <button class="btn btn-success" onclick="openTemplateModal()">
-        <i class="fas fa-file-invoice"></i> Use Template
-    </button>
-</div>                <p style="font-size: 0.85rem; color: #666;">150 Northway, Seke rd, Hatfield — Harare</p>
-                    <p style="font-size: 0.85rem; color: #666;">Cell: 0774 819 901 | Email: info@homebaseplumbers.co.zw
-                    </p>
-                </div>
-
-                <div class="preview-info">
-                    <strong>Client Information</strong>
-                    <div id="previewClient"></div>
-                </div>
-
-                <div class="preview-info">
-                    <strong>Project Details</strong>
-                    <div id="previewProject"></div>
-                </div>
-
-                <table class="preview-table">
-                    <thead>
-                        <tr>
-                            <th>Item</th>
-                            <th>Qty</th>
-                            <th>Price</th>
-                            <th>Total</th>
-                        </tr>
-                    </thead>
-                    <tbody id="previewItems"></tbody>
-                </table>
-
-                <div class="totals-card">
-                    <div class="totals-row">
-                        <span>Material cost:</span>
-                        <span id="previewMaterials">$0.00</span>
+<!-- Preview Section -->
+                <div class="card preview-section" id="previewSection">
+                    <div class="preview-header">
+                        <div class="logo-container" style="text-align: center; margin-bottom: 20px;">
+                            <img src="/static/images/logo.jpg" alt="HOMEBASE CONSTRUCTION"
+                                style="height: 80px; width: auto; max-width: 200px; margin: 0 auto 15px auto; display: block;">
+                            <h2 style="margin: 0; color: #2d3748; font-size: 1.5rem;">HOMEBASE CONSTRUCTION</h2>
+                            <p style="margin: 5px 0 0 0; font-size: 0.9rem; color: #666;">"Quality Is Our Qualification"</p>
+                        </div>
+                        <p style="font-size: 0.85rem; color: #666; text-align: center;">150 Northway, Seke rd, Hatfield — Harare</p>
+                        <p style="font-size: 0.85rem; color: #666; text-align: center;">Cell: 0774 819 901 | Email:
+                            info@homebaseplumbers.co.zw</p>
                     </div>
-                    <div class="totals-row">
-                        <span>Labour:</span>
-                        <span id="previewLabour">$0.00</span>
+
+                    <div class="preview-info">
+                        <strong>Client Information</strong>
+                        <div id="previewClient"></div>
                     </div>
-                    <div class="totals-row">
-                        <span>Transport:</span>
-                        <span id="previewTransport">$0.00</span>
+
+                    <div class="preview-info">
+                        <strong>Project Details</strong>
+                        <div id="previewProject"></div>
                     </div>
-                    <div class="totals-row">
-                        <span>Total Amount:</span>
-                        <span id="previewGrandTotal">$0.00</span>
+
+                    <table class="preview-table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="previewItems"></tbody>
+                    </table>
+
+                    <div class="totals-card">
+                        <div class="totals-row">
+                            <span>Material cost:</span>
+                            <span id="previewMaterials">$0.00</span>
+                        </div>
+                        <div class="totals-row">
+                            <span>Labour:</span>
+                            <span id="previewLabour">$0.00</span>
+                        </div>
+                        <div class="totals-row">
+                            <span>Transport:</span>
+                            <span id="previewTransport">$0.00</span>
+                        </div>
+                        <div class="totals-row">
+                            <span>Total Amount:</span>
+                            <span id="previewGrandTotal">$0.00</span>
+                        </div>
                     </div>
-                </div>
-            </div>
-        </div>
+                </div>        </div>
 
         <!-- Fixed Action Buttons -->
         <div class="action-buttons">
