@@ -77,8 +77,9 @@ class AISettingsForm(forms.Form):
 class QuotationForm(forms.ModelForm):
     class Meta:
         model = Quotation
-        fields = ['labor_cost', 'materials_cost', 'transport_cost', 'notes']
+        fields = ['appointment', 'labor_cost', 'materials_cost', 'transport_cost', 'notes']
         widgets = {
+            'appointment': forms.HiddenInput(),  # Use hidden input if appointment is set automatically
             'labor_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
             'materials_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
             'transport_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
@@ -88,7 +89,6 @@ class QuotationForm(forms.ModelForm):
             'labor_cost': 'Labor Cost (R)',
             'materials_cost': 'Materials Cost (R)',
         }
-
 class QuotationItemForm(forms.ModelForm):
     class Meta:
         model = QuotationItem
