@@ -692,7 +692,6 @@
         // Form validation before submit (fallback for Enter key in form)
 
       // Form validation before submit
-        // Form validation before submit
         document.getElementById('templateForm').addEventListener('submit', function (e) {
             if (isSubmitting) {
                 return true; // Already validated, allow submission
@@ -724,18 +723,14 @@
 
             if (!hasAtLeastOneItem) {
                 alert('Please add at least one complete item to the template (with Description, Quantity, and Unit Price).');
-                isSubmitting = false; // Reset flag
                 return false;
             }
 
-            // If validation passes, set flag and submit programmatically
+            // If validation passes, set flag and submit
             isSubmitting = true;
-
-            // Use a small timeout to ensure the flag is set before submission
-            setTimeout(() => {
-                this.submit();
-            }, 10);
+            this.submit();
         });
+
         
         // Smooth scroll to new row
         function smoothScrollToRow(row) {
