@@ -501,11 +501,6 @@
         });
 
         // Also check for empty rows when description changes
-        document.addEventListener('input', function (e) {
-            if (e.target.matches('input[id$="-description"]')) {
-                setTimeout(checkAndDeleteEmptyRows, 100);
-            }
-        });
 
         // Labor and transport cost updates
         document.querySelector('#id_default_labor_cost').addEventListener('input', calculateAllTotals);
@@ -698,9 +693,6 @@
         // Form validation before submit
         document.getElementById('templateForm').addEventListener('submit', function (e) {
 
-                checkAndDeleteEmptyRows();
-
-
             const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
 
             if (visibleRows.length === 0) {
@@ -709,25 +701,8 @@
                 return false;
             }
 
-            // Check if required fields are filled
-            let hasEmptyRequired = false;
-            visibleRows.forEach(row => {
-                const desc = row.querySelector('input[id$="-description"]')?.value.trim();
-                const qty = row.querySelector('input[id$="-quantity"]')?.value;
-                const price = row.querySelector('input[id$="-unit_price"]')?.value;
+            checkAndDeleteEmptyRows();
 
-                if (!desc || !qty || !price) {
-                    hasEmptyRequired = true;
-                    row.style.backgroundColor = '#fee';
-                    setTimeout(() => row.style.backgroundColor = '', 2000);
-                }
-            });
-
-            if (hasEmptyRequired) {
-                e.preventDefault();
-                alert('Please fill in all required fields (Description, Quantity, Unit Price) for all items.');
-                return false;
-            }
         });
 
         // Smooth scroll to new row
