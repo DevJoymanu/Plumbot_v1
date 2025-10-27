@@ -591,7 +591,7 @@ class CreateQuotationView(CreateView):
 # Add this separate view for API-based quotation creation
 @csrf_exempt
 @require_http_methods(["POST"])
-def create_quotation_api(request, appointment_id):
+def create_quotation_api(request):
     """API endpoint for creating quotations from the quotation generator page"""
     try:
         data = json.loads(request.body)
