@@ -88,12 +88,9 @@
         border-radius: 8px;
         padding: 12px;
         font-size: 16px;
-        /* Prevents zoom on iOS */
         transition: all 0.2s;
         min-height: 48px;
-        /* Better touch target */
         width: 100%;
-        /* Ensure full width */
     }
 
     .form-control:focus,
@@ -116,29 +113,11 @@
         border-color: var(--success);
     }
 
-    .form-check-label {
-        font-weight: 500;
-        color: var(--dark);
-        margin-left: 8px;
-    }
-
-    small.text-muted {
-        color: #6b7280 !important;
-        font-size: 0.8rem;
-    }
-
-    .text-danger {
-        color: var(--danger) !important;
-        font-size: 0.8rem;
-    }
-
     .table {
         margin-bottom: 0;
         font-size: 0.85rem;
         width: 100%;
-        /* Ensure table takes full width */
         table-layout: fixed;
-        /* Consistent column widths */
     }
 
     .table thead {
@@ -173,21 +152,6 @@
         background: #e7f5ed;
     }
 
-    .item-row input[type="checkbox"] {
-        display: none;
-    }
-
-    .badge {
-        padding: 6px 10px;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 0.75rem;
-    }
-
-    .badge.bg-secondary {
-        background: var(--secondary) !important;
-    }
-
     .item-number {
         display: inline-block;
         padding: 4px 10px;
@@ -209,7 +173,6 @@
         transition: all 0.2s;
         border: none;
         min-height: 48px;
-        /* Better touch target */
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -236,75 +199,6 @@
         background: #059669;
     }
 
-    .btn-outline-primary {
-        background: white;
-        border: 2px solid var(--primary);
-        color: var(--primary);
-    }
-
-    .btn-outline-primary:hover {
-        background: var(--primary);
-        color: white;
-    }
-
-    .btn-outline-secondary {
-        background: white;
-        border: 2px solid var(--secondary);
-        color: var(--secondary);
-    }
-
-    .btn-outline-secondary:hover {
-        background: var(--secondary);
-        color: white;
-    }
-
-    .btn-outline-danger {
-        background: white;
-        border: 2px solid var(--danger);
-        color: var(--danger);
-        padding: 8px 12px;
-    }
-
-    .btn-outline-danger:hover {
-        background: var(--danger);
-        color: white;
-    }
-
-    .btn-sm {
-        padding: 8px 12px;
-        font-size: 0.85rem;
-        min-height: 36px;
-    }
-
-    .btn-light {
-        background: white;
-        color: var(--dark);
-        border: 2px solid white;
-    }
-
-    .btn-light:hover {
-        background: rgba(255, 255, 255, 0.9);
-    }
-
-    .alert {
-        border-radius: 8px;
-        padding: 12px;
-        border: none;
-        margin-bottom: 15px;
-        font-size: 0.9rem;
-    }
-
-    .alert-info {
-        background: #e0f2fe;
-        color: #0369a1;
-        border-left: 4px solid var(--info);
-    }
-
-    .alert-info i {
-        color: var(--info);
-    }
-
-    /* Delete button styles - Enhanced for better UX */
     .delete-btn {
         background: rgba(220, 38, 38, 0.1);
         border: 1px solid rgba(220, 38, 38, 0.3);
@@ -322,7 +216,6 @@
         gap: 4px;
         cursor: pointer;
         width: 100%;
-        /* Full width within table cell */
     }
 
     .delete-btn:hover {
@@ -331,74 +224,72 @@
         transform: scale(1.05);
     }
 
-    .delete-btn:active {
-        transform: scale(0.95);
+    /* New row highlight */
+    .item-row.new-row {
+        background-color: #e7f5ed !important;
+        animation: highlightNew 2s ease-in-out;
     }
 
-    .delete-btn i {
-        font-size: 0.9rem;
+    @keyframes highlightNew {
+        0% {
+            background-color: #10b981;
+        }
+
+        100% {
+            background-color: transparent;
+        }
     }
 
-    /* Table column width fixes for proper horizontal layout */
+    /* Column widths */
     .table th:nth-child(1),
     .table td:nth-child(1) {
         width: 5%;
-        /* # column */
         text-align: center;
     }
 
     .table th:nth-child(2),
     .table td:nth-child(2) {
         width: 25%;
-        /* Description column */
     }
 
     .table th:nth-child(3),
     .table td:nth-child(3) {
         width: 10%;
-        /* Qty column */
     }
 
     .table th:nth-child(4),
     .table td:nth-child(4) {
         width: 12%;
-        /* Unit Price column */
     }
 
     .table th:nth-child(5),
     .table td:nth-child(5) {
         width: 12%;
-        /* Category column */
     }
 
     .table th:nth-child(6),
     .table td:nth-child(6) {
         width: 12%;
-        /* Line Total column */
         text-align: center;
     }
 
     .table th:nth-child(7),
     .table td:nth-child(7) {
         width: 8%;
-        /* Optional column */
         text-align: center;
     }
 
     .table th:nth-child(8),
     .table td:nth-child(8) {
         width: 8%;
-        /* Sort column */
     }
 
     .table th:nth-child(9),
     .table td:nth-child(9) {
         width: 8%;
-        /* Delete column */
         text-align: center;
     }
 
-    /* Form inputs within table */
     .table input[type="text"],
     .table input[type="number"],
     .table select {
@@ -416,195 +307,7 @@
         margin: 0 auto;
     }
 
-    /* Mobile-specific styles */
-    @media (max-width: 768px) {
-        .container-fluid {
-            padding-left: 10px;
-            padding-right: 10px;
-        }
-
-        .page-header .d-flex {
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .page-header h2 {
-            font-size: 1.3rem;
-        }
-
-        .table-responsive {
-            font-size: 0.8rem;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            /* Smooth scrolling on iOS */
-        }
-
-        /* Reset table layout for mobile */
-        .table {
-            table-layout: auto;
-            min-width: 800px;
-            /* Ensure table doesn't get too narrow */
-        }
-
-        .table th,
-        .table td {
-            white-space: nowrap;
-        }
-
-        .table th:nth-child(2),
-        /* Description */
-        .table td:nth-child(2) {
-            min-width: 150px;
-        }
-
-        .btn {
-            width: 100%;
-            margin-bottom: 10px;
-        }
-
-        .d-flex.justify-content-between {
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .card-header {
-            padding: 12px 15px;
-        }
-
-        .card-body {
-            padding: 15px;
-        }
-
-        .form-control,
-        .form-select,
-        textarea {
-            font-size: 16px;
-            /* Prevents zoom on iOS */
-        }
-
-        /* Stack form columns on mobile */
-        .row .col-md-6,
-        .row .col-md-4,
-        .row .col-md-8 {
-            margin-bottom: 15px;
-        }
-
-        /* Action buttons container */
-        .d-flex.gap-2 {
-            width: 100%;
-            flex-direction: column;
-        }
-
-        /* Hide less important columns on mobile */
-        .table th:nth-child(5),
-        /* Category */
-        .table td:nth-child(5),
-        .table th:nth-child(8),
-        /* Sort */
-        .table td:nth-child(8) {
-            display: none;
-        }
-
-        /* Adjust delete button for mobile */
-        .delete-btn {
-            min-height: 40px;
-            min-width: 40px;
-            padding: 10px;
-            font-size: 0.75rem;
-        }
-
-        /* Make delete button more prominent on mobile */
-        .delete-btn {
-            background: rgba(220, 38, 38, 0.15);
-            border: 1px solid rgba(220, 38, 38, 0.4);
-        }
-
-        /* Compact table on mobile */
-        .table th,
-        .table td {
-            padding: 8px 6px;
-        }
-    }
-
-    /* Extra small devices */
-    @media (max-width: 576px) {
-        .page-header {
-            padding: 12px;
-        }
-
-        .card-header h5 {
-            font-size: 0.95rem;
-        }
-
-        /* Hide more columns on very small screens */
-        .table th:nth-child(7),
-        /* Optional */
-        .table td:nth-child(7) {
-            display: none;
-        }
-
-        .table th,
-        .table td {
-            padding: 6px 4px;
-        }
-
-        /* Text-only delete button on very small screens */
-        .delete-btn span.text {
-            display: none;
-        }
-
-        .delete-btn {
-            min-width: 32px;
-            min-height: 32px;
-            padding: 6px;
-        }
-
-        .table {
-            min-width: 700px;
-            /* Slightly smaller min-width for very small screens */
-        }
-    }
-
-    /* Desktop-specific enhancements */
-    @media (min-width: 769px) {
-        .delete-btn {
-            min-width: 80px;
-        }
-
-        .table tbody tr:hover .delete-btn {
-            background: rgba(220, 38, 38, 0.15);
-        }
-
-        /* Ensure proper horizontal alignment on desktop */
-        .table-responsive {
-            overflow-x: visible;
-            /* No horizontal scroll on desktop */
-        }
-    }
-
-    /* Fix for iOS form elements */
-    input[type="text"],
-    input[type="number"],
-    select,
-    textarea {
-        -webkit-appearance: none;
-        border-radius: 8px;
-    }
-
-    /* Improve touch targets */
-    .form-check {
-        min-height: 24px;
-        display: flex;
-        align-items: center;
-    }
-
-    .form-check-input {
-        margin-top: 0;
-    }
-
-    /* Row deletion styling */
+    /* Deleted row styling */
     .deleted-row {
         opacity: 0.6;
         background-color: #f8f9fa !important;
@@ -622,23 +325,28 @@
         transform: translateY(-50%);
     }
 
-    /* Warning for minimum items */
-    .min-items-warning {
-        display: none;
-        color: var(--warning);
-        font-size: 0.8rem;
-        margin-top: 5px;
+    /* Loading indicator */
+    .calculating {
+        opacity: 0.6;
     }
 
-    /* Visual feedback for interactive elements */
-    .item-row {
-        transition: all 0.2s ease;
-    }
+    @media (max-width: 768px) {
+        .table-responsive {
+            font-size: 0.8rem;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
 
-    .item-row:not(.deleted-row):hover {
-        background-color: #f0f4ff !important;
-        transform: translateY(-1px);
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        .table {
+            min-width: 800px;
+        }
+
+        .btn {
+            width: 100%;
+            margin-bottom: 10px;
+        }
     }
 </style>
 {% endblock %}
@@ -655,8 +363,8 @@
                             <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %}"></i>
                             {% if object %}Edit{% else %}Create{% endif %} Template
                         </h2>
-                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation
-                            template{%endif %}</p>
+                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation template{%
+                            endif %}</p>
                     </div>
                     <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary mt-2 mt-md-0">
                         <i class="bi bi-arrow-left"></i> Back to Templates
@@ -714,12 +422,12 @@
                 <div class="card">
                     <div class="card-header bg-success d-flex justify-content-between align-items-center flex-wrap">
                         <h5 class="mb-0 mb-md-2"><i class="bi bi-list-ul"></i> Template Items</h5>
+                        <button type="button" class="btn btn-light btn-sm" id="addRowBtn">
+                            <i class="bi bi-plus-circle"></i> Add Item
+                        </button>
                     </div>
                     <div class="card-body">
                         {{ formset.management_form }}
-                        <div class="min-items-warning alert alert-warning" id="minItemsWarning">
-                            <i class="bi bi-exclamation-triangle"></i> You need at least one item in your template.
-                        </div>
 
                         <div class="table-responsive">
                             <table class="table table-hover" id="itemsTable">
@@ -770,8 +478,8 @@
                                         </td>
                                         <td class="text-center">
                                             {{ item_form.DELETE }}
-                                            <button type="button" class="delete-btn" data-row-id="{{ forloop.counter }}"
-                                                title="Delete this item">
+                                            <button type="button" class="delete-btn"
+                                                data-row-id="{{ forloop.counter }}">
                                                 <i class="bi bi-trash"></i>
                                                 <span class="text d-none d-md-inline">Delete</span>
                                             </button>
@@ -807,8 +515,8 @@
                         </div>
 
                         <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Use the "Optional" checkbox for
-                            items that may not be needed in all quotations. Use "Sort" to control the display order.
+                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Items are automatically added when
+                            you fill all fields. Quantities default to 1.
                         </div>
                     </div>
                 </div>
@@ -820,11 +528,9 @@
                             <button type="button" class="btn btn-outline-secondary" onclick="window.history.back()">
                                 <i class="bi bi-x-lg"></i> Cancel
                             </button>
-                            <div class="d-flex gap-2 flex-wrap w-100 w-md-auto">
-                                <button type="submit" class="btn btn-primary flex-fill">
-                                    <i class="bi bi-check-lg"></i> Save Template
-                                </button>
-                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg"></i> Save Template
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -833,5 +539,221 @@
     </div>
 </div>
 
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        let totalForms = document.querySelector('#id_items-TOTAL_FORMS');
+        let formIdx = parseInt(totalForms.value);
 
+        // Initialize calculations on load
+        calculateAllTotals();
+
+        // Auto-calculate line totals
+        document.addEventListener('input', function (e) {
+            if (e.target.matches('input[id$="-quantity"], input[id$="-unit_price"]')) {
+                const row = e.target.closest('tr');
+                calculateLineTotal(row);
+                calculateAllTotals();
+                checkIfNewRowNeeded();
+            }
+        });
+
+        // Labor and transport cost updates
+        document.querySelector('#id_default_labor_cost').addEventListener('input', calculateAllTotals);
+        document.querySelector('#id_default_transport_cost').addEventListener('input', calculateAllTotals);
+
+        // Delete button functionality
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('.delete-btn')) {
+                e.preventDefault();
+                const row = e.target.closest('tr');
+                const deleteCheckbox = row.querySelector('input[id$="-DELETE"]');
+
+                if (deleteCheckbox) {
+                    deleteCheckbox.checked = !deleteCheckbox.checked;
+                    row.classList.toggle('deleted-row');
+                    calculateAllTotals();
+                }
+            }
+        });
+
+        // Add row button
+        document.getElementById('addRowBtn').addEventListener('click', function () {
+            addNewRow();
+        });
+
+        // Auto-focus on description when new row is added
+        function focusNewRow(row) {
+            const descInput = row.querySelector('input[id$="-description"]');
+            if (descInput) {
+                setTimeout(() => descInput.focus(), 100);
+            }
+        }
+
+        function calculateLineTotal(row) {
+            const qtyInput = row.querySelector('input[id$="-quantity"]');
+            const priceInput = row.querySelector('input[id$="-unit_price"]');
+            const totalInput = row.querySelector('.line-total');
+
+            if (qtyInput && priceInput && totalInput) {
+                const qty = parseFloat(qtyInput.value) || 0;
+                const price = parseFloat(priceInput.value) || 0;
+                const total = qty * price;
+
+                totalInput.value = total.toFixed(2);
+                totalInput.classList.add('calculating');
+                setTimeout(() => totalInput.classList.remove('calculating'), 300);
+            }
+        }
+
+        function calculateAllTotals() {
+            let itemsSubtotal = 0;
+            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
+
+            rows.forEach(row => {
+                const totalInput = row.querySelector('.line-total');
+                if (totalInput && totalInput.value) {
+                    itemsSubtotal += parseFloat(totalInput.value) || 0;
+                }
+            });
+
+            const laborCost = parseFloat(document.querySelector('#id_default_labor_cost').value) || 0;
+            const transportCost = parseFloat(document.querySelector('#id_default_transport_cost').value) || 0;
+            const grandTotal = itemsSubtotal + laborCost + transportCost;
+
+            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
+            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
+            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
+            document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
+        }
+
+        function checkIfNewRowNeeded() {
+            const rows = Array.from(document.querySelectorAll('.item-row:not(.deleted-row)'));
+
+            // Check if all visible rows have data
+            const allFilled = rows.every(row => {
+                const desc = row.querySelector('input[id$="-description"]')?.value.trim();
+                const qty = row.querySelector('input[id$="-quantity"]')?.value;
+                const price = row.querySelector('input[id$="-unit_price"]')?.value;
+
+                return desc && qty && price;
+            });
+
+            // If all rows are filled, add a new one
+            if (allFilled && rows.length > 0) {
+                addNewRow();
+            }
+        }
+
+        function addNewRow() {
+            const tbody = document.getElementById('itemsTableBody');
+            const newRow = tbody.querySelector('tr:first-child').cloneNode(true);
+
+            // Update form index
+            formIdx++;
+            totalForms.value = formIdx;
+
+            // Update all field names and IDs
+            newRow.querySelectorAll('input, select, textarea').forEach(field => {
+                const name = field.getAttribute('name');
+                const id = field.getAttribute('id');
+
+                if (name) {
+                    field.setAttribute('name', name.replace(/items-\d+/, `items-${formIdx - 1}`));
+                }
+                if (id) {
+                    field.setAttribute('id', id.replace(/items-\d+/, `items-${formIdx - 1}`));
+                }
+
+                // Clear values except quantity (set to 1)
+                if (field.getAttribute('id')?.endsWith('-quantity')) {
+                    field.value = '1';
+                } else if (field.getAttribute('id')?.endsWith('-sort_order')) {
+                    field.value = formIdx;
+                } else if (field.type !== 'checkbox') {
+                    field.value = '';
+                } else {
+                    field.checked = false;
+                }
+            });
+
+            // Update row number
+            newRow.querySelector('.item-number').textContent = formIdx;
+            newRow.dataset.itemId = formIdx;
+            newRow.id = `row-${formIdx}`;
+
+            // Clear line total
+            newRow.querySelector('.line-total').value = '0.00';
+
+            // Remove deleted-row class if present
+            newRow.classList.remove('deleted-row');
+
+            // Add new-row animation class
+            newRow.classList.add('new-row');
+            setTimeout(() => newRow.classList.remove('new-row'), 2000);
+
+            // Append to tbody
+            tbody.appendChild(newRow);
+
+            // Focus on new row
+            focusNewRow(newRow);
+
+            // Recalculate totals
+            calculateAllTotals();
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function (e) {
+            // Ctrl/Cmd + Enter to add new row
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                addNewRow();
+            }
+        });
+
+        // Form validation before submit
+        document.getElementById('templateForm').addEventListener('submit', function (e) {
+            const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
+
+            if (visibleRows.length === 0) {
+                e.preventDefault();
+                alert('Please add at least one item to the template.');
+                return false;
+            }
+
+            // Check if required fields are filled
+            let hasEmptyRequired = false;
+            visibleRows.forEach(row => {
+                const desc = row.querySelector('input[id$="-description"]')?.value.trim();
+                const qty = row.querySelector('input[id$="-quantity"]')?.value;
+                const price = row.querySelector('input[id$="-unit_price"]')?.value;
+
+                if (!desc || !qty || !price) {
+                    hasEmptyRequired = true;
+                    row.style.backgroundColor = '#fee';
+                    setTimeout(() => row.style.backgroundColor = '', 2000);
+                }
+            });
+
+            if (hasEmptyRequired) {
+                e.preventDefault();
+                alert('Please fill in all required fields (Description, Quantity, Unit Price) for all items.');
+                return false;
+            }
+        });
+
+        // Smooth scroll to new row
+        function smoothScrollToRow(row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        // Auto-save indication (optional)
+        let saveTimeout;
+        document.addEventListener('input', function () {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                console.log('Changes detected - remember to save!');
+            }, 1000);
+        });
+    });
+</script>
 {% endblock %}
