@@ -1103,104 +1103,46 @@
         const projectType = document.getElementById('projectType').value.trim();
 
         if (!clientName || !projectType) {
-            showAlert('Please fill in client name and project type', 'error');
+            showAlert('Please fill in client name and project type before downloading', 'error');
             return;
         }
 
         // Show preview first
         showPreview();
 
+        // Show loading state
         const downloadBtn = document.querySelector('.btn-outline');
-        const originalText = downloadBtn.innerHTML;
+        const originalContent = downloadBtn.innerHTML;
         downloadBtn.classList.add('loading');
         downloadBtn.innerHTML = '<span class="spinner"></span> Generating PDF...';
 
         try {
-            // Method 1: Use html2pdf.js for better PDF generation
-            if (typeof html2pdf !== 'undefined') {
-                await generatePDFWithHtml2PDF();
-            }
-            // Method 2: Use print to PDF with custom filename
-            else {
-                await generatePDFWithPrint();
-            }
+            // Wait a bit for preview to render
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Get the preview section
+            const previewElement = document.getElementById('previewSection');
+
+            // Use html2pdf library
+            const opt = {
+                margin: 10,
+                filename: `Quotation_${clientName.replace(/\s+/g, '_')}_${Date.now()}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            await html2pdf().set(opt).from(previewElement).save();
+
+            showAlert('PDF downloaded successfully!', 'success');
         } catch (error) {
-            console.error('Error generating PDF:', error);
-            showAlert('Failed to generate PDF. Please try the print option instead.', 'error');
+            console.error('PDF generation error:', error);
+            showAlert('Failed to generate PDF. Falling back to print dialog...', 'error');
+            setTimeout(() => window.print(), 500);
         } finally {
             downloadBtn.classList.remove('loading');
-            downloadBtn.innerHTML = originalText;
+            downloadBtn.innerHTML = originalContent;
         }
-    }
-
-    // Method 1: Using html2pdf.js (Recommended)
-    async function generatePDFWithHtml2PDF() {
-        // Load html2pdf library if not already loaded
-        if (typeof html2pdf === 'undefined') {
-            await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js');
-        }
-
-        const element = document.getElementById('previewSection');
-        const clientName = document.getElementById('clientName').value.trim();
-        const projectType = document.getElementById('projectType').value.trim();
-
-        const filename = `Quotation_${clientName.replace(/\s+/g, '_')}_${projectType.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-
-        const opt = {
-            margin: [10, 10, 10, 10],
-            filename: filename,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: {
-                scale: 2,
-                useCORS: true,
-                logging: false
-            },
-            jsPDF: {
-                unit: 'mm',
-                format: 'a4',
-                orientation: 'portrait'
-            },
-            pagebreak: {
-                mode: ['avoid-all', 'css', 'legacy']
-            }
-        };
-
-        await html2pdf().set(opt).from(element).save();
-        showAlert('PDF downloaded successfully!', 'success');
-    }
-
-    // Method 2: Enhanced print to PDF with better filename
-    async function generatePDFWithPrint() {
-        return new Promise((resolve) => {
-            const clientName = document.getElementById('clientName').value.trim();
-            const projectType = document.getElementById('projectType').value.trim();
-            const filename = `Quotation_${clientName.replace(/\s+/g, '_')}_${projectType.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-
-            // Add beforeprint event to set document title
-            window.addEventListener('beforeprint', () => {
-                document.title = filename.replace('.pdf', '');
-            });
-
-            // Show print dialog
-            window.print();
-
-            // Reset title after print
-            setTimeout(() => {
-                document.title = 'Construction Quotation Generator';
-                resolve();
-            }, 1000);
-        });
-    }
-
-    // Helper function to load external scripts
-    function loadScript(src) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
     }
         function clearAll() {
             if (confirm('Clear all data? This cannot be undone.')) {
