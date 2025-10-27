@@ -647,13 +647,10 @@
                     field.value = '1';
                 } else if (field.getAttribute('id')?.endsWith('-sort_order')) {
                     field.value = formIdx;
-                } else if (field.tagName.toLowerCase() === 'select') {
-                    // ✅ Set default Category value
-                    if (field.options.length > 0) {
-                        field.selectedIndex = 0; // first option
-                    }
- 
-                else if (field.type !== 'checkbox') {
+                } else if (field.getAttribute('id')?.endsWith('-category')) {
+                    // Set default category value - you can change this to whatever default you prefer
+                    field.value = 'material'; // or 'labor', 'equipment', etc.
+                }else if (field.type !== 'checkbox') {
                     field.value = '';
                 } else {
                     field.checked = false;
