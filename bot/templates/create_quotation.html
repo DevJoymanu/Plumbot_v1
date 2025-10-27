@@ -1098,52 +1098,11 @@
             document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
         }
 
-    async function downloadPDF() {
-        const clientName = document.getElementById('clientName').value.trim();
-        const projectType = document.getElementById('projectType').value.trim();
-
-        if (!clientName || !projectType) {
-            showAlert('Please fill in client name and project type before downloading', 'error');
-            return;
-        }
-
-        // Show preview first
-        showPreview();
-
-        // Show loading state
-        const downloadBtn = document.querySelector('.btn-outline');
-        const originalContent = downloadBtn.innerHTML;
-        downloadBtn.classList.add('loading');
-        downloadBtn.innerHTML = '<span class="spinner"></span> Generating PDF...';
-
-        try {
-            // Wait a bit for preview to render
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // Get the preview section
-            const previewElement = document.getElementById('previewSection');
-
-            // Use html2pdf library
-            const opt = {
-                margin: 10,
-                filename: `Quotation_${clientName.replace(/\s+/g, '_')}_${Date.now()}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-
-            await html2pdf().set(opt).from(previewElement).save();
-
-            showAlert('PDF downloaded successfully!', 'success');
-        } catch (error) {
-            console.error('PDF generation error:', error);
-            showAlert('Failed to generate PDF. Falling back to print dialog...', 'error');
+        function downloadPDF() {
+            showPreview();
             setTimeout(() => window.print(), 500);
-        } finally {
-            downloadBtn.classList.remove('loading');
-            downloadBtn.innerHTML = originalContent;
         }
-    }
+
         function clearAll() {
             if (confirm('Clear all data? This cannot be undone.')) {
                 document.querySelectorAll('input, textarea').forEach(input => {
