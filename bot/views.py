@@ -1409,7 +1409,7 @@ Job Description:
 View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         
         # Send to team
-        TEAM_NUMBERS = ['whatsapp:+27610318200']
+        TEAM_NUMBERS = ['whatsapp:+263774819901']
         for number in TEAM_NUMBERS:
             try:
                 twilio_client.messages.create(
@@ -1834,7 +1834,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             self.appointment.save()
             
             # Get plumber contact info
-            plumber_number = getattr(self.appointment, 'plumber_contact_number', '+27610318200')
+            plumber_number = getattr(self.appointment, 'plumber_contact_number', '+263774819901')
             
             # Send plan to plumber
             self.notify_plumber_about_plan()
@@ -1899,7 +1899,7 @@ Status: Plan uploaded - awaiting your review"""
 
             # Send to plumber
             plumber_numbers = [
-                'whatsapp:+27610318200',  # Main plumber
+                'whatsapp:+263774819901',  # Main plumber
                 # Add additional plumbers if needed
             ]
             
@@ -2003,7 +2003,7 @@ View details: http://127.0.0.1:8000/appointments/{self.appointment.id}/"""
             twilio_client.messages.create(
                 body=urgent_message,
                 from_=TWILIO_WHATSAPP_NUMBER,
-                to='whatsapp:+27610318200'
+                to='whatsapp:+263774819901'
             )
             
             return """🚨 I've marked your plan review as URGENT and notified our plumber immediately.
@@ -4264,7 +4264,7 @@ Thank you for choosing us.
 
             # Team numbers to notify
             TEAM_NUMBERS = [
-                'whatsapp:+27610318200',  # Your plumber's number
+                'whatsapp:+263774819901',  # Your plumber's number
             ]
             
             print(f"📤 Attempting to send notifications to {len(TEAM_NUMBERS)} team members...")
@@ -4614,7 +4614,7 @@ If you receive this, notifications are working! ✅"""
 
         # Team numbers to test
         TEAM_NUMBERS = [
-            'whatsapp:+27610318200',  # Your plumber's number
+            'whatsapp:+263774819901',  # Your plumber's number
         ]
         
         results = []
@@ -4679,7 +4679,7 @@ def verify_whatsapp_setup():
         return False
     
     # Check team numbers format
-    TEAM_NUMBERS = ['whatsapp:+27610318200']  # Your actual numbers
+    TEAM_NUMBERS = ['whatsapp:+263774819901']  # Your actual numbers
     print(f"👥 Team numbers configured: {len(TEAM_NUMBERS)}")
     
     for number in TEAM_NUMBERS:
