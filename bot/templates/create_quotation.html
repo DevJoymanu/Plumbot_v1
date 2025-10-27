@@ -851,15 +851,32 @@
         let currentAppointmentId = null;
 
         // Auto-load appointment on page load
-        document.addEventListener('DOMContentLoaded', function () {
-            const urlParams = new URLSearchParams(window.location.search);
-            const appointmentId = urlParams.get('appointment_id');
+    // Replace the existing DOMContentLoaded function
+    document.addEventListener('DOMContentLoaded', function () {
+        // Get appointment ID from URL path instead of query parameters
+        const pathParts = window.location.pathname.split('/');
+        const appointmentId = pathParts[pathParts.indexOf('appointments') + 1];
 
-            if (appointmentId) {
-                loadAppointmentData(appointmentId);
-            }
-        });
+        if (appointmentId && !isNaN(appointmentId)) {
+            loadAppointmentData(parseInt(appointmentId));
+        } else {
+            showAlert('No appointment found in URL. Please access this page from an appointment detail page.', 'error');
+            // Disable save button since we don't have an appointment
+            document.getElementById('saveBtn').disabled = true;
+            document.getElementById('saveBtn').innerHTML = '<i class="fas fa-ban"></i> No Appointment';
+        }
 
+        // Add "Use Template" button to the header
+        const header = document.querySelector('.header');
+        if (header) {
+            const templateBtn = document.createElement('button');
+            templateBtn.className = 'btn btn-success';
+            templateBtn.innerHTML = '<i class="fas fa-file-invoice"></i> Use Template';
+            templateBtn.onclick = openTemplateModal;
+            templateBtn.style.marginTop = '10px';
+            header.appendChild(templateBtn);
+        }
+    });
         // Sample data for bathroom renovation (default items)
         const defaultBathroomItems = [
             { name: '500ml prodorite solvent cement', qty: 1, price: 4 },
