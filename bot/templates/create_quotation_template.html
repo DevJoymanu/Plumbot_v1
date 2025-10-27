@@ -580,13 +580,6 @@
             addNewRow();
         });
 
-        // Auto-focus on description when new row is added
-        function focusNewRow(row) {
-            const descInput = row.querySelector('input[id$="-description"]');
-            if (descInput) {
-                setTimeout(() => descInput.focus(), 100);
-            }
-        }
 
         function calculateLineTotal(row) {
             const qtyInput = row.querySelector('input[id$="-quantity"]');
@@ -733,17 +726,9 @@
                 }
             });
 
-            if (hasEmptyRequired) {
-                e.preventDefault();
-                alert('Please fill in all required fields (Description, Quantity, Unit Price) for all items.');
-                return false;
-            }
         });
 
         // Smooth scroll to new row
-        function smoothScrollToRow(row) {
-            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
 
         // Auto-save indication (optional)
         let saveTimeout;
