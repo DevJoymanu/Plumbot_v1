@@ -1161,7 +1161,7 @@
         try {
             const csrftoken = getCookie('csrftoken');
 
-            const response = await fetch(`/api/quotations/create/${currentAppointmentId}/`, {
+            const response = await fetch('/api/quotations/create/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1169,6 +1169,7 @@
                 },
                 body: JSON.stringify(quotationData)
             });
+
             const result = await response.json();
 
             if (response.ok && result.success) {
