@@ -642,14 +642,17 @@
                     field.setAttribute('id', id.replace(/items-\d+/, `items-${formIdx - 1}`));
                 }
 
-                // Clear values except quantity (set to 1)
+                // Clear values except quantity (set to 1) and set default category
                 if (field.getAttribute('id')?.endsWith('-quantity')) {
                     field.value = '1';
                 } else if (field.getAttribute('id')?.endsWith('-sort_order')) {
                     field.value = formIdx;
-                } else if (field.type !== 'checkbox') {
+                } else if (field.getAttribute('id')?.endsWith('-category')) {
+                    // Set default category value - you can change this to whatever default you prefer
+                    field.value = 'material'; // or 'labor', 'equipment', etc.
+                } else if (field.type !== 'checkbox' && field.type !== 'select-one') {
                     field.value = '';
-                } else {
+                } else if (field.type === 'checkbox') {
                     field.checked = false;
                 }
             });
@@ -678,7 +681,6 @@
             // Recalculate totals
             calculateAllTotals();
         }
-
         // Keyboard shortcuts
         document.addEventListener('keydown', function (e) {
             // Ctrl/Cmd + Enter to add new row
