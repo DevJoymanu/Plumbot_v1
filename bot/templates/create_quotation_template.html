@@ -575,6 +575,21 @@
             }
         });
 
+        function autoDeleteEmptyRows() {
+            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
+            rows.forEach(row => {
+                const desc = row.querySelector('input[id$="-description"]')?.value.trim();
+                const qty = row.querySelector('input[id$="-quantity"]')?.value;
+                const price = row.querySelector('input[id$="-unit_price"]')?.value;
+
+                // If empty description + price, and quantity is default 1, delete
+                if (!desc && !price && (qty === '1' || qty === 1)) {
+                    toggleDeleteRow(row);
+                }
+            });
+        }
+
+
         // Add row button
         document.getElementById('addRowBtn').addEventListener('click', function () {
             addNewRow();
@@ -698,6 +713,8 @@
 
             // Recalculate totals
             calculateAllTotals();
+            autoDeleteEmptyRows();
+
         }
 
         // Keyboard shortcuts
