@@ -565,7 +565,7 @@ class CreateQuotationView(CreateView):
 
         # Get appointment if pk provided
         if 'pk' in self.kwargs:
-            appointment = get_object_or_404(Appointment, appointment.pk=self.kwargs['pk'])
+            appointment = get_object_or_404(Appointment, pk=self.kwargs['pk'])
             form.instance.appointment = appointment
         
         if formset.is_valid():
@@ -622,7 +622,7 @@ def create_quotation_api(request):
             status='draft'
         )
 
-        
+
 @method_decorator(staff_required, name='dispatch')
 class ViewQuotationView(DetailView):
     model = Quotation
