@@ -1122,10 +1122,11 @@
 
     // Replace the saveQuotation function in create_quotation.html with this:
 
+    // Replace the saveQuotation function with this updated version
     async function saveQuotation() {
         const clientName = document.getElementById('clientName').value.trim();
         const projectType = document.getElementById('projectType').value.trim();
-        // In the saveQuotation function, ensure appointment_id is set
+
         if (!clientName || !projectType) {
             showAlert('Please fill in required fields', 'error');
             return;
@@ -1133,6 +1134,12 @@
 
         if (items.length === 0) {
             showAlert('Please add at least one item', 'error');
+            return;
+        }
+
+        // Check if we have an appointment ID
+        if (!currentAppointmentId) {
+            showAlert('Error: No appointment associated with this quotation. Please access this page from an appointment detail page.', 'error');
             return;
         }
 
@@ -1145,7 +1152,6 @@
         const transport = parseFloat(document.getElementById('transportCost').value) || 0;
 
         const quotationData = {
-            
             appointment_id: currentAppointmentId,
             items: items.map(item => ({
                 name: item.name,
