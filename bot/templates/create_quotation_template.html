@@ -674,7 +674,7 @@
             newRow.id = `row-${formIdx}`;
 
             // Clear line total
-            newRow.querySelector('.line-total').value = '0.00';
+    //        newRow.querySelector('.line-total').value = '0.00';
 
             // Remove deleted-row class if present
             newRow.classList.remove('deleted-row');
@@ -712,19 +712,7 @@
                 return false;
             }
 
-            // Check if required fields are filled
-            let hasEmptyRequired = false;
-            visibleRows.forEach(row => {
-                const desc = row.querySelector('input[id$="-description"]')?.value.trim();
-                const qty = row.querySelector('input[id$="-quantity"]')?.value;
-                const price = row.querySelector('input[id$="-unit_price"]')?.value;
-
-                if (!desc || !qty || !price) {
-                    hasEmptyRequired = true;
-                    row.style.backgroundColor = '#fee';
-                    setTimeout(() => row.style.backgroundColor = '', 2000);
-                }
-            });
+            
 
         });
 
