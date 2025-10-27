@@ -896,16 +896,13 @@
                     <h4>Project Type</h4>
                     <select name="project_type" class="form-select">
                         <option value="">All Project Types</option>
-                        <option value="bathroom_renovation" {% if request.GET.project_type=='bathroom_renovation'
-                            %}selected{% endif %}>
+                        <option value="bathroom_renovation" {% if request.GET.project_type == 'bathroom_renovation'%}selected{% endif %}>
                             Bathroom Renovation
                         </option>
-                        <option value="kitchen_renovation" {% if request.GET.project_type=='kitchen_renovation'
-                            %}selected{% endif %}>
+                        <option value="kitchen_renovation" {% if request.GET.project_type == 'kitchen_renovation'%}selected{% endif %}>
                             Kitchen Renovation
                         </option>
-                        <option value="new_plumbing_installation" {% if
-                            request.GET.project_type=='new_plumbing_installation' %}selected{% endif %}>
+                        <option value="new_plumbing_installation" {% if request.GET.project_type == 'new_plumbing_installation' %}selected{% endif %}>
                             New Installation
                         </option>
                     </select>
@@ -915,8 +912,8 @@
                     <h4>Status</h4>
                     <select name="status" class="form-select">
                         <option value="">All Status</option>
-                        <option value="active" {% if request.GET.status=='active' %}selected{% endif %}>Active</option>
-                        <option value="inactive" {% if request.GET.status=='inactive' %}selected{% endif %}>Inactive
+                        <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive
                         </option>
                     </select>
                 </div>
@@ -967,7 +964,7 @@
                             <div class="stat-label">Items</div>
                         </div>
                         <div class="stat">
-                            <div class="stat-value">R{{ template.get_total_estimated_cost|floatformat:2 }}</div>
+                            <div class="stat-value">${{ template.get_total_estimated_cost|floatformat:2 }}</div>
                             <div class="stat-label">Est. Cost</div>
                         </div>
                         <div class="stat">
@@ -1034,7 +1031,7 @@
                 {% endif %}
 
                 {% for num in page_obj.paginator.page_range %}
-                {% if num == page_obj.number %}
+                {% if num  ==  page_obj.number %}
                 <span class="page-btn active">{{ num }}</span>
                 {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %} <a class="page-btn"
                     href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
@@ -1070,8 +1067,8 @@
         const form = document.getElementById('filterForm');
         const inputs = form.querySelectorAll('input, select');
         inputs.forEach(input => {
-            if (input.type === 'text') input.value = '';
-            if (input.type === 'select-one') input.selectedIndex = 0;
+            if (input.type  == = 'text') input.value = '';
+            if (input.type  == = 'select-one') input.selectedIndex = 0;
         });
         form.submit();
     }
@@ -1089,7 +1086,7 @@
                 viewOptions.forEach(opt => opt.classList.remove('active'));
                 this.classList.add('active');
 
-                if (viewType === 'grid') {
+                if (viewType  == = 'grid') {
                     templatesView.style.display = 'grid';
                     desktopTable.style.display = 'none';
                 } else {
