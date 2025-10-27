@@ -526,13 +526,6 @@
             addNewRow();
         });
 
-        // Auto-focus on description when new row is added
-        function focusNewRow(row) {
-            const descInput = row.querySelector('input[id$="-description"]');
-            if (descInput) {
-                setTimeout(() => descInput.focus(), 100);
-            }
-        }
 
         function calculateLineTotal(row) {
             const qtyInput = row.querySelector('input[id$="-quantity"]');
@@ -680,7 +673,6 @@
             tbody.appendChild(newRow);
 
             // Focus on new row
-            focusNewRow(newRow);
 
             // Recalculate totals
             calculateAllTotals();
