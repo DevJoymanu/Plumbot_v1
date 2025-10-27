@@ -482,10 +482,12 @@
     </div>
 </div>
 
+
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         let totalForms = document.querySelector('#id_items-TOTAL_FORMS');
         let formIdx = parseInt(totalForms.value);
+        let isSubmitting = false;
 
         // Initialize calculations on load
         calculateAllTotals();
@@ -686,24 +688,103 @@
             }
         });
 
-        // Form validation before submit
-        document.getElementById('templateForm').addEventListener('submit', function (e) {
-            // First delete empty rows before validation
-            const emptyRowsDeleted = deleteEmptyRows();
-            console.log(`Deleted ${emptyRowsDeleted} empty rows before submission`);
+        // Custom save button handler
+        function setupSaveButton() {
+            const saveButton = document.querySelector('button[type="submit"], input[type="submit"]');
+            if (saveButton) {
+                saveButton.addEventListener('click', function (e) {
+                    if (isSubmitting) return; // Prevent double submission
 
-            const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
+                    e.preventDefault(); // Prevent immediate form submission
 
-            if (visibleRows.length === 0) {
-                e.preventDefault();
-                alert('Please add at least one item to the template.');
-                return false;
+                    // Delete empty rows first
+                    const emptyRowsDeleted = deleteEmptyRows();
+                    console.log(`Deleted ${emptyRowsDeleted} empty rows before submission`);
+
+                    // Recalculate totals after deletion
+                    calculateAllTotals();
+
+                    // Validate form
+                    const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
+
+                    if (visibleRows.length === 0) {
+                        alert('Please add at least one item to the template.');
+                        return false;
+                    }
+
+                    // Check if required fields are filled
+                    let hasEmptyRequired = false;
+                    visibleRows.forEach(row => {
+                        const desc = row.querySelector('input[id$="-description"]')?.value.trim();
+                        const qty = row.querySelector('input[id$="-quantity"]')?.value;
+                        const price = row.querySelector('input[id$="-unit_price"]')?.value;
+
+                        if (!desc || !qty || !price) {
+                            hasEmptyRequired = true;
+                            row.style.backgroundColor = '#fee';
+                            setTimeout(() => row.style.backgroundColor = '', 2000);
+                        }
+                    });
+
+                    if (hasEmptyRequired) {
+                        alert('Please fill in all required fields (Description, Quantity, Unit Price) for all items.');
+                        return false;
+                    }
+
+                    // If validation passes, submit the form
+                    isSubmitting = true;
+                    document.getElementById('templateForm').submit();
+                });
             }
+        }
 
+        // Form validation before submit (fallback for Enter key in form)
+        document.getElementById('templateForm').addEventListener('submit', function (e) {
+            if (!isSubmitting) {
+                e.preventDefault();
 
-            // Recalculate totals after deleting empty rows
-            calculateAllTotals();
+                // Delete empty rows first
+                const emptyRowsDeleted = deleteEmptyRows();
+                console.log(`Deleted ${emptyRowsDeleted} empty rows before submission`);
+
+                // Recalculate totals after deletion
+                calculateAllTotals();
+
+                // Validate form
+                const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
+
+                if (visibleRows.length === 0) {
+                    alert('Please add at least one item to the template.');
+                    return false;
+                }
+
+                // Check if required fields are filled
+                let hasEmptyRequired = false;
+                visibleRows.forEach(row => {
+                    const desc = row.querySelector('input[id$="-description"]')?.value.trim();
+                    const qty = row.querySelector('input[id$="-quantity"]')?.value;
+                    const price = row.querySelector('input[id$="-unit_price"]')?.value;
+
+                    if (!desc || !qty || !price) {
+                        hasEmptyRequired = true;
+                        row.style.backgroundColor = '#fee';
+                        setTimeout(() => row.style.backgroundColor = '', 2000);
+                    }
+                });
+
+                if (hasEmptyRequired) {
+                    alert('Please fill in all required fields (Description, Quantity, Unit Price) for all items.');
+                    return false;
+                }
+
+                // If validation passes, allow form submission
+                isSubmitting = true;
+                return true;
+            }
         });
+
+        // Initialize save button handler
+        setupSaveButton();
 
         // Smooth scroll to new row
         function smoothScrollToRow(row) {
@@ -720,4 +801,5 @@
         });
     });
 </script>
+
 {% endblock %}
