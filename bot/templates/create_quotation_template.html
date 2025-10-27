@@ -483,260 +483,241 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    let totalForms = document.querySelector('#id_items-TOTAL_FORMS');
-    let formIdx = parseInt(totalForms.value);
-    
-    // Initialize calculations on load
-    calculateAllTotals();
-    
-    // Auto-calculate line totals
-    document.addEventListener('input', function(e) {
-        if (e.target.matches('input[id$="-quantity"], input[id$="-unit_price"]')) {
-            const row = e.target.closest('tr');
-            calculateLineTotal(row);
-            calculateAllTotals();
-            checkIfNewRowNeeded();
-        }
-    });
-    
-    // Labor and transport cost updates
-    document.querySelector('#id_default_labor_cost').addEventListener('input', calculateAllTotals);
-    document.querySelector('#id_default_transport_cost').addEventListener('input', calculateAllTotals);
-    
-    // Delete button functionality
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('.delete-btn')) {
-            e.preventDefault();
-            const row = e.target.closest('tr');
-            const deleteCheckbox = row.querySelector('input[id$="-DELETE"]');
-            
-            if (deleteCheckbox) {
-                deleteCheckbox.checked = !deleteCheckbox.checked;
-                row.classList.toggle('deleted-row');
+    document.addEventListener('DOMContentLoaded', function () {
+        let totalForms = document.querySelector('#id_items-TOTAL_FORMS');
+        let formIdx = parseInt(totalForms.value);
+
+        // Initialize calculations on load
+        calculateAllTotals();
+
+        // Auto-calculate line totals
+        document.addEventListener('input', function (e) {
+            if (e.target.matches('input[id$="-quantity"], input[id$="-unit_price"]')) {
+                const row = e.target.closest('tr');
+                calculateLineTotal(row);
                 calculateAllTotals();
-            }
-        }
-    });
-    
-    // Add row button
-    document.getElementById('addRowBtn').addEventListener('click', function() {
-        addNewRow();
-    });
-    
-    // Auto-focus on description when new row is added
-    function focusNewRow(row) {
-        const descInput = row.querySelector('input[id$="-description"]');
-        if (descInput) {
-            setTimeout(() => descInput.focus(), 100);
-        }
-    }
-    
-    function calculateLineTotal(row) {
-        const qtyInput = row.querySelector('input[id$="-quantity"]');
-        const priceInput = row.querySelector('input[id$="-unit_price"]');
-        const totalInput = row.querySelector('.line-total');
-        
-        if (qtyInput && priceInput && totalInput) {
-            const qty = parseFloat(qtyInput.value) || 0;
-            const price = parseFloat(priceInput.value) || 0;
-            const total = qty * price;
-            
-            totalInput.value = total.toFixed(2);
-            totalInput.classList.add('calculating');
-            setTimeout(() => totalInput.classList.remove('calculating'), 300);
-        }
-    }
-    
-    function calculateAllTotals() {
-        let itemsSubtotal = 0;
-        const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
-        
-        rows.forEach(row => {
-            const totalInput = row.querySelector('.line-total');
-            if (totalInput && totalInput.value) {
-                itemsSubtotal += parseFloat(totalInput.value) || 0;
+                checkIfNewRowNeeded();
             }
         });
-        
-        const laborCost = parseFloat(document.querySelector('#id_default_labor_cost').value) || 0;
-        const transportCost = parseFloat(document.querySelector('#id_default_transport_cost').value) || 0;
-        const grandTotal = itemsSubtotal + laborCost + transportCost;
-        
-        document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
-        document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
-        document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
-        document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
-    }
-    
-    function checkIfNewRowNeeded() {
-        const rows = Array.from(document.querySelectorAll('.item-row:not(.deleted-row)'));
-        
-        // Check if all visible rows have data
-        const allFilled = rows.every(row => {
-            const desc = row.querySelector('input[id$="-description"]')?.value.trim();
-            const qty = row.querySelector('input[id$="-quantity"]')?.value;
-            const price = row.querySelector('input[id$="-unit_price"]')?.value;
-            
-            return desc && qty && price;
-        });
-        
-        // If all rows are filled, add a new one
-        if (allFilled && rows.length > 0) {
-            addNewRow();
-        }
-    }
-    
-    function deleteEmptyRows() {
-        const rows = Array.from(document.querySelectorAll('.item-row:not(.deleted-row)'));
-        let emptyRowsDeleted = 0;
-        
-        // Don't delete if there's only one row left
-        if (rows.length <= 1) return 0;
-        
-        rows.forEach(row => {
-            const descInput = row.querySelector('input[id$="-description"]');
-            const qtyInput = row.querySelector('input[id$="-quantity"]');
-            const priceInput = row.querySelector('input[id$="-unit_price"]');
-            
-            const description = descInput?.value.trim() || '';
-            const quantity = parseFloat(qtyInput?.value) || 0;
-            const unitPrice = parseFloat(priceInput?.value) || 0;
-            
-            // Check if row is empty and has quantity of 1
-            const isEmpty = description === '' && unitPrice === 0;
-            const hasQtyOne = quantity === 1;
-            
-            if (isEmpty && hasQtyOne) {
+
+        // Labor and transport cost updates
+        document.querySelector('#id_default_labor_cost').addEventListener('input', calculateAllTotals);
+        document.querySelector('#id_default_transport_cost').addEventListener('input', calculateAllTotals);
+
+        // Delete button functionality
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('.delete-btn')) {
+                e.preventDefault();
+                const row = e.target.closest('tr');
                 const deleteCheckbox = row.querySelector('input[id$="-DELETE"]');
+
                 if (deleteCheckbox) {
-                    deleteCheckbox.checked = true;
-                    row.classList.add('deleted-row');
-                    emptyRowsDeleted++;
+                    deleteCheckbox.checked = !deleteCheckbox.checked;
+                    row.classList.toggle('deleted-row');
+                    calculateAllTotals();
                 }
             }
         });
-        
-        return emptyRowsDeleted;
-    }
-    
-    function addNewRow() {
-        const tbody = document.getElementById('itemsTableBody');
-        const newRow = tbody.querySelector('tr:first-child').cloneNode(true);
-        
-        // Update form index
-        formIdx++;
-        totalForms.value = formIdx;
-        
-        // Update all field names and IDs
-        newRow.querySelectorAll('input, select, textarea').forEach(field => {
-            const name = field.getAttribute('name');
-            const id = field.getAttribute('id');
-            
-            if (name) {
-                field.setAttribute('name', name.replace(/items-\d+/, `items-${formIdx - 1}`));
-            }
-            if (id) {
-                field.setAttribute('id', id.replace(/items-\d+/, `items-${formIdx - 1}`));
-            }
-            
-            // Clear values except quantity (set to 1)
-            if (field.getAttribute('id')?.endsWith('-quantity')) {
-                field.value = '1';
-            } else if (field.getAttribute('id')?.endsWith('-sort_order')) {
-                field.value = formIdx;
-            } else if (field.type !== 'checkbox') {
-                field.value = '';
-            } else {
-                field.checked = false;
-            }
-        });
-        
-        // Update row number
-        newRow.querySelector('.item-number').textContent = formIdx;
-        newRow.dataset.itemId = formIdx;
-        newRow.id = `row-${formIdx}`;
-        
-        // Clear line total
-        newRow.querySelector('.line-total').value = '0.00';
-        
-        // Remove deleted-row class if present
-        newRow.classList.remove('deleted-row');
-        
-        // Add new-row animation class
-        newRow.classList.add('new-row');
-        setTimeout(() => newRow.classList.remove('new-row'), 2000);
-        
-        // Append to tbody
-        tbody.appendChild(newRow);
-        
-        // Focus on new row
-        focusNewRow(newRow);
-        
-        // Recalculate totals
-        calculateAllTotals();
-    }
-    
-    // Keyboard shortcuts
-    document.addEventListener('keydown', function(e) {
-        // Ctrl/Cmd + Enter to add new row
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-            e.preventDefault();
+
+        // Add row button
+        document.getElementById('addRowBtn').addEventListener('click', function () {
             addNewRow();
+        });
+
+        // Auto-focus on description when new row is added
+        function focusNewRow(row) {
+            const descInput = row.querySelector('input[id$="-description"]');
+            if (descInput) {
+                setTimeout(() => descInput.focus(), 100);
+            }
         }
-    });
-    
-    // Form validation before submit
-    document.getElementById('templateForm').addEventListener('submit', function(e) {
-        // First delete empty rows before validation
-        const emptyRowsDeleted = deleteEmptyRows();
-        console.log(`Deleted ${emptyRowsDeleted} empty rows before submission`);
-        
-        const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
-        
-        if (visibleRows.length === 0) {
-            e.preventDefault();
-            alert('Please add at least one item to the template.');
-            return false;
+
+        function calculateLineTotal(row) {
+            const qtyInput = row.querySelector('input[id$="-quantity"]');
+            const priceInput = row.querySelector('input[id$="-unit_price"]');
+            const totalInput = row.querySelector('.line-total');
+
+            if (qtyInput && priceInput && totalInput) {
+                const qty = parseFloat(qtyInput.value) || 0;
+                const price = parseFloat(priceInput.value) || 0;
+                const total = qty * price;
+
+                totalInput.value = total.toFixed(2);
+                totalInput.classList.add('calculating');
+                setTimeout(() => totalInput.classList.remove('calculating'), 300);
+            }
         }
-        
-        // Check if required fields are filled
-        let hasEmptyRequired = false;
-        visibleRows.forEach(row => {
-            const desc = row.querySelector('input[id$="-description"]')?.value.trim();
-            const qty = row.querySelector('input[id$="-quantity"]')?.value;
-            const price = row.querySelector('input[id$="-unit_price"]')?.value;
-            
-            if (!desc || !qty || !price) {
-                hasEmptyRequired = true;
-                row.style.backgroundColor = '#fee';
-                setTimeout(() => row.style.backgroundColor = '', 2000);
+
+        function calculateAllTotals() {
+            let itemsSubtotal = 0;
+            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
+
+            rows.forEach(row => {
+                const totalInput = row.querySelector('.line-total');
+                if (totalInput && totalInput.value) {
+                    itemsSubtotal += parseFloat(totalInput.value) || 0;
+                }
+            });
+
+            const laborCost = parseFloat(document.querySelector('#id_default_labor_cost').value) || 0;
+            const transportCost = parseFloat(document.querySelector('#id_default_transport_cost').value) || 0;
+            const grandTotal = itemsSubtotal + laborCost + transportCost;
+
+            document.getElementById('itemsSubtotal').textContent = 'R ' + itemsSubtotal.toFixed(2);
+            document.getElementById('laborCost').textContent = 'R ' + laborCost.toFixed(2);
+            document.getElementById('transportCost').textContent = 'R ' + transportCost.toFixed(2);
+            document.getElementById('grandTotal').textContent = 'R ' + grandTotal.toFixed(2);
+        }
+
+        function checkIfNewRowNeeded() {
+            const rows = Array.from(document.querySelectorAll('.item-row:not(.deleted-row)'));
+
+            // Check if all visible rows have data
+            const allFilled = rows.every(row => {
+                const desc = row.querySelector('input[id$="-description"]')?.value.trim();
+                const qty = row.querySelector('input[id$="-quantity"]')?.value;
+                const price = row.querySelector('input[id$="-unit_price"]')?.value;
+
+                return desc && qty && price;
+            });
+
+            // If all rows are filled, add a new one
+            if (allFilled && rows.length > 0) {
+                addNewRow();
+            }
+        }
+
+        function deleteEmptyRows() {
+            const rows = Array.from(document.querySelectorAll('.item-row:not(.deleted-row)'));
+            let emptyRowsDeleted = 0;
+
+            // Don't delete if there's only one row left
+            if (rows.length <= 1) return 0;
+
+            rows.forEach(row => {
+                const descInput = row.querySelector('input[id$="-description"]');
+                const qtyInput = row.querySelector('input[id$="-quantity"]');
+                const priceInput = row.querySelector('input[id$="-unit_price"]');
+
+                const description = descInput?.value.trim() || '';
+                const quantity = parseFloat(qtyInput?.value) || 0;
+                const unitPrice = parseFloat(priceInput?.value) || 0;
+
+                // Check if row is empty and has quantity of 1
+                const isEmpty = description === '' && unitPrice === 0;
+                const hasQtyOne = quantity === 1;
+
+                if (isEmpty && hasQtyOne) {
+                    const deleteCheckbox = row.querySelector('input[id$="-DELETE"]');
+                    if (deleteCheckbox) {
+                        deleteCheckbox.checked = true;
+                        row.classList.add('deleted-row');
+                        emptyRowsDeleted++;
+                    }
+                }
+            });
+
+            return emptyRowsDeleted;
+        }
+
+        function addNewRow() {
+            const tbody = document.getElementById('itemsTableBody');
+            const newRow = tbody.querySelector('tr:first-child').cloneNode(true);
+
+            // Update form index
+            formIdx++;
+            totalForms.value = formIdx;
+
+            // Update all field names and IDs
+            newRow.querySelectorAll('input, select, textarea').forEach(field => {
+                const name = field.getAttribute('name');
+                const id = field.getAttribute('id');
+
+                if (name) {
+                    field.setAttribute('name', name.replace(/items-\d+/, `items-${formIdx - 1}`));
+                }
+                if (id) {
+                    field.setAttribute('id', id.replace(/items-\d+/, `items-${formIdx - 1}`));
+                }
+
+                // Clear values except quantity (set to 1)
+                if (field.getAttribute('id')?.endsWith('-quantity')) {
+                    field.value = '1';
+                } else if (field.getAttribute('id')?.endsWith('-sort_order')) {
+                    field.value = formIdx;
+                } else if (field.type !== 'checkbox') {
+                    field.value = '';
+                } else {
+                    field.checked = false;
+                }
+            });
+
+            // Update row number
+            newRow.querySelector('.item-number').textContent = formIdx;
+            newRow.dataset.itemId = formIdx;
+            newRow.id = `row-${formIdx}`;
+
+            // Clear line total
+            newRow.querySelector('.line-total').value = '0.00';
+
+            // Remove deleted-row class if present
+            newRow.classList.remove('deleted-row');
+
+            // Add new-row animation class
+            newRow.classList.add('new-row');
+            setTimeout(() => newRow.classList.remove('new-row'), 2000);
+
+            // Append to tbody
+            tbody.appendChild(newRow);
+
+            // Focus on new row
+            focusNewRow(newRow);
+
+            // Recalculate totals
+            calculateAllTotals();
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function (e) {
+            // Ctrl/Cmd + Enter to add new row
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                addNewRow();
             }
         });
-        
-        if (hasEmptyRequired) {
-            e.preventDefault();
-            alert('Please fill in all required fields (Description, Quantity, Unit Price) for all items.');
-            return false;
+
+        // Form validation before submit
+        document.getElementById('templateForm').addEventListener('submit', function (e) {
+            // First delete empty rows before validation
+            const emptyRowsDeleted = deleteEmptyRows();
+            console.log(`Deleted ${emptyRowsDeleted} empty rows before submission`);
+
+            const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
+
+            if (visibleRows.length === 0) {
+                e.preventDefault();
+                alert('Please add at least one item to the template.');
+                return false;
+            }
+
+
+            // Recalculate totals after deleting empty rows
+            calculateAllTotals();
+        });
+
+        // Smooth scroll to new row
+        function smoothScrollToRow(row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        
-        // Recalculate totals after deleting empty rows
-        calculateAllTotals();
+
+        // Auto-save indication (optional)
+        let saveTimeout;
+        document.addEventListener('input', function () {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                console.log('Changes detected - remember to save!');
+            }, 1000);
+        });
     });
-    
-    // Smooth scroll to new row
-    function smoothScrollToRow(row) {
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-    
-    // Auto-save indication (optional)
-    let saveTimeout;
-    document.addEventListener('input', function() {
-        clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
-            console.log('Changes detected - remember to save!');
-        }, 1000);
-    });
-});
 </script>
 {% endblock %}
