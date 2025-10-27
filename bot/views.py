@@ -56,6 +56,7 @@ from .decorators import staff_required
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
 import logging
+logger = logging.getLogger(__name__)
 
 
 
@@ -591,7 +592,6 @@ class CreateQuotationView(CreateView):
 @csrf_exempt
 @require_http_methods(["POST"])
 
-logger = logging.getLogger(__name__)
 
 def create_quotation_api(request):
     """API endpoint for creating quotations from the quotation generator page"""
