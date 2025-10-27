@@ -594,6 +594,14 @@ class CreateQuotationView(CreateView):
 def create_quotation_api(request):
     """API endpoint for creating quotations from the quotation generator page"""
     try:
+        
+        if not request.data.get('appointment_id'):
+            return Response(
+                {'error': 'appointment_id is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
         data = json.loads(request.body)
         
         # Get appointment if provided
@@ -613,6 +621,7 @@ def create_quotation_api(request):
             materials_cost=data.get('materials_cost', 0),
             notes=data.get('notes', ''),
             status='draft'
+            appointment_id=request.data['appointment_id'],  # This was missing
         )
         
         # Create quotation items
