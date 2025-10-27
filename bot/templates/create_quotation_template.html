@@ -363,7 +363,8 @@
                             <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %}"></i>
                             {% if object %}Edit{% else %}Create{% endif %} Template
                         </h2>
-                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation template{% endif %}</p>
+                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation template{%
+                            endif %}</p>
                     </div>
                     <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary mt-2 mt-md-0">
                         <i class="bi bi-arrow-left"></i> Back to Templates
@@ -580,6 +581,13 @@
             addNewRow();
         });
 
+        // Auto-focus on description when new row is added
+        function focusNewRow(row) {
+            const descInput = row.querySelector('input[id$="-description"]');
+            if (descInput) {
+                setTimeout(() => descInput.focus(), 100);
+            }
+        }
 
         function calculateLineTotal(row) {
             const qtyInput = row.querySelector('input[id$="-quantity"]');
@@ -674,7 +682,7 @@
             newRow.id = `row-${formIdx}`;
 
             // Clear line total
-    //        newRow.querySelector('.line-total').value = '0.00';
+            newRow.querySelector('.line-total').value = '0.00';
 
             // Remove deleted-row class if present
             newRow.classList.remove('deleted-row');
@@ -704,19 +712,13 @@
 
         // Form validation before submit
         document.getElementById('templateForm').addEventListener('submit', function (e) {
-            const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
-
-            if (visibleRows.length === 0) {
-                e.preventDefault();
-                alert('Please add at least one item to the template.');
-                return false;
-            }
-
-            
 
         });
 
         // Smooth scroll to new row
+        function smoothScrollToRow(row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
 
         // Auto-save indication (optional)
         let saveTimeout;
