@@ -55,6 +55,7 @@ from django.db.models import Q
 from .decorators import staff_required
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
+import logging
 
 
 
@@ -591,34 +592,48 @@ class CreateQuotationView(CreateView):
 # Add this separate view for API-based quotation creation
 @csrf_exempt
 @require_http_methods(["POST"])
+
+logger = logging.getLogger(__name__)
+
 def create_quotation_api(request):
     """API endpoint for creating quotations from the quotation generator page"""
+    logger.info("🔹 Received request to create a new quotation")
+
     try:
         data = json.loads(request.body)
-        
+        logger.debug(f"📦 Parsed request data: {data}")
+
         # Get appointment if provided
         appointment = None
         appointment_id = data.get('appointment_id')
         if appointment_id:
+            logger.debug(f"🔍 Looking up Appointment with ID: {appointment_id}")
             try:
                 appointment = Appointment.objects.get(id=appointment_id)
+                logger.info(f"✅ Found Appointment: {appointment}")
             except Appointment.DoesNotExist:
-                pass
+                logger.warning(f"⚠️ Appointment with ID {appointment_id} not found.")
+                appointment = None
         
         # Create the quotation
+        logger.debug("🧾 Creating Quotation record...")
         quotation = Quotation.objects.create(
             appointment=appointment,
             labor_cost=data.get('labour_cost', 0),
-            transport_cost=data.get('2', 0),
+            transport_cost=data.get('transport_cost', data.get('2', 0)),  # possible typo fix
             materials_cost=data.get('materials_cost', 0),
             notes=data.get('notes', ''),
             status='draft'
         )
-        
+        logger.info(f"✅ Quotation created with ID: {quotation.id}")
+
         # Create quotation items
         items_created = 0
-        for item_data in data.get('items', []):
-            if item_data.get('name'):  # Only create if name is provided
+        items_data = data.get('items', [])
+        logger.debug(f"🧩 Creating {len(items_data)} quotation items...")
+        for idx, item_data in enumerate(items_data, start=1):
+            logger.debug(f"➡️ Processing item {idx}: {item_data}")
+            if item_data.get('name'):
                 QuotationItem.objects.create(
                     quotation=quotation,
                     description=item_data.get('name', ''),
@@ -626,11 +641,15 @@ def create_quotation_api(request):
                     unit_price=item_data.get('unit', 0)
                 )
                 items_created += 1
-        
+                logger.debug(f"✅ Created item {idx} successfully")
+            else:
+                logger.warning(f"⚠️ Skipped item {idx} due to missing 'name' field")
+
         # Recalculate total
         quotation.save()
-        
-        return JsonResponse({
+        logger.info(f"💰 Quotation total recalculated: {quotation.total_amount}")
+
+        response_data = {
             'success': True,
             'message': 'Quotation created successfully',
             'quotation_id': quotation.id,
@@ -638,22 +657,24 @@ def create_quotation_api(request):
             'appointment_id': appointment.id if appointment else None,
             'items_created': items_created,
             'total_amount': float(quotation.total_amount)
-        })
-        
+        }
+        logger.debug(f"📤 Response data: {response_data}")
+
+        return JsonResponse(response_data)
+
     except json.JSONDecodeError:
+        logger.error("❌ Failed to decode JSON from request body", exc_info=True)
         return JsonResponse({
             'success': False,
             'error': 'Invalid JSON data'
         }, status=400)
+
     except Exception as e:
-        print(f"❌ Error creating quotation: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"❌ Unexpected error while creating quotation: {e}")
         return JsonResponse({
             'success': False,
             'error': str(e)
         }, status=500)
-
 
 @method_decorator(staff_required, name='dispatch')
 class ViewQuotationView(DetailView):
