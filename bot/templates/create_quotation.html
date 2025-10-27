@@ -1125,7 +1125,7 @@
     async function saveQuotation() {
         const clientName = document.getElementById('clientName').value.trim();
         const projectType = document.getElementById('projectType').value.trim();
-
+        // In the saveQuotation function, ensure appointment_id is set
         if (!clientName || !projectType) {
             showAlert('Please fill in required fields', 'error');
             return;
@@ -1145,6 +1145,7 @@
         const transport = parseFloat(document.getElementById('transportCost').value) || 0;
 
         const quotationData = {
+            
             appointment_id: currentAppointmentId,
             items: items.map(item => ({
                 name: item.name,

@@ -591,8 +591,6 @@ class CreateQuotationView(CreateView):
 # Add this separate view for API-based quotation creation
 @csrf_exempt
 @require_http_methods(["POST"])
-
-
 def create_quotation_api(request):
     """API endpoint for creating quotations from the quotation generator page"""
     logger.info("🔹 Received request to create a new quotation")
@@ -601,29 +599,37 @@ def create_quotation_api(request):
         data = json.loads(request.body)
         logger.debug(f"📦 Parsed request data: {data}")
 
-        # Get appointment if provided
-        appointment = None
+        # Get appointment - this is REQUIRED
         appointment_id = data.get('appointment_id')
-        if appointment_id:
-            logger.debug(f"🔍 Looking up Appointment with ID: {appointment_id}")
-            try:
-                appointment = Appointment.objects.get(id=appointment_id)
-                logger.info(f"✅ Found Appointment: {appointment}")
-            except Appointment.DoesNotExist:
-                logger.warning(f"⚠️ Appointment with ID {appointment_id} not found.")
-                appointment = None
+        if not appointment_id:
+            logger.error("❌ No appointment_id provided")
+            return JsonResponse({
+                'success': False,
+                'error': 'appointment_id is required'
+            }, status=400)
+
+        logger.debug(f"🔍 Looking up Appointment with ID: {appointment_id}")
+        try:
+            appointment = Appointment.objects.get(id=appointment_id)
+            logger.info(f"✅ Found Appointment: {appointment}")
+        except Appointment.DoesNotExist:
+            logger.error(f"❌ Appointment with ID {appointment_id} not found")
+            return JsonResponse({
+                'success': False,
+                'error': f'Appointment with ID {appointment_id} not found'
+            }, status=404)
         
         # Create the quotation
         logger.debug("🧾 Creating Quotation record...")
         quotation = Quotation.objects.create(
-            appointment=appointment,
+            appointment=appointment,  # This is now guaranteed to exist
             labor_cost=data.get('labour_cost', 0),
-            transport_cost=data.get('transport_cost', data.get('2', 0)),  # possible typo fix
+            transport_cost=data.get('transport_cost', 0),
             materials_cost=data.get('materials_cost', 0),
             notes=data.get('notes', ''),
             status='draft'
         )
-        logger.info(f"✅ Quotation created with ID : {quotation.id}")
+        logger.info(f"✅ Quotation created with ID: {quotation.id}")
 
         # Create quotation items
         items_created = 0
@@ -652,7 +658,7 @@ def create_quotation_api(request):
             'message': 'Quotation created successfully',
             'quotation_id': quotation.id,
             'quotation_number': quotation.quotation_number,
-            'appointment_id': appointment.id if appointment else None,
+            'appointment_id': appointment.id,
             'items_created': items_created,
             'total_amount': float(quotation.total_amount)
         }
@@ -673,6 +679,9 @@ def create_quotation_api(request):
             'success': False,
             'error': str(e)
         }, status=500)
+
+
+
 
 @method_decorator(staff_required, name='dispatch')
 class ViewQuotationView(DetailView):
