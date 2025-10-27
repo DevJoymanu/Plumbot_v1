@@ -433,8 +433,6 @@ def toggle_template_status(request, pk):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-
-
 @staff_required
 def appointment_detail_api(request, appointment_id):
     """API endpoint to get appointment details"""
@@ -625,7 +623,7 @@ def create_quotation_api(request):
             notes=data.get('notes', ''),
             status='draft'
         )
-        logger.info(f"✅ Quotation created with ID: {quotation.id}")
+        logger.info(f"✅ Quotation created with ID : {quotation.id}")
 
         # Create quotation items
         items_created = 0
