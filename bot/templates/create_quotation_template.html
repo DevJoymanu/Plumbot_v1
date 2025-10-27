@@ -363,8 +363,7 @@
                             <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %}"></i>
                             {% if object %}Edit{% else %}Create{% endif %} Template
                         </h2>
-                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation template{%
-                            endif %}</p>
+                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation template{%endif %}</p>
                     </div>
                     <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary mt-2 mt-md-0">
                         <i class="bi bi-arrow-left"></i> Back to Templates
