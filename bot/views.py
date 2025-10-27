@@ -655,6 +655,8 @@ def create_quotation_api(request, appointment_id):
             'error': str(e)
         }, status=500)
 
+
+
 @method_decorator(staff_required, name='dispatch')
 class ViewQuotationView(DetailView):
     model = Quotation
