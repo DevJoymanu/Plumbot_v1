@@ -231,64 +231,20 @@
     }
 
     @keyframes highlightNew {
-        0% {
-            background-color: #10b981;
-        }
-
-        100% {
-            background-color: transparent;
-        }
+        0% { background-color: #10b981; }
+        100% { background-color: transparent; }
     }
 
     /* Column widths */
-    .table th:nth-child(1),
-    .table td:nth-child(1) {
-        width: 5%;
-        text-align: center;
-    }
-
-    .table th:nth-child(2),
-    .table td:nth-child(2) {
-        width: 25%;
-    }
-
-    .table th:nth-child(3),
-    .table td:nth-child(3) {
-        width: 10%;
-    }
-
-    .table th:nth-child(4),
-    .table td:nth-child(4) {
-        width: 12%;
-    }
-
-    .table th:nth-child(5),
-    .table td:nth-child(5) {
-        width: 12%;
-    }
-
-    .table th:nth-child(6),
-    .table td:nth-child(6) {
-        width: 12%;
-        text-align: center;
-    }
-
-    .table th:nth-child(7),
-    .table td:nth-child(7) {
-        width: 8%;
-        text-align: center;
-    }
-
-    .table th:nth-child(8),
-    .table td:nth-child(8) {
-        width: 8%;
-    }
-
-    .table th:nth-child(9),
-    .table td:nth-child(9) {
-        width: 8%;
-        text-align: center;
-    }
+    .table th:nth-child(1), .table td:nth-child(1) { width: 5%; text-align: center; }
+    .table th:nth-child(2), .table td:nth-child(2) { width: 25%; }
+    .table th:nth-child(3), .table td:nth-child(3) { width: 10%; }
+    .table th:nth-child(4), .table td:nth-child(4) { width: 12%; }
+    .table th:nth-child(5), .table td:nth-child(5) { width: 12%; }
+    .table th:nth-child(6), .table td:nth-child(6) { width: 12%; text-align: center; }
+    .table th:nth-child(7), .table td:nth-child(7) { width: 8%; text-align: center; }
+    .table th:nth-child(8), .table td:nth-child(8) { width: 8%; }
+    .table th:nth-child(9), .table td:nth-child(9) { width: 8%; text-align: center; }
 
     .table input[type="text"],
     .table input[type="number"],
@@ -338,15 +294,9 @@
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
         }
-
-        .table {
-            min-width: 800px;
-        }
-
-        .btn {
-            width: 100%;
-            margin-bottom: 10px;
-        }
+        
+        .table { min-width: 800px; }
+        .btn { width: 100%; margin-bottom: 10px; }
     }
 </style>
 {% endblock %}
@@ -363,7 +313,7 @@
                             <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %}"></i>
                             {% if object %}Edit{% else %}Create{% endif %} Template
                         </h2>
-                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation template{%endif %}</p>
+                        <p>{% if object %}Update existing template{% else %}Create a new reusable quotation template{% endif %}</p>
                     </div>
                     <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary mt-2 mt-md-0">
                         <i class="bi bi-arrow-left"></i> Back to Templates
@@ -445,8 +395,7 @@
                                 </thead>
                                 <tbody id="itemsTableBody">
                                     {% for item_form in formset %}
-                                    <tr class="item-row" data-item-id="{{ forloop.counter }}"
-                                        id="row-{{ forloop.counter }}">
+                                    <tr class="item-row" data-item-id="{{ forloop.counter }}" id="row-{{ forloop.counter }}">
                                         <td class="text-center">
                                             <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
                                         </td>
@@ -464,8 +413,7 @@
                                             {{ item_form.category }}
                                         </td>
                                         <td class="text-center">
-                                            <input type="text" class="form-control form-control-sm line-total" readonly
-                                                value="0.00">
+                                            <input type="text" class="form-control form-control-sm line-total" readonly value="0.00">
                                         </td>
                                         <td class="text-center d-none d-sm-table-cell">
                                             <div class="d-flex justify-content-center">
@@ -477,8 +425,7 @@
                                         </td>
                                         <td class="text-center">
                                             {{ item_form.DELETE }}
-                                            <button type="button" class="delete-btn"
-                                                data-row-id="{{ forloop.counter }}">
+                                            <button type="button" class="delete-btn" data-row-id="{{ forloop.counter }}">
                                                 <i class="bi bi-trash"></i>
                                                 <span class="text d-none d-md-inline">Delete</span>
                                             </button>
@@ -504,9 +451,7 @@
                                     </tr>
                                     <tr>
                                         <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
-                                        <td><strong><span id="grandTotal"
-                                                    style="font-size: 1.1em; color: var(--success);">R
-                                                    0.00</span></strong></td>
+                                        <td><strong><span id="grandTotal" style="font-size: 1.1em; color: var(--success);">R 0.00</span></strong></td>
                                         <td colspan="3"></td>
                                     </tr>
                                 </tfoot>
@@ -514,8 +459,7 @@
                         </div>
 
                         <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Items are automatically added when
-                            you fill all fields. Quantities default to 1.
+                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Items are automatically added when you fill all fields. Quantities default to 1.
                         </div>
                     </div>
                 </div>
@@ -553,6 +497,14 @@
                 calculateLineTotal(row);
                 calculateAllTotals();
                 checkIfNewRowNeeded();
+                checkAndDeleteEmptyRows();
+            }
+        });
+
+        // Also check for empty rows when description changes
+        document.addEventListener('input', function (e) {
+            if (e.target.matches('input[id$="-description"]')) {
+                setTimeout(checkAndDeleteEmptyRows, 100);
             }
         });
 
@@ -574,21 +526,6 @@
                 }
             }
         });
-
-        function autoDeleteEmptyRows() {
-            const rows = document.querySelectorAll('.item-row:not(.deleted-row)');
-            rows.forEach(row => {
-                const desc = row.querySelector('input[id$="-description"]')?.value.trim();
-                const qty = row.querySelector('input[id$="-quantity"]')?.value;
-                const price = row.querySelector('input[id$="-unit_price"]')?.value;
-
-                // If empty description + price, and quantity is default 1, delete
-                if (!desc && !price && (qty === '1' || qty === 1)) {
-                    toggleDeleteRow(row);
-                }
-            });
-        }
-
 
         // Add row button
         document.getElementById('addRowBtn').addEventListener('click', function () {
@@ -658,6 +595,41 @@
             }
         }
 
+        function checkAndDeleteEmptyRows() {
+            const rows = Array.from(document.querySelectorAll('.item-row:not(.deleted-row)'));
+
+            // Don't delete if there's only one row left
+            if (rows.length <= 1) return;
+
+            rows.forEach(row => {
+                const descInput = row.querySelector('input[id$="-description"]');
+                const qtyInput = row.querySelector('input[id$="-quantity"]');
+                const priceInput = row.querySelector('input[id$="-unit_price"]');
+
+                const description = descInput?.value.trim() || '';
+                const quantity = parseFloat(qtyInput?.value) || 0;
+                const unitPrice = parseFloat(priceInput?.value) || 0;
+
+                // Check if row is empty and has quantity of 1
+                const isEmpty = description === '' && unitPrice === 0;
+                const hasQtyOne = quantity === 1;
+
+                if (isEmpty && hasQtyOne) {
+                    // Mark for deletion with visual feedback
+                    row.style.backgroundColor = '#fff0f0';
+                    setTimeout(() => {
+                        const deleteCheckbox = row.querySelector('input[id$="-DELETE"]');
+                        if (deleteCheckbox) {
+                            deleteCheckbox.checked = true;
+                            row.classList.add('deleted-row');
+                            row.style.backgroundColor = '';
+                            calculateAllTotals();
+                        }
+                    }, 500);
+                }
+            });
+        }
+
         function addNewRow() {
             const tbody = document.getElementById('itemsTableBody');
             const newRow = tbody.querySelector('tr:first-child').cloneNode(true);
@@ -713,8 +685,6 @@
 
             // Recalculate totals
             calculateAllTotals();
-            autoDeleteEmptyRows();
-
         }
 
         // Keyboard shortcuts
@@ -728,7 +698,33 @@
 
         // Form validation before submit
         document.getElementById('templateForm').addEventListener('submit', function (e) {
+            const visibleRows = document.querySelectorAll('.item-row:not(.deleted-row)');
 
+            if (visibleRows.length === 0) {
+                e.preventDefault();
+                alert('Please add at least one item to the template.');
+                return false;
+            }
+
+            // Check if required fields are filled
+            let hasEmptyRequired = false;
+            visibleRows.forEach(row => {
+                const desc = row.querySelector('input[id$="-description"]')?.value.trim();
+                const qty = row.querySelector('input[id$="-quantity"]')?.value;
+                const price = row.querySelector('input[id$="-unit_price"]')?.value;
+
+                if (!desc || !qty || !price) {
+                    hasEmptyRequired = true;
+                    row.style.backgroundColor = '#fee';
+                    setTimeout(() => row.style.backgroundColor = '', 2000);
+                }
+            });
+
+            if (hasEmptyRequired) {
+                e.preventDefault();
+                alert('Please fill in all required fields (Description, Quantity, Unit Price) for all items.');
+                return false;
+            }
         });
 
         // Smooth scroll to new row
@@ -746,4 +742,5 @@
         });
     });
 </script>
+
 {% endblock %}
