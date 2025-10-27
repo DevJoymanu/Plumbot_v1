@@ -589,24 +589,15 @@ class CreateQuotationView(CreateView):
 
 
 # Add this separate view for API-based quotation creation
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_quotation_api(request, appointment_id):
     """API endpoint for creating quotations from the quotation generator page"""
     try:
-        appointment = get_object_or_404(Appointment, id=appointment_id)
-
-        data = {
-            'id': appointment.id,
-        }        
-        # Get appointment - REQUIRED
-        appointment_id = data.get('appointment_id')
-        if not appointment_id:
-            return JsonResponse({
-                'success': False,
-                'error': 'Appointment ID is required'
-            }, status=400)
+        data = json.loads(request.body)
         
+        # Get appointment from URL parameter
         try:
             appointment = Appointment.objects.get(id=appointment_id)
         except Appointment.DoesNotExist:
@@ -619,15 +610,16 @@ def create_quotation_api(request, appointment_id):
         quotation = Quotation.objects.create(
             appointment=appointment,
             labor_cost=data.get('labour_cost', 0),
-            transport_cost=data.get('transport_cost', 0),  # Fixed typo: was '2'
+            transport_cost=data.get('transport_cost', 0),
             materials_cost=data.get('materials_cost', 0),
             notes=data.get('notes', ''),
             status='draft'
-        )        
+        )
+        
         # Create quotation items
         items_created = 0
         for item_data in data.get('items', []):
-            if item_data.get('name'):  # Only create if name is provided
+            if item_data.get('name'):
                 QuotationItem.objects.create(
                     quotation=quotation,
                     description=item_data.get('name', ''),
@@ -644,7 +636,7 @@ def create_quotation_api(request, appointment_id):
             'message': 'Quotation created successfully',
             'quotation_id': quotation.id,
             'quotation_number': quotation.quotation_number,
-            'appointment_id': appointment.id if appointment else None,
+            'appointment_id': appointment.id,
             'items_created': items_created,
             'total_amount': float(quotation.total_amount)
         })
@@ -662,7 +654,6 @@ def create_quotation_api(request, appointment_id):
             'success': False,
             'error': str(e)
         }, status=500)
-
 
 @method_decorator(staff_required, name='dispatch')
 class ViewQuotationView(DetailView):
