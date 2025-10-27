@@ -596,8 +596,9 @@ def create_quotation_api(request, appointment_id):
     try:
         appointment = get_object_or_404(Appointment, id=appointment_id)
 
-        data = json.loads(request.body)
-        
+        data = {
+            'id': appointment.id,
+        }        
         # Get appointment - REQUIRED
         appointment_id = data.get('appointment_id')
         if not appointment_id:
