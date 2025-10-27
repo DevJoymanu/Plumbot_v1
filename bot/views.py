@@ -594,6 +594,8 @@ class CreateQuotationView(CreateView):
 def create_quotation_api(request, appointment_id):
     """API endpoint for creating quotations from the quotation generator page"""
     try:
+        appointment = get_object_or_404(Appointment, id=appointment_id)
+
         data = json.loads(request.body)
         
         # Get appointment - REQUIRED
