@@ -458,11 +458,15 @@
                 <h2 class="section-title">
                     <i class="fas fa-user"></i> Client Information
                 </h2>
-                <div class="form-group">
-                    <label for="clientName">Client Name *</label>
-                    <input type="text" id="clientName" placeholder="Enter client name" required value="{{ quotation.appointment.customer_name|default:'' }}"
-                    class="form-control">
-                </div>
+                    <!-- Add hidden appointment ID field -->
+                    <input type="hidden" id="appointmentId" value="{{ appointment.id|default:'' }}">
+                    
+                    <div class="form-group">
+                        <label for="clientName">Client Name *</label>
+                        <input type="text" id="clientName" placeholder="Enter client name" required
+                            value="{{ quotation.appointment.customer_name|default:'' }}" class="form-control">
+                    </div>
+
 
                 </div>
                 <div class="form-group">
@@ -851,14 +855,28 @@
         let currentAppointmentId = null;
 
         // Auto-load appointment on page load
-        document.addEventListener('DOMContentLoaded', function () {
-            const urlParams = new URLSearchParams(window.location.search);
-            const appointmentId = urlParams.get('appointment_id');
+    // Auto-load appointment on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        const urlParams = new URLSearchParams(window.location.search);
+        const appointmentId = urlParams.get('appointment_id');
 
-            if (appointmentId) {
-                loadAppointmentData(appointmentId);
-            }
-        });
+        // Also check if appointment ID is in the hidden field
+        const hiddenAppointmentId = document.getElementById('appointmentId')?.value;
+
+        const finalAppointmentId = appointmentId || hiddenAppointmentId;
+
+        if (finalAppointmentId) {
+            loadAppointmentData(finalAppointmentId);
+        } else {
+            // Initialize with empty items if no appointment
+            items = [
+                { id: Date.now(), name: '', qty: 1, price: 0 },
+                { id: Date.now() + 1, name: '', qty: 1, price: 0 }
+            ];
+            renderItems();
+        }
+    });
+
 
         // Sample data for bathroom renovation (default items)
         const defaultBathroomItems = [
@@ -1144,14 +1162,29 @@
         const labour = parseFloat(document.getElementById('labourCost').value) || 0;
         const transport = parseFloat(document.getElementById('transportCost').value) || 0;
 
+        // Get or create appointment ID
+        let appointmentId = currentAppointmentId;
+
+        // If no appointment ID, create one from the form data
+        if (!appointmentId) {
+            try {
+                appointmentId = await createAppointmentFromForm();
+            } catch (error) {
+                showAlert('Failed to create appointment: ' + error.message, 'error');
+                saveBtn.classList.remove('loading');
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+                return;
+            }
+        }
+
         const quotationData = {
-            appointment_id: currentAppointmentId,
+            appointment_id: appointmentId,
             items: items.map(item => ({
-                name: item.name,
-                qty: item.qty,
-                unit: item.price
+                description: item.name,  // Changed from 'name' to 'description' to match your model
+                quantity: item.qty,      // Changed from 'qty' to 'quantity'
+                unit_price: item.price   // Changed from 'unit' to 'unit_price'
             })),
-            labour_cost: labour,
+            labor_cost: labour,          // Changed from 'labour_cost' to 'labor_cost'
             transport_cost: transport,
             materials_cost: materials,
             total_amount: materials + labour + transport,
@@ -1195,6 +1228,65 @@
             saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
         }
     }
+
+    // Function to create appointment from form data
+    async function createAppointmentFromForm() {
+        const clientName = document.getElementById('clientName').value.trim();
+        const clientPhone = document.getElementById('clientPhone').value.trim();
+        const projectType = document.getElementById('projectType').value.trim();
+        const projectLocation = document.getElementById('projectLocation').value.trim();
+
+        if (!clientName) {
+            throw new Error('Client name is required');
+        }
+
+        const appointmentData = {
+            customer_name: clientName,
+            phone_number: clientPhone || 'Unknown',
+            project_type: mapProjectTypeToSlug(projectType),
+            property_type: 'residential', // Default value
+            customer_area: projectLocation || 'Unknown',
+            timeline: 'asap',
+            status: 'completed',
+            has_plan: false
+        };
+
+        const csrftoken = getCookie('csrftoken');
+        const response = await fetch('/api/appointments/create/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken
+            },
+            body: JSON.stringify(appointmentData)
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            currentAppointmentId = result.appointment_id;
+            return result.appointment_id;
+        } else {
+            throw new Error(result.error || 'Failed to create appointment');
+        }
+    }
+
+    // Helper function to map project type to slug
+    function mapProjectTypeToSlug(projectType) {
+        const typeMap = {
+            'bathroom renovation': 'bathroom_renovation',
+            'kitchen renovation': 'kitchen_renovation',
+            'plumbing installation': 'new_plumbing_installation',
+            'electrical installation': 'electrical_installation',
+            'roof repair': 'roof_repair',
+            'foundation work': 'foundation_work',
+            'painting': 'interior_painting'
+        };
+
+        const lowerType = projectType.toLowerCase();
+        return typeMap[lowerType] || 'general_construction';
+    }
+
 
     // Helper function to get CSRF token
     function getCookie(name) {
