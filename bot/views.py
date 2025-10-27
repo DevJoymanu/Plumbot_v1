@@ -620,7 +620,7 @@ def create_quotation_api(request):
             transport_cost=data.get('2', 0),
             materials_cost=data.get('materials_cost', 0),
             notes=data.get('notes', ''),
-            status='draft'
+            status='draft',
             appointment_id=request.data['appointment_id'],  # This was missing
         )
         
