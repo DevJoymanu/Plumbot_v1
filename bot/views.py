@@ -594,34 +594,31 @@ class CreateQuotationView(CreateView):
 def create_quotation_api(request):
     """API endpoint for creating quotations from the quotation generator page"""
     try:
+        # For form data
+        appointment_id = request.POST.get('appointment_id')
         
-        if not request.data.get('appointment_id'):
-            return Response(
+        # OR for JSON data
+        if request.content_type == 'application/json':
+            import json
+            data = json.loads(request.body)
+            appointment_id = data.get('appointment_id')
+        else:
+            appointment_id = request.POST.get('appointment_id')
+        
+        if not appointment_id:
+            from django.http import JsonResponse
+            return JsonResponse(
                 {'error': 'appointment_id is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
+                status=400
             )
-
-
-        data = json.loads(request.body)
-        
-        # Get appointment if provided
-        appointment = None
-        appointment_id = data.get('appointment_id')
-        if appointment_id:
-            try:
-                appointment = Appointment.objects.get(id=appointment_id)
-            except Appointment.DoesNotExist:
-                pass
-        
-        # Create the quotation
+            
         quotation = Quotation.objects.create(
-            appointment=appointment,
-            labor_cost=data.get('labour_cost', 0),
-            transport_cost=data.get('2', 0),
-            materials_cost=data.get('materials_cost', 0),
-            notes=data.get('notes', ''),
+            quotation_number=quotation_number,
+            subtotal=0.00,
+            tax_amount=0.00,
+            total_amount=20.00,
             status='draft',
-            appointment_id=request.data['appointment_id'],  # This was missing
+            appointment_id=appointment_id,  # Use the extracted appointment_id
         )
         
         # Create quotation items
