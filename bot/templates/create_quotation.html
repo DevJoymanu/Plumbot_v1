@@ -400,12 +400,10 @@
         }
 
         /* Print Styles */
-/* Print Styles */
         @media print {
             body {
                 background: white;
                 padding: 0;
-                margin: 0;
             }
 
             .header,
@@ -417,105 +415,24 @@
             .preview-section {
                 display: block !important;
                 box-shadow: none !important;
-                padding: 20mm 15mm !important;
-                margin: 0 !important;
-                border-radius: 0 !important;
-                max-width: 100% !important;
+            }
+        }
+
+        /* Larger screens */
+        @media (min-width: 768px) {
+            .container {
+                max-width: 800px;
             }
 
-            .preview-header {
-                border-bottom: 3px solid #667eea;
-                padding-bottom: 15px;
-                margin-bottom: 20px;
+            .action-buttons {
+                position: relative;
+                box-shadow: none;
+                padding: 0;
+                margin-top: 20px;
             }
 
-            .preview-header h2 {
-                font-size: 1.8rem !important;
-                color: #2d3748 !important;
-            }
-
-            .preview-info {
-                background: #f9fafb !important;
-                border: 1px solid #e5e7eb;
-                page-break-inside: avoid;
-            }
-
-            .preview-table {
-                page-break-inside: auto;
-                border-collapse: collapse;
-                width: 100%;
-            }
-
-            .preview-table thead {
-                background: #667eea !important;
-                color: white !important;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-
-            .preview-table th {
-                background: #667eea !important;
-                color: white !important;
-                border: 1px solid #5568d3 !important;
-                padding: 12px 8px !important;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-
-            .preview-table td {
-                border: 1px solid #d1d5db !important;
-                padding: 10px 8px !important;
-            }
-
-            .preview-table tr {
-                page-break-inside: avoid;
-                page-break-after: auto;
-            }
-
-            .totals-card {
-                page-break-inside: avoid;
-                border: 2px solid #e5e7eb !important;
-                margin-top: 20px !important;
-            }
-
-            .totals-row:last-child {
-                background: #f3f4f6 !important;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-
-            .print-footer {
-                display: block !important;
-                margin-top: 30px;
-                padding-top: 20px;
-                border-top: 2px solid #e5e7eb;
-                page-break-inside: avoid;
-            }
-
-            .print-terms {
-                font-size: 0.75rem;
-                color: #4b5563;
-                line-height: 1.4;
-            }
-
-            .print-signature {
-                margin-top: 40px;
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 40px;
-            }
-
-            .signature-line {
-                border-top: 1px solid #000;
-                padding-top: 5px;
-                text-align: center;
-                font-size: 0.85rem;
-            }
-
-            /* Ensure colors print */
-            * {
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
+            .content-wrapper {
+                padding-bottom: 0;
             }
         }
     </style>
@@ -632,7 +549,7 @@
                         <div class="logo-container" style="text-align: center; margin-bottom: 20px;">
                             <img src="/static/images/logo.jpg" alt="HOMEBASE CONSTRUCTION"
                                 style="height: 80px; width: auto; max-width: 200px; margin: 0 auto 15px auto; display: block;">
-                            <h2 style="margin: 0; color: #2d3748; font-size: 1.5rem;"> CONSTRUCTION11</h2>
+                            <h2 style="margin: 0; color: #2d3748; font-size: 1.5rem;">HOMEBASE CONSTRUCTION</h2>
                             <p style="margin: 5px 0 0 0; font-size: 0.9rem; color: #666;">"Quality Is Our Qualification"</p>
                         </div>
                         <p style="font-size: 0.85rem; color: #666; text-align: center;">150 Northway, Seke rd, Hatfield — Harare</p>
@@ -990,6 +907,10 @@
                 }
 
                 // Auto-fill client information
+                document.getElementById('clientName').value = appointment.customer_name || '';
+                document.getElementById('clientEmail').value = appointment.customer_email || '';
+                document.getElementById('clientPhone').value = appointment.phone_number || '';
+                document.getElementById('clientAddress').value = appointment.customer_area || '';
 
                 // Auto-fill project information
                 const projectType = formatProjectType(appointment.project_type);
@@ -1155,8 +1076,7 @@
                 return;
             }
 
-            // Update preview content
-
+     
             document.getElementById('previewProject').innerHTML = `
                 <strong>${projectType}</strong><br>
                 ${document.getElementById('projectLocation').value}<br>
