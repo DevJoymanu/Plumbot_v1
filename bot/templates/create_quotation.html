@@ -465,19 +465,6 @@
                 </div>
 
                 </div>
-                <div class="form-group">
-                    <label for="clientEmail">Email</label>
-                    <input type="email" id="clientEmail" placeholder="client@example.com">
-                </div>
-                <div class="form-group">
-                    <label for="clientPhone">Phone</label>
-                    <input type="tel" id="clientPhone" placeholder="+263 77 123 4567">
-                </div>
-                <div class="form-group">
-                    <label for="clientAddress">Address</label>
-                    <input type="text" id="clientAddress" placeholder="Client address">
-                </div>
-            </div>
 
             <!-- Project Information -->
             <div class="card">
@@ -852,6 +839,11 @@
 
         // Auto-load appointment on page load
     // Replace the existing DOMContentLoaded function
+    document.addEventListener('DOMContentLoaded', function () {
+        // Get appointment ID from URL path instead of query parameters
+        const pathParts = window.location.pathname.split('/');
+        const appointmentId = pathParts[pathParts.indexOf('appointments') + 1];
+
         if (appointmentId && !isNaN(appointmentId)) {
             loadAppointmentData(parseInt(appointmentId));
         } else {
@@ -888,6 +880,30 @@
             { name: 'Shower p trap', qty: 1, price: 3 }
         ];
 
+        async function loadAppointmentData(appointmentId) {
+            try {
+                showAlert('Loading appointment data...', 'success');
+
+                // Fetch appointment data from API
+                const response = await fetch(`/api/appointments/${appointmentId}/`);
+                const appointment = await response.json();
+
+                if (appointment.error) {
+                    showAlert('Error loading appointment: ' + appointment.error, 'error');
+                    return;
+                }
+
+                // Auto-fill client information
+                document.getElementById('clientName').value = appointment.customer_name || '';
+                document.getElementById('clientEmail').value = appointment.customer_email || '';
+                document.getElementById('clientPhone').value = appointment.phone_number || '';
+                document.getElementById('clientAddress').value = appointment.customer_area || '';
+
+                // Auto-fill project information
+                const projectType = formatProjectType(appointment.project_type);
+                document.getElementById('projectType').value = projectType || '';
+                document.getElementById('projectLocation').value = appointment.customer_area || '';
+
                 // Build project notes
                 let notes = appointment.project_description || '';
                 if (appointment.property_type) {
@@ -918,10 +934,18 @@
                         { id: Date.now() + 1, name: '', qty: 1, price: 0 }
                     ];
                 }
+
+                currentAppointmentId = appointmentId;
                 renderItems();
                 calculateTotals();
 
+                showAlert('Appointment data loaded successfully!', 'success');
 
+            } catch (error) {
+                console.error('Error loading appointment:', error);
+                showAlert('Failed to load appointment data', 'error');
+            }
+        }
 
         function formatProjectType(projectType) {
             if (!projectType) return '';
