@@ -79,7 +79,7 @@ class Appointment(models.Model):
     phone_number = models.CharField(max_length=50, unique=True, help_text="Customer's WhatsApp number")
     customer_name = models.CharField(max_length=100, blank=True, null=True, help_text="Customer's full name")
     customer_email = models.EmailField(blank=True, null=True, help_text="Customer's email address")
-    has_plan = models.BooleanField(default=False, help_text="Customer has existing plans")
+    has_plan = models.BooleanField(null=True, blank=True, default=None)  # ✅ Correct!
     site_visit = models.BooleanField(default=False, help_text="Customer requested site visit")
     
     # Appointment Details

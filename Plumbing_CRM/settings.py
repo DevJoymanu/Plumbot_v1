@@ -64,20 +64,23 @@ TEMPLATES = [
 WSGI_APPLICATION = 'Plumbing_CRM.wsgi.application'
 
 # Database - Use Railway's DATABASE_URL if available, otherwise use environment variables
+import os
+from dotenv import load_dotenv
+import dj_database_url
+
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+DEBUG = os.getenv("DEBUG", "False") == "True"
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL'),
-        conn_max_age=600,
-        conn_health_checks=True,
-    ) or {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB', 'plumbing_db'),
-        'USER': os.getenv('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),
-    }
+    "default": dj_database_url.config(default=os.getenv("DATABASE_URL"))
 }
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 
 # Static & Media files
 STATIC_URL = '/static/'
