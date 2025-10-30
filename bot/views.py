@@ -2173,10 +2173,15 @@ I understand this is time-sensitive!"""
             return "Unable to load appointment context"
 
 
+
     def update_appointment_with_extracted_data(self, extracted_data):
-        """Update appointment with extracted data - COMPLETE FIX"""
+        """Update appointment with extracted data - ONLY UPDATE RELEVANT FIELDS"""
         try:
             updated_fields = []
+            next_question = self.get_next_question_to_ask()
+            
+            print(f"🔄 Updating appointment - Current question: {next_question}")
+            print(f"📦 Extracted data: {extracted_data}")
             
             # Service type - only update if we don't have one and AI found one
             if (extracted_data.get('service_type') and 
@@ -2184,20 +2189,30 @@ I understand this is time-sensitive!"""
                 not self.appointment.project_type):
                 self.appointment.project_type = extracted_data['service_type']
                 updated_fields.append('service_type')
+                print(f"✅ Updated service_type: {self.appointment.project_type}")
             
-            # FIXED: Plan status - ALWAYS update when AI finds one (was being blocked)
+            # CRITICAL FIX: Only update plan status if:
+            # 1. We don't have it yet (has_plan is None)
+            # 2. AI explicitly found one
+            # 3. We're actually asking about plans (next_question is plan_or_visit)
             if (extracted_data.get('plan_status') and 
-                extracted_data.get('plan_status') != 'null'):
+                extracted_data.get('plan_status') != 'null' and
+                self.appointment.has_plan is None and
+                next_question == "plan_or_visit"):
+                
                 old_value = self.appointment.has_plan
+                
                 # Convert string to boolean
                 if extracted_data['plan_status'] == 'has_plan':
                     self.appointment.has_plan = True
                     updated_fields.append('plan_status')
-                    print(f"✅ Updated plan status: {old_value} -> True")
+                    print(f"✅ Updated plan status: {old_value} -> True (has plan)")
                 elif extracted_data['plan_status'] == 'needs_visit':
                     self.appointment.has_plan = False
                     updated_fields.append('plan_status')
-                    print(f"✅ Updated plan status: {old_value} -> False")
+                    print(f"✅ Updated plan status: {old_value} -> False (needs visit)")
+            elif extracted_data.get('plan_status') and next_question != "plan_or_visit":
+                print(f"⚠️ Ignoring plan_status extraction - not currently asking about plans")
             
             # Area - only update if we don't have one and AI found one
             if (extracted_data.get('area') and 
@@ -2205,6 +2220,7 @@ I understand this is time-sensitive!"""
                 not self.appointment.customer_area):
                 self.appointment.customer_area = extracted_data['area']
                 updated_fields.append('area')
+                print(f"✅ Updated area: {self.appointment.customer_area}")
             
             # Timeline - only update if we don't have one and AI found one
             if (extracted_data.get('timeline') and 
@@ -2212,6 +2228,7 @@ I understand this is time-sensitive!"""
                 not self.appointment.timeline):
                 self.appointment.timeline = extracted_data['timeline']
                 updated_fields.append('timeline')
+                print(f"✅ Updated timeline: {self.appointment.timeline}")
             
             # Property type - only update if we don't have one and AI found one
             if (extracted_data.get('property_type') and 
@@ -2219,17 +2236,16 @@ I understand this is time-sensitive!"""
                 not self.appointment.property_type):
                 self.appointment.property_type = extracted_data['property_type']
                 updated_fields.append('property_type')
+                print(f"✅ Updated property_type: {self.appointment.property_type}")
             
-            # FIXED: Availability/DateTime - ALLOW UPDATES (was being blocked)
+            # Availability/DateTime
             if (extracted_data.get('availability') and 
                 extracted_data.get('availability') != 'null'):
                 try:
-                    # Parse AI datetime format
                     parsed_dt = datetime.strptime(extracted_data['availability'], '%Y-%m-%dT%H:%M')
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
                     localized_dt = sa_timezone.localize(parsed_dt)
                     
-                    # Update even if we already have a datetime (to handle time changes)
                     old_dt = self.appointment.scheduled_datetime
                     self.appointment.scheduled_datetime = localized_dt
                     updated_fields.append('availability')
@@ -2245,18 +2261,22 @@ I understand this is time-sensitive!"""
                 if self.is_valid_name(extracted_data['customer_name']):
                     self.appointment.customer_name = extracted_data['customer_name']
                     updated_fields.append('customer_name')
+                    print(f"✅ Updated customer_name: {self.appointment.customer_name}")
             
             # Save if anything was updated
             if updated_fields:
                 self.appointment.save()
-                print(f"💾 Updated appointment fields: {updated_fields}")
+                print(f"💾 Saved appointment with updated fields: {updated_fields}")
+            else:
+                print(f"ℹ️ No fields were updated")
             
             return updated_fields
             
         except Exception as e:
             print(f"❌ Error updating appointment: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return []
-
 
 
     def get_information_summary(self):
@@ -2390,6 +2410,7 @@ I understand this is time-sensitive!"""
         try:
             # Get current appointment state for context
             current_context = self.get_appointment_context()
+            next_question = self.get_next_question_to_ask()
             
             # Format current time properly
             current_time = timezone.now().strftime('%Y-%m-%d %H:%M')
@@ -2404,13 +2425,16 @@ I understand this is time-sensitive!"""
             CURRENT APPOINTMENT STATE:
             {current_context}
             
+            NEXT QUESTION WE NEED: {next_question}
+            
             CUSTOMER MESSAGE: "{message}"
             
             EXTRACTION RULES:
-            1. ONLY extract information that is CLEARLY present in the message
-            2. PRESERVE existing information - do NOT set fields to null if they already have values
-            3. Return ONLY a JSON object - no markdown, no explanations, no code blocks
-            4. Use null only for fields where no information was found in this message
+            1. ONLY extract information that is CLEARLY and EXPLICITLY present in the message
+            2. DO NOT GUESS or ASSUME - if not explicitly stated, return null
+            3. PRESERVE existing information - do NOT set fields to null if they already have values
+            4. Return ONLY a JSON object - no markdown, no explanations, no code blocks
+            5. For plan_status: ONLY extract if customer is DIRECTLY answering the plan question
             
             EXTRACTION TARGETS:
             
@@ -2418,9 +2442,14 @@ I understand this is time-sensitive!"""
             - Keywords: bathroom, kitchen, plumbing, installation, renovation, repair, toilet, shower, sink
             - Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
             
-            PLAN STATUS - Look for:
-            - Keywords: have plan, got plan, existing plan, site visit, visit, assess, quote
-            - Return: "has_plan" or "needs_visit"
+            PLAN STATUS - CRITICAL - ONLY extract if answering plan question:
+            - Context: This should ONLY be extracted when customer is answering "Do you have a plan?"
+            - YES indicators (when answering plan question): "have plan", "got plan", "existing plan", "yes", "I do", "already have"
+            - NO indicators (when answering plan question): "no plan", "don't have", "need visit", "site visit", "no", "don't"
+            - If customer is answering the plan question with YES: Return "has_plan"
+            - If customer is answering the plan question with NO: Return "needs_visit"
+            - If NOT answering plan question or unclear: Return null
+            - WARNING: Do NOT extract plan status from general conversation - only when directly asked
             
             AREA/LOCATION - Look for:
             - Any location names, suburbs, areas mentioned
@@ -2463,7 +2492,7 @@ I understand this is time-sensitive!"""
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON with no formatting or explanations."},
+                    {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON with no formatting or explanations. Pay special attention to plan status questions - 'yes' means has_plan, 'no' means needs_visit."},
                     {"role": "user", "content": extraction_prompt}
                 ],
                 temperature=0.1,
@@ -2472,13 +2501,18 @@ I understand this is time-sensitive!"""
             
             ai_response = response.choices[0].message.content.strip()
             
-            # FIXED: Clean up the response to handle markdown formatting
+            # Clean up the response to handle markdown formatting
             ai_response = ai_response.replace('```json', '').replace('```', '').strip()
             
             # Parse AI response as JSON
             try:
                 extracted_data = json.loads(ai_response)
                 print(f"🤖 AI extracted data: {extracted_data}")
+                
+                # Debug log for plan status specifically
+                if extracted_data.get('plan_status'):
+                    print(f"✅ PLAN STATUS DETECTED: {extracted_data['plan_status']}")
+                
                 return extracted_data
             except json.JSONDecodeError as e:
                 print(f"❌ AI returned invalid JSON: {ai_response}")
@@ -2488,6 +2522,7 @@ I understand this is time-sensitive!"""
         except Exception as e:
             print(f"❌ AI extraction error: {str(e)}")
             return {}
+
 
 
 
@@ -3076,46 +3111,80 @@ I understand this is time-sensitive!"""
 
 
 
-    def fallback_manual_extraction(self, message):
-        """ENHANCED: Fallback extraction with better property_type handling"""
-        try:
-            message_lower = message.lower()
-            original_message = message.strip()
-            next_question = self.get_next_question_to_ask()
-            retry_count = getattr(self.appointment, 'retry_count', 0)
+def fallback_manual_extraction(self, message):
+    """ENHANCED: Fallback extraction - ONLY extract what's being asked"""
+    try:
+        message_lower = message.lower()
+        original_message = message.strip()
+        next_question = self.get_next_question_to_ask()
+        retry_count = getattr(self.appointment, 'retry_count', 0)
+        
+        print(f"🔍 Fallback extraction - Current question: {next_question}")
+        
+        # Be more generous on retries
+        be_generous = retry_count > 0
+        
+        # CRITICAL: ONLY extract plan status when it's the actual question being asked
+        if next_question == "plan_or_visit" and self.appointment.has_plan is None:
+            print(f"❓ Looking for plan status in message: '{message}'")
             
-            # Be more generous on retries
-            be_generous = retry_count > 0
+            # Explicit YES patterns
+            yes_patterns = [
+                'yes', 'yeah', 'yep', 'yup', 'sure', 'have plan', 'got plan', 
+                'have a plan', 'got a plan', 'already have', 'existing plan',
+                'i do', 'i have', 'yes i do', 'yes i have', 'i got'
+            ]
             
-            if next_question == "property_type" and not self.appointment.property_type:
-                # Enhanced property type detection
-                property_keywords = {
-                    'house': ['house', 'home', 'residential'],
-                    'apartment': ['apartment', 'flat', 'unit', 'complex'],
-                    'business': ['business', 'commercial', 'office', 'shop', 'store', 'company']
-                }
-                
-                # On retries, be more generous with keywords
-                if be_generous:
-                    property_keywords['house'].extend(['place', 'property', 'residence'])
-                    property_keywords['apartment'].extend(['condo', 'townhouse'])
-                    property_keywords['business'].extend(['work', 'workplace', 'commercial'])
-                
-                for prop_type, keywords in property_keywords.items():
-                    if any(keyword in message_lower for keyword in keywords):
-                        self.appointment.property_type = prop_type
-                        self.appointment.save()
-                        print(f"✅ Manual extraction: property_type = {prop_type}")
-                        return prop_type
+            # Explicit NO patterns
+            no_patterns = [
+                'no', 'nope', 'nah', "don't have", "dont have", 
+                'no plan', 'need visit', 'site visit', 'visit first',
+                "don't", "i don't", 'visit please', 'no i', 'i need'
+            ]
             
-            # Add other manual extraction logic here for other fields...
-            # (keeping existing logic for service_type, area, etc.)
+            # Check for YES
+            for pattern in yes_patterns:
+                if pattern in message_lower:
+                    self.appointment.has_plan = True
+                    self.appointment.save()
+                    print(f"✅ Manual extraction: has_plan = True (matched: '{pattern}')")
+                    return "has_plan"
             
-            return "NOT_FOUND"
+            # Check for NO
+            for pattern in no_patterns:
+                if pattern in message_lower:
+                    self.appointment.has_plan = False
+                    self.appointment.save()
+                    print(f"✅ Manual extraction: has_plan = False (matched: '{pattern}')")
+                    return "needs_visit"
             
-        except Exception as e:
-            print(f"❌ Fallback extraction error: {str(e)}")
-            return "NOT_FOUND"
+            print(f"⚠️ No clear plan status found in message")
+        
+        # Property type detection
+        if next_question == "property_type" and not self.appointment.property_type:
+            property_keywords = {
+                'house': ['house', 'home', 'residential'],
+                'apartment': ['apartment', 'flat', 'unit', 'complex'],
+                'business': ['business', 'commercial', 'office', 'shop', 'store', 'company']
+            }
+            
+            if be_generous:
+                property_keywords['house'].extend(['place', 'property', 'residence'])
+                property_keywords['apartment'].extend(['condo', 'townhouse'])
+                property_keywords['business'].extend(['work', 'workplace', 'commercial'])
+            
+            for prop_type, keywords in property_keywords.items():
+                if any(keyword in message_lower for keyword in keywords):
+                    self.appointment.property_type = prop_type
+                    self.appointment.save()
+                    print(f"✅ Manual extraction: property_type = {prop_type}")
+                    return prop_type
+        
+        return "NOT_FOUND"
+        
+    except Exception as e:
+        print(f"❌ Fallback extraction error: {str(e)}")
+        return "NOT_FOUND"
 
 
 
