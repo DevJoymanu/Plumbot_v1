@@ -30,7 +30,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'bot',
-    'django_cron'
+    'django_cron',
     'storages',  # Add this
 
 ]
