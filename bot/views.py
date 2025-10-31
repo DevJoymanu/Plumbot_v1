@@ -900,6 +900,7 @@ class AppointmentDetailView(DetailView):
         
         return redirect('appointment_detail', pk=appointment.pk)
 
+# views.py
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDocumentsView(DetailView):
     template_name = 'appointment_documents.html'
@@ -909,9 +910,8 @@ class AppointmentDocumentsView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         appointment = self.get_object()
-        
+
         documents = appointment.get_uploaded_documents()
-        
         context.update({
             'documents': documents,
             'document_count': len(documents),
@@ -920,15 +920,12 @@ class AppointmentDocumentsView(DetailView):
 
 @staff_required
 def download_document(request, pk, document_type):
-    """Redirect to the file URL for download"""
     appointment = get_object_or_404(Appointment, pk=pk)
-    
-    file_field = None
-    if document_type == 'plan_file' and appointment.plan_file:
-        file_field = appointment.plan_file
+
+    documents = {doc['type']: doc['file'] for doc in appointment.get_uploaded_documents()}
+    file_field = documents.get(document_type)
 
     if file_field:
-        # Redirect directly to the storage URL
         return redirect(file_field.url)
 
     messages.error(request, 'Document not found')
