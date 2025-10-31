@@ -233,30 +233,32 @@ LOGGING = {
 # ===== CLOUDFLARE R2 / AWS S3 STORAGE CONFIGURATION =====
 import os
 
-# Check if we should use cloud storage (production)
-USE_S3 = os.environ.get('USE_S3', 'FALSE').upper() == 'TRUE'
+USE_S3 = os.getenv("USE_S3", "FALSE").upper() == "TRUE"
 
 if USE_S3:
-    # AWS/R2 Settings
-    AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
-    AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
-    AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME')
-    AWS_S3_ENDPOINT_URL = os.environ.get('AWS_S3_ENDPOINT_URL')  # For Cloudflare R2
-    AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'auto')
-    
-    # S3 Settings
-    AWS_S3_FILE_OVERWRITE = False
-    AWS_DEFAULT_ACL = 'public-read'
-    AWS_S3_CUSTOM_DOMAIN = os.environ.get('AWS_S3_CUSTOM_DOMAIN')  # Your R2 public URL
-    AWS_LOCATION = 'media'
-    
-    # Django Storage Settings
-    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-    MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_LOCATION}/'
-    
-    print(f"✅ Using cloud storage: {AWS_STORAGE_BUCKET_NAME}")
+    # Cloudflare R2 / S3 storage
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+            "OPTIONS": {
+                "access_key": os.getenv("AWS_ACCESS_KEY_ID"),
+                "secret_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
+                "bucket_name": os.getenv("AWS_STORAGE_BUCKET_NAME"),
+                "endpoint_url": os.getenv("AWS_S3_ENDPOINT_URL"),
+                "custom_domain": os.getenv("AWS_S3_CUSTOM_DOMAIN"),
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
 else:
-    # Local development settings
-    MEDIA_URL = '/media/'
-    MEDIA_ROOT = BASE_DIR / 'media'
-    print("⚠️ Using local file storage")
+    # Local dev fallback
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
