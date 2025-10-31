@@ -466,14 +466,11 @@
 
                 </div>
             <div class="card">
-
                 <div class="form-group">
                     <label for="clientAddress">Address</label>
                     <input type="text" id="clientAddress" placeholder="Client address">
                 </div>
             </div>
-            </div>
-
 
             <!-- Project Information -->
             <div class="card">
@@ -1065,6 +1062,7 @@
 
         function showPreview() {
             const clientName = document.getElementById('clientName').value.trim();
+            const clientAddress = document.getElementById('clientAddress').value.trim();
             const projectType = document.getElementById('projectType').value.trim();
 
             if (!clientName || !projectType) {
