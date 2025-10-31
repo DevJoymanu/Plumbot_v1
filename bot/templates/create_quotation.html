@@ -468,7 +468,8 @@
             <div class="card">
                 <div class="form-group">
                     <label for="clientAddress">Address</label>
-                    <input type="text" id="clientAddress" placeholder="Client address">
+                    <textarea id="clientAddress" placeholder="Describe the project scope..."></textarea>
+
                 </div>
             </div>
 
@@ -1070,7 +1071,12 @@
                 return;
             }
 
-     
+            document.getElementById('previewProject').innerHTML = `
+                <strong>${clientName}</strong><br>
+                ${document.getElementById('clientAddress').value}<br>
+            `;
+
+            
             document.getElementById('previewProject').innerHTML = `
                 <strong>${projectType}</strong><br>
                 ${document.getElementById('projectLocation').value}<br>
