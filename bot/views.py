@@ -145,6 +145,10 @@ TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
 TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER')
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
 
+
+
+
+
 # Initialize clients
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com/v1")
@@ -4895,10 +4899,10 @@ def handle_whatsapp_media(request):
 
 
 def download_and_save_media(media_url, content_type, appointment, file_index):
-    """Download media from Twilio and save to Django storage"""
+    """Download media from Twilio and save to Django storage - FIXED"""
     try:
-        # Authenticate with Twilio to download media
-        auth = (ACCOUNT_SID, AUTH_TOKEN)
+        # FIXED: Use correct variable names from top of file
+        auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)  # ✅ Changed from ACCOUNT_SID
         response = requests.get(media_url, auth=auth)
         
         if response.status_code != 200:
