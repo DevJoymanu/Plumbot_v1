@@ -920,19 +920,17 @@ class AppointmentDocumentsView(DetailView):
 
 @staff_required
 def download_document(request, pk, document_type):
-    """View to download specific documents"""
+    """Redirect to the file URL for download"""
     appointment = get_object_or_404(Appointment, pk=pk)
     
+    file_field = None
     if document_type == 'plan_file' and appointment.plan_file:
-        try:
-            # Serve the file for download
-            response = HttpResponse(appointment.plan_file.read(), content_type='application/octet-stream')
-            filename = f"plan_{appointment.customer_name or 'customer'}_{appointment.id}{os.path.splitext(appointment.plan_file.name)[1]}"
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            return response
-        except Exception as e:
-            messages.error(request, f'Error downloading file: {str(e)}')
-    
+        file_field = appointment.plan_file
+
+    if file_field:
+        # Redirect directly to the storage URL
+        return redirect(file_field.url)
+
     messages.error(request, 'Document not found')
     return redirect('appointment_documents', pk=appointment.pk)
 
