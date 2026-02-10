@@ -5,7 +5,7 @@ from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView,
     settings_view, calendar_settings_view, ai_settings_view,
     update_appointment, send_followup, confirm_appointment,
-    cancel_appointment, test_whatsapp, export_appointments, bot, CalendarView, handle_whatsapp_media,
+    cancel_appointment, test_whatsapp, export_appointments, CalendarView, handle_whatsapp_media,
     # Import the new document views
     AppointmentDocumentsView, download_document,
     # Import the new quotation views
