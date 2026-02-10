@@ -1452,7 +1452,7 @@ Job Description:
 View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         
         # Send to team
-        TEAM_NUMBERS = ['263774819901']
+        TEAM_NUMBERS = ['0610318200']
         for number in TEAM_NUMBERS:
             try:
                 whatsapp_api.send_text_message(number, team_message)
@@ -1873,7 +1873,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             self.appointment.save()
             
             # Get plumber contact info
-            plumber_number = getattr(self.appointment, 'plumber_contact_number', '+263774819901')
+            plumber_number = getattr(self.appointment, 'plumber_contact_number', '+0610318200')
             
             # Send plan to plumber
             self.notify_plumber_about_plan()
@@ -1937,7 +1937,7 @@ Status: Plan uploaded - awaiting your review"""
 
             # Plumber numbers (without whatsapp: prefix or +)
             plumber_numbers = [
-                '263774819901',  # Format: country code + number
+                '0610318200',  # Format: country code + number
             ]
             
             for number in plumber_numbers:
@@ -2036,7 +2036,7 @@ View details: http://127.0.0.1:8000/appointments/{self.appointment.id}/"""
             twilio_client.messages.create(
                 body=urgent_message,
                 from_=TWILIO_WHATSAPP_NUMBER,
-                to='whatsapp:+263774819901'
+                to='whatsapp:+0610318200'
             )
             
             return """🚨 I've marked your plan review as URGENT and notified our plumber immediately.
@@ -2772,10 +2772,34 @@ I understand this is time-sensitive!"""
             print(f"Error getting alternative suggestions: {str(e)}")
             return []
 
+    def format_datetime_for_display(self, dt):
+        """Format datetime ensuring it shows in South Africa timezone"""
+        try:
+            import pytz
+            
+            # Ensure datetime is timezone-aware
+            if dt.tzinfo is None:
+                # If naive, assume it's already in SA time
+                sa_timezone = pytz.timezone('Africa/Johannesburg')
+                dt = sa_timezone.localize(dt)
+            else:
+                # If aware, convert to SA timezone
+                sa_timezone = pytz.timezone('Africa/Johannesburg')
+                dt = dt.astimezone(sa_timezone)
+            
+            return dt
+            
+        except Exception as e:
+            print(f"Error formatting datetime: {str(e)}")
+            return dt
+
 
     def send_confirmation_message(self, appointment_info, appointment_datetime):
-        """Send confirmation message to customer"""
+        """Send confirmation message to customer - FIXED TIMEZONE"""
         try:
+            # FIX: Ensure datetime is in correct timezone for display
+            display_datetime = self.format_datetime_for_display(appointment_datetime)
+            
             service_name = appointment_info.get('project_type', 'Plumbing service')
             if service_name:
                 service_map = {
@@ -2790,8 +2814,8 @@ I understand this is time-sensitive!"""
     Hi {appointment_info.get('name', 'there')},
 
     Your plumbing appointment is confirmed:
-    📅 Date: {appointment_datetime.strftime('%A, %B %d, %Y')}
-    🕐 Time: {appointment_datetime.strftime('%I:%M %p')}
+    📅 Date: {display_datetime.strftime('%A, %B %d, %Y')}
+    🕐 Time: {display_datetime.strftime('%I:%M %p')}
     📍 Area: {appointment_info.get('area', 'Your area')}
     🔨 Service: {service_name}
 
@@ -2810,9 +2834,14 @@ I understand this is time-sensitive!"""
             print(f"❌ Confirmation message error: {str(e)}")
 
 
+    # ALSO UPDATE YOUR notify_team METHOD:
+
     def notify_team(self, appointment_info, appointment_datetime):
-        """Notify team about new appointment"""
+        """Notify team about new appointment - FIXED TIMEZONE"""
         try:
+            # FIX: Ensure datetime is in correct timezone for display
+            display_datetime = self.format_datetime_for_display(appointment_datetime)
+            
             service_name = appointment_info.get('project_type', 'Plumbing service')
             if service_name:
                 service_map = {
@@ -2830,7 +2859,7 @@ I understand this is time-sensitive!"""
 
     Customer: {appointment_info.get('name', 'Unknown')}
     Phone: {self.phone_number.replace('whatsapp:', '')}
-    Date/Time: {appointment_datetime.strftime('%A, %B %d at %I:%M %p')}
+    Date/Time: {display_datetime.strftime('%A, %B %d at %I:%M %p')}
     Area: {appointment_info.get('area', 'Not provided')}
     Service: {service_name}
     Property: {appointment_info.get('property_type', 'Not specified')}
@@ -2933,79 +2962,82 @@ I understand this is time-sensitive!"""
             return None
 
 
+def book_appointment(self, message):
+    """Book an appointment using the stored datetime - FIXED TIMEZONE"""
+    try:
+        print(f"🔄 Starting appointment booking process...")
+        
+        # Use the stored datetime from AI extraction
+        appointment_datetime = self.appointment.scheduled_datetime
+        
+        if not appointment_datetime:
+            print("❌ No datetime available - booking cancelled")
+            return {'success': False, 'error': 'No appointment time set'}
 
-    def book_appointment(self, message):
-        """Book an appointment using the stored datetime"""
-        try:
-            print(f"🔄 Starting appointment booking process...")
-            
-            # Use the stored datetime from AI extraction
-            appointment_datetime = self.appointment.scheduled_datetime
-            
-            if not appointment_datetime:
-                print("❌ No datetime available - booking cancelled")
-                return {'success': False, 'error': 'No appointment time set'}
+        print(f"📅 Using appointment time: {appointment_datetime}")
 
-            print(f"📅 Using appointment time: {appointment_datetime}")
+        # Ensure proper timezone handling
+        sa_timezone = pytz.timezone('Africa/Johannesburg')
+        if appointment_datetime.tzinfo is None:
+            appointment_datetime = sa_timezone.localize(appointment_datetime)
+        else:
+            appointment_datetime = appointment_datetime.astimezone(sa_timezone)
 
-            # Ensure proper timezone handling
-            sa_timezone = pytz.timezone('Africa/Johannesburg')
-            if appointment_datetime.tzinfo is None:
-                appointment_datetime = sa_timezone.localize(appointment_datetime)
-            else:
-                appointment_datetime = appointment_datetime.astimezone(sa_timezone)
+        print(f"📅 Timezone-corrected appointment time: {appointment_datetime}")
 
-            print(f"📅 Timezone-corrected appointment time: {appointment_datetime}")
-
-            # Check availability with the CORRECT time
-            is_available, conflict_info = self.check_appointment_availability(appointment_datetime)
-            
-            if not is_available:
-                print(f"❌ Time slot not available: {conflict_info}")
-                alternatives = self.get_alternative_time_suggestions(appointment_datetime)
-                
-                return {
-                    'success': False, 
-                    'error': 'Time not available', 
-                    'alternatives': alternatives
-                }
-            
-            # SUCCESS PATH: Update appointment
-            self.appointment.status = 'confirmed'
-            self.appointment.scheduled_datetime = appointment_datetime
-            self.appointment.save()
-            
-            print(f"💾 Appointment confirmed and saved: {appointment_datetime}")
-            
-            # Extract appointment details
-            appointment_details = self.extract_appointment_details()
-            
-            # Send notifications
-            try:
-                print("📤 Sending notifications...")
-                self.send_confirmation_message(appointment_details, appointment_datetime)
-                self.notify_team(appointment_details, appointment_datetime)
-                print("✅ Notifications sent")
-            except Exception as notify_error:
-                print(f"⚠️ Notification error: {notify_error}")
-            
-            # Add to calendar (optional)
-            try:
-                if GOOGLE_CALENDAR_CREDENTIALS:
-                    self.add_to_google_calendar(appointment_details, appointment_datetime)
-            except Exception as cal_error:
-                print(f"⚠️ Calendar error: {cal_error}")
+        # Check availability
+        is_available, conflict_info = self.check_appointment_availability(appointment_datetime)
+        
+        if not is_available:
+            print(f"❌ Time slot not available: {conflict_info}")
+            alternatives = self.get_alternative_time_suggestions(appointment_datetime)
             
             return {
-                'success': True,
-                'datetime': appointment_datetime.strftime('%B %d, %Y at %I:%M %p')
+                'success': False, 
+                'error': 'Time not available', 
+                'alternatives': alternatives
             }
+        
+        # SUCCESS PATH: Update appointment
+        self.appointment.status = 'confirmed'
+        self.appointment.scheduled_datetime = appointment_datetime
+        self.appointment.save()
+        
+        print(f"💾 Appointment confirmed and saved: {appointment_datetime}")
+        
+        # Extract appointment details
+        appointment_details = self.extract_appointment_details()
+        
+        # Send notifications
+        try:
+            print("📤 Sending notifications...")
+            self.send_confirmation_message(appointment_details, appointment_datetime)
+            self.notify_team(appointment_details, appointment_datetime)
+            print("✅ Notifications sent")
+        except Exception as notify_error:
+            print(f"⚠️ Notification error: {notify_error}")
+        
+        # Add to calendar (optional)
+        try:
+            if GOOGLE_CALENDAR_CREDENTIALS:
+                self.add_to_google_calendar(appointment_details, appointment_datetime)
+        except Exception as cal_error:
+            print(f"⚠️ Calendar error: {cal_error}")
+        
+        # FIX: Format datetime for display
+        display_datetime = self.format_datetime_for_display(appointment_datetime)
+        
+        return {
+            'success': True,
+            'datetime': display_datetime.strftime('%B %d, %Y at %I:%M %p')
+        }
 
-        except Exception as e:
-            print(f"❌ Booking Error: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return {'success': False, 'error': str(e)}
+    except Exception as e:
+        print(f"❌ Booking Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
 
     def detect_reschedule_request_with_ai(self, message):
         """Use AI to intelligently detect rescheduling requests"""
@@ -4622,7 +4654,7 @@ If you receive this, notifications are working! ✅"""
 
         # Team numbers to test
         TEAM_NUMBERS = [
-            'whatsapp:+263774819901',  # Your plumber's number
+            'whatsapp:+0610318200',  # Your plumber's number
         ]
         
         results = []
@@ -4687,7 +4719,7 @@ def verify_whatsapp_setup():
         return False
     
     # Check team numbers format
-    TEAM_NUMBERS = ['whatsapp:+263774819901']  # Your actual numbers
+    TEAM_NUMBERS = ['whatsapp:+0610318200']  # Your actual numbers
     print(f"👥 Team numbers configured: {len(TEAM_NUMBERS)}")
     
     for number in TEAM_NUMBERS:
