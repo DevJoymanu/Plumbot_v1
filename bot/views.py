@@ -2408,6 +2408,33 @@ I understand this is time-sensitive!"""
             return {'success': False, 'error': str(e)}
 
 
+    def extract_appointment_details(self):
+        """Extract customer details from appointment data"""
+        try:
+            details = {}
+            
+            # Use existing appointment data
+            if self.appointment.customer_name:
+                details['name'] = self.appointment.customer_name
+            if self.appointment.customer_area:
+                details['area'] = self.appointment.customer_area
+            if self.appointment.project_type:
+                details['project_type'] = self.appointment.project_type
+            if self.appointment.property_type:
+                details['property_type'] = self.appointment.property_type
+            if self.appointment.timeline:
+                details['timeline'] = self.appointment.timeline
+            if self.appointment.has_plan is not None:
+                details['has_plan'] = self.appointment.has_plan
+
+            return details
+            
+        except Exception as e:
+            print(f"Error extracting appointment details: {str(e)}")
+            return {}
+
+
+
 
 
     def extract_all_available_info_with_ai(self, message):
@@ -3600,30 +3627,6 @@ def fallback_manual_extraction(self, message):
             return "ERROR"
 
 
-    def extract_appointment_details(self):
-        """Extract customer details from conversation history"""
-        try:
-            details = {}
-            
-            # Use existing appointment data
-            if self.appointment.customer_name:
-                details['name'] = self.appointment.customer_name
-            if self.appointment.customer_area:
-                details['area'] = self.appointment.customer_area
-            if self.appointment.project_type:
-                details['project_type'] = self.appointment.project_type
-            if self.appointment.property_type:
-                details['property_type'] = self.appointment.property_type
-            if self.appointment.timeline:
-                details['timeline'] = self.appointment.timeline
-            if self.appointment.has_plan is not None:
-                details['has_plan'] = self.appointment.has_plan
-
-            return details
-            
-        except Exception as e:
-            print(f"Error extracting appointment details: {str(e)}")
-            return {}
 
 
     def parse_datetime(self, message):
