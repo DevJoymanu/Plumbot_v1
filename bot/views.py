@@ -60,6 +60,13 @@ from .whatsapp_cloud_api import whatsapp_api
 import logging
 logger = logging.getLogger(__name__)
 
+import os
+
+BASE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000")
+
+documents_url = (
+    f"{BASE_URL}/appointments/{self.appointment.id}/documents/"
+)
 
 
 # Helper function for phone number formatting
@@ -1884,7 +1891,16 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             
             completion_message = f"""✅ PLAN SENT SUCCESSFULLY!
 
-{customer_name}, I've forwarded your {service_name} plan to our plumber for review.
+if customer_name:
+    message = (
+        f"Hi {customer_name}, I've forwarded your {service_name} "
+        "plan to our plumber for review."
+    )
+else:
+    message = (
+        f"Thanks! I've forwarded your {service_name} plan "
+        "to our plumber for review."
+    )
 
 📞 NEXT STEPS:
 • Our plumber will review your plan within 24 hours
