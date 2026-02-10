@@ -4571,62 +4571,6 @@ Questions? Reply here.
 
 # Enhanced logging for the main bot function
 
-@csrf_exempt  
-def bot(request):
-    """Enhanced webhook handler for both text and media"""
-    if request.method == 'POST':
-        try:
-            incoming_msg = request.POST.get('Body', '').strip()
-            sender = request.POST.get('From', '')
-            num_media = int(request.POST.get('NumMedia', 0))
-            
-            print(f"📨 Received from {sender}: Message='{incoming_msg}', Media={num_media}")
-            
-            # Handle media files first
-            if num_media > 0:
-                media_result = handle_whatsapp_media(request)
-                # If there's also a text message, continue processing
-                if not incoming_msg:
-                    return media_result
-            
-            # Continue with text processing
-            if not incoming_msg or not sender:
-                return HttpResponse(status=200)
-            
-            # Initialize Plumbot and generate response
-            plumbot = Plumbot(sender)
-            
-            # Log current state
-            before_state = plumbot.get_information_summary()
-            print(f"📊 State before processing: {before_state}")
-            
-            # Generate response
-            reply = plumbot.generate_response(incoming_msg)
-            
-            # Log state after
-            after_state = plumbot.get_information_summary()
-            print(f"📊 State after processing: {after_state}")
-            
-            print(f"🤖 Generated reply: {reply}")
-
-            # Send reply
-            try:
-                customer_message = twilio_client.messages.create(
-                    body=reply,
-                    from_=TWILIO_WHATSAPP_NUMBER,
-                    to=sender
-                )
-                print(f"✅ Reply sent. SID: {customer_message.sid}")
-            except Exception as send_error:
-                print(f"❌ Failed to send reply: {str(send_error)}")
-                
-            return HttpResponse(status=200)
-            
-        except Exception as e:
-            print(f"❌ Webhook Error: {str(e)}")
-            return HttpResponse(status=500)
-            
-    return HttpResponse(status=405)
 
 
 
