@@ -2962,81 +2962,81 @@ I understand this is time-sensitive!"""
             return None
 
 
-def book_appointment(self, message):
-    """Book an appointment using the stored datetime - FIXED TIMEZONE"""
-    try:
-        print(f"🔄 Starting appointment booking process...")
-        
-        # Use the stored datetime from AI extraction
-        appointment_datetime = self.appointment.scheduled_datetime
-        
-        if not appointment_datetime:
-            print("❌ No datetime available - booking cancelled")
-            return {'success': False, 'error': 'No appointment time set'}
+    def book_appointment(self, message):
+        """Book an appointment using the stored datetime - FIXED TIMEZONE"""
+        try:
+            print(f"🔄 Starting appointment booking process...")
+            
+            # Use the stored datetime from AI extraction
+            appointment_datetime = self.appointment.scheduled_datetime
+            
+            if not appointment_datetime:
+                print("❌ No datetime available - booking cancelled")
+                return {'success': False, 'error': 'No appointment time set'}
 
-        print(f"📅 Using appointment time: {appointment_datetime}")
+            print(f"📅 Using appointment time: {appointment_datetime}")
 
-        # Ensure proper timezone handling
-        sa_timezone = pytz.timezone('Africa/Johannesburg')
-        if appointment_datetime.tzinfo is None:
-            appointment_datetime = sa_timezone.localize(appointment_datetime)
-        else:
-            appointment_datetime = appointment_datetime.astimezone(sa_timezone)
+            # Ensure proper timezone handling
+            sa_timezone = pytz.timezone('Africa/Johannesburg')
+            if appointment_datetime.tzinfo is None:
+                appointment_datetime = sa_timezone.localize(appointment_datetime)
+            else:
+                appointment_datetime = appointment_datetime.astimezone(sa_timezone)
 
-        print(f"📅 Timezone-corrected appointment time: {appointment_datetime}")
+            print(f"📅 Timezone-corrected appointment time: {appointment_datetime}")
 
-        # Check availability
-        is_available, conflict_info = self.check_appointment_availability(appointment_datetime)
-        
-        if not is_available:
-            print(f"❌ Time slot not available: {conflict_info}")
-            alternatives = self.get_alternative_time_suggestions(appointment_datetime)
+            # Check availability
+            is_available, conflict_info = self.check_appointment_availability(appointment_datetime)
+            
+            if not is_available:
+                print(f"❌ Time slot not available: {conflict_info}")
+                alternatives = self.get_alternative_time_suggestions(appointment_datetime)
+                
+                return {
+                    'success': False, 
+                    'error': 'Time not available', 
+                    'alternatives': alternatives
+                }
+            
+            # SUCCESS PATH: Update appointment
+            self.appointment.status = 'confirmed'
+            self.appointment.scheduled_datetime = appointment_datetime
+            self.appointment.save()
+            
+            print(f"💾 Appointment confirmed and saved: {appointment_datetime}")
+            
+            # Extract appointment details
+            appointment_details = self.extract_appointment_details()
+            
+            # Send notifications
+            try:
+                print("📤 Sending notifications...")
+                self.send_confirmation_message(appointment_details, appointment_datetime)
+                self.notify_team(appointment_details, appointment_datetime)
+                print("✅ Notifications sent")
+            except Exception as notify_error:
+                print(f"⚠️ Notification error: {notify_error}")
+            
+            # Add to calendar (optional)
+            try:
+                if GOOGLE_CALENDAR_CREDENTIALS:
+                    self.add_to_google_calendar(appointment_details, appointment_datetime)
+            except Exception as cal_error:
+                print(f"⚠️ Calendar error: {cal_error}")
+            
+            # FIX: Format datetime for display
+            display_datetime = self.format_datetime_for_display(appointment_datetime)
             
             return {
-                'success': False, 
-                'error': 'Time not available', 
-                'alternatives': alternatives
+                'success': True,
+                'datetime': display_datetime.strftime('%B %d, %Y at %I:%M %p')
             }
-        
-        # SUCCESS PATH: Update appointment
-        self.appointment.status = 'confirmed'
-        self.appointment.scheduled_datetime = appointment_datetime
-        self.appointment.save()
-        
-        print(f"💾 Appointment confirmed and saved: {appointment_datetime}")
-        
-        # Extract appointment details
-        appointment_details = self.extract_appointment_details()
-        
-        # Send notifications
-        try:
-            print("📤 Sending notifications...")
-            self.send_confirmation_message(appointment_details, appointment_datetime)
-            self.notify_team(appointment_details, appointment_datetime)
-            print("✅ Notifications sent")
-        except Exception as notify_error:
-            print(f"⚠️ Notification error: {notify_error}")
-        
-        # Add to calendar (optional)
-        try:
-            if GOOGLE_CALENDAR_CREDENTIALS:
-                self.add_to_google_calendar(appointment_details, appointment_datetime)
-        except Exception as cal_error:
-            print(f"⚠️ Calendar error: {cal_error}")
-        
-        # FIX: Format datetime for display
-        display_datetime = self.format_datetime_for_display(appointment_datetime)
-        
-        return {
-            'success': True,
-            'datetime': display_datetime.strftime('%B %d, %Y at %I:%M %p')
-        }
 
-    except Exception as e:
-        print(f"❌ Booking Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return {'success': False, 'error': str(e)}
+        except Exception as e:
+            print(f"❌ Booking Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'error': str(e)}
 
 
     def detect_reschedule_request_with_ai(self, message):
