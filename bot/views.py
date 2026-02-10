@@ -2609,6 +2609,304 @@ I understand this is time-sensitive!"""
             'completion_percentage': ((6 - len(missing_fields)) / 6) * 100
         }
 
+
+    def check_appointment_availability(self, requested_datetime):
+        """Check if requested time slot is available"""
+        try:
+            # Ensure timezone awareness
+            if requested_datetime.tzinfo is None:
+                sa_timezone = pytz.timezone('Africa/Johannesburg')
+                requested_datetime = sa_timezone.localize(requested_datetime)
+            
+            # Define appointment duration (default 2 hours)
+            appointment_duration = timedelta(hours=2)
+            requested_end = requested_datetime + appointment_duration
+            
+            print(f"Checking availability for: {requested_datetime} to {requested_end}")
+            
+            # 1. Check if it's not in the past (with 1-hour buffer)
+            now = timezone.now()
+            min_booking_time = now + timedelta(hours=1)
+            
+            if requested_datetime <= min_booking_time:
+                print(f"Requested time is too soon: {requested_datetime} vs minimum {min_booking_time}")
+                return False, "too_soon"
+            
+            # 2. Check business days (Monday-Friday)
+            weekday = requested_datetime.weekday()  # 0=Monday, 6=Sunday
+            if weekday >= 5:  # Saturday=5, Sunday=6
+                print(f"Requested time is on weekend: weekday {weekday}")
+                return False, "weekend"
+            
+            # 3. Check business hours (8 AM - 6 PM)
+            hour = requested_datetime.hour
+            if hour < 8 or hour >= 18:
+                print(f"Outside business hours: {hour}:00 (business hours: 8 AM - 6 PM)")
+                return False, "outside_business_hours"
+            
+            # 4. Check if appointment would end after business hours
+            if requested_end.hour > 18 or (requested_end.hour == 18 and requested_end.minute > 0):
+                print(f"Appointment would end after business hours: {requested_end}")
+                return False, "ends_after_hours"
+            
+            # 5. Check for conflicts with other confirmed appointments
+            conflicting_appointments = Appointment.objects.filter(
+                status='confirmed',
+                scheduled_datetime__isnull=False
+            ).exclude(
+                id=self.appointment.id  # Exclude current appointment for reschedules
+            )
+            
+            for existing_appt in conflicting_appointments:
+                # Ensure existing appointment is timezone-aware
+                if existing_appt.scheduled_datetime.tzinfo is None:
+                    sa_timezone = pytz.timezone('Africa/Johannesburg')
+                    existing_start = sa_timezone.localize(existing_appt.scheduled_datetime)
+                else:
+                    existing_start = existing_appt.scheduled_datetime
+                    
+                existing_end = existing_start + appointment_duration
+                
+                # Check for time overlap
+                if (requested_datetime < existing_end and requested_end > existing_start):
+                    print(f"Conflict found with appointment {existing_appt.id}")
+                    print(f"Existing: {existing_start} to {existing_end}")
+                    print(f"Requested: {requested_datetime} to {requested_end}")
+                    return False, existing_appt
+            
+            # 6. Check maximum advance booking (3 months)
+            max_advance_time = now + timedelta(days=90)
+            if requested_datetime > max_advance_time:
+                print(f"Too far in advance: {requested_datetime} vs maximum {max_advance_time}")
+                return False, "too_far_ahead"
+            
+            print(f"✅ Time slot is available: {requested_datetime}")
+            return True, None
+            
+        except Exception as e:
+            print(f"❌ Error checking availability: {str(e)}")
+            return False, "error"
+
+
+    def get_alternative_time_suggestions(self, requested_datetime):
+        """Get alternative available time slots near the requested time"""
+        try:
+            suggestions = []
+            
+            # Get the requested date and time
+            requested_date = requested_datetime.date()
+            
+            # Business time slots (8am, 10am, 12pm, 2pm, 4pm)
+            business_time_slots = [8, 10, 12, 14, 16]
+            
+            print(f"Looking for alternatives near {requested_datetime}")
+            
+            # Try same day first, then next few business days
+            for day_offset in range(0, 5):  # Check today + next 4 days
+                check_date = requested_date + timedelta(days=day_offset)
+                
+                # Skip weekends
+                if check_date.weekday() >= 5:
+                    continue
+                    
+                for hour in business_time_slots:
+                    candidate_time = datetime.combine(check_date, datetime.min.time().replace(hour=hour))
+                    sa_timezone = pytz.timezone('Africa/Johannesburg')
+                    candidate_datetime = sa_timezone.localize(candidate_time)
+                    
+                    # Skip times in the past
+                    if candidate_datetime <= timezone.now():
+                        continue
+                    
+                    # Skip the exact requested time
+                    if candidate_datetime == requested_datetime:
+                        continue
+                    
+                    is_available, conflict = self.check_appointment_availability(candidate_datetime)
+                    if is_available:
+                        day_type = 'same_day' if day_offset == 0 else 'next_days'
+                        suggestions.append({
+                            'datetime': candidate_datetime,
+                            'display': candidate_datetime.strftime('%A, %B %d at %I:%M %p'),
+                            'day_type': day_type
+                        })
+                        
+                        # Limit to 4 suggestions
+                        if len(suggestions) >= 4:
+                            break
+                
+                if len(suggestions) >= 4:
+                    break
+            
+            print(f"Found {len(suggestions)} alternative time suggestions")
+            return suggestions
+            
+        except Exception as e:
+            print(f"Error getting alternative suggestions: {str(e)}")
+            return []
+
+
+    def send_confirmation_message(self, appointment_info, appointment_datetime):
+        """Send confirmation message to customer"""
+        try:
+            service_name = appointment_info.get('project_type', 'Plumbing service')
+            if service_name:
+                service_map = {
+                    'bathroom_renovation': 'Bathroom Renovation',
+                    'new_plumbing_installation': 'New Plumbing Installation',
+                    'kitchen_renovation': 'Kitchen Renovation'
+                }
+                service_name = service_map.get(service_name, service_name.replace('_', ' ').title())
+            
+            confirmation_message = f"""🔧 APPOINTMENT CONFIRMED! 🔧
+
+    Hi {appointment_info.get('name', 'there')},
+
+    Your plumbing appointment is confirmed:
+    📅 Date: {appointment_datetime.strftime('%A, %B %d, %Y')}
+    🕐 Time: {appointment_datetime.strftime('%I:%M %p')}
+    📍 Area: {appointment_info.get('area', 'Your area')}
+    🔨 Service: {service_name}
+
+    Our team will contact you before arrival. 
+
+    Questions? Reply to this message.
+
+    Thank you for choosing us.
+    - Sarah & team"""
+
+            clean_phone = clean_phone_number(self.phone_number)
+            whatsapp_api.send_text_message(clean_phone, confirmation_message)
+            print(f"✅ Confirmation sent to {clean_phone}")
+            
+        except Exception as e:
+            print(f"❌ Confirmation message error: {str(e)}")
+
+
+    def notify_team(self, appointment_info, appointment_datetime):
+        """Notify team about new appointment"""
+        try:
+            service_name = appointment_info.get('project_type', 'Plumbing service')
+            if service_name:
+                service_map = {
+                    'bathroom_renovation': 'Bathroom Renovation',
+                    'new_plumbing_installation': 'New Plumbing Installation',
+                    'kitchen_renovation': 'Kitchen Renovation'
+                }
+                service_name = service_map.get(service_name, service_name.replace('_', ' ').title())
+            
+            plan_status = "Not specified"
+            if appointment_info.get('has_plan') is not None:
+                plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
+            
+            team_message = f"""🚨 NEW APPOINTMENT BOOKED!
+
+    Customer: {appointment_info.get('name', 'Unknown')}
+    Phone: {self.phone_number.replace('whatsapp:', '')}
+    Date/Time: {appointment_datetime.strftime('%A, %B %d at %I:%M %p')}
+    Area: {appointment_info.get('area', 'Not provided')}
+    Service: {service_name}
+    Property: {appointment_info.get('property_type', 'Not specified')}
+    Timeline: {appointment_info.get('timeline', 'Not specified')}
+    Plan Status: {plan_status}
+
+    View appointment: https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/
+
+    Check calendar for details."""
+
+            # Team numbers (without whatsapp: prefix or +)
+            TEAM_NUMBERS = ['263774819901']
+            
+            print(f"📤 Sending notifications to {len(TEAM_NUMBERS)} team members...")
+            
+            sent_count = 0
+            for number in TEAM_NUMBERS:
+                try:
+                    whatsapp_api.send_text_message(number, team_message)
+                    print(f"✅ Team notification sent to {number}")
+                    sent_count += 1
+                except Exception as msg_error:
+                    print(f"❌ Failed to send team notification to {number}: {str(msg_error)}")
+            
+            if sent_count > 0:
+                print(f"✅ Successfully sent {sent_count} team notifications")
+                    
+        except Exception as e:
+            print(f"❌ Team notification error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+
+    def add_to_google_calendar(self, appointment_info, appointment_datetime):
+        """Add appointment to Google Calendar"""
+        try:
+            # Skip if no credentials configured
+            if not GOOGLE_CALENDAR_CREDENTIALS:
+                print("⚠️ Google Calendar credentials not configured")
+                return None
+                
+            # Initialize Google Calendar service
+            credentials = service_account.Credentials.from_service_account_info(
+                GOOGLE_CALENDAR_CREDENTIALS,
+                scopes=['https://www.googleapis.com/auth/calendar']
+            )
+            service = build('calendar', 'v3', credentials=credentials)
+            
+            # Create event description
+            description_parts = []
+            if appointment_info.get('project_type'):
+                description_parts.append(f"Service: {appointment_info['project_type']}")
+            if appointment_info.get('area'):
+                description_parts.append(f"Area: {appointment_info['area']}")
+            if appointment_info.get('property_type'):
+                description_parts.append(f"Property: {appointment_info['property_type']}")
+            if appointment_info.get('timeline'):
+                description_parts.append(f"Timeline: {appointment_info['timeline']}")
+            if appointment_info.get('has_plan') is not None:
+                plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
+                description_parts.append(f"Plan Status: {plan_status}")
+                
+            description_parts.append(f"Phone: {self.phone_number}")
+            
+            # Create event
+            event = {
+                'summary': f"Plumbing Appointment - {appointment_info.get('name', 'Customer')}",
+                'description': "\n".join(description_parts),
+                'start': {
+                    'dateTime': appointment_datetime.isoformat(),
+                    'timeZone': 'Africa/Johannesburg',
+                },
+                'end': {
+                    'dateTime': (appointment_datetime + timedelta(hours=2)).isoformat(),
+                    'timeZone': 'Africa/Johannesburg',
+                },
+                'attendees': [
+                    {'email': 'team@plumbingcompany.com'},
+                ],
+                'reminders': {
+                    'useDefault': False,
+                    'overrides': [
+                        {'method': 'email', 'minutes': 24 * 60},
+                        {'method': 'popup', 'minutes': 30},
+                    ],
+                },
+            }
+            
+            # Insert event
+            event_result = service.events().insert(
+                calendarId='primary',
+                body=event
+            ).execute()
+            
+            print(f"✅ Added to Google Calendar")
+            return event_result
+            
+        except Exception as e:
+            print(f"❌ Google Calendar Error: {str(e)}")
+            return None
+
+
+
     def book_appointment(self, message):
         """Book an appointment using the stored datetime"""
         try:
@@ -3898,84 +4196,6 @@ def fallback_manual_extraction(self, message):
             print(f"Error logging AI decision: {str(e)}")
 
 
-    def check_appointment_availability(self, requested_datetime):
-        """Check if requested time slot is available"""
-        try:
-            # Ensure timezone awareness
-            if requested_datetime.tzinfo is None:
-                sa_timezone = pytz.timezone('Africa/Johannesburg')
-                requested_datetime = sa_timezone.localize(requested_datetime)
-            
-            # Define appointment duration (default 2 hours)
-            appointment_duration = timedelta(hours=2)
-            requested_end = requested_datetime + appointment_duration
-            
-            print(f"Checking availability for: {requested_datetime} to {requested_end}")
-            
-            # 1. Check if it's not in the past (with 1-hour buffer)
-            now = timezone.now()
-            min_booking_time = now + timedelta(hours=1)
-            
-            if requested_datetime <= min_booking_time:
-                print(f"Requested time is too soon: {requested_datetime} vs minimum {min_booking_time}")
-                return False, "too_soon"
-            
-            # 2. Check business days (Monday-Friday)
-            weekday = requested_datetime.weekday()  # 0=Monday, 6=Sunday
-            if weekday >= 5:  # Saturday=5, Sunday=6
-                print(f"Requested time is on weekend: weekday {weekday}")
-                return False, "weekend"
-            
-            # 3. Check business hours (8 AM - 6 PM)
-            hour = requested_datetime.hour
-            if hour < 8 or hour >= 18:
-                print(f"Outside business hours: {hour}:00 (business hours: 8 AM - 6 PM)")
-                return False, "outside_business_hours"
-            
-            # 4. Check if appointment would end after business hours
-            if requested_end.hour > 18 or (requested_end.hour == 18 and requested_end.minute > 0):
-                print(f"Appointment would end after business hours: {requested_end}")
-                return False, "ends_after_hours"
-            
-            # 5. Check for conflicts with other confirmed appointments
-            conflicting_appointments = Appointment.objects.filter(
-                status='confirmed',
-                scheduled_datetime__isnull=False
-            ).exclude(
-                id=self.appointment.id  # Exclude current appointment for reschedules
-            )
-            
-            for existing_appt in conflicting_appointments:
-                # Ensure existing appointment is timezone-aware
-                if existing_appt.scheduled_datetime.tzinfo is None:
-                    sa_timezone = pytz.timezone('Africa/Johannesburg')
-                    existing_start = sa_timezone.localize(existing_appt.scheduled_datetime)
-                else:
-                    existing_start = existing_appt.scheduled_datetime
-                    
-                existing_end = existing_start + appointment_duration
-                
-                # Check for time overlap: appointments overlap if start1 < end2 AND start2 < end1
-                if (requested_datetime < existing_end and requested_end > existing_start):
-                    print(f"Conflict found with appointment {existing_appt.id}")
-                    print(f"Existing: {existing_start} to {existing_end}")
-                    print(f"Requested: {requested_datetime} to {requested_end}")
-                    return False, existing_appt
-            
-            # 6. Check maximum advance booking (3 months)
-            max_advance_time = now + timedelta(days=90)
-            if requested_datetime > max_advance_time:
-                print(f"Too far in advance: {requested_datetime} vs maximum {max_advance_time}")
-                return False, "too_far_ahead"
-            
-            print(f"✅ Time slot is available: {requested_datetime}")
-            return True, None
-            
-        except Exception as e:
-            print(f"❌ Error checking availability: {str(e)}")
-            return False, "error"
-
-
 
     def get_availability_error_message(self, error_type, conflict_appointment=None):
         """Generate user-friendly error messages for availability issues"""
@@ -4079,89 +4299,6 @@ def fallback_manual_extraction(self, message):
         else:
                 return f"{day_names[weekday]} (Weekend - Closed)"
 
-    def get_alternative_time_suggestions(self, requested_datetime):
-        """Get alternative available time slots near the requested time - UPDATED VERSION"""
-        try:
-            suggestions = []
-            
-            # Get the requested date and time
-            requested_date = requested_datetime.date()
-            requested_hour = requested_datetime.hour
-            
-            # Time slots to suggest (business hours: 8, 10, 12, 14, 16)
-            business_time_slots = [8, 10, 12, 14, 16]
-            
-            print(f"Looking for alternatives near {requested_datetime}")
-            
-            # 1. First try same day, different times
-            if self.is_business_day(requested_date):
-                for hour in business_time_slots:
-                    # Skip the exact requested time
-                    if hour == requested_hour:
-                        continue
-                        
-                    candidate_time = datetime.combine(requested_date, datetime.min.time().replace(hour=hour))
-                    sa_timezone = pytz.timezone('Africa/Johannesburg')
-                    candidate_datetime = sa_timezone.localize(candidate_time)
-                    
-                    # Only suggest future times
-                    if candidate_datetime > timezone.now():
-                        is_available, conflict = self.check_appointment_availability(candidate_datetime)
-                        if is_available:
-                            suggestions.append({
-                                'datetime': candidate_datetime,
-                                'display': candidate_datetime.strftime('%A, %B %d at %I:%M %p'),
-                                'day_type': 'same_day',
-                                'priority': 1  # Same day gets highest priority
-                            })
-            
-            # 2. If we need more suggestions, try next business days
-            if len(suggestions) < 4:
-                days_to_check = 7  # Check next week
-                for day_offset in range(1, days_to_check + 1):
-                    check_date = requested_date + timedelta(days=day_offset)
-                    
-                    # Only check business days
-                    if not self.is_business_day(check_date):
-                        continue
-                    
-                    # Try to find slots on this day
-                    for hour in business_time_slots:
-                        candidate_time = datetime.combine(check_date, datetime.min.time().replace(hour=hour))
-                        sa_timezone = pytz.timezone('Africa/Johannesburg')
-                        candidate_datetime = sa_timezone.localize(candidate_time)
-                        
-                        is_available, conflict = self.check_appointment_availability(candidate_datetime)
-                        if is_available:
-                            suggestions.append({
-                                'datetime': candidate_datetime,
-                                'display': candidate_datetime.strftime('%A, %B %d at %I:%M %p'),
-                                'day_type': 'next_days',
-                                'priority': 2  # Next days get lower priority
-                            })
-                            
-                            # Limit suggestions per day to avoid overwhelming
-                            break
-                    
-                    # Stop if we have enough suggestions
-                    if len(suggestions) >= 4:
-                        break
-            
-            # 3. Sort suggestions by priority and time
-            suggestions.sort(key=lambda x: (x['priority'], x['datetime']))
-            
-            # Return max 4 suggestions
-            final_suggestions = suggestions[:4]
-            
-            print(f"Found {len(final_suggestions)} alternative time suggestions")
-            for sugg in final_suggestions:
-                print(f"  - {sugg['display']} ({sugg['day_type']})")
-            
-            return final_suggestions
-            
-        except Exception as e:
-            print(f"Error getting alternative suggestions: {str(e)}")
-            return []
 
     def format_availability_response(self, alternatives, requested_time_str=None):
         """Format alternative time suggestions into a user-friendly message"""
@@ -4221,74 +4358,7 @@ def fallback_manual_extraction(self, message):
 
 
 
-    def add_to_google_calendar(self, appointment_info, appointment_datetime):
-        """Add appointment to Google Calendar"""
-        try:
-            # Skip if no credentials configured
-            if not GOOGLE_CALENDAR_CREDENTIALS:
-                print("⚠️ Google Calendar credentials not configured")
-                return None
-                
-            # Initialize Google Calendar service
-            credentials = service_account.Credentials.from_service_account_info(
-                GOOGLE_CALENDAR_CREDENTIALS,
-                scopes=['https://www.googleapis.com/auth/calendar']
-            )
-            service = build('calendar', 'v3', credentials=credentials)
-            
-            # Create event description
-            description_parts = []
-            if appointment_info.get('project_type'):
-                description_parts.append(f"Service: {appointment_info['project_type']}")
-            if appointment_info.get('area'):
-                description_parts.append(f"Area: {appointment_info['area']}")
-            if appointment_info.get('property_type'):
-                description_parts.append(f"Property: {appointment_info['property_type']}")
-#            if appointment_info.get('house_stage'):
-#                description_parts.append(f"House Stage: {appointment_info['house_stage']}")
-            if appointment_info.get('timeline'):
-                description_parts.append(f"Timeline: {appointment_info['timeline']}")
-            if appointment_info.get('has_plan') is not None:
-                plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
-                description_parts.append(f"Plan Status: {plan_status}")
-                
-            description_parts.append(f"Phone: {self.phone_number}")
-            
-            # Create event
-            event = {
-                'summary': f"Plumbing Appointment - {appointment_info.get('name', 'Customer')}",
-                'description': "\n".join(description_parts),
-                'start': {
-                    'dateTime': appointment_datetime.isoformat(),
-                    'timeZone': 'Africa/Johannesburg',
-                },
-                'end': {
-                    'dateTime': (appointment_datetime + datetime.timedelta(hours=2)).isoformat(),
-                    'timeZone': 'Africa/Johannesburg',
-                },
-                'attendees': [
-                    {'email': 'team@plumbingcompany.com'},
-                ],
-                'reminders': {
-                    'useDefault': False,
-                    'overrides': [
-                        {'method': 'email', 'minutes': 24 * 60},
-                        {'method': 'popup', 'minutes': 30},
-                    ],
-                },
-            }
-            
-            # Insert event
-            event_result = service.events().insert(
-                calendarId='primary',
-                body=event
-            ).execute()
-            
-            return event_result
-            
-        except Exception as e:
-            print(f"Google Calendar Error: {str(e)}")
-            return None
+
 
     def send_message(self, message_text):
         """Send WhatsApp message using Cloud API"""
@@ -4302,88 +4372,6 @@ def fallback_manual_extraction(self, message):
             raise
 
 
-    def send_confirmation_message(self, appointment_info, appointment_datetime):
-        """Send confirmation message to customer"""
-        try:
-            service_name = "Plumbing service"
-            
-            confirmation_message = f"""🔧 APPOINTMENT CONFIRMED! 🔧
-
-Hi {appointment_info.get('name', 'there')},
-
-Your plumbing appointment is confirmed:
-📅 Date: {appointment_datetime.strftime('%A, %B %d, %Y')}
-🕐 Time: {appointment_datetime.strftime('%I:%M %p')}
-📍 Area: {appointment_info.get('area', 'Your area')}
-🔨 Service: {appointment_info.get('project_type','Plumbing Service')}
-
-Our team will contact you before arrival. 
-
-Questions? Reply to this message.
-
-Thank you for choosing us.
-- Sarah & team"""
-
-            clean_phone = clean_phone_number(self.phone_number)
-            whatsapp_api.send_text_message(clean_phone, confirmation_message)
-            
-        except Exception as e:
-            print(f"Confirmation message error: {str(e)}")
-
-    def notify_team(self, appointment_info, appointment_datetime):
-        """Notify team about new appointment - UPDATED for Cloud API"""
-        try:
-            service_name = appointment_info.get('project_type', 'Plumbing service')
-            if service_name:
-                service_map = {
-                    'bathroom_renovation': 'Bathroom Renovation',
-                    'new_plumbing_installation': 'New Plumbing Installation',
-                    'kitchen_renovation': 'Kitchen Renovation'
-                }
-                service_name = service_map.get(service_name, service_name.replace('_', ' ').title())
-            
-            plan_status = "Not specified"
-            if appointment_info.get('has_plan') is not None:
-                plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
-            
-            team_message = f"""🚨 NEW APPOINTMENT BOOKED!
-
-Customer: {appointment_info.get('name', 'Unknown')}
-Phone: {self.phone_number.replace('whatsapp:', '')}
-Date/Time: {appointment_datetime.strftime('%A, %B %d at %I:%M %p')}
-Area: {appointment_info.get('area', 'Not provided')}
-Service: {service_name}
-Property: {appointment_info.get('property_type', 'Not specified')}
-Timeline: {appointment_info.get('timeline', 'Not specified')}
-Plan Status: {plan_status}
-
-View appointment: https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/
-
-Check calendar for details."""
-
-            # Team numbers (without whatsapp: prefix or +)
-            TEAM_NUMBERS = [
-                '263774819901',  # Format: country code + number
-            ]
-            
-            print(f"📤 Sending notifications to {len(TEAM_NUMBERS)} team members...")
-            
-            sent_count = 0
-            for number in TEAM_NUMBERS:
-                try:
-                    whatsapp_api.send_text_message(number, team_message)
-                    print(f"✅ Team notification sent to {number}")
-                    sent_count += 1
-                except Exception as msg_error:
-                    print(f"❌ Failed to send team notification to {number}: {str(msg_error)}")
-            
-            if sent_count > 0:
-                print(f"✅ Successfully sent {sent_count} team notifications")
-                    
-        except Exception as e:
-            print(f"❌ Team notification error: {str(e)}")
-            import traceback
-            traceback.print_exc()
 
             
 def send_reminder_message(appointment, reminder_type):
