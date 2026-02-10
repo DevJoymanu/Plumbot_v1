@@ -55,9 +55,24 @@ from django.db.models import Q
 from .decorators import staff_required
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
+from .whatsapp_cloud_api import whatsapp_api
+
 import logging
 logger = logging.getLogger(__name__)
 
+
+
+# Helper function for phone number formatting
+def clean_phone_number(phone):
+    """Convert phone number to WhatsApp Cloud API format (no prefix, no +)"""
+    return phone.replace('whatsapp:', '').replace('+', '').strip()
+
+def format_phone_number_for_storage(phone):
+    """Format phone number for database storage (keep whatsapp: prefix for compatibility)"""
+    if not phone.startswith('whatsapp:'):
+        # If it's just numbers, add whatsapp:+
+        return f"whatsapp:+{phone}"
+    return phone
 
 
 @anonymous_required
@@ -900,7 +915,6 @@ class AppointmentDetailView(DetailView):
         
         return redirect('appointment_detail', pk=appointment.pk)
 
-# views.py
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDocumentsView(DetailView):
     template_name = 'appointment_documents.html'
@@ -910,8 +924,9 @@ class AppointmentDocumentsView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         appointment = self.get_object()
-
+        
         documents = appointment.get_uploaded_documents()
+        
         context.update({
             'documents': documents,
             'document_count': len(documents),
@@ -920,14 +935,19 @@ class AppointmentDocumentsView(DetailView):
 
 @staff_required
 def download_document(request, pk, document_type):
+    """View to download specific documents"""
     appointment = get_object_or_404(Appointment, pk=pk)
-
-    documents = {doc['type']: doc['file'] for doc in appointment.get_uploaded_documents()}
-    file_field = documents.get(document_type)
-
-    if file_field:
-        return redirect(file_field.url)
-
+    
+    if document_type == 'plan_file' and appointment.plan_file:
+        try:
+            # Serve the file for download
+            response = HttpResponse(appointment.plan_file.read(), content_type='application/octet-stream')
+            filename = f"plan_{appointment.customer_name or 'customer'}_{appointment.id}{os.path.splitext(appointment.plan_file.name)[1]}"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+        except Exception as e:
+            messages.error(request, f'Error downloading file: {str(e)}')
+    
     messages.error(request, 'Document not found')
     return redirect('appointment_documents', pk=appointment.pk)
 
@@ -1381,9 +1401,8 @@ def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=
         return False
 
 def send_job_appointment_notifications(job_appointment):
-    """Send notifications about new job appointment"""
+    """Send notifications about new job appointment - UPDATED"""
     try:
-        # Format job details
         job_date = job_appointment.job_scheduled_datetime.strftime('%A, %B %d, %Y')
         job_time = job_appointment.job_scheduled_datetime.strftime('%I:%M %p')
         duration = job_appointment.job_duration_hours
@@ -1410,11 +1429,8 @@ Questions? Reply to this message.
 - Plumbing Team"""
         
         # Send to customer
-        twilio_client.messages.create(
-            body=customer_message,
-            from_=TWILIO_WHATSAPP_NUMBER,
-            to=job_appointment.phone_number
-        )
+        clean_phone = clean_phone_number(job_appointment.phone_number)
+        whatsapp_api.send_text_message(clean_phone, customer_message)
         
         # Team notification
         plumber_name = job_appointment.assigned_plumber.get_full_name() if job_appointment.assigned_plumber else "Unassigned"
@@ -1436,14 +1452,10 @@ Job Description:
 View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         
         # Send to team
-        TEAM_NUMBERS = ['whatsapp:+263774819901']
+        TEAM_NUMBERS = ['263774819901']
         for number in TEAM_NUMBERS:
             try:
-                twilio_client.messages.create(
-                    body=team_message,
-                    from_=TWILIO_WHATSAPP_NUMBER,
-                    to=number
-                )
+                whatsapp_api.send_text_message(number, team_message)
             except Exception as e:
                 print(f"Failed to send team notification: {str(e)}")
         
@@ -1894,9 +1906,8 @@ Questions? Feel free to ask here anytime."""
             return "Your plan has been uploaded. Our plumber will review it and contact you within 24 hours."
 
     def notify_plumber_about_plan(self):
-        """Send plan details to plumber via WhatsApp"""
+        """Send plan details to plumber via WhatsApp - UPDATED"""
         try:
-            # Prepare plumber notification
             service_name = self.appointment.project_type.replace('_', ' ').title()
             customer_name = self.appointment.customer_name or "Customer"
             customer_phone = self.phone_number.replace('whatsapp:', '')
@@ -1924,26 +1935,21 @@ View full details: http://127.0.0.1:8000/appointments/{self.appointment.id}/
 
 Status: Plan uploaded - awaiting your review"""
 
-            # Send to plumber
+            # Plumber numbers (without whatsapp: prefix or +)
             plumber_numbers = [
-                'whatsapp:+263774819901',  # Main plumber
-                # Add additional plumbers if needed
+                '263774819901',  # Format: country code + number
             ]
             
             for number in plumber_numbers:
                 try:
-                    message = twilio_client.messages.create(
-                        body=plumber_message,
-                        from_=TWILIO_WHATSAPP_NUMBER,
-                        to=number
-                    )
-                    print(f"✅ Plan notification sent to plumber {number}. SID: {message.sid}")
+                    whatsapp_api.send_text_message(number, plumber_message)
+                    print(f"✅ Plan notification sent to plumber {number}")
                 except Exception as msg_error:
                     print(f"❌ Failed to notify plumber {number}: {str(msg_error)}")
 
         except Exception as e:
             print(f"❌ Error notifying plumber: {str(e)}")
-
+            
     def handle_post_upload_messages(self, message):
         """Handle messages after plan has been uploaded"""
         try:
@@ -4285,18 +4291,22 @@ def fallback_manual_extraction(self, message):
             print(f"Google Calendar Error: {str(e)}")
             return None
 
+    def send_message(self, message_text):
+        """Send WhatsApp message using Cloud API"""
+        try:
+            clean_phone = clean_phone_number(self.phone_number)
+            result = whatsapp_api.send_text_message(clean_phone, message_text)
+            print(f"✅ Message sent via Cloud API to {clean_phone}")
+            return result
+        except Exception as e:
+            print(f"❌ Failed to send message: {str(e)}")
+            raise
+
+
     def send_confirmation_message(self, appointment_info, appointment_datetime):
         """Send confirmation message to customer"""
         try:
-            # Build service description
             service_name = "Plumbing service"
-#            if appointment_info.get('project_type'):
-#                service_map = {
-#                    'bathroom': 'Bathroom Renovation',
-#                    'installation': 'New Plumbing Installation', 
-#                    'kitchen': 'Kitchen Renovation'
-#                }
-#                service_name = service_map.get(appointment_info['project_type'], service_name)
             
             confirmation_message = f"""🔧 APPOINTMENT CONFIRMED! 🔧
 
@@ -4310,24 +4320,20 @@ Your plumbing appointment is confirmed:
 
 Our team will contact you before arrival. 
 
-Questions? Reply to this message or call (555) PLUMBING.
+Questions? Reply to this message.
 
 Thank you for choosing us.
 - Sarah & team"""
 
-            twilio_client.messages.create(
-                body=confirmation_message,
-                from_=TWILIO_WHATSAPP_NUMBER,
-                to=self.phone_number
-            )
+            clean_phone = clean_phone_number(self.phone_number)
+            whatsapp_api.send_text_message(clean_phone, confirmation_message)
             
         except Exception as e:
             print(f"Confirmation message error: {str(e)}")
 
     def notify_team(self, appointment_info, appointment_datetime):
-        """Notify team about new appointment - FIXED VERSION"""
+        """Notify team about new appointment - UPDATED for Cloud API"""
         try:
-            # Get service name with fallback
             service_name = appointment_info.get('project_type', 'Plumbing service')
             if service_name:
                 service_map = {
@@ -4337,151 +4343,123 @@ Thank you for choosing us.
                 }
                 service_name = service_map.get(service_name, service_name.replace('_', ' ').title())
             
-            # Plan status for team
             plan_status = "Not specified"
             if appointment_info.get('has_plan') is not None:
                 plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
             
-            # Format the team notification message
             team_message = f"""🚨 NEW APPOINTMENT BOOKED!
 
-    Customer: {appointment_info.get('name', 'Unknown')}
-    Phone: {self.phone_number.replace('whatsapp:', '')}
-    Date/Time: {appointment_datetime.strftime('%A, %B %d at %I:%M %p')}
-    Area: {appointment_info.get('area', 'Not provided')}
-    Service: {service_name}
-    Property: {appointment_info.get('property_type', 'Not specified')}
-    Timeline: {appointment_info.get('timeline', 'Not specified')}
-    Plan Status: {plan_status}
+Customer: {appointment_info.get('name', 'Unknown')}
+Phone: {self.phone_number.replace('whatsapp:', '')}
+Date/Time: {appointment_datetime.strftime('%A, %B %d at %I:%M %p')}
+Area: {appointment_info.get('area', 'Not provided')}
+Service: {service_name}
+Property: {appointment_info.get('property_type', 'Not specified')}
+Timeline: {appointment_info.get('timeline', 'Not specified')}
+Plan Status: {plan_status}
 
-    View appointment: https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/
+View appointment: https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/
 
-    Check calendar for details."""
+Check calendar for details."""
 
-            # Team numbers to notify
+            # Team numbers (without whatsapp: prefix or +)
             TEAM_NUMBERS = [
-                'whatsapp:+263774819901',  # Your plumber's number
+                '263774819901',  # Format: country code + number
             ]
             
-            print(f"📤 Attempting to send notifications to {len(TEAM_NUMBERS)} team members...")
+            print(f"📤 Sending notifications to {len(TEAM_NUMBERS)} team members...")
             
             sent_count = 0
             for number in TEAM_NUMBERS:
                 try:
-                    message = twilio_client.messages.create(
-                        body=team_message,
-                        from_=TWILIO_WHATSAPP_NUMBER,
-                        to=number
-                    )
-                    print(f"✅ Team notification sent successfully to {number}. Message SID: {message.sid}")
+                    whatsapp_api.send_text_message(number, team_message)
+                    print(f"✅ Team notification sent to {number}")
                     sent_count += 1
                 except Exception as msg_error:
                     print(f"❌ Failed to send team notification to {number}: {str(msg_error)}")
             
             if sent_count > 0:
                 print(f"✅ Successfully sent {sent_count} team notifications")
-            else:
-                print(f"❌ Failed to send any team notifications")
                     
         except Exception as e:
             print(f"❌ Team notification error: {str(e)}")
             import traceback
-            print(traceback.format_exc())
+            traceback.print_exc()
+
             
-    def send_reminder_message(appointment, reminder_type):
-        """Send reminder message based on reminder type"""
-        try:
-            # Get customer name or default to "there"
-            customer_name = appointment.customer_name or "there"
-            
-            # Format appointment datetime
-            appt_date = appointment.scheduled_datetime.strftime('%A, %B %d, %Y')
-            appt_time = appointment.scheduled_datetime.strftime('%I:%M %p')
-            
-            # Get service name
-#            service_name = "Plumbing service"
-#            if appointment.project_type:
-#                service_map = {
-#                    'bathroom_renovation': 'Bathroom Renovation',
-#                    'new_plumbing_installation': 'New Plumbing Installation',
-#                    'kitchen_renovation': 'Kitchen Renovation'
-#                }
-#                service_name = service_map.get(appointment.project_type, service_name)
-            
-            # Create reminder messages based on type
-            if reminder_type == '1_day':
-                message = f"""🔧 APPOINTMENT REMINDER
-
-    Hi {customer_name},
-
-    Just a friendly reminder about your plumbing appointment:
-
-    📅 Tomorrow: {appt_date}
-    🕐 Time: {appt_time}
-    📍 Area: {appointment.customer_area or 'Your location'}
-    🔨 Service: {service_name}
-
-    Our team will contact you before arrival to confirm timing.
-
-    Need to reschedule? Reply to this message or call (555) PLUMBING.
-
-    See you tomorrow!
-    - Sarah & team"""
-
-            elif reminder_type == 'morning':
-                message = f"""🌅 GOOD MORNING REMINDER
-
-    Hi {customer_name},
-
-    Today's your plumbing appointment:
-
-    📅 Today: {appt_date}
-    🕐 Time: {appt_time}
-    📍 Area: {appointment.customer_area or 'Your location'}
-    🔨 Service: {service_name}
-
-    Our team will call you 30 minutes before arrival.
-
-    Questions? Reply here or call (555) PLUMBING.
-
-    Looking forward to serving you today!
-    - Sarah & team"""
-
-            elif reminder_type == '2_hours':
-                message = f"""⏰ APPOINTMENT IN 2 HOURS
-
-    Hi {customer_name},
-
-    Your plumbing appointment is coming up:
-
-    🕐 In 2 hours: {appt_time}
-    📍 Area: {appointment.customer_area or 'Your location'}
-    🔨 Service: {service_name}
-
-    Our team will call you in about 30 minutes to confirm arrival time.
-
-    Please ensure someone is available at the location.
-
-    Questions? Reply here or call (555) PLUMBING.
-
-    - Sarah & team"""
-
-            else:
-                return False
-
-            # Send the reminder message
-            twilio_client.messages.create(
-                body=message,
-                from_=TWILIO_WHATSAPP_NUMBER,
-                to=appointment.phone_number
-            )
-            
-            print(f"✅ {reminder_type} reminder sent to {appointment.phone_number}")
-            return True
+def send_reminder_message(appointment, reminder_type):
+    """Send reminder message based on reminder type - UPDATED"""
+    try:
+        customer_name = appointment.customer_name or "there"
+        appt_date = appointment.scheduled_datetime.strftime('%A, %B %d, %Y')
+        appt_time = appointment.scheduled_datetime.strftime('%I:%M %p')
         
-        except Exception as e:
-            print(f"❌ Failed to send {reminder_type} reminder to {appointment.phone_number}: {str(e)}")
+        if reminder_type == '1_day':
+            message = f"""🔧 APPOINTMENT REMINDER
+
+Hi {customer_name},
+
+Just a friendly reminder about your plumbing appointment:
+
+📅 Tomorrow: {appt_date}
+🕐 Time: {appt_time}
+📍 Area: {appointment.customer_area or 'Your location'}
+
+Our team will contact you before arrival to confirm timing.
+
+Need to reschedule? Reply to this message.
+
+See you tomorrow!
+- Sarah & team"""
+
+        elif reminder_type == 'morning':
+            message = f"""🌅 GOOD MORNING REMINDER
+
+Hi {customer_name},
+
+Today's your plumbing appointment:
+
+📅 Today: {appt_date}
+🕐 Time: {appt_time}
+📍 Area: {appointment.customer_area or 'Your location'}
+
+Our team will call you 30 minutes before arrival.
+
+Questions? Reply here.
+
+Looking forward to serving you today!
+- Sarah & team"""
+
+        elif reminder_type == '2_hours':
+            message = f"""⏰ APPOINTMENT IN 2 HOURS
+
+Hi {customer_name},
+
+Your plumbing appointment is coming up:
+
+🕐 In 2 hours: {appt_time}
+📍 Area: {appointment.customer_area or 'Your location'}
+
+Our team will call you in about 30 minutes to confirm arrival time.
+
+Please ensure someone is available at the location.
+
+Questions? Reply here.
+
+- Sarah & team"""
+        else:
             return False
+
+        # Send using WhatsApp Cloud API
+        clean_phone = clean_phone_number(appointment.phone_number)
+        whatsapp_api.send_text_message(clean_phone, message)
+        
+        print(f"✅ {reminder_type} reminder sent to {clean_phone}")
+        return True
+    
+    except Exception as e:
+        print(f"❌ Failed to send {reminder_type} reminder: {str(e)}")
+        return False
 
 
     def check_and_send_reminders():

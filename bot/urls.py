@@ -25,7 +25,8 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    path('webhook/', bot, name='whatsapp_webhook'),
+    #path('webhook/', bot, name='whatsapp_webhook'),
+    path('webhook/', whatsapp_webhook, name='whatsapp_webhook'),
 
     # Authentication URLs
     path('', login_view, name='login'),
