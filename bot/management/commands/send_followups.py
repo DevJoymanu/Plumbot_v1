@@ -85,7 +85,7 @@ class Command(BaseCommand):
         
         # Exclude leads that have responded recently (within last 12 hours)
         # Exclude leads that responded in last 2 minutes
-        recent_response_cutoff = now - timedelta(minutes=2)
+        recent_response_cutoff = now - timedelta(minutes=7)
 
         leads = leads.exclude(
             last_customer_response__gte=recent_response_cutoff
@@ -167,7 +167,7 @@ class Command(BaseCommand):
         current_stage = lead.followup_stage
 
         # 🔥 NEW: 2-minute immediate follow-up
-        if current_stage in ['none', 'responded'] and minutes_since >= 2:
+        if current_stage in ['none', 'responded'] and minutes_since >= 7:
             return 'day_1'
         
         elif current_stage == 'day_1':
