@@ -1,18 +1,25 @@
-# Save this as: yourapp/management/commands/send_followups.py
-# Create the directory structure: yourapp/management/commands/
+# Save this as: bot/management/commands/send_followups.py
+# ENHANCED VERSION with AI-powered contextual message generation
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
-from bot.models import Appointment  # Replace 'yourapp' with your actual app name
+from bot.models import Appointment
 from bot.whatsapp_cloud_api import whatsapp_api
+from openai import OpenAI
+import os
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
+# Initialize DeepSeek client for AI-powered message generation
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
+deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com/v1") if DEEPSEEK_API_KEY else None
+
 
 class Command(BaseCommand):
-    help = 'Check and send follow-up messages to non-responsive leads'
+    help = 'Check and send AI-powered follow-up messages to non-responsive leads'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -30,10 +37,13 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         force = options['force']
         
-        self.stdout.write(self.style.SUCCESS('🔍 Starting follow-up check...'))
+        self.stdout.write(self.style.SUCCESS('🔍 Starting AI-powered follow-up check...'))
         
         if dry_run:
             self.stdout.write(self.style.WARNING('🧪 DRY RUN MODE - No messages will be sent'))
+        
+        if not deepseek_client:
+            self.stdout.write(self.style.ERROR('❌ DEEPSEEK_API_KEY not configured - using fallback templates'))
         
         # Get leads that need follow-up
         leads = self.get_leads_needing_followup(force)
@@ -45,12 +55,18 @@ class Command(BaseCommand):
             'skipped': 0,
             'errors': 0,
             'completed': 0,
+            'ai_generated': 0,
+            'template_fallback': 0
         }
         
         for lead in leads:
             try:
                 result = self.process_lead_followup(lead, dry_run)
-                results[result] += 1
+                results[result['status']] += 1
+                if result.get('ai_generated'):
+                    results['ai_generated'] += 1
+                if result.get('template_fallback'):
+                    results['template_fallback'] += 1
                 
             except Exception as e:
                 logger.error(f"Error processing lead {lead.id}: {str(e)}")
@@ -62,6 +78,8 @@ class Command(BaseCommand):
         # Print summary
         self.stdout.write(self.style.SUCCESS('\n📊 FOLLOW-UP SUMMARY:'))
         self.stdout.write(f"✅ Sent: {results['sent']}")
+        self.stdout.write(f"🤖 AI Generated: {results['ai_generated']}")
+        self.stdout.write(f"📄 Template Fallback: {results['template_fallback']}")
         self.stdout.write(f"⏭️  Skipped: {results['skipped']}")
         self.stdout.write(f"✔️  Completed: {results['completed']}")
         self.stdout.write(f"❌ Errors: {results['errors']}")
@@ -83,10 +101,8 @@ class Command(BaseCommand):
             followup_stage='responded'
         )
         
-        # Exclude leads that have responded recently (within last 12 hours)
-        # Exclude leads that responded in last 2 minutes
+        # Exclude leads that responded in last 7 minutes
         recent_response_cutoff = now - timedelta(minutes=7)
-
         leads = leads.exclude(
             last_customer_response__gte=recent_response_cutoff
         )
@@ -101,18 +117,16 @@ class Command(BaseCommand):
         return leads.order_by('last_customer_response', 'created_at')
 
     def process_lead_followup(self, lead, dry_run=False):
-        """Process a single lead for follow-up"""
+        """Process a single lead for follow-up with AI-generated message"""
         now = timezone.now()
         
         # Determine which follow-up stage this lead should be at
         next_stage = self.calculate_followup_stage(lead, now)
         
         if next_stage is None:
-            # Not ready for follow-up yet
-            return 'skipped'
+            return {'status': 'skipped'}
         
         if next_stage == 'completed':
-            # Mark as completed
             if not dry_run:
                 lead.followup_stage = 'completed'
                 lead.is_lead_active = False
@@ -122,16 +136,23 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(f'✔️  Lead {lead.id} marked as completed (no more follow-ups)')
             )
-            return 'completed'
+            return {'status': 'completed'}
         
-        # Generate and send the follow-up message
-        message = self.generate_followup_message(lead, next_stage)
+        # Generate the follow-up message using AI
+        message_result = self.generate_followup_message(lead, next_stage)
+        message = message_result['message']
         
         if dry_run:
             self.stdout.write(
                 self.style.SUCCESS(f'🧪 Would send {next_stage} follow-up to {lead.phone_number}:')
             )
+            self.stdout.write(f'   AI: {message_result["ai_generated"]}')
             self.stdout.write(f'   "{message[:100]}..."')
+            return {
+                'status': 'sent',
+                'ai_generated': message_result['ai_generated'],
+                'template_fallback': message_result['template_fallback']
+            }
         else:
             # Send the actual message
             clean_phone = self.clean_phone_number(lead.phone_number)
@@ -146,15 +167,19 @@ class Command(BaseCommand):
             # Add to conversation history
             lead.add_conversation_message('assistant', message)
             
+            ai_indicator = "🤖 AI" if message_result['ai_generated'] else "📄 Template"
             self.stdout.write(
-                self.style.SUCCESS(f'✅ Sent {next_stage} follow-up to {lead.phone_number}')
+                self.style.SUCCESS(f'✅ {ai_indicator} {next_stage} follow-up sent to {lead.phone_number}')
             )
-        
-        return 'sent'
+            
+            return {
+                'status': 'sent',
+                'ai_generated': message_result['ai_generated'],
+                'template_fallback': message_result['template_fallback']
+            }
     
     def calculate_followup_stage(self, lead, now):
         """Calculate which follow-up stage the lead should be at"""
-
         # Determine time since last interaction
         if lead.last_customer_response:
             time_since = now - lead.last_customer_response
@@ -166,56 +191,172 @@ class Command(BaseCommand):
         minutes_since = time_since.total_seconds() / 60
         current_stage = lead.followup_stage
 
-        # 🔥 NEW: 2-minute immediate follow-up
+        # First follow-up: after 7 minutes (for testing) - change to 1 day in production
         if current_stage in ['none', 'responded'] and minutes_since >= 7:
             return 'day_1'
         
         elif current_stage == 'day_1':
-            # Second follow-up: 3 days after first follow-up
             if lead.last_followup_sent:
                 days_since_followup = (now - lead.last_followup_sent).total_seconds() / (3600 * 24)
                 if days_since_followup >= 3:
                     return 'day_3'
         
         elif current_stage == 'day_3':
-            # Third follow-up: 1 week after second follow-up
             if lead.last_followup_sent:
                 days_since_followup = (now - lead.last_followup_sent).total_seconds() / (3600 * 24)
                 if days_since_followup >= 7:
                     return 'week_1'
         
         elif current_stage == 'week_1':
-            # Fourth follow-up: 2 weeks after third follow-up
             if lead.last_followup_sent:
                 days_since_followup = (now - lead.last_followup_sent).total_seconds() / (3600 * 24)
                 if days_since_followup >= 14:
                     return 'week_2'
         
         elif current_stage == 'week_2':
-            # Final follow-up: 1 month after fourth follow-up
             if lead.last_followup_sent:
                 days_since_followup = (now - lead.last_followup_sent).total_seconds() / (3600 * 24)
                 if days_since_followup >= 30:
                     return 'month_1'
         
         elif current_stage == 'month_1':
-            # No more follow-ups after the 1-month follow-up
             return 'completed'
         
-        # Not ready for next follow-up yet
         return None
 
     def generate_followup_message(self, lead, stage):
-        """Generate appropriate follow-up message based on stage"""
+        """Generate AI-powered contextually appropriate follow-up message"""
+        try:
+            # Try AI generation first if available
+            if deepseek_client:
+                return self.generate_ai_followup_message(lead, stage)
+            else:
+                # Fallback to templates if no AI
+                return self.generate_template_followup_message(lead, stage)
+        except Exception as e:
+            logger.error(f"AI message generation failed: {str(e)}, falling back to template")
+            return self.generate_template_followup_message(lead, stage)
+    
+    def generate_ai_followup_message(self, lead, stage):
+        """Use DeepSeek AI to generate contextually appropriate follow-up message"""
         customer_name = lead.customer_name or "there"
+        context = self.get_lead_context(lead)
         
-        # Get context about what we know so far
+        # Get conversation history for context
+        recent_messages = self.get_recent_conversation_summary(lead)
+        
+        # Define stage-specific guidance
+        stage_guidance = {
+            'day_1': {
+                'tone': 'friendly and gentle',
+                'goal': 'gentle check-in without being pushy',
+                'time_reference': 'recently',
+                'urgency': 'low',
+            },
+            'day_3': {
+                'tone': 'understanding and patient',
+                'goal': 'acknowledge they may be busy, offer flexibility',
+                'time_reference': 'a few days ago',
+                'urgency': 'low-medium',
+            },
+            'week_1': {
+                'tone': 'professional with a helpful offer',
+                'goal': 'create value, mention benefits or offer',
+                'time_reference': 'last week',
+                'urgency': 'medium',
+            },
+            'week_2': {
+                'tone': 'warm and understanding',
+                'goal': 'final soft attempt, offer to pause outreach',
+                'time_reference': 'a couple weeks ago',
+                'urgency': 'medium',
+            },
+            'month_1': {
+                'tone': 'casual re-engagement',
+                'goal': 'fresh start, no pressure',
+                'time_reference': 'a while back',
+                'urgency': 'low',
+            }
+        }
+        
+        guidance = stage_guidance.get(stage, stage_guidance['day_1'])
+        
+        prompt = f"""You are Sarah, a professional and friendly appointment assistant for a luxury plumbing company in South Africa.
+
+CONTEXT:
+- Customer name: {customer_name}
+- Service interested in: {context['service'] or 'plumbing services'}
+- Information collected so far: {context['progress']}
+- Relevant offer: {context['offer']}
+- Last contacted: {guidance['time_reference']}
+- This is follow-up attempt: {stage.replace('_', ' ')}
+- Recent conversation: {recent_messages}
+
+TASK:
+Write a WhatsApp follow-up message with these requirements:
+
+TONE: {guidance['tone']}
+GOAL: {guidance['goal']}
+URGENCY LEVEL: {guidance['urgency']}
+
+MESSAGE REQUIREMENTS:
+1. Start with "Hi {customer_name}," (always use this exact format)
+2. Acknowledge the gap in communication naturally based on: {guidance['time_reference']}
+3. Reference their specific service interest: {context['service'] or 'plumbing needs'}
+4. Include what information you still need if applicable: {context['progress']}
+5. Make it conversational and warm, not salesy
+6. Include a clear but gentle call-to-action
+7. Keep it concise (3-5 short sentences max)
+8. End with "- Sarah & team"
+9. Use South African English spelling and phrasing
+10. Include ONE emoji maximum (optional, only if it feels natural)
+
+AVOID:
+- Being too formal or corporate
+- Apologizing excessively  
+- Being pushy or desperate
+- Using multiple emojis
+- Long paragraphs
+- Complex language
+
+Generate ONLY the message text, nothing else."""
+
+        response = deepseek_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are Sarah, a professional appointment assistant. Write natural, warm WhatsApp messages for follow-ups. Keep messages short and conversational."
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
+            ],
+            temperature=0.8,  # Higher temperature for more natural variation
+            max_tokens=200
+        )
+        
+        ai_message = response.choices[0].message.content.strip()
+        
+        # Log the AI-generated message for monitoring
+        logger.info(f"AI generated {stage} follow-up for lead {lead.id}")
+        
+        return {
+            'message': ai_message,
+            'ai_generated': True,
+            'template_fallback': False
+        }
+    
+    def generate_template_followup_message(self, lead, stage):
+        """Fallback template-based message generation"""
+        customer_name = lead.customer_name or "there"
         context = self.get_lead_context(lead)
         
         messages = {
             'day_1': f"""Hi {customer_name},
 
-I noticed we started discussing your {context['service'] or 'plumbing needs'} yesterday, but I haven't heard back from you.
+I noticed we started discussing your {context['service'] or 'plumbing needs'} recently, but I haven't heard back from you.
 
 {context['progress']}
 
@@ -273,7 +414,32 @@ Thanks!
 - Sarah & team"""
         }
         
-        return messages.get(stage, messages['day_1'])
+        return {
+            'message': messages.get(stage, messages['day_1']),
+            'ai_generated': False,
+            'template_fallback': True
+        }
+    
+    def get_recent_conversation_summary(self, lead):
+        """Get a summary of recent conversation for AI context"""
+        try:
+            if not lead.conversation_history:
+                return "No previous conversation"
+            
+            # Get last 3 messages
+            recent = lead.conversation_history[-3:] if len(lead.conversation_history) > 3 else lead.conversation_history
+            
+            summary_parts = []
+            for msg in recent:
+                role = "Customer" if msg.get('role') == 'user' else "Sarah"
+                content = msg.get('content', '')[:100]  # First 100 chars
+                summary_parts.append(f"{role}: {content}")
+            
+            return " | ".join(summary_parts) if summary_parts else "No previous conversation"
+            
+        except Exception as e:
+            logger.error(f"Error getting conversation summary: {str(e)}")
+            return "Unable to load conversation history"
 
     def get_lead_context(self, lead):
         """Get context about what information we have for the lead"""
@@ -319,5 +485,3 @@ Thanks!
     def clean_phone_number(self, phone):
         """Clean phone number for WhatsApp Cloud API"""
         return phone.replace('whatsapp:', '').replace('+', '').strip()
-
-        
