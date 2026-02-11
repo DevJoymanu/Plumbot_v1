@@ -907,12 +907,15 @@ class AppointmentDetailView(DetailView):
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
                     appointment.job_scheduled_datetime = sa_timezone.localize(dt)
             else:
+                #s
                 scheduled_datetime = request.POST.get('scheduled_datetime')
                 if scheduled_datetime:
-                    dt = datetime.strptime(scheduled_datetime, "%Y-%m-%d %H:%M")
+                    dt = datetime.fromisoformat(scheduled_datetime)
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
-                    appointment.scheduled_datetime = sa_timezone.localize(dt)
-            
+                    if dt.tzinfo is None:
+                        dt = sa_timezone.localize(dt)
+                    appointment.scheduled_datetime = dt
+                                
             appointment.save()
             
             messages.success(request, 'Appointment updated successfully!')
