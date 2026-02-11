@@ -901,11 +901,17 @@ class AppointmentDetailView(DetailView):
             if appointment.appointment_type == 'job_appointment':
                 job_datetime = request.POST.get('job_scheduled_datetime')
                 if job_datetime:
-                    appointment.job_scheduled_datetime = job_datetime
+                    # Parse string into datetime object
+                    dt = datetime.strptime(job_datetime, "%Y-%m-%d %H:%M")
+                    # Make timezone aware
+                    sa_timezone = pytz.timezone('Africa/Johannesburg')
+                    appointment.job_scheduled_datetime = sa_timezone.localize(dt)
             else:
                 scheduled_datetime = request.POST.get('scheduled_datetime')
                 if scheduled_datetime:
-                    appointment.scheduled_datetime = scheduled_datetime
+                    dt = datetime.strptime(scheduled_datetime, "%Y-%m-%d %H:%M")
+                    sa_timezone = pytz.timezone('Africa/Johannesburg')
+                    appointment.scheduled_datetime = sa_timezone.localize(dt)
             
             appointment.save()
             
