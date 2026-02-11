@@ -84,7 +84,9 @@ class Command(BaseCommand):
         )
         
         # Exclude leads that have responded recently (within last 12 hours)
-        recent_response_cutoff = now - timedelta(hours=12)
+        # Exclude leads that responded in last 2 minutes
+        recent_response_cutoff = now - timedelta(minutes=2)
+
         leads = leads.exclude(
             last_customer_response__gte=recent_response_cutoff
         )
@@ -149,27 +151,24 @@ class Command(BaseCommand):
             )
         
         return 'sent'
-
+    
     def calculate_followup_stage(self, lead, now):
         """Calculate which follow-up stage the lead should be at"""
+
         # Determine time since last interaction
         if lead.last_customer_response:
-            time_since_response = now - lead.last_customer_response
+            time_since = now - lead.last_customer_response
         elif lead.last_followup_sent:
-            time_since_response = now - lead.last_followup_sent
+            time_since = now - lead.last_followup_sent
         else:
-            time_since_response = now - lead.created_at
-        
-        hours_since = time_since_response.total_seconds() / 3600
-        days_since = hours_since / 24
-        
+            time_since = now - lead.created_at
+
+        minutes_since = time_since.total_seconds() / 60
         current_stage = lead.followup_stage
-        
-        # Follow-up progression logic
-        if current_stage == 'none' or current_stage == 'responded':
-            # First follow-up: after 1 day (24 hours)
-            if days_since >= 1:
-                return 'day_1'
+
+        # 🔥 NEW: 2-minute immediate follow-up
+        if current_stage in ['none', 'responded'] and minutes_since >= 2:
+            return 'day_1'
         
         elif current_stage == 'day_1':
             # Second follow-up: 3 days after first follow-up
