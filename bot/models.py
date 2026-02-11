@@ -354,88 +354,80 @@ class Appointment(models.Model):
 
     # ===== AVAILABILITY CHECKING METHODS =====
     
+
     def check_appointment_availability(self, requested_datetime):
-        """Check if the requested datetime is available (no conflicts)"""
+        """
+        Check if the requested datetime is available (no conflicts).
+        
+        Returns:
+            (bool, str|Appointment) -> True if available, False with reason or conflicting appointment
+        """
         try:
-            # Convert to timezone-aware datetime if needed
+            # 1️⃣ Ensure requested_datetime is timezone-aware
+            sa_timezone = pytz.timezone('Africa/Johannesburg')
             if requested_datetime.tzinfo is None:
-                sa_timezone = pytz.timezone('Africa/Johannesburg')
                 requested_datetime = sa_timezone.localize(requested_datetime)
-            
-            # Define appointment duration (default 2 hours)
-            appointment_duration = timedelta(hours=2)
+            else:
+                requested_datetime = requested_datetime.astimezone(sa_timezone)
+
+            # 2️⃣ Determine appointment duration
+            appointment_duration = getattr(self, 'duration', timedelta(hours=2))
             requested_end = requested_datetime + appointment_duration
-            
-            print(f"Checking availability for: {requested_datetime} to {requested_end}")
-            
-            # 1. Check if it's not in the past
-            now = timezone.now()
+
+            # 3️⃣ Check if requested time is in the past
+            now = timezone.now().astimezone(sa_timezone)
             if requested_datetime <= now:
-                print(f"Requested time is in the past: {requested_datetime} vs {now}")
                 return False, "past_time"
-            
-            # 2. Check business hours (8 AM - 6 PM, Monday to Friday)
+
+            # 4️⃣ Check business hours: 8:00 - 18:00, Monday to Friday
             weekday = requested_datetime.weekday()  # 0=Monday, 6=Sunday
-            hour = requested_datetime.hour
-            
-            # Check if it's a weekend
-            if weekday >= 5:  # Saturday=5, Sunday=6
-                print(f"Requested time is on weekend: weekday {weekday}")
+            if weekday >= 5:
                 return False, "weekend"
+
+            business_start = requested_datetime.replace(hour=8, minute=0, second=0, microsecond=0)
+            business_end = requested_datetime.replace(hour=18, minute=0, second=0, microsecond=0)
             
-            # Check business hours
-            if hour < 8 or hour >= 18:
-                print(f"Outside business hours: {hour}:00 (business hours: 8 AM - 6 PM)")
+            if not (business_start <= requested_datetime < business_end):
                 return False, "outside_business_hours"
-            
-            # Check if appointment would end after business hours
-            if requested_end.hour > 18:
-                print(f"Appointment would end after business hours: {requested_end}")
+            if requested_end > business_end:
                 return False, "ends_after_hours"
-            
-            # 3. Check for conflicts with other confirmed appointments
+
+            # 5️⃣ Check for conflicts with other confirmed appointments
             conflicting_appointments = Appointment.objects.filter(
                 status='confirmed',
                 scheduled_datetime__isnull=False
-            ).exclude(
-                id=self.id  # Exclude current appointment for reschedules
-            )
-            
-            for existing_appt in conflicting_appointments:
-                if existing_appt.scheduled_datetime.tzinfo is None:
-                    sa_timezone = pytz.timezone('Africa/Johannesburg')
-                    existing_start = sa_timezone.localize(existing_appt.scheduled_datetime)
+            ).exclude(id=self.id)  # exclude current appointment for reschedules
+
+            for existing in conflicting_appointments:
+                existing_start = existing.scheduled_datetime
+                if existing_start.tzinfo is None:
+                    existing_start = sa_timezone.localize(existing_start)
                 else:
-                    existing_start = existing_appt.scheduled_datetime
-                    
-                existing_end = existing_start + appointment_duration
+                    existing_start = existing_start.astimezone(sa_timezone)
                 
-                # Check for time overlap
-                # Appointments overlap if: start1 < end2 AND start2 < end1
-                if (requested_datetime < existing_end and requested_end > existing_start):
-                    print(f"Conflict found with appointment {existing_appt.id}")
-                    print(f"Existing: {existing_start} to {existing_end}")
-                    print(f"Requested: {requested_datetime} to {requested_end}")
-                    return False, existing_appt
-            
-            # 4. Check for minimum advance booking (optional - at least 2 hours notice)
-            min_advance_time = now + timedelta(hours=2)
-            if requested_datetime < min_advance_time:
-                print(f"Too short notice: {requested_datetime} vs minimum {min_advance_time}")
+                existing_end = existing_start + getattr(existing, 'duration', timedelta(hours=2))
+                
+                # Overlap check: start1 < end2 AND start2 < end1
+                if requested_datetime < existing_end and requested_end > existing_start:
+                    return False, existing  # return conflicting appointment object
+
+            # 6️⃣ Minimum notice: at least 2 hours in advance
+            min_notice = now + timedelta(hours=2)
+            if requested_datetime < min_notice:
                 return False, "insufficient_notice"
-            
-            # 5. Check for reasonable booking window (optional - not more than 3 months ahead)
-            max_advance_time = now + timedelta(days=90)
-            if requested_datetime > max_advance_time:
-                print(f"Too far in advance: {requested_datetime} vs maximum {max_advance_time}")
+
+            # 7️⃣ Maximum booking window: not more than 90 days ahead
+            max_booking = now + timedelta(days=90)
+            if requested_datetime > max_booking:
                 return False, "too_far_ahead"
-            
-            print(f"Time slot is available: {requested_datetime}")
+
+            # ✅ Time slot available
             return True, None
-            
+
         except Exception as e:
-            print(f"Error checking availability: {str(e)}")
+            print(f"❌ Error checking availability: {str(e)}")
             return False, "error"
+
 
     def get_availability_error_message(self, error_type, conflict_appointment=None):
         """Generate user-friendly error messages for availability issues"""
