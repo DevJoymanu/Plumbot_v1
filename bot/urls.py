@@ -103,6 +103,13 @@ urlpatterns = [
          template_items_api, 
          name='template_items_api'),
 
+    # Follow-up Management URLs
+    path('followups/', views.followup_dashboard, name='followup_dashboard'),
+    path('followups/check/', views.manual_followup_check, name='manual_followup_check'),
+    path('appointments/<int:pk>/mark-inactive/', views.mark_lead_inactive, name='mark_lead_inactive'),
+    path('appointments/<int:pk>/reactivate/', views.reactivate_lead, name='reactivate_lead'),
+    path('appointments/<int:pk>/test-followup/', views.test_followup_message, name='test_followup_message'),
+
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

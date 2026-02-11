@@ -864,6 +864,140 @@ class Appointment(models.Model):
         return len(self.get_uploaded_documents())
 # Keep your other models (ConversationMessage, AppointmentNote, AppointmentReminder, ServiceArea) unchanged
 
+    # New follow-up tracking fields (add these after running the migration)
+    last_customer_response = models.DateTimeField(
+        null=True, 
+        blank=True, 
+        help_text='Last time customer sent a message'
+    )
+    last_followup_sent = models.DateTimeField(
+        null=True, 
+        blank=True, 
+        help_text='Last time we sent a follow-up message'
+    )
+    followup_count = models.IntegerField(
+        default=0, 
+        help_text='Number of follow-ups sent'
+    )
+    followup_stage = models.CharField(
+        max_length=20,
+        choices=[
+            ('none', 'No Follow-up Needed'),
+            ('day_1', '1 Day Follow-up'),
+            ('day_3', '3 Day Follow-up'),
+            ('week_1', '1 Week Follow-up'),
+            ('week_2', '2 Week Follow-up'),
+            ('month_1', '1 Month Follow-up'),
+            ('completed', 'Follow-up Completed'),
+            ('responded', 'Customer Responded'),
+        ],
+        default='none',
+        help_text='Current follow-up stage'
+    )
+    is_lead_active = models.BooleanField(
+        default=True, 
+        help_text='Whether this lead is still active for follow-ups'
+    )
+    lead_marked_inactive_at = models.DateTimeField(
+        null=True, 
+        blank=True, 
+        help_text='When lead was marked as inactive'
+    )
+    
+    # ... existing methods ...
+    
+    def mark_customer_response(self):
+        """Mark that customer has responded - resets follow-up stage"""
+        self.last_customer_response = timezone.now()
+        self.followup_stage = 'responded'
+        self.is_lead_active = True
+        self.save()
+    
+    def mark_as_inactive_lead(self, reason='customer_requested'):
+        """Mark lead as inactive (no more follow-ups)"""
+        self.is_lead_active = False
+        self.lead_marked_inactive_at = timezone.now()
+        self.followup_stage = 'completed'
+        self.save()
+    
+    def get_days_since_last_contact(self):
+        """Get number of days since last customer contact"""
+        if self.last_customer_response:
+            delta = timezone.now() - self.last_customer_response
+            return delta.days
+        elif self.created_at:
+            delta = timezone.now() - self.created_at
+            return delta.days
+        return 0
+    
+    def get_followup_status_display_verbose(self):
+        """Get detailed follow-up status for admin"""
+        if not self.is_lead_active:
+            return f"Inactive since {self.lead_marked_inactive_at.strftime('%Y-%m-%d')}"
+        
+        days_since = self.get_days_since_last_contact()
+        stage_display = self.get_followup_stage_display()
+        
+        if self.followup_count == 0:
+            return f"No follow-ups yet ({days_since} days since last contact)"
+        else:
+            return f"{stage_display} - {self.followup_count} follow-ups sent ({days_since} days)"
+    
+    def should_send_followup_now(self):
+        """Check if this lead needs a follow-up right now"""
+        if not self.is_lead_active or self.status == 'confirmed':
+            return False
+        
+        now = timezone.now()
+        
+        # Don't send if customer responded recently (within 12 hours)
+        if self.last_customer_response:
+            hours_since = (now - self.last_customer_response).total_seconds() / 3600
+            if hours_since < 12:
+                return False
+        
+        # Don't send if we already sent a follow-up today
+        if self.last_followup_sent:
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            if self.last_followup_sent >= today_start:
+                return False
+        
+        # Check if it's time based on follow-up stage
+        return self._is_ready_for_next_followup(now)
+    
+    def _is_ready_for_next_followup(self, now):
+        """Internal method to check if ready for next follow-up stage"""
+        if self.followup_stage == 'none' or self.followup_stage == 'responded':
+            # First follow-up: 1 day after last contact
+            reference_time = self.last_customer_response or self.created_at
+            if reference_time:
+                days_since = (now - reference_time).total_seconds() / (3600 * 24)
+                return days_since >= 1
+        
+        elif self.last_followup_sent:
+            days_since_followup = (now - self.last_followup_sent).total_seconds() / (3600 * 24)
+            
+            stage_delays = {
+                'day_1': 3,      # 3 days after first follow-up
+                'day_3': 7,      # 1 week after second follow-up
+                'week_1': 14,    # 2 weeks after third follow-up
+                'week_2': 30,    # 1 month after fourth follow-up
+            }
+            
+            required_delay = stage_delays.get(self.followup_stage)
+            if required_delay:
+                return days_since_followup >= required_delay
+        
+        return False
+    
+    class Meta:
+        # Add index for follow-up queries
+        indexes = [
+            models.Index(fields=['is_lead_active', 'followup_stage', 'last_customer_response']),
+            models.Index(fields=['last_followup_sent']),
+        ]
+
+
 class ConversationMessage(models.Model):
     ROLE_CHOICES = [
         ('user', 'Customer'),

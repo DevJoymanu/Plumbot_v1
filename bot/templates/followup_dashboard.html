@@ -1,0 +1,180 @@
+<!-- Save as: templates/followup_dashboard.html -->
+
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Follow-up Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">📊 Follow-up Dashboard</h1>
+        <div>
+            <form method="post" action="{% url 'manual_followup_check' %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-send"></i> Run Follow-up Check Now
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-primary">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Active Leads</h6>
+                    <h2 class="card-title mb-0">{{ total_active_leads }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Ready for Follow-up</h6>
+                    <h2 class="card-title mb-0">{{ ready_count }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Follow-up Stages</h6>
+                    <div class="row">
+                        {% for stage, count in stage_counts.items %}
+                        <div class="col-6">
+                            <small>{{ stage }}: <strong>{{ count }}</strong></small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leads Ready for Follow-up -->
+    {% if ready_leads %}
+    <div class="card mb-4">
+        <div class="card-header bg-warning">
+            <h5 class="mb-0">⚡ Leads Ready for Follow-up Today</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th>Phone</th>
+                            <th>Service</th>
+                            <th>Current Stage</th>
+                            <th>Days Since Contact</th>
+                            <th>Follow-ups Sent</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lead in ready_leads %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'appointment_detail' lead.pk %}">
+                                    {{ lead.customer_name|default:"Unknown" }}
+                                </a>
+                            </td>
+                            <td>{{ lead.phone_number }}</td>
+                            <td>{{ lead.get_project_type_display|default:"Not specified" }}</td>
+                            <td>
+                                <span class="badge bg-info">
+                                    {{ lead.get_followup_stage_display }}
+                                </span>
+                            </td>
+                            <td>{{ lead.get_days_since_last_contact }} days</td>
+                            <td>{{ lead.followup_count }}</td>
+                            <td>
+                                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm btn-outline-primary">
+                                    View
+                                </a>
+                                <a href="{% url 'test_followup_message' lead.pk %}"
+                                    class="btn btn-sm btn-outline-secondary">
+                                    Test Message
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Recent Responses -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">✅ Recent Responses (Last 7 Days)</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_responses %}
+                    <div class="list-group">
+                        {% for lead in recent_responses %}
+                        <a href="{% url 'appointment_detail' lead.pk %}" class="list-group-item list-group-item-action">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">{{ lead.customer_name|default:"Unknown" }}</h6>
+                                <small>{{ lead.last_customer_response|timesince }} ago</small>
+                            </div>
+                            <small class="text-muted">{{ lead.phone_number }}</small>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No recent responses</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">🚫 Recently Inactive Leads</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_inactive %}
+                    <div class="list-group">
+                        {% for lead in recent_inactive %}
+                        <a href="{% url 'appointment_detail' lead.pk %}" class="list-group-item list-group-item-action">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">{{ lead.customer_name|default:"Unknown" }}</h6>
+                                <small>{{ lead.lead_marked_inactive_at|timesince }} ago</small>
+                            </div>
+                            <small class="text-muted">{{ lead.phone_number }}</small>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No recently inactive leads</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        border-radius: 0.5rem;
+    }
+
+    .card-header {
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+
+    .badge {
+        padding: 0.35em 0.65em;
+        font-size: 0.85em;
+    }
+</style>
+{% endblock %}

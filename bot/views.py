@@ -1667,7 +1667,244 @@ def map_project_type_to_service_key(project_type):
     }
     return mapping.get(project_type, "other")
 
+# ====== UPDATE THE WEBHOOK HANDLER ======
+# Update your existing @csrf_exempt webhook function to mark customer responses
 
+@csrf_exempt
+def whatsapp_webhook(request):
+    """Handle incoming WhatsApp messages - UPDATED WITH FOLLOW-UP TRACKING"""
+    if request.method == 'POST':
+        try:
+            incoming_message = request.POST.get('Body', '').strip()
+            sender = request.POST.get('From', '')
+            
+            if not incoming_message or not sender:
+                return HttpResponse(status=200)
+            
+            print(f"📥 Incoming from {sender}: {incoming_message}")
+            
+            # Create or get appointment
+            appointment, created = Appointment.objects.get_or_create(
+                phone_number=sender,
+                defaults={'status': 'pending'}
+            )
+            
+            # ✅ NEW: Mark that customer has responded
+            appointment.mark_customer_response()
+            
+            # Check for opt-out requests
+            opt_out_keywords = ['stop', 'unsubscribe', 'opt out', 'no more', 'leave me alone']
+            if any(keyword in incoming_message.lower() for keyword in opt_out_keywords):
+                appointment.mark_as_inactive_lead(reason='customer_opted_out')
+                
+                opt_out_message = """Understood. I've removed you from our follow-up list.
+
+If you change your mind in the future, just send us a message and we'll be happy to help!
+
+Thanks,
+- Sarah & team"""
+                
+                clean_phone = clean_phone_number(sender)
+                whatsapp_api.send_text_message(clean_phone, opt_out_message)
+                
+                print(f"🚫 Customer {sender} opted out")
+                return HttpResponse(status=200)
+            
+            # Check for "LATER" or "NOT NOW" requests
+            delay_keywords = ['later', 'not now', 'busy', 'call me later', 'in a few weeks']
+            if any(keyword in incoming_message.lower() for keyword in delay_keywords):
+                appointment.followup_stage = 'week_2'  # Fast-forward to 2-week follow-up
+                appointment.save()
+                
+                delay_message = """No problem at all! I understand timing isn't right at the moment.
+
+I'll check back with you in a couple of weeks. 
+
+In the meantime, if you need anything, just message us!
+
+Thanks,
+- Sarah & team"""
+                
+                clean_phone = clean_phone_number(sender)
+                whatsapp_api.send_text_message(clean_phone, delay_message)
+                
+                print(f"⏰ Customer {sender} requested delay")
+                return HttpResponse(status=200)
+            
+            # Normal message processing with Plumbot
+            plumbot = Plumbot(sender)
+            reply = plumbot.generate_response(incoming_message)
+            
+            # Send reply
+            clean_phone = clean_phone_number(sender)
+            whatsapp_api.send_text_message(clean_phone, reply)
+            
+            print(f"✅ Sent reply to {sender}")
+            return HttpResponse(status=200)
+            
+        except Exception as e:
+            print(f"❌ Webhook error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return HttpResponse(status=500)
+    
+    return HttpResponse(status=405)
+
+
+# ====== NEW VIEWS FOR FOLLOW-UP MANAGEMENT ======
+
+@staff_required
+def followup_dashboard(request):
+    """Dashboard showing follow-up statistics and leads"""
+    from datetime import timedelta
+    
+    now = timezone.now()
+    
+    # Get statistics
+    total_active_leads = Appointment.objects.filter(
+        is_lead_active=True,
+        status='pending'
+    ).count()
+    
+    # Leads by follow-up stage
+    stage_counts = {}
+    for stage_code, stage_name in Appointment._meta.get_field('followup_stage').choices:
+        count = Appointment.objects.filter(
+            is_lead_active=True,
+            followup_stage=stage_code
+        ).count()
+        if count > 0:
+            stage_counts[stage_name] = count
+    
+    # Leads needing follow-up today
+    leads_needing_followup = Appointment.objects.filter(
+        is_lead_active=True,
+        status='pending'
+    ).exclude(
+        followup_stage='completed'
+    ).exclude(
+        followup_stage='responded'
+    )
+    
+    # Filter to those actually ready for follow-up
+    ready_for_followup = [
+        lead for lead in leads_needing_followup 
+        if lead.should_send_followup_now()
+    ]
+    
+    # Recent responses (last 7 days)
+    recent_responses = Appointment.objects.filter(
+        last_customer_response__gte=now - timedelta(days=7),
+        is_lead_active=True
+    ).order_by('-last_customer_response')[:10]
+    
+    # Inactive leads (last 30 days)
+    recent_inactive = Appointment.objects.filter(
+        is_lead_active=False,
+        lead_marked_inactive_at__gte=now - timedelta(days=30)
+    ).order_by('-lead_marked_inactive_at')[:10]
+    
+    context = {
+        'total_active_leads': total_active_leads,
+        'stage_counts': stage_counts,
+        'ready_count': len(ready_for_followup),
+        'ready_leads': ready_for_followup[:20],  # First 20
+        'recent_responses': recent_responses,
+        'recent_inactive': recent_inactive,
+    }
+    
+    return render(request, 'followup_dashboard.html', context)
+
+
+@staff_required
+def mark_lead_inactive(request, pk):
+    """Manually mark a lead as inactive"""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    
+    if request.method == 'POST':
+        reason = request.POST.get('reason', 'manual')
+        appointment.mark_as_inactive_lead(reason=reason)
+        
+        messages.success(request, f'Lead for {appointment.customer_name or appointment.phone_number} marked as inactive')
+        return redirect('appointments_list')
+    
+    return render(request, 'confirm_mark_inactive.html', {
+        'appointment': appointment
+    })
+
+
+@staff_required
+def reactivate_lead(request, pk):
+    """Reactivate an inactive lead"""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    
+    if request.method == 'POST':
+        appointment.is_lead_active = True
+        appointment.followup_stage = 'none'
+        appointment.lead_marked_inactive_at = None
+        appointment.save()
+        
+        messages.success(request, f'Lead reactivated for {appointment.customer_name or appointment.phone_number}')
+        return redirect('appointment_detail', pk=appointment.pk)
+    
+    return render(request, 'confirm_reactivate.html', {
+        'appointment': appointment
+    })
+
+
+@staff_required  
+def test_followup_message(request, pk):
+    """Send a test follow-up message for a specific lead"""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    
+    if request.method == 'POST':
+        stage = request.POST.get('stage', 'day_1')
+        
+        # Import the management command to use its message generator
+        from django.core.management import call_command
+        from io import StringIO
+        
+        # You can manually craft a test message or use the generator
+        from yourapp.management.commands.send_followups import Command
+        cmd = Command()
+        message = cmd.generate_followup_message(appointment, stage)
+        
+        # Send it
+        clean_phone = clean_phone_number(appointment.phone_number)
+        whatsapp_api.send_text_message(clean_phone, message)
+        
+        messages.success(request, f'Test {stage} follow-up sent to {appointment.phone_number}')
+        return redirect('appointment_detail', pk=appointment.pk)
+    
+    return render(request, 'test_followup.html', {
+        'appointment': appointment,
+        'stages': ['day_1', 'day_3', 'week_1', 'week_2', 'month_1']
+    })
+
+
+@staff_required
+@require_POST
+def manual_followup_check(request):
+    """Manually trigger follow-up check (for testing/debugging)"""
+    from django.core.management import call_command
+    from io import StringIO
+    
+    try:
+        out = StringIO()
+        call_command('send_followups', stdout=out)
+        output = out.getvalue()
+        
+        messages.success(request, 'Follow-up check completed successfully')
+        
+        # Show summary
+        for line in output.split('\n'):
+            if 'Sent:' in line or 'Skipped:' in line or 'Errors:' in line:
+                messages.info(request, line.strip())
+        
+    except Exception as e:
+        messages.error(request, f'Error running follow-up check: {str(e)}')
+    
+    return redirect('followup_dashboard')
 
 
 class Plumbot:
