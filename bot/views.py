@@ -1462,7 +1462,7 @@ Job Description:
 View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         
         # Send to team
-        TEAM_NUMBERS = ['0610318200']
+        TEAM_NUMBERS = ['0774819901']
         for number in TEAM_NUMBERS:
             try:
                 whatsapp_api.send_text_message(number, team_message)
@@ -2124,7 +2124,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             plumber_number = getattr(
                 self.appointment,
                 'plumber_contact_number',
-                '+27610318200'
+                '+263774819901'
             )
 
             # Notify plumber
@@ -2212,7 +2212,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     """
 
             plumber_numbers = [
-                '27610318200',  # ✅ international format
+                '263774819901',  # ✅ international format
             ]
 
             for number in plumber_numbers:
@@ -2243,7 +2243,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             return """Your plan has been sent to our plumber and they'll contact you within 24 hours.
 
 If you need immediate assistance:
-📞 Call directly: 0610318200
+📞 Call directly: 0774819901
 
 Otherwise, please wait for their review and call. They're very reliable!
 
@@ -2267,13 +2267,13 @@ Your plan was sent {int(hours_since)} hours ago. Our plumber typically responds 
 
 Expected contact: Within the next {remaining_hours} hours
 
-If it's urgent, you can call directly: 0610318200
+If it's urgent, you can call directly: 0774819901
 
 Otherwise, they'll definitely contact you today!"""
         else:
             return """I see it's been over 24 hours since your plan was sent. Let me check on this for you.
 
-Please call our plumber directly at 0610318200 - they may have tried to reach you already.
+Please call our plumber directly at 0774819901 - they may have tried to reach you already.
 
 I'll also send them a follow-up message now."""
 
@@ -2308,20 +2308,20 @@ View details: http://127.0.0.1:8000/appointments/{self.appointment.id}/"""
             twilio_client.messages.create(
                 body=urgent_message,
                 from_=TWILIO_WHATSAPP_NUMBER,
-                to='whatsapp:+0610318200'
+                to='whatsapp:+0774819901'
             )
             
             return """🚨 I've marked your plan review as URGENT and notified our plumber immediately.
 
 They should contact you within the next few hours.
 
-For immediate assistance, you can also call: 0610318200
+For immediate assistance, you can also call: 0774819901
 
 I understand this is time-sensitive!"""
 
         except Exception as e:
             print(f"❌ Error handling urgent request: {str(e)}")
-            return "I've noted this is urgent. Please call our plumber directly at 0610318200 for immediate assistance."
+            return "I've noted this is urgent. Please call our plumber directly at 0774819901 for immediate assistance."
 
 
 
@@ -4926,7 +4926,7 @@ If you receive this, notifications are working! ✅"""
 
         # Team numbers to test
         TEAM_NUMBERS = [
-            'whatsapp:+0610318200',  # Your plumber's number
+            'whatsapp:+0774819901',  # Your plumber's number
         ]
         
         results = []
@@ -4991,7 +4991,7 @@ def verify_whatsapp_setup():
         return False
     
     # Check team numbers format
-    TEAM_NUMBERS = ['whatsapp:+0610318200']  # Your actual numbers
+    TEAM_NUMBERS = ['whatsapp:+0774819901']  # Your actual numbers
     print(f"👥 Team numbers configured: {len(TEAM_NUMBERS)}")
     
     for number in TEAM_NUMBERS:
