@@ -60,13 +60,7 @@ from .whatsapp_cloud_api import whatsapp_api
 import logging
 logger = logging.getLogger(__name__)
 
-import os
 
-BASE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000")
-
-documents_url = (
-    f"{BASE_URL}/appointments/{self.appointment.id}/documents/"
-)
 
 
 # Helper function for phone number formatting
@@ -1872,96 +1866,112 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             print(f"❌ Error handling upload question: {str(e)}")
             return "Please continue sending your plan materials. Type 'done' when you've sent everything."
 
+
+
     def complete_plan_upload(self):
         """Complete the plan upload process and notify plumber"""
         try:
             # Update appointment status
             self.appointment.plan_status = 'plan_uploaded'
             self.appointment.save()
-            
-            # Get plumber contact info
-            plumber_number = getattr(self.appointment, 'plumber_contact_number', '+0610318200')
-            
-            # Send plan to plumber
+
+            plumber_number = getattr(
+                self.appointment,
+                'plumber_contact_number',
+                '+27610318200'
+            )
+
+            # Notify plumber
             self.notify_plumber_about_plan()
-            
-            # Generate completion message
+
             service_name = self.appointment.project_type.replace('_', ' ').title()
-            customer_name = self.appointment.customer_name or "Customer"
-            
+            customer_name = self.appointment.customer_name
+
+            # ✅ Customer-friendly wording
+            if customer_name:
+                intro_message = (
+                    f"Hi {customer_name}, I've forwarded your {service_name} "
+                    "plan to our plumber for review."
+                )
+            else:
+                intro_message = (
+                    f"Thanks! I've forwarded your {service_name} "
+                    "plan to our plumber for review."
+                )
+
             completion_message = f"""✅ PLAN SENT SUCCESSFULLY!
 
-if customer_name:
-    message = (
-        f"Hi {customer_name}, I've forwarded your {service_name} "
-        "plan to our plumber for review."
-    )
-else:
-    message = (
-        f"Thanks! I've forwarded your {service_name} plan "
-        "to our plumber for review."
-    )
+    {intro_message}
 
-📞 NEXT STEPS:
-• Our plumber will review your plan within 24 hours
-• They'll contact you directly on this number: {self.phone_number.replace('whatsapp:', '')}
-• They'll discuss the project details and provide a quote
-• Once approved, they'll book your appointment or message you to complete booking
+    📞 NEXT STEPS:
+    • Our plumber will review your plan within 24 hours
+    • They'll contact you directly on this number: {self.phone_number.replace('whatsapp:', '')}
+    • They'll discuss the project details and provide a quote
+    • Once approved, they'll book your appointment or message you to complete booking
 
-🔧 PLUMBER DIRECT CONTACT:
-If you need to reach them directly: {plumber_number.replace('+27', '0').replace('+', '')}
+    🔧 PLUMBER DIRECT CONTACT:
+    If you need to reach them directly: {plumber_number.replace('+27', '0').replace('+', '')}
 
-You don't need to do anything now - just wait for their call. They're very responsive!
+    You don't need to do anything now — just wait for their call. They're very responsive!
 
-Questions? Feel free to ask here anytime."""
+    Questions? Feel free to ask here anytime 😊
+    """
 
             return completion_message
 
         except Exception as e:
             print(f"❌ Error completing plan upload: {str(e)}")
-            return "Your plan has been uploaded. Our plumber will review it and contact you within 24 hours."
+            return (
+                "Your plan has been uploaded successfully. "
+                "Our plumber will review it and contact you within 24 hours."
+            )
+
 
     def notify_plumber_about_plan(self):
-        """Send plan details to plumber via WhatsApp - UPDATED"""
+        """Send plan details to plumber via WhatsApp"""
         try:
+            base_url = os.getenv("SITE_URL", "http://127.0.0.1:8000")
+
             service_name = self.appointment.project_type.replace('_', ' ').title()
             customer_name = self.appointment.customer_name or "Customer"
             customer_phone = self.phone_number.replace('whatsapp:', '')
-            
+
+            details_url = (
+                f"{base_url}/appointments/"
+                f"{self.appointment.id}/documents/"
+            )
+
             plumber_message = f"""📋 NEW PLAN RECEIVED!
 
-Customer: {customer_name}
-Phone: {customer_phone}
-Service: {service_name}
-Area: {self.appointment.customer_area}
-Property: {self.appointment.property_type}
-Timeline: {self.appointment.timeline}
+    Customer: {customer_name}
+    Phone: {customer_phone}
+    Service: {service_name}
+    Area: {self.appointment.customer_area}
+    Property: {self.appointment.property_type}
+    Timeline: {self.appointment.timeline}
 
-🔍 PLAN DETAILS:
-The customer has uploaded their plan through WhatsApp. Please:
+    🔍 PLAN DETAILS:
+    The customer has uploaded their plan via WhatsApp.
 
-1. Review the uploaded plan materials
-2. Contact customer at {customer_phone} within 24 hours  
-3. Discuss project scope and provide quote
-4. Book appointment when ready
+    Please:
+    1. Review the uploaded plan materials
+    2. Contact the customer within 24 hours
+    3. Discuss project scope and provide a quote
+    4. Book appointment once confirmed
 
-📱 Customer is expecting your call!
+    🔗 View full details:
+    {details_url}
 
-View full details: http://127.0.0.1:8000/appointments/{self.appointment.id}/
+    Status: Plan uploaded — awaiting your review
+    """
 
-Status: Plan uploaded - awaiting your review"""
-
-            # Plumber numbers (without whatsapp: prefix or +)
             plumber_numbers = [
-                '0610318200',  # Format: country code + number
+                '27610318200',  # ✅ international format
             ]
-            
+
             for number in plumber_numbers:
-                try:
-                    whatsapp_api.send_text_message(number, plumber_message)
-                    print(f"✅ Plan notification sent to plumber {number}")
-                except Exception as msg_error:
-                    print(f"❌ Failed to notify plumber {number}: {str(msg_error)}")
+                whatsapp_api.send_text_message(number, plumber_message)
+                print(f"✅ Plan notification sent to plumber {number}")
 
         except Exception as e:
             print(f"❌ Error notifying plumber: {str(e)}")
