@@ -219,38 +219,29 @@
     <div class="card">
         <div class="card-header">
             <h3><i class="fas fa-file-invoice-dollar"></i> Quotations</h3>
-        </div>
-        <!-- Add this in the Quotations section of appointment_detail.html -->
-        <div class="quotation-section">
-            <div class="card">
-                <div class="card-header">
-                    <h3><i class="fas fa-file-invoice-dollar"></i> Quotations</h3>
-                    <div style="display: flex; gap: 10px;">
-                        <a href="{% url 'create_quotation' appointment.pk %}" class="btn btn-primary">
-                            <i class="fas fa-plus"></i> New Quotation
-                        </a>
-        
-                        <!-- Template Dropdown -->
-                        <div class="dropdown" style="position: relative;">
-                            <button class="btn btn-success" onclick="toggleTemplateDropdown()" id="templateDropdownBtn">
-                                <i class="fas fa-file-invoice"></i> From Template
-                                <i class="fas fa-chevron-down" style="margin-left: 5px; font-size: 0.8em;"></i>
-                            </button>
-                            <div id="templateDropdown"
-                                style="display: none; position: absolute; top: 100%; right: 0; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); min-width: 250px; max-height: 400px; overflow-y: auto; margin-top: 5px; z-index: 1000;">
-                                <div style="padding: 10px; border-bottom: 1px solid #eee;">
-                                    <input type="text" id="quickTemplateSearch" placeholder="Search templates..."
-                                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;"
-                                        oninput="quickSearchTemplates()">
-                                </div>
-                                <div id="quickTemplateList" style="padding: 5px;">
-                                    <!-- Templates loaded here -->
-                                </div>
-                            </div>
+            <div style="display: flex; gap: 10px;">
+                <a href="{% url 'create_quotation' appointment.pk %}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> New Quotation
+                </a>
+
+                <!-- Template Dropdown -->
+                <div class="dropdown" style="position: relative;">
+                    <button class="btn btn-success" onclick="toggleTemplateDropdown()" id="templateDropdownBtn">
+                        <i class="fas fa-file-invoice"></i> From Template
+                        <i class="fas fa-chevron-down" style="margin-left: 5px; font-size: 0.8em;"></i>
+                    </button>
+                    <div id="templateDropdown"
+                        style="display: none; position: absolute; top: 100%; right: 0; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); min-width: 250px; max-height: 400px; overflow-y: auto; margin-top: 5px; z-index: 1000;">
+                        <div style="padding: 10px; border-bottom: 1px solid #eee;">
+                            <input type="text" id="quickTemplateSearch" placeholder="Search templates..."
+                                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;"
+                                oninput="quickSearchTemplates()">
+                        </div>
+                        <div id="quickTemplateList" style="padding: 5px;">
+                            <!-- Templates loaded here -->
                         </div>
                     </div>
                 </div>
-                <!-- Rest of quotation section -->
             </div>
         </div>
 
@@ -358,7 +349,7 @@
                 <label for="property_type">Property Type</label>
                 <select id="property_type" name="property_type" class="form-control">
                     {% for value, display in appointment.PROPERTY_TYPE_CHOICES %}
-                    <option value="{{ value }}" {% if appointment.property_type == value %}selected{% endif %}>
+                    <option value="{{ value }}" {% if appointment.property_type==value %}selected{% endif %}>
                         {{ display }}
                     </option>
                     {% endfor %}
@@ -409,137 +400,138 @@
         </form>
     </div>
 
-<!-- Conversation History -->
-<div class="card">
-    <h2><i class="fas fa-comments"></i> Conversation</h2>
+    <!-- Conversation History Card -->
+    <div class="card">
+        <h2><i class="fas fa-comments"></i> Conversation</h2>
 
-    <!-- Follow-up Status Bar -->
-    <div class="followup-status-bar">
-        <div class="status-item">
-            <label>Last Contact:</label>
-            <span>{{ appointment.last_customer_response|date:"M d, H:i"|default:"Never" }}</span>
-        </div>
-        <div class="status-item">
-            <label>Follow-up Stage:</label>
-            <span class="badge badge-{{ appointment.followup_stage }}">
-                {{ appointment.get_followup_stage_display }}
-            </span>
-        </div>
-        <div class="status-item">
-            <label>Auto Follow-ups:</label>
-            <span>{{ appointment.automatic_followup_count|default:0 }}</span>
-        </div>
-        <div class="status-item">
-            <label>Manual Follow-ups:</label>
-            <span>{{ appointment.manual_followup_count|default:0 }}</span>
-        </div>
-
-        {% if appointment.manual_followup_paused %}
-        <div class="status-item paused">
-            <i class="fas fa-pause-circle"></i>
-            <span>Auto follow-ups paused until {{ appointment.manual_followup_paused_until|date:"M d, H:i" }}</span>
-        </div>
-        {% endif %}
-    </div>
-
-    <div class="conversation-history">
-        {% for message in conversation_history %}
-        <div class="message {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
-            <div class="message-header">
-                {% if message.role == 'user' %}
-                Customer
-                {% else %}
-                Bot
-                <!-- Show if automatic or manual -->
-                {% if '[AUTOMATIC FOLLOW-UP]' in message.content %}
-                <span class="followup-badge automatic">🤖 Automatic</span>
-                {% elif '[MANUAL FOLLOW-UP]' in message.content %}
-                <span class="followup-badge manual">👤 Manual</span>
-                {% elif '[BULK MANUAL FOLLOW-UP]' in message.content %}
-                <span class="followup-badge bulk">📢 Bulk Manual</span>
-                {% endif %}
-                {% endif %}
-                {% if message.timestamp %}
-                <small>{{ message.timestamp|date:"M d, H:i" }}</small>
-                {% endif %}
+        <!-- Follow-up Status Bar -->
+        <div class="followup-status-bar">
+            <div class="status-item">
+                <label>Last Contact:</label>
+                <span>{{ appointment.last_customer_response|date:"M d, H:i"|default:"Never" }}</span>
             </div>
-            <p>
-                {% if message.content %}
-                {{ message.content|cut:"[AUTOMATIC FOLLOW-UP] "|cut:"[MANUAL FOLLOW-UP] "|cut:"[BULK MANUAL FOLLOW-UP] "
-                }}
-                {% else %}
-                (no content)
-                {% endif %}
-            </p>
-        </div>
-        {% empty %}
-        <div class="empty-state">
-            <i class="fas fa-comment-slash"></i>
-            <p>No conversation history</p>
-        </div>
-        {% endfor %}
-    </div>
+            <div class="status-item">
+                <label>Follow-up Stage:</label>
+                <span class="badge badge-{{ appointment.followup_stage }}">
+                    {{ appointment.get_followup_stage_display }}
+                </span>
+            </div>
+            <div class="status-item">
+                <label>Auto Follow-ups:</label>
+                <span>{{ appointment.automatic_followup_count|default:0 }}</span>
+            </div>
+            <div class="status-item">
+                <label>Manual Follow-ups:</label>
+                <span>{{ appointment.manual_followup_count|default:0 }}</span>
+            </div>
 
-    <!-- Manual Follow-up Controls -->
-    <div class="followup-controls">
-        <!-- Pause/Resume Automatic Follow-ups -->
-        <div class="auto-followup-toggle">
             {% if appointment.manual_followup_paused %}
-            <form method="post" action="{% url 'resume_auto_followup' appointment.pk %}" style="display: inline;">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-success btn-sm">
-                    <i class="fas fa-play"></i> Resume Auto Follow-ups
-                </button>
-            </form>
-            {% else %}
-            <button onclick="showPauseModal()" class="btn btn-warning btn-sm">
-                <i class="fas fa-pause"></i> Pause Auto Follow-ups
-            </button>
+            <div class="status-item paused">
+                <i class="fas fa-pause-circle"></i>
+                <span>Auto follow-ups paused until {{ appointment.manual_followup_paused_until|date:"M d, H:i" }}</span>
+            </div>
             {% endif %}
         </div>
 
-        <!-- Quick Message Templates -->
-        <div class="quick-templates">
-            <button onclick="insertTemplate('greeting')" class="btn btn-sm btn-outline-secondary">
-                <i class="fas fa-smile"></i> Greeting
-            </button>
-            <button onclick="insertTemplate('check_in')" class="btn btn-sm btn-outline-secondary">
-                <i class="fas fa-check"></i> Check-in
-            </button>
-            <button onclick="insertTemplate('offer')" class="btn btn-sm btn-outline-secondary">
-                <i class="fas fa-gift"></i> Special Offer
-            </button>
-            <button onclick="insertTemplate('reminder')" class="btn btn-sm btn-outline-secondary">
-                <i class="fas fa-bell"></i> Reminder
-            </button>
+        <div class="conversation-history">
+            {% for message in conversation_history %}
+            <div class="message {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
+                <div class="message-header">
+                    {% if message.role == 'user' %}
+                    Customer
+                    {% else %}
+                    Bot
+                    <!-- Show if automatic or manual -->
+                    {% if '[AUTOMATIC FOLLOW-UP]' in message.content %}
+                    <span class="followup-badge automatic">🤖 Automatic</span>
+                    {% elif '[MANUAL FOLLOW-UP]' in message.content %}
+                    <span class="followup-badge manual">👤 Manual</span>
+                    {% elif '[BULK MANUAL FOLLOW-UP]' in message.content %}
+                    <span class="followup-badge bulk">📢 Bulk Manual</span>
+                    {% endif %}
+                    {% endif %}
+                    {% if message.timestamp %}
+                    <small>{{ message.timestamp|date:"M d, H:i" }}</small>
+                    {% endif %}
+                </div>
+                <p>
+                    {% if message.content %}
+                    {{ message.content|cut:"[AUTOMATIC FOLLOW-UP] "|cut:"[MANUAL FOLLOW-UP] "|cut:"[BULK MANUAL
+                    FOLLOW-UP] " }}
+                    {% else %}
+                    (no content)
+                    {% endif %}
+                </p>
+            </div>
+            {% empty %}
+            <div class="empty-state">
+                <i class="fas fa-comment-slash"></i>
+                <p>No conversation history</p>
+            </div>
+            {% endfor %}
         </div>
-    </div>
 
-    <!-- Manual Follow-up Form -->
-    <form method="post" class="followup-form" id="followupForm">
-        {% csrf_token %}
-        <div class="form-group">
-            <label for="followup_message">
-                <i class="fas fa-paper-plane"></i> Send Manual Follow-up
-                <span class="label-hint">(This will pause automatic follow-ups for 48 hours)</span>
-            </label>
-            <textarea id="followup_message" name="message" class="form-control" rows="3"
-                placeholder="Type your message here... Use {name} to personalize with customer name"
-                required></textarea>
-            <div class="char-counter">
-                <span id="charCount">0</span> / 1000 characters
+        <!-- Manual Follow-up Controls -->
+        <div class="followup-controls">
+            <!-- Pause/Resume Automatic Follow-ups -->
+            <div class="auto-followup-toggle">
+                {% if appointment.manual_followup_paused %}
+                <form method="post" action="{% url 'resume_auto_followup' appointment.pk %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success btn-sm">
+                        <i class="fas fa-play"></i> Resume Auto Follow-ups
+                    </button>
+                </form>
+                {% else %}
+                <button onclick="showPauseModal()" class="btn btn-warning btn-sm">
+                    <i class="fas fa-pause"></i> Pause Auto Follow-ups
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- Quick Message Templates -->
+            <div class="quick-templates">
+                <button onclick="insertTemplate('greeting')" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-smile"></i> Greeting
+                </button>
+                <button onclick="insertTemplate('check_in')" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-check"></i> Check-in
+                </button>
+                <button onclick="insertTemplate('offer')" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-gift"></i> Special Offer
+                </button>
+                <button onclick="insertTemplate('reminder')" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-bell"></i> Reminder
+                </button>
             </div>
         </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary" id="sendMessageBtn">
-                <i class="fas fa-paper-plane"></i> Send Manual Follow-up
-            </button>
-            <button type="button" class="btn btn-secondary" onclick="clearMessage()">
-                <i class="fas fa-times"></i> Clear
-            </button>
-        </div>
-        <div id="messageStatus" style="margin-top: 10px; display: none;"></div>
-    </form>
+
+        <!-- Manual Follow-up Form -->
+        <form method="post" class="followup-form" id="followupForm">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="followup_message">
+                    <i class="fas fa-paper-plane"></i> Send Manual Follow-up
+                    <span class="label-hint">(This will pause automatic follow-ups for 48 hours)</span>
+                </label>
+                <textarea id="followup_message" name="message" class="form-control" rows="3"
+                    placeholder="Type your message here... Use {name} to personalize with customer name"
+                    required></textarea>
+                <div class="char-counter">
+                    <span id="charCount">0</span> / 1000 characters
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="sendMessageBtn">
+                    <i class="fas fa-paper-plane"></i> Send Manual Follow-up
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="clearMessage()">
+                    <i class="fas fa-times"></i> Clear
+                </button>
+            </div>
+            <div id="messageStatus" style="margin-top: 10px; display: none;"></div>
+        </form>
+    </div>
 </div>
 
 <!-- Pause Auto Follow-up Modal -->
@@ -590,17 +582,13 @@
         </form>
     </div>
 </div>
-</div>
 
 <script>
     // Message templates
     const messageTemplates = {
         greeting: `Hi {name},\n\nI hope this message finds you well! I wanted to personally follow up on your plumbing project.\n\nIs there anything I can help clarify or any questions you have?\n\nBest regards,\n{your_name}\nHomebase Plumbers`,
-
         check_in: `Hi {name},\n\nJust checking in to see if you're still interested in moving forward with your plumbing project.\n\nWe have availability this week and would love to help!\n\nLet me know if you'd like to schedule a consultation.\n\nBest,\n{your_name}`,
-
         offer: `Hi {name},\n\nI wanted to reach out with a special offer for you!\n\nThis month, we're offering 10% off all bathroom renovations. Your project would be perfect for this.\n\nWould you like to discuss this further?\n\nBest regards,\n{your_name}\nHomebase Plumbers`,
-
         reminder: `Hi {name},\n\nI noticed we haven't heard back from you regarding your plumbing project.\n\nNo pressure at all - just wanted to remind you that we're here whenever you're ready!\n\nFeel free to reach out anytime.\n\nBest,\n{your_name}`
     };
 
@@ -708,6 +696,7 @@
                 sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Manual Follow-up';
             });
     });
+
     function updateJobStatus(jobId, newStatus) {
         if (confirm(`Change job status to ${newStatus.replace('_', ' ')}?`)) {
             fetch(`/jobs/${jobId}/update-status/`, {
@@ -731,47 +720,48 @@
                 });
         }
     }
-// Quick template dropdown
-            let quickTemplates = [];
 
-            async function toggleTemplateDropdown() {
-    const dropdown = document.getElementById('templateDropdown');
+    // Quick template dropdown
+    let quickTemplates = [];
 
-            if (dropdown.style.display === 'none') {
-                dropdown.style.display = 'block';
+    async function toggleTemplateDropdown() {
+        const dropdown = document.getElementById('templateDropdown');
+
+        if (dropdown.style.display === 'none') {
+            dropdown.style.display = 'block';
             await loadQuickTemplates();
-    } else {
-                dropdown.style.display = 'none';
+        } else {
+            dropdown.style.display = 'none';
+        }
     }
-}
 
-            async function loadQuickTemplates() {
-    const listEl = document.getElementById('quickTemplateList');
-            listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;"><i class="fas fa-spinner fa-spin"></i></div>';
+    async function loadQuickTemplates() {
+        const listEl = document.getElementById('quickTemplateList');
+        listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;"><i class="fas fa-spinner fa-spin"></i></div>';
 
-            try {
-        const response = await fetch('/api/quotation-templates/?active_only=true');
+        try {
+            const response = await fetch('/api/quotation-templates/?active_only=true');
             const data = await response.json();
 
             if (data.success && data.templates) {
                 quickTemplates = data.templates;
-            displayQuickTemplates(quickTemplates);
-        }
-    } catch (error) {
-                console.error('Error loading templates:', error);
+                displayQuickTemplates(quickTemplates);
+            }
+        } catch (error) {
+            console.error('Error loading templates:', error);
             listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Failed to load</div>';
+        }
     }
-}
 
-            function displayQuickTemplates(templates) {
-    const listEl = document.getElementById('quickTemplateList');
+    function displayQuickTemplates(templates) {
+        const listEl = document.getElementById('quickTemplateList');
 
-            if (templates.length === 0) {
-                listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No templates found</div>';
+        if (templates.length === 0) {
+            listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">No templates found</div>';
             return;
-    }
-    
-    listEl.innerHTML = templates.map(t => `
+        }
+
+        listEl.innerHTML = templates.map(t => `
             <a href="/templates/${t.id}/use/{{ appointment.pk }}/"
                 style="display: block; padding: 12px; text-decoration: none; color: #333; border-bottom: 1px solid #f0f0f0;"
                 onmouseover="this.style.background='#f8f9fa'"
@@ -781,221 +771,228 @@
                     ${t.items_count} items • R${t.estimated_cost.toFixed(2)}
                 </div>
             </a>
-    `).join('');
-}
-
-function quickSearchTemplates() {
-    const search = document.getElementById('quickTemplateSearch').value.toLowerCase();
-    const filtered = quickTemplates.filter(t =>
-        t.name.toLowerCase().includes(search) ||
-        (t.description && t.description.toLowerCase().includes(search))
-    );
-    displayQuickTemplates(filtered);
-}
-
-// Close dropdown when clicking outside
-document.addEventListener('click', function(e) {
-    const dropdown = document.getElementById('templateDropdown');
-    const btn = document.getElementById('templateDropdownBtn');
-
-    if (dropdown && btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
-        dropdown.style.display = 'none';
+        `).join('');
     }
-});
-    
 
+    function quickSearchTemplates() {
+        const search = document.getElementById('quickTemplateSearch').value.toLowerCase();
+        const filtered = quickTemplates.filter(t =>
+            t.name.toLowerCase().includes(search) ||
+            (t.description && t.description.toLowerCase().includes(search))
+        );
+        displayQuickTemplates(filtered);
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function (e) {
+        const dropdown = document.getElementById('templateDropdown');
+        const btn = document.getElementById('templateDropdownBtn');
+
+        if (dropdown && btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
+            dropdown.style.display = 'none';
+        }
+    });
 </script>
 
+<!-- Combined CSS from both versions -->
 <style>
-
     /* Follow-up specific styles */
-.followup-status-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-    padding: 15px;
-    background: #f8f9fa;
-    border-radius: 5px;
-    margin-bottom: 15px;
-    border-left: 4px solid #007bff;
-}
-
-.status-item {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-}
-
-.status-item label {
-    font-size: 0.75rem;
-    color: #666;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.status-item span {
-    font-size: 0.9rem;
-    color: #333;
-}
-
-.status-item.paused {
-    color: #856404;
-    background: #fff3cd;
-    padding: 8px;
-    border-radius: 4px;
-}
-
-.badge {
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: bold;
-}
-
-.badge-none { background: #e9ecef; color: #495057; }
-.badge-day_1 { background: #fff3cd; color: #856404; }
-.badge-day_3 { background: #cce5ff; color: #004085; }
-.badge-week_1 { background: #d1ecf1; color: #0c5460; }
-.badge-week_2 { background: #f8d7da; color: #721c24; }
-.badge-month_1 { background: #e2e3e5; color: #383d41; }
-.badge-completed { background: #d4edda; color: #155724; }
-.badge-responded { background: #d1f2eb; color: #00695c; }
-
-.followup-badge {
-    font-size: 0.7rem;
-    padding: 2px 6px;
-    border-radius: 8px;
-    margin-left: 8px;
-}
-
-.followup-badge.automatic {
-    background: #e3f2fd;
-    color: #1976d2;
-}
-
-.followup-badge.manual {
-    background: #fff3e0;
-    color: #f57c00;
-}
-
-.followup-badge.bulk {
-    background: #f3e5f5;
-    color: #7b1fa2;
-}
-
-.followup-controls {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    padding: 10px;
-    background: #f8f9fa;
-    border-radius: 5px;
-    margin-bottom: 15px;
-}
-
-.quick-templates {
-    display: flex;
-    gap: 5px;
-    flex-wrap: wrap;
-}
-
-.label-hint {
-    font-size: 0.75rem;
-    color: #666;
-    font-weight: normal;
-    font-style: italic;
-}
-
-.char-counter {
-    text-align: right;
-    font-size: 0.75rem;
-    color: #666;
-    margin-top: 5px;
-}
-
-.form-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-}
-
-.modal-content {
-    background: white;
-    padding: 30px;
-    border-radius: 8px;
-    max-width: 500px;
-    width: 90%;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.modal-content h3 {
-    margin-top: 0;
-    margin-bottom: 15px;
-}
-
-.modal-content .form-group {
-    margin-bottom: 12px;
-}
-
-.modal-content label {
-    display: block;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.modal-content label:hover {
-    background: #f8f9fa;
-    border-color: #007bff;
-}
-
-.modal-content input[type="radio"] {
-    margin-right: 8px;
-}
-
-.modal-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-@media (max-width: 767px) {
     .followup-status-bar {
-        flex-direction: column;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 5px;
+        margin-bottom: 15px;
+        border-left: 4px solid #007bff;
     }
-    
+
+    .status-item {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .status-item label {
+        font-size: 0.75rem;
+        color: #666;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .status-item span {
+        font-size: 0.9rem;
+        color: #333;
+    }
+
+    .status-item.paused {
+        color: #856404;
+        background: #fff3cd;
+        padding: 8px;
+        border-radius: 4px;
+    }
+
+    .badge {
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+
+    .badge-none {
+        background: #e9ecef;
+        color: #495057;
+    }
+
+    .badge-day_1 {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .badge-day_3 {
+        background: #cce5ff;
+        color: #004085;
+    }
+
+    .badge-week_1 {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+
+    .badge-week_2 {
+        background: #f8d7da;
+        color: #721c24;
+    }
+
+    .badge-month_1 {
+        background: #e2e3e5;
+        color: #383d41;
+    }
+
+    .badge-completed {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .badge-responded {
+        background: #d1f2eb;
+        color: #00695c;
+    }
+
+    .followup-badge {
+        font-size: 0.7rem;
+        padding: 2px 6px;
+        border-radius: 8px;
+        margin-left: 8px;
+    }
+
+    .followup-badge.automatic {
+        background: #e3f2fd;
+        color: #1976d2;
+    }
+
+    .followup-badge.manual {
+        background: #fff3e0;
+        color: #f57c00;
+    }
+
+    .followup-badge.bulk {
+        background: #f3e5f5;
+        color: #7b1fa2;
+    }
+
     .followup-controls {
-        flex-direction: column;
-        align-items: stretch;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 5px;
+        margin-bottom: 15px;
     }
-    
+
     .quick-templates {
-        justify-content: center;
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
     }
-    
+
+    .label-hint {
+        font-size: 0.75rem;
+        color: #666;
+        font-weight: normal;
+        font-style: italic;
+    }
+
+    .char-counter {
+        text-align: right;
+        font-size: 0.75rem;
+        color: #666;
+        margin-top: 5px;
+    }
+
     .form-actions {
-        flex-direction: column;
+        display: flex;
+        gap: 8px;
     }
-    
-    .form-actions .btn {
+
+    .modal {
+        position: fixed;
+        top: 0;
+        left: 0;
         width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
     }
-}
+
+    .modal-content {
+        background: white;
+        padding: 30px;
+        border-radius: 8px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .modal-content h3 {
+        margin-top: 0;
+        margin-bottom: 15px;
+    }
+
+    .modal-content .form-group {
+        margin-bottom: 12px;
+    }
+
+    .modal-content label {
+        display: block;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .modal-content label:hover {
+        background: #f8f9fa;
+        border-color: #007bff;
+    }
+
+    .modal-content input[type="radio"] {
+        margin-right: 8px;
+    }
+
+    .modal-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+    }
+
     /* Base Styles */
     * {
         box-sizing: border-box;
@@ -1068,6 +1065,10 @@ document.addEventListener('click', function(e) {
         background: #f8f9fa;
         padding: 15px;
         border-bottom: 1px solid #dee2e6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
     }
 
     .card-header h3 {
@@ -1372,6 +1373,7 @@ document.addEventListener('click', function(e) {
         margin-bottom: 5px;
         font-weight: 600;
         font-size: 0.85rem;
+        flex-wrap: wrap;
     }
 
     .message-header small {
@@ -1621,10 +1623,8 @@ document.addEventListener('click', function(e) {
             margin-right: 10px;
         }
 
-        /* Make form inputs more touch-friendly */
         .form-control {
             font-size: 16px;
-            /* Prevents zoom on iOS */
             padding: 12px;
         }
 
@@ -1636,6 +1636,27 @@ document.addEventListener('click', function(e) {
         .btn-sm {
             padding: 8px 12px;
             font-size: 0.85rem;
+        }
+
+        .followup-status-bar {
+            flex-direction: column;
+        }
+
+        .followup-controls {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .quick-templates {
+            justify-content: center;
+        }
+
+        .form-actions {
+            flex-direction: column;
+        }
+
+        .form-actions .btn {
+            width: 100%;
         }
     }
 
@@ -1652,6 +1673,12 @@ document.addEventListener('click', function(e) {
 
         .card-header h3 {
             font-size: 1rem;
+        }
+
+        .card-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
         }
     }
 
@@ -1691,7 +1718,8 @@ document.addEventListener('click', function(e) {
         .btn,
         .actions,
         .followup-form,
-        .job-actions {
+        .job-actions,
+        .followup-controls {
             display: none;
         }
 
