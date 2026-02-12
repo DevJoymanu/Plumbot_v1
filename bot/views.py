@@ -2141,10 +2141,9 @@ class Plumbot:
                         else:
                             reply = "I'm having trouble finding available times. Could you suggest a completely different day? Our hours are 8 AM - 6 PM, Monday to Friday."
                     
-                    # ⚠️ Message saving now handled in webhook to avoid duplicates
-                    # Conversation history is managed by webhook handler
-
-                    #
+                    # Update conversation history and return
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    self.appointment.add_conversation_message("assistant", reply)
                     return reply
             
             # STEP 2: Extract ALL available information from the message

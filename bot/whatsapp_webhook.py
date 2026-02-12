@@ -1,6 +1,7 @@
 """
-WhatsApp Cloud API Webhook Handler - ASYNC VERSION
-Handles delays without blocking the webhook response
+Enhanced WhatsApp Cloud API Webhook Handler
+- Implements random 1-5 minute response delays
+- Better objection handling for pricing/timeline/availability requests
 """
 
 from django.http import HttpResponse, JsonResponse
@@ -13,7 +14,6 @@ from .models import Appointment
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-import threading
 import time
 import random
 
@@ -26,19 +26,12 @@ def get_random_delay() -> int:
     return seconds
 
 
-def delayed_response(sender, reply, delay_seconds):
-    """
-    Send response after delay in a background thread
-    This prevents webhook timeout
-    """
-    try:
-        print(f"💤 Scheduling response in {delay_seconds // 60} minute(s)...")
-        time.sleep(delay_seconds)
-        print(f"✅ Delay complete, sending response now")
-        whatsapp_api.send_text_message(sender, reply)
-        print(f"✅ Response sent to {sender}")
-    except Exception as e:
-        print(f"❌ Error in delayed response: {str(e)}")
+def apply_response_delay():
+    """Apply random delay before responding"""
+    delay = get_random_delay()
+    print(f"💤 Waiting {delay // 60} minute(s) before responding...")
+    time.sleep(delay)
+    print(f"✅ Delay complete")
 
 
 def detect_objection_type(message: str) -> str:
@@ -76,24 +69,23 @@ def handle_pricing_objection(appointment) -> str:
     if not missing:
         # We have enough info - provide range
         service_ranges = {
-            'bathroom_renovation': 'US$1,500 - US$6,000',
-            'kitchen_renovation': 'US$3,000 - US$12,000',
-            'new_plumbing_installation': 'US$700 - US$8,000'
+            'bathroom_renovation': 'R15,000 - R50,000',
+            'kitchen_renovation': 'R20,000 - R80,000',
+            'new_plumbing_installation': 'R10,000 - R40,000'
         }
         
-        range_str = service_ranges.get(appointment.project_type, 'US$1,000 - US$15,000')
+        range_str = service_ranges.get(appointment.project_type, 'R10,000 - R80,000')
         
-        return f"""Based on your {appointment.project_type.replace('_', ' ')}, 
-        typical pricing in Hatfield/Harare ranges from {range_str}.
+        return f"""Based on your {appointment.project_type.replace('_', ' ')}, typical pricing ranges from {range_str}.
 
-        However, the exact cost depends on:
-        - Specific fixtures and materials you choose
-        - Size and complexity of the work
-        - Your exact location ({appointment.customer_area})
+However, the exact cost depends on:
+• Specific fixtures and materials you choose
+• Size and complexity of the work
+• Your exact location ({appointment.customer_area})
 
-        For an accurate quote, our plumber will need to {"review your plan" if appointment.has_plan else "do a site visit"}.
+For an accurate quote, our plumber will need to {"review your plan" if appointment.has_plan else "do a site visit"}.
 
-        Would you like to proceed with booking?"""
+Would you like to proceed with booking?"""
     
     # Missing info - explain why we can't price yet
     missing_str = ' and '.join(missing) if len(missing) <= 2 else f"{', '.join(missing[:-1])}, and {missing[-1]}"
@@ -108,7 +100,7 @@ Let me ask you a few quick questions so I can give you the most accurate estimat
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def whatsapp_webhook(request):
-    """Handle WhatsApp Cloud API webhook events - ASYNC VERSION"""
+    """Handle WhatsApp Cloud API webhook events with delays"""
     
     if request.method == 'GET':
         return verify_webhook(request)
@@ -138,26 +130,20 @@ def verify_webhook(request):
 
 
 def handle_webhook_event(request):
-    """
-    Handle incoming webhook events
-    IMMEDIATELY return 200 OK, process messages in background
-    """
+    """Handle incoming webhook events"""
     try:
         body = json.loads(request.body.decode('utf-8'))
         
-        print(f"📨 Webhook received")
+        print(f"📨 Webhook received: {json.dumps(body, indent=2)}")
         
         if body.get('object') != 'whatsapp_business_account':
             return HttpResponse(status=200)
         
-        # Process messages in background thread - don't block webhook
-        threading.Thread(
-            target=process_webhook_in_background,
-            args=(body,),
-            daemon=True
-        ).start()
+        for entry in body.get('entry', []):
+            for change in entry.get('changes', []):
+                if change.get('field') == 'messages':
+                    process_message_change(change.get('value', {}))
         
-        # IMMEDIATELY return 200 OK to WhatsApp
         return HttpResponse(status=200)
         
     except json.JSONDecodeError as e:
@@ -168,22 +154,8 @@ def handle_webhook_event(request):
         return HttpResponse(status=500)
 
 
-def process_webhook_in_background(body):
-    """
-    Process webhook in background thread
-    This allows webhook to return immediately
-    """
-    try:
-        for entry in body.get('entry', []):
-            for change in entry.get('changes', []):
-                if change.get('field') == 'messages':
-                    process_message_change(change.get('value', {}))
-    except Exception as e:
-        print(f"❌ Background processing error: {str(e)}")
-
-
 def process_message_change(value):
-    """Process message change"""
+    """Process message change with delay"""
     try:
         messages = value.get('messages', [])
         
@@ -215,10 +187,7 @@ def process_message_change(value):
 
 
 def handle_text_message(sender, text_data):
-    """
-    Handle text message - SCHEDULES delayed response
-    Returns immediately, response sent after delay in background
-    """
+    """Handle text message with random delay and objection handling"""
     try:
         message_body = text_data.get('body', '').strip()
         
@@ -236,10 +205,6 @@ def handle_text_message(sender, text_data):
             defaults={'status': 'pending'}
         )
         
-        # ✅ FIX 1: SAVE USER MESSAGE FIRST (before generating response)
-        appointment.add_conversation_message("user", message_body)
-        print(f"✅ User message saved to conversation history")
-        
         # Mark customer response
         appointment.mark_customer_response()
         
@@ -250,7 +215,7 @@ def handle_text_message(sender, text_data):
         if objection_type == 'pricing':
             objection_response = handle_pricing_objection(appointment)
         
-        # Generate reply
+        # If we have an objection response, use it
         if objection_response:
             print(f"🛡️ Handling {objection_type} objection")
             reply = objection_response
@@ -262,27 +227,23 @@ def handle_text_message(sender, text_data):
         
         print(f"🤖 Generated reply: {reply[:100]}...")
         
-        # ✅ Save assistant reply to conversation history
+        # ✅ APPLY RANDOM DELAY (1-5 minutes)
+        apply_response_delay()
+        
+        # Send reply
+        whatsapp_api.send_text_message(sender, reply)
+        
+        # Save to conversation history
         appointment.add_conversation_message("assistant", reply)
-        print(f"✅ Assistant reply saved to conversation history")
-        
-        # ✅ SCHEDULE delayed response in background thread
-        delay = get_random_delay()
-        threading.Thread(
-            target=delayed_response,
-            args=(sender, reply, delay),
-            daemon=True
-        ).start()
-        
-        print(f"✅ Response scheduled for {delay // 60} minute(s) from now")
         
     except Exception as e:
         print(f"❌ Error handling text: {str(e)}")
         import traceback
         traceback.print_exc()
 
+
 def handle_media_message(sender, media_data, media_type):
-    """Handle media with scheduled delay"""
+    """Handle media with delay"""
     try:
         media_id = media_data.get('id')
         mime_type = media_data.get('mime_type')
@@ -296,28 +257,26 @@ def handle_media_message(sender, media_data, media_type):
         except Appointment.DoesNotExist:
             print(f"❌ No appointment for {phone_number}")
             
-            # Schedule delayed error message
-            error_msg = "I don't have an active appointment for this number. Please start by telling me about your plumbing needs."
-            delay = get_random_delay()
-            threading.Thread(
-                target=delayed_response,
-                args=(sender, error_msg, delay),
-                daemon=True
-            ).start()
+            # Apply delay before error message
+            apply_response_delay()
+            
+            whatsapp_api.send_text_message(
+                sender,
+                "I don't have an active appointment for this number. Please start by telling me about your plumbing needs."
+            )
             return
         
         # Check if expecting media
         if appointment.plan_status != 'pending_upload':
             print(f"ℹ️ Not in upload flow. Status: {appointment.plan_status}")
             
-            # Schedule delayed response
-            response_msg = "I see you sent a file, but I'm not currently expecting any documents. Let me continue with your appointment details."
-            delay = get_random_delay()
-            threading.Thread(
-                target=delayed_response,
-                args=(sender, response_msg, delay),
-                daemon=True
-            ).start()
+            # Apply delay before response
+            apply_response_delay()
+            
+            whatsapp_api.send_text_message(
+                sender, 
+                "I see you sent a file, but I'm not currently expecting any documents. Let me continue with your appointment details."
+            )
             return
         
         # Download and save media
@@ -348,30 +307,25 @@ def handle_media_message(sender, media_data, media_type):
             
             print(f"✅ Saved: {saved_path}")
             
-            # Generate acknowledgment
+            # Apply delay before acknowledgment
+            apply_response_delay()
+            
             from .views import Plumbot
             plumbot = Plumbot(phone_number)
             ack_message = plumbot.handle_plan_upload_flow("file received")
             
-            # Schedule delayed acknowledgment
-            delay = get_random_delay()
-            threading.Thread(
-                target=delayed_response,
-                args=(sender, ack_message, delay),
-                daemon=True
-            ).start()
+            whatsapp_api.send_text_message(sender, ack_message)
             
         except Exception as download_error:
             print(f"❌ Error with media: {str(download_error)}")
             
-            # Schedule delayed error message
-            error_msg = "I had trouble processing that file. Could you try sending it again?"
-            delay = get_random_delay()
-            threading.Thread(
-                target=delayed_response,
-                args=(sender, error_msg, delay),
-                daemon=True
-            ).start()
+            # Apply delay before error message
+            apply_response_delay()
+            
+            whatsapp_api.send_text_message(
+                sender,
+                "I had trouble processing that file. Could you try sending it again?"
+            )
         
     except Exception as e:
         print(f"❌ Error handling media: {str(e)}")
