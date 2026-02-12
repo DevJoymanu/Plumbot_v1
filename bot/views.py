@@ -2119,21 +2119,18 @@ class Plumbot:
                 self.appointment.customer_area and 
                 self.appointment.timeline and 
                 self.appointment.property_type and 
-                not self.appointment.customer_name):  # All info except name, likely selecting alternative
+                not self.appointment.customer_name):
                 
-                # Try to parse as alternative time selection
                 selected_time = self.process_alternative_time_selection(incoming_message)
                 
                 if selected_time:
                     print(f"🎯 Customer selecting alternative time: {selected_time}")
                     
-                    # Book with the selected time
                     booking_result = self.book_appointment_with_selected_time(selected_time)
                     
                     if booking_result['success']:
                         reply = f"Perfect! I've booked your appointment for {booking_result['datetime']}. To complete your booking, may I have your full name?"
                     else:
-                        # Still conflicts, offer new alternatives
                         alternatives = booking_result.get('alternatives', [])
                         if alternatives:
                             alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
@@ -2141,13 +2138,36 @@ class Plumbot:
                         else:
                             reply = "I'm having trouble finding available times. Could you suggest a completely different day? Our hours are 8 AM - 6 PM, Monday to Friday."
                     
-                    # Update conversation history and return
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
             
             # STEP 2: Extract ALL available information from the message
             extracted_data = self.extract_all_available_info_with_ai(incoming_message)
+            
+            # ✅ NEW: Check for "I'll send it later" responses BEFORE updating
+            if self.handle_plan_later_response(incoming_message):
+                # Customer will send plan later - acknowledge and continue
+                next_question = self.get_next_question_to_ask()
+                
+                if next_question != "complete":
+                    acknowledgment = "Perfect! You can send your plan whenever you're ready. "
+                    
+                    # Generate next question
+                    reply = self.generate_contextual_response(
+                        incoming_message, 
+                        next_question, 
+                        ['plan_status']  # Indicate that plan status was handled
+                    )
+                    
+                    # Prepend acknowledgment
+                    reply = acknowledgment + reply
+                    
+                    # Update conversation history
+                    #self.appointment.add_conversation_message("user", incoming_message)
+                    #self.appointment.add_conversation_message("assistant", reply)
+                    
+                    return reply
             
             # STEP 3: Update appointment with extracted data
             updated_fields = self.update_appointment_with_extracted_data(extracted_data)
@@ -2160,7 +2180,6 @@ class Plumbot:
                 print("🤖 AI detected reschedule request, handling...")
                 reschedule_response = self.handle_reschedule_request_with_ai(incoming_message)
                 
-                # Update conversation history
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", reschedule_response)
                 
@@ -2175,7 +2194,7 @@ class Plumbot:
             # For users without plans, continue normal booking flow
             if (booking_status['ready_to_book'] and 
                 self.appointment.status != 'confirmed' and
-                self.appointment.has_plan is False):  # Only book directly if no plan needed
+                self.appointment.has_plan is False):
                 
                 booking_result = self.book_appointment(incoming_message)
                 
@@ -2197,15 +2216,14 @@ class Plumbot:
                 reply = self.generate_contextual_response(incoming_message, next_question, updated_fields)
             
             # Update conversation history
-    #        self.appointment.add_conversation_message("user", incoming_message)
-    #        self.appointment.add_conversation_message("assistant", reply)
+            self.appointment.add_conversation_message("user", incoming_message)
+            self.appointment.add_conversation_message("assistant", reply)
             
             return reply
 
         except Exception as e:
             print(f"❌ API Error: {str(e)}")
             return "I'm having some trouble connecting to our system. Could you try again in a moment?"
-
 
     def has_basic_info_for_plan_upload(self):
         """Check if we have enough basic info to start plan upload process"""
@@ -2930,10 +2948,27 @@ I understand this is time-sensitive!"""
             - Keywords: bathroom, kitchen, plumbing, installation, renovation, repair, toilet, shower, sink
             - Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
             
+            
             PLAN STATUS - CRITICAL - ONLY extract if answering plan question:
             - Context: This should ONLY be extracted when customer is answering "Do you have a plan?"
-            - YES indicators (when answering plan question): "have plan", "got plan", "existing plan", "yes", "I do", "already have"
-            - NO indicators (when answering plan question): "no plan", "don't have", "need visit", "site visit", "no", "don't"
+            
+            YES indicators (customer HAS or WILL SEND a plan):
+            - Direct: "have plan", "got plan", "existing plan", "yes", "I do", "already have"
+            - Future: "will send", "I'll send", "send later", "send when", "upload later", "let me send", "let try to send"
+            - Implied: "have one", "got one", "made one", "drew one"
+            
+            NO indicators (customer needs site visit):
+            - Direct: "no plan", "don't have", "need visit", "site visit", "no", "don't"
+            - Needs help: "make one", "create one", "need one", "don't know", "not sure"
+            
+            CRITICAL RULE:
+            - "will send later" = "has_plan" (they have it, just sending later)
+            - "need to make one" = "needs_visit" (they don't have it)
+            
+            If customer is DEFINITELY answering about having/sending plan: Return "has_plan"
+            If customer is DEFINITELY saying no plan/needs visit: Return "needs_visit"  
+            If NOT clearly answering plan question: Return null
+
             - If customer is answering the plan question with YES: Return "has_plan"
             - If customer is answering the plan question with NO: Return "needs_visit"
             - If NOT answering plan question or unclear: Return null
@@ -3615,8 +3650,15 @@ I understand this is time-sensitive!"""
             
             CURRENT APPOINTMENT STATE:
             {appointment_context}
-            
-            
+                        
+            CRITICAL CONTEXT PRESERVATION RULES:
+            1. ❌ NEVER ask for information already in appointment context above
+            2. ✅ If service_type is set, NEVER ask "which service" again
+            3. ✅ If has_plan status is set, NEVER ask about plan again
+            4. ✅ Check appointment_context carefully before every question
+            5. ✅ Only ask for genuinely missing information
+            6. ✅ If customer said "later", acknowledge and move to next question
+
             RESPONSE STRATEGY:
             1. Acknowledge any new information received
             2. Ask the next needed question naturally
