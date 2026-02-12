@@ -86,9 +86,9 @@ def handle_pricing_objection(appointment) -> str:
         return f"""Based on your {appointment.project_type.replace('_', ' ')}, typical pricing in Hatfield/Harare ranges from {range_str}."""
 
 However, the exact cost depends on:
-• Specific fixtures and materials you choose
-• Size and complexity of the work
-• Your exact location ({appointment.customer_area})
+- Specific fixtures and materials you choose
+- Size and complexity of the work
+- Your exact location ({appointment.customer_area})
 
 For an accurate quote, our plumber will need to {"review your plan" if appointment.has_plan else "do a site visit"}.
 
