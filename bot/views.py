@@ -1989,7 +1989,7 @@ def send_followup(request, pk):
             result = whatsapp_api.send_text_message(clean_phone, personalized_message)
             
             # Save to conversation history with MANUAL tag
-            appointment.add_conversation_message('assistant', f"[MANUAL FOLLOW-UP] {personalized_message}")
+            appointment.add_conversation_message('assistant', f" {personalized_message}")
             
             # Update follow-up tracking - mark as MANUAL follow-up
             appointment.last_followup_sent = timezone.now()
