@@ -136,8 +136,7 @@
                             {{ appointment.get_job_status_display }}
                         </span>
                     </p>
-                    <p><strong>Plumber:</strong> {{ appointment.assigned_plumber.get_full_name|default:"Unassigned" }}
-                    </p>
+                    <p><strong>Plumber:</strong> {{ appointment.assigned_plumber.get_full_name|default:"Unassigned" }}</p>
 
                     {% if appointment.job_completed_at %}
                     <p><strong>Completed:</strong> {{ appointment.job_completed_at|date:"M d, Y H:i" }}</p>
@@ -181,8 +180,7 @@
                 {% endif %}
 
                 {% if appointment.parent_site_visit %}
-                <a href="{% url 'appointment_detail' appointment.parent_site_visit.pk %}"
-                    class="btn btn-outline-primary">
+                <a href="{% url 'appointment_detail' appointment.parent_site_visit.pk %}" class="btn btn-outline-primary">
                     <i class="fas fa-eye"></i> View Site Visit
                 </a>
                 {% endif %}
@@ -349,7 +347,7 @@
                 <label for="property_type">Property Type</label>
                 <select id="property_type" name="property_type" class="form-control">
                     {% for value, display in appointment.PROPERTY_TYPE_CHOICES %}
-                    <option value="{{ value }}" {% if appointment.property_type==value %}selected{% endif %}>
+                    <option value="{{ value }}" {% if appointment.property_type == value %}selected{% endif %}>
                         {{ display }}
                     </option>
                     {% endfor %}
@@ -432,6 +430,8 @@
             </div>
             {% endif %}
         </div>
+    
+    
 
         <div class="conversation-history">
             {% for message in conversation_history %}
@@ -441,27 +441,12 @@
                     Customer
                     {% else %}
                     Bot
-                    <!-- Show if automatic or manual -->
-                    {% if '[AUTOMATIC FOLLOW-UP]' in message.content %}
-                    <span class="followup-badge automatic">🤖 Automatic</span>
-                    {% elif '[MANUAL FOLLOW-UP]' in message.content %}
-                    <span class="followup-badge manual">👤 Manual</span>
-                    {% elif '[BULK MANUAL FOLLOW-UP]' in message.content %}
-                    <span class="followup-badge bulk">📢 Bulk Manual</span>
-                    {% endif %}
                     {% endif %}
                     {% if message.timestamp %}
                     <small>{{ message.timestamp|date:"M d, H:i" }}</small>
                     {% endif %}
                 </div>
-                <p>
-                    {% if message.content %}
-                    {{ message.content|cut:"[AUTOMATIC FOLLOW-UP] "|cut:"[MANUAL FOLLOW-UP] "|cut:"[BULK MANUAL
-                    FOLLOW-UP] " }}
-                    {% else %}
-                    (no content)
-                    {% endif %}
-                </p>
+                <p>{{ message.content|default:"(no content)" }}</p>
             </div>
             {% empty %}
             <div class="empty-state">
@@ -469,7 +454,7 @@
                 <p>No conversation history</p>
             </div>
             {% endfor %}
-        </div>
+
 
         <!-- Manual Follow-up Controls -->
         <div class="followup-controls">
@@ -632,7 +617,7 @@
     }
 
     // Handle manual follow-up form submission
-    document.getElementById('followupForm').addEventListener('submit', function (e) {
+    document.getElementById('followupForm').addEventListener('submit', function(e) {
         e.preventDefault();
 
         const form = this;
@@ -657,15 +642,15 @@
 
         // Send the message
         fetch('{% url "send_followup" appointment.pk %}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: new URLSearchParams({
-                'message': messageText
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: new URLSearchParams({
+                    'message': messageText
+                })
             })
-        })
             .then(response => {
                 if (response.ok) {
                     return response.text();
@@ -700,13 +685,13 @@
     function updateJobStatus(jobId, newStatus) {
         if (confirm(`Change job status to ${newStatus.replace('_', ' ')}?`)) {
             fetch(`/jobs/${jobId}/update-status/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                },
-                body: `status=${newStatus}`
-            })
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    },
+                    body: `status=${newStatus}`
+                })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -784,7 +769,7 @@
     }
 
     // Close dropdown when clicking outside
-    document.addEventListener('click', function (e) {
+    document.addEventListener('click', function(e) {
         const dropdown = document.getElementById('templateDropdown');
         const btn = document.getElementById('templateDropdownBtn');
 
@@ -840,45 +825,14 @@
         font-weight: bold;
     }
 
-    .badge-none {
-        background: #e9ecef;
-        color: #495057;
-    }
-
-    .badge-day_1 {
-        background: #fff3cd;
-        color: #856404;
-    }
-
-    .badge-day_3 {
-        background: #cce5ff;
-        color: #004085;
-    }
-
-    .badge-week_1 {
-        background: #d1ecf1;
-        color: #0c5460;
-    }
-
-    .badge-week_2 {
-        background: #f8d7da;
-        color: #721c24;
-    }
-
-    .badge-month_1 {
-        background: #e2e3e5;
-        color: #383d41;
-    }
-
-    .badge-completed {
-        background: #d4edda;
-        color: #155724;
-    }
-
-    .badge-responded {
-        background: #d1f2eb;
-        color: #00695c;
-    }
+    .badge-none { background: #e9ecef; color: #495057; }
+    .badge-day_1 { background: #fff3cd; color: #856404; }
+    .badge-day_3 { background: #cce5ff; color: #004085; }
+    .badge-week_1 { background: #d1ecf1; color: #0c5460; }
+    .badge-week_2 { background: #f8d7da; color: #721c24; }
+    .badge-month_1 { background: #e2e3e5; color: #383d41; }
+    .badge-completed { background: #d4edda; color: #155724; }
+    .badge-responded { background: #d1f2eb; color: #00695c; }
 
     .followup-badge {
         font-size: 0.7rem;
@@ -1641,20 +1595,20 @@
         .followup-status-bar {
             flex-direction: column;
         }
-
+        
         .followup-controls {
             flex-direction: column;
             align-items: stretch;
         }
-
+        
         .quick-templates {
             justify-content: center;
         }
-
+        
         .form-actions {
             flex-direction: column;
         }
-
+        
         .form-actions .btn {
             width: 100%;
         }
@@ -1674,7 +1628,7 @@
         .card-header h3 {
             font-size: 1rem;
         }
-
+        
         .card-header {
             flex-direction: column;
             align-items: flex-start;
@@ -1714,7 +1668,6 @@
 
     /* Print styles */
     @media print {
-
         .btn,
         .actions,
         .followup-form,
