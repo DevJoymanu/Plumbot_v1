@@ -9,13 +9,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 import json
 import os
+import threading  # ✅ ADDED: Import threading module
+import time
+import random
 from .whatsapp_cloud_api import whatsapp_api
 from .models import Appointment
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-import time
-import random
 
 
 def get_random_delay() -> int:
@@ -32,6 +33,25 @@ def apply_response_delay():
     print(f"💤 Waiting {delay // 60} minute(s) before responding...")
     time.sleep(delay)
     print(f"✅ Delay complete")
+
+
+def delayed_response(sender: str, message: str, delay: int):
+    """
+    Send a delayed response after waiting specified seconds
+    This runs in a background thread
+    """
+    try:
+        print(f"⏰ Waiting {delay} seconds before sending response to {sender}")
+        time.sleep(delay)
+        
+        # Send the message
+        whatsapp_api.send_text_message(sender, message)
+        print(f"✅ Delayed response sent to {sender}")
+        
+    except Exception as e:
+        print(f"❌ Error sending delayed response: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 def detect_objection_type(message: str) -> str:
@@ -252,6 +272,7 @@ def handle_text_message(sender, text_data):
         print(f"❌ Error handling text: {str(e)}")
         import traceback
         traceback.print_exc()
+
 
 def handle_media_message(sender, media_data, media_type):
     """Handle media with delay"""
