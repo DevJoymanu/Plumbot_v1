@@ -1,6 +1,7 @@
 """
-WhatsApp Cloud API Webhook Handler
-Replaces Twilio webhook handling
+Enhanced WhatsApp Cloud API Webhook Handler
+- Implements random 1-5 minute response delays
+- Better objection handling for pricing/timeline/availability requests
 """
 
 from django.http import HttpResponse, JsonResponse
@@ -13,16 +14,93 @@ from .models import Appointment
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+import time
+import random
+
+
+def get_random_delay() -> int:
+    """Returns random delay between 1-5 minutes in seconds"""
+    minutes = random.randint(1, 5)
+    seconds = minutes * 60
+    print(f"⏱️ Random delay: {minutes} minute(s)")
+    return seconds
+
+
+def apply_response_delay():
+    """Apply random delay before responding"""
+    delay = get_random_delay()
+    print(f"💤 Waiting {delay // 60} minute(s) before responding...")
+    time.sleep(delay)
+    print(f"✅ Delay complete")
+
+
+def detect_objection_type(message: str) -> str:
+    """Detect customer objection type"""
+    message_lower = message.lower()
+    
+    pricing_keywords = ['how much', 'cost', 'price', 'expensive', 'kuisa', 'mari']
+    if any(k in message_lower for k in pricing_keywords):
+        return 'pricing'
+    
+    timeline_keywords = ['how long', 'duration', 'when finish']
+    if any(k in message_lower for k in timeline_keywords):
+        return 'timeline'
+    
+    availability_keywords = ['when can you', 'available', 'come']
+    if any(k in message_lower for k in availability_keywords):
+        return 'availability'
+    
+    return 'other'
+
+
+def handle_pricing_objection(appointment) -> str:
+    """Handle pricing request with explanation"""
+    missing = []
+    
+    if not appointment.project_type:
+        missing.append("which service you need")
+    if not appointment.property_type:
+        missing.append("your property type")
+    if not appointment.customer_area:
+        missing.append("your location")
+    if appointment.has_plan is None:
+        missing.append("whether you have a plan")
+    
+    if not missing:
+        # We have enough info - provide range
+        service_ranges = {
+            'bathroom_renovation': 'R15,000 - R50,000',
+            'kitchen_renovation': 'R20,000 - R80,000',
+            'new_plumbing_installation': 'R10,000 - R40,000'
+        }
+        
+        range_str = service_ranges.get(appointment.project_type, 'R10,000 - R80,000')
+        
+        return f"""Based on your {appointment.project_type.replace('_', ' ')}, typical pricing ranges from {range_str}.
+
+However, the exact cost depends on:
+• Specific fixtures and materials you choose
+• Size and complexity of the work
+• Your exact location ({appointment.customer_area})
+
+For an accurate quote, our plumber will need to {"review your plan" if appointment.has_plan else "do a site visit"}.
+
+Would you like to proceed with booking?"""
+    
+    # Missing info - explain why we can't price yet
+    missing_str = ' and '.join(missing) if len(missing) <= 2 else f"{', '.join(missing[:-1])}, and {missing[-1]}"
+    
+    return f"""I'd love to give you a price! To provide an accurate quote, I need to know {missing_str}.
+
+Our pricing varies based on your specific project details - every bathroom, kitchen, and plumbing job is unique.
+
+Let me ask you a few quick questions so I can give you the most accurate estimate."""
 
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def whatsapp_webhook(request):
-    """
-    Handle WhatsApp Cloud API webhook events
-    GET: Webhook verification
-    POST: Incoming messages and status updates
-    """
+    """Handle WhatsApp Cloud API webhook events with delays"""
     
     if request.method == 'GET':
         return verify_webhook(request)
@@ -31,10 +109,7 @@ def whatsapp_webhook(request):
 
 
 def verify_webhook(request):
-    """
-    Verify webhook during initial setup
-    WhatsApp sends: hub.mode, hub.verify_token, hub.challenge
-    """
+    """Verify webhook during initial setup"""
     try:
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
@@ -55,20 +130,15 @@ def verify_webhook(request):
 
 
 def handle_webhook_event(request):
-    """
-    Handle incoming webhook events from WhatsApp Cloud API
-    """
+    """Handle incoming webhook events"""
     try:
         body = json.loads(request.body.decode('utf-8'))
         
-        # Log the incoming webhook
         print(f"📨 Webhook received: {json.dumps(body, indent=2)}")
         
-        # WhatsApp Cloud API sends events in this structure
         if body.get('object') != 'whatsapp_business_account':
             return HttpResponse(status=200)
         
-        # Process each entry
         for entry in body.get('entry', []):
             for change in entry.get('changes', []):
                 if change.get('field') == 'messages':
@@ -85,149 +155,139 @@ def handle_webhook_event(request):
 
 
 def process_message_change(value):
-    """
-    Process a message change event
-    
-    Args:
-        value: The 'value' object from the webhook containing messages and metadata
-    """
+    """Process message change with delay"""
     try:
-        # Get messages array
         messages = value.get('messages', [])
         
         for message in messages:
             message_type = message.get('type')
             message_id = message.get('id')
-            sender = message.get('from')  # Phone number without + or whatsapp:
-            timestamp = message.get('timestamp')
+            sender = message.get('from')
             
             print(f"📬 Processing message from {sender}, type: {message_type}")
             
-            # Mark message as read
+            # Mark as read immediately
             try:
                 whatsapp_api.mark_message_as_read(message_id)
             except Exception as e:
-                print(f"⚠️ Could not mark message as read: {str(e)}")
+                print(f"⚠️ Could not mark as read: {str(e)}")
             
-            # Process based on message type
+            # Process based on type
             if message_type == 'text':
                 handle_text_message(sender, message.get('text', {}))
-            
             elif message_type == 'image':
                 handle_media_message(sender, message.get('image', {}), 'image')
-            
             elif message_type == 'document':
                 handle_media_message(sender, message.get('document', {}), 'document')
-            
-            elif message_type == 'audio':
-                handle_media_message(sender, message.get('audio', {}), 'audio')
-            
-            elif message_type == 'video':
-                handle_media_message(sender, message.get('video', {}), 'video')
-            
-            elif message_type == 'button':
-                handle_button_response(sender, message.get('button', {}))
-            
-            elif message_type == 'interactive':
-                handle_interactive_response(sender, message.get('interactive', {}))
-            
             else:
                 print(f"⚠️ Unsupported message type: {message_type}")
         
     except Exception as e:
-        print(f"❌ Error processing message change: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Error processing message: {str(e)}")
 
 
 def handle_text_message(sender, text_data):
-    """
-    Handle incoming text message
-    
-    Args:
-        sender: Phone number of the sender (without + or whatsapp: prefix)
-        text_data: Text message data containing 'body'
-    """
+    """Handle text message with random delay and objection handling"""
     try:
         message_body = text_data.get('body', '').strip()
         
         if not message_body:
             return
         
-        print(f"💬 Text message from {sender}: {message_body}")
+        print(f"💬 Text from {sender}: {message_body}")
         
-        # Format phone number for compatibility (add whatsapp: prefix for existing code)
+        # Format phone number
         phone_number = f"whatsapp:+{sender}"
         
-        # Import here to avoid circular imports
-        from .views import Plumbot
+        # Get or create appointment
+        appointment, created = Appointment.objects.get_or_create(
+            phone_number=phone_number,
+            defaults={'status': 'pending'}
+        )
         
-        # Initialize Plumbot and generate response
-        plumbot = Plumbot(phone_number)
-        reply = plumbot.generate_response(message_body)
+        # Mark customer response
+        appointment.mark_customer_response()
         
-        print(f"🤖 Generated reply: {reply}")
+        # Check for objections FIRST
+        objection_type = detect_objection_type(message_body)
+        objection_response = None
         
-        # Send reply using WhatsApp Cloud API (remove whatsapp: prefix)
+        if objection_type == 'pricing':
+            objection_response = handle_pricing_objection(appointment)
+        
+        # If we have an objection response, use it
+        if objection_response:
+            print(f"🛡️ Handling {objection_type} objection")
+            reply = objection_response
+        else:
+            # Normal Plumbot processing
+            from .views import Plumbot
+            plumbot = Plumbot(phone_number)
+            reply = plumbot.generate_response(message_body)
+        
+        print(f"🤖 Generated reply: {reply[:100]}...")
+        
+        # ✅ APPLY RANDOM DELAY (1-5 minutes)
+        apply_response_delay()
+        
+        # Send reply
         whatsapp_api.send_text_message(sender, reply)
         
+        # Save to conversation history
+        appointment.add_conversation_message("assistant", reply)
+        
     except Exception as e:
-        print(f"❌ Error handling text message: {str(e)}")
+        print(f"❌ Error handling text: {str(e)}")
         import traceback
         traceback.print_exc()
 
 
 def handle_media_message(sender, media_data, media_type):
-    """
-    Handle incoming media message (image, document, video, audio)
-    
-    Args:
-        sender: Phone number of the sender
-        media_data: Media message data containing 'id', 'mime_type', etc.
-        media_type: Type of media (image, document, video, audio)
-    """
+    """Handle media with delay"""
     try:
         media_id = media_data.get('id')
         mime_type = media_data.get('mime_type')
-        caption = media_data.get('caption', '')
         
-        print(f"📎 {media_type.capitalize()} from {sender}, ID: {media_id}")
+        print(f"📎 {media_type} from {sender}, ID: {media_id}")
         
-        # Format phone number for compatibility
         phone_number = f"whatsapp:+{sender}"
         
-        # Get or create appointment
         try:
             appointment = Appointment.objects.get(phone_number=phone_number)
         except Appointment.DoesNotExist:
-            print(f"❌ No appointment found for {phone_number}")
+            print(f"❌ No appointment for {phone_number}")
+            
+            # Apply delay before error message
+            apply_response_delay()
+            
             whatsapp_api.send_text_message(
                 sender,
                 "I don't have an active appointment for this number. Please start by telling me about your plumbing needs."
             )
             return
         
-        # Check if we should accept media
+        # Check if expecting media
         if appointment.plan_status != 'pending_upload':
-            print(f"ℹ️ Ignoring media - not in upload flow. Status: {appointment.plan_status}")
+            print(f"ℹ️ Not in upload flow. Status: {appointment.plan_status}")
             
-            response_msg = "I see you sent a file, but I'm not currently expecting any documents. Let me continue with your appointment details."
-            whatsapp_api.send_text_message(sender, response_msg)
+            # Apply delay before response
+            apply_response_delay()
+            
+            whatsapp_api.send_text_message(
+                sender, 
+                "I see you sent a file, but I'm not currently expecting any documents. Let me continue with your appointment details."
+            )
             return
         
-        # Download and save the media
+        # Download and save media
         try:
             media_content = whatsapp_api.download_media(media_id)
             
-            # Generate filename
             extension_map = {
                 'image/jpeg': '.jpg',
                 'image/png': '.png',
                 'image/webp': '.webp',
-                'application/pdf': '.pdf',
-                'image/gif': '.gif',
-                'video/mp4': '.mp4',
-                'audio/ogg': '.ogg'
+                'application/pdf': '.pdf'
             }
             
             extension = extension_map.get(mime_type, '.bin')
@@ -236,20 +296,20 @@ def handle_media_message(sender, media_data, media_type):
             safe_name = ''.join(c for c in customer_name if c.isalnum())
             filename = f"plan_{safe_name}_{appointment.id}_{timestamp}{extension}"
             
-            # Save file
             file_path = f"customer_plans/{filename}"
             file_content = ContentFile(media_content, name=filename)
             saved_path = default_storage.save(file_path, file_content)
             
-            # Update appointment
             if not appointment.plan_file:
                 appointment.plan_file = saved_path
             appointment.plan_uploaded_at = timezone.now()
             appointment.save()
             
-            print(f"✅ Saved media file: {saved_path}")
+            print(f"✅ Saved: {saved_path}")
             
-            # Send acknowledgment
+            # Apply delay before acknowledgment
+            apply_response_delay()
+            
             from .views import Plumbot
             plumbot = Plumbot(phone_number)
             ack_message = plumbot.handle_plan_upload_flow("file received")
@@ -257,91 +317,15 @@ def handle_media_message(sender, media_data, media_type):
             whatsapp_api.send_text_message(sender, ack_message)
             
         except Exception as download_error:
-            print(f"❌ Error downloading/saving media: {str(download_error)}")
+            print(f"❌ Error with media: {str(download_error)}")
+            
+            # Apply delay before error message
+            apply_response_delay()
+            
             whatsapp_api.send_text_message(
                 sender,
                 "I had trouble processing that file. Could you try sending it again?"
             )
         
     except Exception as e:
-        print(f"❌ Error handling media message: {str(e)}")
-        import traceback
-        traceback.print_exc()
-
-
-def handle_button_response(sender, button_data):
-    """
-    Handle button reply
-    
-    Args:
-        sender: Phone number of the sender
-        button_data: Button response data
-    """
-    try:
-        button_text = button_data.get('text', '')
-        button_payload = button_data.get('payload', '')
-        
-        print(f"🔘 Button response from {sender}: {button_text}")
-        
-        # Treat as regular text message
-        handle_text_message(sender, {'body': button_text})
-        
-    except Exception as e:
-        print(f"❌ Error handling button response: {str(e)}")
-
-
-def handle_interactive_response(sender, interactive_data):
-    """
-    Handle interactive message response (list, button)
-    
-    Args:
-        sender: Phone number of the sender
-        interactive_data: Interactive response data
-    """
-    try:
-        interactive_type = interactive_data.get('type')
-        
-        if interactive_type == 'button_reply':
-            button_reply = interactive_data.get('button_reply', {})
-            response_text = button_reply.get('title', '')
-            
-        elif interactive_type == 'list_reply':
-            list_reply = interactive_data.get('list_reply', {})
-            response_text = list_reply.get('title', '')
-        
-        else:
-            print(f"⚠️ Unknown interactive type: {interactive_type}")
-            return
-        
-        print(f"🎯 Interactive response from {sender}: {response_text}")
-        
-        # Treat as regular text message
-        handle_text_message(sender, {'body': response_text})
-        
-    except Exception as e:
-        print(f"❌ Error handling interactive response: {str(e)}")
-
-
-def handle_status_update(value):
-    """
-    Handle message status updates (sent, delivered, read, failed)
-    
-    Args:
-        value: The 'value' object containing status information
-    """
-    try:
-        statuses = value.get('statuses', [])
-        
-        for status in statuses:
-            message_id = status.get('id')
-            recipient = status.get('recipient_id')
-            status_type = status.get('status')
-            timestamp = status.get('timestamp')
-            
-            print(f"📊 Message {message_id} to {recipient}: {status_type}")
-            
-            # You can log these status updates to your database if needed
-            # For example, track delivery success rates
-            
-    except Exception as e:
-        print(f"❌ Error handling status update: {str(e)}")
+        print(f"❌ Error handling media: {str(e)}")
