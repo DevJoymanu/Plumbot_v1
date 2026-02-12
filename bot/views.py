@@ -1702,7 +1702,7 @@ def whatsapp_webhook(request):
 If you change your mind in the future, just send us a message and we'll be happy to help!
 
 Thanks,
-- Sarah & team"""
+- Homebase Plumbers"""
                 
                 clean_phone = clean_phone_number(sender)
                 whatsapp_api.send_text_message(clean_phone, opt_out_message)
@@ -1723,7 +1723,7 @@ I'll check back with you in a couple of weeks.
 In the meantime, if you need anything, just message us!
 
 Thanks,
-- Sarah & team"""
+- Homebase Plumbers"""
                 
                 clean_phone = clean_phone_number(sender)
                 whatsapp_api.send_text_message(clean_phone, delay_message)
@@ -3096,7 +3096,7 @@ I understand this is time-sensitive!"""
     Questions? Reply to this message.
 
     Thank you for choosing us.
-    - Sarah & team"""
+    - Homebase Plumbers"""
 
             clean_phone = clean_phone_number(self.phone_number)
             whatsapp_api.send_text_message(clean_phone, confirmation_message)
@@ -4704,7 +4704,7 @@ Our team will contact you before arrival to confirm timing.
 Need to reschedule? Reply to this message.
 
 See you tomorrow!
-- Sarah & team"""
+- Homebase Plumbers"""
 
         elif reminder_type == 'morning':
             message = f"""🌅 GOOD MORNING REMINDER
@@ -4722,7 +4722,7 @@ Our team will call you 30 minutes before arrival.
 Questions? Reply here.
 
 Looking forward to serving you today!
-- Sarah & team"""
+- Homebase Plumbers"""
 
         elif reminder_type == '2_hours':
             message = f"""⏰ APPOINTMENT IN 2 HOURS
@@ -4740,7 +4740,7 @@ Please ensure someone is available at the location.
 
 Questions? Reply here.
 
-- Sarah & team"""
+- Homebase Plumbers"""
         else:
             return False
 

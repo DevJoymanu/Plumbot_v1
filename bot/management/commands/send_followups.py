@@ -312,12 +312,12 @@ MESSAGE REQUIREMENTS:
 1. Start with "Hi {customer_name}," (always use this exact format)
 2. Acknowledge the gap in communication naturally based on: {guidance['time_reference']}
 3. Reference their specific service interest: {context['service'] or 'plumbing needs'}
-4. Include what information you still need if applicable: {context['progress']}
+4. Include the next piece of information you still need if applicable: {context['progress']}
 5. Make it conversational and warm, not salesy
 6. Include a clear but gentle call-to-action
-7. Keep it concise (3-5 short sentences max)
-8. End with "- Sarah & team"
-9. Use South African English spelling and phrasing
+7. Keep it concise (1-2 short sentences max)
+8. End with "- Homebase Plumbers"
+9. Use Zimbabwean English spelling and phrasing
 10. Include ONE emoji maximum (optional, only if it feels natural)
 
 AVOID:
