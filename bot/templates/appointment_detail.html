@@ -409,7 +409,7 @@
         </form>
     </div>
 
-    <!-- Conversation History -->
+<!-- Conversation History -->
 <div class="card">
     <h2><i class="fas fa-comments"></i> Conversation</h2>
 
@@ -463,8 +463,14 @@
                 <small>{{ message.timestamp|date:"M d, H:i" }}</small>
                 {% endif %}
             </div>
-            <p>{{ message.content|replace:"[AUTOMATIC FOLLOW-UP] "|replace:"[MANUAL FOLLOW-UP] "|replace:"[BULK MANUAL
-                FOLLOW-UP] "|default:"(no content)" }}</p>
+            <p>
+                {% if message.content %}
+                {{ message.content|cut:"[AUTOMATIC FOLLOW-UP] "|cut:"[MANUAL FOLLOW-UP] "|cut:"[BULK MANUAL FOLLOW-UP] "
+                }}
+                {% else %}
+                (no content)
+                {% endif %}
+            </p>
         </div>
         {% empty %}
         <div class="empty-state">
