@@ -2180,31 +2180,31 @@ class Plumbot:
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
             #
-        # STEP 2: Extract ALL available information from the message
-        extracted_data = self.extract_all_available_info_with_ai(incoming_message)
-        
-        # ✅ NEW: Check for "I'll send it later" responses BEFORE updating
-        if self.handle_plan_later_response(incoming_message):
-            # Customer will send plan later - acknowledge and continue
-            next_question = self.get_next_question_to_ask()
+            # STEP 2: Extract ALL available information from the message
+            extracted_data = self.extract_all_available_info_with_ai(incoming_message)
             
-            if next_question != "complete":
-                acknowledgment = "Perfect! You can send your plan whenever you're ready. "
+            # ✅ NEW: Check for "I'll send it later" responses BEFORE updating
+            if self.handle_plan_later_response(incoming_message):
+                # Customer will send plan later - acknowledge and continue
+                next_question = self.get_next_question_to_ask()
                 
-                # Generate next question
-                reply = self.generate_contextual_response(
-                    incoming_message, 
-                    next_question, 
-                    ['plan_status']
-                )
-                
-                # Prepend acknowledgment
-                reply = acknowledgment + reply
-                
-                # Update conversation history
-                self.appointment.add_conversation_message("user", incoming_message)
-                self.appointment.add_conversation_message("assistant", reply)
-                return reply
+                if next_question != "complete":
+                    acknowledgment = "Perfect! You can send your plan whenever you're ready. "
+                    
+                    # Generate next question
+                    reply = self.generate_contextual_response(
+                        incoming_message, 
+                        next_question, 
+                        ['plan_status']
+                    )
+                    
+                    # Prepend acknowledgment
+                    reply = acknowledgment + reply
+                    
+                    # Update conversation history
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    self.appointment.add_conversation_message("assistant", reply)
+                    return reply
         
         # STEP 3: Update appointment with extracted data
         updated_fields = self.update_appointment_with_extracted_data(extracted_data)
