@@ -2133,7 +2133,7 @@ class Plumbot:
             defaults={'status': 'pending'}
         )
 
-
+    #
     def generate_response(self, incoming_message):
         """UPDATED: Enhanced response generation with proper alternative handling"""
         try:
@@ -2179,7 +2179,7 @@ class Plumbot:
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
-            #
+            
             # STEP 2: Extract ALL available information from the message
             extracted_data = self.extract_all_available_info_with_ai(incoming_message)
             
@@ -2205,9 +2205,9 @@ class Plumbot:
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
-        
-        # STEP 3: Update appointment with extracted data
-        updated_fields = self.update_appointment_with_extracted_data(extracted_data)
+            
+            # STEP 3: Update appointment with extracted data
+            updated_fields = self.update_appointment_with_extracted_data(extracted_data)
             
             # STEP 4: Check for reschedule requests (for confirmed appointments)
             if (self.appointment.status == 'confirmed' and 
@@ -2254,18 +2254,17 @@ class Plumbot:
                 reply = self.generate_contextual_response(incoming_message, next_question, updated_fields)
             
             # Update conversation history
-    #        self.appointment.add_conversation_message("user", incoming_message)
-    #        self.appointment.add_conversation_message("assistant", reply)
-                    # ⚠️ Message saving now handled in webhook to avoid duplicates
-        # Conversation history is managed by webhook handler
+            self.appointment.add_conversation_message("user", incoming_message)
+            self.appointment.add_conversation_message("assistant", reply)
+            # ⚠️ Message saving now managed in webhook to avoid duplicates
+            # Conversation history is maintained by webhook handler
 
             return reply
 
         except Exception as e:
             print(f"❌ API Error: {str(e)}")
             return "I'm having some trouble connecting to our system. Could you try again in a moment?"
-
-
+            
     def has_basic_info_for_plan_upload(self):
         """Check if we have enough basic info to start plan upload process"""
         return (self.appointment.project_type and 
