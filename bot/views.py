@@ -2133,7 +2133,7 @@ class Plumbot:
             defaults={'status': 'pending'}
         )
 
-    
+
     def generate_response(self, incoming_message):
         """UPDATED: Enhanced response generation with proper alternative handling"""
         try:
@@ -2180,31 +2180,31 @@ class Plumbot:
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
             #
-            # STEP 2: Extract ALL available information from the message
-            extracted_data = self.extract_all_available_info_with_ai(incoming_message)
+        # STEP 2: Extract ALL available information from the message
+        extracted_data = self.extract_all_available_info_with_ai(incoming_message)
+        
+        # ✅ NEW: Check for "I'll send it later" responses BEFORE updating
+        if self.handle_plan_later_response(incoming_message):
+            # Customer will send plan later - acknowledge and continue
+            next_question = self.get_next_question_to_ask()
             
-            # ✅ NEW: Check for "I'll send it later" responses BEFORE updating
-            if self.handle_plan_later_response(incoming_message):
-                # Customer will send plan later - acknowledge and continue
-                next_question = self.get_next_question_to_ask()
+            if next_question != "complete":
+                acknowledgment = "Perfect! You can send your plan whenever you're ready. "
                 
-                if next_question != "complete":
-                    acknowledgment = "Perfect! You can send your plan whenever you're ready. "
-                    
-                    # Generate next question
-                    reply = self.generate_contextual_response(
-                        incoming_message, 
-                        next_question, 
-                        ['plan_status']
-                    )
-                    
-                    # Prepend acknowledgment
-                    reply = acknowledgment + reply
-                    
-                    # Update conversation history
-                    self.appointment.add_conversation_message("user", incoming_message)
-                    self.appointment.add_conversation_message("assistant", reply)
-                    return reply
+                # Generate next question
+                reply = self.generate_contextual_response(
+                    incoming_message, 
+                    next_question, 
+                    ['plan_status']
+                )
+                
+                # Prepend acknowledgment
+                reply = acknowledgment + reply
+                
+                # Update conversation history
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
         
         # STEP 3: Update appointment with extracted data
         updated_fields = self.update_appointment_with_extracted_data(extracted_data)
@@ -3690,15 +3690,7 @@ I understand this is time-sensitive!"""
             CURRENT APPOINTMENT STATE:
             {appointment_context}
             
-            #
-            CRITICAL CONTEXT PRESERVATION RULES:
-            1. ❌ NEVER ask for information already in appointment context above
-            2. ✅ If service_type is set, NEVER ask "which service" again
-            3. ✅ If has_plan status is set, NEVER ask about plan again
-            4. ✅ Check appointment_context carefully before every question
-            5. ✅ Only ask for genuinely missing information
-            6. ✅ If customer said "later", acknowledge and move to next question
-
+            
             RESPONSE STRATEGY:
             1. Acknowledge any new information received
             2. Ask the next needed question naturally
