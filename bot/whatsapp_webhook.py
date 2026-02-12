@@ -187,7 +187,10 @@ def process_message_change(value):
 
 
 def handle_text_message(sender, text_data):
-    """Handle text message with random delay and objection handling"""
+    """
+    Handle text message - SCHEDULES delayed response
+    Returns immediately, response sent after delay in background
+    """
     try:
         message_body = text_data.get('body', '').strip()
         
@@ -205,6 +208,10 @@ def handle_text_message(sender, text_data):
             defaults={'status': 'pending'}
         )
         
+        # ✅ FIX 1: SAVE USER MESSAGE FIRST (before generating response)
+        appointment.add_conversation_message("user", message_body)
+        print(f"✅ User message saved to conversation history")
+        
         # Mark customer response
         appointment.mark_customer_response()
         
@@ -215,7 +222,7 @@ def handle_text_message(sender, text_data):
         if objection_type == 'pricing':
             objection_response = handle_pricing_objection(appointment)
         
-        # If we have an objection response, use it
+        # Generate reply
         if objection_response:
             print(f"🛡️ Handling {objection_type} objection")
             reply = objection_response
@@ -227,20 +234,24 @@ def handle_text_message(sender, text_data):
         
         print(f"🤖 Generated reply: {reply[:100]}...")
         
-        # ✅ APPLY RANDOM DELAY (1-5 minutes)
-        apply_response_delay()
-        
-        # Send reply
-        whatsapp_api.send_text_message(sender, reply)
-        
-        # Save to conversation history
+        # ✅ Save assistant reply to conversation history
         appointment.add_conversation_message("assistant", reply)
+        print(f"✅ Assistant reply saved to conversation history")
+        
+        # ✅ SCHEDULE delayed response in background thread
+        delay = get_random_delay()
+        threading.Thread(
+            target=delayed_response,
+            args=(sender, reply, delay),
+            daemon=True
+        ).start()
+        
+        print(f"✅ Response scheduled for {delay // 60} minute(s) from now")
         
     except Exception as e:
         print(f"❌ Error handling text: {str(e)}")
         import traceback
         traceback.print_exc()
-
 
 def handle_media_message(sender, media_data, media_type):
     """Handle media with delay"""

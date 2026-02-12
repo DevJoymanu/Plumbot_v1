@@ -1575,6 +1575,40 @@ Questions? Reply to this message.
         print(f"Error sending reschedule notification: {str(e)}")
 
 
+def handle_plan_later_response(self, message):
+    """
+    Handle when customer says they'll send plan later
+    Returns True if this is a "later" response
+    """
+    message_lower = message.lower()
+    
+    later_keywords = [
+        'later', 'when i get', 'when i\'m', 'tonight', 'tomorrow',
+        'will send', 'gonna send', 'going to send', 'let me send',
+        'i\'ll send', 'ill send', 'send when', 'after', 'soon',
+        'let try', 'let me try'  # From your actual conversation
+    ]
+    
+    plan_keywords = ['plan', 'blueprint', 'drawing', 'design', 'layout', 'send the', 'upload']
+    
+    # Check if message mentions both "later" and "plan"
+    has_later = any(keyword in message_lower for keyword in later_keywords)
+    has_plan_ref = any(keyword in message_lower for keyword in plan_keywords)
+    
+    if has_later and (has_plan_ref or self.appointment.has_plan is None):
+        print(f"✅ Detected 'will send plan later' response")
+        
+        # Mark that customer HAS a plan (they'll send later)
+        if self.appointment.has_plan is None:
+            self.appointment.has_plan = True
+            self.appointment.save()
+            print(f"✅ Updated: has_plan = True (will send later)")
+        
+        return True
+    
+    return False
+
+
 @staff_required
 def job_appointments_list(request):
     """List all job appointments"""
@@ -2145,12 +2179,35 @@ class Plumbot:
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
+            #
+        # STEP 2: Extract ALL available information from the message
+        extracted_data = self.extract_all_available_info_with_ai(incoming_message)
+        
+        # ✅ NEW: Check for "I'll send it later" responses BEFORE updating
+        if self.handle_plan_later_response(incoming_message):
+            # Customer will send plan later - acknowledge and continue
+            next_question = self.get_next_question_to_ask()
             
-            # STEP 2: Extract ALL available information from the message
-            extracted_data = self.extract_all_available_info_with_ai(incoming_message)
-            
-            # STEP 3: Update appointment with extracted data
-            updated_fields = self.update_appointment_with_extracted_data(extracted_data)
+            if next_question != "complete":
+                acknowledgment = "Perfect! You can send your plan whenever you're ready. "
+                
+                # Generate next question
+                reply = self.generate_contextual_response(
+                    incoming_message, 
+                    next_question, 
+                    ['plan_status']
+                )
+                
+                # Prepend acknowledgment
+                reply = acknowledgment + reply
+                
+                # Update conversation history
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
+        
+        # STEP 3: Update appointment with extracted data
+        updated_fields = self.update_appointment_with_extracted_data(extracted_data)
             
             # STEP 4: Check for reschedule requests (for confirmed appointments)
             if (self.appointment.status == 'confirmed' and 
@@ -2197,9 +2254,11 @@ class Plumbot:
                 reply = self.generate_contextual_response(incoming_message, next_question, updated_fields)
             
             # Update conversation history
-            self.appointment.add_conversation_message("user", incoming_message)
-            self.appointment.add_conversation_message("assistant", reply)
-            
+    #        self.appointment.add_conversation_message("user", incoming_message)
+    #        self.appointment.add_conversation_message("assistant", reply)
+                    # ⚠️ Message saving now handled in webhook to avoid duplicates
+        # Conversation history is managed by webhook handler
+
             return reply
 
         except Exception as e:
@@ -2929,11 +2988,26 @@ I understand this is time-sensitive!"""
             SERVICE TYPE - Look for:
             - Keywords: bathroom, kitchen, plumbing, installation, renovation, repair, toilet, shower, sink
             - Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
-            
+            #
             PLAN STATUS - CRITICAL - ONLY extract if answering plan question:
             - Context: This should ONLY be extracted when customer is answering "Do you have a plan?"
-            - YES indicators (when answering plan question): "have plan", "got plan", "existing plan", "yes", "I do", "already have"
-            - NO indicators (when answering plan question): "no plan", "don't have", "need visit", "site visit", "no", "don't"
+            
+            YES indicators (customer HAS or WILL SEND a plan):
+            - Direct: "have plan", "got plan", "existing plan", "yes", "I do", "already have"
+            - Future: "will send", "I'll send", "send later", "send when", "upload later", "let me send", "let try to send"
+            - Implied: "have one", "got one", "made one", "drew one"
+            
+            NO indicators (customer needs site visit):
+            - Direct: "no plan", "don't have", "need visit", "site visit", "no", "don't"
+            - Needs help: "make one", "create one", "need one", "don't know", "not sure"
+            
+            CRITICAL RULE:
+            - "will send later" = "has_plan" (they have it, just sending later)
+            - "need to make one" = "needs_visit" (they don't have it)
+            
+            If customer is DEFINITELY answering about having/sending plan: Return "has_plan"
+            If customer is DEFINITELY saying no plan/needs visit: Return "needs_visit"  
+            If NOT clearly answering plan question: Return null
             - If customer is answering the plan question with YES: Return "has_plan"
             - If customer is answering the plan question with NO: Return "needs_visit"
             - If NOT answering plan question or unclear: Return null
@@ -3616,6 +3690,15 @@ I understand this is time-sensitive!"""
             CURRENT APPOINTMENT STATE:
             {appointment_context}
             
+            #
+            CRITICAL CONTEXT PRESERVATION RULES:
+            1. ❌ NEVER ask for information already in appointment context above
+            2. ✅ If service_type is set, NEVER ask "which service" again
+            3. ✅ If has_plan status is set, NEVER ask about plan again
+            4. ✅ Check appointment_context carefully before every question
+            5. ✅ Only ask for genuinely missing information
+            6. ✅ If customer said "later", acknowledge and move to next question
+
             RESPONSE STRATEGY:
             1. Acknowledge any new information received
             2. Ask the next needed question naturally

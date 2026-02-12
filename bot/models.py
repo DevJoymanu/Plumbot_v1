@@ -719,15 +719,32 @@ class Appointment(models.Model):
 
     def add_conversation_message(self, role, content):
         """Add a message to conversation history"""
-        if not isinstance(self.conversation_history, list):
-            self.conversation_history = []
-        
-        self.conversation_history.append({
-            'role': role,
-            'content': content,
-            'timestamp': timezone.now().isoformat()
-        })
-        self.save()
+        try:
+            # Ensure conversation_history is a list
+            if not isinstance(self.conversation_history, list):
+                self.conversation_history = []
+
+            # Create message object
+            message = {
+                "role": role,
+                "content": content,
+                "timestamp": timezone.now().isoformat()
+            }
+
+            # Append to history
+            self.conversation_history.append(message)
+
+            # Save to database
+            self.save(update_fields=["conversation_history"])
+
+            print(f"✅ Saved {role} message to conversation_history")
+
+        except Exception as e:
+            print(f"❌ Error adding conversation message: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise  # Re-raise so errors aren't silently ignored
+
 
     def get_customer_info_completeness(self):
         """Return percentage of customer information that's been collected"""
