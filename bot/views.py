@@ -1410,39 +1410,6 @@ def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=
         print(f"Error checking job availability: {str(e)}")
         return False
 
-def handle_plan_later_response(self, message):
-    """
-    Handle when customer says they'll send plan later
-    Returns True if this is a "later" response
-    """
-    message_lower = message.lower()
-    
-    later_keywords = [
-        'later', 'when i get', 'when i\'m', 'tonight', 'tomorrow',
-        'will send', 'gonna send', 'going to send', 'let me send',
-        'i\'ll send', 'ill send', 'send when', 'after', 'soon',
-        'let try', 'let me try'  # From your actual conversation
-    ]
-    
-    plan_keywords = ['plan', 'blueprint', 'drawing', 'design', 'layout', 'send the', 'upload']
-    
-    # Check if message mentions both "later" and "plan"
-    has_later = any(keyword in message_lower for keyword in later_keywords)
-    has_plan_ref = any(keyword in message_lower for keyword in plan_keywords)
-    
-    if has_later and (has_plan_ref or self.appointment.has_plan is None):
-        print(f"✅ Detected 'will send plan later' response")
-        
-        # Mark that customer HAS a plan (they'll send later)
-        if self.appointment.has_plan is None:
-            self.appointment.has_plan = True
-            self.appointment.save()
-            print(f"✅ Updated: has_plan = True (will send later)")
-        
-        return True
-    
-    return False
-
 
 def send_job_appointment_notifications(job_appointment):
     """Send notifications about new job appointment - UPDATED"""
@@ -2258,6 +2225,40 @@ class Plumbot:
         except Exception as e:
             print(f"❌ API Error: {str(e)}")
             return "I'm having some trouble connecting to our system. Could you try again in a moment?"
+
+    def handle_plan_later_response(self, message):
+        """
+        Handle when customer says they'll send plan later
+        Returns True if this is a "later" response
+        """
+        message_lower = message.lower()
+        
+        later_keywords = [
+            'later', 'when i get', 'when i\'m', 'tonight', 'tomorrow',
+            'will send', 'gonna send', 'going to send', 'let me send',
+            'i\'ll send', 'ill send', 'send when', 'after', 'soon',
+            'let try', 'let me try'  # From your actual conversation
+        ]
+        
+        plan_keywords = ['plan', 'blueprint', 'drawing', 'design', 'layout', 'send the', 'upload']
+        
+        # Check if message mentions both "later" and "plan"
+        has_later = any(keyword in message_lower for keyword in later_keywords)
+        has_plan_ref = any(keyword in message_lower for keyword in plan_keywords)
+        
+        if has_later and (has_plan_ref or self.appointment.has_plan is None):
+            print(f"✅ Detected 'will send plan later' response")
+            
+            # Mark that customer HAS a plan (they'll send later)
+            if self.appointment.has_plan is None:
+                self.appointment.has_plan = True
+                self.appointment.save()
+                print(f"✅ Updated: has_plan = True (will send later)")
+            
+            return True
+        
+        return False
+
 
     def has_basic_info_for_plan_upload(self):
         """Check if we have enough basic info to start plan upload process"""
