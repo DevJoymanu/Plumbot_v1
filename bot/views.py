@@ -1906,6 +1906,190 @@ def manual_followup_check(request):
     
     return redirect('followup_dashboard')
 
+# UPDATED send_followup function for bot/views.py
+# This handles MANUAL follow-ups from the admin interface
+
+@staff_required
+@require_POST
+def pause_auto_followup(request, pk):
+    """Pause automatic follow-ups for a specific lead"""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    
+    pause_duration = request.POST.get('pause_duration')
+    
+    if pause_duration == 'permanent':
+        # Pause indefinitely
+        appointment.manual_followup_paused = True
+        appointment.manual_followup_paused_until = None
+        pause_msg = "permanently"
+    else:
+        # Pause for specified hours
+        hours = int(pause_duration)
+        pause_until = timezone.now() + timedelta(hours=hours)
+        appointment.manual_followup_paused = True
+        appointment.manual_followup_paused_until = pause_until
+        
+        # Human-friendly duration
+        if hours == 24:
+            pause_msg = "for 24 hours"
+        elif hours == 48:
+            pause_msg = "for 48 hours"
+        elif hours == 168:
+            pause_msg = "for 1 week"
+        elif hours == 720:
+            pause_msg = "for 1 month"
+        else:
+            pause_msg = f"for {hours} hours"
+    
+    appointment.save()
+    
+    messages.success(request, f'⏸️ Automatic follow-ups paused {pause_msg}')
+    logger.info(f"Auto follow-ups paused {pause_msg} for appointment {pk} by {request.user.username}")
+    
+    return redirect('appointment_detail', pk=pk)
+
+
+@staff_required
+@require_POST
+def resume_auto_followup(request, pk):
+    """Resume automatic follow-ups for a specific lead"""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    
+    appointment.manual_followup_paused = False
+    appointment.manual_followup_paused_until = None
+    appointment.save()
+    
+    messages.success(request, '▶️ Automatic follow-ups resumed')
+    logger.info(f"Auto follow-ups resumed for appointment {pk} by {request.user.username}")
+    
+    return redirect('appointment_detail', pk=pk)
+
+
+@staff_required
+def send_followup(request, pk):
+    """Send MANUAL follow-up message via WhatsApp"""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    
+    if request.method == 'POST':
+        message = request.POST.get('message', '').strip()
+        
+        if not message:
+            messages.error(request, 'Message cannot be empty')
+            return redirect('appointment_detail', pk=appointment.pk)
+        
+        try:
+            # Personalize message with customer name
+            customer_name = appointment.customer_name or "there"
+            personalized_message = message.replace('{name}', customer_name)
+            
+            # Clean phone number for WhatsApp Cloud API
+            clean_phone = clean_phone_number(appointment.phone_number)
+            
+            # Send message using WhatsApp Cloud API
+            result = whatsapp_api.send_text_message(clean_phone, personalized_message)
+            
+            # Save to conversation history with MANUAL tag
+            appointment.add_conversation_message('assistant', f"[MANUAL FOLLOW-UP] {personalized_message}")
+            
+            # Update follow-up tracking - mark as MANUAL follow-up
+            appointment.last_followup_sent = timezone.now()
+            appointment.last_manual_followup_sent = timezone.now()
+            appointment.followup_count = (appointment.followup_count or 0) + 1
+            appointment.manual_followup_count = (appointment.manual_followup_count or 0) + 1
+            appointment.is_automatic_followup = False
+            
+            # Reset followup stage to 'responded' since admin is manually engaging
+            appointment.followup_stage = 'responded'
+            
+            # AUTOMATICALLY pause automatic follow-ups for 48 hours when manual message sent
+            pause_until = timezone.now() + timedelta(hours=48)
+            appointment.manual_followup_paused = True
+            appointment.manual_followup_paused_until = pause_until
+            
+            appointment.save()
+            
+            messages.success(request, f'✅ Manual follow-up sent to {clean_phone}! Auto follow-ups paused for 48 hours.')
+            logger.info(f"✅ MANUAL follow-up sent by {request.user.username} to {clean_phone}")
+            
+        except Exception as e:
+            error_msg = f'Failed to send message: {str(e)}'
+            messages.error(request, error_msg)
+            logger.error(f"❌ MANUAL follow-up error: {error_msg}")
+    
+    return redirect('appointment_detail', pk=appointment.pk)
+
+
+@staff_required
+def send_bulk_followup(request):
+    """Send manual follow-up to multiple leads at once"""
+    if request.method == 'POST':
+        lead_ids = request.POST.getlist('lead_ids')
+        message_template = request.POST.get('message_template', '').strip()
+        pause_duration = int(request.POST.get('pause_duration', 48))
+        
+        if not lead_ids or not message_template:
+            messages.error(request, 'Please select leads and provide a message')
+            return redirect('followup_dashboard')
+        
+        results = {
+            'sent': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        for lead_id in lead_ids:
+            try:
+                appointment = Appointment.objects.get(id=lead_id)
+                
+                # Personalize message with customer name
+                customer_name = appointment.customer_name or "there"
+                personalized_message = message_template.replace('{name}', customer_name)
+                
+                # Send message
+                clean_phone = clean_phone_number(appointment.phone_number)
+                whatsapp_api.send_text_message(clean_phone, personalized_message)
+                
+                # Update tracking
+                appointment.add_conversation_message('assistant', f"[BULK MANUAL FOLLOW-UP] {personalized_message}")
+                appointment.last_followup_sent = timezone.now()
+                appointment.last_manual_followup_sent = timezone.now()
+                appointment.followup_count = (appointment.followup_count or 0) + 1
+                appointment.manual_followup_count = (appointment.manual_followup_count or 0) + 1
+                appointment.is_automatic_followup = False
+                appointment.followup_stage = 'responded'
+                
+                # Pause automatic follow-ups
+                pause_until = timezone.now() + timedelta(hours=pause_duration)
+                appointment.manual_followup_paused = True
+                appointment.manual_followup_paused_until = pause_until
+                
+                appointment.save()
+                
+                results['sent'] += 1
+                
+            except Exception as e:
+                results['failed'] += 1
+                results['errors'].append(f"Lead {lead_id}: {str(e)}")
+                logger.error(f"Bulk follow-up error for lead {lead_id}: {str(e)}")
+        
+        # Show results
+        if results['sent'] > 0:
+            messages.success(request, f"✅ Sent {results['sent']} manual follow-ups (auto follow-ups paused)")
+        if results['failed'] > 0:
+            messages.warning(request, f"⚠️ Failed to send {results['failed']} messages")
+        
+        return redirect('followup_dashboard')
+    
+    # GET request - show bulk follow-up form
+    active_leads = Appointment.objects.filter(
+        is_lead_active=True,
+        status='pending'
+    ).order_by('-last_customer_response')
+    
+    return render(request, 'bulk_followup.html', {
+        'leads': active_leads
+    })
+
 
 class Plumbot:
     def __init__(self, phone_number):

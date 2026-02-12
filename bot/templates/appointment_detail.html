@@ -410,47 +410,298 @@
     </div>
 
     <!-- Conversation History -->
-    <div class="card">
-        <h2><i class="fas fa-comments"></i> Conversation</h2>
+<div class="card">
+    <h2><i class="fas fa-comments"></i> Conversation</h2>
 
-        <div class="conversation-history">
-            {% for message in conversation_history %}
-            <div class="message {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
-                <div class="message-header">
-                    {% if message.role == 'user' %}
-                    Customer
-                    {% else %}
-                    Bot
-                    {% endif %}
-                    {% if message.timestamp %}
-                    <small>{{ message.timestamp|date:"M d, H:i" }}</small>
-                    {% endif %}
-                </div>
-                <p>{{ message.content|default:"(no content)" }}</p>
-            </div>
-            {% empty %}
-            <div class="empty-state">
-                <i class="fas fa-comment-slash"></i>
-                <p>No conversation history</p>
-            </div>
-            {% endfor %}
+    <!-- Follow-up Status Bar -->
+    <div class="followup-status-bar">
+        <div class="status-item">
+            <label>Last Contact:</label>
+            <span>{{ appointment.last_customer_response|date:"M d, H:i"|default:"Never" }}</span>
+        </div>
+        <div class="status-item">
+            <label>Follow-up Stage:</label>
+            <span class="badge badge-{{ appointment.followup_stage }}">
+                {{ appointment.get_followup_stage_display }}
+            </span>
+        </div>
+        <div class="status-item">
+            <label>Auto Follow-ups:</label>
+            <span>{{ appointment.automatic_followup_count|default:0 }}</span>
+        </div>
+        <div class="status-item">
+            <label>Manual Follow-ups:</label>
+            <span>{{ appointment.manual_followup_count|default:0 }}</span>
         </div>
 
-        <form method="post" action="{% url 'send_followup' appointment.pk %}" class="followup-form">
+        {% if appointment.manual_followup_paused %}
+        <div class="status-item paused">
+            <i class="fas fa-pause-circle"></i>
+            <span>Auto follow-ups paused until {{ appointment.manual_followup_paused_until|date:"M d, H:i" }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="conversation-history">
+        {% for message in conversation_history %}
+        <div class="message {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
+            <div class="message-header">
+                {% if message.role == 'user' %}
+                Customer
+                {% else %}
+                Bot
+                <!-- Show if automatic or manual -->
+                {% if '[AUTOMATIC FOLLOW-UP]' in message.content %}
+                <span class="followup-badge automatic">🤖 Automatic</span>
+                {% elif '[MANUAL FOLLOW-UP]' in message.content %}
+                <span class="followup-badge manual">👤 Manual</span>
+                {% elif '[BULK MANUAL FOLLOW-UP]' in message.content %}
+                <span class="followup-badge bulk">📢 Bulk Manual</span>
+                {% endif %}
+                {% endif %}
+                {% if message.timestamp %}
+                <small>{{ message.timestamp|date:"M d, H:i" }}</small>
+                {% endif %}
+            </div>
+            <p>{{ message.content|replace:"[AUTOMATIC FOLLOW-UP] "|replace:"[MANUAL FOLLOW-UP] "|replace:"[BULK MANUAL
+                FOLLOW-UP] "|default:"(no content)" }}</p>
+        </div>
+        {% empty %}
+        <div class="empty-state">
+            <i class="fas fa-comment-slash"></i>
+            <p>No conversation history</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Manual Follow-up Controls -->
+    <div class="followup-controls">
+        <!-- Pause/Resume Automatic Follow-ups -->
+        <div class="auto-followup-toggle">
+            {% if appointment.manual_followup_paused %}
+            <form method="post" action="{% url 'resume_auto_followup' appointment.pk %}" style="display: inline;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success btn-sm">
+                    <i class="fas fa-play"></i> Resume Auto Follow-ups
+                </button>
+            </form>
+            {% else %}
+            <button onclick="showPauseModal()" class="btn btn-warning btn-sm">
+                <i class="fas fa-pause"></i> Pause Auto Follow-ups
+            </button>
+            {% endif %}
+        </div>
+
+        <!-- Quick Message Templates -->
+        <div class="quick-templates">
+            <button onclick="insertTemplate('greeting')" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-smile"></i> Greeting
+            </button>
+            <button onclick="insertTemplate('check_in')" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-check"></i> Check-in
+            </button>
+            <button onclick="insertTemplate('offer')" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-gift"></i> Special Offer
+            </button>
+            <button onclick="insertTemplate('reminder')" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-bell"></i> Reminder
+            </button>
+        </div>
+    </div>
+
+    <!-- Manual Follow-up Form -->
+    <form method="post" class="followup-form" id="followupForm">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="followup_message">
+                <i class="fas fa-paper-plane"></i> Send Manual Follow-up
+                <span class="label-hint">(This will pause automatic follow-ups for 48 hours)</span>
+            </label>
+            <textarea id="followup_message" name="message" class="form-control" rows="3"
+                placeholder="Type your message here... Use {name} to personalize with customer name"
+                required></textarea>
+            <div class="char-counter">
+                <span id="charCount">0</span> / 1000 characters
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="sendMessageBtn">
+                <i class="fas fa-paper-plane"></i> Send Manual Follow-up
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="clearMessage()">
+                <i class="fas fa-times"></i> Clear
+            </button>
+        </div>
+        <div id="messageStatus" style="margin-top: 10px; display: none;"></div>
+    </form>
+</div>
+
+<!-- Pause Auto Follow-up Modal -->
+<div id="pauseModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>Pause Automatic Follow-ups</h3>
+        <p>How long would you like to pause automatic follow-ups for this lead?</p>
+        <form method="post" action="{% url 'pause_auto_followup' appointment.pk %}">
             {% csrf_token %}
             <div class="form-group">
-                <label for="followup_message">Send Follow-up</label>
-                <textarea id="followup_message" name="message" class="form-control" rows="3"
-                    placeholder="Type message..."></textarea>
+                <label>
+                    <input type="radio" name="pause_duration" value="24" checked>
+                    24 hours (1 day)
+                </label>
             </div>
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-paper-plane"></i> Send
-            </button>
+            <div class="form-group">
+                <label>
+                    <input type="radio" name="pause_duration" value="48">
+                    48 hours (2 days)
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="radio" name="pause_duration" value="168">
+                    1 week
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="radio" name="pause_duration" value="720">
+                    1 month
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="radio" name="pause_duration" value="permanent">
+                    Permanently (until manually resumed)
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-warning">
+                    <i class="fas fa-pause"></i> Pause
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="hidePauseModal()">
+                    Cancel
+                </button>
+            </div>
         </form>
     </div>
 </div>
+</div>
 
 <script>
+    // Message templates
+    const messageTemplates = {
+        greeting: `Hi {name},\n\nI hope this message finds you well! I wanted to personally follow up on your plumbing project.\n\nIs there anything I can help clarify or any questions you have?\n\nBest regards,\n{your_name}\nHomebase Plumbers`,
+
+        check_in: `Hi {name},\n\nJust checking in to see if you're still interested in moving forward with your plumbing project.\n\nWe have availability this week and would love to help!\n\nLet me know if you'd like to schedule a consultation.\n\nBest,\n{your_name}`,
+
+        offer: `Hi {name},\n\nI wanted to reach out with a special offer for you!\n\nThis month, we're offering 10% off all bathroom renovations. Your project would be perfect for this.\n\nWould you like to discuss this further?\n\nBest regards,\n{your_name}\nHomebase Plumbers`,
+
+        reminder: `Hi {name},\n\nI noticed we haven't heard back from you regarding your plumbing project.\n\nNo pressure at all - just wanted to remind you that we're here whenever you're ready!\n\nFeel free to reach out anytime.\n\nBest,\n{your_name}`
+    };
+
+    // Insert template into message box
+    function insertTemplate(templateName) {
+        const template = messageTemplates[templateName];
+        if (template) {
+            const customerName = '{{ appointment.customer_name|default:"there" }}';
+            const yourName = '{{ request.user.get_full_name|default:request.user.username }}';
+
+            const personalizedMessage = template
+                .replace(/{name}/g, customerName)
+                .replace(/{your_name}/g, yourName);
+
+            document.getElementById('followup_message').value = personalizedMessage;
+            updateCharCount();
+        }
+    }
+
+    // Clear message
+    function clearMessage() {
+        document.getElementById('followup_message').value = '';
+        updateCharCount();
+    }
+
+    // Character counter
+    function updateCharCount() {
+        const message = document.getElementById('followup_message').value;
+        document.getElementById('charCount').textContent = message.length;
+    }
+
+    document.getElementById('followup_message').addEventListener('input', updateCharCount);
+
+    // Pause modal
+    function showPauseModal() {
+        document.getElementById('pauseModal').style.display = 'flex';
+    }
+
+    function hidePauseModal() {
+        document.getElementById('pauseModal').style.display = 'none';
+    }
+
+    // Handle manual follow-up form submission
+    document.getElementById('followupForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        const form = this;
+        const messageText = document.getElementById('followup_message').value.trim();
+        const sendBtn = document.getElementById('sendMessageBtn');
+        const statusDiv = document.getElementById('messageStatus');
+
+        if (!messageText) {
+            alert('Please enter a message');
+            return;
+        }
+
+        // Confirm that this will pause automatic follow-ups
+        if (!confirm('Sending a manual follow-up will pause automatic follow-ups for 48 hours. Continue?')) {
+            return;
+        }
+
+        // Show loading state
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending Manual Follow-up...';
+        statusDiv.style.display = 'none';
+
+        // Send the message
+        fetch('{% url "send_followup" appointment.pk %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: new URLSearchParams({
+                'message': messageText
+            })
+        })
+            .then(response => {
+                if (response.ok) {
+                    return response.text();
+                }
+                throw new Error('Network response was not ok');
+            })
+            .then(data => {
+                // Success
+                statusDiv.innerHTML = '<div class="alert alert-success">✅ Manual follow-up sent! Automatic follow-ups paused for 48 hours.</div>';
+                statusDiv.style.display = 'block';
+                document.getElementById('followup_message').value = '';
+                updateCharCount();
+
+                // Reload page after 1.5 seconds
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            })
+            .catch(error => {
+                // Error
+                console.error('Error:', error);
+                statusDiv.innerHTML = '<div class="alert alert-error">❌ Failed to send message. Please try again.</div>';
+                statusDiv.style.display = 'block';
+            })
+            .finally(() => {
+                // Reset button
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Manual Follow-up';
+            });
+    });
     function updateJobStatus(jobId, newStatus) {
         if (confirm(`Change job status to ${newStatus.replace('_', ' ')}?`)) {
             fetch(`/jobs/${jobId}/update-status/`, {
@@ -550,6 +801,195 @@ document.addEventListener('click', function(e) {
 </script>
 
 <style>
+
+    /* Follow-up specific styles */
+.followup-status-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    border-left: 4px solid #007bff;
+}
+
+.status-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.status-item label {
+    font-size: 0.75rem;
+    color: #666;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-item span {
+    font-size: 0.9rem;
+    color: #333;
+}
+
+.status-item.paused {
+    color: #856404;
+    background: #fff3cd;
+    padding: 8px;
+    border-radius: 4px;
+}
+
+.badge {
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+.badge-none { background: #e9ecef; color: #495057; }
+.badge-day_1 { background: #fff3cd; color: #856404; }
+.badge-day_3 { background: #cce5ff; color: #004085; }
+.badge-week_1 { background: #d1ecf1; color: #0c5460; }
+.badge-week_2 { background: #f8d7da; color: #721c24; }
+.badge-month_1 { background: #e2e3e5; color: #383d41; }
+.badge-completed { background: #d4edda; color: #155724; }
+.badge-responded { background: #d1f2eb; color: #00695c; }
+
+.followup-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 8px;
+    margin-left: 8px;
+}
+
+.followup-badge.automatic {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.followup-badge.manual {
+    background: #fff3e0;
+    color: #f57c00;
+}
+
+.followup-badge.bulk {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.followup-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    margin-bottom: 15px;
+}
+
+.quick-templates {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.label-hint {
+    font-size: 0.75rem;
+    color: #666;
+    font-weight: normal;
+    font-style: italic;
+}
+
+.char-counter {
+    text-align: right;
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 5px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+.modal-content .form-group {
+    margin-bottom: 12px;
+}
+
+.modal-content label {
+    display: block;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.modal-content label:hover {
+    background: #f8f9fa;
+    border-color: #007bff;
+}
+
+.modal-content input[type="radio"] {
+    margin-right: 8px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+@media (max-width: 767px) {
+    .followup-status-bar {
+        flex-direction: column;
+    }
+    
+    .followup-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .quick-templates {
+        justify-content: center;
+    }
+    
+    .form-actions {
+        flex-direction: column;
+    }
+    
+    .form-actions .btn {
+        width: 100%;
+    }
+}
     /* Base Styles */
     * {
         box-sizing: border-box;

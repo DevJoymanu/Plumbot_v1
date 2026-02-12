@@ -1,5 +1,5 @@
-# Save this as: bot/management/commands/send_followups.py
-# ENHANCED VERSION with AI-powered contextual message generation
+# bot/management/commands/send_followups.py
+# AUTOMATIC FOLLOW-UP SYSTEM with AI-powered contextual messages
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -19,7 +19,7 @@ deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepsee
 
 
 class Command(BaseCommand):
-    help = 'Check and send AI-powered follow-up messages to non-responsive leads'
+    help = 'Check and send AI-powered automatic follow-up messages to non-responsive leads'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -37,7 +37,7 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         force = options['force']
         
-        self.stdout.write(self.style.SUCCESS('🔍 Starting AI-powered follow-up check...'))
+        self.stdout.write(self.style.SUCCESS('🔍 Starting automatic follow-up check...'))
         
         if dry_run:
             self.stdout.write(self.style.WARNING('🧪 DRY RUN MODE - No messages will be sent'))
@@ -48,7 +48,7 @@ class Command(BaseCommand):
         # Get leads that need follow-up
         leads = self.get_leads_needing_followup(force)
         
-        self.stdout.write(f'📊 Found {leads.count()} leads needing follow-up')
+        self.stdout.write(f'📊 Found {leads.count()} leads needing automatic follow-up')
         
         results = {
             'sent': 0,
@@ -76,7 +76,7 @@ class Command(BaseCommand):
                 )
         
         # Print summary
-        self.stdout.write(self.style.SUCCESS('\n📊 FOLLOW-UP SUMMARY:'))
+        self.stdout.write(self.style.SUCCESS('\n📊 AUTOMATIC FOLLOW-UP SUMMARY:'))
         self.stdout.write(f"✅ Sent: {results['sent']}")
         self.stdout.write(f"🤖 AI Generated: {results['ai_generated']}")
         self.stdout.write(f"📄 Template Fallback: {results['template_fallback']}")
@@ -88,7 +88,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING('\n🧪 This was a dry run - no actual messages sent'))
 
     def get_leads_needing_followup(self, force=False):
-        """Get all leads that need a follow-up message"""
+        """Get all leads that need an automatic follow-up message"""
         now = timezone.now()
         
         # Base criteria: incomplete appointments that are still active leads
@@ -111,7 +111,7 @@ class Command(BaseCommand):
             plan_status='pending_upload'
         )
         
-        # Exclude leads that responded in last 7 minutes
+        # Exclude leads that responded in last 24 hours
         recent_response_cutoff = now - timedelta(days=1)
         leads = leads.exclude(
             last_customer_response__gte=recent_response_cutoff
@@ -127,7 +127,7 @@ class Command(BaseCommand):
         return leads.order_by('last_customer_response', 'created_at')
 
     def process_lead_followup(self, lead, dry_run=False):
-        """Process a single lead for follow-up with AI-generated message"""
+        """Process a single lead for automatic follow-up with AI-generated message"""
         now = timezone.now()
         
         # Determine which follow-up stage this lead should be at
@@ -144,7 +144,7 @@ class Command(BaseCommand):
                 lead.save()
             
             self.stdout.write(
-                self.style.WARNING(f'✔️  Lead {lead.id} marked as completed (no more follow-ups)')
+                self.style.WARNING(f'✔️  Lead {lead.id} marked as completed (no more automatic follow-ups)')
             )
             return {'status': 'completed'}
         
@@ -154,7 +154,7 @@ class Command(BaseCommand):
         
         if dry_run:
             self.stdout.write(
-                self.style.SUCCESS(f'🧪 Would send {next_stage} follow-up to {lead.phone_number}:')
+                self.style.SUCCESS(f'🧪 Would send AUTOMATIC {next_stage} follow-up to {lead.phone_number}:')
             )
             self.stdout.write(f'   AI: {message_result["ai_generated"]}')
             self.stdout.write(f'   "{message[:100]}..."')
@@ -168,18 +168,19 @@ class Command(BaseCommand):
             clean_phone = self.clean_phone_number(lead.phone_number)
             whatsapp_api.send_text_message(clean_phone, message)
             
-            # Update lead record
+            # Update lead record - mark as AUTOMATIC follow-up
             lead.last_followup_sent = now
             lead.followup_count += 1
             lead.followup_stage = next_stage
+            lead.is_automatic_followup = True  # Track that this was automatic
             lead.save()
             
-            # Add to conversation history
-            lead.add_conversation_message('assistant', message)
+            # Add to conversation history with AUTOMATIC tag
+            lead.add_conversation_message('assistant', f"[AUTOMATIC FOLLOW-UP] {message}")
             
             ai_indicator = "🤖 AI" if message_result['ai_generated'] else "📄 Template"
             self.stdout.write(
-                self.style.SUCCESS(f'✅ {ai_indicator} {next_stage} follow-up sent to {lead.phone_number}')
+                self.style.SUCCESS(f'✅ {ai_indicator} AUTOMATIC {next_stage} follow-up sent to {lead.phone_number}')
             )
             
             return {
@@ -198,8 +199,10 @@ class Command(BaseCommand):
         else:
             time_since = now - lead.created_at
 
-        minutes_since = time_since.total_seconds() / 60
         current_stage = lead.followup_stage
+
+        # Calculate last message time for day_1 check
+        last_message_time = lead.last_customer_response or lead.created_at
 
         if current_stage in ['none', 'responded'] and now >= last_message_time + timedelta(days=1):
             return 'day_1'
@@ -234,7 +237,7 @@ class Command(BaseCommand):
         return None
 
     def generate_followup_message(self, lead, stage):
-        """Generate AI-powered contextually appropriate follow-up message"""
+        """Generate AI-powered contextually appropriate automatic follow-up message"""
         try:
             # Try AI generation first if available
             if deepseek_client:
@@ -247,7 +250,7 @@ class Command(BaseCommand):
             return self.generate_template_followup_message(lead, stage)
     
     def generate_ai_followup_message(self, lead, stage):
-        """Use DeepSeek AI to generate contextually appropriate follow-up message"""
+        """Use DeepSeek AI to generate contextually appropriate automatic follow-up message"""
         customer_name = lead.customer_name or "there"
         context = self.get_lead_context(lead)
         
@@ -298,11 +301,11 @@ CONTEXT:
 - Information collected so far: {context['progress']}
 - Relevant offer: {context['offer']}
 - Last contacted: {guidance['time_reference']}
-- This is follow-up attempt: {stage.replace('_', ' ')}
+- This is AUTOMATIC follow-up attempt: {stage.replace('_', ' ')}
 - Recent conversation: {recent_messages}
 
 TASK:
-Write a WhatsApp follow-up message with these requirements:
+Write a WhatsApp AUTOMATIC follow-up message with these requirements:
 
 TONE: {guidance['tone']}
 GOAL: {guidance['goal']}
@@ -315,9 +318,9 @@ MESSAGE REQUIREMENTS:
 4. Include the next piece of information you still need if applicable: {context['progress']}
 5. Make it conversational and warm, not salesy
 6. Include a clear but gentle call-to-action
-7. Keep it concise (1-2 short sentences max)
+7. Keep it concise (2-3 short sentences max)
 8. End with "- Homebase Plumbers"
-9. Use Zimbabwean English spelling and phrasing
+9. Use South African English spelling and phrasing
 10. Include ONE emoji maximum (optional, only if it feels natural)
 
 AVOID:
@@ -335,7 +338,7 @@ Generate ONLY the message text, nothing else."""
             messages=[
                 {
                     "role": "system", 
-                    "content": "You are Sarah, a professional appointment assistant. Write natural, warm WhatsApp messages for follow-ups. Keep messages short and conversational."
+                    "content": "You are Sarah, a professional appointment assistant. Write natural, warm WhatsApp messages for automatic follow-ups. Keep messages short and conversational."
                 },
                 {
                     "role": "user", 
@@ -349,7 +352,7 @@ Generate ONLY the message text, nothing else."""
         ai_message = response.choices[0].message.content.strip()
         
         # Log the AI-generated message for monitoring
-        logger.info(f"AI generated {stage} follow-up for lead {lead.id}")
+        logger.info(f"AI generated AUTOMATIC {stage} follow-up for lead {lead.id}")
         
         return {
             'message': ai_message,
@@ -358,7 +361,7 @@ Generate ONLY the message text, nothing else."""
         }
     
     def generate_template_followup_message(self, lead, stage):
-        """Fallback template-based message generation"""
+        """Fallback template-based message generation for automatic follow-ups"""
         customer_name = lead.customer_name or "there"
         context = self.get_lead_context(lead)
         
@@ -371,7 +374,7 @@ I noticed we started discussing your {context['service'] or 'plumbing needs'} re
 
 Are you still interested? Just reply with "YES" to continue, or let me know if now isn't a good time.
 
-- Sarah & team""",
+- Homebase Plumbers""",
 
             'day_3': f"""Hi {customer_name},
 
@@ -383,7 +386,7 @@ I understand you might be busy, but I wanted to check if you're still interested
 
 Reply "YES" to continue or "LATER" if you'd prefer I check back in a few weeks.
 
-- Sarah & team""",
+- Homebase Plumbers""",
 
             'week_1': f"""Hi {customer_name},
 
@@ -395,7 +398,7 @@ I wanted to reach out one more time to see if you'd like to move forward.
 
 Let me know if you're interested - just reply "YES" 👍
 
-- Sarah & team""",
+- Homebase Plumbers""",
 
             'week_2': f"""Hi {customer_name},
 
@@ -407,7 +410,7 @@ If you're still interested, we'd love to help. If timing isn't right, no worries
 
 Reply "YES" to continue or "NOT NOW" and I'll reach out in a month.
 
-- Sarah & team""",
+- Homebase Plumbers""",
 
             'month_1': f"""Hi {customer_name},
 
@@ -420,7 +423,7 @@ We're here whenever you're ready.
 Just reply if you'd like to discuss or book an appointment.
 
 Thanks!
-- Sarah & team"""
+- Homebase Plumbers"""
         }
         
         return {

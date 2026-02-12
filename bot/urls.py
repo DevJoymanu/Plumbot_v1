@@ -110,6 +110,12 @@ urlpatterns = [
     path('appointments/<int:pk>/reactivate/', views.reactivate_lead, name='reactivate_lead'),
     path('appointments/<int:pk>/test-followup/', views.test_followup_message, name='test_followup_message'),
 
+    # Manual vs Automatic Follow-up Management
+    path('appointments/<int:pk>/send-followup/', send_followup, name='send_followup'),
+    path('appointments/<int:pk>/pause-auto-followup/', pause_auto_followup, name='pause_auto_followup'),
+    path('appointments/<int:pk>/resume-auto-followup/', resume_auto_followup, name='resume_auto_followup'),
+    path('bulk-followup/', send_bulk_followup, name='send_bulk_followup'),
+
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
