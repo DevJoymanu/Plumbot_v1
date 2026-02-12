@@ -83,16 +83,17 @@ def handle_pricing_objection(appointment) -> str:
         
         range_str = service_ranges.get(appointment.project_type, 'US$1,000 - US$15,000')
         
-        return f"""Based on your {appointment.project_type.replace('_', ' ')}, typical pricing in Hatfield/Harare ranges from {range_str}."""
+        return f"""Based on your {appointment.project_type.replace('_', ' ')}, 
+        typical pricing in Hatfield/Harare ranges from {range_str}.
 
-However, the exact cost depends on:
-- Specific fixtures and materials you choose
-- Size and complexity of the work
-- Your exact location ({appointment.customer_area})
+        However, the exact cost depends on:
+        - Specific fixtures and materials you choose
+        - Size and complexity of the work
+        - Your exact location ({appointment.customer_area})
 
-For an accurate quote, our plumber will need to {"review your plan" if appointment.has_plan else "do a site visit"}.
+        For an accurate quote, our plumber will need to {"review your plan" if appointment.has_plan else "do a site visit"}.
 
-Would you like to proceed with booking?"""
+        Would you like to proceed with booking?"""
     
     # Missing info - explain why we can't price yet
     missing_str = ' and '.join(missing) if len(missing) <= 2 else f"{', '.join(missing[:-1])}, and {missing[-1]}"
