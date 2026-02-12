@@ -101,8 +101,18 @@ class Command(BaseCommand):
             followup_stage='responded'
         )
         
+        # CRITICAL: Exclude leads who have sent plans (they're waiting for plumber review)
+        leads = leads.exclude(
+            plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book']
+        )
+        
+        # Also exclude leads actively in the plan upload flow
+        leads = leads.exclude(
+            plan_status='pending_upload'
+        )
+        
         # Exclude leads that responded in last 7 minutes
-        recent_response_cutoff = now - timedelta(minutes=7)
+        recent_response_cutoff = now - timedelta(days=1)
         leads = leads.exclude(
             last_customer_response__gte=recent_response_cutoff
         )
@@ -191,10 +201,9 @@ class Command(BaseCommand):
         minutes_since = time_since.total_seconds() / 60
         current_stage = lead.followup_stage
 
-        # First follow-up: after 7 minutes (for testing) - change to 1 day in production
-        if current_stage in ['none', 'responded'] and minutes_since >= 7:
+        if current_stage in ['none', 'responded'] and now >= last_message_time + timedelta(days=1):
             return 'day_1'
-        
+                    
         elif current_stage == 'day_1':
             if lead.last_followup_sent:
                 days_since_followup = (now - lead.last_followup_sent).total_seconds() / (3600 * 24)
