@@ -76,14 +76,14 @@ def handle_pricing_objection(appointment) -> str:
     if not missing:
         # We have enough info - provide range
         service_ranges = {
-            'bathroom_renovation': 'R15,000 - R50,000',
-            'kitchen_renovation': 'R20,000 - R80,000',
-            'new_plumbing_installation': 'R10,000 - R40,000'
+            'bathroom_renovation': 'US$1,500 - US$6,000',
+            'kitchen_renovation': 'US$3,000 - US$12,000',
+            'new_plumbing_installation': 'US$700 - US$8,000'
         }
         
-        range_str = service_ranges.get(appointment.project_type, 'R10,000 - R80,000')
+        range_str = service_ranges.get(appointment.project_type, 'US$1,000 - US$15,000')
         
-        return f"""Based on your {appointment.project_type.replace('_', ' ')}, typical pricing ranges from {range_str}.
+        return f"""Based on your {appointment.project_type.replace('_', ' ')}, typical pricing in Hatfield/Harare ranges from {range_str}."""
 
 However, the exact cost depends on:
 • Specific fixtures and materials you choose
