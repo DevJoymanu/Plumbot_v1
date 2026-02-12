@@ -1989,7 +1989,7 @@ def send_followup(request, pk):
             result = whatsapp_api.send_text_message(clean_phone, personalized_message)
             
             # Save to conversation history with MANUAL tag
-            appointment.add_conversation_message('assistant', f" {personalized_message}")
+            appointment.add_conversation_message('assistant', f"[MANUAL FOLLOW-UP] {personalized_message}")
             
             # Update follow-up tracking - mark as MANUAL follow-up
             appointment.last_followup_sent = timezone.now()
@@ -2141,9 +2141,10 @@ class Plumbot:
                         else:
                             reply = "I'm having trouble finding available times. Could you suggest a completely different day? Our hours are 8 AM - 6 PM, Monday to Friday."
                     
-                    # Update conversation history and return
-                    self.appointment.add_conversation_message("user", incoming_message)
-                    self.appointment.add_conversation_message("assistant", reply)
+                    # ⚠️ Message saving now handled in webhook to avoid duplicates
+                    # Conversation history is managed by webhook handler
+
+                    #
                     return reply
             
             # STEP 2: Extract ALL available information from the message

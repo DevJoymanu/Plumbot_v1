@@ -236,6 +236,10 @@ def handle_text_message(sender, text_data):
             defaults={'status': 'pending'}
         )
         
+        # ✅ FIX 1: SAVE USER MESSAGE FIRST (before generating response)
+        appointment.add_conversation_message("user", message_body)
+        print(f"✅ User message saved to conversation history")
+        
         # Mark customer response
         appointment.mark_customer_response()
         
@@ -258,8 +262,9 @@ def handle_text_message(sender, text_data):
         
         print(f"🤖 Generated reply: {reply[:100]}...")
         
-        # Save to conversation history
+        # ✅ Save assistant reply to conversation history
         appointment.add_conversation_message("assistant", reply)
+        print(f"✅ Assistant reply saved to conversation history")
         
         # ✅ SCHEDULE delayed response in background thread
         delay = get_random_delay()
@@ -275,7 +280,6 @@ def handle_text_message(sender, text_data):
         print(f"❌ Error handling text: {str(e)}")
         import traceback
         traceback.print_exc()
-
 
 def handle_media_message(sender, media_data, media_type):
     """Handle media with scheduled delay"""
