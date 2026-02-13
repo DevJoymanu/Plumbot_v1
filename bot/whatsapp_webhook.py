@@ -182,7 +182,7 @@ def process_webhook_in_background(body):
 
 
 def process_message_change(value):
-    """Process message change"""
+    """Process message change with support for ALL message types"""
     try:
         messages = value.get('messages', [])
         
@@ -202,15 +202,261 @@ def process_message_change(value):
             # Process based on type
             if message_type == 'text':
                 handle_text_message(sender, message.get('text', {}))
+            
             elif message_type == 'image':
                 handle_media_message(sender, message.get('image', {}), 'image')
+            
             elif message_type == 'document':
                 handle_media_message(sender, message.get('document', {}), 'document')
+            
+            elif message_type == 'audio':
+                handle_audio_message(sender, message.get('audio', {}))
+            
+            elif message_type == 'video':
+                handle_unsupported_media(sender, 'video')
+            
+            elif message_type == 'sticker':
+                handle_unsupported_media(sender, 'sticker')
+            
+            elif message_type == 'location':
+                handle_location_message(sender, message.get('location', {}))
+            
+            elif message_type == 'contacts':
+                handle_unsupported_media(sender, 'contacts')
+            
+            elif message_type == 'voice':
+                handle_audio_message(sender, message.get('voice', {}))
+            
             else:
-                print(f"⚠️ Unsupported message type: {message_type}")
+                print(f"⚠️ Unknown message type: {message_type}")
+                handle_unsupported_media(sender, message_type)
         
     except Exception as e:
         print(f"❌ Error processing message: {str(e)}")
+
+def handle_location_message(sender, location_data):
+    """
+    Handle location messages
+    Could be useful for getting customer area
+    """
+    try:
+        latitude = location_data.get('latitude')
+        longitude = location_data.get('longitude')
+        address = location_data.get('address')
+        name = location_data.get('name')
+        
+        print(f"📍 Location from {sender}: {latitude}, {longitude}")
+        
+        phone_number = f"whatsapp:+{sender}"
+        
+        try:
+            appointment = Appointment.objects.get(phone_number=phone_number)
+        except Appointment.DoesNotExist:
+            response_msg = "Thanks for the location! To get started, please tell me about your plumbing needs."
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, response_msg, delay),
+                daemon=True
+            ).start()
+            return
+        
+        # Check if we're asking for area
+        from .views import Plumbot
+        plumbot = Plumbot(phone_number)
+        next_question = plumbot.get_next_question_to_ask()
+        
+        if next_question == 'area' and not appointment.customer_area:
+            # Use location to set area
+            if address:
+                appointment.customer_area = address
+                appointment.save()
+                
+                response_msg = f"""Perfect! I've got your location: {address}
+
+Let me continue with the next question..."""
+                
+                # Generate next question
+                reply = plumbot.generate_response(f"My location is {address}")
+                
+                delay = get_random_delay()
+                threading.Thread(
+                    target=delayed_response,
+                    args=(sender, reply, delay),
+                    daemon=True
+                ).start()
+            else:
+                # No address, ask for area name
+                response_msg = """Thanks for the location pin! 📍
+
+Could you also type the area name? (e.g., Harare Hatfield, Harare Avondale)
+
+This helps us serve you better."""
+                
+                delay = get_random_delay()
+                threading.Thread(
+                    target=delayed_response,
+                    args=(sender, response_msg, delay),
+                    daemon=True
+                ).start()
+        else:
+            # Not asking for area, just acknowledge
+            response_msg = """Thanks for sharing your location! 📍
+
+I've noted it. Let me continue with your appointment details..."""
+            
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, response_msg, delay),
+                daemon=True
+            ).start()
+        
+        print(f"✅ Location handling response scheduled")
+        
+    except Exception as e:
+        print(f"❌ Error handling location: {str(e)}")
+
+def handle_unsupported_media(sender, media_type):
+    """
+    Handle unsupported media types with friendly message
+    """
+    try:
+        print(f"⚠️ Unsupported media type from {sender}: {media_type}")
+        
+        # Map media types to friendly names
+        media_names = {
+            'video': 'video',
+            'sticker': 'sticker',
+            'contacts': 'contact card',
+            'voice': 'voice message',
+            'gif': 'GIF'
+        }
+        
+        friendly_name = media_names.get(media_type, media_type)
+        
+        response_msg = f"""Thanks for the {friendly_name}! 😊
+
+I can't process {friendly_name}s right now, but I work great with:
+✅ Text messages
+✅ Images (for plans)
+✅ PDF documents (for plans)
+
+Could you send that as a text message instead?
+
+Thanks!"""
+        
+        # Schedule delayed response
+        delay = get_random_delay()
+        threading.Thread(
+            target=delayed_response,
+            args=(sender, response_msg, delay),
+            daemon=True
+        ).start()
+        
+        print(f"✅ Unsupported media response scheduled")
+        
+    except Exception as e:
+        print(f"❌ Error handling unsupported media: {str(e)}")
+
+def handle_location_message(sender, location_data):
+    latitude = location_data.get('latitude')
+    longitude = location_data.get('longitude')
+    address = location_data.get('address')
+    
+    # If asking for area, use location
+    if next_question == 'area':
+        if address:
+            appointment.customer_area = address
+            appointment.save()
+            
+            return "Perfect! I've got your location. Let me continue..."
+        else:
+            return "Thanks for the pin! Could you type the area name too?"
+
+def handle_audio_message(sender, audio_data):
+    """
+    Handle audio/voice messages
+    Currently unsupported but acknowledge politely
+    """
+    try:
+        print(f"🎤 Audio message from {sender}")
+        
+        phone_number = f"whatsapp:+{sender}"
+        
+        # Get appointment to check context
+        try:
+            appointment = Appointment.objects.get(phone_number=phone_number)
+        except Appointment.DoesNotExist:
+            # New customer sending audio - polite redirect
+            response_msg = """Hi there! 👋
+
+I received your voice message, but I work better with text messages.
+
+Could you please type your message instead? That way I can help you book your plumbing appointment more efficiently.
+
+Thanks! 😊"""
+            
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, response_msg, delay),
+                daemon=True
+            ).start()
+            return
+        
+        # Check if we're expecting a plan upload
+        if appointment.plan_status == 'pending_upload':
+            response_msg = """I see you sent an audio message, but I need images or PDF documents for your plan.
+
+Please send:
+📸 Photos of your plan/blueprint
+📄 PDF document
+
+Or type "done" if you've finished uploading."""
+        
+        # Check what question we're on
+        else:
+            from .views import Plumbot
+            plumbot = Plumbot(phone_number)
+            next_question = plumbot.get_next_question_to_ask()
+            
+            if next_question == "complete":
+                # Appointment done, just acknowledge
+                response_msg = """I got your voice message! 
+
+Your appointment is all set. If you need to make any changes, please type them out so I can help you.
+
+Thanks! 😊"""
+            
+            elif next_question in ['service_type', 'plan_or_visit', 'area', 'property_type', 'timeline', 'availability', 'name']:
+                # In middle of booking - need text
+                response_msg = """I received your voice message! 🎤
+
+However, I work better with text messages. Could you please type your response instead?
+
+I'll continue where we left off... 😊"""
+            
+            else:
+                # General acknowledgment
+                response_msg = """Thanks for your voice message!
+
+I work better with text though. Could you type that out for me?
+
+I'm here to help! 😊"""
+        
+        # Schedule delayed response
+        delay = get_random_delay()
+        threading.Thread(
+            target=delayed_response,
+            args=(sender, response_msg, delay),
+            daemon=True
+        ).start()
+        
+        print(f"✅ Audio handling response scheduled")
+        
+    except Exception as e:
+        print(f"❌ Error handling audio: {str(e)}")
 
 
 def handle_text_message(sender, text_data):
@@ -281,128 +527,38 @@ def handle_text_message(sender, text_data):
         traceback.print_exc()
 
 def handle_media_message(sender, media_data, media_type):
-    """
-    Handle media with early upload support
-    FIXED: Now accepts plans sent before bot asks for them
-    """
+    """Handle media - accept early uploads"""
     try:
         media_id = media_data.get('id')
-        mime_type = media_data.get('mime_type')
-        
-        print(f"📎 {media_type} from {sender}, ID: {media_id}")
-        
         phone_number = f"whatsapp:+{sender}"
         
-        try:
-            appointment = Appointment.objects.get(phone_number=phone_number)
-        except Appointment.DoesNotExist:
-            print(f"❌ No appointment for {phone_number}")
+        appointment = Appointment.objects.get(phone_number=phone_number)
+        
+        # NEW: Accept uploads even if not explicitly in upload flow
+        # As long as customer hasn't explicitly said "no plan"
+        if appointment.has_plan != False:  # None or True
             
-            # Schedule delayed error message
-            error_msg = "I don't have an active appointment for this number. Please start by telling me about your plumbing needs."
-            delay = get_random_delay()
-            threading.Thread(
-                target=delayed_response,
-                args=(sender, error_msg, delay),
-                daemon=True
-            ).start()
-            return
-        
-        # NEW: Check if this is a plan-type file
-        plan_file_types = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
-        is_plan_file = mime_type in plan_file_types
-        
-        # NEW: Accept plan uploads in multiple scenarios
-        should_accept_upload = False
-        response_msg = ""
-        
-        # Scenario 1: Already in upload flow (current behavior)
-        if appointment.plan_status == 'pending_upload':
-            should_accept_upload = True
-            response_msg = """Got it! 
-
-Send more images/pages if needed, or type "done" when finished."""
-            print(f"✅ Normal upload flow")
-        
-        # Scenario 2: EARLY UPLOAD - Customer sends plan before we ask
-        elif is_plan_file and appointment.has_plan is None:
-            should_accept_upload = True
+            # Save the media
+            save_plan_media(appointment, media_id, media_data)
             
-            # Auto-detect that customer has a plan
-            appointment.has_plan = True
-            appointment.plan_status = 'pending_upload'  # Set to accept more if needed
+            # Update appointment status
+            if appointment.has_plan is None:
+                appointment.has_plan = True
+                print(f"✅ Auto-detected: Customer has plan (sent early)")
+            
+            appointment.plan_status = 'pending_upload'  # In case they send more
             appointment.save()
             
-            response_msg = """Perfect! I've got your plan. 📋
+            # Acknowledge
+            response_msg = """Thanks for sending that! 
 
-You can send more pages or images if needed.
-
-Let me ask you a few quick questions, then I'll send your plan to our plumber for review."""
+I've got your plan. You can send more images if needed, or I'll continue with a few questions."""
             
-            print(f"🎯 EARLY UPLOAD detected - customer sent plan before bot asked")
-        
-        # Scenario 3: Customer already said they have plan, sending it now
-        elif is_plan_file and appointment.has_plan is True:
-            should_accept_upload = True
-            
-            if appointment.plan_status != 'plan_uploaded':
-                appointment.plan_status = 'pending_upload'
-                appointment.save()
-            
-            response_msg = """Thanks! I've saved that.
-
-Send more images if needed, or type "done" when you've sent everything."""
-            
-            print(f"✅ Customer sending plan after confirming they have one")
-        
-        # Scenario 4: NOT a plan file, or customer said NO to having plan
         else:
-            should_accept_upload = False
-            
-            if appointment.has_plan is False:
-                response_msg = "I see you sent a file, but you mentioned you need a site visit. I've saved it for reference, but we'll schedule a site visit to assess your needs."
-            else:
-                response_msg = "I see you sent a file. I've noted it. Let me continue with your appointment details."
-            
-            print(f"ℹ️ File uploaded but not as a plan. has_plan={appointment.has_plan}, type={mime_type}")
+            # They said NO to having a plan, this is unexpected
+            response_msg = "I see you sent a file, but you mentioned you need a site visit..."
         
-        # Download and save media if we should accept it
-        if should_accept_upload:
-            try:
-                media_content = whatsapp_api.download_media(media_id)
-                
-                # Generate filename
-                extension_map = {
-                    'image/jpeg': '.jpg',
-                    'image/png': '.png',
-                    'image/webp': '.webp',
-                    'application/pdf': '.pdf'
-                }
-                
-                extension = extension_map.get(mime_type, '.bin')
-                timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-                customer_name = appointment.customer_name or 'customer'
-                safe_name = ''.join(c for c in customer_name if c.isalnum())
-                filename = f"plan_{safe_name}_{appointment.id}_{timestamp}{extension}"
-                
-                # Save file
-                file_path = f"customer_plans/{filename}"
-                file_content = ContentFile(media_content, name=filename)
-                saved_path = default_storage.save(file_path, file_content)
-                
-                # Update appointment - set plan_file if first upload
-                if not appointment.plan_file:
-                    appointment.plan_file = saved_path
-                    appointment.plan_uploaded_at = timezone.now()
-                    appointment.save()
-                
-                print(f"✅ Saved plan file: {saved_path}")
-                
-            except Exception as download_error:
-                print(f"❌ Error saving media: {str(download_error)}")
-                response_msg = "I had trouble processing that file. Could you try sending it again?"
-        
-        # Schedule delayed response
+        # Send response
         delay = get_random_delay()
         threading.Thread(
             target=delayed_response,
@@ -410,10 +566,5 @@ Send more images if needed, or type "done" when you've sent everything."""
             daemon=True
         ).start()
         
-        print(f"✅ Response scheduled for {delay // 60} minute(s) from now")
-        
     except Exception as e:
-        print(f"❌ Error handling media: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        
+        print(f"❌ Error handling media: {str(e)}")        
