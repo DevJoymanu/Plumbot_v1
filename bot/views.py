@@ -2686,10 +2686,28 @@ I understand this is time-sensitive!"""
             print(f"Error getting appointment context: {str(e)}")
             return "Unable to load appointment context"
 
-
+    def verify_plan_question_not_asked_recently(self):
+        """Check if we asked about plan in last 5 messages"""
+        try:
+            if not self.appointment.conversation_history:
+                return False
+            
+            recent_messages = self.appointment.conversation_history[-5:]
+            plan_keywords = ['have a plan', 'site visit', 'existing plan', 'Do you have']
+            
+            for msg in recent_messages:
+                if msg.get('role') == 'assistant':
+                    content = msg.get('content', '').lower()
+                    if any(keyword.lower() in content for keyword in plan_keywords):
+                        return True  # We asked recently
+            
+            return False  # Safe to ask
+        except Exception as e:
+            print(f"Error checking conversation history: {str(e)}")
+            return False
 
     def update_appointment_with_extracted_data(self, extracted_data):
-        """Update appointment with extracted data - ONLY UPDATE RELEVANT FIELDS"""
+        """Update appointment with extracted data - ENHANCED WITH SAFETY CHECKS"""
         try:
             updated_fields = []
             next_question = self.get_next_question_to_ask()
@@ -2705,28 +2723,33 @@ I understand this is time-sensitive!"""
                 updated_fields.append('service_type')
                 print(f"✅ Updated service_type: {self.appointment.project_type}")
             
-            # CRITICAL FIX: Only update plan status if:
-            # 1. We don't have it yet (has_plan is None)
-            # 2. AI explicitly found one
-            # 3. We're actually asking about plans (next_question is plan_or_visit)
-            if (extracted_data.get('plan_status') and 
-                extracted_data.get('plan_status') != 'null' and
-                self.appointment.has_plan is None and
-                next_question == "plan_or_visit"):
+            # ULTRA CRITICAL FIX: Plan status with triple safety checks
+            if extracted_data.get('plan_status') and extracted_data.get('plan_status') != 'null':
                 
-                old_value = self.appointment.has_plan
+                # SAFETY CHECK 1: Never update if already set
+                if self.appointment.has_plan is not None:
+                    print(f"🛡️ SAFETY: Blocked plan_status update - already set to {self.appointment.has_plan}")
                 
-                # Convert string to boolean
-                if extracted_data['plan_status'] == 'has_plan':
-                    self.appointment.has_plan = True
-                    updated_fields.append('plan_status')
-                    print(f"✅ Updated plan status: {old_value} -> True (has plan)")
-                elif extracted_data['plan_status'] == 'needs_visit':
-                    self.appointment.has_plan = False
-                    updated_fields.append('plan_status')
-                    print(f"✅ Updated plan status: {old_value} -> False (needs visit)")
-            elif extracted_data.get('plan_status') and next_question != "plan_or_visit":
-                print(f"⚠️ Ignoring plan_status extraction - not currently asking about plans")
+                # SAFETY CHECK 2: Only update if we're actually asking about it
+                elif next_question != "plan_or_visit":
+                    print(f"🛡️ SAFETY: Blocked plan_status update - not currently asking about plans (question: {next_question})")
+                
+                # SAFETY CHECK 3: Validate the extraction makes sense
+                elif extracted_data['plan_status'] not in ['has_plan', 'needs_visit']:
+                    print(f"🛡️ SAFETY: Blocked plan_status update - invalid value: {extracted_data['plan_status']}")
+                
+                # ALL CHECKS PASSED - safe to update
+                else:
+                    old_value = self.appointment.has_plan
+                    
+                    if extracted_data['plan_status'] == 'has_plan':
+                        self.appointment.has_plan = True
+                        updated_fields.append('plan_status')
+                        print(f"✅ Updated plan status: {old_value} -> True (has plan)")
+                    elif extracted_data['plan_status'] == 'needs_visit':
+                        self.appointment.has_plan = False
+                        updated_fields.append('plan_status')
+                        print(f"✅ Updated plan status: {old_value} -> False (needs visit)")
             
             # Area - only update if we don't have one and AI found one
             if (extracted_data.get('area') and 
@@ -2947,7 +2970,7 @@ I understand this is time-sensitive!"""
 
 
     def extract_all_available_info_with_ai(self, message):
-        """Extract ALL possible appointment information from any message - FIXED VERSION"""
+        """Extract ALL possible appointment information from any message - FIXED TO PREVENT RE-ASKING"""
         try:
             # Get current appointment state for context
             current_context = self.get_appointment_context()
@@ -2975,7 +2998,7 @@ I understand this is time-sensitive!"""
             2. DO NOT GUESS or ASSUME - if not explicitly stated, return null
             3. PRESERVE existing information - do NOT set fields to null if they already have values
             4. Return ONLY a JSON object - no markdown, no explanations, no code blocks
-            5. For plan_status: ONLY extract if customer is DIRECTLY answering the plan question
+            5. For plan_status: ONLY extract if we are ACTIVELY ASKING about the plan RIGHT NOW
             
             EXTRACTION TARGETS:
             
@@ -2984,30 +3007,29 @@ I understand this is time-sensitive!"""
             - Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
             
             
-            PLAN STATUS - CRITICAL - ONLY extract if answering plan question:
-            - Context: This should ONLY be extracted when customer is answering "Do you have a plan?"
+            PLAN STATUS - ULTRA CRITICAL - STRICT EXTRACTION RULES:
             
-            YES indicators (customer HAS or WILL SEND a plan):
-            - Direct: "have plan", "got plan", "existing plan", "yes", "I do", "already have"
-            - Future: "will send", "I'll send", "send later", "send when", "upload later", "let me send", "let try to send"
-            - Implied: "have one", "got one", "made one", "drew one"
+            WHEN TO EXTRACT:
+            - ONLY if next_question = "plan_or_visit" (we are actively asking about plan)
+            - ONLY if customer is DIRECTLY answering the plan question in THIS message
+            - NEVER extract from general conversation, greetings, or other topics
+            
+            CURRENT QUESTION CHECK: {next_question}
+            
+            IF next_question IS NOT "plan_or_visit":
+            - ALWAYS return null for plan_status
+            - Do NOT try to infer plan status from any message
+            - This prevents re-asking questions already answered
+            
+            IF next_question IS "plan_or_visit":
+            YES indicators (customer HAS plan):
+            - Direct: "yes", "yeah", "yep", "i do", "i have", "got plan", "have plan"
+            - Future: "will send", "i'll send", "send later", "let me send"
             
             NO indicators (customer needs site visit):
-            - Direct: "no plan", "don't have", "need visit", "site visit", "no", "don't"
-            - Needs help: "make one", "create one", "need one", "don't know", "not sure"
+            - Direct: "no", "nope", "don't have", "no plan", "need visit", "site visit"
             
-            CRITICAL RULE:
-            - "will send later" = "has_plan" (they have it, just sending later)
-            - "need to make one" = "needs_visit" (they don't have it)
-            
-            If customer is DEFINITELY answering about having/sending plan: Return "has_plan"
-            If customer is DEFINITELY saying no plan/needs visit: Return "needs_visit"  
-            If NOT clearly answering plan question: Return null
-
-            - If customer is answering the plan question with YES: Return "has_plan"
-            - If customer is answering the plan question with NO: Return "needs_visit"
-            - If NOT answering plan question or unclear: Return null
-            - WARNING: Do NOT extract plan status from general conversation - only when directly asked
+            IF IN DOUBT: Return null (better to ask again than assume wrong answer)
             
             AREA/LOCATION - Look for:
             - Any location names, suburbs, areas mentioned
@@ -3050,7 +3072,7 @@ I understand this is time-sensitive!"""
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON with no formatting or explanations. Pay special attention to plan status questions - 'yes' means has_plan, 'no' means needs_visit."},
+                    {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON with no formatting or explanations. NEVER extract plan_status unless actively asking about it RIGHT NOW."},
                     {"role": "user", "content": extraction_prompt}
                 ],
                 temperature=0.1,
@@ -3066,6 +3088,11 @@ I understand this is time-sensitive!"""
             try:
                 extracted_data = json.loads(ai_response)
                 print(f"🤖 AI extracted data: {extracted_data}")
+                
+                # ADDITIONAL SAFETY CHECK: Never extract plan_status if we already have it
+                if self.appointment.has_plan is not None and extracted_data.get('plan_status'):
+                    print(f"⚠️ BLOCKED: Attempted to re-extract plan_status when already set to {self.appointment.has_plan}")
+                    extracted_data['plan_status'] = None  # Force to null
                 
                 # Debug log for plan status specifically
                 if extracted_data.get('plan_status'):
@@ -3085,34 +3112,43 @@ I understand this is time-sensitive!"""
 
 
 
-
     def get_next_question_to_ask(self):
-        """Determine which question to ask next - FIXED"""
+        """Determine which question to ask next - FIXED for early uploads"""
         
         if not self.appointment.project_type:
             return "service_type"
         
-        # FIXED: Check if has_plan has been answered (not just if it's False)
-        if self.appointment.has_plan is None:  # ✅ Check for None, not False
-            return "plan_or_visit"
-
+        # FIXED: Skip plan question if customer already uploaded plan early
+        if self.appointment.has_plan is None:
+            # Only ask if they haven't uploaded anything yet
+            if not self.appointment.plan_file:
+                return "plan_or_visit"
+            else:
+                # They uploaded early - skip to next question
+                print(f"⏭️ Skipping plan question - customer already uploaded plan")
+                self.appointment.has_plan = True  # Mark as having plan
+                self.appointment.save()
+        
         # If they have a plan, handle plan upload flow
         if self.appointment.has_plan is True:
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.property_type:
                 return "property_type"
-            if (self.appointment.customer_area and 
-                self.appointment.property_type and 
-                self.appointment.plan_status is None):
+            
+            # Check if plan needs to be uploaded
+            if not self.appointment.plan_file and self.appointment.plan_status != 'plan_uploaded':
                 return "initiate_plan_upload"
-            if self.appointment.plan_status == 'pending_upload':
+            
+            # If plan uploaded but not sent to plumber yet
+            if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
                 return "awaiting_plan_upload"
+            
             if self.appointment.plan_status == 'plan_uploaded':
                 return "plan_with_plumber"
-
+        
         # If they don't have a plan (False), continue normal flow
-        if self.appointment.has_plan is False:  # ✅ Explicitly check for False
+        if self.appointment.has_plan is False:
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.timeline:
@@ -3123,9 +3159,8 @@ I understand this is time-sensitive!"""
                 return "availability"
             if not self.appointment.customer_name and self.appointment.status == 'confirmed':
                 return "name"
-                
+        
         return "complete"
-
 
 
 

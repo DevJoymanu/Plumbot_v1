@@ -281,7 +281,10 @@ def handle_text_message(sender, text_data):
         traceback.print_exc()
 
 def handle_media_message(sender, media_data, media_type):
-    """Handle media with scheduled delay"""
+    """
+    Handle media with early upload support
+    FIXED: Now accepts plans sent before bot asks for them
+    """
     try:
         media_id = media_data.get('id')
         mime_type = media_data.get('mime_type')
@@ -305,72 +308,112 @@ def handle_media_message(sender, media_data, media_type):
             ).start()
             return
         
-        # Check if expecting media
-        if appointment.plan_status != 'pending_upload':
-            print(f"ℹ️ Not in upload flow. Status: {appointment.plan_status}")
-            
-            # Schedule delayed response
-            response_msg = "I see you sent a file, but I'm not currently expecting any documents. Let me continue with your appointment details."
-            delay = get_random_delay()
-            threading.Thread(
-                target=delayed_response,
-                args=(sender, response_msg, delay),
-                daemon=True
-            ).start()
-            return
+        # NEW: Check if this is a plan-type file
+        plan_file_types = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+        is_plan_file = mime_type in plan_file_types
         
-        # Download and save media
-        try:
-            media_content = whatsapp_api.download_media(media_id)
+        # NEW: Accept plan uploads in multiple scenarios
+        should_accept_upload = False
+        response_msg = ""
+        
+        # Scenario 1: Already in upload flow (current behavior)
+        if appointment.plan_status == 'pending_upload':
+            should_accept_upload = True
+            response_msg = """Got it! 
+
+Send more images/pages if needed, or type "done" when finished."""
+            print(f"✅ Normal upload flow")
+        
+        # Scenario 2: EARLY UPLOAD - Customer sends plan before we ask
+        elif is_plan_file and appointment.has_plan is None:
+            should_accept_upload = True
             
-            extension_map = {
-                'image/jpeg': '.jpg',
-                'image/png': '.png',
-                'image/webp': '.webp',
-                'application/pdf': '.pdf'
-            }
-            
-            extension = extension_map.get(mime_type, '.bin')
-            timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-            customer_name = appointment.customer_name or 'customer'
-            safe_name = ''.join(c for c in customer_name if c.isalnum())
-            filename = f"plan_{safe_name}_{appointment.id}_{timestamp}{extension}"
-            
-            file_path = f"customer_plans/{filename}"
-            file_content = ContentFile(media_content, name=filename)
-            saved_path = default_storage.save(file_path, file_content)
-            
-            if not appointment.plan_file:
-                appointment.plan_file = saved_path
-            appointment.plan_uploaded_at = timezone.now()
+            # Auto-detect that customer has a plan
+            appointment.has_plan = True
+            appointment.plan_status = 'pending_upload'  # Set to accept more if needed
             appointment.save()
             
-            print(f"✅ Saved: {saved_path}")
+            response_msg = """Perfect! I've got your plan. 📋
+
+You can send more pages or images if needed.
+
+Let me ask you a few quick questions, then I'll send your plan to our plumber for review."""
             
-            # Generate acknowledgment
-            from .views import Plumbot
-            plumbot = Plumbot(phone_number)
-            ack_message = plumbot.handle_plan_upload_flow("file received")
+            print(f"🎯 EARLY UPLOAD detected - customer sent plan before bot asked")
+        
+        # Scenario 3: Customer already said they have plan, sending it now
+        elif is_plan_file and appointment.has_plan is True:
+            should_accept_upload = True
             
-            # Schedule delayed acknowledgment
-            delay = get_random_delay()
-            threading.Thread(
-                target=delayed_response,
-                args=(sender, ack_message, delay),
-                daemon=True
-            ).start()
+            if appointment.plan_status != 'plan_uploaded':
+                appointment.plan_status = 'pending_upload'
+                appointment.save()
             
-        except Exception as download_error:
-            print(f"❌ Error with media: {str(download_error)}")
+            response_msg = """Thanks! I've saved that.
+
+Send more images if needed, or type "done" when you've sent everything."""
             
-            # Schedule delayed error message
-            error_msg = "I had trouble processing that file. Could you try sending it again?"
-            delay = get_random_delay()
-            threading.Thread(
-                target=delayed_response,
-                args=(sender, error_msg, delay),
-                daemon=True
-            ).start()
+            print(f"✅ Customer sending plan after confirming they have one")
+        
+        # Scenario 4: NOT a plan file, or customer said NO to having plan
+        else:
+            should_accept_upload = False
+            
+            if appointment.has_plan is False:
+                response_msg = "I see you sent a file, but you mentioned you need a site visit. I've saved it for reference, but we'll schedule a site visit to assess your needs."
+            else:
+                response_msg = "I see you sent a file. I've noted it. Let me continue with your appointment details."
+            
+            print(f"ℹ️ File uploaded but not as a plan. has_plan={appointment.has_plan}, type={mime_type}")
+        
+        # Download and save media if we should accept it
+        if should_accept_upload:
+            try:
+                media_content = whatsapp_api.download_media(media_id)
+                
+                # Generate filename
+                extension_map = {
+                    'image/jpeg': '.jpg',
+                    'image/png': '.png',
+                    'image/webp': '.webp',
+                    'application/pdf': '.pdf'
+                }
+                
+                extension = extension_map.get(mime_type, '.bin')
+                timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+                customer_name = appointment.customer_name or 'customer'
+                safe_name = ''.join(c for c in customer_name if c.isalnum())
+                filename = f"plan_{safe_name}_{appointment.id}_{timestamp}{extension}"
+                
+                # Save file
+                file_path = f"customer_plans/{filename}"
+                file_content = ContentFile(media_content, name=filename)
+                saved_path = default_storage.save(file_path, file_content)
+                
+                # Update appointment - set plan_file if first upload
+                if not appointment.plan_file:
+                    appointment.plan_file = saved_path
+                    appointment.plan_uploaded_at = timezone.now()
+                    appointment.save()
+                
+                print(f"✅ Saved plan file: {saved_path}")
+                
+            except Exception as download_error:
+                print(f"❌ Error saving media: {str(download_error)}")
+                response_msg = "I had trouble processing that file. Could you try sending it again?"
+        
+        # Schedule delayed response
+        delay = get_random_delay()
+        threading.Thread(
+            target=delayed_response,
+            args=(sender, response_msg, delay),
+            daemon=True
+        ).start()
+        
+        print(f"✅ Response scheduled for {delay // 60} minute(s) from now")
         
     except Exception as e:
         print(f"❌ Error handling media: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
