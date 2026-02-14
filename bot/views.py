@@ -608,6 +608,248 @@ class CreateQuotationView(CreateView):
         return reverse('view_quotation', kwargs={'pk': self.object.pk})
 
 
+    def validate_plan_status_with_ai(self, extracted_status: str, original_message: str) -> tuple:
+        """
+        Use AI to validate and normalize plan status responses
+        Handles spelling mistakes, context, and ambiguous answers
+        
+        Args:
+            extracted_status: The raw AI extraction ('yes', 'no', 'has_plan', etc.)
+            original_message: The customer's original message
+            
+        Returns:
+            tuple: (is_valid: bool, normalized_value: bool or None, confidence: str)
+        """
+        try:
+            validation_prompt = f"""You are a plan status validation assistant for an appointment booking system.
+
+    CONTEXT:
+    We asked the customer: "Do you have a plan already, or would you like us to do a site visit?"
+
+    CUSTOMER'S RESPONSE: "{original_message}"
+
+    AI EXTRACTED VALUE: "{extracted_status}"
+
+    TASK:
+    Analyze the customer's response and determine:
+    1. Did they answer the plan question?
+    2. Do they HAVE a plan or do they NEED a site visit?
+    3. How confident are you in this interpretation?
+
+    ANALYSIS RULES:
+    - Look at the MEANING, not just keywords
+    - Handle spelling mistakes (e.g., "vist" = "visit", "pln" = "plan")
+    - Handle context clues (e.g., "I'll send it" implies they have a plan)
+    - Handle ambiguity (e.g., "maybe" or "not sure")
+    - Ignore unrelated content (e.g., greetings, other questions)
+
+    EXAMPLES:
+
+    Customer: "A site visit would be ideal"
+    Analysis: NEEDS_VISIT (customer wants site visit, doesn't have plan)
+    Confidence: HIGH
+
+    Customer: "yes i have one"
+    Analysis: HAS_PLAN (customer confirms they have a plan)
+    Confidence: HIGH
+
+    Customer: "I'll send the blueprints later"
+    Analysis: HAS_PLAN (implies they have plans to send)
+    Confidence: HIGH
+
+    Customer: "No, come see it first"
+    Analysis: NEEDS_VISIT (customer wants visit first, no plan)
+    Confidence: HIGH
+
+    Customer: "I think so, let me check"
+    Analysis: UNCLEAR (customer is uncertain)
+    Confidence: LOW
+
+    Customer: "How much will it cost?"
+    Analysis: OFF_TOPIC (not answering the plan question)
+    Confidence: N/A
+
+    Customer: "yea I got da plan"
+    Analysis: HAS_PLAN (spelling mistakes but clear intent)
+    Confidence: HIGH
+
+    Customer: "site vist would be better"
+    Analysis: NEEDS_VISIT (spelling mistake but clear: site visit)
+    Confidence: HIGH
+
+    Customer: "No plan, need someone to come lok at it"
+    Analysis: NEEDS_VISIT (no plan + wants someone to look = site visit)
+    Confidence: HIGH
+
+    RESPONSE FORMAT (CRITICAL - FOLLOW EXACTLY):
+    Return ONLY a JSON object with this exact structure:
+    {{
+        "answer_provided": true/false,
+        "interpretation": "HAS_PLAN" or "NEEDS_VISIT" or "UNCLEAR" or "OFF_TOPIC",
+        "confidence": "HIGH" or "MEDIUM" or "LOW",
+        "reasoning": "Brief explanation of your analysis"
+    }}
+
+    Do NOT include any other text, markdown, or explanations outside the JSON.
+
+    CUSTOMER MESSAGE: "{original_message}"
+
+    YOUR ANALYSIS:"""
+
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are a precise validation assistant. Return ONLY valid JSON with no additional text or formatting."
+                    },
+                    {
+                        "role": "user", 
+                        "content": validation_prompt
+                    }
+                ],
+                temperature=0.2,  # Low temperature for consistency
+                max_tokens=150
+            )
+            
+            ai_response = response.choices[0].message.content.strip()
+            
+            # Clean up response (remove markdown if present)
+            ai_response = ai_response.replace('```json', '').replace('```', '').strip()
+            
+            # Parse JSON response
+            try:
+                validation_result = json.loads(ai_response)
+            except json.JSONDecodeError as e:
+                print(f"❌ AI returned invalid JSON: {ai_response}")
+                print(f"JSON Error: {str(e)}")
+                return (False, None, "ERROR")
+            
+            # Extract results
+            answer_provided = validation_result.get('answer_provided', False)
+            interpretation = validation_result.get('interpretation', 'UNCLEAR')
+            confidence = validation_result.get('confidence', 'LOW')
+            reasoning = validation_result.get('reasoning', '')
+            
+            print(f"🤖 AI Validation Result:")
+            print(f"   Answer provided: {answer_provided}")
+            print(f"   Interpretation: {interpretation}")
+            print(f"   Confidence: {confidence}")
+            print(f"   Reasoning: {reasoning}")
+            
+            # Only accept HIGH or MEDIUM confidence answers
+            if not answer_provided or confidence == 'LOW':
+                print(f"⚠️ Low confidence or no answer - will ask again")
+                return (False, None, confidence)
+            
+            # Convert interpretation to boolean
+            if interpretation == 'HAS_PLAN':
+                normalized_value = True
+                is_valid = True
+            elif interpretation == 'NEEDS_VISIT':
+                normalized_value = False
+                is_valid = True
+            elif interpretation == 'UNCLEAR':
+                normalized_value = None
+                is_valid = False
+            elif interpretation == 'OFF_TOPIC':
+                normalized_value = None
+                is_valid = False
+            else:
+                print(f"❌ Unexpected interpretation: {interpretation}")
+                return (False, None, "ERROR")
+            
+            print(f"✅ Validated: has_plan = {normalized_value} (confidence: {confidence})")
+            return (is_valid, normalized_value, confidence)
+            
+        except Exception as e:
+            print(f"❌ AI validation error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return (False, None, "ERROR")
+
+
+    def generate_clarifying_question_for_plan_status(self, retry_count: int) -> str:
+        """
+        Generate varied clarifying questions when plan status is unclear
+        Uses different phrasing on retries to help customer understand
+        """
+        try:
+            clarification_prompt = f"""You are Sarah, a professional appointment assistant.
+
+    SITUATION:
+    You asked: "Do you have a plan already, or would you like us to do a site visit?"
+    The customer's response was unclear or off-topic.
+    This is retry attempt #{retry_count + 1}
+
+    TASK:
+    Generate a NEW way to ask about whether they have an existing plan.
+
+    PHRASING OPTIONS (use different ones for different retries):
+
+    Retry 1 (Direct):
+    "Just to clarify - do you already have plans/blueprints for your bathroom, or would you like our plumber to visit first and create a plan?"
+
+    Retry 2 (Explanation):
+    "I need to know if you have existing plans (blueprints/drawings) that our plumber should review, OR if you need us to come assess your space first. Which one?"
+
+    Retry 3 (Simple Yes/No):
+    "Quick question: Do you have plans/blueprints ready? 
+    • Reply YES if you have plans to send us
+    • Reply NO if you need us to visit and assess first"
+
+    Retry 4 (Examples):
+    "Let me explain the options:
+
+    Option A: You already have architectural plans/blueprints → We review them first
+    Option B: You don't have plans yet → We do a site visit to assess and create a plan
+
+    Which option fits your situation - A or B?"
+
+    REQUIREMENTS:
+    - Keep it professional but friendly
+    - Be clear and concise (2-3 sentences max)
+    - Use language appropriate for retry #{retry_count + 1}
+    - No markdown formatting
+    - If retry > 3, use very simple YES/NO format
+
+    Current retry: {retry_count}
+
+    Generate the clarifying question:"""
+
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are Sarah, a helpful appointment assistant. Generate clear, varied questions."
+                    },
+                    {
+                        "role": "user",
+                        "content": clarification_prompt
+                    }
+                ],
+                temperature=0.8,  # Higher temp for variety
+                max_tokens=150
+            )
+            
+            clarifying_question = response.choices[0].message.content.strip()
+            print(f"🤖 Generated clarifying question (retry {retry_count}): {clarifying_question[:100]}...")
+            
+            return clarifying_question
+            
+        except Exception as e:
+            print(f"❌ Error generating clarifying question: {str(e)}")
+            # Fallback questions by retry count
+            fallbacks = [
+                "Just to confirm - do you have plans already, or would you like us to do a site visit?",
+                "I need to know: do you have existing blueprints/plans, or should we visit your property first?",
+                "Simple question: Do you have plans? Reply YES or NO.",
+                "Option A: I have plans to send. Option B: I need a site visit. Which one - A or B?"
+            ]
+            return fallbacks[min(retry_count, len(fallbacks) - 1)]
+
+            
 # Add this separate view for API-based quotation creation
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -2741,15 +2983,54 @@ I understand this is time-sensitive!"""
                 # ALL CHECKS PASSED - safe to update
                 else:
                     old_value = self.appointment.has_plan
-                    
-                    if extracted_data['plan_status'] == 'has_plan':
-                        self.appointment.has_plan = True
-                        updated_fields.append('plan_status')
-                        print(f"✅ Updated plan status: {old_value} -> True (has plan)")
-                    elif extracted_data['plan_status'] == 'needs_visit':
-                        self.appointment.has_plan = False
-                        updated_fields.append('plan_status')
-                        print(f"✅ Updated plan status: {old_value} -> False (needs visit)")
+
+                    #                    
+                    if extracted_data.get('plan_status') and extracted_data.get('plan_status') != 'null':
+                        
+                        # SAFETY CHECK 1: Never update if already set
+                        if self.appointment.has_plan is not None:
+                            print(f"🛡️ SAFETY: Blocked plan_status update - already set to {self.appointment.has_plan}")
+                        
+                        # SAFETY CHECK 2: Only update if we're actually asking about it
+                        elif next_question != "plan_or_visit":
+                            print(f"🛡️ SAFETY: Blocked plan_status update - not currently asking about plans (question: {next_question})")
+                        
+                        # SAFETY CHECK 3: Use AI to validate the response
+                        else:
+                            old_value = self.appointment.has_plan
+                            
+                            # Get the original customer message from last conversation entry
+                            original_message = message if 'message' in locals() else ''
+                            if not original_message and self.appointment.conversation_history:
+                                last_message = self.appointment.conversation_history[-1]
+                                if last_message.get('role') == 'user':
+                                    original_message = last_message.get('content', '')
+                            
+                            # Use AI validation for accuracy
+                            is_valid, normalized_value, confidence = self.validate_plan_status_with_ai(
+                                extracted_data['plan_status'], 
+                                original_message
+                            )
+                            
+                            if is_valid and normalized_value is not None:
+                                self.appointment.has_plan = normalized_value
+                                updated_fields.append('plan_status')
+                                print(f"✅ AI-validated plan status: {old_value} -> {normalized_value} (confidence: {confidence})")
+                                
+                                # Store confidence for monitoring
+                                if not hasattr(self.appointment, 'plan_status_confidence'):
+                                    self.appointment.plan_status_confidence = confidence
+                            
+                            elif is_valid and normalized_value is None:
+                                print(f"⚠️ AI detected unclear/off-topic response - will rephrase question")
+                                # Increment retry counter so bot rephrases the question
+                                self.appointment.retry_count = getattr(self.appointment, 'retry_count', 0) + 1
+                                self.appointment.save()
+                            
+                            else:
+                                print(f"❌ AI validation failed - will ask again with different phrasing")
+                                self.appointment.retry_count = getattr(self.appointment, 'retry_count', 0) + 1
+                                self.appointment.save()
             
             # Area - only update if we don't have one and AI found one
             if (extracted_data.get('area') and 
@@ -3700,6 +3981,13 @@ I understand this is time-sensitive!"""
                 service_display = self.appointment.project_type.replace('_', ' ').title()
                 acknowledgments.append(f"service: {service_display}")
             
+            #
+            if next_question == "plan_or_visit" and retry_count > 0:
+                # Customer's previous response was unclear - use AI to rephrase
+                clarifying_question = self.generate_clarifying_question_for_plan_status(retry_count)
+                return clarifying_question
+
+
             if 'plan_status' in updated_fields:
                 plan_text = "you have a plan" if self.appointment.has_plan else "you'd like a site visit"
                 acknowledgments.append(f"plan status: {plan_text}")
