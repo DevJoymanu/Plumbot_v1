@@ -378,11 +378,10 @@ class Appointment(models.Model):
             weekday = requested_datetime.weekday()  # 0=Monday, 6=Sunday
             hour = requested_datetime.hour
             
-            # Check if it's a weekend
-            if weekday >= 5:  # Saturday=5, Sunday=6
-                print(f"Requested time is on weekend: weekday {weekday}")
-                return False, "weekend"
-            
+            # Check if it's Saturday (closed day)
+            if weekday == 5:  # Saturday only
+                print(f"Requested time is on Saturday (closed): weekday {weekday}")
+                return False, "saturday_closed"            
             # Check business hours
             if hour < 8 or hour >= 18:
                 print(f"Outside business hours: {hour}:00 (business hours: 8 AM - 6 PM)")

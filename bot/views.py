@@ -1497,8 +1497,8 @@ def schedule_job(request, pk):
                 })
             
             # Check business hours (8 AM - 6 PM, Monday-Friday)
-            if job_datetime.weekday() >= 5:  # Weekend
-                messages.error(request, 'Jobs can only be scheduled Monday-Friday')
+            if job_datetime.weekday() == 5:  # Saturday only
+                messages.error(request, 'Jobs can only be scheduled Sunday-Friday (closed Saturdays)')
                 return render(request, 'schedule_job.html', {
                     'site_visit': site_visit,
                 })
@@ -1635,10 +1635,10 @@ def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=
             if (job_datetime < existing_end and job_end_time > job.job_scheduled_datetime):
                 return False
         
-        # Check business hours (8 AM - 6 PM, Monday-Friday)
-        if job_datetime.weekday() >= 5:  # Weekend
+        # Check business hours (8 AM - 6 PM, Sunday-Friday)
+        if job_datetime.weekday() == 5:  # Saturday only
             return False
-        
+
         if job_datetime.hour < 8 or job_end_time.hour > 18:
             return False
         
@@ -2818,9 +2818,13 @@ I understand this is time-sensitive!"""
             print(f"Looking for alternatives near {requested_datetime}")
             
             # Try same day first, then next few business days
-            for day_offset in range(0, 5):  # Check today + next 4 days
+            for day_offset in range(0, 7):  # Check today + next 6 days
                 check_date = requested_date + timedelta(days=day_offset)
                 
+                # Skip Saturday only
+                if check_date.weekday() == 5:
+                    continue                
+
                 # Skip weekends
                 if check_date.weekday() >= 5:
                     continue
@@ -3498,11 +3502,12 @@ I understand this is time-sensitive!"""
                 return False, "too_soon"
             
             # 2. Check business days (Monday-Friday)
+            # Check business days (Sunday-Friday, Saturday closed)
             weekday = requested_datetime.weekday()  # 0=Monday, 6=Sunday
-            if weekday >= 5:  # Saturday=5, Sunday=6
-                print(f"Requested time is on weekend: weekday {weekday}")
-                return False, "weekend"
-            
+            if weekday == 5:  # Only Saturday (5) is closed, Sunday (6) is open
+                print(f"Requested time is on Saturday (closed): weekday {weekday}")
+                return False, "saturday_closed"            
+
             # 3. Check business hours (8 AM - 6 PM)
             hour = requested_datetime.hour
             if hour < 8 or hour >= 18:
@@ -5090,10 +5095,10 @@ def fallback_manual_extraction(self, message):
         try:
             if error_type == "past_time":
                 return "That time has already passed. Please choose a future time."
-            
-            elif error_type == "weekend":
-                return "We're closed on weekends. Please choose Monday through Friday."
-            
+            #
+            elif error_type == "saturday_closed":
+                return "We're closed on Saturdays. Please choose Sunday through Friday."
+
             elif error_type == "outside_business_hours":
                 return "We're only available 8 AM to 6 PM, Monday through Friday. Please choose a time within business hours."
             
@@ -5167,10 +5172,11 @@ def fallback_manual_extraction(self, message):
         except Exception as e:
             print(f"Error finding available slots: {str(e)}")
             return []
-
+    #
     def is_business_day(self, check_date):
-        """Check if a given date is a business day (Monday-Friday)"""
-        return check_date.weekday() < 5
+        """Check if a given date is a business day (Sunday-Friday)"""
+        weekday = check_date.weekday()
+        return weekday != 5  # All days except Saturday (5)
 
     def is_business_hours(self, check_time):
         """Check if a given time is within business hours (8 AM - 6 PM)"""
