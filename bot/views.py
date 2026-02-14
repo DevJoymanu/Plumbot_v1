@@ -2921,7 +2921,17 @@ I understand this is time-sensitive!"""
             # Completion percentage
             completeness = self.appointment.get_customer_info_completeness()
             context_parts.append(f"Info Completeness: {completeness:.0f}%")
+            #
+            sa_timezone = pytz.timezone('Africa/Johannesburg')
+            sa_time = self.appointment.scheduled_datetime.astimezone(sa_timezone)
+            formatted_datetime = sa_time.strftime('%A, %B %d, %Y at %I:%M %p')
             
+            context_parts.append(f"📅 Scheduled: {formatted_datetime}")
+            
+            # Add explicit instruction for AI
+            context_parts.append(f"⚠️ CRITICAL: When mentioning appointment time, ALWAYS use: {formatted_datetime}")
+
+
             return "\n".join(context_parts)
             
         except Exception as e:
