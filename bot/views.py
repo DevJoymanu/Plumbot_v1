@@ -775,7 +775,7 @@ class CreateQuotationView(CreateView):
         Uses different phrasing on retries to help customer understand
         """
         try:
-            clarification_prompt = f"""You are Sarah, a professional appointment assistant.
+            clarification_prompt = f"""You are a professional appointment assistant.
 
     SITUATION:
     You asked: "Do you have a plan already, or would you like us to do a site visit?"
@@ -822,7 +822,7 @@ class CreateQuotationView(CreateView):
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are Sarah, a helpful appointment assistant. Generate clear, varied questions."
+                        "content": "You are a helpful appointment assistant. Generate clear, varied questions."
                     },
                     {
                         "role": "user",
@@ -2947,9 +2947,9 @@ I understand this is time-sensitive!"""
         except Exception as e:
             print(f"Error checking conversation history: {str(e)}")
             return False
-
+    #
     def update_appointment_with_extracted_data(self, extracted_data):
-        """Update appointment with extracted data - ENHANCED WITH SAFETY CHECKS"""
+        """Update appointment with extracted data - FIXED VERSION"""
         try:
             updated_fields = []
             next_question = self.get_next_question_to_ask()
@@ -2965,7 +2965,7 @@ I understand this is time-sensitive!"""
                 updated_fields.append('service_type')
                 print(f"✅ Updated service_type: {self.appointment.project_type}")
             
-            # ULTRA CRITICAL FIX: Plan status with triple safety checks
+            # EMERGENCY FIX: Plan status with response normalization
             if extracted_data.get('plan_status') and extracted_data.get('plan_status') != 'null':
                 
                 # SAFETY CHECK 1: Never update if already set
@@ -2976,61 +2976,48 @@ I understand this is time-sensitive!"""
                 elif next_question != "plan_or_visit":
                     print(f"🛡️ SAFETY: Blocked plan_status update - not currently asking about plans (question: {next_question})")
                 
-                # SAFETY CHECK 3: Validate the extraction makes sense
-                elif extracted_data['plan_status'] not in ['has_plan', 'needs_visit']:
-                    print(f"🛡️ SAFETY: Blocked plan_status update - invalid value: {extracted_data['plan_status']}")
-                
-                # ALL CHECKS PASSED - safe to update
+                # SAFETY CHECK 3: Normalize and validate response
                 else:
                     old_value = self.appointment.has_plan
-
-                    #                    
-                    if extracted_data.get('plan_status') and extracted_data.get('plan_status') != 'null':
-                        
-                        # SAFETY CHECK 1: Never update if already set
-                        if self.appointment.has_plan is not None:
-                            print(f"🛡️ SAFETY: Blocked plan_status update - already set to {self.appointment.has_plan}")
-                        
-                        # SAFETY CHECK 2: Only update if we're actually asking about it
-                        elif next_question != "plan_or_visit":
-                            print(f"🛡️ SAFETY: Blocked plan_status update - not currently asking about plans (question: {next_question})")
-                        
-                        # SAFETY CHECK 3: Use AI to validate the response
-                        else:
-                            old_value = self.appointment.has_plan
-                            
-                            # Get the original customer message from last conversation entry
-                            original_message = message if 'message' in locals() else ''
-                            if not original_message and self.appointment.conversation_history:
-                                last_message = self.appointment.conversation_history[-1]
-                                if last_message.get('role') == 'user':
-                                    original_message = last_message.get('content', '')
-                            
-                            # Use AI validation for accuracy
-                            is_valid, normalized_value, confidence = self.validate_plan_status_with_ai(
-                                extracted_data['plan_status'], 
-                                original_message
-                            )
-                            
-                            if is_valid and normalized_value is not None:
-                                self.appointment.has_plan = normalized_value
-                                updated_fields.append('plan_status')
-                                print(f"✅ AI-validated plan status: {old_value} -> {normalized_value} (confidence: {confidence})")
-                                
-                                # Store confidence for monitoring
-                                if not hasattr(self.appointment, 'plan_status_confidence'):
-                                    self.appointment.plan_status_confidence = confidence
-                            
-                            elif is_valid and normalized_value is None:
-                                print(f"⚠️ AI detected unclear/off-topic response - will rephrase question")
-                                # Increment retry counter so bot rephrases the question
-                                self.appointment.retry_count = getattr(self.appointment, 'retry_count', 0) + 1
-                                self.appointment.save()
-                            
-                            else:
-                                print(f"❌ AI validation failed - will ask again with different phrasing")
-                                self.appointment.retry_count = getattr(self.appointment, 'retry_count', 0) + 1
-                                self.appointment.save()
+                    plan_status = str(extracted_data['plan_status']).lower().strip()
+                    
+                    # Map ALL possible AI responses to boolean
+                    # Handles: 'has_plan', 'yes', 'true', 'no', 'false', 'needs_visit'
+                    has_plan_indicators = [
+                        'has_plan', 'has plan', 'have plan', 'got plan',
+                        'yes', 'yep', 'yeah', 'yup', 'true',
+                        'have it', 'got it', 'i do', 'i have'
+                    ]
+                    
+                    needs_visit_indicators = [
+                        'needs_visit', 'needs visit', 'need visit', 
+                        'site visit', 'site_visit',
+                        'no', 'nope', 'nah', 'false',
+                        'no plan', 'dont have', "don't have",
+                        'visit', 'prefer visit'
+                    ]
+                    
+                    updated = False
+                    
+                    # Check if response indicates HAS plan
+                    if any(indicator in plan_status for indicator in has_plan_indicators):
+                        self.appointment.has_plan = True
+                        updated_fields.append('plan_status')
+                        updated = True
+                        print(f"✅ Updated plan status: {old_value} -> True (matched: {plan_status})")
+                    
+                    # Check if response indicates NEEDS visit
+                    elif any(indicator in plan_status for indicator in needs_visit_indicators):
+                        self.appointment.has_plan = False
+                        updated_fields.append('plan_status')
+                        updated = True
+                        print(f"✅ Updated plan status: {old_value} -> False (matched: {plan_status})")
+                    
+                    # Unrecognized response
+                    else:
+                        print(f"⚠️ WARNING: Unrecognized plan_status value: '{plan_status}'")
+                        print(f"Expected variants of: has_plan/needs_visit or yes/no")
+                        print(f"Bot will ask the question again with different phrasing")
             
             # Area - only update if we don't have one and AI found one
             if (extracted_data.get('area') and 
@@ -3095,7 +3082,6 @@ I understand this is time-sensitive!"""
             import traceback
             traceback.print_exc()
             return []
-
 
     def get_information_summary(self):
         """Get a summary of collected information for debugging"""
@@ -3999,7 +3985,7 @@ I understand this is time-sensitive!"""
                 acknowledgments.append(f"property type: {self.appointment.property_type}")
             
             system_prompt = f"""
-            You are Sarah, a professional appointment assistant for a luxury plumbing company.
+            You are a professional appointment assistant for a luxury plumbing company.
             
             SITUATION ANALYSIS:
             - Customer provided new information: {updated_fields if updated_fields else 'None'}
@@ -4905,7 +4891,7 @@ def fallback_manual_extraction(self, message):
             alternatives = self.get_alternative_time_suggestions(requested_datetime)
             
             unavailable_response_prompt = f"""
-            You are Sarah, a professional appointment assistant for a plumbing company.
+            You a professional appointment assistant for a plumbing company.
             
             SITUATION: Customer requested to reschedule to a time that's not available.
             
@@ -4932,7 +4918,7 @@ def fallback_manual_extraction(self, message):
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": "You are Sarah, a professional appointment assistant. Be helpful and concise."},
+                    {"role": "system", "content": "You are a professional appointment assistant. Be helpful and concise."},
                     {"role": "user", "content": unavailable_response_prompt}
                 ],
                 temperature=0.7,
@@ -4956,7 +4942,7 @@ def fallback_manual_extraction(self, message):
         """Use AI to generate clarification request when datetime parsing fails"""
         try:
             clarification_prompt = f"""
-            You are Sarah, a professional appointment assistant for a plumbing company.
+            You are a professional appointment assistant for a plumbing company.
             
             SITUATION: Customer wants to reschedule but didn't provide clear date/time information.
             
@@ -4983,7 +4969,7 @@ def fallback_manual_extraction(self, message):
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": "You are Sarah, a professional appointment assistant. Be clear and helpful."},
+                    {"role": "system", "content": "You are a professional appointment assistant. Be clear and helpful."},
                     {"role": "user", "content": clarification_prompt}
                 ],
                 temperature=0.7,
@@ -5024,7 +5010,7 @@ def fallback_manual_extraction(self, message):
             
             # Generate confirmation with AI
             confirmation_prompt = f"""
-            You are Sarah, a professional appointment assistant for a plumbing company.
+            You are a professional appointment assistant for a plumbing company.
             
             SITUATION: Successfully rescheduled customer's appointment.
             
@@ -5049,7 +5035,7 @@ def fallback_manual_extraction(self, message):
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": "You are Sarah, a professional appointment assistant. Be reassuring and clear."},
+                    {"role": "system", "content": "You are a professional appointment assistant. Be reassuring and clear."},
                     {"role": "user", "content": confirmation_prompt}
                 ],
                 temperature=0.7,
