@@ -1,5 +1,6 @@
 # bot/management/commands/send_followups.py
 # AUTOMATIC FOLLOW-UP SYSTEM with AI-powered contextual messages
+# ✅ FIXED VERSION - 'responded' stage only blocks for 24 hours, not forever
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -87,12 +88,11 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING('\n🧪 This was a dry run - no actual messages sent'))
 
-    #
     def get_leads_needing_followup(self, force=False):
         """
         Get all leads that need an automatic follow-up message
         
-        FIXED: 'responded' stage only blocks for 24 hours, not forever
+        ✅ FIXED: 'responded' stage only blocks for 24 hours, not forever
         """
         from django.db.models import Q
         now = timezone.now()
@@ -105,7 +105,7 @@ class Command(BaseCommand):
             followup_stage='completed'
         )
         
-        # ✅ CRITICAL FIX: Only exclude 'responded' if within 24 hours
+        # ✅ CRITICAL FIX: Only exclude 'responded' if they responded in last 24 hours
         # After 24 hours, they become eligible for follow-ups again
         response_window = now - timedelta(hours=24)
         leads = leads.exclude(
@@ -123,7 +123,7 @@ class Command(BaseCommand):
             plan_status='pending_upload'
         )
         
-        # Exclude leads that responded in last 24 hours (safety check)
+        # Exclude leads that responded in last 24 hours (general safety check)
         leads = leads.exclude(
             last_customer_response__gte=response_window
         )
@@ -183,7 +183,6 @@ class Command(BaseCommand):
             lead.last_followup_sent = now
             lead.followup_count += 1
             lead.followup_stage = next_stage
-            lead.is_automatic_followup = True  # Track that this was automatic
             lead.save()
             
             # Add to conversation history with AUTOMATIC tag
