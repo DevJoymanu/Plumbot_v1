@@ -87,8 +87,14 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING('\n🧪 This was a dry run - no actual messages sent'))
 
+    #
     def get_leads_needing_followup(self, force=False):
-        """Get all leads that need an automatic follow-up message"""
+        """
+        Get all leads that need an automatic follow-up message
+        
+        FIXED: 'responded' stage only blocks for 24 hours, not forever
+        """
+        from django.db.models import Q
         now = timezone.now()
         
         # Base criteria: incomplete appointments that are still active leads
@@ -97,8 +103,14 @@ class Command(BaseCommand):
             status='pending',  # Not yet confirmed
         ).exclude(
             followup_stage='completed'
-        ).exclude(
-            followup_stage='responded'
+        )
+        
+        # ✅ CRITICAL FIX: Only exclude 'responded' if within 24 hours
+        # After 24 hours, they become eligible for follow-ups again
+        response_window = now - timedelta(hours=24)
+        leads = leads.exclude(
+            Q(followup_stage='responded') & 
+            Q(last_customer_response__gte=response_window)
         )
         
         # CRITICAL: Exclude leads who have sent plans (they're waiting for plumber review)
@@ -111,10 +123,9 @@ class Command(BaseCommand):
             plan_status='pending_upload'
         )
         
-        # Exclude leads that responded in last 24 hours
-        recent_response_cutoff = now - timedelta(days=1)
+        # Exclude leads that responded in last 24 hours (safety check)
         leads = leads.exclude(
-            last_customer_response__gte=recent_response_cutoff
+            last_customer_response__gte=response_window
         )
         
         # If not forcing, exclude leads we already followed up with today

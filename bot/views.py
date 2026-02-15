@@ -2108,7 +2108,7 @@ def test_followup_message(request, pk):
         from io import StringIO
         
         # You can manually craft a test message or use the generator
-        from yourapp.management.commands.send_followups import Command
+        from bot.management.commands.send_followups import Command
         cmd = Command()
         message = cmd.generate_followup_message(appointment, stage)
         
@@ -4824,10 +4824,10 @@ def fallback_manual_extraction(self, message):
             
             TASK: Extract a complete date and time from the customer's message and convert it to YYYY-MM-DDTHH:MM format.
             
-            CURRENT CONTEXT:
-            - Current date/time: {current_time_str}
+]            CURRENT CONTEXT:
+            - Current date: {current_time.strftime('%Y-%m-%d')}
             - Timezone: Africa/Johannesburg (UTC+2)
-            - Business hours: 8 AM - 6 PM, Monday to Friday
+            - Business hours: 8 AM - 6 PM, Sunday to Friday (closed Saturdays)
             
             CUSTOMER MESSAGE: "{message}"
             
