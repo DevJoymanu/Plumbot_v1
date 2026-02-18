@@ -2711,57 +2711,80 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 "Our plumber will review it and contact you within 24 hours."
             )
 
-    def detect_service_inquiry(self, message):
-        """Use DeepSeek to detect if customer is asking about products/services/pricing."""
-        try:
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an intent classifier for a Zimbabwean plumbing company. Customers may write in English, Shona, or mixed. Return ONLY valid JSON, no markdown."
-                    },
-                    {
-                        "role": "user",
-                        "content": f"""Classify the customer's message into ONE of these intents.
 
-    Customer message: "{message}"
+def detect_service_inquiry(self, message):
+    """Use DeepSeek to detect if customer is asking about products/services/pricing."""
+    try:
+        response = deepseek_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an intent classifier for a Zimbabwean plumbing company. Customers may write in English, Shona, or mixed. Return ONLY valid JSON, no markdown."
+                },
+                {
+                    "role": "user",
+                    "content": f"""Classify the customer's message into ONE of these intents.
 
-    INTENTS:
-    - tub_sales: asking if we sell tubs or about small bathroom tubs
-    - standalone_tub: asking about standalone/freestanding tub price or availability
-    - geyser: asking about geyser installation or pricing
-    - shower_cubicle: asking about shower cubicles, pricing, installation
-    - vanity: asking about vanity units, custom vanity
-    - bathtub_installation: asking about installing a bathtub, wall finishing around tub
-    - toilet: asking about toilet supply or installation
-    - facebook_package: referencing a Facebook ad or package deal
-    - location_visit: asking where we are located or wanting to visit/come to office
-    - previous_quotation: saying we sent them a quotation before
-    - pictures: asking to see product pictures (not previous work photos)
-    - none: none of the above
+Customer message: "{message}"
 
-    Return ONLY this JSON:
-    {{
-        "intent": "one of the intents above",
-        "confidence": "HIGH or LOW"
-    }}"""
-                    }
-                ],
-                temperature=0.1,
-                max_tokens=50
-            )
+INTENTS:
+- tub_sales: asking if we sell tubs or about small bathroom tubs
+- standalone_tub: asking about standalone/freestanding tub price or availability
+- geyser: asking about geyser installation or pricing
+- shower_cubicle: asking about shower cubicles, pricing, installation
+- vanity: asking about vanity units, custom vanity
+- bathtub_installation: asking about installing a bathtub, wall finishing around tub
+- toilet: asking about toilet supply or installation
+- facebook_package: referencing a Facebook ad or package deal
+- location_ask: customer is ONLY asking where we are located or for our address
+- location_visit: customer wants to physically come IN PERSON to our office or showroom
+- previous_quotation: saying we sent them a quotation before
+- pictures: asking to see product pictures (not previous work photos)
+- none: none of the above — including when customer just says an area name like "Hatfield", "Avondale", "Borrowdale" etc.
 
-            ai_response = response.choices[0].message.content.strip()
-            ai_response = ai_response.replace('```json', '').replace('```', '').strip()
-            result = json.loads(ai_response)
+CRITICAL RULES:
+1. location_ask vs location_visit:
+   - location_ask = ONLY asking for address/whereabouts. Examples:
+     * "Where are you located"
+     * "Whre ar u located"
+     * "Where are you based"
+     * "What's your address"
+     * "Muri kupi" (Shona: where are you)
+     * "Muri kupi imimi"
+   - location_visit = customer explicitly wants to come in person. Examples:
+     * "Can I come to your office"
+     * "Ko when can I come ku office"
+     * "I want to visit your showroom"
+     * "Can I come and see the tubs"
+     * "When can I come in"
+   - If message is ONLY an area name like "Hatfield", "Avondale", "Glen View" → intent must be "none"
 
-            print(f"🤖 Service inquiry detection: '{message}' → {result}")
-            return result
+2. Confidence rules:
+   - HIGH = message clearly matches the intent
+   - LOW = message is ambiguous or too short to be certain
 
-        except Exception as e:
-            print(f"❌ Service inquiry detection error: {str(e)}")
-            return {"intent": "none", "confidence": "LOW"}
+Return ONLY this JSON:
+{{
+    "intent": "one of the intents above",
+    "confidence": "HIGH or LOW"
+}}"""
+                }
+            ],
+            temperature=0.1,
+            max_tokens=50
+        )
+
+        ai_response = response.choices[0].message.content.strip()
+        ai_response = ai_response.replace('```json', '').replace('```', '').strip()
+        result = json.loads(ai_response)
+
+        print(f"🤖 Service inquiry detection: '{message}' → {result}")
+        return result
+
+    except Exception as e:
+        print(f"❌ Service inquiry detection error: {str(e)}")
+        return {"intent": "none", "confidence": "LOW"}
 
 
     def handle_service_inquiry(self, intent, message):
@@ -2786,7 +2809,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             language = lang_response.choices[0].message.content.strip().lower()
             print(f"🌍 Detected language: {language}")
 
-            plumber_number = self.appointment.plumber_contact_number or '+27610318200'
+            plumber_number = self.appointment.plumber_contact_number or '+263774819901'
 
             pricing_info = {
                 "tub_sales": {
@@ -2821,9 +2844,14 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "en": f"The bathroom package shown on our Facebook ad starts from US$600. 📢\n\n⚠️ This is an approximate price and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like us to assess your space first?",
                     "sn": f"Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. 📢\n\n⚠️ Mutengo uyu wakangofanana - unogona kushanduka zvichienda nebasa. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here kuti tiuye titarise nzvimbo yako?"
                 },
+                # ✅ SPLIT: location_ask = just asking address, location_visit = wants to come in person
+                "location_ask": {
+                    "en": "We are based in Hatfield, Harare. 📍\n\nWe work on a mobile basis and come directly to you. Would you like us to arrange a site visit?",
+                    "sn": "Tiri muHatfield, Harare. 📍\n\nTinoenda kwauri — unoda here kuti tiuye kusite visit?"
+                },
                 "location_visit": {
-                    "en": f"We are located in Hatfield, Harare. 📍\n\nWe operate using a home office setup, so we work by appointment. Would you like us to arrange a site visit to your place, or schedule a meeting?",
-                    "sn": f"Tiri muHatfield, Harare. 📍\n\nTinoshandisa home office, saka tinoshanda ne appointment. Unoda here kuti tiuye kusite visit, kana tibvumirene musangano?"
+                    "en": "We operate by appointment rather than walk-ins. 📍 We're based in Hatfield, Harare.\n\nWould you like us to arrange a site visit to your place instead?",
+                    "sn": "Tinoshandisa ne appointment, hatisi kushanda ne walk-ins. 📍 Tiri muHatfield, Harare.\n\nUnoda here kuti tiuye kwauri?"
                 },
                 "previous_quotation": {
                     "en": f"Kindly contact our plumber directly and they will assist you with your previous quotation. 📄\n\nYou can reach them on: {plumber_number}",
