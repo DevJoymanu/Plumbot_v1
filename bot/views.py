@@ -624,7 +624,7 @@ class CreateQuotationView(CreateView):
             validation_prompt = f"""You are a plan status validation assistant for an appointment booking system.
 
     CONTEXT:
-    We asked the customer: "Do you have a plan already, or would you like us to do a site visit?"
+    We asked the customer: "Do you have a plan(a picture of space or pdf) already, or would you like us to do a site visit?"
 
     CUSTOMER'S RESPONSE: "{original_message}"
 system_prompt
@@ -778,7 +778,7 @@ system_prompt
             clarification_prompt = f"""You are a professional appointment assistant.
 
     SITUATION:
-    You asked: "Do you have a plan already, or would you like us to do a site visit?"
+    You asked: "Do you have a plan(a picture of space or pdf) already, or would you like us to do a site visit?"
     The customer's response was unclear or off-topic.
     This is retry attempt #{retry_count + 1}
 
@@ -2488,7 +2488,7 @@ class Plumbot:
                     },
                     {
                         "role": "user",
-                        "content": f"""We asked the customer: "Do you have a plan already, or would you like us to do a site visit?"
+                        "content": f"""We asked the customer: "Do you have a plan(a picture of space or pdf) already, or would you like us to do a site visit?"
 
     Is the customer saying they HAVE a plan and will send/share it later (not now)?
 
@@ -4035,12 +4035,21 @@ I understand this is time-sensitive!"""
             You are a professional appointment assistant for a luxury plumbing company in Zimbabwe.
 
             LANGUAGE RULES - CRITICAL:
-            - Detect the language the customer is using (English, Shona, or mixed)
-            - If customer writes in Shona, respond in Shona
-            - If customer writes in English, respond in English
-            - If customer mixes both, mirror their style
-            - Always be warm, professional and culturally appropriate for Zimbabwe
+            - DEFAULT language is English. Always respond in English unless the customer clearly uses Shona.
+            - If the customer writes ONLY in Shona (no English words), respond in Shona.
+            - If the customer mixes Shona and English, mirror their mixed style.
+            - If the customer writes in English (even with a few Shona words), respond in English.
+            - Once the customer establishes a language pattern, maintain it throughout.
+            - Always be warm, professional and culturally appropriate for Zimbabwe.
 
+            LANGUAGE DETECTION GUIDE:
+            - "Hello", "Hi", "Good morning", "Yes", "No" → English → respond in English
+            - "Mhoro", "Ndini", "Ndinoda", "Zvakanaka" (primarily Shona) → respond in Shona
+            - "Hello, ndinoda bathroom renovation" (mixed) → respond in mixed style
+            - When in doubt, default to English.
+
+            SHONA RESPONSE EXAMPLES (only use when customer is writing in Shona):
+            - Greeting: "Mhoro! Ndinokufara kukubatsira."
             SHONA RESPONSE EXAMPLES:
             - Greeting: "Mhoro! Ndinokufara kukubatsira."
             - Asking for area: "Munogara kupi? (e.g. Hatfield, Avondale, Borrowdale)"
@@ -4076,7 +4085,7 @@ I understand this is time-sensitive!"""
             
             QUESTION TEMPLATES:
             - service_type: "Which service are you interested in? We offer: Bathroom Renovation, New Plumbing Installation, or Kitchen Renovation"
-            - plan_or_visit: "Do you have a plan already, or would you like us to do a site visit?"
+            - plan_or_visit: "Do you have a plan(a picture of space or pdf) already, or would you like us to do a site visit?"
             - area: "Which area are you located in? (e.g. Harare Hatfield, Harare Avondale)"
             - timeline: "When were you hoping to get this done?"
             - property_type: "Is this for a house, apartment, or business?"
