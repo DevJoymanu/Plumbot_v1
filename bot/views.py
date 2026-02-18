@@ -2712,79 +2712,79 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             )
 
 
-def detect_service_inquiry(self, message):
-    """Use DeepSeek to detect if customer is asking about products/services/pricing."""
-    try:
-        response = deepseek_client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an intent classifier for a Zimbabwean plumbing company. Customers may write in English, Shona, or mixed. Return ONLY valid JSON, no markdown."
-                },
-                {
-                    "role": "user",
-                    "content": f"""Classify the customer's message into ONE of these intents.
+    def detect_service_inquiry(self, message):
+        """Use DeepSeek to detect if customer is asking about products/services/pricing."""
+        try:
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an intent classifier for a Zimbabwean plumbing company. Customers may write in English, Shona, or mixed. Return ONLY valid JSON, no markdown."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"""Classify the customer's message into ONE of these intents.
 
-Customer message: "{message}"
+    Customer message: "{message}"
 
-INTENTS:
-- tub_sales: asking if we sell tubs or about small bathroom tubs
-- standalone_tub: asking about standalone/freestanding tub price or availability
-- geyser: asking about geyser installation or pricing
-- shower_cubicle: asking about shower cubicles, pricing, installation
-- vanity: asking about vanity units, custom vanity
-- bathtub_installation: asking about installing a bathtub, wall finishing around tub
-- toilet: asking about toilet supply or installation
-- facebook_package: referencing a Facebook ad or package deal
-- location_ask: customer is ONLY asking where we are located or for our address
-- location_visit: customer wants to physically come IN PERSON to our office or showroom
-- previous_quotation: saying we sent them a quotation before
-- pictures: asking to see product pictures (not previous work photos)
-- none: none of the above — including when customer just says an area name like "Hatfield", "Avondale", "Borrowdale" etc.
+    INTENTS:
+    - tub_sales: asking if we sell tubs or about small bathroom tubs
+    - standalone_tub: asking about standalone/freestanding tub price or availability
+    - geyser: asking about geyser installation or pricing
+    - shower_cubicle: asking about shower cubicles, pricing, installation
+    - vanity: asking about vanity units, custom vanity
+    - bathtub_installation: asking about installing a bathtub, wall finishing around tub
+    - toilet: asking about toilet supply or installation
+    - facebook_package: referencing a Facebook ad or package deal
+    - location_ask: customer is ONLY asking where we are located or for our address
+    - location_visit: customer wants to physically come IN PERSON to our office or showroom
+    - previous_quotation: saying we sent them a quotation before
+    - pictures: asking to see product pictures (not previous work photos)
+    - none: none of the above — including when customer just says an area name like "Hatfield", "Avondale", "Borrowdale" etc.
 
-CRITICAL RULES:
-1. location_ask vs location_visit:
-   - location_ask = ONLY asking for address/whereabouts. Examples:
-     * "Where are you located"
-     * "Whre ar u located"
-     * "Where are you based"
-     * "What's your address"
-     * "Muri kupi" (Shona: where are you)
-     * "Muri kupi imimi"
-   - location_visit = customer explicitly wants to come in person. Examples:
-     * "Can I come to your office"
-     * "Ko when can I come ku office"
-     * "I want to visit your showroom"
-     * "Can I come and see the tubs"
-     * "When can I come in"
-   - If message is ONLY an area name like "Hatfield", "Avondale", "Glen View" → intent must be "none"
+    CRITICAL RULES:
+    1. location_ask vs location_visit:
+    - location_ask = ONLY asking for address/whereabouts. Examples:
+        * "Where are you located"
+        * "Whre ar u located"
+        * "Where are you based"
+        * "What's your address"
+        * "Muri kupi" (Shona: where are you)
+        * "Muri kupi imimi"
+    - location_visit = customer explicitly wants to come in person. Examples:
+        * "Can I come to your office"
+        * "Ko when can I come ku office"
+        * "I want to visit your showroom"
+        * "Can I come and see the tubs"
+        * "When can I come in"
+    - If message is ONLY an area name like "Hatfield", "Avondale", "Glen View" → intent must be "none"
 
-2. Confidence rules:
-   - HIGH = message clearly matches the intent
-   - LOW = message is ambiguous or too short to be certain
+    2. Confidence rules:
+    - HIGH = message clearly matches the intent
+    - LOW = message is ambiguous or too short to be certain
 
-Return ONLY this JSON:
-{{
-    "intent": "one of the intents above",
-    "confidence": "HIGH or LOW"
-}}"""
-                }
-            ],
-            temperature=0.1,
-            max_tokens=50
-        )
+    Return ONLY this JSON:
+    {{
+        "intent": "one of the intents above",
+        "confidence": "HIGH or LOW"
+    }}"""
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=50
+            )
 
-        ai_response = response.choices[0].message.content.strip()
-        ai_response = ai_response.replace('```json', '').replace('```', '').strip()
-        result = json.loads(ai_response)
+            ai_response = response.choices[0].message.content.strip()
+            ai_response = ai_response.replace('```json', '').replace('```', '').strip()
+            result = json.loads(ai_response)
 
-        print(f"🤖 Service inquiry detection: '{message}' → {result}")
-        return result
+            print(f"🤖 Service inquiry detection: '{message}' → {result}")
+            return result
 
-    except Exception as e:
-        print(f"❌ Service inquiry detection error: {str(e)}")
-        return {"intent": "none", "confidence": "LOW"}
+        except Exception as e:
+            print(f"❌ Service inquiry detection error: {str(e)}")
+            return {"intent": "none", "confidence": "LOW"}
 
 
     def handle_service_inquiry(self, intent, message):
@@ -2879,6 +2879,8 @@ Return ONLY this JSON:
         except Exception as e:
             print(f"❌ Error handling service inquiry: {str(e)}")
             return self.generate_contextual_response(message, self.get_next_question_to_ask(), [])
+
+
 
     def notify_plumber_about_plan(self):
         """Send plan details to plumber via WhatsApp"""
