@@ -58,19 +58,32 @@ def get_previous_work_image_urls() -> list:
 
 
 def get_previous_work_image_files() -> list:
-    """Load local portfolio images from static/images/portfolio."""
+    """Load local portfolio images from common project portfolio directories."""
     configured_dir = os.environ.get('PORTFOLIO_IMAGE_DIR', '').strip()
-    portfolio_dir = Path(configured_dir) if configured_dir else (Path(settings.BASE_DIR) / 'bot' / 'static' / 'images' / 'portfolio')    
-    print(f"Looking for portfolio images in: {portfolio_dir}")
-
-    if not portfolio_dir.exists():
-        print("Portfolio image directory does not exist")
-        return []
+    candidate_dirs = []
+    if configured_dir:
+        candidate_dirs.append(Path(configured_dir))
+    candidate_dirs.extend([
+        Path(settings.BASE_DIR) / 'static' / 'images' / 'portfolio',
+        Path(settings.BASE_DIR) / 'bot' / 'static' / 'images' / 'portfolio',
+    ])
+    print(f"Looking for portfolio images in: {[str(path) for path in candidate_dirs]}")
 
     allowed_ext = {'.jpg', '.jpeg', '.png', '.webp'}
     image_files = []
-    for file_path in sorted(portfolio_dir.iterdir()):
-        if file_path.is_file() and file_path.suffix.lower() in allowed_ext:
+    seen = set()
+    for portfolio_dir in candidate_dirs:
+        if not portfolio_dir.exists():
+            continue
+        for file_path in sorted(portfolio_dir.iterdir()):
+            if not file_path.is_file():
+                continue
+            if file_path.suffix.lower() not in allowed_ext:
+                continue
+            normalized = str(file_path.resolve())
+            if normalized in seen:
+                continue
+            seen.add(normalized)
             image_files.append(str(file_path))
     print(f"Found {len(image_files)} portfolio image file(s)")
     return image_files
@@ -121,18 +134,33 @@ def detect_objection_type(message: str) -> str:
 def is_previous_work_photo_request(message: str) -> bool:
     """Detect if customer is asking to see previous work photos."""
     message_lower = message.lower()
+    direct_request_phrases = [
+        'pictures of previous work', 'photos of previous work',
+        'send pictures', 'send photos', 'send me pictures', 'send me photos',
+        'show pictures', 'show photos', 'show me pictures', 'show me photos',
+        'show me your work', 'show your previous work', 'share your portfolio'
+    ]
+    if any(phrase in message_lower for phrase in direct_request_phrases):
+        return True
+
     visual_keywords = [
         'picture', 'pictures', 'photo', 'photos', 'image', 'images',
         'previous work', 'past work', 'your work', 'portfolio', 'gallery',
         'show me', 'examples'
     ]
+    previous_work_context_terms = [
+        'previous work', 'past work', 'your work', 'portfolio', 'gallery',
+        'work examples', 'example work'
+    ]
     request_intent_terms = [
-        'send', 'show', 'see', 'share', 'can i get', 'do you have', 'let me see'
+        'send', 'show', 'see', 'share', 'can i get', 'do you have', 'let me see',
+        'need', 'want'
     ]
 
     has_visual_keyword = any(keyword in message_lower for keyword in visual_keywords)
+    has_previous_work_context = any(term in message_lower for term in previous_work_context_terms)
     has_request_intent = any(term in message_lower for term in request_intent_terms)
-    return has_visual_keyword and has_request_intent
+    return has_visual_keyword and (has_request_intent or has_previous_work_context)
 
 
 def send_previous_work_photos(sender, appointment=None) -> bool:
