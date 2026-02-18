@@ -2361,7 +2361,6 @@ class Plumbot:
                     self.appointment.plan_status == 'pending_upload'):
                 return self.handle_plan_upload_flow(incoming_message)
 
-            # ... all your existing code below unchanged            
             # Check if user is awaiting plumber contact after plan upload
             if (self.appointment.has_plan is True and 
                 self.appointment.plan_status == 'plan_uploaded'):
