@@ -59,8 +59,12 @@ def get_previous_work_image_urls() -> list:
 
 def get_previous_work_image_files() -> list:
     """Load local portfolio images from static/images/portfolio."""
-    portfolio_dir = Path(settings.BASE_DIR) / 'static' / 'images' / 'portfolio'
+    configured_dir = os.environ.get('PORTFOLIO_IMAGE_DIR', '').strip()
+    portfolio_dir = Path(configured_dir) if configured_dir else (Path(settings.BASE_DIR) / 'static' / 'images' / 'portfolio')
+    print(f"Looking for portfolio images in: {portfolio_dir}")
+
     if not portfolio_dir.exists():
+        print("Portfolio image directory does not exist")
         return []
 
     allowed_ext = {'.jpg', '.jpeg', '.png', '.webp'}
@@ -68,6 +72,7 @@ def get_previous_work_image_files() -> list:
     for file_path in sorted(portfolio_dir.iterdir()):
         if file_path.is_file() and file_path.suffix.lower() in allowed_ext:
             image_files.append(str(file_path))
+    print(f"Found {len(image_files)} portfolio image file(s)")
     return image_files
 
 
@@ -138,8 +143,10 @@ def send_previous_work_photos(sender, appointment=None) -> bool:
     """
     image_files = get_previous_work_image_files()
     image_urls = get_previous_work_image_urls()
+    print(f"Previous-work media candidates: local_files={len(image_files)}, url_fallbacks={len(image_urls)}")
 
     if not image_files and not image_urls:
+        print("No previous-work media configured or found")
         return False
 
     try:
