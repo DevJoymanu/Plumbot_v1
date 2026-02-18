@@ -2345,7 +2345,6 @@ class Plumbot:
 
     def generate_response(self, incoming_message):
         """Check service inquiries ONLY when not mid-conversation."""
-        #
         try:
                 current_question = self.get_next_question_to_ask()
 
