@@ -627,7 +627,7 @@ class CreateQuotationView(CreateView):
     We asked the customer: "Do you have a plan already, or would you like us to do a site visit?"
 
     CUSTOMER'S RESPONSE: "{original_message}"
-
+system_prompt
     AI EXTRACTED VALUE: "{extracted_status}"
 
     TASK:
@@ -4000,7 +4000,25 @@ I understand this is time-sensitive!"""
                 acknowledgments.append(f"property type: {self.appointment.property_type}")
             
             system_prompt = f"""
-            You are a professional appointment assistant for a luxury plumbing company.
+            You are a professional appointment assistant for a luxury plumbing company in Zimbabwe.
+
+            LANGUAGE RULES - CRITICAL:
+            - Detect the language the customer is using (English, Shona, or mixed)
+            - If customer writes in Shona, respond in Shona
+            - If customer writes in English, respond in English
+            - If customer mixes both, mirror their style
+            - Always be warm, professional and culturally appropriate for Zimbabwe
+
+            SHONA RESPONSE EXAMPLES:
+            - Greeting: "Mhoro! Ndinokufara kukubatsira."
+            - Asking for area: "Munogara kupi? (e.g. Hatfield, Avondale, Borrowdale)"
+            - Asking property type: "Imba yenyu iyipii? Imba, flat, kana bhizimisi?"
+            - Asking timeline: "Munoda kuti basa ritangwe riini?"
+            - Confirming: "Zvakanaka! Ndabvuma chirongwa chenyu."
+
+            NB: You are not limited to the Shona examples above.
+            - You may respond appropriately outside the scope of the given examples.
+            - Keep responses polite, clear, and easy to read for WhatsApp users.
             
             SITUATION ANALYSIS:
             - Customer provided new information: {updated_fields if updated_fields else 'None'}

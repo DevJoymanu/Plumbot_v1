@@ -68,18 +68,71 @@ def detect_objection_type(message: str) -> str:
 
 
 def is_previous_work_photo_request(message: str) -> bool:
-    """Detect if customer is asking to see previous work photos."""
-    message_lower = message.lower()
-    keywords = [
-        'picture', 'pictures', 'photo', 'photos', 'image', 'images',
-        'previous work', 'past work', 'your work', 'portfolio', 'gallery',
-        'show me', 'examples'
-    ]
-    has_visual_keyword = any(keyword in message_lower for keyword in keywords)
-    has_request_intent = any(term in message_lower for term in ['send', 'show', 'see', 'share'])
-    return has_visual_keyword and has_request_intent
+    """Use DeepSeek AI to detect if customer is asking to see previous work photos - including Shona."""
+    try:
+        from openai import OpenAI
+        import os
+        
+        deepseek_client = OpenAI(
+            api_key=os.environ.get('DEEPSEEK_API_KEY'),
+            base_url="https://api.deepseek.com/v1"
+        )
+        
+        response = deepseek_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a message intent classifier for a Zimbabwean plumbing company. Customers may write in English, Shona, or a mix of both. Reply with ONLY 'YES' or 'NO', nothing else."
+                },
+                {
+                    "role": "user",
+                    "content": f"""Is the customer asking to see photos, pictures, images, or examples of previous/past plumbing work?
 
+Consider English expressions like:
+- "send me photos", "show me your work", "do you have pictures", "portfolio", "examples"
 
+Consider Shona expressions like:
+- "ndiratidze mifananidzo" (show me pictures)
+- "une mifananidzo here" (do you have pictures)
+- "ndiona basa renyu" (let me see your work)
+- "tumira mifananidzo" (send pictures)
+- "ratidza basa renyu" (show your work)
+- "mifananidzo yebasa renyu" (pictures of your work)
+- "ndione zvamakamboita" (let me see what you've done before)
+- "mufananidzo" (picture/image)
+- "basa renyu" (your work)
+
+Also consider:
+- Mixed Shona/English: "send mifananidzo", "show me basa renyu"
+- Informal spelling and typos in either language
+
+Customer message: "{message}"
+
+Reply YES or NO only."""
+                }
+            ],
+            temperature=0.1,
+            max_tokens=5
+        )
+        
+        result = response.choices[0].message.content.strip().upper()
+        is_request = result == "YES"
+        
+        print(f"🤖 DeepSeek photo request detection: '{message}' → {result}")
+        return is_request
+        
+    except Exception as e:
+        print(f"❌ DeepSeek photo detection error: {str(e)}, falling back to keyword check")
+        message_lower = message.lower()
+        fallback_keywords = [
+            # English
+            'picture', 'photo', 'image', 'previous work', 'portfolio', 'show me', 'your work',
+            # Shona
+            'mifananidzo', 'mufananidzo', 'ratidza', 'ndiratidze', 'basa renyu', 'ndiona', 'ndione', 'tumira'
+        ]
+        return any(kw in message_lower for kw in fallback_keywords)
+        
 # Put your images in a folder like: bot/static/previous_work/
 # Or anywhere on the server - just update PREVIOUS_WORK_IMAGES_DIR
 
@@ -109,60 +162,66 @@ def get_previous_work_images() -> list:
     return images
 
 
-def send_previous_work_photos(sender, appointment=None) -> bool:
+def send_previous_work_photos(sender, appointment=None):
     """
-    Send previous work photos by uploading local images directly to WhatsApp
-    Images stored in: bot/previous_work_photos/ (or PREVIOUS_WORK_IMAGES_DIR)
+    Send previous work photos with a small delay between each image,
+    after an initial random delay, to simulate human-like sending.
     """
     images = get_previous_work_images()
     
     if not images:
         print("⚠️ No previous work images found")
         return False
-    
+
     try:
-        # Send intro message first
-        intro = f"Here are some examples of our previous plumbing work! 🔧✨"
-        whatsapp_api.send_text_message(sender, intro)
+        # Compose initial message
+        intro = "Here are some examples of our previous plumbing work! 🔧✨"
         
-        sent_count = 0
-        for index, image_path in enumerate(images):
+        def send_images_with_delay():
             try:
-                caption = None
-                if index == 0:
-                    caption = "Our previous work - high quality plumbing & renovations"
+                # Random delay before starting
+                delay_seconds = get_random_delay()
+                print(f"💤 Waiting {delay_seconds // 60} minute(s) before sending images to {sender}")
+                time.sleep(delay_seconds)
+
+                # Send intro text
+                whatsapp_api.send_text_message(sender, intro)
                 
-                whatsapp_api.send_local_image(sender, image_path, caption=caption)
-                sent_count += 1
-                
-                # Small delay between images to avoid rate limiting
-                time.sleep(0.5)
-                
+                sent_count = 0
+                # Send images one by one with 0.5s gap
+                for index, image_path in enumerate(images):
+                    caption = "Our previous work - high quality plumbing & renovations" if index == 0 else None
+                    whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                    sent_count += 1
+                    time.sleep(0.5)  # small delay between images
+
+                # Follow-up message after all images
+                follow_up = "Would you like to book an appointment? Just tell me what service you need! 😊"
+                time.sleep(1)  # slight pause before follow-up
+                whatsapp_api.send_text_message(sender, follow_up)
+
+                # Save to conversation history
+                if appointment:
+                    appointment.add_conversation_message("assistant", intro)
+                    appointment.add_conversation_message(
+                        "assistant", f"[MEDIA] Sent {sent_count} previous work image(s)"
+                    )
+                    appointment.add_conversation_message("assistant", follow_up)
+
+                print(f"✅ Sent {sent_count}/{len(images)} previous work images to {sender}")
+
             except Exception as e:
-                print(f"❌ Failed to send image {image_path}: {str(e)}")
-                continue
-        
-        # Follow-up message after photos
-        if sent_count > 0:
-            follow_up = "Would you like to book an appointment? Just tell me what service you need! 😊"
-            time.sleep(1)
-            whatsapp_api.send_text_message(sender, follow_up)
-        
-        # Save to conversation history
-        if appointment and sent_count > 0:
-            appointment.add_conversation_message("assistant", intro)
-            appointment.add_conversation_message(
-                "assistant",
-                f"[MEDIA] Sent {sent_count} previous work image(s)"
-            )
-            appointment.add_conversation_message("assistant", follow_up)
-        
-        print(f"✅ Sent {sent_count}/{len(images)} previous work images to {sender}")
-        return sent_count > 0
-        
+                print(f"❌ Failed to send images: {str(e)}")
+
+        # Run in background thread so webhook is not blocked
+        threading.Thread(target=send_images_with_delay, daemon=True).start()
+
+        return True
+
     except Exception as e:
-        print(f"❌ Failed to send previous work photos: {str(e)}")
+        print(f"❌ Error preparing previous work images: {str(e)}")
         return False
+
 
 def handle_pricing_objection(appointment) -> str:
     """Handle pricing request with explanation"""
