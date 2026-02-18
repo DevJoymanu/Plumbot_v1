@@ -16,6 +16,7 @@ from django.core.files.storage import default_storage
 import threading
 import time
 import random
+from pathlib import Path
 
 PREVIOUS_WORK_IMAGE_URLS = [
     url.strip()
