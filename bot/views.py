@@ -2849,8 +2849,8 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 },
                 # ✅ SPLIT: location_ask = just asking address, location_visit = wants to come in person
                 "location_ask": {
-                    "en": "We are based in Hatfield, Harare. 📍\n\nWe work on a mobile basis and come directly to you. Would you like us to arrange a site visit?",
-                    "sn": "Tiri muHatfield, Harare. 📍\n\nTinoenda kwauri — unoda here kuti tiuye kusite visit?"
+                    "en": "We are based in Hatfield, Harare. 📍\n\n",
+                    "sn": "Tiri muHatfield, Harare. 📍\n\n"
                 },
                 "location_visit": {
                     "en": "We operate by appointment rather than walk-ins. 📍 We're based in Hatfield, Harare.\n\nWould you like us to arrange a site visit to your place instead?",

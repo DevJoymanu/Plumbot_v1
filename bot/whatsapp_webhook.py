@@ -722,20 +722,31 @@ def handle_media_message(sender, media_data, media_type):
         plumber_number = getattr(appointment, 'plumber_contact_number', None) or '27610318200'
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
 
-        # ✅ Build context from whatever we know so far
         service = appointment.project_type or 'Not specified'
         area = appointment.customer_area or 'Not specified'
         has_plan = appointment.has_plan
+        property_type = appointment.property_type or 'Not specified'
+        timeline = appointment.timeline or 'Not specified'
+        status = appointment.get_status_display() if hasattr(appointment, 'get_status_display') else appointment.status
+
+        # Generate AI conversation summary
+        ai_summary = generate_conversation_summary(appointment)
 
         alert_message = (
-
-            f"🔗 https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/\n\n"
             f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
             f"Customer: {customer_name}\n"
             f"Phone: +{sender}\n"
-            f"Media type: {media_type.upper()}\n"
-            f"Service: {service}\n"
-            f"Area: {area}\n\n"
+            f"Media type: {media_type.upper()}\n\n"
+            f"📋 APPOINTMENT DETAILS:\n"
+            f"  Service: {service}\n"
+            f"  Area: {area}\n"
+            f"  Property: {property_type}\n"
+            f"  Timeline: {timeline}\n"
+            f"  Status: {status}\n"
+            f"  Has plan: {'Yes' if has_plan is True else 'No' if has_plan is False else 'Not answered'}\n\n"
+            f"🤖 AI CONVERSATION SUMMARY:\n{ai_summary}\n\n"
+            f"🔗 View full appointment:\n"
+            f"https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/\n\n"
             f"Please contact the customer directly to assist them."
         )
 
@@ -746,7 +757,7 @@ def handle_media_message(sender, media_data, media_type):
         except Exception as e:
             print(f"❌ Failed to alert plumber: {str(e)}")
 
-        # ✅ Update appointment plan status based on context
+        # Update appointment plan status based on context
         if media_type in ['image', 'document']:
             if has_plan is None:
                 appointment.has_plan = True
@@ -773,3 +784,94 @@ def handle_media_message(sender, media_data, media_type):
 
     except Exception as e:
         print(f"❌ Error handling media: {str(e)}")
+
+
+def generate_conversation_summary(appointment) -> str:
+    """
+    Use DeepSeek AI to generate a concise summary of the conversation
+    for the plumber alert message.
+    """
+    try:
+        if not appointment.conversation_history:
+            return "No conversation history available."
+
+        # Build conversation transcript (last 20 messages to stay within token limits)
+        recent_messages = appointment.conversation_history[-20:]
+        transcript_lines = []
+        for msg in recent_messages:
+            role = msg.get('role', '')
+            content = msg.get('content', '').strip()
+
+            # Skip empty messages or system tags
+            if not content or content.startswith('[Sent '):
+                continue
+
+            # Clean up tags
+            content = (
+                content
+                .replace('[AUTOMATIC FOLLOW-UP] ', '')
+                .replace('[MANUAL FOLLOW-UP] ', '')
+                .replace('[BULK MANUAL FOLLOW-UP] ', '')
+            )
+
+            label = "Customer" if role == 'user' else "Bot"
+            transcript_lines.append(f"{label}: {content[:300]}")
+
+        if not transcript_lines:
+            return "No meaningful conversation history found."
+
+        transcript = "\n".join(transcript_lines)
+
+        # Call DeepSeek AI
+        from openai import OpenAI
+        import os
+
+        deepseek_client = OpenAI(
+            api_key=os.environ.get('DEEPSEEK_API_KEY'),
+            base_url="https://api.deepseek.com/v1"
+        )
+
+        response = deepseek_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant summarising WhatsApp conversations "
+                        "between a plumbing company's chatbot and a customer. "
+                        "Your summary will be sent to a plumber so they know exactly "
+                        "what the customer needs before calling them. "
+                        "Be concise, factual, and highlight anything actionable."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Please summarise this conversation in 3-5 bullet points. "
+                        f"Focus on: what the customer wants, key details they shared, "
+                        f"any concerns or questions they raised, and what the next step should be.\n\n"
+                        f"CONVERSATION:\n{transcript}"
+                    )
+                }
+            ],
+            temperature=0.3,
+            max_tokens=300
+        )
+
+        summary = response.choices[0].message.content.strip()
+        print(f"✅ AI conversation summary generated")
+        return summary
+
+    except Exception as e:
+        print(f"❌ AI summary generation failed: {str(e)}")
+
+        # Fallback: return last 3 messages as plain text
+        try:
+            fallback_lines = []
+            for msg in appointment.conversation_history[-3:]:
+                role = "Customer" if msg.get('role') == 'user' else "Bot"
+                content = msg.get('content', '')[:150]
+                fallback_lines.append(f"{role}: {content}")
+            return "Summary unavailable. Last messages:\n" + "\n".join(fallback_lines)
+        except Exception:
+            return "Summary unavailable."
