@@ -2345,28 +2345,29 @@ class Plumbot:
 
     def generate_response(self, incoming_message):
         """Check service inquiries ONLY when not mid-conversation."""
+        #
         try:
-            # ✅ Skip service inquiry detection if we're mid-conversation
-            # and expecting a specific answer (area, property type, etc.)
-            current_question = self.get_next_question_to_ask()
-            mid_conversation = (
-                self.appointment.project_type is not None or
-                self.appointment.has_plan is not None or
-                self.appointment.customer_area is not None
-            )
+                current_question = self.get_next_question_to_ask()
 
-            # Only run service inquiry detection on fresh or ambiguous conversations
-            if not mid_conversation:
-                inquiry = self.detect_service_inquiry(incoming_message)
-                if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
-                    print(f"💡 Handling service inquiry: {inquiry['intent']}")
-                    reply = self.handle_service_inquiry(inquiry['intent'], incoming_message)
-                    self.appointment.add_conversation_message("user", incoming_message)
-                    self.appointment.add_conversation_message("assistant", reply)
-                    return reply
+                # ✅ Only skip service inquiry if we're past the FIRST question
+                # i.e. we already know service_type AND at least one other field
+                mid_conversation = (
+                    self.appointment.project_type is not None and
+                    (
+                        self.appointment.has_plan is not None or
+                        self.appointment.customer_area is not None or
+                        self.appointment.property_type is not None
+                    )
+                )
 
-            # ... rest of your existing generate_response code unchanged
-            # rest of your existing generate_response code continues unchanged...
+                if not mid_conversation:
+                    inquiry = self.detect_service_inquiry(incoming_message)
+                    if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
+                        print(f"💡 Handling service inquiry: {inquiry['intent']}")
+                        reply = self.handle_service_inquiry(inquiry['intent'], incoming_message)
+                        self.appointment.add_conversation_message("user", incoming_message)
+                        self.appointment.add_conversation_message("assistant", reply)
+                        return reply
             # Check if user is in plan upload flow
             if (self.appointment.has_plan is True and
                     self.appointment.plan_status == 'pending_upload'):
