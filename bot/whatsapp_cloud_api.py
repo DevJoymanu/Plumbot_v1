@@ -10,6 +10,10 @@ from typing import Dict, Optional, List
 import mimetypes
 from django.core.files.storage import default_storage
 from django.utils import timezone
+import base64
+import os
+import requests
+from pathlib import Path
 
 
 class WhatsAppCloudAPI:
@@ -334,6 +338,85 @@ class WhatsAppCloudAPI:
             print(f"❌ Failed to mark message as read: {str(e)}")
             raise
 
+    def send_local_image(self, to: str, image_path: str, caption: str = None) -> Dict:
+        """
+        Upload a local image file to WhatsApp and send it
+        
+        Args:
+            to: Recipient phone number
+            image_path: Absolute path to the local image file
+            caption: Optional caption
+        """
+        try:
+            to_clean = to.replace('whatsapp:', '').replace('+', '').strip()
+            
+            # Step 1: Upload image to get media ID
+            upload_url = f'{self.base_url}/{self.phone_number_id}/media'
+            
+            headers = {
+                'Authorization': f'Bearer {self.access_token}'
+            }
+            
+            # Detect MIME type
+            ext = Path(image_path).suffix.lower()
+            mime_map = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg', 
+                '.png': 'image/png',
+                '.webp': 'image/webp',
+                '.gif': 'image/gif',
+            }
+            mime_type = mime_map.get(ext, 'image/jpeg')
+            
+            with open(image_path, 'rb') as f:
+                upload_response = requests.post(
+                    upload_url,
+                    headers=headers,
+                    files={
+                        'file': (os.path.basename(image_path), f, mime_type),
+                        'messaging_product': (None, 'whatsapp'),
+                        'type': (None, mime_type),
+                    }
+                )
+            
+            upload_response.raise_for_status()
+            media_id = upload_response.json().get('id')
+            
+            if not media_id:
+                raise ValueError("No media ID returned from upload")
+            
+            print(f"✅ Image uploaded, media ID: {media_id}")
+            
+            # Step 2: Send image using media ID
+            send_url = f'{self.base_url}/{self.phone_number_id}/messages'
+            
+            payload = {
+                'messaging_product': 'whatsapp',
+                'recipient_type': 'individual',
+                'to': to_clean,
+                'type': 'image',
+                'image': {
+                    'id': media_id,
+                }
+            }
+            
+            if caption:
+                payload['image']['caption'] = caption
+            
+            send_headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            send_response = requests.post(send_url, headers=send_headers, json=payload)
+            send_response.raise_for_status()
+            
+            print(f"✅ Image sent to {to_clean}")
+            return send_response.json()
+            
+        except Exception as e:
+            print(f"❌ Failed to send local image to {to}: {str(e)}")
+            raise
 
 # Singleton instance
 whatsapp_api = WhatsAppCloudAPI()
