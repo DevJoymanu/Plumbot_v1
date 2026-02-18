@@ -17,6 +17,12 @@ import threading
 import time
 import random
 
+PREVIOUS_WORK_IMAGE_URLS = [
+    url.strip()
+    for url in os.environ.get('PREVIOUS_WORK_IMAGE_URLS', '').replace('\n', ',').split(',')
+    if url.strip()
+]
+
 
 def get_random_delay() -> int:
     """Returns random delay between 1-5 minutes in seconds"""
@@ -58,6 +64,54 @@ def detect_objection_type(message: str) -> str:
         return 'availability'
     
     return 'other'
+
+
+def is_previous_work_photo_request(message: str) -> bool:
+    """Detect if customer is asking to see previous work photos."""
+    message_lower = message.lower()
+    keywords = [
+        'picture', 'pictures', 'photo', 'photos', 'image', 'images',
+        'previous work', 'past work', 'your work', 'portfolio', 'gallery',
+        'show me', 'examples'
+    ]
+    has_visual_keyword = any(keyword in message_lower for keyword in keywords)
+    has_request_intent = any(term in message_lower for term in ['send', 'show', 'see', 'share'])
+    return has_visual_keyword and has_request_intent
+
+
+def send_previous_work_photos(sender, appointment=None) -> bool:
+    """
+    Send previous-work photos via WhatsApp Cloud API.
+    Uses PREVIOUS_WORK_IMAGE_URLS (comma/newline-separated URLs).
+    """
+    if not PREVIOUS_WORK_IMAGE_URLS:
+        return False
+
+    try:
+        intro = "Sure, here are some photos of our previous plumbing work."
+        whatsapp_api.send_text_message(sender, intro)
+
+        for index, image_url in enumerate(PREVIOUS_WORK_IMAGE_URLS):
+            caption = "Previous work example" if index == 0 else None
+            whatsapp_api.send_media_message(
+                sender,
+                image_url,
+                media_type='image',
+                caption=caption
+            )
+
+        if appointment:
+            appointment.add_conversation_message("assistant", intro)
+            appointment.add_conversation_message(
+                "assistant",
+                f"[MEDIA] Sent {len(PREVIOUS_WORK_IMAGE_URLS)} previous-work image(s)"
+            )
+
+        print(f"✅ Sent {len(PREVIOUS_WORK_IMAGE_URLS)} previous-work image(s) to {sender}")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send previous-work photos: {str(e)}")
+        return False
 
 
 def handle_pricing_objection(appointment) -> str:
@@ -487,6 +541,24 @@ def handle_text_message(sender, text_data):
         
         # Mark customer response
         appointment.mark_customer_response()
+
+        # Handle requests for previous-work pictures immediately
+        if is_previous_work_photo_request(message_body):
+            photos_sent = send_previous_work_photos(sender, appointment)
+            if photos_sent:
+                return
+            fallback_reply = (
+                "I can share previous-work photos, but they are not configured yet. "
+                "Please ask our team and we will send them shortly."
+            )
+            appointment.add_conversation_message("assistant", fallback_reply)
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, fallback_reply, delay),
+                daemon=True
+            ).start()
+            return
         
         # Check for objections FIRST
         objection_type = detect_objection_type(message_body)
