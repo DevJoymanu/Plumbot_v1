@@ -728,6 +728,8 @@ def handle_media_message(sender, media_data, media_type):
         has_plan = appointment.has_plan
 
         alert_message = (
+
+            f"🔗 https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/\n\n"
             f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
             f"Customer: {customer_name}\n"
             f"Phone: +{sender}\n"
