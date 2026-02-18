@@ -2344,13 +2344,24 @@ class Plumbot:
 
 
     def generate_response(self, incoming_message):
-        """UPDATED: Enhanced response generation with proper alternative handling"""
+        """UPDATED: Check service inquiries before normal appointment flow."""
         try:
+            # ✅ STEP 0: Check for service/product/pricing inquiries FIRST
+            inquiry = self.detect_service_inquiry(incoming_message)
+            if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
+                print(f"💡 Handling service inquiry: {inquiry['intent']}")
+                reply = self.handle_service_inquiry(inquiry['intent'], incoming_message)
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
+
+            # rest of your existing generate_response code continues unchanged...
             # Check if user is in plan upload flow
-            if (self.appointment.has_plan is True and 
-                self.appointment.plan_status == 'pending_upload'):
+            if (self.appointment.has_plan is True and
+                    self.appointment.plan_status == 'pending_upload'):
                 return self.handle_plan_upload_flow(incoming_message)
-            
+
+            # ... all your existing code below unchanged            
             # Check if user is awaiting plumber contact after plan upload
             if (self.appointment.has_plan is True and 
                 self.appointment.plan_status == 'plan_uploaded'):
@@ -2690,6 +2701,146 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 "Our plumber will review it and contact you within 24 hours."
             )
 
+    def detect_service_inquiry(self, message):
+        """Use DeepSeek to detect if customer is asking about products/services/pricing."""
+        try:
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an intent classifier for a Zimbabwean plumbing company. Customers may write in English, Shona, or mixed. Return ONLY valid JSON, no markdown."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"""Classify the customer's message into ONE of these intents.
+
+    Customer message: "{message}"
+
+    INTENTS:
+    - tub_sales: asking if we sell tubs or about small bathroom tubs
+    - standalone_tub: asking about standalone/freestanding tub price or availability
+    - geyser: asking about geyser installation or pricing
+    - shower_cubicle: asking about shower cubicles, pricing, installation
+    - vanity: asking about vanity units, custom vanity
+    - bathtub_installation: asking about installing a bathtub, wall finishing around tub
+    - toilet: asking about toilet supply or installation
+    - facebook_package: referencing a Facebook ad or package deal
+    - location_visit: asking where we are located or wanting to visit/come to office
+    - previous_quotation: saying we sent them a quotation before
+    - pictures: asking to see product pictures (not previous work photos)
+    - none: none of the above
+
+    Return ONLY this JSON:
+    {{
+        "intent": "one of the intents above",
+        "confidence": "HIGH or LOW"
+    }}"""
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=50
+            )
+
+            ai_response = response.choices[0].message.content.strip()
+            ai_response = ai_response.replace('```json', '').replace('```', '').strip()
+            result = json.loads(ai_response)
+
+            print(f"🤖 Service inquiry detection: '{message}' → {result}")
+            return result
+
+        except Exception as e:
+            print(f"❌ Service inquiry detection error: {str(e)}")
+            return {"intent": "none", "confidence": "LOW"}
+
+
+    def handle_service_inquiry(self, intent, message):
+        """Generate response for product/service/pricing inquiries in English or Shona."""
+        try:
+            # Detect language
+            lang_response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Detect the language of this message. Reply with ONLY 'shona', 'english', or 'mixed'."
+                    },
+                    {
+                        "role": "user",
+                        "content": message
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=5
+            )
+            language = lang_response.choices[0].message.content.strip().lower()
+            print(f"🌍 Detected language: {language}")
+
+            plumber_number = self.appointment.plumber_contact_number or '+263774819901'
+
+            pricing_info = {
+                "tub_sales": {
+                    "en": f"We don't operate as a retail store, but we can supply and install tubs as part of a renovation project. 🛁 Standalone tubs start from US$400 depending on the design and quality.\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like us to assist with supply and installation? 😊",
+                    "sn": f"Hatitengesi setshopu, asi tinogona kuita supply neinstallation yetub sebhizimisi rekuvandudza imba yako. 🛁 Tubs dzinotangira kuUS$400 zvichienda nedhizaini nequality.\n\n⚠️ Mitengo iyi yakangofanana - inogona kushanduka zvichienda nebasa riri pasite. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here kuti tikubatsire? 😊"
+                },
+                "standalone_tub": {
+                    "en": f"Standalone tubs start from US$400, depending on the design and quality. 🛁\n\nFor bathtub installation:\n• Ordinary tub (with wall finishing) starts from US$80\n• Free-standing tub supply starts from US$450\n• Free-standing mixer starts from US$150\n• Mixer installation: US$120\n• Side chamber: US$130 (installation US$30)\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like installation included as well? 🔧✨",
+                    "sn": f"Tubs dzinomira dzega dzinotangira kuUS$400, zvichienda nedhizaini nequality. 🛁\n\nNeinstallation:\n• Tub yakajairwa (ine wall finishing) inotangira kuUS$80\n• Free-standing tub inotangira kuUS$450\n• Free-standing mixer: US$150\n• Kuisa mixer: US$120\n• Side chamber: US$130 (installation US$30)\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here installation zvakare? 🔧"
+                },
+                "geyser": {
+                    "en": f"Yes, we do geyser installations! 🔥\n\nGeyser installation starts from US$80, depending on the type and size of the geyser.\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWhat size geyser are you installing?",
+                    "sn": f"Hongu, tinoisa ma geyser! 🔥\n\nKuisa geyser kunotangira kuUS$80, zvichienda nemhando neukuru hwegeyser.\n\n⚠️ Mutengo uyu wakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nGeyser yekuisa yakura zvakadini?"
+                },
+                "shower_cubicle": {
+                    "en": f"We supply and install shower cubicles! 🚿\n\n• Ordinary shower cubicle (900mm x 900mm): starts from US$130\n• Installation: starts from US$40\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like supply and installation together?",
+                    "sn": f"Tinopa uye tinoisa ma shower cubicle! 🚿\n\n• Shower cubicle yakajairwa (900mm x 900mm): inotangira kuUS$130\n• Kuisa: inotangira kuUS$40\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here supply neinstallation pamwechete?"
+                },
+                "vanity": {
+                    "en": f"Yes, we do custom-made vanity units! 🪞\n\n• Vanity units start from US$150 (depending on size, type, and material)\n• Labour starts from US$30\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWhat size are you looking for?",
+                    "sn": f"Hongu, tinoita ma vanity unit akagadzirwa zvaunoda! 🪞\n\n• Ma vanity unit anotangira kuUS$150 (zvichienda nekukura, mhando, nesimba resimbi)\n• Kubhadhara vashandi kunotangira kuUS$30\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda ukuru wakaita sei?"
+                },
+                "bathtub_installation": {
+                    "en": f"Here are our bathtub installation prices: 🛁\n\n• Ordinary tub installation (with wall finishing): from US$80\n• Free-standing tub supply: from US$450\n• Free-standing mixer: from US$150\n• Mixer installation: US$120\n• Side chamber: US$130\n• Side chamber installation: US$30\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWhat type of bathtub are you interested in?",
+                    "sn": f"Mitengo yedu yekuisa ma bathtub: 🛁\n\n• Tub yakajairwa (ine wall finishing): kubva kuUS$80\n• Free-standing tub: kubva kuUS$450\n• Free-standing mixer: kubva kuUS$150\n• Kuisa mixer: US$120\n• Side chamber: US$130\n• Kuisa side chamber: US$30\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda mhando ipi yebathtub?"
+                },
+                "toilet": {
+                    "en": f"We supply and install toilets! 🚽\n\n• Close-coupled toilet supply: starts from US$50\n• New toilet seat installation: starts from US$20 (depending on type)\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like supply and installation?",
+                    "sn": f"Tinopa uye tinoisa ma toilet! 🚽\n\n• Close-coupled toilet: inotangira kuUS$50\n• Kuisa chigaro chitsva chetoilet: inotangira kuUS$20 (zvichienda nemhando)\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here supply neinstallation?"
+                },
+                "facebook_package": {
+                    "en": f"The bathroom package shown on our Facebook ad starts from US$600. 📢\n\n⚠️ This is an approximate price and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like us to assess your space first?",
+                    "sn": f"Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. 📢\n\n⚠️ Mutengo uyu wakangofanana - unogona kushanduka zvichienda nebasa. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here kuti tiuye titarise nzvimbo yako?"
+                },
+                "location_visit": {
+                    "en": f"We are located in Hatfield, Harare. 📍\n\nWe operate using a home office setup, so we work by appointment. Would you like us to arrange a site visit to your place, or schedule a meeting?",
+                    "sn": f"Tiri muHatfield, Harare. 📍\n\nTinoshandisa home office, saka tinoshanda ne appointment. Unoda here kuti tiuye kusite visit, kana tibvumirene musangano?"
+                },
+                "previous_quotation": {
+                    "en": f"Kindly contact our plumber directly and they will assist you with your previous quotation. 📄\n\nYou can reach them on: {plumber_number}",
+                    "sn": f"Ndapota taura neplumber yedu directly uye vachakubatsira nequotation yako yekare. 📄\n\nUnogona kubata: {plumber_number}"
+                },
+                "pictures": {
+                    "en": f"I'll connect you with our plumber so they can send you available pictures and options. 📸\n\nPlease contact them directly on: {plumber_number}",
+                    "sn": f"Ndichakubatanidza neplumber wedu kuti vakutumire mifananidzo uye zvinosarudzwa. 📸\n\nBata: {plumber_number}"
+                },
+            }
+
+            # Select response based on language
+            responses = pricing_info.get(intent, {})
+            if language == 'shona':
+                reply = responses.get('sn', responses.get('en', ''))
+            else:
+                reply = responses.get('en', '')
+
+            # If no specific response, generate one with DeepSeek
+            if not reply:
+                reply = self.generate_contextual_response(message, self.get_next_question_to_ask(), [])
+
+            return reply
+
+        except Exception as e:
+            print(f"❌ Error handling service inquiry: {str(e)}")
+            return self.generate_contextual_response(message, self.get_next_question_to_ask(), [])
 
     def notify_plumber_about_plan(self):
         """Send plan details to plumber via WhatsApp"""

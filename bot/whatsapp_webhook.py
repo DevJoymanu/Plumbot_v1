@@ -708,44 +708,62 @@ def handle_text_message(sender, text_data):
         traceback.print_exc()
 
 def handle_media_message(sender, media_data, media_type):
-    """Handle media - accept early uploads"""
+    """Handle media - accept early uploads and immediately alert plumber."""
     try:
         media_id = media_data.get('id')
         phone_number = f"whatsapp:+{sender}"
-        
-        appointment = Appointment.objects.get(phone_number=phone_number)
-        
-        # NEW: Accept uploads even if not explicitly in upload flow
-        # As long as customer hasn't explicitly said "no plan"
-        if appointment.has_plan != False:  # None or True
-            
-            # Save the media
+
+        appointment, created = Appointment.objects.get_or_create(
+            phone_number=phone_number,
+            defaults={'status': 'pending'}
+        )
+
+        customer_name = appointment.customer_name or "Unknown customer"
+        customer_phone = sender
+        plumber_number = appointment.plumber_contact_number or '263774819901'
+        plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
+
+        # ✅ Immediately alert plumber about incoming media
+        alert_message = f"""📎 MEDIA RECEIVED FROM CUSTOMER
+
+Customer: {customer_name}
+Phone: +{customer_phone}
+Media type: {media_type.upper()}
+Service: {appointment.project_type or 'Not specified yet'}
+Area: {appointment.customer_area or 'Not specified yet'}
+
+Please call or WhatsApp the customer directly to assist them.
+
+View appointment: https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"""
+
+        try:
+            whatsapp_api.send_text_message(plumber_number, alert_message)
+            print(f"✅ Plumber alerted about media from {sender}")
+        except Exception as alert_error:
+            print(f"❌ Failed to alert plumber: {str(alert_error)}")
+
+        # Tell customer plumber will contact them
+        customer_reply = "Thank you for sending that! 📎 Our plumber has been notified and will contact you directly to assist you. Please call this number if urgent: " + appointment.plumber_contact_number
+
+        # Save media if it's a plan
+        if appointment.has_plan != False:
             save_plan_media(appointment, media_id, media_data)
-            
-            # Update appointment status
+
             if appointment.has_plan is None:
                 appointment.has_plan = True
                 print(f"✅ Auto-detected: Customer has plan (sent early)")
-            
-            appointment.plan_status = 'pending_upload'  # In case they send more
-            appointment.save()
-            
-            # Acknowledge
-            response_msg = """Thanks for sending that! 
 
-I've got your plan. You can send more images if needed, or I'll continue with a few questions."""
-            
-        else:
-            # They said NO to having a plan, this is unexpected
-            response_msg = "I see you sent a file, but you mentioned you need a site visit..."
-        
-        # Send response
+            appointment.plan_status = 'pending_upload'
+            appointment.save()
+
+        appointment.add_conversation_message("assistant", customer_reply)
+
         delay = get_random_delay()
         threading.Thread(
             target=delayed_response,
-            args=(sender, response_msg, delay),
+            args=(sender, customer_reply, delay),
             daemon=True
         ).start()
-        
+
     except Exception as e:
-        print(f"❌ Error handling media: {str(e)}")        
+        print(f"❌ Error handling media: {str(e)}")
