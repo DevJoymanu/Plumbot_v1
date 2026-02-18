@@ -79,40 +79,89 @@ def is_previous_work_photo_request(message: str) -> bool:
     return has_visual_keyword and has_request_intent
 
 
+# Put your images in a folder like: bot/static/previous_work/
+# Or anywhere on the server - just update PREVIOUS_WORK_IMAGES_DIR
+
+PREVIOUS_WORK_IMAGES_DIR = os.environ.get(
+    'PREVIOUS_WORK_IMAGES_DIR',
+    os.path.join(os.path.dirname(__file__), 'previous_work_photos')
+)
+
+SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+
+
+def get_previous_work_images() -> list:
+    """Get list of image file paths from the previous work folder"""
+    images = []
+    
+    if not os.path.exists(PREVIOUS_WORK_IMAGES_DIR):
+        print(f"⚠️ Previous work images folder not found: {PREVIOUS_WORK_IMAGES_DIR}")
+        return images
+    
+    for filename in sorted(os.listdir(PREVIOUS_WORK_IMAGES_DIR)):
+        ext = Path(filename).suffix.lower()
+        if ext in SUPPORTED_IMAGE_EXTENSIONS:
+            full_path = os.path.join(PREVIOUS_WORK_IMAGES_DIR, filename)
+            images.append(full_path)
+    
+    print(f"📸 Found {len(images)} previous work images")
+    return images
+
+
 def send_previous_work_photos(sender, appointment=None) -> bool:
     """
-    Send previous-work photos via WhatsApp Cloud API.
-    Uses PREVIOUS_WORK_IMAGE_URLS (comma/newline-separated URLs).
+    Send previous work photos by uploading local images directly to WhatsApp
+    Images stored in: bot/previous_work_photos/ (or PREVIOUS_WORK_IMAGES_DIR)
     """
-    if not PREVIOUS_WORK_IMAGE_URLS:
+    images = get_previous_work_images()
+    
+    if not images:
+        print("⚠️ No previous work images found")
         return False
-
+    
     try:
-        intro = "Sure, here are some photos of our previous plumbing work."
+        # Send intro message first
+        intro = f"Here are some examples of our previous plumbing work! 🔧✨"
         whatsapp_api.send_text_message(sender, intro)
-
-        for index, image_url in enumerate(PREVIOUS_WORK_IMAGE_URLS):
-            caption = "Previous work example" if index == 0 else None
-            whatsapp_api.send_media_message(
-                sender,
-                image_url,
-                media_type='image',
-                caption=caption
-            )
-
-        if appointment:
+        
+        sent_count = 0
+        for index, image_path in enumerate(images):
+            try:
+                caption = None
+                if index == 0:
+                    caption = "Our previous work - high quality plumbing & renovations"
+                
+                whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                sent_count += 1
+                
+                # Small delay between images to avoid rate limiting
+                time.sleep(0.5)
+                
+            except Exception as e:
+                print(f"❌ Failed to send image {image_path}: {str(e)}")
+                continue
+        
+        # Follow-up message after photos
+        if sent_count > 0:
+            follow_up = "Would you like to book an appointment? Just tell me what service you need! 😊"
+            time.sleep(1)
+            whatsapp_api.send_text_message(sender, follow_up)
+        
+        # Save to conversation history
+        if appointment and sent_count > 0:
             appointment.add_conversation_message("assistant", intro)
             appointment.add_conversation_message(
                 "assistant",
-                f"[MEDIA] Sent {len(PREVIOUS_WORK_IMAGE_URLS)} previous-work image(s)"
+                f"[MEDIA] Sent {sent_count} previous work image(s)"
             )
-
-        print(f"✅ Sent {len(PREVIOUS_WORK_IMAGE_URLS)} previous-work image(s) to {sender}")
-        return True
+            appointment.add_conversation_message("assistant", follow_up)
+        
+        print(f"✅ Sent {sent_count}/{len(images)} previous work images to {sender}")
+        return sent_count > 0
+        
     except Exception as e:
-        print(f"❌ Failed to send previous-work photos: {str(e)}")
+        print(f"❌ Failed to send previous work photos: {str(e)}")
         return False
-
 
 def handle_pricing_objection(appointment) -> str:
     """Handle pricing request with explanation"""
