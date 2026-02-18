@@ -60,8 +60,7 @@ def get_previous_work_image_urls() -> list:
 def get_previous_work_image_files() -> list:
     """Load local portfolio images from static/images/portfolio."""
     configured_dir = os.environ.get('PORTFOLIO_IMAGE_DIR', '').strip()
-    portfolio_dir = Path(configured_dir) if configured_dir else (Path(settings.BASE_DIR) / 'static' / 'images' / 'portfolio')
-    print(f"Looking for portfolio images in: {portfolio_dir}")
+portfolio_dir = Path(configured_dir) if configured_dir else (Path(settings.BASE_DIR) / 'bot' / 'static' / 'images' / 'portfolio')    print(f"Looking for portfolio images in: {portfolio_dir}")
 
     if not portfolio_dir.exists():
         print("Portfolio image directory does not exist")
