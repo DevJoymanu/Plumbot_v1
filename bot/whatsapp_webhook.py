@@ -708,7 +708,7 @@ def handle_text_message(sender, text_data):
         traceback.print_exc()
 
 def handle_media_message(sender, media_data, media_type):
-    """Handle media - accept early uploads and immediately alert plumber."""
+    """Handle ANY media sent at ANY point - alert plumber immediately."""
     try:
         media_id = media_data.get('id')
         phone_number = f"whatsapp:+{sender}"
@@ -718,44 +718,48 @@ def handle_media_message(sender, media_data, media_type):
             defaults={'status': 'pending'}
         )
 
-        customer_name = appointment.customer_name or "Unknown customer"
-        customer_phone = sender
-        plumber_number = appointment.plumber_contact_number or '263774819901'
+        customer_name = appointment.customer_name or "A customer"
+        plumber_number = getattr(appointment, 'plumber_contact_number', None) or '263774819901'
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
 
-        # ✅ Immediately alert plumber about incoming media
-        alert_message = f"""📎 MEDIA RECEIVED FROM CUSTOMER
+        # ✅ Build context from whatever we know so far
+        service = appointment.project_type or 'Not specified'
+        area = appointment.customer_area or 'Not specified'
+        has_plan = appointment.has_plan
 
-Customer: {customer_name}
-Phone: +{customer_phone}
-Media type: {media_type.upper()}
-Service: {appointment.project_type or 'Not specified yet'}
-Area: {appointment.customer_area or 'Not specified yet'}
+        alert_message = (
+            f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
+            f"Customer: {customer_name}\n"
+            f"Phone: +{sender}\n"
+            f"Media type: {media_type.upper()}\n"
+            f"Service: {service}\n"
+            f"Area: {area}\n\n"
+            f"Please contact the customer directly to assist them."
+        )
 
-Please call or WhatsApp the customer directly to assist them.
-
-View appointment: https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"""
-
+        # Alert plumber
         try:
             whatsapp_api.send_text_message(plumber_number, alert_message)
-            print(f"✅ Plumber alerted about media from {sender}")
-        except Exception as alert_error:
-            print(f"❌ Failed to alert plumber: {str(alert_error)}")
+            print(f"✅ Plumber alerted about {media_type} from {sender}")
+        except Exception as e:
+            print(f"❌ Failed to alert plumber: {str(e)}")
 
-        # Tell customer plumber will contact them
-        customer_reply = "Thank you for sending that! 📎 Our plumber has been notified and will contact you directly to assist you. Please call this number if urgent: " + appointment.plumber_contact_number
-
-        # Save media if it's a plan
-        if appointment.has_plan != False:
-            save_plan_media(appointment, media_id, media_data)
-
-            if appointment.has_plan is None:
+        # ✅ Update appointment plan status based on context
+        if media_type in ['image', 'document']:
+            if has_plan is None:
                 appointment.has_plan = True
-                print(f"✅ Auto-detected: Customer has plan (sent early)")
-
-            appointment.plan_status = 'pending_upload'
+                print(f"✅ Auto-set has_plan=True (customer sent media)")
+            appointment.plan_status = 'received'
             appointment.save()
 
+        # Tell customer
+        customer_reply = (
+            "Thank you for sending that! 📎 Our plumber has been notified and will be "
+            "in touch with you directly. If it's urgent, you can also call them on "
+            f"{appointment.plumber_contact_number or '+263774819901'}."
+        )
+
+        appointment.add_conversation_message("user", f"[Sent {media_type}]")
         appointment.add_conversation_message("assistant", customer_reply)
 
         delay = get_random_delay()
