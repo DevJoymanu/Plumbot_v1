@@ -13,80 +13,15 @@ from .models import Appointment
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.conf import settings
-from pathlib import Path
 import threading
 import time
 import random
-import mimetypes
 
-
-def _split_csv_or_lines(raw_value: str) -> list:
-    """Split comma/newline separated values into a clean list."""
-    return [item.strip() for item in raw_value.replace('\n', ',').split(',') if item.strip()]
-
-
-def get_previous_work_image_urls() -> list:
-    """
-    Resolve previous-work images from env configuration.
-
-    Supports:
-    - PREVIOUS_WORK_IMAGE_URLS: direct public URLs (recommended with Cloudflare)
-    - PREVIOUS_WORK_IMAGE_FILES: storage file paths resolved by default_storage.url()
-    """
-    urls = _split_csv_or_lines(os.environ.get('PREVIOUS_WORK_IMAGE_URLS', ''))
-    file_paths = _split_csv_or_lines(os.environ.get('PREVIOUS_WORK_IMAGE_FILES', ''))
-
-    resolved_urls = []
-    seen = set()
-
-    for url in urls:
-        if url not in seen:
-            resolved_urls.append(url)
-            seen.add(url)
-
-    for file_path in file_paths:
-        try:
-            media_url = default_storage.url(file_path)
-            if media_url and media_url not in seen:
-                resolved_urls.append(media_url)
-                seen.add(media_url)
-        except Exception as e:
-            print(f"Could not resolve previous-work file path '{file_path}': {str(e)}")
-
-    return resolved_urls
-
-
-def get_previous_work_image_files() -> list:
-    """Load local portfolio images from common project portfolio directories."""
-    configured_dir = os.environ.get('PORTFOLIO_IMAGE_DIR', '').strip()
-    candidate_dirs = []
-    if configured_dir:
-        candidate_dirs.append(Path(configured_dir))
-    candidate_dirs.extend([
-        Path(settings.BASE_DIR) / 'static' / 'images' / 'portfolio',
-        Path(settings.BASE_DIR) / 'bot' / 'static' / 'images' / 'portfolio',
-    ])
-    print(f"Looking for portfolio images in: {[str(path) for path in candidate_dirs]}")
-
-    allowed_ext = {'.jpg', '.jpeg', '.png', '.webp'}
-    image_files = []
-    seen = set()
-    for portfolio_dir in candidate_dirs:
-        if not portfolio_dir.exists():
-            continue
-        for file_path in sorted(portfolio_dir.iterdir()):
-            if not file_path.is_file():
-                continue
-            if file_path.suffix.lower() not in allowed_ext:
-                continue
-            normalized = str(file_path.resolve())
-            if normalized in seen:
-                continue
-            seen.add(normalized)
-            image_files.append(str(file_path))
-    print(f"Found {len(image_files)} portfolio image file(s)")
-    return image_files
+PREVIOUS_WORK_IMAGE_URLS = [
+    url.strip()
+    for url in os.environ.get('PREVIOUS_WORK_IMAGE_URLS', '').replace('\n', ',').split(',')
+    if url.strip()
+]
 
 
 def get_random_delay() -> int:
@@ -134,98 +69,45 @@ def detect_objection_type(message: str) -> str:
 def is_previous_work_photo_request(message: str) -> bool:
     """Detect if customer is asking to see previous work photos."""
     message_lower = message.lower()
-    direct_request_phrases = [
-        'pictures of previous work', 'photos of previous work',
-        'send pictures', 'send photos', 'send me pictures', 'send me photos',
-        'show pictures', 'show photos', 'show me pictures', 'show me photos',
-        'show me your work', 'show your previous work', 'share your portfolio'
-    ]
-    if any(phrase in message_lower for phrase in direct_request_phrases):
-        return True
-
-    visual_keywords = [
+    keywords = [
         'picture', 'pictures', 'photo', 'photos', 'image', 'images',
         'previous work', 'past work', 'your work', 'portfolio', 'gallery',
         'show me', 'examples'
     ]
-    previous_work_context_terms = [
-        'previous work', 'past work', 'your work', 'portfolio', 'gallery',
-        'work examples', 'example work'
-    ]
-    request_intent_terms = [
-        'send', 'show', 'see', 'share', 'can i get', 'do you have', 'let me see',
-        'need', 'want'
-    ]
-
-    has_visual_keyword = any(keyword in message_lower for keyword in visual_keywords)
-    has_previous_work_context = any(term in message_lower for term in previous_work_context_terms)
-    has_request_intent = any(term in message_lower for term in request_intent_terms)
-    return has_visual_keyword and (has_request_intent or has_previous_work_context)
+    has_visual_keyword = any(keyword in message_lower for keyword in keywords)
+    has_request_intent = any(term in message_lower for term in ['send', 'show', 'see', 'share'])
+    return has_visual_keyword and has_request_intent
 
 
 def send_previous_work_photos(sender, appointment=None) -> bool:
     """
     Send previous-work photos via WhatsApp Cloud API.
-    Preferred source: local files in static/images/portfolio (upload + send by media ID).
-    Fallback: PREVIOUS_WORK_IMAGE_URLS / PREVIOUS_WORK_IMAGE_FILES URLs.
+    Uses PREVIOUS_WORK_IMAGE_URLS (comma/newline-separated URLs).
     """
-    image_files = get_previous_work_image_files()
-    image_urls = get_previous_work_image_urls()
-    print(f"Previous-work media candidates: local_files={len(image_files)}, url_fallbacks={len(image_urls)}")
-
-    if not image_files and not image_urls:
-        print("No previous-work media configured or found")
+    if not PREVIOUS_WORK_IMAGE_URLS:
         return False
 
     try:
         intro = "Sure, here are some photos of our previous plumbing work."
         whatsapp_api.send_text_message(sender, intro)
 
-        sent_count = 0
-        max_images = 8
-
-        # Primary path: send actual image media by uploading local files first.
-        for file_path in image_files[:max_images]:
-            try:
-                caption = "Previous work example" if sent_count == 0 else None
-                mime_type, _ = mimetypes.guess_type(file_path)
-                media_id = whatsapp_api.upload_media(file_path, mime_type=mime_type or 'image/jpeg')
-                whatsapp_api.send_media_by_id(
-                    sender,
-                    media_id,
-                    media_type='image',
-                    caption=caption
-                )
-                sent_count += 1
-            except Exception as e:
-                print(f"Failed sending local portfolio image '{file_path}': {str(e)}")
-
-        # Fallback path: if local uploads failed or are unavailable, try URL-based media.
-        if sent_count == 0:
-            for image_url in image_urls[:max_images]:
-                try:
-                    caption = "Previous work example" if sent_count == 0 else None
-                    whatsapp_api.send_media_message(
-                        sender,
-                        image_url,
-                        media_type='image',
-                        caption=caption
-                    )
-                    sent_count += 1
-                except Exception as e:
-                    print(f"Failed sending URL image '{image_url}': {str(e)}")
-
-        if sent_count == 0:
-            raise ValueError("No previous-work images could be sent")
+        for index, image_url in enumerate(PREVIOUS_WORK_IMAGE_URLS):
+            caption = "Previous work example" if index == 0 else None
+            whatsapp_api.send_media_message(
+                sender,
+                image_url,
+                media_type='image',
+                caption=caption
+            )
 
         if appointment:
             appointment.add_conversation_message("assistant", intro)
             appointment.add_conversation_message(
                 "assistant",
-                f"[MEDIA] Sent {sent_count} previous-work image(s)"
+                f"[MEDIA] Sent {len(PREVIOUS_WORK_IMAGE_URLS)} previous-work image(s)"
             )
 
-        print(f"✅ Sent {sent_count} previous-work image(s) to {sender}")
+        print(f"✅ Sent {len(PREVIOUS_WORK_IMAGE_URLS)} previous-work image(s) to {sender}")
         return True
     except Exception as e:
         print(f"❌ Failed to send previous-work photos: {str(e)}")
