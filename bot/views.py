@@ -2470,37 +2470,76 @@ class Plumbot:
 
     def handle_plan_later_response(self, message):
         """
-        Handle when customer says they'll send plan later
-        Returns True if this is a "later" response
+        Use DeepSeek to detect if customer is saying they'll send their plan later.
+        Returns True ONLY if customer clearly has a plan but will send it later.
+        Never triggers on site visit requests.
         """
-        message_lower = message.lower()
-        
-        later_keywords = [
-            'later', 'when i get', 'when i\'m', 'tonight', 'tomorrow',
-            'will send', 'gonna send', 'going to send', 'let me send',
-            'i\'ll send', 'ill send', 'send when', 'after', 'soon',
-            'let try', 'let me try'  # From your actual conversation
-        ]
-        
-        plan_keywords = ['plan', 'blueprint', 'drawing', 'design', 'layout', 'send the', 'upload']
-        
-        # Check if message mentions both "later" and "plan"
-        has_later = any(keyword in message_lower for keyword in later_keywords)
-        has_plan_ref = any(keyword in message_lower for keyword in plan_keywords)
-        
-        if has_later and (has_plan_ref or self.appointment.has_plan is None):
-            print(f"✅ Detected 'will send plan later' response")
-            
-            # Mark that customer HAS a plan (they'll send later)
-            if self.appointment.has_plan is None:
+        try:
+            # Only check if plan status is still undecided
+            if self.appointment.has_plan is not None:
+                return False
+
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an intent classifier for a plumbing appointment system in Zimbabwe. Customers may write in English, Shona, or mixed. Reply with ONLY 'YES' or 'NO'."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"""We asked the customer: "Do you have a plan already, or would you like us to do a site visit?"
+
+    Is the customer saying they HAVE a plan and will send/share it later (not now)?
+
+    This should be YES ONLY if:
+    - They confirm they have a plan/blueprint/drawing
+    - AND they say they will send it later, tonight, tomorrow, soon etc.
+
+    This should be NO if:
+    - They are asking for a site visit (even if they mention "tomorrow" as when they want the visit)
+    - They say they don't have a plan
+    - They mention "tomorrow" in the context of scheduling a visit, not sending a plan
+    - They are asking about anything else
+
+    Examples of YES:
+    - "I'll send the plan later"
+    - "I have blueprints, will send tonight"  
+    - "Ndinayo plan, nditumire mangwana" (I have a plan, let me send it tomorrow)
+    - "Let me send the drawings when I get home"
+
+    Examples of NO:
+    - "Site visit tomorrow" ← NO, they want a visit tomorrow, not sending a plan
+    - "Come tomorrow for the visit"
+    - "I don't have a plan"
+    - "Please do a site visit"
+    - "Uye uone mangwana" (Come and see tomorrow)
+    - "Kwete, uye utarise" (No, come and look)
+
+    Customer message: "{message}"
+
+    Reply YES or NO only."""
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=5
+            )
+
+            result = response.choices[0].message.content.strip().upper()
+            is_plan_later = result == "YES"
+
+            print(f"🤖 DeepSeek plan-later detection: '{message}' → {result}")
+
+            if is_plan_later:
                 self.appointment.has_plan = True
                 self.appointment.save()
-                print(f"✅ Updated: has_plan = True (will send later)")
-            
-            return True
-        
-        return False
+                print(f"✅ Updated: has_plan = True (customer will send plan later)")
 
+            return is_plan_later
+
+        except Exception as e:
+            print(f"❌ DeepSeek plan-later detection error: {str(e)}")
+            return False  # Safe default — don't assume
 
     def has_basic_info_for_plan_upload(self):
         """Check if we have enough basic info to start plan upload process"""
@@ -2871,7 +2910,6 @@ I understand this is time-sensitive!"""
         try:
             context_parts = []
             
-            # Customer info
             if self.appointment.customer_name:
                 context_parts.append(f"Customer Name: {self.appointment.customer_name}")
             else:
@@ -2882,18 +2920,16 @@ I understand this is time-sensitive!"""
             else:
                 context_parts.append("Area: Not provided yet")
                 
-            # Project details
             if self.appointment.project_type:
                 context_parts.append(f"Service Type: {self.appointment.project_type}")
             else:
                 context_parts.append("Service Type: Not specified yet")
                 
-            # Plan preference - Fixed boolean logic
             if self.appointment.has_plan is True:
                 context_parts.append("Plan Status: Customer has existing plan")
             elif self.appointment.has_plan is False:
                 context_parts.append("Plan Status: Customer wants site visit")
-            else:  # has_plan is None
+            else:
                 context_parts.append("Plan Status: Not specified yet")
                 
             if self.appointment.property_type:
@@ -2906,41 +2942,37 @@ I understand this is time-sensitive!"""
             else:
                 context_parts.append("Timeline: Not specified yet")
                 
-            # Appointment status
             context_parts.append(f"Current Status: {self.appointment.get_status_display()}")
             
+            # ✅ FIX: Check if scheduled_datetime exists before calling astimezone
             if self.appointment.scheduled_datetime:
-                context_parts.append(f"Scheduled: {self.appointment.scheduled_datetime.strftime('%A, %B %d at %I:%M %p')}")
+                try:
+                    sa_timezone = pytz.timezone('Africa/Johannesburg')
+                    sa_time = self.appointment.scheduled_datetime.astimezone(sa_timezone)
+                    formatted_datetime = sa_time.strftime('%A, %B %d, %Y at %I:%M %p')
+                    context_parts.append(f"Scheduled: {formatted_datetime}")
+                    context_parts.append(f"⚠️ CRITICAL: When mentioning appointment time, ALWAYS use: {formatted_datetime}")
+                except Exception as dt_error:
+                    print(f"⚠️ Error formatting scheduled datetime: {dt_error}")
+                    context_parts.append("Scheduled: Error reading datetime")
             else:
                 context_parts.append("Scheduled: No appointment time set yet")
                 
-            # Next question to ask
             next_question = self.get_next_question_to_ask()
             context_parts.append(f"Next Question Needed: {next_question}")
             
-            # Add retry attempt tracking
             retry_count = getattr(self.appointment, 'retry_count', 0)
             context_parts.append(f"Question Retry Count: {retry_count}")
-                
-            # Completion percentage
+            
             completeness = self.appointment.get_customer_info_completeness()
             context_parts.append(f"Info Completeness: {completeness:.0f}%")
-            #
-            sa_timezone = pytz.timezone('Africa/Johannesburg')
-            sa_time = self.appointment.scheduled_datetime.astimezone(sa_timezone)
-            formatted_datetime = sa_time.strftime('%A, %B %d, %Y at %I:%M %p')
-            
-            context_parts.append(f"📅 Scheduled: {formatted_datetime}")
-            
-            # Add explicit instruction for AI
-            context_parts.append(f"⚠️ CRITICAL: When mentioning appointment time, ALWAYS use: {formatted_datetime}")
-
 
             return "\n".join(context_parts)
             
         except Exception as e:
             print(f"Error getting appointment context: {str(e)}")
             return "Unable to load appointment context"
+
 
     def verify_plan_question_not_asked_recently(self):
         """Check if we asked about plan in last 5 messages"""
