@@ -719,7 +719,7 @@ def handle_media_message(sender, media_data, media_type):
         )
 
         customer_name = appointment.customer_name or "A customer"
-        plumber_number = getattr(appointment, 'plumber_contact_number', None) or '263774819901'
+        plumber_number = getattr(appointment, 'plumber_contact_number', None) or '27610318200'
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
 
         # ✅ Build context from whatever we know so far
@@ -756,7 +756,7 @@ def handle_media_message(sender, media_data, media_type):
         customer_reply = (
             "Thank you for sending that! 📎 Our plumber has been notified and will be "
             "in touch with you directly. If it's urgent, you can also call them on "
-            f"{appointment.plumber_contact_number or '+263774819901'}."
+            f"{appointment.plumber_contact_number or '+27610318200'}."
         )
 
         appointment.add_conversation_message("user", f"[Sent {media_type}]")

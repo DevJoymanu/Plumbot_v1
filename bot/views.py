@@ -2663,7 +2663,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             plumber_number = getattr(
                 self.appointment,
                 'plumber_contact_number',
-                '+263774819901'
+                '+27610318200'
             )
 
             # Notify plumber
@@ -2786,7 +2786,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             language = lang_response.choices[0].message.content.strip().lower()
             print(f"🌍 Detected language: {language}")
 
-            plumber_number = self.appointment.plumber_contact_number or '+263774819901'
+            plumber_number = self.appointment.plumber_contact_number or '+27610318200'
 
             pricing_info = {
                 "tub_sales": {
@@ -2891,7 +2891,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     """
 
             plumber_numbers = [
-                '263774819901',  # ✅ international format
+                '27610318200',  # ✅ international format
             ]
 
             for number in plumber_numbers:
@@ -3907,7 +3907,7 @@ I understand this is time-sensitive!"""
     Check calendar for details."""
 
             # Team numbers (without whatsapp: prefix or +)
-            TEAM_NUMBERS = ['263774819901']
+            TEAM_NUMBERS = ['27610318200']
             
             print(f"📤 Sending notifications to {len(TEAM_NUMBERS)} team members...")
             
