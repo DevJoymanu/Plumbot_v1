@@ -48,40 +48,47 @@ def _area(apt) -> str:
 
 
 def _apt_time(apt) -> str:
+    import pytz
     dt = getattr(apt, "scheduled_datetime", None)
     if not dt:
         return "Scheduled time"
-    import pytz
-    cat = pytz.timezone(TIMEZONE_NAME)
-    local = dt.astimezone(cat) if dt.tzinfo else dt
-    h, m = local.hour, local.minute
-    suffix = "AM" if h < 12 else "PM"
-    h12 = h % 12 or 12
-    return f"{h12}:{m:02d} {suffix}"
-
+    try:
+        cat = pytz.timezone(TIMEZONE_NAME)
+        local = dt.astimezone(cat) if dt.tzinfo else dt
+        h, m = local.hour, local.minute
+        suffix = "AM" if h < 12 else "PM"
+        h12 = h % 12 or 12
+        return f"{h12}:{m:02d} {suffix}"
+    except Exception:
+        return str(dt)
 
 def _apt_date(apt) -> str:
+    import pytz
     dt = getattr(apt, "scheduled_datetime", None)
     if not dt:
         return "Scheduled date"
-    import pytz, datetime
-    cat = pytz.timezone(TIMEZONE_NAME)
-    d = dt.astimezone(cat).date() if dt.tzinfo else dt.date()
-    days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-    return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
-
+    try:
+        cat = pytz.timezone(TIMEZONE_NAME)
+        d = dt.astimezone(cat).date() if dt.tzinfo else dt.date()
+        days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
+    except Exception:
+        return str(dt)
 
 def _apt_date_short(apt) -> str:
+    import pytz
     dt = getattr(apt, "scheduled_datetime", None)
     if not dt:
         return ""
-    import pytz
-    cat = pytz.timezone(TIMEZONE_NAME)
-    d = dt.astimezone(cat).date() if dt.tzinfo else dt.date()
-    days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
-    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-    return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
+    try:
+        cat = pytz.timezone(TIMEZONE_NAME)
+        d = dt.astimezone(cat).date() if dt.tzinfo else dt.date()
+        days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
+    except Exception:
+        return str(dt)
 
 # ── Customer (Lead) Messages ───────────────────────────────────────────────────
 
@@ -320,15 +327,14 @@ def is_2h_window(appt_utc_dt, now_utc) -> bool:
 
 
 def appt_utc(apt):
+    import pytz
     dt = getattr(apt, "scheduled_datetime", None)
     if not dt:
         return None
-    import pytz
     cat = pytz.timezone(TIMEZONE_NAME)
     if dt.tzinfo is None:
         return cat.localize(dt).astimezone(pytz.utc)
     return dt.astimezone(pytz.utc)
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # DUPLICATE PREVENTION
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -399,10 +405,9 @@ class Command(BaseCommand):
         # ── Fetch appointments ─────────────────────────────────────────────────
         active = list(Appointment.objects.filter(
             Q(status__in=["confirmed", "scheduled", "booked", "pending"]),
-            Q(appointment_date__gte=today),
-            appointment_date__isnull=False,
-            appointment_time__isnull=False,
-        ).order_by("appointment_date", "appointment_time"))
+            Q(scheduled_datetime__date__gte=today),
+            scheduled_datetime__isnull=False,
+        ).order_by("scheduled_datetime"))
 
         # ── Overview ───────────────────────────────────────────────────────────
         self.stdout.write(_section("OVERVIEW", "APPOINTMENT SUMMARY"))
@@ -410,7 +415,8 @@ class Command(BaseCommand):
 
         by_date = defaultdict(list)
         for a in active:
-            by_date[a.appointment_date].append(a)
+            #
+            by_date[a.scheduled_datetime.date()].append(a)
 
         first_d = min(by_date.keys()) if by_date else None
         last_d  = max(by_date.keys()) if by_date else None
@@ -539,7 +545,7 @@ class Command(BaseCommand):
             # Tomorrow's appointments @ 20:00
             if is_in_window(now_local, 20):
                 tomorrow      = today + timedelta(days=1)
-                tomorrow_apts = [a for a in active if a.appointment_date == tomorrow]
+                tomorrow_apts = [a for a in active if a.scheduled_datetime.date() == tomorrow]
                 if tomorrow_apts:
                     rtype = f"plumber_nextday_{tomorrow.isoformat()}"
                     if already_sent(tomorrow_apts[0], rtype):
@@ -558,7 +564,7 @@ class Command(BaseCommand):
 
             # Morning @ 07:00
             if is_in_window(now_local, 7):
-                today_apts = [a for a in active if a.appointment_date == today]
+                today_apts = [a for a in active if a.scheduled_datetime.date() == today]
                 if today_apts:
                     rtype = f"plumber_morning_{today.isoformat()}"
                     if already_sent(today_apts[0], rtype):
