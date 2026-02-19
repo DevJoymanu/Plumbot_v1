@@ -1,4 +1,4 @@
-"""
+what do the whatsapp messages look like: """
 Django Management Command: send_reminders
 =========================================
 Run every 15 minutes via Railway Scheduler or cron:
@@ -184,19 +184,19 @@ def _apt_block(i: int, apt, show_date: bool = True) -> str:
     date_part = f"{_apt_date_short(apt)} | " if show_date else ""
     return (
         f"{i}\ufe0f\u20e3 {name}\n"
-        f"🛠 {_service(apt)}\n"
-        f"📍 {_area(apt)}\n"
-        f"⏰ {date_part}{_apt_time(apt)}\n"
-        f"📞 {phone}"
+        f"\U0001f6e0 {_service(apt)}\n"
+        f"\U0001f4cd {_area(apt)}\n"
+        f"\u23f0 {date_part}{_apt_time(apt)}\n"
+        f"\U0001f4de {phone}"
     )
 
 
 def msg_plumber_weekly(apts: list, plumber_name: str = "there") -> str:
     blocks = f"\n{SEP}\n\n".join(_apt_block(i + 1, a, show_date=True) for i, a in enumerate(apts))
     return (
-        f"📅 *WEEKLY APPOINTMENT SUMMARY*\n"
+        f"\U0001f4c5 *WEEKLY APPOINTMENT SUMMARY*\n"
         f"\n"
-        f"Hi {plumber_name} 👋\n"
+        f"Hi {plumber_name} \U0001f44b\n"
         f"Here are your upcoming jobs:\n"
         f"\n"
         f"{SEP}\n"
@@ -207,16 +207,16 @@ def msg_plumber_weekly(apts: list, plumber_name: str = "there") -> str:
         f"\n"
         f"Please review your schedule and prepare materials accordingly.\n"
         f"\n"
-        f"Let's have a productive week! 💪🔧"
+        f"Let's have a productive week! \U0001f4aa\U0001f527"
     )
 
 
 def msg_plumber_next_day(apts: list, plumber_name: str = "there") -> str:
     blocks = f"\n{SEP}\n\n".join(_apt_block(i + 1, a, show_date=False) for i, a in enumerate(apts))
     return (
-        f"🌙 *TOMORROW'S APPOINTMENTS*\n"
+        f"\U0001f319 *TOMORROW'S APPOINTMENTS*\n"
         f"\n"
-        f"Hi {plumber_name} 👋\n"
+        f"Hi {plumber_name} \U0001f44b\n"
         f"Here's what's scheduled:\n"
         f"\n"
         f"{SEP}\n"
@@ -225,16 +225,16 @@ def msg_plumber_next_day(apts: list, plumber_name: str = "there") -> str:
         f"\n"
         f"{SEP}\n"
         f"\n"
-        f"Get your tools ready and travel safe. 🔧🚗"
+        f"Get your tools ready and travel safe. \U0001f527\U0001f697"
     )
 
 
 def msg_plumber_morning(apts: list, plumber_name: str = "there") -> str:
     blocks = f"\n{SEP}\n\n".join(_apt_block(i + 1, a, show_date=False) for i, a in enumerate(apts))
     return (
-        f"☀️ *TODAY'S SCHEDULE*\n"
+        f"\u2600\ufe0f *TODAY'S SCHEDULE*\n"
         f"\n"
-        f"Good morning {plumber_name} 👋\n"
+        f"Good morning {plumber_name} \U0001f44b\n"
         f"\n"
         f"{SEP}\n"
         f"\n"
@@ -242,7 +242,7 @@ def msg_plumber_morning(apts: list, plumber_name: str = "there") -> str:
         f"\n"
         f"{SEP}\n"
         f"\n"
-        f"Have a productive day! 💪🔧"
+        f"Have a productive day! \U0001f4aa\U0001f527"
     )
 
 
@@ -250,19 +250,19 @@ def msg_plumber_2hours(apt, plumber_name: str = "there") -> str:
     phone = _fmt_phone(getattr(apt, "phone_number", "") or "")
     name  = getattr(apt, "customer_name", "?") or "?"
     return (
-        f"⏰ *UPCOMING JOB – 2 HOURS*\n"
+        f"\u23f0 *UPCOMING JOB \u2013 2 HOURS*\n"
         f"\n"
-        f"Hi {plumber_name} 👋\n"
+        f"Hi {plumber_name} \U0001f44b\n"
         f"\n"
         f"Customer: {name}\n"
-        f"🛠 {_service(apt)}\n"
-        f"📍 {_area(apt)}\n"
-        f"⏰ {_apt_time(apt)}\n"
-        f"📞 {phone}\n"
+        f"\U0001f6e0 {_service(apt)}\n"
+        f"\U0001f4cd {_area(apt)}\n"
+        f"\u23f0 {_apt_time(apt)}\n"
+        f"\U0001f4de {phone}\n"
         f"\n"
         f"Make sure you're on your way.\n"
         f"\n"
-        f"Drive safe! 🚗🔧"
+        f"Drive safe! \U0001f697\U0001f527"
     )
 
 
@@ -292,19 +292,19 @@ def _bar(count: int, total: int, width: int = 20) -> str:
 
 
 def _ok(msg: str) -> str:
-    return f"  ✅  {msg}"
+    return f"  OK  {msg}"
 
 
 def _skip(msg: str) -> str:
-    return f"  ⏭️  {msg}"
+    return f"  --  {msg}"
 
 
 def _warn(msg: str) -> str:
-    return f"  ⚠️  {msg}"
+    return f"  !!  {msg}"
 
 
 def _info(msg: str) -> str:
-    return f"  ℹ️  {msg}"
+    return f"  ..  {msg}"
 
 
 def _preview(text: str, max_chars: int = 55) -> str:
@@ -419,7 +419,7 @@ class Command(BaseCommand):
         ).order_by("appointment_date", "appointment_time"))
 
         # ── Overview ───────────────────────────────────────────────────────────
-        self.stdout.write(_section("📊", "APPOINTMENT SUMMARY"))
+        self.stdout.write(_section("OVERVIEW", "APPOINTMENT SUMMARY"))
         self.stdout.write("")
 
         by_date = defaultdict(list)
@@ -451,7 +451,7 @@ class Command(BaseCommand):
         # ─────────────────────────────────────────────────────────────────────
         # LEAD REMINDERS
         # ─────────────────────────────────────────────────────────────────────
-        self.stdout.write(_section("👤", "CUSTOMER REMINDERS"))
+        self.stdout.write(_section("LEADS", "CUSTOMER REMINDERS"))
         self.stdout.write("")
 
         lead_sent = lead_skipped = 0
@@ -516,7 +516,7 @@ class Command(BaseCommand):
         # ─────────────────────────────────────────────────────────────────────
         # PLUMBER REMINDERS
         # ─────────────────────────────────────────────────────────────────────
-        self.stdout.write(_section("👨‍🔧", "PLUMBER REMINDERS"))
+        self.stdout.write(_section("PLUMBER", "PLUMBER REMINDERS"))
         self.stdout.write("")
 
         plumber_sent = 0
