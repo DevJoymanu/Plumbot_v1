@@ -420,4 +420,4 @@ class WhatsAppCloudAPI:
 
 
 # ─── Singleton ───────────────────────────────────────────────────────────────
-whatsapp_api = WhatsAppCloudAPI()
+whatsapp_api = WhatsAppCloudAPI
