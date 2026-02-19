@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 import json
 import os
-from .whatsapp_cloud_api import whatsapp_api
+from .whatsapp_cloud_api import whatsapp_api, get_extension_for_mime, MEDIA_SIZE_LIMITS
 from .models import Appointment
 from django.utils import timezone
 from django.core.files.base import ContentFile
@@ -376,7 +376,8 @@ def process_message_change(value):
                 handle_audio_message(sender, message.get('audio', {}))
             
             elif message_type == 'video':
-                handle_unsupported_media(sender, 'video')
+                # ─── CHANGED: video now saved to R2 instead of unsupported message ───
+                handle_media_message(sender, message.get('video', {}), 'video')
             
             elif message_type == 'sticker':
                 handle_unsupported_media(sender, 'sticker')
@@ -396,6 +397,7 @@ def process_message_change(value):
         
     except Exception as e:
         print(f"❌ Error processing message: {str(e)}")
+
 
 def handle_location_message(sender, location_data):
     """
@@ -480,6 +482,7 @@ I've noted it. Let me continue with your appointment details..."""
     except Exception as e:
         print(f"❌ Error handling location: {str(e)}")
 
+
 def handle_unsupported_media(sender, media_type):
     """
     Handle unsupported media types with friendly message
@@ -489,10 +492,8 @@ def handle_unsupported_media(sender, media_type):
         
         # Map media types to friendly names
         media_names = {
-            'video': 'video',
             'sticker': 'sticker',
             'contacts': 'contact card',
-            'voice': 'voice message',
             'gif': 'GIF'
         }
         
@@ -504,6 +505,7 @@ I can't process {friendly_name}s right now, but I work great with:
 ✅ Text messages
 ✅ Images (for plans)
 ✅ PDF documents (for plans)
+✅ Videos
 
 Could you send that as a text message instead?
 
@@ -522,20 +524,6 @@ Thanks!"""
     except Exception as e:
         print(f"❌ Error handling unsupported media: {str(e)}")
 
-def handle_location_message(sender, location_data):
-    latitude = location_data.get('latitude')
-    longitude = location_data.get('longitude')
-    address = location_data.get('address')
-    
-    # If asking for area, use location
-    if next_question == 'area':
-        if address:
-            appointment.customer_area = address
-            appointment.save()
-            
-            return "Perfect! I've got your location. Let me continue..."
-        else:
-            return "Thanks for the pin! Could you type the area name too?"
 
 def handle_audio_message(sender, audio_data):
     """
@@ -720,8 +708,36 @@ def handle_text_message(sender, text_data):
         import traceback
         traceback.print_exc()
 
+
+# ─── Storage helpers for media ────────────────────────────────────────────────
+
+# Maps WhatsApp message type → storage subfolder
+MEDIA_STORAGE_FOLDERS = {
+    'image':    'customer_plans',
+    'document': 'customer_plans',
+    'video':    'customer_videos',   # videos get their own folder in R2
+    'audio':    'customer_audio',
+}
+
+# MIME type → file extension (for images/documents already handled by ext_map below;
+# get_extension_for_mime from whatsapp_cloud_api handles video/audio types)
+IMAGE_DOC_EXT_MAP = {
+    'image/jpeg': '.jpg',
+    'image/jpg':  '.jpg',
+    'image/png':  '.png',
+    'image/webp': '.webp',
+    'image/gif':  '.gif',
+    'application/pdf': '.pdf',
+}
+
+
 def handle_media_message(sender, media_data, media_type):
-    """Handle ANY media sent — download from WhatsApp, save to R2, alert plumber."""
+    """
+    Handle images, documents, AND videos — download from WhatsApp, save to R2, alert plumber.
+
+    For images/documents: saves to customer_plans/ folder, updates plan_file on appointment.
+    For videos:           saves to customer_videos/ folder, notes in internal_notes.
+    """
     try:
         media_id = media_data.get('id')
         mime_type = media_data.get('mime_type', '')
@@ -743,25 +759,23 @@ def handle_media_message(sender, media_data, media_type):
 
         # ─── STEP 2: Save to Django storage (local or R2) ───
         saved_path = None
+        file_url = None
         if file_bytes:
             try:
-                from django.core.files.base import ContentFile
-                from django.core.files.storage import default_storage
-                from django.utils import timezone
+                # Pick the right extension
+                if media_type in ('image', 'document'):
+                    ext = IMAGE_DOC_EXT_MAP.get(mime_type, '.bin')
+                else:
+                    # video, audio — use the full MIME map from whatsapp_cloud_api
+                    ext = get_extension_for_mime(mime_type)
 
-                # Build a clean filename
-                ext_map = {
-                    'image/jpeg': '.jpg', 'image/jpg': '.jpg',
-                    'image/png': '.png', 'image/webp': '.webp',
-                    'image/gif': '.gif', 'application/pdf': '.pdf',
-                }
-                ext = ext_map.get(mime_type, '.bin')
+                folder = MEDIA_STORAGE_FOLDERS.get(media_type, 'customer_media')
                 timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
                 customer_slug = ''.join(
                     c for c in (appointment.customer_name or 'customer') if c.isalnum()
                 )
-                filename = f"plan_{customer_slug}_{appointment.id}_{timestamp}{ext}"
-                storage_path = f"customer_plans/{filename}"
+                filename = f"{media_type}_{customer_slug}_{appointment.id}_{timestamp}{ext}"
+                storage_path = f"{folder}/{filename}"
 
                 file_obj = ContentFile(file_bytes, name=filename)
                 saved_path = default_storage.save(storage_path, file_obj)
@@ -771,12 +785,27 @@ def handle_media_message(sender, media_data, media_type):
                 print(f"✅ File URL: {file_url}")
 
                 # Update appointment record
-                if not appointment.plan_file:
-                    appointment.plan_file = saved_path
-                if appointment.has_plan is None:
-                    appointment.has_plan = True
-                appointment.plan_status = 'plan_uploaded'
-                appointment.plan_uploaded_at = timezone.now()
+                if media_type in ('image', 'document'):
+                    if not appointment.plan_file:
+                        appointment.plan_file = saved_path
+                    if appointment.has_plan is None:
+                        appointment.has_plan = True
+                    appointment.plan_status = 'plan_uploaded'
+                    appointment.plan_uploaded_at = timezone.now()
+
+                elif media_type == 'video':
+                    # Store in internal_notes (add a video_file FileField to model for cleaner storage)
+                    video_note = f"[VIDEO UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
+                    existing_notes = appointment.internal_notes or ''
+                    appointment.internal_notes = f"{existing_notes}\n{video_note}".strip()
+                    # Also flag as having plan material
+                    if appointment.has_plan is None:
+                        appointment.has_plan = True
+                    if not appointment.plan_status:
+                        appointment.plan_status = 'plan_uploaded'
+                    if not appointment.plan_uploaded_at:
+                        appointment.plan_uploaded_at = timezone.now()
+
                 appointment.save()
 
             except Exception as save_err:
@@ -790,7 +819,7 @@ def handle_media_message(sender, media_data, media_type):
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
 
         ai_summary = generate_conversation_summary(appointment)
-        file_info = f"\n🔗 File URL: {default_storage.url(saved_path)}" if saved_path else "\n⚠️ File could not be saved automatically."
+        file_info = f"\n🔗 File URL: {file_url}" if file_url else "\n⚠️ File could not be saved automatically."
 
         alert_message = (
             f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
@@ -817,11 +846,18 @@ def handle_media_message(sender, media_data, media_type):
             print(f"❌ Failed to alert plumber: {str(e)}")
 
         # ─── STEP 4: Acknowledge customer ───
-        customer_reply = (
-            "Thank you for sending that! 📎 Our plumber has been notified and will "
-            "be in touch with you directly. If it's urgent, you can also call them on "
-            f"{appointment.plumber_contact_number or '+27610318200'}."
-        )
+        if media_type == 'video':
+            customer_reply = (
+                "Thank you for sending that video! 🎥 Our plumber has been notified and will "
+                "review it and contact you directly. If it's urgent, you can also call them on "
+                f"{appointment.plumber_contact_number or '+27610318200'}."
+            )
+        else:
+            customer_reply = (
+                "Thank you for sending that! 📎 Our plumber has been notified and will "
+                "be in touch with you directly. If it's urgent, you can also call them on "
+                f"{appointment.plumber_contact_number or '+27610318200'}."
+            )
 
         appointment.add_conversation_message("user", f"[Sent {media_type}]")
         appointment.add_conversation_message("assistant", customer_reply)
@@ -838,28 +874,6 @@ def handle_media_message(sender, media_data, media_type):
         import traceback
         traceback.print_exc()
 
-
-def download_media(self, media_id: str) -> bytes:
-    """Download media from WhatsApp Cloud API"""
-    headers = {'Authorization': f'Bearer {self.access_token}'}
-
-    # Step 1: Get the media download URL
-    url_response = requests.get(
-        f'{self.base_url}/{media_id}',
-        headers=headers
-    )
-    url_response.raise_for_status()
-    media_url = url_response.json().get('url')
-
-    if not media_url:
-        raise ValueError(f"No URL returned for media_id={media_id}")
-
-    # Step 2: Download the actual file — MUST pass auth header here too
-    media_response = requests.get(media_url, headers=headers)
-    media_response.raise_for_status()
-
-    print(f"✅ Downloaded {len(media_response.content)} bytes")
-    return media_response.content
 
 def generate_conversation_summary(appointment) -> str:
     """
