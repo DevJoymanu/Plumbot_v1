@@ -2739,12 +2739,13 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     - vanity: asking about vanity units, custom vanity
     - bathtub_installation: asking about installing a bathtub, wall finishing around tub
     - toilet: asking about toilet supply or installation
+    - chamber: asking about side chamber, chamber supply or installation   # <-- ADD THIS
     - facebook_package: referencing a Facebook ad or package deal
     - location_ask: customer is ONLY asking where we are located or for our address
     - location_visit: customer wants to physically come IN PERSON to our office or showroom
     - previous_quotation: saying we sent them a quotation before
     - pictures: asking to see product pictures (not previous work photos)
-    - none: none of the above — including when customer just says an area name like "Hatfield", "Avondale", "Borrowdale" etc.
+    - none: none of the above
 
     CRITICAL RULES:
     1. location_ask vs location_visit:
@@ -2840,8 +2841,12 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "sn": f"Mitengo yedu yekuisa ma bathtub: 🛁\n\n• Tub yakajairwa (ine wall finishing): kubva kuUS$80\n• Free-standing tub: kubva kuUS$450\n• Free-standing mixer: kubva kuUS$150\n• Kuisa mixer: US$120\n• Side chamber: US$130\n• Kuisa side chamber: US$30\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda mhando ipi yebathtub?"
                 },
                 "toilet": {
-                    "en": f"We supply and install toilets! 🚽\n\n• Close-coupled toilet supply: starts from US$50\n• New toilet seat installation: starts from US$20 (depending on type)\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like supply and installation?",
-                    "sn": f"Tinopa uye tinoisa ma toilet! 🚽\n\n• Close-coupled toilet: inotangira kuUS$50\n• Kuisa chigaro chitsva chetoilet: inotangira kuUS$20 (zvichienda nemhando)\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here supply neinstallation?"
+                    "en": f"We supply and install toilets and side chambers! \n\n• Close-coupled toilet supply: starts from US$50\n• New toilet seat installation: starts from US$20 (depending on type)\n• Side chamber: US$130\n• Side chamber installation: US$30\n\nThese are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo or schedule a site visit.\n\nWould you like supply and installation?",
+                    "sn": f"Tinopa uye tinoisa ma toilet nema side chamber! \n\n• Close-coupled toilet: inotangira kuUS$50\n• Kuisa chigaro chitsva chetoilet: inotangira kuUS$20 (zvichienda nemhando)\n• Side chamber: US$130\n• Kuisa side chamber: US$30\n\nMitengo iyi yakangofanana. Tumira photo kana plan kana tibvumirene visit.\n\nUnoda here supply neinstallation?",
+                },
+                "chamber": {
+                    "en": f"We supply and install side chambers and toilets! \n\n• Side chamber: US$130\n• Side chamber installation: US$30\n• Close-coupled toilet supply: starts from US$50\n• New toilet seat installation: starts from US$20 (depending on type)\n\nThese are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo or schedule a site visit.\n\nWould you like supply and installation?",
+                    "sn": f"Tinopa uye tinoisa ma side chamber nema toilet! \n\n• Side chamber: US$130\n• Kuisa side chamber: US$30\n• Close-coupled toilet: inotangira kuUS$50\n• Kuisa chigaro chitsva chetoilet: inotangira kuUS$20\n\nMitengo iyi yakangofanana. Tumira photo kana plan kana tibvumirene visit.\n\nUnoda here supply neinstallation?",
                 },
                 "facebook_package": {
                     "en": f"The bathroom package shown on our Facebook ad starts from US$600. 📢\n\n⚠️ This is an approximate price and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like us to assess your space first?",
@@ -2865,7 +2870,8 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "sn": f"Ndichakubatanidza neplumber wedu kuti vakutumire mifananidzo uye zvinosarudzwa. 📸\n\nBata: {plumber_number}"
                 },
             }
-
+            responses = pricing_info.get(intent, pricing_info.get('toilet', {}))
+            
             # Select response based on language
             responses = pricing_info.get(intent, {})
             if language == 'shona':
