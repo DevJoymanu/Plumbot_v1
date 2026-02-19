@@ -1009,3 +1009,4 @@ def generate_conversation_summary(appointment) -> str:
             return "Summary unavailable. Last messages:\n" + "\n".join(fallback_lines)
         except Exception:
             return "Summary unavailable."
+            

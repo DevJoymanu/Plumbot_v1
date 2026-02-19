@@ -48,48 +48,40 @@ def _area(apt) -> str:
 
 
 def _apt_time(apt) -> str:
-    t = getattr(apt, "appointment_time", "") or ""
-    if not t:
+    dt = getattr(apt, "scheduled_datetime", None)
+    if not dt:
         return "Scheduled time"
-    try:
-        parts = str(t).split(":")
-        h, m = int(parts[0]), int(parts[1])
-        suffix = "AM" if h < 12 else "PM"
-        h12 = h % 12 or 12
-        return f"{h12}:{m:02d} {suffix}"
-    except Exception:
-        return str(t)
+    import pytz
+    cat = pytz.timezone(TIMEZONE_NAME)
+    local = dt.astimezone(cat) if dt.tzinfo else dt
+    h, m = local.hour, local.minute
+    suffix = "AM" if h < 12 else "PM"
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d} {suffix}"
 
 
 def _apt_date(apt) -> str:
-    d = getattr(apt, "appointment_date", None)
-    if not d:
+    dt = getattr(apt, "scheduled_datetime", None)
+    if not dt:
         return "Scheduled date"
-    try:
-        import datetime
-        if isinstance(d, str):
-            d = datetime.date.fromisoformat(d)
-        days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-        return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
-    except Exception:
-        return str(d)
+    import pytz, datetime
+    cat = pytz.timezone(TIMEZONE_NAME)
+    d = dt.astimezone(cat).date() if dt.tzinfo else dt.date()
+    days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
 
 
 def _apt_date_short(apt) -> str:
-    d = getattr(apt, "appointment_date", None)
-    if not d:
+    dt = getattr(apt, "scheduled_datetime", None)
+    if not dt:
         return ""
-    try:
-        import datetime
-        if isinstance(d, str):
-            d = datetime.date.fromisoformat(d)
-        days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
-        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-        return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
-    except Exception:
-        return str(d)
-
+    import pytz
+    cat = pytz.timezone(TIMEZONE_NAME)
+    d = dt.astimezone(cat).date() if dt.tzinfo else dt.date()
+    days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
 
 # ── Customer (Lead) Messages ───────────────────────────────────────────────────
 
@@ -328,20 +320,14 @@ def is_2h_window(appt_utc_dt, now_utc) -> bool:
 
 
 def appt_utc(apt):
-    import datetime
-    import pytz
-    d = getattr(apt, "appointment_date", None)
-    t = getattr(apt, "appointment_time", None)
-    if not d or not t:
+    dt = getattr(apt, "scheduled_datetime", None)
+    if not dt:
         return None
-    if isinstance(d, str):
-        d = date.fromisoformat(d)
-    if isinstance(t, str):
-        parts = t.split(":")
-        t = dt_time(int(parts[0]), int(parts[1]))
+    import pytz
     cat = pytz.timezone(TIMEZONE_NAME)
-    return cat.localize(datetime.datetime.combine(d, t)).astimezone(pytz.utc)
-
+    if dt.tzinfo is None:
+        return cat.localize(dt).astimezone(pytz.utc)
+    return dt.astimezone(pytz.utc)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DUPLICATE PREVENTION
