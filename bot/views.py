@@ -3060,14 +3060,10 @@ I understand this is time-sensitive!"""
             for day_offset in range(0, 7):  # Check today + next 6 days
                 check_date = requested_date + timedelta(days=day_offset)
                 
-                # Skip Saturday only
+                # Skip Saturday only — Sunday is a working day
                 if check_date.weekday() == 5:
-                    continue                
-
-                # Skip weekends
-                if check_date.weekday() >= 5:
                     continue
-                    
+
                 for hour in business_time_slots:
                     candidate_time = datetime.combine(check_date, datetime.min.time().replace(hour=hour))
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
@@ -3351,71 +3347,74 @@ I understand this is time-sensitive!"""
 
 
     def process_alternative_time_selection(self, message):
-        """Process when customer selects an alternative time - NEW FUNCTION"""
+        """Use DeepSeek to detect and parse when customer selects an alternative time slot"""
         try:
-            message_lower = message.lower()
-            
-            # Extract time from common patterns
-            time_patterns = [
-                (r'(\d{1,2}):(\d{2})\s*(am|pm)', 'time_with_minutes'),
-                (r'(\d{1,2})\s*(am|pm)', 'time_only'),
-                (r'monday.*?(\d{1,2}):(\d{2})\s*(am|pm)', 'day_time_minutes'),
-                (r'monday.*?(\d{1,2})\s*(am|pm)', 'day_time_only'),
-            ]
-            
-            selected_datetime = None
-            
-            for pattern, pattern_type in time_patterns:
-                match = re.search(pattern, message_lower)
-                if match:
-                    groups = match.groups()
-                    
-                    # Parse hour and minute
-                    if 'minutes' in pattern_type:
-                        hour = int(groups[0])
-                        minute = int(groups[1])
-                        am_pm = groups[2] if len(groups) > 2 else groups[-1]
-                    else:
-                        hour = int(groups[0])
-                        minute = 0
-                        am_pm = groups[1] if len(groups) > 1 else groups[-1]
-                    
-                    # Convert to 24-hour format
-                    if am_pm == 'pm' and hour != 12:
-                        hour += 12
-                    elif am_pm == 'am' and hour == 12:
-                        hour = 0
-                    
-                    # Use tomorrow's date (or next Monday if specified)
-                    sa_timezone = pytz.timezone('Africa/Johannesburg')
-                    tomorrow = timezone.now().astimezone(sa_timezone) + timedelta(days=1)
-                    
-                    if 'monday' in message_lower:
-                        # Find next Monday
-                        days_ahead = (0 - tomorrow.weekday()) % 7
-                        if days_ahead == 0:  # Today is Monday
-                            days_ahead = 7  # Next Monday
-                        target_date = tomorrow + timedelta(days=days_ahead)
-                    else:
-                        target_date = tomorrow
-                    
-                    # Create the datetime
-                    selected_datetime = target_date.replace(
-                        hour=hour, 
-                        minute=minute, 
-                        second=0, 
-                        microsecond=0
-                    )
-                    
-                    print(f"✅ Parsed alternative selection: {selected_datetime}")
-                    break
-            
-            return selected_datetime
-            
-        except Exception as e:
-            print(f"❌ Error processing alternative time selection: {str(e)}")
-            return None
+            sa_timezone = pytz.timezone('Africa/Johannesburg')
+            now = timezone.now().astimezone(sa_timezone)
 
+            # Build next-day lookup
+            day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+            next_days = {}
+            for i, name in enumerate(day_names):
+                days_ahead = (i - now.weekday()) % 7
+                if days_ahead == 0:
+                    days_ahead = 7
+                next_days[name] = (now + timedelta(days=days_ahead)).strftime('%B %d, %Y')
+
+            prompt = f"""You are a datetime extraction assistant.
+
+    The customer was shown a list of available appointment slots and is replying to choose one, 
+    or suggesting a new time. Extract the date and time they want.
+
+    CURRENT DATETIME: {now.strftime('%Y-%m-%d %H:%M')} (Africa/Johannesburg)
+    WORKING DAYS: Sunday–Friday (Saturday CLOSED)
+
+    NEXT OCCURRENCE OF EACH DAY:
+    - Monday: {next_days['monday']}
+    - Tuesday: {next_days['tuesday']}
+    - Wednesday: {next_days['wednesday']}
+    - Thursday: {next_days['thursday']}
+    - Friday: {next_days['friday']}
+    - Saturday: {next_days['saturday']} ← CLOSED, do not use
+    - Sunday: {next_days['sunday']}
+    - Tomorrow: {(now + timedelta(days=1)).strftime('%B %d, %Y')}
+
+    CUSTOMER MESSAGE: "{message}"
+
+    Return ONLY one of:
+    - YYYY-MM-DDTHH:MM  (if both date and time are clear)
+    - SATURDAY_CLOSED   (if they picked Saturday)
+    - NOT_FOUND         (if no clear selection)
+
+    No other text."""
+
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return only a datetime string YYYY-MM-DDTHH:MM, SATURDAY_CLOSED, or NOT_FOUND."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=25
+            )
+
+            ai_response = response.choices[0].message.content.strip()
+            print(f"🤖 DeepSeek alternative selection: '{message}' → {ai_response}")
+
+            if ai_response in ("SATURDAY_CLOSED", "NOT_FOUND"):
+                return None
+
+            parsed_dt = datetime.strptime(ai_response, '%Y-%m-%dT%H:%M')
+            localized_dt = sa_timezone.localize(parsed_dt)
+            print(f"✅ Parsed alternative selection: {localized_dt}")
+            return localized_dt
+
+        except Exception as e:
+            print(f"❌ DeepSeek alternative selection error: {e}")
+            return None
 
     def book_appointment_with_selected_time(self, selected_datetime):
         """Book appointment with specifically selected alternative time - NEW FUNCTION"""
@@ -5076,95 +5075,97 @@ def fallback_manual_extraction(self, message):
             return "I'd like to help you reschedule, but I'm having some technical difficulties. Could you call us at (555) PLUMBING to reschedule?"
 
     def parse_datetime_with_ai(self, message):
-        """Use AI to extract datetime from natural language - FIXED VERSION"""
+        """Use DeepSeek AI to extract datetime from natural language"""
         try:
-            # Get current time in South Africa timezone
             sa_timezone = pytz.timezone('Africa/Johannesburg')
             current_time = timezone.now().astimezone(sa_timezone)
-            
-            # Pre-format datetime strings to avoid f-string issues
-            current_time_str = current_time.strftime('%A, %B %d, %Y at %I:%M %p')
+
             tomorrow_date_str = (current_time + timedelta(days=1)).strftime('%B %d, %Y')
             today_date_str = current_time.strftime('%B %d, %Y')
-            
-            datetime_extraction_prompt = f"""
-            You are a datetime extraction assistant for appointment scheduling.
-            
-            TASK: Extract a complete date and time from the customer's message and convert it to YYYY-MM-DDTHH:MM format.
-            
-]            CURRENT CONTEXT:
-            - Current date: {current_time.strftime('%Y-%m-%d')}
-            - Timezone: Africa/Johannesburg (UTC+2)
-            - Business hours: 8 AM - 6 PM, Sunday to Friday (closed Saturdays)
-            
-            CUSTOMER MESSAGE: "{message}"
-            
-            EXTRACTION RULES:
-            1. Only return a complete datetime if BOTH date and time are clearly specified
-            2. Handle relative terms correctly:
-            - "tomorrow" = {tomorrow_date_str}
-            - "today" = {today_date_str}
-            - "next Monday" = next occurrence of Monday after today
-            - "this Friday" = this week's Friday if not past, otherwise next Friday
-            3. Handle time formats: "2pm" = 14:00, "10am" = 10:00, "2:30pm" = 14:30
-            4. DO NOT adjust timezone - return local South Africa time
-            5. Default minutes to 00 if not specified
-            
-            EXAMPLES:
-            Input: "Can we do Monday at 2pm instead?" 
-            Output: 2025-09-08T14:00 (if next Monday is Sep 8)
-            
-            Input: "How about tomorrow morning at 10?"
-            Output: 2025-09-02T10:00 (tomorrow + 10am)
-            
-            Input: "Friday would be better"
-            Output: PARTIAL_INFO (no time specified)
-            
-            Input: "2pm works"  
-            Output: PARTIAL_INFO (no date specified)
-            
-            RESPONSE FORMAT:
-            - If complete datetime found: Return YYYY-MM-DDTHH:MM
-            - If partial information: Return "PARTIAL_INFO"
-            - If no datetime info: Return "NOT_FOUND"
-            
-            MESSAGE: "{message}"
-            EXTRACTED DATETIME:"""
-            
+
+            # Build next-day lookup for each weekday name
+            day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+            next_days = {}
+            for i, name in enumerate(day_names):
+                days_ahead = (i - current_time.weekday()) % 7
+                if days_ahead == 0:
+                    days_ahead = 7
+                next_days[name] = (current_time + timedelta(days=days_ahead)).strftime('%B %d, %Y')
+
+            datetime_extraction_prompt = f"""You are a datetime extraction assistant for appointment scheduling.
+
+    TASK: Extract a complete date and time from the customer's message and convert it to YYYY-MM-DDTHH:MM format.
+
+    CURRENT CONTEXT:
+    - Current datetime: {current_time.strftime('%Y-%m-%d %H:%M')} (Africa/Johannesburg, UTC+2)
+    - Business hours: 08:00–18:00
+    - Working days: Sunday through Friday (Saturday is CLOSED)
+    - Today is: {today_date_str} ({current_time.strftime('%A')})
+
+    NEXT OCCURRENCE OF EACH DAY:
+    - Monday: {next_days['monday']}
+    - Tuesday: {next_days['tuesday']}
+    - Wednesday: {next_days['wednesday']}
+    - Thursday: {next_days['thursday']}
+    - Friday: {next_days['friday']}
+    - Saturday: {next_days['saturday']} (CLOSED — do NOT use)
+    - Sunday: {next_days['sunday']}
+    - Tomorrow: {tomorrow_date_str}
+
+    EXTRACTION RULES:
+    1. Return a complete datetime ONLY if BOTH date AND time are clearly specified.
+    2. "Saturday" → return UNAVAILABLE (we are closed Saturdays)
+    3. "Sunday" → use Sunday date above, valid working day
+    4. "tomorrow" → {tomorrow_date_str}
+    5. "today" → {today_date_str}
+    6. Time formats: "2pm"=14:00, "10am"=10:00, "2:30pm"=14:30, "14:00"=14:00
+    7. Default minutes to 00 if not specified.
+    8. Do NOT adjust timezone — return local South Africa time.
+
+    RESPONSE FORMAT (return ONLY one of these, no other text):
+    - Complete datetime: YYYY-MM-DDTHH:MM
+    - Saturday requested: SATURDAY_CLOSED
+    - Only partial info (missing date OR time): PARTIAL_INFO
+    - No datetime found: NOT_FOUND
+
+    CUSTOMER MESSAGE: "{message}"
+    EXTRACTED DATETIME:"""
+
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": "You are a precise datetime extraction assistant. Follow the format exactly."},
+                    {
+                        "role": "system",
+                        "content": "You are a precise datetime extraction assistant. Return ONLY the format specified — a datetime string like 2025-11-03T14:00, or one of: SATURDAY_CLOSED, PARTIAL_INFO, NOT_FOUND."
+                    },
                     {"role": "user", "content": datetime_extraction_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=50
+                max_tokens=30
             )
-            
-            ai_response = response.choices[0].message.content.strip()
-            
-            if ai_response == "PARTIAL_INFO" or ai_response == "NOT_FOUND":
-                print(f"AI datetime extraction: {ai_response}")
-                return None
-                
-            # Try to parse the AI response as datetime
-            try:
-                # AI should return format: YYYY-MM-DDTHH:MM
-                parsed_dt = datetime.strptime(ai_response, '%Y-%m-%dT%H:%M')
-                localized_dt = sa_timezone.localize(parsed_dt)
-                
-                print(f"AI extracted datetime: {localized_dt}")
-                return localized_dt
-                
-            except ValueError:
-                print(f"AI returned invalid datetime format: {ai_response}")
-                # Fallback to original parsing method
-                return self.parse_datetime(message)
-                
-        except Exception as e:
-            print(f"AI datetime extraction error: {str(e)}")
-            return self.parse_datetime(message)
 
+            ai_response = response.choices[0].message.content.strip()
+            print(f"🤖 DeepSeek datetime extraction: '{message}' → {ai_response}")
+
+            if ai_response == "SATURDAY_CLOSED":
+                print("⚠️ Customer requested Saturday — closed")
+                return None  # Caller will handle with alternatives
+
+            if ai_response in ("PARTIAL_INFO", "NOT_FOUND"):
+                return None
+
+            # Parse the returned datetime
+            parsed_dt = datetime.strptime(ai_response, '%Y-%m-%dT%H:%M')
+            localized_dt = sa_timezone.localize(parsed_dt)
+            print(f"✅ Parsed datetime: {localized_dt}")
+            return localized_dt
+
+        except ValueError as e:
+            print(f"❌ DeepSeek returned invalid datetime format: {ai_response} — {e}")
+            return self.parse_datetime(message)  # fallback
+        except Exception as e:
+            print(f"❌ DeepSeek datetime extraction error: {e}")
+            return self.parse_datetime(message)  # fallback
 
 
     def handle_unavailable_reschedule_with_ai(self, requested_datetime, original_message):
@@ -5411,7 +5412,8 @@ def fallback_manual_extraction(self, message):
                 check_date = current_check.date()
                 
                 # Skip weekends
-                if check_date.weekday() < 5:  # Monday=0 to Friday=4
+                # Skip Saturday only (Sunday is open)
+                if check_date.weekday() != 5:
                     for hour in business_hours:
                         check_datetime = datetime.combine(check_date, datetime.min.time().replace(hour=hour))
                         sa_timezone = pytz.timezone('Africa/Johannesburg')

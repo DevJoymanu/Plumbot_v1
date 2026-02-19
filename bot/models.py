@@ -486,8 +486,8 @@ class Appointment(models.Model):
             while len(suggestions) < num_suggestions and days_checked < max_days_ahead:
                 check_date = current_check.date()
                 
-                # Skip weekends
-                if check_date.weekday() < 5:  # Monday=0 to Friday=4
+                # Skip Saturday only (Sunday=6 is a working day)
+                if check_date.weekday() != 5:  # 5=Saturday
                     for hour in business_hours:
                         check_datetime = datetime.combine(check_date, datetime.min.time().replace(hour=hour))
                         sa_timezone = pytz.timezone('Africa/Johannesburg')
@@ -518,24 +518,22 @@ class Appointment(models.Model):
             return []
 
     def is_business_day(self, check_date):
-        """Check if a given date is a business day (Monday-Friday)"""
-        return check_date.weekday() < 5
-
+        """Check if a given date is a business day (Sunday–Friday, Saturday closed)"""
+        return check_date.weekday() != 5  # 5 = Saturday
+    
     def is_business_hours(self, check_time):
         """Check if a given time is within business hours (8 AM - 6 PM)"""
         hour = check_time.hour
         return 8 <= hour < 18
 
     def get_business_day_name(self, date_obj):
-        """Get user-friendly day name with business context"""
+        """Get user-friendly day name — only Saturday is closed"""
         weekday = date_obj.weekday()
         day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        if weekday == 5:
+            return f"{day_names[weekday]} (Closed)"
+        return day_names[weekday]
         
-        if weekday < 5:
-            return day_names[weekday]
-        else:
-            return f"{day_names[weekday]} (Weekend - Closed)"
-
     def get_alternative_time_suggestions(self, requested_datetime):
         """Get alternative available time slots near the requested time"""
         try:
@@ -578,9 +576,10 @@ class Appointment(models.Model):
                 for day_offset in range(1, days_to_check + 1):
                     check_date = requested_date + timedelta(days=day_offset)
                     
-                    # Only check business days
-                    if not self.is_business_day(check_date):
+                    # Skip Saturday only
+                    if check_date.weekday() == 5:  # Saturday closed
                         continue
+
                     
                     # Try to find slots on this day
                     for hour in business_time_slots:
