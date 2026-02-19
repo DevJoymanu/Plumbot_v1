@@ -721,9 +721,10 @@ def handle_text_message(sender, text_data):
         traceback.print_exc()
 
 def handle_media_message(sender, media_data, media_type):
-    """Handle ANY media sent at ANY point - alert plumber immediately."""
+    """Handle ANY media sent — download from WhatsApp, save to R2, alert plumber."""
     try:
         media_id = media_data.get('id')
+        mime_type = media_data.get('mime_type', '')
         phone_number = f"whatsapp:+{sender}"
 
         appointment, created = Appointment.objects.get_or_create(
@@ -731,57 +732,94 @@ def handle_media_message(sender, media_data, media_type):
             defaults={'status': 'pending'}
         )
 
+        # ─── STEP 1: Download media bytes from WhatsApp Cloud API ───
+        file_bytes = None
+        if media_id:
+            try:
+                file_bytes = whatsapp_api.download_media(media_id)
+                print(f"✅ Downloaded {len(file_bytes)} bytes from WhatsApp (id={media_id})")
+            except Exception as dl_err:
+                print(f"❌ Failed to download media from WhatsApp: {dl_err}")
+
+        # ─── STEP 2: Save to Django storage (local or R2) ───
+        saved_path = None
+        if file_bytes:
+            try:
+                from django.core.files.base import ContentFile
+                from django.core.files.storage import default_storage
+                from django.utils import timezone
+
+                # Build a clean filename
+                ext_map = {
+                    'image/jpeg': '.jpg', 'image/jpg': '.jpg',
+                    'image/png': '.png', 'image/webp': '.webp',
+                    'image/gif': '.gif', 'application/pdf': '.pdf',
+                }
+                ext = ext_map.get(mime_type, '.bin')
+                timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+                customer_slug = ''.join(
+                    c for c in (appointment.customer_name or 'customer') if c.isalnum()
+                )
+                filename = f"plan_{customer_slug}_{appointment.id}_{timestamp}{ext}"
+                storage_path = f"customer_plans/{filename}"
+
+                file_obj = ContentFile(file_bytes, name=filename)
+                saved_path = default_storage.save(storage_path, file_obj)
+                file_url = default_storage.url(saved_path)
+
+                print(f"✅ Media saved to storage: {saved_path}")
+                print(f"✅ File URL: {file_url}")
+
+                # Update appointment record
+                if not appointment.plan_file:
+                    appointment.plan_file = saved_path
+                if appointment.has_plan is None:
+                    appointment.has_plan = True
+                appointment.plan_status = 'plan_uploaded'
+                appointment.plan_uploaded_at = timezone.now()
+                appointment.save()
+
+            except Exception as save_err:
+                print(f"❌ Failed to save media to storage: {save_err}")
+                import traceback
+                traceback.print_exc()
+
+        # ─── STEP 3: Alert plumber ───
         customer_name = appointment.customer_name or "A customer"
-        plumber_number = getattr(appointment, 'plumber_contact_number', None) or '27610318200'
+        plumber_number = (getattr(appointment, 'plumber_contact_number', None) or '27610318200')
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
 
-        service = appointment.project_type or 'Not specified'
-        area = appointment.customer_area or 'Not specified'
-        has_plan = appointment.has_plan
-        property_type = appointment.property_type or 'Not specified'
-        timeline = appointment.timeline or 'Not specified'
-        status = appointment.get_status_display() if hasattr(appointment, 'get_status_display') else appointment.status
-
-        # Generate AI conversation summary
         ai_summary = generate_conversation_summary(appointment)
-        
+        file_info = f"\n🔗 File URL: {default_storage.url(saved_path)}" if saved_path else "\n⚠️ File could not be saved automatically."
+
         alert_message = (
-                    f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
-                    f"Customer: {customer_name}\n"
-                    f"Phone: +{sender}\n"
-                    f"WhatsApp: wa.me/{sender}\n"
-                    f"Media type: {media_type.upper()}\n\n"
-                    f"📋 APPOINTMENT DETAILS:\n"
-                    f"  Service: {service}\n"
-                    f"  Area: {area}\n"
-                    f"  Property: {property_type}\n"
-                    f"  Timeline: {timeline}\n"
-                    f"  Status: {status}\n"
-                    f"  Has plan: {'Yes' if has_plan is True else 'No' if has_plan is False else 'Not answered'}\n\n"
-                    f"🤖 AI CONVERSATION SUMMARY:\n{ai_summary}\n\n"
-                    f"🔗 View full appointment:\n"
-                    f"https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/\n\n"
-                    f"Please contact the customer directly to assist them."
-                )
-        # Alert plumber
+            f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
+            f"Customer: {customer_name}\n"
+            f"Phone: +{sender}\n"
+            f"WhatsApp: wa.me/{sender}\n"
+            f"Media type: {media_type.upper()}\n"
+            f"{file_info}\n\n"
+            f"📋 APPOINTMENT DETAILS:\n"
+            f"  Service: {appointment.project_type or 'Not specified'}\n"
+            f"  Area: {appointment.customer_area or 'Not specified'}\n"
+            f"  Property: {appointment.property_type or 'Not specified'}\n"
+            f"  Timeline: {appointment.timeline or 'Not specified'}\n"
+            f"  Has plan: {'Yes' if appointment.has_plan is True else 'No' if appointment.has_plan is False else 'Not answered'}\n\n"
+            f"🤖 AI SUMMARY:\n{ai_summary}\n\n"
+            f"🔗 View appointment:\n"
+            f"https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"
+        )
+
         try:
             whatsapp_api.send_text_message(plumber_number, alert_message)
             print(f"✅ Plumber alerted about {media_type} from {sender}")
         except Exception as e:
             print(f"❌ Failed to alert plumber: {str(e)}")
 
-        # Update appointment plan status based on context
-        if media_type in ['image', 'document']:
-            if has_plan is None:
-                appointment.has_plan = True
-                print(f"✅ Auto-set has_plan=True (customer sent media)")
-            appointment.plan_status = 'received'
-            appointment.save()
-
-        # Tell customer
+        # ─── STEP 4: Acknowledge customer ───
         customer_reply = (
-            "Thank you for sending that! 📎 Our plumber has been notified and will be "
-            "in touch with you directly. If it's urgent, you can also call them on "
+            "Thank you for sending that! 📎 Our plumber has been notified and will "
+            "be in touch with you directly. If it's urgent, you can also call them on "
             f"{appointment.plumber_contact_number or '+27610318200'}."
         )
 
@@ -797,7 +835,31 @@ def handle_media_message(sender, media_data, media_type):
 
     except Exception as e:
         print(f"❌ Error handling media: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
+
+def download_media(self, media_id: str) -> bytes:
+    """Download media from WhatsApp Cloud API"""
+    headers = {'Authorization': f'Bearer {self.access_token}'}
+
+    # Step 1: Get the media download URL
+    url_response = requests.get(
+        f'{self.base_url}/{media_id}',
+        headers=headers
+    )
+    url_response.raise_for_status()
+    media_url = url_response.json().get('url')
+
+    if not media_url:
+        raise ValueError(f"No URL returned for media_id={media_id}")
+
+    # Step 2: Download the actual file — MUST pass auth header here too
+    media_response = requests.get(media_url, headers=headers)
+    media_response.raise_for_status()
+
+    print(f"✅ Downloaded {len(media_response.content)} bytes")
+    return media_response.content
 
 def generate_conversation_summary(appointment) -> str:
     """
