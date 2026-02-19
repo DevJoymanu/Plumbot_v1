@@ -1,16 +1,23 @@
-# bot/management/commands/send_followups.py
-# AUTOMATIC FOLLOW-UP SYSTEM with AI-powered contextual messages
-# ✅ FIXED VERSION - 'responded' stage only blocks for 24 hours, not forever
+"""
+Django Management Command: send_reminders
+=========================================
+Run every 15 minutes via Railway Scheduler or cron:
+
+    python manage.py send_reminders
+
+Cron:
+    */15 * * * * cd /app && python manage.py send_reminders >> /var/log/reminders.log 2>&1
+"""
+
+import os
+import json
+import logging
+from datetime import timedelta, date, time as dt_time
+from collections import defaultdict
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from datetime import timedelta
-from bot.models import Appointment
-from bot.whatsapp_cloud_api import whatsapp_api
-from openai import OpenAI
-import os
-import logging
-import json
+from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
