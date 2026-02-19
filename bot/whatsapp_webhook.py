@@ -644,8 +644,17 @@ def handle_text_message(sender, text_data):
         # Mark customer response
         appointment.mark_customer_response()
 
-        # ✅ STEP 1: Check for previous work photo request
+        # ─────────────────────────────────────────────
+        # ALL LOGIC RUNS HERE - SYNCHRONOUSLY - BEFORE ANY THREADING
+        # ─────────────────────────────────────────────
+
+        from .views import Plumbot
+        plumbot = Plumbot(phone_number)
+
+        # STEP 1: Previous work photo request
+        print(f"🔍 Checking photo request: '{message_body}'")
         if is_previous_work_photo_request(message_body):
+            print(f"📸 Photo request detected")
             photos_sent = send_previous_work_photos(sender, appointment)
             if photos_sent:
                 return
@@ -662,11 +671,9 @@ def handle_text_message(sender, text_data):
             ).start()
             return
 
-        # ✅ STEP 2: Check for service inquiry BEFORE pricing objection
-        # This ensures "How much is standalone tub" hits the right handler
-        from .views import Plumbot
-        plumbot = Plumbot(phone_number)
+        reply = None
 
+        # STEP 2: Service inquiry detection (runs BEFORE pricing objection)
         mid_conversation = (
             appointment.project_type is not None and
             (
@@ -676,36 +683,40 @@ def handle_text_message(sender, text_data):
             )
         )
 
-        reply = None
-
         if not mid_conversation:
+            print(f"🔍 Checking service inquiry: '{message_body}'")
             inquiry = plumbot.detect_service_inquiry(message_body)
-            print(f"🔍 Service inquiry check: {inquiry}")
+            print(f"🔍 Service inquiry result: {inquiry}")
 
             if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
-                print(f"💡 Handling service inquiry: {inquiry['intent']}")
+                print(f"💡 Service inquiry matched: {inquiry['intent']}")
                 reply = plumbot.handle_service_inquiry(inquiry['intent'], message_body)
 
-        # ✅ STEP 3: Only check pricing objection if no service inquiry matched
+        # STEP 3: Pricing objection - ONLY if service inquiry didn't match
         if reply is None:
             objection_type = detect_objection_type(message_body)
+            print(f"🔍 Objection type: {objection_type}")
 
             if objection_type == 'pricing':
                 print(f"🛡️ Handling generic pricing objection")
                 reply = handle_pricing_objection(appointment)
 
-        # ✅ STEP 4: Fall through to normal Plumbot processing
+        # STEP 4: Normal Plumbot processing
         if reply is None:
+            print(f"🤖 Running normal Plumbot processing")
             reply = plumbot.generate_response(message_body)
 
-        print(f"🤖 Generated reply: {reply[:100]}...")
+        print(f"🤖 Final reply: {reply[:100]}...")
 
         # Save assistant reply
         appointment.add_conversation_message("assistant", reply)
         print(f"✅ Assistant reply saved to conversation history")
 
-        # Schedule delayed response
+        # ─────────────────────────────────────────────
+        # ONLY NOW do we schedule the delayed send
+        # ─────────────────────────────────────────────
         delay = get_random_delay()
+        print(f"⏱️ Random delay: {delay // 60} minute(s)")
         threading.Thread(
             target=delayed_response,
             args=(sender, reply, delay),
@@ -718,8 +729,16 @@ def handle_text_message(sender, text_data):
         print(f"❌ Error handling text: {str(e)}")
         import traceback
         traceback.print_exc()
+```
 
-        
+The critical difference is `⏱️ Random delay` now prints **after** all the logic, so in your logs you'll see:
+```
+🔍 Checking service inquiry: 'How much is the tub in facebook ad'
+💡 Service inquiry matched: facebook_package
+🤖 Final reply: The bathroom package shown on our Facebook ad...
+⏱️ Random delay: 3 minute(s)
+
+
 def handle_media_message(sender, media_data, media_type):
     """Handle ANY media sent at ANY point - alert plumber immediately."""
     try:
