@@ -3642,24 +3642,26 @@ I understand this is time-sensitive!"""
                 self.appointment.has_plan = True  # Mark as having plan
                 self.appointment.save()
         
-        # If they have a plan, handle plan upload flow
+        # If they have a plan, IMMEDIATELY ask them to send it before anything else
         if self.appointment.has_plan is True:
+            # Plan not yet uploaded - ask for it RIGHT NOW, before area/property questions
+            if not self.appointment.plan_file and self.appointment.plan_status not in ('plan_uploaded', 'plan_reviewed', 'ready_to_book'):
+                return "initiate_plan_upload"
+            
+            # Plan uploaded but awaiting completion confirmation
+            if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
+                return "awaiting_plan_upload"
+            
+            # Plan already with plumber
+            if self.appointment.plan_status == 'plan_uploaded':
+                return "plan_with_plumber"
+            
+            # Plan done - now collect any remaining info
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.property_type:
                 return "property_type"
-            
-            # Check if plan needs to be uploaded
-            if not self.appointment.plan_file and self.appointment.plan_status != 'plan_uploaded':
-                return "initiate_plan_upload"
-            
-            # If plan uploaded but not sent to plumber yet
-            if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
-                return "awaiting_plan_upload"
-            
-            if self.appointment.plan_status == 'plan_uploaded':
-                return "plan_with_plumber"
-        
+
         # If they don't have a plan (False), continue normal flow
         if self.appointment.has_plan is False:
             if not self.appointment.customer_area:
