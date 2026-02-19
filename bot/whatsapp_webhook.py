@@ -623,35 +623,28 @@ I'm here to help! 😊"""
 
 
 def handle_text_message(sender, text_data):
-    """
-    Handle text message - SCHEDULES delayed response
-    Returns immediately, response sent after delay in background
-    """
     try:
         message_body = text_data.get('body', '').strip()
-        
         if not message_body:
             return
-        
+
         print(f"💬 Text from {sender}: {message_body}")
-        
-        # Format phone number
+
         phone_number = f"whatsapp:+{sender}"
-        
-        # Get or create appointment
+
         appointment, created = Appointment.objects.get_or_create(
             phone_number=phone_number,
             defaults={'status': 'pending'}
         )
-        
-        # ✅ FIX 1: SAVE USER MESSAGE FIRST (before generating response)
+
+        # Save user message first
         appointment.add_conversation_message("user", message_body)
         print(f"✅ User message saved to conversation history")
-        
+
         # Mark customer response
         appointment.mark_customer_response()
 
-        # Handle requests for previous-work pictures immediately
+        # ✅ STEP 1: Check for previous work photo request
         if is_previous_work_photo_request(message_body):
             photos_sent = send_previous_work_photos(sender, appointment)
             if photos_sent:
@@ -668,45 +661,65 @@ def handle_text_message(sender, text_data):
                 daemon=True
             ).start()
             return
-        
-        # Check for objections FIRST
-        objection_type = detect_objection_type(message_body)
-        objection_response = None
-        
-        if objection_type == 'pricing':
-            objection_response = handle_pricing_objection(appointment)
-        
-        # Generate reply
-        if objection_response:
-            print(f"🛡️ Handling {objection_type} objection")
-            reply = objection_response
-        else:
-            # Normal Plumbot processing
-            from .views import Plumbot
-            plumbot = Plumbot(phone_number)
+
+        # ✅ STEP 2: Check for service inquiry BEFORE pricing objection
+        # This ensures "How much is standalone tub" hits the right handler
+        from .views import Plumbot
+        plumbot = Plumbot(phone_number)
+
+        mid_conversation = (
+            appointment.project_type is not None and
+            (
+                appointment.has_plan is not None or
+                appointment.customer_area is not None or
+                appointment.property_type is not None
+            )
+        )
+
+        reply = None
+
+        if not mid_conversation:
+            inquiry = plumbot.detect_service_inquiry(message_body)
+            print(f"🔍 Service inquiry check: {inquiry}")
+
+            if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
+                print(f"💡 Handling service inquiry: {inquiry['intent']}")
+                reply = plumbot.handle_service_inquiry(inquiry['intent'], message_body)
+
+        # ✅ STEP 3: Only check pricing objection if no service inquiry matched
+        if reply is None:
+            objection_type = detect_objection_type(message_body)
+
+            if objection_type == 'pricing':
+                print(f"🛡️ Handling generic pricing objection")
+                reply = handle_pricing_objection(appointment)
+
+        # ✅ STEP 4: Fall through to normal Plumbot processing
+        if reply is None:
             reply = plumbot.generate_response(message_body)
-        
+
         print(f"🤖 Generated reply: {reply[:100]}...")
-        
-        # ✅ Save assistant reply to conversation history
+
+        # Save assistant reply
         appointment.add_conversation_message("assistant", reply)
         print(f"✅ Assistant reply saved to conversation history")
-        
-        # ✅ SCHEDULE delayed response in background thread
+
+        # Schedule delayed response
         delay = get_random_delay()
         threading.Thread(
             target=delayed_response,
             args=(sender, reply, delay),
             daemon=True
         ).start()
-        
+
         print(f"✅ Response scheduled for {delay // 60} minute(s) from now")
-        
+
     except Exception as e:
         print(f"❌ Error handling text: {str(e)}")
         import traceback
         traceback.print_exc()
 
+        
 def handle_media_message(sender, media_data, media_type):
     """Handle ANY media sent at ANY point - alert plumber immediately."""
     try:
@@ -731,25 +744,25 @@ def handle_media_message(sender, media_data, media_type):
 
         # Generate AI conversation summary
         ai_summary = generate_conversation_summary(appointment)
-
+        
         alert_message = (
-            f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
-            f"Customer: {customer_name}\n"
-            f"Phone: +{sender}\n"
-            f"Media type: {media_type.upper()}\n\n"
-            f"📋 APPOINTMENT DETAILS:\n"
-            f"  Service: {service}\n"
-            f"  Area: {area}\n"
-            f"  Property: {property_type}\n"
-            f"  Timeline: {timeline}\n"
-            f"  Status: {status}\n"
-            f"  Has plan: {'Yes' if has_plan is True else 'No' if has_plan is False else 'Not answered'}\n\n"
-            f"🤖 AI CONVERSATION SUMMARY:\n{ai_summary}\n\n"
-            f"🔗 View full appointment:\n"
-            f"https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/\n\n"
-            f"Please contact the customer directly to assist them."
-        )
-
+                    f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
+                    f"Customer: {customer_name}\n"
+                    f"Phone: +{sender}\n"
+                    f"WhatsApp: wa.me/{sender}\n"
+                    f"Media type: {media_type.upper()}\n\n"
+                    f"📋 APPOINTMENT DETAILS:\n"
+                    f"  Service: {service}\n"
+                    f"  Area: {area}\n"
+                    f"  Property: {property_type}\n"
+                    f"  Timeline: {timeline}\n"
+                    f"  Status: {status}\n"
+                    f"  Has plan: {'Yes' if has_plan is True else 'No' if has_plan is False else 'Not answered'}\n\n"
+                    f"🤖 AI CONVERSATION SUMMARY:\n{ai_summary}\n\n"
+                    f"🔗 View full appointment:\n"
+                    f"https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/\n\n"
+                    f"Please contact the customer directly to assist them."
+                )
         # Alert plumber
         try:
             whatsapp_api.send_text_message(plumber_number, alert_message)
