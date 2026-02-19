@@ -1,4 +1,4 @@
-what do the whatsapp messages look like: """
+"""
 Django Management Command: send_reminders
 =========================================
 Run every 15 minutes via Railway Scheduler or cron:
