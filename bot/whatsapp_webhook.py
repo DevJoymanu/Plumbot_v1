@@ -24,6 +24,77 @@ PREVIOUS_WORK_IMAGE_URLS = [
     if url.strip()
 ]
 
+# ─── Media debounce tracker ───────────────────────────────────────────────────
+# Tracks pending acknowledgment timers per sender so we only send ONE reply
+# after a burst of media messages.
+#
+# Structure: { phone_number_str: threading.Timer }
+_media_ack_timers: dict = {}
+_media_ack_lock = threading.Lock()
+
+# How long (seconds) to wait after the LAST media message before sending the ack.
+# If the customer sends another image within this window the timer resets.
+MEDIA_DEBOUNCE_SECONDS = 8
+
+
+def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str):
+    """
+    Schedule a single acknowledgment message to the customer after they stop
+    sending media files.  Each call resets the countdown so bursts of images
+    only ever produce one reply.
+    """
+    def _send_ack():
+        with _media_ack_lock:
+            # Remove ourselves from the tracker
+            _media_ack_timers.pop(sender, None)
+
+        # Re-fetch appointment to get latest plan_status
+        try:
+            fresh = Appointment.objects.get(phone_number=f"whatsapp:+{sender}")
+        except Appointment.DoesNotExist:
+            fresh = appointment
+
+        if media_type == 'video':
+            customer_reply = (
+                "Thank you for sending that video! 🎥 Our plumber has been notified and will "
+                "review it and contact you directly. If it's urgent, you can also call them on "
+                f"{fresh.plumber_contact_number or '+27610318200'}."
+            )
+        else:
+            customer_reply = (
+                "Thank you for sending your plan! 📎 Our plumber has been notified and will "
+                "be in touch with you directly to discuss your project.\n\n"
+                "If it's urgent, you can also call them on "
+                f"{fresh.plumber_contact_number or '+27610318200'}."
+            )
+
+        # Persist to conversation history
+        fresh.add_conversation_message("assistant", customer_reply)
+
+        # Apply the normal human-like random delay before actually sending
+        delay = get_random_delay()
+        print(f"📨 Sending single media ack to {sender} after {delay // 60}m delay")
+        time.sleep(delay)
+        try:
+            whatsapp_api.send_text_message(sender, customer_reply)
+            print(f"✅ Media ack sent to {sender}")
+        except Exception as e:
+            print(f"❌ Failed to send media ack to {sender}: {e}")
+
+    with _media_ack_lock:
+        # Cancel any existing pending timer for this sender
+        existing = _media_ack_timers.get(sender)
+        if existing is not None:
+            existing.cancel()
+            print(f"🔄 Reset media ack timer for {sender}")
+
+        # Schedule a new timer
+        timer = threading.Timer(MEDIA_DEBOUNCE_SECONDS, _send_ack)
+        timer.daemon = True
+        _media_ack_timers[sender] = timer
+        timer.start()
+        print(f"⏳ Media ack timer set for {sender} ({MEDIA_DEBOUNCE_SECONDS}s)")
+
 
 def get_random_delay() -> int:
     """Returns random delay between 1-5 minutes in seconds"""
@@ -376,7 +447,6 @@ def process_message_change(value):
                 handle_audio_message(sender, message.get('audio', {}))
             
             elif message_type == 'video':
-                # ─── CHANGED: video now saved to R2 instead of unsupported message ───
                 handle_media_message(sender, message.get('video', {}), 'video')
             
             elif message_type == 'sticker':
@@ -436,10 +506,6 @@ def handle_location_message(sender, location_data):
             if address:
                 appointment.customer_area = address
                 appointment.save()
-                
-                response_msg = f"""Perfect! I've got your location: {address}
-
-Let me continue with the next question..."""
                 
                 # Generate next question
                 reply = plumbot.generate_response(f"My location is {address}")
@@ -573,7 +639,6 @@ Or type "done" if you've finished uploading."""
             next_question = plumbot.get_next_question_to_ask()
             
             if next_question == "complete":
-                # Appointment done, just acknowledge
                 response_msg = """I got your voice message! 
 
 Your appointment is all set. If you need to make any changes, please type them out so I can help you.
@@ -581,7 +646,6 @@ Your appointment is all set. If you need to make any changes, please type them o
 Thanks! 😊"""
             
             elif next_question in ['service_type', 'plan_or_visit', 'area', 'property_type', 'timeline', 'availability', 'name']:
-                # In middle of booking - need text
                 response_msg = """I received your voice message! 🎤
 
 However, I work better with text messages. Could you please type your response instead?
@@ -589,7 +653,6 @@ However, I work better with text messages. Could you please type your response i
 I'll continue where we left off... 😊"""
             
             else:
-                # General acknowledgment
                 response_msg = """Thanks for your voice message!
 
 I work better with text though. Could you type that out for me?
@@ -715,12 +778,10 @@ def handle_text_message(sender, text_data):
 MEDIA_STORAGE_FOLDERS = {
     'image':    'customer_plans',
     'document': 'customer_plans',
-    'video':    'customer_videos',   # videos get their own folder in R2
+    'video':    'customer_videos',
     'audio':    'customer_audio',
 }
 
-# MIME type → file extension (for images/documents already handled by ext_map below;
-# get_extension_for_mime from whatsapp_cloud_api handles video/audio types)
 IMAGE_DOC_EXT_MAP = {
     'image/jpeg': '.jpg',
     'image/jpg':  '.jpg',
@@ -733,10 +794,14 @@ IMAGE_DOC_EXT_MAP = {
 
 def handle_media_message(sender, media_data, media_type):
     """
-    Handle images, documents, AND videos — download from WhatsApp, save to R2, alert plumber.
+    Handle images, documents, AND videos.
 
-    For images/documents: saves to customer_plans/ folder, updates plan_file on appointment.
-    For videos:           saves to customer_videos/ folder, notes in internal_notes.
+    Key behaviour:
+    - Downloads and saves EVERY file immediately (no debounce on saving).
+    - Alerts the plumber immediately for EVERY file.
+    - Sends the customer acknowledgment ONCE, after they stop sending files,
+      using a debounce timer (_schedule_media_ack).  If the customer sends
+      3 images in a burst, only one "thank you" message is sent.
     """
     try:
         media_id = media_data.get('id')
@@ -762,11 +827,9 @@ def handle_media_message(sender, media_data, media_type):
         file_url = None
         if file_bytes:
             try:
-                # Pick the right extension
                 if media_type in ('image', 'document'):
                     ext = IMAGE_DOC_EXT_MAP.get(mime_type, '.bin')
                 else:
-                    # video, audio — use the full MIME map from whatsapp_cloud_api
                     ext = get_extension_for_mime(mime_type)
 
                 folder = MEDIA_STORAGE_FOLDERS.get(media_type, 'customer_media')
@@ -781,7 +844,7 @@ def handle_media_message(sender, media_data, media_type):
                 saved_path = default_storage.save(storage_path, file_obj)
                 file_url = default_storage.url(saved_path)
 
-                print(f"✅ Media saved to storage: {saved_path}")
+                print(f"✅ Media saved: {saved_path}")
                 print(f"✅ File URL: {file_url}")
 
                 # Update appointment record
@@ -794,11 +857,9 @@ def handle_media_message(sender, media_data, media_type):
                     appointment.plan_uploaded_at = timezone.now()
 
                 elif media_type == 'video':
-                    # Store in internal_notes (add a video_file FileField to model for cleaner storage)
                     video_note = f"[VIDEO UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
                     existing_notes = appointment.internal_notes or ''
                     appointment.internal_notes = f"{existing_notes}\n{video_note}".strip()
-                    # Also flag as having plan material
                     if appointment.has_plan is None:
                         appointment.has_plan = True
                     if not appointment.plan_status:
@@ -813,7 +874,10 @@ def handle_media_message(sender, media_data, media_type):
                 import traceback
                 traceback.print_exc()
 
-        # ─── STEP 3: Alert plumber ───
+        # ─── STEP 3: Log to conversation history (every file, no ack yet) ───
+        appointment.add_conversation_message("user", f"[Sent {media_type}]")
+
+        # ─── STEP 4: Alert plumber immediately for every file ───
         customer_name = appointment.customer_name or "A customer"
         plumber_number = (getattr(appointment, 'plumber_contact_number', None) or '27610318200')
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
@@ -845,29 +909,10 @@ def handle_media_message(sender, media_data, media_type):
         except Exception as e:
             print(f"❌ Failed to alert plumber: {str(e)}")
 
-        # ─── STEP 4: Acknowledge customer ───
-        if media_type == 'video':
-            customer_reply = (
-                "Thank you for sending that video! 🎥 Our plumber has been notified and will "
-                "review it and contact you directly. If it's urgent, you can also call them on "
-                f"{appointment.plumber_contact_number or '+27610318200'}."
-            )
-        else:
-            customer_reply = (
-                "Thank you for sending that! 📎 Our plumber has been notified and will "
-                "be in touch with you directly. If it's urgent, you can also call them on "
-                f"{appointment.plumber_contact_number or '+27610318200'}."
-            )
-
-        appointment.add_conversation_message("user", f"[Sent {media_type}]")
-        appointment.add_conversation_message("assistant", customer_reply)
-
-        delay = get_random_delay()
-        threading.Thread(
-            target=delayed_response,
-            args=(sender, customer_reply, delay),
-            daemon=True
-        ).start()
+        # ─── STEP 5: Schedule debounced customer acknowledgment ───
+        # This resets every time a new media message arrives from the same sender,
+        # so a burst of 5 images only ever produces ONE "thank you" reply.
+        _schedule_media_ack(sender, appointment, media_type)
 
     except Exception as e:
         print(f"❌ Error handling media: {str(e)}")
