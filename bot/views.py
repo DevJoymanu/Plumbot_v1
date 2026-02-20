@@ -3304,7 +3304,6 @@ I understand this is time-sensitive!"""
                 print(f"✅ Updated property_type: {self.appointment.property_type}")
             
             # Availability/DateTime
-            # In update_appointment_with_extracted_data, after saving availability:
             if (extracted_data.get('availability') and 
                 extracted_data.get('availability') != 'null'):
                 try:
@@ -3312,9 +3311,19 @@ I understand this is time-sensitive!"""
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
                     localized_dt = sa_timezone.localize(parsed_dt)
                     
+                    old_dt = self.appointment.scheduled_datetime  # ✅ Define it first
                     self.appointment.scheduled_datetime = localized_dt
                     updated_fields.append('availability')
                     print(f"📅 Updated datetime: {old_dt} -> {localized_dt}")
+                    
+                    # ✅ Auto-fill timeline if still missing
+                    if not self.appointment.timeline:
+                        self.appointment.timeline = localized_dt.strftime('%A, %B %d')
+                        updated_fields.append('timeline')
+                        print(f"✅ Auto-filled timeline from datetime: {self.appointment.timeline}")
+                        
+                except ValueError as e:
+                    print(f"❌ Failed to parse AI datetime: {extracted_data['availability']}")
                     
                     # ✅ Auto-fill timeline if still missing — datetime implies when they want it
                     if not self.appointment.timeline:
@@ -3845,8 +3854,9 @@ I understand this is time-sensitive!"""
             for day_offset in range(0, 5):  # Check today + next 4 days
                 check_date = requested_date + timedelta(days=day_offset)
                 
-                # Skip weekends
-                if check_date.weekday() == 5:
+                # This one is actually correct already — but double-check the one
+                # inside find_next_available_slots which has:
+                if check_date.weekday() != 5:   # ← this skips everything EXCEPT Saturday
                     continue
                     
                 for hour in business_time_slots:
