@@ -4760,80 +4760,80 @@ I understand this is time-sensitive!"""
 
 
 
-def fallback_manual_extraction(self, message):
-    """ENHANCED: Fallback extraction - ONLY extract what's being asked"""
-    try:
-        message_lower = message.lower()
-        original_message = message.strip()
-        next_question = self.get_next_question_to_ask()
-        retry_count = getattr(self.appointment, 'retry_count', 0)
-        
-        print(f"🔍 Fallback extraction - Current question: {next_question}")
-        
-        # Be more generous on retries
-        be_generous = retry_count > 0
-        
-        # CRITICAL: ONLY extract plan status when it's the actual question being asked
-        if next_question == "plan_or_visit" and self.appointment.has_plan is None:
-            print(f"❓ Looking for plan status in message: '{message}'")
+    def fallback_manual_extraction(self, message):
+        """ENHANCED: Fallback extraction - ONLY extract what's being asked"""
+        try:
+            message_lower = message.lower()
+            original_message = message.strip()
+            next_question = self.get_next_question_to_ask()
+            retry_count = getattr(self.appointment, 'retry_count', 0)
             
-            # Explicit YES patterns
-            yes_patterns = [
-                'yes', 'yeah', 'yep', 'yup', 'sure', 'have plan', 'got plan', 
-                'have a plan', 'got a plan', 'already have', 'existing plan',
-                'i do', 'i have', 'yes i do', 'yes i have', 'i got'
-            ]
+            print(f"🔍 Fallback extraction - Current question: {next_question}")
             
-            # Explicit NO patterns
-            no_patterns = [
-                'no', 'nope', 'nah', "don't have", "dont have", 
-                'no plan', 'need visit', 'site visit', 'visit first',
-                "don't", "i don't", 'visit please', 'no i', 'i need'
-            ]
+            # Be more generous on retries
+            be_generous = retry_count > 0
             
-            # Check for YES
-            for pattern in yes_patterns:
-                if pattern in message_lower:
-                    self.appointment.has_plan = True
-                    self.appointment.save()
-                    print(f"✅ Manual extraction: has_plan = True (matched: '{pattern}')")
-                    return "has_plan"
+            # CRITICAL: ONLY extract plan status when it's the actual question being asked
+            if next_question == "plan_or_visit" and self.appointment.has_plan is None:
+                print(f"❓ Looking for plan status in message: '{message}'")
+                
+                # Explicit YES patterns
+                yes_patterns = [
+                    'yes', 'yeah', 'yep', 'yup', 'sure', 'have plan', 'got plan', 
+                    'have a plan', 'got a plan', 'already have', 'existing plan',
+                    'i do', 'i have', 'yes i do', 'yes i have', 'i got'
+                ]
+                
+                # Explicit NO patterns
+                no_patterns = [
+                    'no', 'nope', 'nah', "don't have", "dont have", 
+                    'no plan', 'need visit', 'site visit', 'visit first',
+                    "don't", "i don't", 'visit please', 'no i', 'i need'
+                ]
+                
+                # Check for YES
+                for pattern in yes_patterns:
+                    if pattern in message_lower:
+                        self.appointment.has_plan = True
+                        self.appointment.save()
+                        print(f"✅ Manual extraction: has_plan = True (matched: '{pattern}')")
+                        return "has_plan"
+                
+                # Check for NO
+                for pattern in no_patterns:
+                    if pattern in message_lower:
+                        self.appointment.has_plan = False
+                        self.appointment.save()
+                        print(f"✅ Manual extraction: has_plan = False (matched: '{pattern}')")
+                        return "needs_visit"
+                
+                print(f"⚠️ No clear plan status found in message")
             
-            # Check for NO
-            for pattern in no_patterns:
-                if pattern in message_lower:
-                    self.appointment.has_plan = False
-                    self.appointment.save()
-                    print(f"✅ Manual extraction: has_plan = False (matched: '{pattern}')")
-                    return "needs_visit"
+            # Property type detection
+            if next_question == "property_type" and not self.appointment.property_type:
+                property_keywords = {
+                    'house': ['house', 'home', 'residential'],
+                    'apartment': ['apartment', 'flat', 'unit', 'complex'],
+                    'business': ['business', 'commercial', 'office', 'shop', 'store', 'company']
+                }
+                
+                if be_generous:
+                    property_keywords['house'].extend(['place', 'property', 'residence'])
+                    property_keywords['apartment'].extend(['condo', 'townhouse'])
+                    property_keywords['business'].extend(['work', 'workplace', 'commercial'])
+                
+                for prop_type, keywords in property_keywords.items():
+                    if any(keyword in message_lower for keyword in keywords):
+                        self.appointment.property_type = prop_type
+                        self.appointment.save()
+                        print(f"✅ Manual extraction: property_type = {prop_type}")
+                        return prop_type
             
-            print(f"⚠️ No clear plan status found in message")
-        
-        # Property type detection
-        if next_question == "property_type" and not self.appointment.property_type:
-            property_keywords = {
-                'house': ['house', 'home', 'residential'],
-                'apartment': ['apartment', 'flat', 'unit', 'complex'],
-                'business': ['business', 'commercial', 'office', 'shop', 'store', 'company']
-            }
+            return "NOT_FOUND"
             
-            if be_generous:
-                property_keywords['house'].extend(['place', 'property', 'residence'])
-                property_keywords['apartment'].extend(['condo', 'townhouse'])
-                property_keywords['business'].extend(['work', 'workplace', 'commercial'])
-            
-            for prop_type, keywords in property_keywords.items():
-                if any(keyword in message_lower for keyword in keywords):
-                    self.appointment.property_type = prop_type
-                    self.appointment.save()
-                    print(f"✅ Manual extraction: property_type = {prop_type}")
-                    return prop_type
-        
-        return "NOT_FOUND"
-        
-    except Exception as e:
-        print(f"❌ Fallback extraction error: {str(e)}")
-        return "NOT_FOUND"
+        except Exception as e:
+            print(f"❌ Fallback extraction error: {str(e)}")
+            return "NOT_FOUND"
 
 
 
