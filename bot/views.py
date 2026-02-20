@@ -2349,7 +2349,7 @@ class Plumbot:
             current_question = self.get_next_question_to_ask()
 
             mid_conversation = (
-                self.appointment.project_type is not None and
+                self.appointment.project_type is not None
             )
 
             if not mid_conversation:
