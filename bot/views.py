@@ -3417,28 +3417,41 @@ I understand this is time-sensitive!"""
             return None
 
     def book_appointment_with_selected_time(self, selected_datetime):
-        """Book appointment with specifically selected alternative time - NEW FUNCTION"""
+        """Book appointment with specifically selected alternative time"""
         try:
             print(f"🔄 Booking appointment with selected time: {selected_datetime}")
             
-            # Check availability for the SELECTED time, not original time
             is_available, conflict_info = self.check_appointment_availability(selected_datetime)
             
             if is_available:
-                # Book the appointment
                 self.appointment.scheduled_datetime = selected_datetime
                 self.appointment.status = 'confirmed'
                 self.appointment.save()
                 
                 print(f"✅ Appointment booked successfully: {selected_datetime}")
                 
+                # ✅ ADD: Extract details and send notifications
+                appointment_details = self.extract_appointment_details()
+                
+                try:
+                    self.send_confirmation_message(appointment_details, selected_datetime)
+                except Exception as e:
+                    print(f"⚠️ Confirmation message error: {e}")
+                
+                try:
+                    self.notify_team(appointment_details, selected_datetime)
+                except Exception as e:
+                    print(f"⚠️ Team notification error: {e}")
+                
+                # Format display datetime
+                display_datetime = self.format_datetime_for_display(selected_datetime)
+                
                 return {
                     'success': True,
-                    'datetime': selected_datetime.strftime('%B %d, %Y at %I:%M %p')
+                    'datetime': display_datetime.strftime('%B %d, %Y at %I:%M %p')
                 }
             else:
                 print(f"❌ Selected time not available: {conflict_info}")
-                # Get new alternatives
                 alternatives = self.get_alternative_time_suggestions(selected_datetime)
                 
                 return {
@@ -3450,7 +3463,6 @@ I understand this is time-sensitive!"""
         except Exception as e:
             print(f"❌ Error booking with selected time: {str(e)}")
             return {'success': False, 'error': str(e)}
-
 
     def extract_appointment_details(self):
         """Extract customer details from appointment data"""
