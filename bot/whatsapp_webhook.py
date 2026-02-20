@@ -58,14 +58,14 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
             customer_reply = (
                 "Thank you for sending that video! 🎥 Our plumber has been notified and will "
                 "review it and contact you directly. If it's urgent, you can also call them on "
-                f"{fresh.plumber_contact_number or '+27610318200'}."
+                f"{fresh.plumber_contact_number or '+263774819901'}."
             )
         else:
             customer_reply = (
                 "Thank you for sending your plan! 📎 Our plumber has been notified and will "
                 "be in touch with you directly to discuss your project.\n\n"
                 "If it's urgent, you can also call them on "
-                f"{fresh.plumber_contact_number or '+27610318200'}."
+                f"{fresh.plumber_contact_number or '+263774819901'}."
             )
 
         # Persist to conversation history
@@ -881,7 +881,7 @@ def handle_media_message(sender, media_data, media_type):
 
         # ─── STEP 4: Alert plumber immediately for every file ───
         customer_name = appointment.customer_name or "A customer"
-        plumber_number = (getattr(appointment, 'plumber_contact_number', None) or '27610318200')
+        plumber_number = (getattr(appointment, 'plumber_contact_number', None) or '263774819901')
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
 
         ai_summary = generate_conversation_summary(appointment)

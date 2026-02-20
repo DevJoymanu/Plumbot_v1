@@ -2669,7 +2669,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             plumber_number = getattr(
                 self.appointment,
                 'plumber_contact_number',
-                '+27610318200'
+                '+263774819901'
             )
 
             # Notify plumber
@@ -2973,7 +2973,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     """
 
             plumber_numbers = [
-                '27610318200',  # ✅ international format
+                '263774819901',  # ✅ international format
             ]
 
             for number in plumber_numbers:
@@ -4026,7 +4026,7 @@ I understand this is time-sensitive!"""
                 f"https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/"
             )
 
-            TEAM_NUMBERS = ['27610318200']
+            TEAM_NUMBERS = ['263774819901']
 
             print(f"📤 Sending booking notifications to {len(TEAM_NUMBERS)} team members...")
 

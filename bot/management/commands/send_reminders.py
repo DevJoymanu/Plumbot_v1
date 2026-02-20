@@ -94,7 +94,7 @@ def _apt_date_short(apt) -> str:
 
 def msg_lead_2days(apt, plumber_phone: str = "") -> str:
     name    = getattr(apt, "customer_name", "") or "there"
-    contact = plumber_phone or "+263610318200"
+    contact = plumber_phone or "+263774819901"
     return (
         f"Hi {name} 👋\n"
         f"\n"
@@ -115,7 +115,7 @@ def msg_lead_2days(apt, plumber_phone: str = "") -> str:
 
 def msg_lead_1day(apt, plumber_phone: str = "") -> str:
     name    = getattr(apt, "customer_name", "") or "there"
-    contact = plumber_phone or "+263610318200"
+    contact = plumber_phone or "+263774819901"
     return (
         f"Hi {name} 👋\n"
         f"\n"
@@ -138,7 +138,7 @@ def msg_lead_1day(apt, plumber_phone: str = "") -> str:
 
 def msg_lead_morning(apt, plumber_phone: str = "") -> str:
     name    = getattr(apt, "customer_name", "") or "there"
-    contact = plumber_phone or "+263610318200"
+    contact = plumber_phone or "+263774819901"
     return (
         f"Good morning {name} ☀️\n"
         f"\n"
@@ -158,7 +158,7 @@ def msg_lead_morning(apt, plumber_phone: str = "") -> str:
 
 def msg_lead_2hours(apt, plumber_phone: str = "") -> str:
     name    = getattr(apt, "customer_name", "") or "there"
-    contact = plumber_phone or "+263610318200"
+    contact = plumber_phone or "+263774819901"
     return (
         f"Hi {name} ⏰\n"
         f"\n"
@@ -447,7 +447,7 @@ class Command(BaseCommand):
         self.stdout.write("")
 
         lead_sent = lead_skipped = 0
-        plumber_contact = f"+{PLUMBER_PHONE}" if PLUMBER_PHONE else "+263610318200"
+        plumber_contact = f"+{PLUMBER_PHONE}" if PLUMBER_PHONE else "+263774819901"
 
         LEAD_CHECKS = [
             (2, 18, "lead_2days",   msg_lead_2days,   "2 Days Before  [6:00 PM]"),
