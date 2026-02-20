@@ -2350,11 +2350,6 @@ class Plumbot:
 
             mid_conversation = (
                 self.appointment.project_type is not None and
-                (
-                    self.appointment.has_plan is not None or
-                    self.appointment.customer_area is not None or
-                    self.appointment.property_type is not None
-                )
             )
 
             if not mid_conversation:
@@ -2770,6 +2765,13 @@ When you're finished sending everything, just type "done" or "finished" and I'll
         * "I want to visit your showroom"
         * "Can I come and see the tubs"
         * "When can I come in"
+
+    ⚠️ IMPORTANT EXCEPTIONS — these are NOT location_visit:
+    * 'Site visit' alone = customer is answering a plan question (needs site visit to their property)
+    * 'Site visit would be perfect' = same
+    * 'I need a site visit' = same
+    These should return intent: 'none'"
+    
     - If message is ONLY an area name like "Hatfield", "Avondale", "Glen View" → intent must be "none"
 
     2. Confidence rules:
