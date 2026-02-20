@@ -3304,6 +3304,7 @@ I understand this is time-sensitive!"""
                 print(f"✅ Updated property_type: {self.appointment.property_type}")
             
             # Availability/DateTime
+            # In update_appointment_with_extracted_data, after saving availability:
             if (extracted_data.get('availability') and 
                 extracted_data.get('availability') != 'null'):
                 try:
@@ -3311,13 +3312,19 @@ I understand this is time-sensitive!"""
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
                     localized_dt = sa_timezone.localize(parsed_dt)
                     
-                    old_dt = self.appointment.scheduled_datetime
                     self.appointment.scheduled_datetime = localized_dt
                     updated_fields.append('availability')
                     print(f"📅 Updated datetime: {old_dt} -> {localized_dt}")
                     
+                    # ✅ Auto-fill timeline if still missing — datetime implies when they want it
+                    if not self.appointment.timeline:
+                        self.appointment.timeline = localized_dt.strftime('%A, %B %d')
+                        updated_fields.append('timeline')
+                        print(f"✅ Auto-filled timeline from datetime: {self.appointment.timeline}")
+                        
                 except ValueError as e:
                     print(f"❌ Failed to parse AI datetime: {extracted_data['availability']}")
+
             
             # Customer name - only update if we don't have one and AI found one
             if (extracted_data.get('customer_name') and 
@@ -3839,7 +3846,7 @@ I understand this is time-sensitive!"""
                 check_date = requested_date + timedelta(days=day_offset)
                 
                 # Skip weekends
-                if check_date.weekday() >= 5:
+                if check_date.weekday() == 5:
                     continue
                     
                 for hour in business_time_slots:
