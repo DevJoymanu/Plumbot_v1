@@ -99,7 +99,7 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
 def get_random_delay() -> int:
     """Returns random delay between 1-5 minutes in seconds"""
     minutes = random.randint(1, 5)
-    seconds = minutes * 1
+    seconds = minutes * 60
     print(f"⏱️ Random delay: {minutes} minute(s)")
     return seconds
 
