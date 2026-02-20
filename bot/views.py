@@ -2465,19 +2465,27 @@ class Plumbot:
                 
                 booking_result = self.book_appointment(incoming_message)
                 
+                #
                 if booking_result['success']:
-                    if not self.appointment.customer_name:
-                        reply = (f"Perfect! I've booked your appointment for {booking_result['datetime']}. "
-                                "To complete your booking, may I have your full name?")
-                    else:
-                        reply = f"✅ Appointment confirmed for {booking_result['datetime']}! Our team will contact you before arrival."
+                    reply = f"Perfect! I've booked your appointment for {booking_result['datetime']}. To complete your booking, may I have your full name?"
                 else:
+                    error = booking_result.get('error', '')
                     alternatives = booking_result.get('alternatives', [])
-                    if alternatives:
-                        alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
-                        reply = f"That time isn't available. Here are some alternatives:\n{alt_text}\n\nWhich works better for you?"
+                    
+                    # ✅ Saturday-specific message
+                    if 'saturday' in error.lower() or not alternatives:
+                        alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
+                        reply = (
+                            "We unfortunately don't operate on Saturdays. 😊\n\n"
+                            "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                        )
+                        if alt_text:
+                            reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
+                        else:
+                            reply += "Could you please suggest a different date and time that works for you?"
                     else:
-                        reply = "That time isn't available. Could you suggest another time? Our hours are 8 AM - 6 PM, Monday to Friday."
+                        alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
+                        reply = f"That time isn't available either. Here are some other options:\n{alt_text}\n\nWhich works better for you?"
             else:
                 # Generate contextual response
                 reply = self.generate_contextual_response(incoming_message, next_question, updated_fields)
@@ -3270,12 +3278,22 @@ I understand this is time-sensitive!"""
                 print(f"✅ Updated area: {self.appointment.customer_area}")
             
             # Timeline - only update if we don't have one and AI found one
+            # Timeline - only update if we don't have one and AI found one
             if (extracted_data.get('timeline') and 
                 extracted_data.get('timeline') != 'null' and
                 not self.appointment.timeline):
-                self.appointment.timeline = extracted_data['timeline']
-                updated_fields.append('timeline')
-                print(f"✅ Updated timeline: {self.appointment.timeline}")
+                
+                timeline_value = extracted_data['timeline']
+                
+                # ✅ Block Saturday from being stored as a timeline
+                saturday_indicators = ['saturday', 'sat']
+                if any(s in timeline_value.lower() for s in saturday_indicators):
+                    print(f"⚠️ Blocked Saturday as timeline value: '{timeline_value}'")
+                    extracted_data['timeline'] = None  # Don't save it
+                else:
+                    self.appointment.timeline = timeline_value
+                    updated_fields.append('timeline')
+                    print(f"✅ Updated timeline: {self.appointment.timeline}")
             
             # Property type - only update if we don't have one and AI found one
             if (extracted_data.get('property_type') and 
@@ -3428,24 +3446,21 @@ I understand this is time-sensitive!"""
                 self.appointment.status = 'confirmed'
                 self.appointment.save()
                 
-                print(f"✅ Appointment booked successfully: {selected_datetime}")
+                #
+print(f"✅ Appointment booked successfully: {selected_datetime}")
                 
-                # ✅ ADD: Extract details and send notifications
+                # ✅ Send notifications immediately at booking time
                 appointment_details = self.extract_appointment_details()
-                
                 try:
                     self.send_confirmation_message(appointment_details, selected_datetime)
                 except Exception as e:
                     print(f"⚠️ Confirmation message error: {e}")
-                
                 try:
                     self.notify_team(appointment_details, selected_datetime)
                 except Exception as e:
                     print(f"⚠️ Team notification error: {e}")
                 
-                # Format display datetime
                 display_datetime = self.format_datetime_for_display(selected_datetime)
-                
                 return {
                     'success': True,
                     'datetime': display_datetime.strftime('%B %d, %Y at %I:%M %p')
@@ -3749,9 +3764,12 @@ I understand this is time-sensitive!"""
             # 2. Check business days (Monday-Friday)
             # Check business days (Sunday-Friday, Saturday closed)
             weekday = requested_datetime.weekday()  # 0=Monday, 6=Sunday
-            if weekday == 5:  # Only Saturday (5) is closed, Sunday (6) is open
+            if weekday == 5:  # Only Saturday (5) is closed
                 print(f"Requested time is on Saturday (closed): weekday {weekday}")
-                return False, "saturday_closed"            
+                # ✅ Clear the invalid datetime so it doesn't loop on every message
+                self.appointment.scheduled_datetime = None
+                self.appointment.save()
+                return False, "saturday_closed"
 
             # 3. Check business hours (8 AM - 6 PM)
             hour = requested_datetime.hour
@@ -4251,6 +4269,24 @@ I understand this is time-sensitive!"""
             if 'property_type' in updated_fields:
                 acknowledgments.append(f"property type: {self.appointment.property_type}")
             
+            # ✅ Check if customer is suggesting Saturday for their timeline/availability
+            saturday_indicators = ['saturday', 'sat']
+            if any(s in incoming_message.lower() for s in saturday_indicators):
+                alternatives = self.get_alternative_time_suggestions(
+                    timezone.now() + timedelta(days=1)
+                )
+                alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
+                
+                reply = (
+                    "We unfortunately don't operate on Saturdays. 😊\n\n"
+                    "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                )
+                if alt_text:
+                    reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
+                else:
+                    reply += "Could you please choose a different day that works for you?"
+                return reply
+
             system_prompt = f"""
             You are a professional appointment assistant for a luxury plumbing company in Zimbabwe.
 
