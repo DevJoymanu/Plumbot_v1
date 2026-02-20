@@ -742,10 +742,12 @@ def handle_text_message(sender, text_data):
             objection_type = detect_objection_type(message_body)
             print(f"Objection type: {objection_type}")
 
+            #
             if objection_type == 'pricing':
-                print(f"Handling generic pricing objection")
-                reply = handle_pricing_objection(appointment)
-
+                reply = self.generate_pricing_overview(incoming_message)
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
         # STEP 4: Normal Plumbot processing
         if reply is None:
             print(f"Running normal Plumbot processing")
@@ -1009,4 +1011,3 @@ def generate_conversation_summary(appointment) -> str:
             return "Summary unavailable. Last messages:\n" + "\n".join(fallback_lines)
         except Exception:
             return "Summary unavailable."
-            
