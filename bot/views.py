@@ -3447,7 +3447,7 @@ I understand this is time-sensitive!"""
                 self.appointment.save()
                 
                 #
-print(f"✅ Appointment booked successfully: {selected_datetime}")
+                print(f"✅ Appointment booked successfully: {selected_datetime}")
                 
                 # ✅ Send notifications immediately at booking time
                 appointment_details = self.extract_appointment_details()
