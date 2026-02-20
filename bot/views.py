@@ -2899,7 +2899,40 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             print(f"❌ Error handling service inquiry: {str(e)}")
             return self.generate_contextual_response(message, self.get_next_question_to_ask(), [])
 
+    def generate_pricing_overview(self, message):
+        """Send approximate prices when customer asks about cost"""
+        # Try to detect specific service first
+        inquiry = self.detect_service_inquiry(message)
+        
+        if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
+            return self.handle_service_inquiry(inquiry['intent'], message)
+        
+        return """Here are our approximate prices 😊
 
+    🛁 *Bathroom Renovation*
+    - Full renovation: from US$600
+    - Bathtub installation (with wall finishing): from US$80
+    - Standalone/freestanding tub: from US$450
+    - Free-standing mixer: from US$150
+
+    🚿 *Shower*
+    - Shower cubicle (900x900mm): from US$130
+    - Installation: from US$40
+
+    🚽 *Toilet & Chamber*
+    - Close-coupled toilet supply: from US$50
+    - Toilet installation: from US$20
+    - Side chamber: US$130 (installation US$30)
+
+    🔥 *Geyser*
+    - Installation: from US$80
+
+    🪞 *Vanity Units*
+    - Custom vanity: from US$150
+
+    ⚠️ These are approximate prices and may vary depending on the scope of work on site. For an accurate quote, we can do a *site visit* or you can send us a *photo/plan*.
+
+    Which service are you interested in?"""
 
     def notify_plumber_about_plan(self):
         """Send plan details to plumber via WhatsApp"""
@@ -3313,29 +3346,19 @@ I understand this is time-sensitive!"""
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
                     localized_dt = sa_timezone.localize(parsed_dt)
                     
-                    old_dt = self.appointment.scheduled_datetime  # ✅ Define it first
+                    old_dt = self.appointment.scheduled_datetime
                     self.appointment.scheduled_datetime = localized_dt
                     updated_fields.append('availability')
                     print(f"📅 Updated datetime: {old_dt} -> {localized_dt}")
                     
-                    # ✅ Auto-fill timeline if still missing
+                    # Auto-fill timeline if still missing
                     if not self.appointment.timeline:
                         self.appointment.timeline = localized_dt.strftime('%A, %B %d')
                         updated_fields.append('timeline')
                         print(f"✅ Auto-filled timeline from datetime: {self.appointment.timeline}")
                         
                 except ValueError as e:
-                    print(f"❌ Failed to parse AI datetime: {extracted_data['availability']}")
-                    
-                    # ✅ Auto-fill timeline if still missing — datetime implies when they want it
-                    if not self.appointment.timeline:
-                        self.appointment.timeline = localized_dt.strftime('%A, %B %d')
-                        updated_fields.append('timeline')
-                        print(f"✅ Auto-filled timeline from datetime: {self.appointment.timeline}")
-                        
-                except ValueError as e:
-                    print(f"❌ Failed to parse AI datetime: {extracted_data['availability']}")
-
+                    print(f"❌ Failed to parse AI datetime: {extracted_data['availability']} — {e}")
             
             # Customer name - only update if we don't have one and AI found one
             if (extracted_data.get('customer_name') and 
@@ -3858,7 +3881,7 @@ I understand this is time-sensitive!"""
                 
                 # This one is actually correct already — but double-check the one
                 # inside find_next_available_slots which has:
-                if check_date.weekday() != 5:   # ← this skips everything EXCEPT Saturday
+                if check_date.weekday() == 5:   # ← Skip Saturday only
                     continue
                     
                 for hour in business_time_slots:
