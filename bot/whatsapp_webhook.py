@@ -745,9 +745,6 @@ def handle_text_message(sender, text_data):
             #
             if objection_type == 'pricing':
                 reply = plumbot.generate_pricing_overview(message_body)
-                self.appointment.add_conversation_message("user", incoming_message)
-                self.appointment.add_conversation_message("assistant", reply)
-                return reply
         # STEP 4: Normal Plumbot processing
         if reply is None:
             print(f"Running normal Plumbot processing")
