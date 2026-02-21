@@ -744,7 +744,7 @@ def handle_text_message(sender, text_data):
 
             #
             if objection_type == 'pricing':
-                reply = self.generate_pricing_overview(incoming_message)
+                reply = plumbot.generate_pricing_overview(message_body)
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", reply)
                 return reply
