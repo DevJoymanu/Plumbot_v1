@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path
 from . import views
 from .views import (
-    DashboardView, AppointmentsListView, AppointmentDetailView,
+    DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
     update_appointment, send_followup, confirm_appointment,
     cancel_appointment, test_whatsapp, export_appointments, CalendarView, handle_whatsapp_media,
@@ -44,6 +44,7 @@ urlpatterns = [
     
     # Appointments
     path('appointments/', AppointmentsListView.as_view(), name='appointments_list'),
+    path('leads/priority/', PriorityLeadsView.as_view(), name='priority_leads'),
     path('appointments/<int:pk>/', AppointmentDetailView.as_view(), name='appointment_detail'),
     path('appointments/<int:pk>/update/', update_appointment, name='update_appointment'),
     path('appointments/<int:pk>/followup/', send_followup, name='send_followup'),

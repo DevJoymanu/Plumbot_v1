@@ -1115,6 +1115,42 @@ class AppointmentsListView(ListView):
         }
         return context
 
+
+@method_decorator(staff_required, name='dispatch')
+class PriorityLeadsView(TemplateView):
+    template_name = 'priority_leads.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from django.db.models import Case, F, IntegerField, Value, When
+        from django.db.models.functions import Coalesce
+
+        leads = (
+            Appointment.objects.annotate(
+                status_rank=Case(
+                    When(lead_status='very_hot', then=Value(0)),
+                    When(lead_status='hot', then=Value(1)),
+                    When(lead_status='warm', then=Value(2)),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                ),
+                recent_activity=Coalesce('last_inbound_at', 'updated_at'),
+            )
+            .order_by('status_rank', F('recent_activity').desc(nulls_last=True), '-lead_score')
+        )
+
+        context.update(
+            {
+                'very_hot_leads': leads.filter(lead_status='very_hot'),
+                'hot_leads': leads.filter(lead_status='hot'),
+                'warm_leads': leads.filter(lead_status='warm'),
+                'cold_leads': leads.filter(lead_status='cold'),
+                'total_leads': leads.count(),
+            }
+        )
+        return context
+
+
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDetailView(DetailView):
     template_name = 'appointment_detail.html'
