@@ -5938,7 +5938,7 @@ def verify_whatsapp_setup():
         return False
     
     # Check team numbers format
-    TEAM_NUMBERS = ['whatsapp:+0774819901']  # Your actual numbers
+    TEAM_NUMBERS = ['whatsapp:+263774819901']  # Your actual numbers
     print(f"👥 Team numbers configured: {len(TEAM_NUMBERS)}")
     
     for number in TEAM_NUMBERS:
