@@ -1122,29 +1122,75 @@ class PriorityLeadsView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        from django.db.models import Case, F, IntegerField, Value, When
+        from django.db.models import Case, F, IntegerField, Q, Value, When
         from django.db.models.functions import Coalesce
+
+        has_project_type = Case(
+            When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_property_type = Case(
+            When(Q(property_type__isnull=False) & ~Q(property_type=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_area = Case(
+            When(Q(customer_area__isnull=False) & ~Q(customer_area=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_timeline = Case(
+            When(Q(timeline__isnull=False) & ~Q(timeline=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_site_visit = Case(
+            When(scheduled_datetime__isnull=False, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
 
         leads = (
             Appointment.objects.annotate(
+                completed_fields=has_project_type + has_property_type + has_area + has_timeline + has_site_visit,
+                computed_score=Case(
+                    When(scheduled_datetime__isnull=False, then=Value(100)),
+                    default=(has_project_type + has_property_type + has_area + has_timeline + has_site_visit) * Value(20),
+                    output_field=IntegerField(),
+                ),
+                computed_status=Case(
+                    When(scheduled_datetime__isnull=False, then=Value('very_hot')),
+                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) <= 1, then=Value('cold')),
+                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) <= 3, then=Value('warm')),
+                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) == 4, then=Value('hot')),
+                    default=Value('very_hot'),
+                ),
+                computed_status_label=Case(
+                    When(scheduled_datetime__isnull=False, then=Value('Very Hot')),
+                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) <= 1, then=Value('Cold')),
+                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) <= 3, then=Value('Warm')),
+                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) == 4, then=Value('Hot')),
+                    default=Value('Very Hot'),
+                ),
                 status_rank=Case(
-                    When(lead_status='very_hot', then=Value(0)),
-                    When(lead_status='hot', then=Value(1)),
-                    When(lead_status='warm', then=Value(2)),
+                    When(computed_status='very_hot', then=Value(0)),
+                    When(computed_status='hot', then=Value(1)),
+                    When(computed_status='warm', then=Value(2)),
                     default=Value(3),
                     output_field=IntegerField(),
                 ),
                 recent_activity=Coalesce('last_inbound_at', 'updated_at'),
             )
-            .order_by('status_rank', F('recent_activity').desc(nulls_last=True), '-lead_score')
+            .order_by('status_rank', F('recent_activity').desc(nulls_last=True), '-computed_score')
         )
 
         context.update(
             {
-                'very_hot_leads': leads.filter(lead_status='very_hot'),
-                'hot_leads': leads.filter(lead_status='hot'),
-                'warm_leads': leads.filter(lead_status='warm'),
-                'cold_leads': leads.filter(lead_status='cold'),
+                'very_hot_leads': leads.filter(computed_status='very_hot'),
+                'hot_leads': leads.filter(computed_status='hot'),
+                'warm_leads': leads.filter(computed_status='warm'),
+                'cold_leads': leads.filter(computed_status='cold'),
                 'total_leads': leads.count(),
             }
         )
