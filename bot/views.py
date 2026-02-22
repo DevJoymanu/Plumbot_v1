@@ -1159,20 +1159,22 @@ class PriorityLeadsView(TemplateView):
                     default=(has_project_type + has_property_type + has_area + has_timeline + has_site_visit) * Value(20),
                     output_field=IntegerField(),
                 ),
+            ).annotate(
                 computed_status=Case(
                     When(scheduled_datetime__isnull=False, then=Value('very_hot')),
-                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) <= 1, then=Value('cold')),
-                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) <= 3, then=Value('warm')),
-                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) == 4, then=Value('hot')),
+                    When(completed_fields__lte=1, then=Value('cold')),
+                    When(completed_fields__lte=3, then=Value('warm')),
+                    When(completed_fields=4, then=Value('hot')),
                     default=Value('very_hot'),
                 ),
                 computed_status_label=Case(
                     When(scheduled_datetime__isnull=False, then=Value('Very Hot')),
-                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) <= 1, then=Value('Cold')),
-                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) <= 3, then=Value('Warm')),
-                    When((has_project_type + has_property_type + has_area + has_timeline + has_site_visit) == 4, then=Value('Hot')),
+                    When(completed_fields__lte=1, then=Value('Cold')),
+                    When(completed_fields__lte=3, then=Value('Warm')),
+                    When(completed_fields=4, then=Value('Hot')),
                     default=Value('Very Hot'),
                 ),
+            ).annotate(
                 status_rank=Case(
                     When(computed_status='very_hot', then=Value(0)),
                     When(computed_status='hot', then=Value(1)),
