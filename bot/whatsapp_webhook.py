@@ -9,14 +9,16 @@ from django.views.decorators.http import require_http_methods
 import json
 import os
 from .whatsapp_cloud_api import whatsapp_api, get_extension_for_mime, MEDIA_SIZE_LIMITS
-from .models import Appointment
+from .models import Appointment, WhatsAppInboundEvent, LeadInteraction, LeadActivityType, LeadStatus
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db import IntegrityError
 import threading
 import time
 import random
 from pathlib import Path
+from .services.lead_scoring import refresh_lead_score
 
 PREVIOUS_WORK_IMAGE_URLS = [
     url.strip()
@@ -35,6 +37,37 @@ _media_ack_lock = threading.Lock()
 # How long (seconds) to wait after the LAST media message before sending the ack.
 # If the customer sends another image within this window the timer resets.
 MEDIA_DEBOUNCE_SECONDS = 8
+
+
+def is_chatbot_paused_for_sender(sender: str) -> bool:
+    phone_number = f"whatsapp:+{sender}"
+    appointment = Appointment.objects.filter(phone_number=phone_number).only('chatbot_paused').first()
+    return bool(appointment and appointment.chatbot_paused)
+
+
+def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
+    if appointment.lead_status not in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
+        return
+
+    plumber_number = (appointment.plumber_contact_number or '263610318200')
+    plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
+    customer_name = appointment.customer_name or 'Unknown customer'
+    message = (
+        f"Priority lead update\n"
+        f"Lead status: {appointment.get_lead_status_display()}\n"
+        f"Score: {appointment.lead_score}\n"
+        f"Customer: {customer_name}\n"
+        f"Phone: +{sender}\n"
+        f"Service: {appointment.project_type or 'Not specified'}\n"
+        f"Area: {appointment.customer_area or 'Not specified'}\n"
+        f"Timeline: {appointment.timeline or 'Not specified'}\n"
+        f"Site visit: {appointment.scheduled_datetime or 'Not set'}\n"
+        f"Lead: https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"
+    )
+    try:
+        whatsapp_api.send_text_message(plumber_number, message)
+    except Exception as exc:
+        print(f"Failed to notify admin for appointment {appointment.id}: {exc}")
 
 
 def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str):
@@ -424,6 +457,12 @@ def process_message_change(value):
             message_type = message.get('type')
             message_id = message.get('id')
             sender = message.get('from')
+            if message_id:
+                try:
+                    WhatsAppInboundEvent.objects.create(message_id=message_id, sender=sender or "")
+                except IntegrityError:
+                    print(f"Duplicate inbound message ignored: {message_id}")
+                    continue
             
             print(f"📬 Processing message from {sender}, type: {message_type}")
             
@@ -495,6 +534,10 @@ def handle_location_message(sender, location_data):
                 daemon=True
             ).start()
             return
+
+        if appointment.chatbot_paused:
+            print(f"Chatbot paused for {phone_number}; ignoring auto location response.")
+            return
         
         # Check if we're asking for area
         from .views import Plumbot
@@ -506,6 +549,7 @@ def handle_location_message(sender, location_data):
             if address:
                 appointment.customer_area = address
                 appointment.save()
+                refresh_lead_score(appointment)
                 
                 # Generate next question
                 reply = plumbot.generate_response(f"My location is {address}")
@@ -554,6 +598,9 @@ def handle_unsupported_media(sender, media_type):
     Handle unsupported media types with friendly message
     """
     try:
+        if is_chatbot_paused_for_sender(sender):
+            print(f"Chatbot paused for whatsapp:+{sender}; skipping unsupported media auto response.")
+            return
         print(f"⚠️ Unsupported media type from {sender}: {media_type}")
         
         # Map media types to friendly names
@@ -597,6 +644,9 @@ def handle_audio_message(sender, audio_data):
     Currently unsupported but acknowledge politely
     """
     try:
+        if is_chatbot_paused_for_sender(sender):
+            print(f"Chatbot paused for whatsapp:+{sender}; skipping audio auto response.")
+            return
         print(f"🎤 Audio message from {sender}")
         
         phone_number = f"whatsapp:+{sender}"
@@ -692,6 +742,19 @@ def handle_text_message(sender, text_data):
         print(f"User message saved to conversation history")
 
         appointment.mark_customer_response()
+        previous_status = appointment.lead_status
+        _, new_status = refresh_lead_score(appointment)
+        if new_status != previous_status and new_status in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
+            notify_admin_of_priority_lead(appointment, sender)
+        LeadInteraction.objects.create(
+            appointment=appointment,
+            activity_type=LeadActivityType.WHATSAPP_INBOUND,
+            note=message_body[:500],
+        )
+
+        if appointment.chatbot_paused:
+            print(f"Chatbot paused for {phone_number}; skipping auto response.")
+            return
 
         from .views import Plumbot
         plumbot = Plumbot(phone_number)
@@ -753,6 +816,14 @@ def handle_text_message(sender, text_data):
         print(f"Final reply: {reply[:100]}...")
 
         appointment.add_conversation_message("assistant", reply)
+        appointment.last_outbound_at = timezone.now()
+        appointment.last_contacted_at = appointment.last_outbound_at
+        appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+        LeadInteraction.objects.create(
+            appointment=appointment,
+            activity_type=LeadActivityType.WHATSAPP_OUTBOUND,
+            note=reply[:500],
+        )
         print(f"Assistant reply saved to conversation history")
 
         delay = get_random_delay()
@@ -867,6 +938,12 @@ def handle_media_message(sender, media_data, media_type):
                         appointment.plan_uploaded_at = timezone.now()
 
                 appointment.save()
+                refresh_lead_score(appointment)
+                LeadInteraction.objects.create(
+                    appointment=appointment,
+                    activity_type=LeadActivityType.WHATSAPP_INBOUND,
+                    note=f"[MEDIA] {media_type} received",
+                )
 
             except Exception as save_err:
                 print(f"❌ Failed to save media to storage: {save_err}")
@@ -911,7 +988,10 @@ def handle_media_message(sender, media_data, media_type):
         # ─── STEP 5: Schedule debounced customer acknowledgment ───
         # This resets every time a new media message arrives from the same sender,
         # so a burst of 5 images only ever produces ONE "thank you" reply.
-        _schedule_media_ack(sender, appointment, media_type)
+        if not appointment.chatbot_paused:
+            _schedule_media_ack(sender, appointment, media_type)
+        else:
+            print(f"Chatbot paused for whatsapp:+{sender}; skipped media acknowledgment.")
 
     except Exception as e:
         print(f"❌ Error handling media: {str(e)}")

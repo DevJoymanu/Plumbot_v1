@@ -13,6 +13,7 @@ from .views import (
     # Import job scheduling views
     complete_site_visit, schedule_job, job_appointments_list, update_job_status, reschedule_job,
     login_view, logout_view, profile_view, change_password_view,appointment_detail_api,
+    pause_chatbot, resume_chatbot,
     # Import quotation template views
     QuotationTemplatesListView, CreateQuotationTemplateView,CreateQuotationView, EditQuotationTemplateView,
     QuotationTemplateDetailView, duplicate_template, delete_template, 
@@ -112,6 +113,8 @@ urlpatterns = [
 
     # Manual vs Automatic Follow-up Management
     path('appointments/<int:pk>/send-followup/', views.send_followup, name='send_followup'),
+    path('appointments/<int:pk>/pause-bot/', pause_chatbot, name='pause_chatbot'),
+    path('appointments/<int:pk>/resume-bot/', resume_chatbot, name='resume_chatbot'),
     path('appointments/<int:pk>/pause-auto-followup/', views.pause_auto_followup, name='pause_auto_followup'),
     path('appointments/<int:pk>/resume-auto-followup/', views.resume_auto_followup, name='resume_auto_followup'),
     path('bulk-followup/', views.send_bulk_followup, name='send_bulk_followup'),

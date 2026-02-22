@@ -4,7 +4,15 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
 from twilio.rest import Client
-from .models import Appointment, Quotation, QuotationItem, QuotationTemplate, QuotationTemplateItem
+from .models import (
+    Appointment,
+    Quotation,
+    QuotationItem,
+    QuotationTemplate,
+    QuotationTemplateItem,
+    LeadInteraction,
+    LeadActivityType,
+)
 import requests
 import datetime
 import pytz
@@ -56,6 +64,7 @@ from .decorators import staff_required
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
 from .whatsapp_cloud_api import whatsapp_api
+from .services.lead_scoring import refresh_lead_score
 
 import logging
 logger = logging.getLogger(__name__)
@@ -2154,6 +2163,36 @@ def manual_followup_check(request):
 
 @staff_required
 @require_POST
+def pause_chatbot(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment.pause_chatbot()
+    LeadInteraction.objects.create(
+        appointment=appointment,
+        activity_type=LeadActivityType.BOT_PAUSED,
+        note='Bot paused by admin',
+        performed_by=request.user,
+    )
+    messages.success(request, 'Chatbot paused for this lead.')
+    return redirect('appointment_detail', pk=pk)
+
+
+@staff_required
+@require_POST
+def resume_chatbot(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment.resume_chatbot()
+    LeadInteraction.objects.create(
+        appointment=appointment,
+        activity_type=LeadActivityType.BOT_RESUMED,
+        note='Bot resumed by admin',
+        performed_by=request.user,
+    )
+    messages.success(request, 'Chatbot resumed for this lead.')
+    return redirect('appointment_detail', pk=pk)
+
+
+@staff_required
+@require_POST
 def pause_auto_followup(request, pk):
     """Pause automatic follow-ups for a specific lead"""
     appointment = get_object_or_404(Appointment, pk=pk)
@@ -3372,6 +3411,7 @@ I understand this is time-sensitive!"""
             # Save if anything was updated
             if updated_fields:
                 self.appointment.save()
+                refresh_lead_score(self.appointment)
                 print(f"💾 Saved appointment with updated fields: {updated_fields}")
             else:
                 print(f"ℹ️ No fields were updated")

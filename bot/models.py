@@ -9,6 +9,40 @@ import uuid
 from decimal import Decimal
 
 
+class LeadStatus(models.TextChoices):
+    COLD = 'cold', 'Cold'
+    WARM = 'warm', 'Warm'
+    HOT = 'hot', 'Hot'
+    VERY_HOT = 'very_hot', 'Very Hot'
+
+
+class LeadFollowUpStatus(models.TextChoices):
+    PENDING = 'pending', 'Pending'
+    IN_PROGRESS = 'in_progress', 'In Progress'
+    WAITING_CUSTOMER = 'waiting_customer', 'Waiting Customer'
+    COMPLETED = 'completed', 'Completed'
+    CLOSED_LOST = 'closed_lost', 'Closed Lost'
+
+
+class LeadActivityType(models.TextChoices):
+    CALL = 'call', 'Call'
+    WHATSAPP_INBOUND = 'whatsapp_inbound', 'WhatsApp Inbound'
+    WHATSAPP_OUTBOUND = 'whatsapp_outbound', 'WhatsApp Outbound'
+    NOTE = 'note', 'Note'
+    STATUS_CHANGE = 'status_change', 'Status Change'
+    BOT_PAUSED = 'bot_paused', 'Bot Paused'
+    BOT_RESUMED = 'bot_resumed', 'Bot Resumed'
+    APPOINTMENT = 'appointment', 'Appointment'
+
+
+class CallOutcome(models.TextChoices):
+    NO_ANSWER = 'no_answer', 'No Answer'
+    INTERESTED = 'interested', 'Interested'
+    NOT_INTERESTED = 'not_interested', 'Not Interested'
+    BOOKED = 'booked', 'Booked'
+    FOLLOW_UP_LATER = 'follow_up_later', 'Follow Up Later'
+
+
 
 class Appointment(models.Model):
     """Model to store plumbing appointment information and conversation history"""
@@ -918,15 +952,57 @@ class Appointment(models.Model):
         blank=True, 
         help_text='When lead was marked as inactive'
     )
+    lead_score = models.IntegerField(default=0, db_index=True)
+    lead_status = models.CharField(
+        max_length=20,
+        choices=LeadStatus.choices,
+        default=LeadStatus.COLD,
+        db_index=True,
+    )
+    chatbot_paused = models.BooleanField(default=False, db_index=True)
+    follow_up_status = models.CharField(
+        max_length=30,
+        choices=LeadFollowUpStatus.choices,
+        default=LeadFollowUpStatus.PENDING,
+        db_index=True,
+    )
+    admin_notes = models.TextField(blank=True)
+    last_contacted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    next_follow_up_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_inbound_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_outbound_at = models.DateTimeField(null=True, blank=True, db_index=True)
     
     # ... existing methods ...
     
     def mark_customer_response(self):
         """Mark that customer has responded - resets follow-up stage"""
         self.last_customer_response = timezone.now()
+        self.last_inbound_at = self.last_customer_response
         self.followup_stage = 'responded'
         self.is_lead_active = True
         self.save()
+
+    def recalculate_lead_scoring(self, persist=True):
+        """Recalculate lead score and status from collected qualification fields."""
+        from .services.lead_scoring import calculate_lead_score
+        score, classification = calculate_lead_score(self)
+        self.lead_score = score
+        self.lead_status = classification
+        if classification == LeadStatus.VERY_HOT:
+            self.chatbot_paused = True
+        if persist:
+            self.save(update_fields=['lead_score', 'lead_status', 'chatbot_paused'])
+        return score, classification
+
+    def pause_chatbot(self, save=True):
+        self.chatbot_paused = True
+        if save:
+            self.save(update_fields=['chatbot_paused'])
+
+    def resume_chatbot(self, save=True):
+        self.chatbot_paused = False
+        if save:
+            self.save(update_fields=['chatbot_paused'])
     
     def mark_as_inactive_lead(self, reason='customer_requested'):
         """Mark lead as inactive (no more follow-ups)"""
@@ -1073,6 +1149,46 @@ class AppointmentReminder(models.Model):
     
     def __str__(self):
         return f"{self.reminder_type} reminder for {self.appointment}"
+
+
+class LeadInteraction(models.Model):
+    appointment = models.ForeignKey(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name='lead_interactions'
+    )
+    activity_type = models.CharField(max_length=30, choices=LeadActivityType.choices, db_index=True)
+    call_outcome = models.CharField(max_length=30, choices=CallOutcome.choices, blank=True)
+    note = models.TextField(blank=True)
+    appointment_at = models.DateTimeField(null=True, blank=True)
+    next_follow_up_at = models.DateTimeField(null=True, blank=True)
+    performed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lead_interactions'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['appointment', '-created_at']),
+            models.Index(fields=['activity_type', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.activity_type} for {self.appointment_id} at {self.created_at}"
+
+
+class WhatsAppInboundEvent(models.Model):
+    message_id = models.CharField(max_length=128, unique=True)
+    sender = models.CharField(max_length=50, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
 
 class ServiceArea(models.Model):
