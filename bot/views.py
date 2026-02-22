@@ -1192,7 +1192,8 @@ class PriorityLeadsView(TemplateView):
                 'very_hot_leads': leads.filter(computed_status='very_hot'),
                 'hot_leads': leads.filter(computed_status='hot'),
                 'warm_leads': leads.filter(computed_status='warm'),
-                'cold_leads': leads.filter(computed_status='cold'),
+                'luke_warm_leads': leads.filter(computed_status='cold', computed_score=20),
+                'cold_leads': leads.filter(computed_status='cold', computed_score=0),
                 'total_leads': leads.count(),
             }
         )

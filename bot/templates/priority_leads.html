@@ -13,6 +13,7 @@
         <div class="detail-item"><i class="fas fa-fire"></i> Very Hot: {{ very_hot_leads|length }}</div>
         <div class="detail-item"><i class="fas fa-exclamation-triangle"></i> Hot: {{ hot_leads|length }}</div>
         <div class="detail-item"><i class="fas fa-sun"></i> Warm: {{ warm_leads|length }}</div>
+        <div class="detail-item"><i class="fas fa-temperature-low"></i> Luke-warm: {{ luke_warm_leads|length }}</div>
         <div class="detail-item"><i class="fas fa-snowflake"></i> Cold: {{ cold_leads|length }}</div>
     </div>
 </div>
@@ -95,6 +96,33 @@
             </div>
             {% empty %}
             <div class="empty-state"><p>No warm leads.</p></div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card">
+        <h2><i class="fas fa-temperature-low"></i> Luke-warm Leads (20/100)</h2>
+        <div class="appointment-list">
+            {% for lead in luke_warm_leads %}
+            <div class="appointment-item" style="border-left-color: #0ea5e9;">
+                <div class="appointment-header">
+                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status" style="background:#dbeafe;color:#1e3a8a;">
+                        {{ lead.computed_score }}/100
+                    </div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
+                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
+                </div>
+            </div>
+            {% empty %}
+            <div class="empty-state"><p>No luke-warm leads.</p></div>
             {% endfor %}
         </div>
     </div>
