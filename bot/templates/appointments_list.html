@@ -406,6 +406,16 @@
             </div>
             <div class="appointment-details">
                 <div class="detail-item">
+                    <i class="fas fa-fire"></i>
+                    {{ appointment.get_lead_status_display }} ({{ appointment.lead_score }}/100)
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-robot"></i>
+                    {% if appointment.chatbot_paused %}Bot Paused{% else %}Bot Active{% endif %}
+                </div>
+            </div>
+            <div class="appointment-details">
+                <div class="detail-item">
                     <i class="fas fa-phone"></i>
                     {{ appointment.phone_number }}
                 </div>

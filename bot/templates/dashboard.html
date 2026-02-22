@@ -51,6 +51,10 @@
                         {{ appointment.project_type|default:"No service" }}
                     </div>
                     <div class="detail-item">
+                        <i class="fas fa-fire"></i>
+                        {{ appointment.get_lead_status_display }} ({{ appointment.lead_score }}/100)
+                    </div>
+                    <div class="detail-item">
                         <i class="fas fa-clock"></i>
                         {{ appointment.scheduled_datetime|date:"H:i"|default:"Not scheduled" }}
                     </div>
@@ -101,6 +105,10 @@
                         {{ appointment.project_type|default:"No serv" }}
                     </div>
                     <div class="detail-item">
+                        <i class="fas fa-fire"></i>
+                        {{ appointment.get_lead_status_display }} ({{ appointment.lead_score }}/100)
+                    </div>
+                    <div class="detail-item">
                         <i class="fas fa-clock"></i>
                         {{ appointment.scheduled_datetime|date:"H:i"|default:"Not scheduled" }}
                     </div>
@@ -149,6 +157,10 @@
                     <div class="detail-item">
                         <i class="fas fa-tools"></i>
                         {{ appointment.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-fire"></i>
+                        {{ appointment.get_lead_status_display }} ({{ appointment.lead_score }}/100)
                     </div>
                     <div class="detail-item">
                         <i class="fas fa-calendar"></i>

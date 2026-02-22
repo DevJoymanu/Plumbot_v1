@@ -366,6 +366,36 @@
                     class="form-control">
             </div>
 
+            <div class="form-group">
+                <label>Lead Score</label>
+                <div class="appointment-status">
+                    {{ appointment.lead_score }}/100 - {{ appointment.get_lead_status_display }}
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="follow_up_status">Follow-up Status</label>
+                <select id="follow_up_status" name="follow_up_status" class="form-control">
+                    <option value="pending" {% if appointment.follow_up_status == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="in_progress" {% if appointment.follow_up_status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                    <option value="waiting_customer" {% if appointment.follow_up_status == 'waiting_customer' %}selected{% endif %}>Waiting Customer</option>
+                    <option value="completed" {% if appointment.follow_up_status == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="closed_lost" {% if appointment.follow_up_status == 'closed_lost' %}selected{% endif %}>Closed Lost</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="next_follow_up_at">Next Follow-up Date/Time</label>
+                <input type="datetime-local" id="next_follow_up_at" name="next_follow_up_at"
+                    value="{{ appointment.next_follow_up_at|date:'Y-m-d\\TH:i' }}" class="form-control">
+            </div>
+
+            <div class="form-group">
+                <label for="admin_notes">Admin Notes</label>
+                <textarea id="admin_notes" name="admin_notes" class="form-control" rows="4"
+                    placeholder="Internal notes for lead handling">{{ appointment.admin_notes|default:'' }}</textarea>
+            </div>
+
             {% if appointment.appointment_type == 'job_appointment' %}
             <div class="form-group">
                 <label for="job_scheduled_datetime">Job Date/Time</label>
@@ -405,28 +435,27 @@
         <!-- Follow-up Status Bar -->
         <div class="followup-status-bar">
             <div class="status-item">
-                <label>Last Contact:</label>
-                <span>{{ appointment.last_customer_response|date:"M d, H:i"|default:"Never" }}</span>
+                <label>Lead Score:</label>
+                <span>{{ appointment.lead_score }}/100</span>
             </div>
             <div class="status-item">
-                <label>Follow-up Stage:</label>
-                <span class="badge badge-{{ appointment.followup_stage }}">
-                    {{ appointment.get_followup_stage_display }}
+                <label>Lead Status:</label>
+                <span class="badge badge-{{ appointment.lead_status }}">
+                    {{ appointment.get_lead_status_display }}
                 </span>
             </div>
             <div class="status-item">
-                <label>Auto Follow-ups:</label>
-                <span>{{ appointment.automatic_followup_count|default:0 }}</span>
+                <label>Follow-up Status:</label>
+                <span class="badge">{{ appointment.get_follow_up_status_display }}</span>
             </div>
             <div class="status-item">
-                <label>Manual Follow-ups:</label>
-                <span>{{ appointment.manual_followup_count|default:0 }}</span>
+                <label>Last Contacted:</label>
+                <span>{{ appointment.last_contacted_at|date:"M d, H:i"|default:"Never" }}</span>
             </div>
-
-            {% if appointment.manual_followup_paused %}
+            {% if appointment.chatbot_paused %}
             <div class="status-item paused">
                 <i class="fas fa-pause-circle"></i>
-                <span>Auto follow-ups paused until {{ appointment.manual_followup_paused_until|date:"M d, H:i" }}</span>
+                <span>Chatbot is paused (manual takeover)</span>
             </div>
             {% endif %}
         </div>
@@ -458,19 +487,22 @@
 
         <!-- Manual Follow-up Controls -->
         <div class="followup-controls">
-            <!-- Pause/Resume Automatic Follow-ups -->
-            <div class="auto-followup-toggle">
-                {% if appointment.manual_followup_paused %}
-                <form method="post" action="{% url 'resume_auto_followup' appointment.pk %}" style="display: inline;">
+            <!-- Pause/Resume Chatbot -->
+            <div class="chatbot-toggle">
+                {% if appointment.chatbot_paused %}
+                <form method="post" action="{% url 'resume_chatbot' appointment.pk %}" style="display: inline;">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-success btn-sm">
-                        <i class="fas fa-play"></i> Resume Auto Follow-ups
+                        <i class="fas fa-play"></i> Resume Chatbot
                     </button>
                 </form>
                 {% else %}
-                <button onclick="showPauseModal()" class="btn btn-warning btn-sm">
-                    <i class="fas fa-pause"></i> Pause Auto Follow-ups
-                </button>
+                <form method="post" action="{% url 'pause_chatbot' appointment.pk %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-warning btn-sm">
+                        <i class="fas fa-pause"></i> Pause Chatbot
+                    </button>
+                </form>
                 {% endif %}
             </div>
 
@@ -492,12 +524,12 @@
         </div>
 
         <!-- Manual Follow-up Form -->
-        <form method="post" class="followup-form" id="followupForm">
+        <form method="post" action="{% url 'send_followup' appointment.pk %}" class="followup-form" id="followupForm">
             {% csrf_token %}
             <div class="form-group">
                 <label for="followup_message">
                     <i class="fas fa-paper-plane"></i> Send Manual Follow-up
-                    <span class="label-hint">(This will pause automatic follow-ups for 48 hours)</span>
+                    <span class="label-hint">(Use when handling lead manually)</span>
                 </label>
                 <textarea id="followup_message" name="message" class="form-control" rows="3"
                     placeholder="Type your message here... Use {name} to personalize with customer name"
@@ -519,54 +551,7 @@
     </div>
 </div>
 
-<!-- Pause Auto Follow-up Modal -->
-<div id="pauseModal" class="modal" style="display: none;">
-    <div class="modal-content">
-        <h3>Pause Automatic Follow-ups</h3>
-        <p>How long would you like to pause automatic follow-ups for this lead?</p>
-        <form method="post" action="{% url 'pause_auto_followup' appointment.pk %}">
-            {% csrf_token %}
-            <div class="form-group">
-                <label>
-                    <input type="radio" name="pause_duration" value="24" checked>
-                    24 hours (1 day)
-                </label>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="radio" name="pause_duration" value="48">
-                    48 hours (2 days)
-                </label>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="radio" name="pause_duration" value="168">
-                    1 week
-                </label>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="radio" name="pause_duration" value="720">
-                    1 month
-                </label>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="radio" name="pause_duration" value="permanent">
-                    Permanently (until manually resumed)
-                </label>
-            </div>
-            <div class="modal-actions">
-                <button type="submit" class="btn btn-warning">
-                    <i class="fas fa-pause"></i> Pause
-                </button>
-                <button type="button" class="btn btn-secondary" onclick="hidePauseModal()">
-                    Cancel
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
+<!-- Manual takeover handled via Pause/Resume Chatbot buttons -->
 
 <script>
     // Message templates
@@ -608,14 +593,6 @@
     document.getElementById('followup_message').addEventListener('input', updateCharCount);
 
     // Pause modal
-    function showPauseModal() {
-        document.getElementById('pauseModal').style.display = 'flex';
-    }
-
-    function hidePauseModal() {
-        document.getElementById('pauseModal').style.display = 'none';
-    }
-
     // Handle manual follow-up form submission
     document.getElementById('followupForm').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -833,6 +810,10 @@
     .badge-month_1 { background: #e2e3e5; color: #383d41; }
     .badge-completed { background: #d4edda; color: #155724; }
     .badge-responded { background: #d1f2eb; color: #00695c; }
+    .badge-cold { background: #e9ecef; color: #495057; }
+    .badge-warm { background: #fff3cd; color: #856404; }
+    .badge-hot { background: #ffe5d0; color: #b34700; }
+    .badge-very_hot { background: #f8d7da; color: #721c24; }
 
     .followup-badge {
         font-size: 0.7rem;

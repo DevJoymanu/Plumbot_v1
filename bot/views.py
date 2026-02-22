@@ -1147,7 +1147,17 @@ class AppointmentDetailView(DetailView):
             appointment.property_type = request.POST.get('property_type', appointment.property_type)
             appointment.customer_area = request.POST.get('customer_area', appointment.customer_area)
             appointment.timeline = request.POST.get('timeline', appointment.timeline)
-            
+            appointment.follow_up_status = request.POST.get('follow_up_status', appointment.follow_up_status)
+            appointment.admin_notes = request.POST.get('admin_notes', appointment.admin_notes)
+
+            next_follow_up_raw = request.POST.get('next_follow_up_at')
+            if next_follow_up_raw:
+                next_dt = datetime.fromisoformat(next_follow_up_raw)
+                sa_timezone = pytz.timezone('Africa/Johannesburg')
+                if next_dt.tzinfo is None:
+                    next_dt = sa_timezone.localize(next_dt)
+                appointment.next_follow_up_at = next_dt
+
             # Handle datetime fields based on appointment type
             if appointment.appointment_type == 'job_appointment':
                 job_datetime = request.POST.get('job_scheduled_datetime')
@@ -1158,7 +1168,6 @@ class AppointmentDetailView(DetailView):
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
                     appointment.job_scheduled_datetime = sa_timezone.localize(dt)
             else:
-                #s
                 scheduled_datetime = request.POST.get('scheduled_datetime')
                 if scheduled_datetime:
                     dt = datetime.fromisoformat(scheduled_datetime)
@@ -1166,9 +1175,9 @@ class AppointmentDetailView(DetailView):
                     if dt.tzinfo is None:
                         dt = sa_timezone.localize(dt)
                     appointment.scheduled_datetime = dt
-                                
+
             appointment.save()
-            
+            refresh_lead_score(appointment)
             messages.success(request, 'Appointment updated successfully!')
             
         except Exception as e:
