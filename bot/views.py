@@ -1120,6 +1120,31 @@ class AppointmentsListView(ListView):
 class PriorityLeadsView(TemplateView):
     template_name = 'priority_leads.html'
 
+    def _group_leads_by_date(self, leads_qs):
+        from collections import OrderedDict
+
+        grouped = OrderedDict()
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+
+        for lead in leads_qs:
+            activity = lead.recent_activity
+            if not activity:
+                label = "No Activity Date"
+            else:
+                local_activity = timezone.localtime(activity)
+                activity_date = local_activity.date()
+                if activity_date == today:
+                    label = "Today"
+                elif activity_date == yesterday:
+                    label = "Yesterday"
+                else:
+                    label = local_activity.strftime("%b %d, %Y")
+
+            grouped.setdefault(label, []).append(lead)
+
+        return [{"label": label, "leads": items} for label, items in grouped.items()]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         from django.db.models import Case, F, IntegerField, Q, Value, When
@@ -1187,13 +1212,24 @@ class PriorityLeadsView(TemplateView):
             .order_by('status_rank', F('recent_activity').desc(nulls_last=True), '-computed_score')
         )
 
+        very_hot_leads = leads.filter(computed_status='very_hot')
+        hot_leads = leads.filter(computed_status='hot')
+        warm_leads = leads.filter(computed_status='warm')
+        luke_warm_leads = leads.filter(computed_status='cold', computed_score=20)
+        cold_leads = leads.filter(computed_status='cold', computed_score=0)
+
         context.update(
             {
-                'very_hot_leads': leads.filter(computed_status='very_hot'),
-                'hot_leads': leads.filter(computed_status='hot'),
-                'warm_leads': leads.filter(computed_status='warm'),
-                'luke_warm_leads': leads.filter(computed_status='cold', computed_score=20),
-                'cold_leads': leads.filter(computed_status='cold', computed_score=0),
+                'very_hot_leads': very_hot_leads,
+                'hot_leads': hot_leads,
+                'warm_leads': warm_leads,
+                'luke_warm_leads': luke_warm_leads,
+                'cold_leads': cold_leads,
+                'very_hot_by_date': self._group_leads_by_date(very_hot_leads),
+                'hot_by_date': self._group_leads_by_date(hot_leads),
+                'warm_by_date': self._group_leads_by_date(warm_leads),
+                'luke_warm_by_date': self._group_leads_by_date(luke_warm_leads),
+                'cold_by_date': self._group_leads_by_date(cold_leads),
                 'total_leads': leads.count(),
             }
         )
