@@ -158,10 +158,10 @@
     <h2><i class="fas fa-filter"></i> Response Age Filter</h2>
     <form method="get" class="actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <select name="response_age" class="form-control" style="flex: 1; min-width: 200px; padding: 8px; border-radius: 6px; border: 1px solid #ccc;">
-            <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>
-            <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>
-            <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>
-            <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>   
+            <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>
+            <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>
+            <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>
+            <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>   
          </select>
     <button type="submit" class="btn btn-sm" style="white-space: nowrap;"><i class="fas fa-check"></i>
             Apply</button>
