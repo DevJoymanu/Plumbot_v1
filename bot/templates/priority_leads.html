@@ -53,6 +53,8 @@
                     <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
                     <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
                     <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
                 <div class="actions">
@@ -83,6 +85,8 @@
                     <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
                     <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
                     <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
                 <div class="actions">
@@ -113,6 +117,8 @@
                     <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
                     <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
                     <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
                 <div class="actions">
@@ -143,6 +149,8 @@
                     <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
                     <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
                     <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
                 <div class="actions">
@@ -173,6 +181,8 @@
                     <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
                     <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
                     <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
                 <div class="actions">

@@ -407,7 +407,11 @@
             <div class="appointment-details">
                 <div class="detail-item">
                     <i class="fas fa-fire"></i>
-                    {{ appointment.get_lead_status_display }} ({{ appointment.lead_score }}/100)
+                    {{ appointment.computed_status_label|default:appointment.get_lead_status_display }} ({{ appointment.computed_score|default:appointment.lead_score }}/100)
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-clipboard-check"></i>
+                    {{ appointment.get_follow_up_status_display }}
                 </div>
                 <div class="detail-item">
                     <i class="fas fa-robot"></i>

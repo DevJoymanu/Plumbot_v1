@@ -64,7 +64,7 @@ from .decorators import staff_required
 from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
 from .whatsapp_cloud_api import whatsapp_api
-from .services.lead_scoring import refresh_lead_score
+from .services.lead_scoring import refresh_lead_score, calculate_lead_score
 
 import logging
 logger = logging.getLogger(__name__)
@@ -1095,6 +1095,61 @@ class AppointmentsListView(ListView):
     paginate_by = 20
     ordering = ['-updated_at']
 
+    def get_queryset(self):
+        from django.db.models import Case, IntegerField, Q, Value, When
+
+        has_project_type = Case(
+            When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_property_type = Case(
+            When(Q(property_type__isnull=False) & ~Q(property_type=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_area = Case(
+            When(Q(customer_area__isnull=False) & ~Q(customer_area=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_timeline = Case(
+            When(Q(timeline__isnull=False) & ~Q(timeline=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_site_visit = Case(
+            When(scheduled_datetime__isnull=False, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+
+        completed_fields = has_project_type + has_property_type + has_area + has_timeline + has_site_visit
+        return (
+            Appointment.objects.annotate(
+                computed_score=Case(
+                    When(scheduled_datetime__isnull=False, then=Value(100)),
+                    default=completed_fields * Value(20),
+                    output_field=IntegerField(),
+                ),
+            ).annotate(
+                computed_status=Case(
+                    When(scheduled_datetime__isnull=False, then=Value('very_hot')),
+                    When(computed_score__lte=20, then=Value('cold')),
+                    When(computed_score__lte=60, then=Value('warm')),
+                    When(computed_score=80, then=Value('hot')),
+                    default=Value('very_hot'),
+                ),
+                computed_status_label=Case(
+                    When(scheduled_datetime__isnull=False, then=Value('Very Hot')),
+                    When(computed_score__lte=20, then=Value('Cold')),
+                    When(computed_score__lte=60, then=Value('Warm')),
+                    When(computed_score=80, then=Value('Hot')),
+                    default=Value('Very Hot'),
+                ),
+            ).order_by('-updated_at')
+        )
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
@@ -1270,6 +1325,7 @@ class AppointmentDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         appointment = self.get_object()
+        computed_score, computed_status = calculate_lead_score(appointment)
 
         conversation_history = appointment.conversation_history
 
@@ -1279,6 +1335,9 @@ class AppointmentDetailView(DetailView):
             'documents': appointment.get_uploaded_documents(),
             'has_documents': appointment.has_uploaded_documents(),
             'document_count': appointment.get_document_count(),
+            'computed_lead_score': computed_score,
+            'computed_lead_status': computed_status,
+            'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
         })
         return context
 

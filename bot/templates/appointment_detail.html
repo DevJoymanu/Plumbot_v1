@@ -369,7 +369,7 @@
             <div class="form-group">
                 <label>Lead Score</label>
                 <div class="appointment-status">
-                    {{ appointment.lead_score }}/100 - {{ appointment.get_lead_status_display }}
+                    {{ computed_lead_score|default:appointment.lead_score }}/100 - {{ computed_lead_status_label|default:appointment.get_lead_status_display }}
                 </div>
             </div>
 
@@ -446,12 +446,12 @@
         <div class="followup-status-bar">
             <div class="status-item">
                 <label>Lead Score:</label>
-                <span>{{ appointment.lead_score }}/100</span>
+                <span>{{ computed_lead_score|default:appointment.lead_score }}/100</span>
             </div>
             <div class="status-item">
                 <label>Lead Status:</label>
-                <span class="badge badge-{{ appointment.lead_status }}">
-                    {{ appointment.get_lead_status_display }}
+                <span class="badge badge-{{ computed_lead_status|default:appointment.lead_status }}">
+                    {{ computed_lead_status_label|default:appointment.get_lead_status_display }}
                 </span>
             </div>
             <div class="status-item">
