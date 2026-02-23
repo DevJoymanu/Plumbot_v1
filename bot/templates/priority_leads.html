@@ -1,6 +1,154 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    /* Mobile-friendly adjustments */
+    @media (max-width: 640px) {
+
+        /* Make form elements stack and full width */
+        .actions {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+        }
+
+        .actions select,
+        .actions button,
+        .actions a {
+            width: 100%;
+            margin: 0 !important;
+            text-align: center;
+        }
+
+        /* Stack summary items */
+        .appointment-details {
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .detail-item {
+            width: 100% !important;
+            margin: 0 !important;
+        }
+
+        /* Improve card padding and font sizes */
+        .card {
+            padding: 16px !important;
+        }
+
+        .card h2 {
+            font-size: 1.3rem;
+            margin-top: 0;
+            margin-bottom: 12px;
+        }
+
+        /* Lead item adjustments */
+        .appointment-item {
+            padding: 16px !important;
+            margin-bottom: 12px !important;
+        }
+
+        .appointment-header {
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .appointment-name {
+            font-size: 1.1rem;
+            width: 100%;
+        }
+
+        .appointment-status {
+            align-self: flex-start;
+        }
+
+        /* Stack lead details vertically */
+        .appointment-details {
+            flex-direction: column;
+            gap: 8px;
+            margin: 12px 0;
+        }
+
+        .detail-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .detail-item i {
+            width: 20px;
+            /* fixed width for icons */
+            text-align: center;
+        }
+
+        /* Ensure buttons are easy to tap */
+        .btn-sm,
+        .btn {
+            padding: 12px 16px !important;
+            font-size: 1rem;
+            min-height: 44px;
+            /* minimum touch target */
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Group headers */
+        h3 {
+            font-size: 1rem;
+            padding: 8px 0;
+        }
+
+        /* Summary cards adjustments */
+        .header h1 {
+            font-size: 1.8rem;
+        }
+
+        .header p {
+            font-size: 1rem;
+        }
+    }
+
+    /* Extra small screens */
+    @media (max-width: 380px) {
+        .card {
+            padding: 12px !important;
+        }
+
+        .appointment-item {
+            padding: 12px !important;
+        }
+
+        .btn-sm,
+        .btn {
+            padding: 10px 12px !important;
+        }
+    }
+
+    /* Keep grid single column always – already set in style attribute */
+    /* But we can ensure it here */
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: 1fr !important;
+        /* force single column */
+        gap: 20px;
+    }
+
+    /* Improve touch targets for filter reset link */
+    a.btn {
+        text-decoration: none;
+        box-sizing: border-box;
+    }
+
+    /* Ensure select has enough height for touch */
+    select.form-control {
+        min-height: 44px;
+        font-size: 16px;
+        /* prevents zoom on iOS */
+    }
+</style>
+
 <div class="header">
     <h1><i class="fas fa-bolt"></i> Priority Leads</h1>
     <p>Grouped by urgency: Very Hot, Hot, Warm, Cold</p>
@@ -8,20 +156,27 @@
 
 <div class="card" style="margin-bottom: 20px;">
     <h2><i class="fas fa-filter"></i> Response Age Filter</h2>
-    <form method="get" class="actions" style="margin-bottom: 15px;">
-        <select name="response_age" class="form-control" style="max-width: 260px;">
+    <form method="get" class="actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <select name="response_age" class="form-control"
+            style="flex: 1; min-width: 200px; padding: 8px; border-radius: 6px; border: 1px solid #ccc;">
             <option value="" {% if not selected_response_age %}selected{% endif %}>All response ages</option>
-            <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week</option>
-            <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks</option>
-            <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks</option>
-            <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks</option>
+            <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response within
+                1 week</option>
+            <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>Last response within
+                2 weeks</option>
+            <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>Last response within
+                3 weeks</option>
+            <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response within
+                4 weeks</option>
         </select>
-        <button type="submit" class="btn btn-sm"><i class="fas fa-check"></i> Apply</button>
-        <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+        <button type="submit" class="btn btn-sm" style="white-space: nowrap;"><i class="fas fa-check"></i>
+            Apply</button>
+        <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary" style="white-space: nowrap;"><i
+                class="fas fa-undo"></i> Reset</a>
     </form>
 
     <h2><i class="fas fa-chart-line"></i> Summary</h2>
-    <div class="appointment-details">
+    <div class="appointment-details" style="display: flex; flex-wrap: wrap; gap: 15px;">
         <div class="detail-item"><i class="fas fa-database"></i> Total Leads: {{ total_leads }}</div>
         <div class="detail-item"><i class="fas fa-fire"></i> Very Hot: {{ very_hot_leads|length }}</div>
         <div class="detail-item"><i class="fas fa-exclamation-triangle"></i> Hot: {{ hot_leads|length }}</div>
@@ -31,163 +186,243 @@
     </div>
 </div>
 
-<div class="dashboard-grid" style="grid-template-columns: 1fr;">
+<div class="dashboard-grid" style="grid-template-columns: 1fr; gap: 20px;">
+    <!-- Very Hot Section -->
     <div class="card">
         <h2><i class="fas fa-fire"></i> Very Hot Leads</h2>
         <div class="appointment-list">
             {% for group in very_hot_by_date %}
             <h3 style="margin: 12px 0 8px 0; color:#991b1b;">{{ group.label }}</h3>
             {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #dc2626;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fee2e2;color:#991b1b;">
+            <div class="appointment-item"
+                style="border-left: 4px solid #dc2626; padding: 15px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px;">
+                <div class="appointment-header"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="appointment-name" style="font-weight: bold; font-size: 1.1rem;">{{
+                        lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status"
+                        style="background:#fee2e2; color:#991b1b; padding: 4px 8px; border-radius: 20px; font-size: 0.9rem; font-weight: 600;">
                         {{ lead.computed_score }}/100
                     </div>
                 </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
-                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div class="appointment-details"
+                    style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                    <div class="detail-item"><i class="fas fa-phone" style="width: 20px;"></i> {{ lead.phone_number }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools" style="width: 20px;"></i> {{
+                        lead.project_type|default:"No service" }}</div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt" style="width: 20px;"></i> {{
+                        lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check" style="width: 20px;"></i> {{
+                        lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot" style="width: 20px;"></i> {% if lead.chatbot_paused
+                        %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
+                    <div class="detail-item"><i class="fas fa-clock" style="width: 20px;"></i> {{
+                        lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
+                <div class="actions" style="text-align: right;">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"
+                        style="background: #007bff; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block;">Open
+                        Lead</a>
                 </div>
             </div>
             {% endfor %}
             {% empty %}
-            <div class="empty-state"><p>No very hot leads.</p></div>
+            <div class="empty-state">
+                <p>No very hot leads.</p>
+            </div>
             {% endfor %}
         </div>
     </div>
 
+    <!-- Hot Section -->
     <div class="card">
         <h2><i class="fas fa-exclamation-triangle"></i> Hot Leads</h2>
         <div class="appointment-list">
             {% for group in hot_by_date %}
             <h3 style="margin: 12px 0 8px 0; color:#92400e;">{{ group.label }}</h3>
             {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #f59e0b;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fef3c7;color:#92400e;">
+            <div class="appointment-item"
+                style="border-left: 4px solid #f59e0b; padding: 15px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px;">
+                <div class="appointment-header"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="appointment-name" style="font-weight: bold; font-size: 1.1rem;">{{
+                        lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status"
+                        style="background:#fef3c7; color:#92400e; padding: 4px 8px; border-radius: 20px; font-size: 0.9rem; font-weight: 600;">
                         {{ lead.computed_score }}/100
                     </div>
                 </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
-                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div class="appointment-details"
+                    style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                    <div class="detail-item"><i class="fas fa-phone" style="width: 20px;"></i> {{ lead.phone_number }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools" style="width: 20px;"></i> {{
+                        lead.project_type|default:"No service" }}</div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt" style="width: 20px;"></i> {{
+                        lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check" style="width: 20px;"></i> {{
+                        lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot" style="width: 20px;"></i> {% if lead.chatbot_paused
+                        %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
+                    <div class="detail-item"><i class="fas fa-clock" style="width: 20px;"></i> {{
+                        lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
+                <div class="actions" style="text-align: right;">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"
+                        style="background: #007bff; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block;">Open
+                        Lead</a>
                 </div>
             </div>
             {% endfor %}
             {% empty %}
-            <div class="empty-state"><p>No hot leads.</p></div>
+            <div class="empty-state">
+                <p>No hot leads.</p>
+            </div>
             {% endfor %}
         </div>
     </div>
 
+    <!-- Warm Section -->
     <div class="card">
         <h2><i class="fas fa-sun"></i> Warm Leads</h2>
         <div class="appointment-list">
             {% for group in warm_by_date %}
             <h3 style="margin: 12px 0 8px 0; color:#065f46;">{{ group.label }}</h3>
             {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #10b981;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#d1fae5;color:#065f46;">
+            <div class="appointment-item"
+                style="border-left: 4px solid #10b981; padding: 15px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px;">
+                <div class="appointment-header"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="appointment-name" style="font-weight: bold; font-size: 1.1rem;">{{
+                        lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status"
+                        style="background:#d1fae5; color:#065f46; padding: 4px 8px; border-radius: 20px; font-size: 0.9rem; font-weight: 600;">
                         {{ lead.computed_score }}/100
                     </div>
                 </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
-                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div class="appointment-details"
+                    style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                    <div class="detail-item"><i class="fas fa-phone" style="width: 20px;"></i> {{ lead.phone_number }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools" style="width: 20px;"></i> {{
+                        lead.project_type|default:"No service" }}</div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt" style="width: 20px;"></i> {{
+                        lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check" style="width: 20px;"></i> {{
+                        lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot" style="width: 20px;"></i> {% if lead.chatbot_paused
+                        %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
+                    <div class="detail-item"><i class="fas fa-clock" style="width: 20px;"></i> {{
+                        lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
+                <div class="actions" style="text-align: right;">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"
+                        style="background: #007bff; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block;">Open
+                        Lead</a>
                 </div>
             </div>
             {% endfor %}
             {% empty %}
-            <div class="empty-state"><p>No warm leads.</p></div>
+            <div class="empty-state">
+                <p>No warm leads.</p>
+            </div>
             {% endfor %}
         </div>
     </div>
 
+    <!-- Luke-warm Section -->
     <div class="card">
         <h2><i class="fas fa-temperature-low"></i> Luke-warm Leads (20/100)</h2>
         <div class="appointment-list">
             {% for group in luke_warm_by_date %}
             <h3 style="margin: 12px 0 8px 0; color:#1e3a8a;">{{ group.label }}</h3>
             {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #0ea5e9;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#dbeafe;color:#1e3a8a;">
+            <div class="appointment-item"
+                style="border-left: 4px solid #0ea5e9; padding: 15px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px;">
+                <div class="appointment-header"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="appointment-name" style="font-weight: bold; font-size: 1.1rem;">{{
+                        lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status"
+                        style="background:#dbeafe; color:#1e3a8a; padding: 4px 8px; border-radius: 20px; font-size: 0.9rem; font-weight: 600;">
                         {{ lead.computed_score }}/100
                     </div>
                 </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
-                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div class="appointment-details"
+                    style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                    <div class="detail-item"><i class="fas fa-phone" style="width: 20px;"></i> {{ lead.phone_number }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools" style="width: 20px;"></i> {{
+                        lead.project_type|default:"No service" }}</div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt" style="width: 20px;"></i> {{
+                        lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check" style="width: 20px;"></i> {{
+                        lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot" style="width: 20px;"></i> {% if lead.chatbot_paused
+                        %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
+                    <div class="detail-item"><i class="fas fa-clock" style="width: 20px;"></i> {{
+                        lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
+                <div class="actions" style="text-align: right;">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"
+                        style="background: #007bff; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block;">Open
+                        Lead</a>
                 </div>
             </div>
             {% endfor %}
             {% empty %}
-            <div class="empty-state"><p>No luke-warm leads.</p></div>
+            <div class="empty-state">
+                <p>No luke-warm leads.</p>
+            </div>
             {% endfor %}
         </div>
     </div>
 
+    <!-- Cold Section -->
     <div class="card">
         <h2><i class="fas fa-snowflake"></i> Cold Leads</h2>
         <div class="appointment-list">
             {% for group in cold_by_date %}
             <h3 style="margin: 12px 0 8px 0; color:#374151;">{{ group.label }}</h3>
             {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #6b7280;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#e5e7eb;color:#374151;">
+            <div class="appointment-item"
+                style="border-left: 4px solid #6b7280; padding: 15px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px;">
+                <div class="appointment-header"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="appointment-name" style="font-weight: bold; font-size: 1.1rem;">{{
+                        lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status"
+                        style="background:#e5e7eb; color:#374151; padding: 4px 8px; border-radius: 20px; font-size: 0.9rem; font-weight: 600;">
                         {{ lead.computed_score }}/100
                     </div>
                 </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clipboard-check"></i>{{ lead.get_follow_up_status_display }}</div>
-                    <div class="detail-item"><i class="fas fa-robot"></i>{% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div class="appointment-details"
+                    style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                    <div class="detail-item"><i class="fas fa-phone" style="width: 20px;"></i> {{ lead.phone_number }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools" style="width: 20px;"></i> {{
+                        lead.project_type|default:"No service" }}</div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt" style="width: 20px;"></i> {{
+                        lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check" style="width: 20px;"></i> {{
+                        lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot" style="width: 20px;"></i> {% if lead.chatbot_paused
+                        %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
+                    <div class="detail-item"><i class="fas fa-clock" style="width: 20px;"></i> {{
+                        lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
+                <div class="actions" style="text-align: right;">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"
+                        style="background: #007bff; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block;">Open
+                        Lead</a>
                 </div>
             </div>
             {% endfor %}
             {% empty %}
-            <div class="empty-state"><p>No cold leads.</p></div>
+            <div class="empty-state">
+                <p>No cold leads.</p>
+            </div>
             {% endfor %}
         </div>
     </div>
