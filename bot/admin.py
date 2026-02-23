@@ -5,6 +5,32 @@ from django.utils.safestring import mark_safe
 from django.utils import timezone
 from .models import Appointment, LeadInteraction, WhatsAppInboundEvent
 import json
+from datetime import timedelta
+
+
+class LastInboundIntervalFilter(admin.SimpleListFilter):
+    title = 'last customer response'
+    parameter_name = 'last_inbound_interval'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('1w', 'Last 1 week'),
+            ('2w', 'Last 2 weeks'),
+            ('3w', 'Last 3 weeks'),
+            ('1m', 'Last 1 month'),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == '1w':
+            return queryset.filter(last_inbound_at__gte=timezone.now() - timedelta(weeks=1))
+        if value == '2w':
+            return queryset.filter(last_inbound_at__gte=timezone.now() - timedelta(weeks=2))
+        if value == '3w':
+            return queryset.filter(last_inbound_at__gte=timezone.now() - timedelta(weeks=3))
+        if value == '1m':
+            return queryset.filter(last_inbound_at__gte=timezone.now() - timedelta(days=30))
+        return queryset
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
@@ -29,6 +55,7 @@ class AppointmentAdmin(admin.ModelAdmin):
         'property_type',
         'house_stage',
         'has_plan',
+        LastInboundIntervalFilter,
         ('created_at', admin.DateFieldListFilter),
         ('scheduled_datetime', admin.DateFieldListFilter),
         ('updated_at', admin.DateFieldListFilter)

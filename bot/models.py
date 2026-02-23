@@ -9,6 +9,27 @@ import uuid
 from decimal import Decimal
 
 
+class LeadQuerySet(models.QuerySet):
+    def with_last_inbound(self):
+        return self.exclude(last_inbound_at__isnull=True)
+
+    def responded_since(self, delta):
+        cutoff = timezone.now() - delta
+        return self.with_last_inbound().filter(last_inbound_at__gte=cutoff)
+
+    def last_1_week(self):
+        return self.responded_since(timedelta(weeks=1))
+
+    def last_2_weeks(self):
+        return self.responded_since(timedelta(weeks=2))
+
+    def last_3_weeks(self):
+        return self.responded_since(timedelta(weeks=3))
+
+    def last_1_month(self):
+        return self.responded_since(timedelta(days=30))
+
+
 class LeadStatus(models.TextChoices):
     COLD = 'cold', 'Cold'
     WARM = 'warm', 'Warm'
@@ -110,6 +131,8 @@ class Appointment(models.Model):
     ]
 
     # Basic Information
+    objects = LeadQuerySet.as_manager()
+
     phone_number = models.CharField(max_length=50, unique=True, help_text="Customer's WhatsApp number")
     customer_name = models.CharField(max_length=100, blank=True, null=True, help_text="Customer's full name")
     customer_email = models.EmailField(blank=True, null=True, help_text="Customer's email address")
