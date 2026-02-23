@@ -460,7 +460,17 @@
             </div>
             <div class="status-item">
                 <label>Last Contacted:</label>
-                <span>{{ appointment.last_contacted_at|date:"M d, H:i"|default:"Never" }}</span>
+                <span>
+                    {% if appointment.last_contacted_at %}
+                        {{ appointment.last_contacted_at|date:"M d, H:i" }}
+                    {% elif appointment.last_customer_response %}
+                        {{ appointment.last_customer_response|date:"M d, H:i" }}
+                    {% elif appointment.last_inbound_at %}
+                        {{ appointment.last_inbound_at|date:"M d, H:i" }}
+                    {% else %}
+                        Never
+                    {% endif %}
+                </span>
             </div>
             {% if appointment.chatbot_paused %}
             <div class="status-item paused">
