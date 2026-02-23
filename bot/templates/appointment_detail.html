@@ -490,7 +490,7 @@
     
     
 
-        <div class="conversation-history">
+        <div class="card">
             {% for message in conversation_history %}
             <div class="message {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
                 <div class="message-header">
