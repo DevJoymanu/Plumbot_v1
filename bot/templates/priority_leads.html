@@ -116,6 +116,75 @@
         display: inline-block;
     }
 
+
+    /* ── Phone action buttons ── */
+    .phone-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .phone-link {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: inherit;
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .phone-link span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .phone-btns {
+        display: flex;
+        gap: 5px;
+        flex-shrink: 0;
+        position: relative;
+        z-index: 3;
+    }
+
+    .call-btn,
+    .wa-btn {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 8px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-decoration: none;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        transition: transform 0.1s, opacity 0.1s;
+        flex-shrink: 0;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .call-btn:active,
+    .wa-btn:active {
+        transform: scale(0.94);
+        opacity: 0.85;
+    }
+
+    .call-btn {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .wa-btn {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
     /* ── Bottom Sheet (mobile filter) ── */
     .filter-overlay {
         display: none;
@@ -987,16 +1056,24 @@
                     aria-label="Open {{ lead.customer_name }}"></a>
                 <div class="appointment-header">
                     <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fee2e2;color:#991b1b;">{{ lead.computed_score
-                        }}/100</div>
+                    <div class="appointment-status" style="background:#fee2e2;color:#991b1b;">{{
+                        lead.computed_score|default:"—" }}/100</div>
                 </div>
                 <div class="appointment-details">
                     <div class="detail-item detail-phone">
-                        <a href="tel:{{ lead.phone_number }}">
-                            <i class="fas fa-phone"></i>
-                            <span>{{ lead.phone_number }}</span>
-                            <span class="call-badge">Tap to Call</span>
-                        </a>
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
                     </div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
                     </div>
@@ -1037,16 +1114,24 @@
                     aria-label="Open {{ lead.customer_name }}"></a>
                 <div class="appointment-header">
                     <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fef3c7;color:#92400e;">{{ lead.computed_score
-                        }}/100</div>
+                    <div class="appointment-status" style="background:#fef3c7;color:#92400e;">{{
+                        lead.computed_score|default:"—" }}/100</div>
                 </div>
                 <div class="appointment-details">
                     <div class="detail-item detail-phone">
-                        <a href="tel:{{ lead.phone_number }}">
-                            <i class="fas fa-phone"></i>
-                            <span>{{ lead.phone_number }}</span>
-                            <span class="call-badge">Tap to Call</span>
-                        </a>
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
                     </div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
                     </div>
@@ -1087,16 +1172,24 @@
                     aria-label="Open {{ lead.customer_name }}"></a>
                 <div class="appointment-header">
                     <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#d1fae5;color:#065f46;">{{ lead.computed_score
-                        }}/100</div>
+                    <div class="appointment-status" style="background:#d1fae5;color:#065f46;">{{
+                        lead.computed_score|default:"—" }}/100</div>
                 </div>
                 <div class="appointment-details">
                     <div class="detail-item detail-phone">
-                        <a href="tel:{{ lead.phone_number }}">
-                            <i class="fas fa-phone"></i>
-                            <span>{{ lead.phone_number }}</span>
-                            <span class="call-badge">Tap to Call</span>
-                        </a>
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
                     </div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
                     </div>
@@ -1137,16 +1230,24 @@
                     aria-label="Open {{ lead.customer_name }}"></a>
                 <div class="appointment-header">
                     <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#dbeafe;color:#1e3a8a;">{{ lead.computed_score
-                        }}/100</div>
+                    <div class="appointment-status" style="background:#dbeafe;color:#1e3a8a;">{{
+                        lead.computed_score|default:"—" }}/100</div>
                 </div>
                 <div class="appointment-details">
                     <div class="detail-item detail-phone">
-                        <a href="tel:{{ lead.phone_number }}">
-                            <i class="fas fa-phone"></i>
-                            <span>{{ lead.phone_number }}</span>
-                            <span class="call-badge">Tap to Call</span>
-                        </a>
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
                     </div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
                     </div>
@@ -1187,16 +1288,24 @@
                     aria-label="Open {{ lead.customer_name }}"></a>
                 <div class="appointment-header">
                     <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#e5e7eb;color:#374151;">{{ lead.computed_score
-                        }}/100</div>
+                    <div class="appointment-status" style="background:#e5e7eb;color:#374151;">{{
+                        lead.computed_score|default:"—" }}/100</div>
                 </div>
                 <div class="appointment-details">
                     <div class="detail-item detail-phone">
-                        <a href="tel:{{ lead.phone_number }}">
-                            <i class="fas fa-phone"></i>
-                            <span>{{ lead.phone_number }}</span>
-                            <span class="call-badge">Tap to Call</span>
-                        </a>
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
                     </div>
                     <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
                     </div>
