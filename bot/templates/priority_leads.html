@@ -1,189 +1,1099 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="header">
-    <h1><i class="fas fa-bolt"></i> Priority Leads</h1>
-    <p>Grouped by urgency: Very Hot, Hot, Warm, Cold</p>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap');
+
+    :root {
+        --surface: #ffffff;
+        --bg: #f0f0f5;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --radius: 16px;
+        --shadow: 0 2px 16px rgba(0,0,0,0.06);
+        --touch: 52px;
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-left: env(safe-area-inset-left, 0px);
+        --safe-right: env(safe-area-inset-right, 0px);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+        background: var(--bg);
+        font-family: 'DM Sans', sans-serif;
+        color: var(--text);
+        margin: 0;
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        /* Support dynamic viewport on iOS */
+        min-height: 100dvh;
+    }
+
+    /* ── Sticky Page Header ── */
+    .pl-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: rgba(240,240,245,0.92);
+        backdrop-filter: saturate(180%) blur(16px);
+        -webkit-backdrop-filter: saturate(180%) blur(16px);
+        padding: calc(12px + var(--safe-top)) 16px 12px;
+        border-bottom: 1px solid rgba(229,231,235,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+    .pl-header-left h1 {
+        font-family: 'Syne', sans-serif;
+        font-size: clamp(1.15rem, 5vw, 1.6rem);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        display: flex; align-items: center; gap: 8px;
+        margin: 0 0 2px;
+        line-height: 1.1;
+    }
+    .pl-header-left h1 i { color: #f59e0b; font-size: 0.85em; }
+    .pl-header-left p {
+        color: var(--muted);
+        margin: 0;
+        font-size: 0.78rem;
+        line-height: 1.3;
+        display: none; /* hidden on mobile to save space */
+    }
+    /* Filter toggle button (mobile only) */
+    .btn-filter-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 40px;
+        padding: 0 14px;
+        border-radius: 20px;
+        background: #4f46e5;
+        color: #fff;
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.15s, transform 0.1s;
+    }
+    .btn-filter-toggle:active { background: #4338ca; transform: scale(0.96); }
+    .btn-filter-toggle .filter-badge {
+        background: #fbbf24;
+        color: #78350f;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 1px 6px;
+        display: none;
+    }
+    .btn-filter-toggle.has-filter .filter-badge { display: inline-block; }
+
+    /* ── Bottom Sheet Filter (mobile) ── */
+    .filter-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 100;
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        opacity: 0;
+        transition: opacity 0.25s;
+    }
+    .filter-overlay.open { display: block; }
+    .filter-overlay.visible { opacity: 1; }
+
+    .filter-sheet {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 101;
+        background: var(--surface);
+        border-radius: 24px 24px 0 0;
+        padding: 0 16px calc(20px + var(--safe-bottom));
+        box-shadow: 0 -8px 40px rgba(0,0,0,0.18);
+        transform: translateY(100%);
+        transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+        max-height: 85dvh;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    .filter-sheet.open { transform: translateY(0); }
+
+    .sheet-handle {
+        width: 40px;
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        margin: 12px auto 20px;
+    }
+    .sheet-title {
+        font-family: 'Syne', sans-serif;
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin: 0 0 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .sheet-title i { color: #4f46e5; }
+
+    .filter-select-wrapper {
+        position: relative;
+        margin-bottom: 14px;
+    }
+    .filter-select-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--muted);
+        margin-bottom: 6px;
+        display: block;
+    }
+    .filter-select-wrapper select {
+        width: 100%;
+        padding: 0 42px 0 16px;
+        height: var(--touch);
+        border-radius: 12px;
+        border: 1.5px solid var(--border);
+        background: var(--bg);
+        font-family: 'DM Sans', sans-serif;
+        font-size: 16px;
+        color: var(--text);
+        outline: none;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 16px center;
+        transition: border-color 0.15s;
+    }
+    .filter-select-wrapper select:focus { border-color: #6366f1; }
+
+    .sheet-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 4px;
+    }
+    .btn-apply, .btn-reset {
+        display: flex; align-items: center; justify-content: center; gap: 7px;
+        height: var(--touch);
+        border-radius: 12px;
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.95rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: transform 0.1s, background 0.15s;
+    }
+    .btn-apply:active, .btn-reset:active { transform: scale(0.97); }
+    .btn-apply { background: #4f46e5; color: #fff; }
+    .btn-apply:active { background: #4338ca; }
+    .btn-reset {
+        background: var(--bg);
+        color: var(--muted);
+        border: 1.5px solid var(--border);
+        text-decoration: none;
+    }
+    .btn-reset:active { border-color: #9ca3af; color: var(--text); }
+
+    /* ── Summary Chips Scroll Row ── */
+    .summary-scroll {
+        display: flex;
+        gap: 8px;
+        padding: 14px 16px 2px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+    }
+    .summary-scroll::-webkit-scrollbar { display: none; }
+
+    .summary-chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        white-space: nowrap;
+        flex-shrink: 0;
+        scroll-snap-align: start;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .summary-chip:active { transform: scale(0.95); }
+    .chip-total { background: #f3f4f6; color: #374151; border-color: #e5e7eb; }
+    .chip-vh    { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+    .chip-hot   { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    .chip-warm  { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+    .chip-luke  { background: #dbeafe; color: #1e3a8a; border-color: #93c5fd; }
+    .chip-cold  { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+
+    /* Active filter indicator */
+    .filter-active-bar {
+        margin: 8px 16px 0;
+        padding: 8px 12px;
+        background: #eef2ff;
+        border-radius: 10px;
+        border: 1px solid #c7d2fe;
+        font-size: 0.82rem;
+        color: #4338ca;
+        display: none;
+        align-items: center;
+        gap: 6px;
+    }
+    .filter-active-bar.visible { display: flex; }
+    .filter-active-bar a {
+        margin-left: auto;
+        color: #6366f1;
+        font-weight: 600;
+        text-decoration: none;
+        padding: 2px 0;
+    }
+
+    /* ── Section Cards ── */
+    .sections-wrapper {
+        padding: 14px 0 0;
+    }
+
+    .section-card {
+        background: var(--surface);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        margin: 0 12px 12px;
+        overflow: hidden;
+        transition: box-shadow 0.2s;
+    }
+    .section-card.vh   { border-left: 4px solid #dc2626; }
+    .section-card.hot  { border-left: 4px solid #f59e0b; }
+    .section-card.warm { border-left: 4px solid #10b981; }
+    .section-card.luke { border-left: 4px solid #0ea5e9; }
+    .section-card.cold { border-left: 4px solid #6b7280; }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 16px;
+        min-height: 56px;
+        cursor: pointer;
+        user-select: none;
+        border-bottom: 1px solid transparent;
+        transition: background 0.15s, border-color 0.15s;
+    }
+    .section-header:active { background: #f9fafb; }
+    .section-card:not(.collapsed) .section-header {
+        border-bottom-color: var(--border);
+    }
+
+    .section-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+    .section-card.vh   .section-icon { background: #fee2e2; color: #dc2626; }
+    .section-card.hot  .section-icon { background: #fef3c7; color: #f59e0b; }
+    .section-card.warm .section-icon { background: #d1fae5; color: #10b981; }
+    .section-card.luke .section-icon { background: #dbeafe; color: #0ea5e9; }
+    .section-card.cold .section-icon { background: #f3f4f6; color: #6b7280; }
+
+    .section-header h2 {
+        font-family: 'Syne', sans-serif;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        margin: 0;
+        flex: 1;
+    }
+    .section-card.vh   .section-header h2 { color: #7f1d1d; }
+    .section-card.hot  .section-header h2 { color: #78350f; }
+    .section-card.warm .section-header h2 { color: #064e3b; }
+    .section-card.luke .section-header h2 { color: #1e3a8a; }
+    .section-card.cold .section-header h2 { color: #374151; }
+
+    .count-pill {
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+    .section-card.vh   .count-pill { background: #fee2e2; color: #991b1b; }
+    .section-card.hot  .count-pill { background: #fef3c7; color: #92400e; }
+    .section-card.warm .count-pill { background: #d1fae5; color: #065f46; }
+    .section-card.luke .count-pill { background: #dbeafe; color: #1e3a8a; }
+    .section-card.cold .count-pill { background: #e5e7eb; color: #374151; }
+
+    .chevron {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 0.7rem;
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        flex-shrink: 0;
+        background: var(--bg);
+        border-radius: 8px;
+    }
+    .section-card.collapsed .chevron { transform: rotate(-90deg); }
+
+    /* Collapse animation */
+    .section-body {
+        overflow: hidden;
+        transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .section-card.collapsed .section-body {
+        max-height: 0 !important;
+    }
+
+    /* ── Date Labels ── */
+    .date-label {
+        font-family: 'Syne', sans-serif;
+        font-size: 0.67rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        padding: 10px 16px 4px;
+        background: #fafafa;
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+    }
+
+    /* ── Lead Rows ── */
+    .lead-row {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+        transition: background 0.15s;
+        position: relative;
+        /* Touch feedback */
+        cursor: pointer;
+    }
+    .lead-row:last-child { border-bottom: none; }
+    .lead-row:active { background: #f9fafb; }
+
+    /* Make entire row tappable */
+    .lead-row-link {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+    }
+
+    .lead-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+    .lead-name {
+        font-family: 'Syne', sans-serif;
+        font-weight: 700;
+        font-size: 1rem;
+        letter-spacing: -0.01em;
+        line-height: 1.25;
+        flex: 1;
+    }
+    .score-pill {
+        flex-shrink: 0;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        white-space: nowrap;
+        align-self: flex-start;
+    }
+    .section-card.vh   .score-pill { background: #fee2e2; color: #991b1b; }
+    .section-card.hot  .score-pill { background: #fef3c7; color: #92400e; }
+    .section-card.warm .score-pill { background: #d1fae5; color: #065f46; }
+    .section-card.luke .score-pill { background: #dbeafe; color: #1e3a8a; }
+    .section-card.cold .score-pill { background: #e5e7eb; color: #374151; }
+
+    /* Meta: 2-col grid — phone spans full, then service + area + time */
+    .lead-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 10px;
+    }
+    .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.82rem;
+        color: var(--muted);
+        min-width: 0;
+    }
+    .meta-item span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+    .meta-item i {
+        width: 14px;
+        text-align: center;
+        font-size: 0.72rem;
+        flex-shrink: 0;
+        opacity: 0.7;
+    }
+    .meta-item.meta-phone {
+        grid-column: 1 / -1;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--text);
+    }
+    .meta-item.meta-phone i { opacity: 1; }
+
+    /* Tap-to-call affordance */
+    .meta-phone a {
+        color: inherit;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+    }
+    .call-badge {
+        background: #dcfce7;
+        color: #166534;
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 8px;
+        flex-shrink: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    /* CTA — open lead button (z-index above row overlay) */
+    .lead-actions {
+        margin-top: 12px;
+        position: relative;
+        z-index: 2;
+    }
+    .btn-open {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        height: 44px;
+        border-radius: 10px;
+        background: #111827;
+        color: #fff;
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: background 0.15s, transform 0.1s;
+    }
+    .btn-open:active { background: #1f2937; transform: scale(0.98); }
+
+    /* ── Empty State ── */
+    .empty-state {
+        padding: 28px 16px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.88rem;
+    }
+    .empty-state i {
+        font-size: 1.5rem;
+        display: block;
+        margin-bottom: 8px;
+        opacity: 0.3;
+    }
+
+    /* ── Scroll-to-top FAB ── */
+    .fab-top {
+        position: fixed;
+        bottom: calc(20px + var(--safe-bottom));
+        right: 16px;
+        z-index: 60;
+        width: 44px;
+        height: 44px;
+        border-radius: 22px;
+        background: #111827;
+        color: #fff;
+        border: none;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+        cursor: pointer;
+        opacity: 0;
+        transform: translateY(12px) scale(0.85);
+        transition: opacity 0.25s, transform 0.25s;
+        pointer-events: none;
+    }
+    .fab-top.visible {
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+    }
+    .fab-top:active { transform: scale(0.94); }
+
+    /* ── Bottom spacer ── */
+    .page-bottom-spacer {
+        height: calc(32px + var(--safe-bottom));
+    }
+
+    /* ── Tablet / Desktop ── */
+    @media (min-width: 640px) {
+        .pl-header {
+            padding: 20px 24px 16px;
+        }
+        .pl-header-left p { display: block; }
+        .btn-filter-toggle { display: none; }
+
+        /* Inline filter card on tablet+ */
+        .filter-sheet-desktop {
+            background: var(--surface);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 18px 24px;
+            margin: 14px 24px 0;
+        }
+        .filter-sheet-desktop .sheet-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+        .filter-sheet-desktop .sheet-title i { color: var(--muted); }
+        .filter-desktop-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .filter-desktop-row .filter-select-wrapper {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        .filter-desktop-row .filter-select-wrapper select {
+            height: 44px;
+        }
+        .filter-desktop-row .btn-apply,
+        .filter-desktop-row .btn-reset {
+            width: auto;
+            padding: 0 20px;
+            height: 44px;
+            flex-shrink: 0;
+        }
+
+        .summary-scroll {
+            flex-wrap: wrap;
+            overflow: visible;
+            padding: 14px 24px 2px;
+            gap: 8px;
+        }
+
+        .filter-active-bar { margin: 8px 24px 0; }
+
+        .section-card { margin: 0 24px 14px; }
+        .section-header { padding: 0 24px; min-height: 60px; }
+        .date-label { padding: 10px 24px 4px; }
+        .lead-row { padding: 16px 24px; }
+        .lead-meta {
+            grid-template-columns: repeat(4, auto);
+            gap: 4px 20px;
+        }
+        .meta-item.meta-phone { grid-column: auto; }
+        .btn-open { width: auto; padding: 0 20px; }
+        .lead-actions { display: flex; justify-content: flex-end; }
+    }
+
+    @media (min-width: 1024px) {
+        .filter-sheet-desktop, .section-card, .summary-scroll, .filter-active-bar {
+            max-width: 920px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .pl-header {
+            max-width: 920px;
+            margin: 0 auto;
+        }
+        .lead-row:hover { background: #fafafa; }
+        .btn-open:hover {
+            background: #1f2937;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+    }
+
+    /* ── Mobile-only: hide desktop filter ── */
+    .filter-sheet-desktop { display: none; }
+    @media (min-width: 640px) {
+        .filter-sheet-desktop { display: block; }
+        .filter-overlay, .filter-sheet { display: none !important; }
+        .fab-top { right: 24px; }
+    }
+</style>
+
+<!-- Sticky Header -->
+<div class="pl-header">
+    <div class="pl-header-left">
+        <h1><i class="fas fa-bolt"></i> Priority Leads</h1>
+        <p>Grouped by urgency &middot; Very Hot &middot; Hot &middot; Warm &middot; Luke-warm &middot; Cold</p>
+    </div>
+    <button class="btn-filter-toggle {% if selected_response_age %}has-filter{% endif %}" onclick="openFilter()" aria-label="Open filter">
+        <i class="fas fa-sliders-h"></i> Filter
+        <span class="filter-badge">ON</span>
+    </button>
 </div>
 
-<div class="card" style="margin-bottom: 20px;">
-    <h2><i class="fas fa-filter"></i> Response Age Filter</h2>
-    <form method="get" class="actions" style="margin-bottom: 15px;">
-        <select name="response_age" class="form-control" style="max-width: 260px;">
-            <option value="" {% if not selected_response_age %}selected{% endif %}>All response ages</option>
-            <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+</option>
-            <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+</option>
-            <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+</option>
-            <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+</option>
-            <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week-</option>
-            <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks-</option>
-            <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks-</option>
-            <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks-</option>
-        </select>
-        <button type="submit" class="btn btn-sm"><i class="fas fa-check"></i> Apply</button>
-        <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+<!-- Desktop Filter Card -->
+<div class="filter-sheet-desktop">
+    <div class="sheet-title"><i class="fas fa-filter"></i> Response Age Filter</div>
+    <form method="get" class="filter-desktop-row">
+        <div class="filter-select-wrapper">
+            <select name="response_age" id="desktop_response_age_select">
+                <option value="">All response ages</option>
+                <option value="1w">No response for 1 week+</option>
+                <option value="2w">No response for 2 weeks+</option>
+                <option value="3w">No response for 3 weeks+</option>
+                <option value="1m">No response for 1 month+</option>
+                <option value="1w_minus">Last response within 1 week</option>
+                <option value="2w_minus">Last response within 2 weeks</option>
+                <option value="3w_minus">Last response within 3 weeks</option>
+                <option value="4w_minus">Last response within 4 weeks</option>
+            </select>
+        </div>
+        <button type="submit" class="btn-apply"><i class="fas fa-check"></i> Apply</button>
+        <a href="{% url 'priority_leads' %}" class="btn-reset"><i class="fas fa-undo"></i> Reset</a>
     </form>
+</div>
 
-    <h2><i class="fas fa-chart-line"></i> Summary</h2>
-    <div class="appointment-details">
-        <div class="detail-item"><i class="fas fa-database"></i> Total Leads: {{ total_leads }}</div>
-        <div class="detail-item"><i class="fas fa-fire"></i> Very Hot: {{ very_hot_leads|length }}</div>
-        <div class="detail-item"><i class="fas fa-exclamation-triangle"></i> Hot: {{ hot_leads|length }}</div>
-        <div class="detail-item"><i class="fas fa-sun"></i> Warm: {{ warm_leads|length }}</div>
-        <div class="detail-item"><i class="fas fa-temperature-low"></i> Luke-warm: {{ luke_warm_leads|length }}</div>
-        <div class="detail-item"><i class="fas fa-snowflake"></i> Cold: {{ cold_leads|length }}</div>
+<!-- Summary chips horizontal scroll -->
+<div class="summary-scroll" role="list">
+    <div class="summary-chip chip-total" onclick="scrollToSection('sec-vh')" role="button" tabindex="0">
+        <i class="fas fa-database"></i> All: {{ total_leads }}
+    </div>
+    <div class="summary-chip chip-vh" onclick="scrollToSection('sec-vh')" role="button" tabindex="0">
+        <i class="fas fa-fire"></i> Very Hot: {{ very_hot_leads|length }}
+    </div>
+    <div class="summary-chip chip-hot" onclick="scrollToSection('sec-hot')" role="button" tabindex="0">
+        <i class="fas fa-exclamation-triangle"></i> Hot: {{ hot_leads|length }}
+    </div>
+    <div class="summary-chip chip-warm" onclick="scrollToSection('sec-warm')" role="button" tabindex="0">
+        <i class="fas fa-sun"></i> Warm: {{ warm_leads|length }}
+    </div>
+    <div class="summary-chip chip-luke" onclick="scrollToSection('sec-luke')" role="button" tabindex="0">
+        <i class="fas fa-temperature-low"></i> Lukewarm: {{ luke_warm_leads|length }}
+    </div>
+    <div class="summary-chip chip-cold" onclick="scrollToSection('sec-cold')" role="button" tabindex="0">
+        <i class="fas fa-snowflake"></i> Cold: {{ cold_leads|length }}
     </div>
 </div>
 
-<div class="dashboard-grid" style="grid-template-columns: 1fr;">
-    <div class="card">
-        <h2><i class="fas fa-fire"></i> Very Hot Leads</h2>
-        <div class="appointment-list">
-            {% for group in very_hot_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#991b1b;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #dc2626;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fee2e2;color:#991b1b;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No very hot leads.</p></div>
-            {% endfor %}
-        </div>
-    </div>
+{% if selected_response_age %}
+<div class="filter-active-bar visible">
+    <i class="fas fa-filter"></i>
+    <span>Filter active: <strong>{{ selected_response_age }}</strong></span>
+    <a href="{% url 'priority_leads' %}"><i class="fas fa-times"></i> Clear</a>
+</div>
+{% endif %}
 
-    <div class="card">
-        <h2><i class="fas fa-exclamation-triangle"></i> Hot Leads</h2>
-        <div class="appointment-list">
-            {% for group in hot_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#92400e;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #f59e0b;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fef3c7;color:#92400e;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No hot leads.</p></div>
-            {% endfor %}
-        </div>
-    </div>
+<div class="sections-wrapper">
 
-    <div class="card">
-        <h2><i class="fas fa-sun"></i> Warm Leads</h2>
-        <div class="appointment-list">
-            {% for group in warm_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#065f46;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #10b981;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#d1fae5;color:#065f46;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No warm leads.</p></div>
-            {% endfor %}
-        </div>
+<!-- VERY HOT -->
+<div class="section-card vh" id="sec-vh">
+    <div class="section-header" onclick="toggleSection('sec-vh')" role="button" aria-expanded="true" tabindex="0">
+        <div class="section-icon"><i class="fas fa-fire"></i></div>
+        <h2>Very Hot</h2>
+        <span class="count-pill">{{ very_hot_leads|length }}</span>
+        <div class="chevron"><i class="fas fa-chevron-down"></i></div>
     </div>
-
-    <div class="card">
-        <h2><i class="fas fa-temperature-low"></i> Luke-warm Leads (20/100)</h2>
-        <div class="appointment-list">
-            {% for group in luke_warm_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#1e3a8a;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #0ea5e9;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#dbeafe;color:#1e3a8a;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
+    <div class="section-body">
+        {% for group in very_hot_by_date %}
+        <div class="date-label">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-row">
+            <a href="{% url 'appointment_detail' lead.pk %}" class="lead-row-link" aria-label="Open {{ lead.customer_name }}"></a>
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="score-pill">{{ lead.computed_score }}/100</div>
             </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No luke-warm leads.</p></div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div class="card">
-        <h2><i class="fas fa-snowflake"></i> Cold Leads</h2>
-        <div class="appointment-list">
-            {% for group in cold_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#374151;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #6b7280;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#e5e7eb;color:#374151;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
+            <div class="lead-meta">
+                <span class="meta-item meta-phone">
+                    <a href="tel:{{ lead.phone_number }}">
+                        <i class="fas fa-phone"></i>
+                        <span>{{ lead.phone_number }}</span>
+                        <span class="call-badge">Tap to Call</span>
+                    </a>
+                </span>
+                <span class="meta-item"><i class="fas fa-tools"></i><span>{{ lead.project_type|default:"No service" }}</span></span>
+                <span class="meta-item"><i class="fas fa-map-marker-alt"></i><span>{{ lead.customer_area|default:"No area" }}</span></span>
+                <span class="meta-item"><i class="fas fa-clock"></i><span>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</span></span>
             </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No cold leads.</p></div>
-            {% endfor %}
+            <div class="lead-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn-open"><i class="fas fa-arrow-right"></i> Open Lead</a>
+            </div>
         </div>
+        {% endfor %}
+        {% empty %}
+        <div class="empty-state"><i class="fas fa-fire"></i>No very hot leads right now.</div>
+        {% endfor %}
     </div>
 </div>
+
+<!-- HOT -->
+<div class="section-card hot" id="sec-hot">
+    <div class="section-header" onclick="toggleSection('sec-hot')" role="button" aria-expanded="true" tabindex="0">
+        <div class="section-icon"><i class="fas fa-exclamation-triangle"></i></div>
+        <h2>Hot</h2>
+        <span class="count-pill">{{ hot_leads|length }}</span>
+        <div class="chevron"><i class="fas fa-chevron-down"></i></div>
+    </div>
+    <div class="section-body">
+        {% for group in hot_by_date %}
+        <div class="date-label">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-row">
+            <a href="{% url 'appointment_detail' lead.pk %}" class="lead-row-link" aria-label="Open {{ lead.customer_name }}"></a>
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="score-pill">{{ lead.computed_score }}/100</div>
+            </div>
+            <div class="lead-meta">
+                <span class="meta-item meta-phone">
+                    <a href="tel:{{ lead.phone_number }}">
+                        <i class="fas fa-phone"></i>
+                        <span>{{ lead.phone_number }}</span>
+                        <span class="call-badge">Tap to Call</span>
+                    </a>
+                </span>
+                <span class="meta-item"><i class="fas fa-tools"></i><span>{{ lead.project_type|default:"No service" }}</span></span>
+                <span class="meta-item"><i class="fas fa-map-marker-alt"></i><span>{{ lead.customer_area|default:"No area" }}</span></span>
+                <span class="meta-item"><i class="fas fa-clock"></i><span>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</span></span>
+            </div>
+            <div class="lead-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn-open"><i class="fas fa-arrow-right"></i> Open Lead</a>
+            </div>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="empty-state"><i class="fas fa-exclamation-triangle"></i>No hot leads right now.</div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- WARM -->
+<div class="section-card warm" id="sec-warm">
+    <div class="section-header" onclick="toggleSection('sec-warm')" role="button" aria-expanded="true" tabindex="0">
+        <div class="section-icon"><i class="fas fa-sun"></i></div>
+        <h2>Warm</h2>
+        <span class="count-pill">{{ warm_leads|length }}</span>
+        <div class="chevron"><i class="fas fa-chevron-down"></i></div>
+    </div>
+    <div class="section-body">
+        {% for group in warm_by_date %}
+        <div class="date-label">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-row">
+            <a href="{% url 'appointment_detail' lead.pk %}" class="lead-row-link" aria-label="Open {{ lead.customer_name }}"></a>
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="score-pill">{{ lead.computed_score }}/100</div>
+            </div>
+            <div class="lead-meta">
+                <span class="meta-item meta-phone">
+                    <a href="tel:{{ lead.phone_number }}">
+                        <i class="fas fa-phone"></i>
+                        <span>{{ lead.phone_number }}</span>
+                        <span class="call-badge">Tap to Call</span>
+                    </a>
+                </span>
+                <span class="meta-item"><i class="fas fa-tools"></i><span>{{ lead.project_type|default:"No service" }}</span></span>
+                <span class="meta-item"><i class="fas fa-map-marker-alt"></i><span>{{ lead.customer_area|default:"No area" }}</span></span>
+                <span class="meta-item"><i class="fas fa-clock"></i><span>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</span></span>
+            </div>
+            <div class="lead-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn-open"><i class="fas fa-arrow-right"></i> Open Lead</a>
+            </div>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="empty-state"><i class="fas fa-sun"></i>No warm leads right now.</div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- LUKE-WARM -->
+<div class="section-card luke" id="sec-luke">
+    <div class="section-header" onclick="toggleSection('sec-luke')" role="button" aria-expanded="false" tabindex="0">
+        <div class="section-icon"><i class="fas fa-temperature-low"></i></div>
+        <h2>Luke-warm</h2>
+        <span class="count-pill">{{ luke_warm_leads|length }}</span>
+        <div class="chevron"><i class="fas fa-chevron-down"></i></div>
+    </div>
+    <div class="section-body">
+        {% for group in luke_warm_by_date %}
+        <div class="date-label">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-row">
+            <a href="{% url 'appointment_detail' lead.pk %}" class="lead-row-link" aria-label="Open {{ lead.customer_name }}"></a>
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="score-pill">{{ lead.computed_score }}/100</div>
+            </div>
+            <div class="lead-meta">
+                <span class="meta-item meta-phone">
+                    <a href="tel:{{ lead.phone_number }}">
+                        <i class="fas fa-phone"></i>
+                        <span>{{ lead.phone_number }}</span>
+                        <span class="call-badge">Tap to Call</span>
+                    </a>
+                </span>
+                <span class="meta-item"><i class="fas fa-tools"></i><span>{{ lead.project_type|default:"No service" }}</span></span>
+                <span class="meta-item"><i class="fas fa-map-marker-alt"></i><span>{{ lead.customer_area|default:"No area" }}</span></span>
+                <span class="meta-item"><i class="fas fa-clock"></i><span>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</span></span>
+            </div>
+            <div class="lead-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn-open"><i class="fas fa-arrow-right"></i> Open Lead</a>
+            </div>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="empty-state"><i class="fas fa-temperature-low"></i>No luke-warm leads right now.</div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- COLD -->
+<div class="section-card cold" id="sec-cold">
+    <div class="section-header" onclick="toggleSection('sec-cold')" role="button" aria-expanded="false" tabindex="0">
+        <div class="section-icon"><i class="fas fa-snowflake"></i></div>
+        <h2>Cold</h2>
+        <span class="count-pill">{{ cold_leads|length }}</span>
+        <div class="chevron"><i class="fas fa-chevron-down"></i></div>
+    </div>
+    <div class="section-body">
+        {% for group in cold_by_date %}
+        <div class="date-label">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-row">
+            <a href="{% url 'appointment_detail' lead.pk %}" class="lead-row-link" aria-label="Open {{ lead.customer_name }}"></a>
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="score-pill">{{ lead.computed_score }}/100</div>
+            </div>
+            <div class="lead-meta">
+                <span class="meta-item meta-phone">
+                    <a href="tel:{{ lead.phone_number }}">
+                        <i class="fas fa-phone"></i>
+                        <span>{{ lead.phone_number }}</span>
+                        <span class="call-badge">Tap to Call</span>
+                    </a>
+                </span>
+                <span class="meta-item"><i class="fas fa-tools"></i><span>{{ lead.project_type|default:"No service" }}</span></span>
+                <span class="meta-item"><i class="fas fa-map-marker-alt"></i><span>{{ lead.customer_area|default:"No area" }}</span></span>
+                <span class="meta-item"><i class="fas fa-clock"></i><span>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</span></span>
+            </div>
+            <div class="lead-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn-open"><i class="fas fa-arrow-right"></i> Open Lead</a>
+            </div>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="empty-state"><i class="fas fa-snowflake"></i>No cold leads right now.</div>
+        {% endfor %}
+    </div>
+</div>
+
+</div><!-- /sections-wrapper -->
+
+<div class="page-bottom-spacer"></div>
+
+<!-- Scroll to top FAB -->
+<button class="fab-top" id="fab-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">
+    <i class="fas fa-chevron-up"></i>
+</button>
+
+<!-- Mobile bottom sheet filter -->
+<div class="filter-overlay" id="filter-overlay" onclick="closeFilter()"></div>
+<div class="filter-sheet" id="filter-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title"><i class="fas fa-sliders-h"></i> Filter Leads</div>
+    <form method="get" id="mobile-filter-form">
+        <label class="filter-select-label" for="response_age_select">Response Age</label>
+        <div class="filter-select-wrapper">
+            <select name="response_age" id="response_age_select">
+                <option value="">All response ages</option>
+                <option value="1w">No response for 1 week+</option>
+                <option value="2w">No response for 2 weeks+</option>
+                <option value="3w">No response for 3 weeks+</option>
+                <option value="1m">No response for 1 month+</option>
+                <option value="1w_minus">Last response within 1 week</option>
+                <option value="2w_minus">Last response within 2 weeks</option>
+                <option value="3w_minus">Last response within 3 weeks</option>
+                <option value="4w_minus">Last response within 4 weeks</option>
+            </select>
+        </div>
+        <div class="sheet-actions">
+            <button type="submit" class="btn-apply"><i class="fas fa-check"></i> Apply Filter</button>
+            <a href="{% url 'priority_leads' %}" class="btn-reset"><i class="fas fa-undo"></i> Reset</a>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    // ── Set saved filter values ──
+    var saved = "{{ selected_response_age|default:'' }}";
+    if (saved) {
+        var selMobile = document.getElementById('response_age_select');
+        var selDesktop = document.getElementById('desktop_response_age_select');
+        if (selMobile) selMobile.value = saved;
+        if (selDesktop) selDesktop.value = saved;
+    }
+
+    // ── Section toggle (collapse/expand) ──
+    function initSections() {
+        document.querySelectorAll('.section-body').forEach(function (body) {
+            body.style.maxHeight = body.scrollHeight + 'px';
+        });
+    }
+
+    window.toggleSection = function (id) {
+        var card = document.getElementById(id);
+        var body = card.querySelector('.section-body');
+        var header = card.querySelector('.section-header');
+        var isCollapsed = card.classList.contains('collapsed');
+        if (isCollapsed) {
+            card.classList.remove('collapsed');
+            header.setAttribute('aria-expanded', 'true');
+            // Re-measure after un-hiding
+            requestAnimationFrame(function () {
+                body.style.maxHeight = body.scrollHeight + 'px';
+            });
+        } else {
+            card.classList.add('collapsed');
+            header.setAttribute('aria-expanded', 'false');
+        }
+    };
+
+    // Keyboard support for section headers
+    document.querySelectorAll('.section-header').forEach(function (h) {
+        h.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                h.click();
+            }
+        });
+    });
+
+    // Chip scroll-to
+    window.scrollToSection = function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        // Expand if collapsed
+        if (el.classList.contains('collapsed')) toggleSection(id);
+        var headerH = document.querySelector('.pl-header').offsetHeight || 56;
+        var top = el.getBoundingClientRect().top + window.scrollY - headerH - 8;
+        window.scrollTo({ top: top, behavior: 'smooth' });
+    };
+
+    // Mobile: luke-warm + cold start collapsed
+    function applyDefaults() {
+        if (window.innerWidth < 640) {
+            ['sec-luke', 'sec-cold'].forEach(function (id) {
+                var card = document.getElementById(id);
+                if (card) {
+                    card.classList.add('collapsed');
+                    var h = card.querySelector('.section-header');
+                    if (h) h.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
+    }
+
+    // ── Bottom sheet filter ──
+    window.openFilter = function () {
+        var overlay = document.getElementById('filter-overlay');
+        var sheet = document.getElementById('filter-sheet');
+        overlay.classList.add('open');
+        requestAnimationFrame(function () {
+            overlay.classList.add('visible');
+            sheet.classList.add('open');
+        });
+        document.body.style.overflow = 'hidden';
+    };
+
+    window.closeFilter = function () {
+        var overlay = document.getElementById('filter-overlay');
+        var sheet = document.getElementById('filter-sheet');
+        overlay.classList.remove('visible');
+        sheet.classList.remove('open');
+        document.body.style.overflow = '';
+        setTimeout(function () { overlay.classList.remove('open'); }, 320);
+    };
+
+    // Swipe down to close sheet
+    (function () {
+        var sheet = document.getElementById('filter-sheet');
+        var startY = 0, curY = 0, dragging = false;
+        sheet.addEventListener('touchstart', function (e) {
+            startY = e.touches[0].clientY;
+            dragging = true;
+        }, { passive: true });
+        sheet.addEventListener('touchmove', function (e) {
+            if (!dragging) return;
+            curY = e.touches[0].clientY;
+            var delta = curY - startY;
+            if (delta > 0) {
+                sheet.style.transform = 'translateY(' + delta + 'px)';
+                sheet.style.transition = 'none';
+            }
+        }, { passive: true });
+        sheet.addEventListener('touchend', function () {
+            dragging = false;
+            var delta = curY - startY;
+            sheet.style.transition = '';
+            sheet.style.transform = '';
+            if (delta > 80) closeFilter();
+        });
+    })();
+
+    // ── Scroll-to-top FAB ──
+    var fab = document.getElementById('fab-top');
+    window.addEventListener('scroll', function () {
+        if (window.scrollY > 300) fab.classList.add('visible');
+        else fab.classList.remove('visible');
+    }, { passive: true });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        initSections();
+        applyDefaults();
+    });
+})();
+</script>
+
 {% endblock %}
