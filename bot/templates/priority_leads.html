@@ -157,6 +157,18 @@
 <div class="card" style="margin-bottom: 20px;">
     <h2><i class="fas fa-filter"></i> Response Age Filter</h2>
     <form method="get" class="actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <select name="response_age" class="form-control"
+            style="flex: 1; min-width: 200px; padding: 8px; border-radius: 6px; border: 1px solid #ccc;">
+            <option value="" {% if not selected_response_age %}selected{% endif %}>All response ages</option>
+            <option value="1w_minus" {% if selected_response_age== '1w_minus' %}selected{% endif %}>Last response within 1 week
+            </option>
+            <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>Last response within 2 weeks
+            </option>
+            <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>Last response within 3 weeks
+            </option>
+            <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response within 4 weeks
+            </option>
+        </select>
     <button type="submit" class="btn btn-sm" style="white-space: nowrap;"><i class="fas fa-check"></i>
             Apply</button>
         <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary" style="white-space: nowrap;"><i
@@ -197,16 +209,11 @@
                     style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
                     <div class="detail-item"><i class="fas fa-phone" style="width: 20px;"></i> {{ lead.phone_number }}
                     </div>
-                    <div class="detail-item"><i class="fas fa-tools" style="width: 20px;"></i> {{
-                        lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt" style="width: 20px;"></i> {{
-                        lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clipboard-check" style="width: 20px;"></i> {{
-                        lead.get_follow_up_status_display }}</div>
-                    <div class="detail-item"><i class="fas fa-robot" style="width: 20px;"></i> {% if lead.chatbot_paused
-                        %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
-                    <div class="detail-item"><i class="fas fa-clock" style="width: 20px;"></i> {{
-                        lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                    <div class="detail-item"><i class="fas fa-tools" style="width: 20px;"></i> {{ lead.project_type|default:"No service" }}</div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt" style="width: 20px;"></i> {{ lead.customer_area|default:"No area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clipboard-check" style="width: 20px;"></i> {{ lead.get_follow_up_status_display }}</div>
+                    <div class="detail-item"><i class="fas fa-robot" style="width: 20px;"></i> {% if lead.chatbot_paused %}Chatbot Paused{% else %}Chatbot Active{% endif %}</div>
+                    <div class="detail-item"><i class="fas fa-clock" style="width: 20px;"></i> {{  lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
                 </div>
                 <div class="actions" style="text-align: right;">
                     <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"
