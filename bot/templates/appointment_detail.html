@@ -490,7 +490,7 @@
     
     
 
-        <div class="card">
+        <div class="conversation-history">
             {% for message in conversation_history %}
             <div class="message {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
                 <div class="message-header">
@@ -1306,7 +1306,7 @@
 
     /* Conversation */
     .conversation-history {
-        max-height: 400px;
+        max-height: 1000px;
         overflow-y: auto;
         margin-bottom: 15px;
         padding-right: 5px;
