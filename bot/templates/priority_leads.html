@@ -160,16 +160,15 @@
         <select name="response_age" class="form-control"
             style="flex: 1; min-width: 200px; padding: 8px; border-radius: 6px; border: 1px solid #ccc;">
             <option value="" {% if not selected_response_age %}selected{% endif %}>All response ages</option>
-            <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response within
-                1 week</option>
-            <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>Last response within
-                2 weeks</option>
-            <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>Last response within
-                3 weeks</option>
-            <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response within
-                4 weeks</option>
-        </select>
-        <button type="submit" class="btn btn-sm" style="white-space: nowrap;"><i class="fas fa-check"></i>
+            <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response within 1 week
+            </option>
+            <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>Last response within 2 weeks
+            </option>
+            <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>Last response within 3 weeks
+            </option>
+            <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response within 4 weeks
+            </option>
+        </select>        <button type="submit" class="btn btn-sm" style="white-space: nowrap;"><i class="fas fa-check"></i>
             Apply</button>
         <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary" style="white-space: nowrap;"><i
                 class="fas fa-undo"></i> Reset</a>
