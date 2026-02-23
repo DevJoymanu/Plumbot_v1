@@ -1176,6 +1176,14 @@ class PriorityLeadsView(TemplateView):
             output_field=IntegerField(),
         )
 
+        response_age = self.request.GET.get('response_age', '').strip()
+        age_map = {
+            '1w': timedelta(weeks=1),
+            '2w': timedelta(weeks=2),
+            '3w': timedelta(weeks=3),
+            '1m': timedelta(days=30),
+        }
+
         leads = (
             Appointment.objects.annotate(
                 completed_fields=has_project_type + has_property_type + has_area + has_timeline + has_site_visit,
@@ -1208,9 +1216,16 @@ class PriorityLeadsView(TemplateView):
                     output_field=IntegerField(),
                 ),
                 recent_activity=Coalesce('last_inbound_at', 'updated_at'),
+                last_response_at=Coalesce('last_customer_response', 'created_at'),
             )
+            .filter(is_lead_active=True)
+            .exclude(status__in=['completed', 'cancelled'])
             .order_by('status_rank', F('recent_activity').desc(nulls_last=True), '-computed_score')
         )
+
+        if response_age in age_map:
+            cutoff = timezone.now() - age_map[response_age]
+            leads = leads.filter(last_response_at__lte=cutoff)
 
         very_hot_leads = leads.filter(computed_status='very_hot')
         hot_leads = leads.filter(computed_status='hot')
@@ -1231,6 +1246,7 @@ class PriorityLeadsView(TemplateView):
                 'luke_warm_by_date': self._group_leads_by_date(luke_warm_leads),
                 'cold_by_date': self._group_leads_by_date(cold_leads),
                 'total_leads': leads.count(),
+                'selected_response_age': response_age,
             }
         )
         return context
@@ -1475,6 +1491,36 @@ def confirm_appointment(request, pk):
     appointment.save()
     messages.success(request, 'Appointment confirmed successfully')
     return redirect('appointment_detail', pk=appointment.pk)
+
+
+@staff_required
+@require_POST
+def complete_lead_appointment(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment.status = 'completed'
+    appointment.follow_up_status = 'completed'
+    appointment.is_lead_active = False
+    appointment.lead_marked_inactive_at = timezone.now()
+    appointment.chatbot_paused = False
+    appointment.save(
+        update_fields=[
+            'status',
+            'follow_up_status',
+            'is_lead_active',
+            'lead_marked_inactive_at',
+            'chatbot_paused',
+            'updated_at',
+        ]
+    )
+    LeadInteraction.objects.create(
+        appointment=appointment,
+        activity_type=LeadActivityType.APPOINTMENT,
+        note='Lead marked complete by admin from appointment detail',
+        performed_by=request.user,
+    )
+    messages.success(request, 'Lead marked as complete and removed from Priority Leads.')
+    return redirect('appointment_detail', pk=appointment.pk)
+
 
 @staff_required
 def cancel_appointment(request, pk):

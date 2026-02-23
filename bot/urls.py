@@ -5,6 +5,7 @@ from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
     update_appointment, send_followup, confirm_appointment,
+    complete_lead_appointment,
     cancel_appointment, test_whatsapp, export_appointments, CalendarView, handle_whatsapp_media,
     # Import the new document views
     AppointmentDocumentsView, download_document,
@@ -49,6 +50,7 @@ urlpatterns = [
     path('appointments/<int:pk>/update/', update_appointment, name='update_appointment'),
     path('appointments/<int:pk>/followup/', send_followup, name='send_followup'),
     path('appointments/<int:pk>/confirm/', confirm_appointment, name='confirm_appointment'),
+    path('appointments/<int:pk>/complete-lead/', complete_lead_appointment, name='complete_lead_appointment'),
     path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),
 
         # API endpoints for fetching appointment data
