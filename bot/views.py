@@ -1177,11 +1177,17 @@ class PriorityLeadsView(TemplateView):
         )
 
         response_age = self.request.GET.get('response_age', '').strip()
-        age_map = {
+        age_map_plus = {
             '1w': timedelta(weeks=1),
             '2w': timedelta(weeks=2),
             '3w': timedelta(weeks=3),
             '1m': timedelta(days=30),
+        }
+        age_map_minus = {
+            '1w_minus': timedelta(weeks=1),
+            '2w_minus': timedelta(weeks=2),
+            '3w_minus': timedelta(weeks=3),
+            '4w_minus': timedelta(weeks=4),
         }
 
         leads = (
@@ -1223,9 +1229,12 @@ class PriorityLeadsView(TemplateView):
             .order_by('status_rank', F('recent_activity').desc(nulls_last=True), '-computed_score')
         )
 
-        if response_age in age_map:
-            cutoff = timezone.now() - age_map[response_age]
+        if response_age in age_map_plus:
+            cutoff = timezone.now() - age_map_plus[response_age]
             leads = leads.filter(last_response_at__lte=cutoff)
+        elif response_age in age_map_minus:
+            cutoff = timezone.now() - age_map_minus[response_age]
+            leads = leads.filter(last_response_at__gte=cutoff)
 
         very_hot_leads = leads.filter(computed_status='very_hot')
         hot_leads = leads.filter(computed_status='hot')

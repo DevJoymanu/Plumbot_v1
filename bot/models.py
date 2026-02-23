@@ -181,7 +181,7 @@ class Appointment(models.Model):
     
     plumber_contact_number = models.CharField(
         max_length=20, 
-        default='+263610318200',
+        default='+27610318200',
         help_text="Direct contact number for the assigned plumber"
     )
     
