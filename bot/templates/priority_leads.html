@@ -1,189 +1,104 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="header">
+<div class="header mb-4">
     <h1><i class="fas fa-bolt"></i> Priority Leads</h1>
-    <p>Grouped by urgency: Very Hot, Hot, Warm, Cold</p>
+    <p>Grouped by urgency: Very Hot, Hot, Warm, Luke-warm, Cold</p>
 </div>
 
-<div class="card" style="margin-bottom: 20px;">
+<!-- Filters -->
+<div class="card mb-4 p-3">
     <h2><i class="fas fa-filter"></i> Response Age Filter</h2>
-    <form method="get" class="actions" style="margin-bottom: 15px;">
+    <form method="get" class="d-flex gap-2 align-items-center mb-3">
         <select name="response_age" class="form-control" style="max-width: 260px;">
             <option value="" {% if not selected_response_age %}selected{% endif %}>All response ages</option>
-            <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+</option>
-            <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+</option>
-            <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+</option>
-            <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+</option>
-            <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week-</option>
-            <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks-</option>
-            <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks-</option>
-            <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks-</option>
+            <option value="1w" {% if selected_response_age=='1w' %}selected{% endif %}>No response for 1 week+</option>
+            <option value="2w" {% if selected_response_age=='2w' %}selected{% endif %}>No response for 2 weeks+</option>
+            <option value="3w" {% if selected_response_age=='3w' %}selected{% endif %}>No response for 3 weeks+</option>
+            <option value="1m" {% if selected_response_age=='1m' %}selected{% endif %}>No response for 1 month+</option>
+            <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response within
+                1 week-</option>
+            <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>Last response within
+                2 weeks-</option>
+            <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>Last response within
+                3 weeks-</option>
+            <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response within
+                4 weeks-</option>
         </select>
-        <button type="submit" class="btn btn-sm"><i class="fas fa-check"></i> Apply</button>
+        <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-check"></i> Apply</button>
         <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary"><i class="fas fa-undo"></i> Reset</a>
     </form>
 
+    <!-- Summary -->
     <h2><i class="fas fa-chart-line"></i> Summary</h2>
-    <div class="appointment-details">
-        <div class="detail-item"><i class="fas fa-database"></i> Total Leads: {{ total_leads }}</div>
-        <div class="detail-item"><i class="fas fa-fire"></i> Very Hot: {{ very_hot_leads|length }}</div>
-        <div class="detail-item"><i class="fas fa-exclamation-triangle"></i> Hot: {{ hot_leads|length }}</div>
-        <div class="detail-item"><i class="fas fa-sun"></i> Warm: {{ warm_leads|length }}</div>
-        <div class="detail-item"><i class="fas fa-temperature-low"></i> Luke-warm: {{ luke_warm_leads|length }}</div>
-        <div class="detail-item"><i class="fas fa-snowflake"></i> Cold: {{ cold_leads|length }}</div>
+    <div class="d-flex flex-wrap gap-3 mt-2">
+        {% for label, leads, icon, color in [
+        ("Total Leads", total_leads, "fa-database", "secondary"),
+        ("Very Hot", very_hot_leads|length, "fa-fire", "danger"),
+        ("Hot", hot_leads|length, "fa-exclamation-triangle", "warning"),
+        ("Warm", warm_leads|length, "fa-sun", "success"),
+        ("Luke-warm", luke_warm_leads|length, "fa-temperature-low", "info"),
+        ("Cold", cold_leads|length, "fa-snowflake", "dark")
+        ] %}
+        <div class="badge bg-{{ color }} p-2">
+            <i class="fas {{ icon }}"></i> {{ label }}: {{ leads }}
+        </div>
+        {% endfor %}
     </div>
 </div>
 
-<div class="dashboard-grid" style="grid-template-columns: 1fr;">
-    <div class="card">
-        <h2><i class="fas fa-fire"></i> Very Hot Leads</h2>
-        <div class="appointment-list">
-            {% for group in very_hot_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#991b1b;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #dc2626;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fee2e2;color:#991b1b;">
-                        {{ lead.computed_score }}/100
+<!-- Leads Accordion -->
+<div class="accordion" id="leadAccordion">
+    {% for category in [
+    ("Very Hot", very_hot_by_date, "#dc2626", "#fee2e2", "#991b1b"),
+    ("Hot", hot_by_date, "#f59e0b", "#fef3c7", "#92400e"),
+    ("Warm", warm_by_date, "#10b981", "#d1fae5", "#065f46"),
+    ("Luke-warm", luke_warm_by_date, "#0ea5e9", "#dbeafe", "#1e3a8a"),
+    ("Cold", cold_by_date, "#6b7280", "#e5e7eb", "#374151")
+    ] %}
+    {% with category_name=category.0 group_list=category.1 border_color=category.2 bg_color=category.3
+    text_color=category.4 %}
+    <div class="accordion-item mb-3">
+        <h2 class="accordion-header" id="heading{{ forloop.counter }}">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#collapse{{ forloop.counter }}" aria-expanded="false"
+                aria-controls="collapse{{ forloop.counter }}">
+                <i class="fas fa-circle" style="color: {{ border_color }}; margin-right: 8px;"></i> {{ category_name }}
+                Leads
+            </button>
+        </h2>
+        <div id="collapse{{ forloop.counter }}" class="accordion-collapse collapse"
+            aria-labelledby="heading{{ forloop.counter }}" data-bs-parent="#leadAccordion">
+            <div class="accordion-body">
+                {% for group in group_list %}
+                <h5 style="color: {{ text_color }}; margin-top: 12px;">{{ group.label }}</h5>
+                {% for lead in group.leads %}
+                <div class="card mb-2" style="border-left: 5px solid {{ border_color }};">
+                    <div class="card-body p-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <strong>{{ lead.customer_name|default:"Unknown Customer" }}</strong>
+                            <span class="badge" style="background: {{ bg_color }}; color: {{ text_color }};">{{
+                                lead.computed_score }}/100</span>
+                        </div>
+                        <div class="mt-1 d-flex flex-wrap gap-2 small text-muted">
+                            <div><i class="fas fa-phone"></i> {{ lead.phone_number }}</div>
+                            <div><i class="fas fa-tools"></i> {{ lead.project_type|default:"No service" }}</div>
+                            <div><i class="fas fa-map-marker-alt"></i> {{ lead.customer_area|default:"No area" }}</div>
+                            <div><i class="fas fa-clock"></i> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No
+                                activity" }}</div>
+                        </div>
+                        <a href="{% url 'appointment_detail' lead.pk %}"
+                            class="btn btn-sm btn-outline-primary mt-1">Open Lead</a>
                     </div>
                 </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
+                {% empty %}
+                <p class="text-muted">No {{ category_name|lower }} leads.</p>
+                {% endfor %}
+                {% endfor %}
             </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No very hot leads.</p></div>
-            {% endfor %}
         </div>
     </div>
-
-    <div class="card">
-        <h2><i class="fas fa-exclamation-triangle"></i> Hot Leads</h2>
-        <div class="appointment-list">
-            {% for group in hot_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#92400e;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #f59e0b;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fef3c7;color:#92400e;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No hot leads.</p></div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div class="card">
-        <h2><i class="fas fa-sun"></i> Warm Leads</h2>
-        <div class="appointment-list">
-            {% for group in warm_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#065f46;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #10b981;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#d1fae5;color:#065f46;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No warm leads.</p></div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div class="card">
-        <h2><i class="fas fa-temperature-low"></i> Luke-warm Leads (20/100)</h2>
-        <div class="appointment-list">
-            {% for group in luke_warm_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#1e3a8a;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #0ea5e9;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#dbeafe;color:#1e3a8a;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No luke-warm leads.</p></div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div class="card">
-        <h2><i class="fas fa-snowflake"></i> Cold Leads</h2>
-        <div class="appointment-list">
-            {% for group in cold_by_date %}
-            <h3 style="margin: 12px 0 8px 0; color:#374151;">{{ group.label }}</h3>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #6b7280;">
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#e5e7eb;color:#374151;">
-                        {{ lead.computed_score }}/100
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item"><i class="fas fa-phone"></i>{{ lead.phone_number }}</div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}</div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state"><p>No cold leads.</p></div>
-            {% endfor %}
-        </div>
-    </div>
+    {% endwith %}
+    {% endfor %}
 </div>
 {% endblock %}
