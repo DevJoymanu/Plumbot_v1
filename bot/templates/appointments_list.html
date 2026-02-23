@@ -398,24 +398,7 @@
         <div class="appointment-item">
             <div class="appointment-header">
                 <div class="appointment-name">
-                    {{ appointment.customer_name|default:"Unknown Customer" }}
-                </div>
-                <div class="appointment-status status-{{ appointment.status }}">
-                    {{ appointment.get_status_display }}
-                </div>
-            </div>
-            <div class="appointment-details">
-                <div class="detail-item">
-                    <i class="fas fa-fire"></i>
                     {{ appointment.computed_status_label|default:appointment.get_lead_status_display }} ({{ appointment.computed_score|default:appointment.lead_score }}/100)
-                </div>
-                <div class="detail-item">
-                    <i class="fas fa-clipboard-check"></i>
-                    {{ appointment.get_follow_up_status_display }}
-                </div>
-                <div class="detail-item">
-                    <i class="fas fa-robot"></i>
-                    {% if appointment.chatbot_paused %}Bot Paused{% else %}Bot Active{% endif %}
                 </div>
             </div>
             <div class="appointment-details">

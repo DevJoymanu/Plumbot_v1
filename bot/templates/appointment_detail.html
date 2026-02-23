@@ -459,6 +459,14 @@
                 <span class="badge">{{ appointment.get_follow_up_status_display }}</span>
             </div>
             <div class="status-item">
+                <label>Chatbot Stage:</label>
+                <span class="badge">{{ appointment.get_followup_stage_display }}</span>
+            </div>
+            <div class="status-item">
+                <label>Auto Follow-up:</label>
+                <span>{{ appointment.get_followup_status_display_verbose }}</span>
+            </div>
+            <div class="status-item">
                 <label>Last Contacted:</label>
                 <span>
                     {% if appointment.last_contacted_at %}

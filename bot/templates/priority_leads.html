@@ -11,14 +11,10 @@
     <form method="get" class="actions" style="margin-bottom: 15px;">
         <select name="response_age" class="form-control" style="max-width: 260px;">
             <option value="" {% if not selected_response_age %}selected{% endif %}>All response ages</option>
-            <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+</option>
-            <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+</option>
-            <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+</option>
-            <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+</option>
-            <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week-</option>
-            <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks-</option>
-            <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks-</option>
-            <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks-</option>
+            <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week</option>
+            <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks</option>
+            <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks</option>
+            <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks</option>
         </select>
         <button type="submit" class="btn btn-sm"><i class="fas fa-check"></i> Apply</button>
         <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary"><i class="fas fa-undo"></i> Reset</a>
