@@ -48,6 +48,41 @@
         background: #fff;
         font-size: 0.82rem;
         font-weight: 700;
+        cursor: pointer;
+    }
+
+    .chip i {
+        margin-right: 4px;
+    }
+
+    .chip-total {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .chip-vh {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .chip-hot {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .chip-warm {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .chip-luke {
+        background: #dbeafe;
+        color: #1e3a8a;
+    }
+
+    .chip-cold {
+        background: #e5e7eb;
+        color: #374151;
     }
 
     .filter-card,
@@ -101,6 +136,7 @@
     .section {
         margin-bottom: 12px;
         overflow: hidden;
+        border-left: 4px solid transparent;
     }
 
     .section-head {
@@ -110,6 +146,48 @@
         padding: 12px;
         border-bottom: 1px solid var(--border);
         font-weight: 700;
+    }
+
+    .section-head-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .section-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .sec-vh { border-left-color: #dc2626; }
+    .sec-hot { border-left-color: #f59e0b; }
+    .sec-warm { border-left-color: #10b981; }
+    .sec-luke { border-left-color: #0ea5e9; }
+    .sec-cold { border-left-color: #6b7280; }
+
+    .sec-vh .section-icon { background: #fee2e2; color: #991b1b; }
+    .sec-hot .section-icon { background: #fef3c7; color: #92400e; }
+    .sec-warm .section-icon { background: #d1fae5; color: #065f46; }
+    .sec-luke .section-icon { background: #dbeafe; color: #1e3a8a; }
+    .sec-cold .section-icon { background: #e5e7eb; color: #374151; }
+
+    .section-rec {
+        margin: 8px 12px 2px;
+        padding: 7px 10px;
+        font-size: 0.82rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        color: #1f2937;
+    }
+
+    .section-rec i {
+        color: #2563eb;
+        margin-right: 6px;
     }
 
     .segment-title {
@@ -160,15 +238,6 @@
         gap: 6px;
         font-size: 0.8rem;
         color: var(--muted);
-        margin-bottom: 8px;
-    }
-
-    .rec {
-        background: #ecfeff;
-        border: 1px solid #a5f3fc;
-        border-radius: 8px;
-        padding: 8px;
-        font-size: 0.82rem;
         margin-bottom: 8px;
     }
 
@@ -234,22 +303,26 @@
     </div>
 
     <div class="chip-row">
-        <div class="chip">All: {{ total_leads }}</div>
-        <div class="chip">Very Hot: {{ very_hot_leads|length }}</div>
-        <div class="chip">Hot: {{ hot_leads|length }}</div>
-        <div class="chip">Warm: {{ warm_leads|length }}</div>
-        <div class="chip">Lukewarm: {{ luke_warm_leads|length }}</div>
-        <div class="chip">Cold: {{ cold_leads|length }}</div>
-        <div class="chip">Manual Pending: {{ manual_followup_pending_count }}</div>
-        <div class="chip">Manual Done: {{ manual_followup_done_count }}</div>
+        <div class="chip chip-total" onclick="scrollToSection('sec-vh')"><i class="fas fa-database"></i>All: {{ total_leads }}</div>
+        <div class="chip chip-vh" onclick="scrollToSection('sec-vh')"><i class="fas fa-fire"></i>Very Hot: {{ very_hot_leads|length }}</div>
+        <div class="chip chip-hot" onclick="scrollToSection('sec-hot')"><i class="fas fa-exclamation-triangle"></i>Hot: {{ hot_leads|length }}</div>
+        <div class="chip chip-warm" onclick="scrollToSection('sec-warm')"><i class="fas fa-sun"></i>Warm: {{ warm_leads|length }}</div>
+        <div class="chip chip-luke" onclick="scrollToSection('sec-luke')"><i class="fas fa-temperature-low"></i>Lukewarm: {{ luke_warm_leads|length }}</div>
+        <div class="chip chip-cold" onclick="scrollToSection('sec-cold')"><i class="fas fa-snowflake"></i>Cold: {{ cold_leads|length }}</div>
+        <div class="chip chip-hot" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-clock"></i>Manual Pending: {{ manual_followup_pending_count }}</div>
+        <div class="chip chip-warm" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-check"></i>Manual Done: {{ manual_followup_done_count }}</div>
     </div>
 
     {% for section in sections %}
-    <div class="section" id="{{ section.id }}">
+    <div class="section {{ section.css }}" id="{{ section.id }}">
         <div class="section-head">
-            <span>{{ section.title }}</span>
+            <span class="section-head-left">
+                <span class="section-icon"><i class="fas fa-{{ section.icon }}"></i></span>
+                <span>{{ section.title }}</span>
+            </span>
             <span>{{ section.count }}</span>
         </div>
+        <div class="section-rec"><i class="fas fa-info-circle"></i><strong>Recommended action:</strong> {{ section.recommended_action }}</div>
 
         <div class="segment-title">Manual Follow-up Pending ({{ section.pending_count }})</div>
         {% for group in section.pending_by_date %}
@@ -260,7 +333,6 @@
                 <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
                 <div class="lead-score">{{ lead.computed_score }}/100</div>
             </div>
-            <div class="rec"><strong>Recommended action:</strong> {{ lead.recommended_action }}</div>
             <div class="lead-meta">
                 <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
                 <div>Service: {{ lead.project_type|default:"No service" }}</div>
@@ -310,7 +382,6 @@
                 <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
                 <div class="lead-score">{{ lead.computed_score }}/100</div>
             </div>
-            <div class="rec"><strong>Recommended action:</strong> {{ lead.recommended_action }}</div>
             <div class="lead-meta">
                 <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
                 <div>Service: {{ lead.project_type|default:"No service" }}</div>
@@ -353,4 +424,12 @@
     </div>
     {% endfor %}
 </div>
+<script>
+    function scrollToSection(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const top = el.getBoundingClientRect().top + window.scrollY - 10;
+        window.scrollTo({ top: top, behavior: 'smooth' });
+    }
+</script>
 {% endblock %}
