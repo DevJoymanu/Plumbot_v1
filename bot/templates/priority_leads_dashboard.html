@@ -85,6 +85,33 @@
         color: #374151;
     }
 
+    .types-dropdown {
+        margin: 10px 0 16px;
+    }
+
+    .types-dropdown summary {
+        list-style: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+        font-size: 0.86rem;
+        font-weight: 700;
+        color: #1f2937;
+    }
+
+    .types-dropdown summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .types-dropdown[open] summary {
+        margin-bottom: 8px;
+    }
+
     .filter-card,
     .section {
         background: var(--card);
@@ -304,14 +331,20 @@
 
     <div class="chip-row">
         <div class="chip chip-total" onclick="scrollToSection('sec-vh')"><i class="fas fa-database"></i>All: {{ total_leads }}</div>
-        <div class="chip chip-vh" onclick="scrollToSection('sec-vh')"><i class="fas fa-fire"></i>Very Hot: {{ very_hot_leads|length }}</div>
-        <div class="chip chip-hot" onclick="scrollToSection('sec-hot')"><i class="fas fa-exclamation-triangle"></i>Hot: {{ hot_leads|length }}</div>
-        <div class="chip chip-warm" onclick="scrollToSection('sec-warm')"><i class="fas fa-sun"></i>Warm: {{ warm_leads|length }}</div>
-        <div class="chip chip-luke" onclick="scrollToSection('sec-luke')"><i class="fas fa-temperature-low"></i>Lukewarm: {{ luke_warm_leads|length }}</div>
-        <div class="chip chip-cold" onclick="scrollToSection('sec-cold')"><i class="fas fa-snowflake"></i>Cold: {{ cold_leads|length }}</div>
         <div class="chip chip-hot" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-clock"></i>Manual Pending: {{ manual_followup_pending_count }}</div>
         <div class="chip chip-warm" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-check"></i>Manual Done: {{ manual_followup_done_count }}</div>
     </div>
+
+    <details class="types-dropdown">
+        <summary><i class="fas fa-chevron-right"></i> Lead Types</summary>
+        <div class="chip-row">
+            <div class="chip chip-vh" onclick="scrollToSection('sec-vh')"><i class="fas fa-fire"></i>Very Hot: {{ very_hot_leads|length }}</div>
+            <div class="chip chip-hot" onclick="scrollToSection('sec-hot')"><i class="fas fa-exclamation-triangle"></i>Hot: {{ hot_leads|length }}</div>
+            <div class="chip chip-warm" onclick="scrollToSection('sec-warm')"><i class="fas fa-sun"></i>Warm: {{ warm_leads|length }}</div>
+            <div class="chip chip-luke" onclick="scrollToSection('sec-luke')"><i class="fas fa-temperature-low"></i>Lukewarm: {{ luke_warm_leads|length }}</div>
+            <div class="chip chip-cold" onclick="scrollToSection('sec-cold')"><i class="fas fa-snowflake"></i>Cold: {{ cold_leads|length }}</div>
+        </div>
+    </details>
 
     {% for section in sections %}
     <div class="section {{ section.css }}" id="{{ section.id }}">
