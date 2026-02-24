@@ -327,6 +327,11 @@
 
     <div class="chip-row">
         <div class="chip chip-total" onclick="scrollToSection('sec-vh')"><i class="fas fa-database"></i>All: {{ total_leads }}</div>
+        <div class="chip chip-vh" onclick="scrollToSection('sec-vh')"><i class="fas fa-fire"></i>Very Hot: {{ very_hot_leads|length }}</div>
+        <div class="chip chip-hot" onclick="scrollToSection('sec-hot')"><i class="fas fa-exclamation-triangle"></i>Hot: {{ hot_leads|length }}</div>
+        <div class="chip chip-warm" onclick="scrollToSection('sec-warm')"><i class="fas fa-sun"></i>Warm: {{ warm_leads|length }}</div>
+        <div class="chip chip-luke" onclick="scrollToSection('sec-luke')"><i class="fas fa-temperature-low"></i>Lukewarm: {{ luke_warm_leads|length }}</div>
+        <div class="chip chip-cold" onclick="scrollToSection('sec-cold')"><i class="fas fa-snowflake"></i>Cold: {{ cold_leads|length }}</div>
         <div class="chip chip-hot" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-clock"></i>Manual Pending: {{ manual_followup_pending_count }}</div>
         <div class="chip chip-warm" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-check"></i>Manual Done: {{ manual_followup_done_count }}</div>
     </div>
