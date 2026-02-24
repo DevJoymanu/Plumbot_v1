@@ -166,13 +166,26 @@
         border-left: 4px solid transparent;
     }
 
+    .section summary {
+        list-style: none;
+        cursor: pointer;
+    }
+
+    .section summary::-webkit-details-marker {
+        display: none;
+    }
+
     .section-head {
         display: flex;
         justify-content: space-between;
         align-items: center;
         padding: 12px;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid transparent;
         font-weight: 700;
+    }
+
+    .section[open] .section-head {
+        border-bottom-color: var(--border);
     }
 
     .section-head-left {
@@ -215,6 +228,16 @@
     .section-rec i {
         color: #2563eb;
         margin-right: 6px;
+    }
+
+    .section-chevron {
+        color: var(--muted);
+        margin-left: 8px;
+        transition: transform 0.2s ease;
+    }
+
+    .section[open] .section-chevron {
+        transform: rotate(90deg);
     }
 
     .segment-title {
@@ -347,14 +370,17 @@
     </details>
 
     {% for section in sections %}
-    <div class="section {{ section.css }}" id="{{ section.id }}">
-        <div class="section-head">
+    <details class="section {{ section.css }}" id="{{ section.id }}">
+        <summary class="section-head">
             <span class="section-head-left">
                 <span class="section-icon"><i class="fas fa-{{ section.icon }}"></i></span>
                 <span>{{ section.title }}</span>
             </span>
-            <span>{{ section.count }}</span>
-        </div>
+            <span>
+                {{ section.count }}
+                <i class="fas fa-chevron-right section-chevron"></i>
+            </span>
+        </summary>
         <div class="section-rec"><i class="fas fa-info-circle"></i><strong>Recommended action:</strong> {{ section.recommended_action }}</div>
 
         <div class="segment-title">Manual Follow-up Pending ({{ section.pending_count }})</div>
@@ -454,13 +480,16 @@
         {% empty %}
         <div class="lead-card">No leads marked as manually followed up for this section.</div>
         {% endfor %}
-    </div>
+    </details>
     {% endfor %}
 </div>
 <script>
     function scrollToSection(id) {
         const el = document.getElementById(id);
         if (!el) return;
+        if (el.tagName === 'DETAILS') {
+            el.open = true;
+        }
         const top = el.getBoundingClientRect().top + window.scrollY - 10;
         window.scrollTo({ top: top, behavior: 'smooth' });
     }
