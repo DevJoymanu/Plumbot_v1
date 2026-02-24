@@ -742,6 +742,15 @@ def handle_text_message(sender, text_data):
         print(f"User message saved to conversation history")
 
         appointment.mark_customer_response()
+
+        # ── Auto-classify service type from the customer's message ──────────
+        # Only runs if project_type is not yet set. Uses keyword matching first,
+        # DeepSeek AI as fallback for edge cases. Safe to call on every message.
+        if not appointment.project_type:
+            from .service_type_classifier import classify_and_save
+            classify_and_save(appointment, message_body)
+        # ─────────────────────────────────────────────────────────────────────
+
         previous_status = appointment.lead_status
         _, new_status = refresh_lead_score(appointment)
         if new_status != previous_status and new_status in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
