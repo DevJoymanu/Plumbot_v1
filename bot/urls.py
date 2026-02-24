@@ -46,6 +46,7 @@ urlpatterns = [
     # Appointments
     path('appointments/', AppointmentsListView.as_view(), name='appointments_list'),
     path('leads/priority/', PriorityLeadsView.as_view(), name='priority_leads'),
+    path('leads/priority/<int:pk>/update/', views.update_priority_lead_card, name='update_priority_lead_card'),
     path('appointments/<int:pk>/', AppointmentDetailView.as_view(), name='appointment_detail'),
     path('appointments/<int:pk>/update/', update_appointment, name='update_appointment'),
     path('appointments/<int:pk>/followup/', send_followup, name='send_followup'),

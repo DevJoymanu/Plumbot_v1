@@ -989,6 +989,10 @@ class Appointment(models.Model):
         default=LeadFollowUpStatus.PENDING,
         db_index=True,
     )
+    manual_followup_done = models.BooleanField(default=False, db_index=True)
+    manual_followup_updated_at = models.DateTimeField(null=True, blank=True)
+    last_priority_alert_summary = models.TextField(blank=True)
+    last_priority_alert_sent_at = models.DateTimeField(null=True, blank=True)
     admin_notes = models.TextField(blank=True)
     last_contacted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     next_follow_up_at = models.DateTimeField(null=True, blank=True, db_index=True)

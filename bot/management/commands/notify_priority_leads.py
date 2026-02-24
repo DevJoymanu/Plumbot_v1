@@ -100,10 +100,14 @@ class Command(BaseCommand):
                 else:
                     whatsapp_api.send_text_message(plumber_number, message)
 
+                lead.last_priority_alert_summary = message
+                lead.last_priority_alert_sent_at = timezone.now()
+                lead.save(update_fields=["last_priority_alert_summary", "last_priority_alert_sent_at"])
+
                 LeadInteraction.objects.create(
                     appointment=lead,
                     activity_type=LeadActivityType.NOTE,
-                    note=f"{marker} Sent to {plumber_number}",
+                    note=f"{marker}\nSent to {plumber_number}\n\n{message}",
                 )
                 sent += 1
             except Exception as exc:
@@ -229,4 +233,3 @@ class Command(BaseCommand):
             logger.warning("DeepSeek summary failed for appointment %s: %s", lead.id, exc)
             # Deterministic fallback for operational continuity.
             return " | ".join(transcript_lines[-3:])[:500]
-

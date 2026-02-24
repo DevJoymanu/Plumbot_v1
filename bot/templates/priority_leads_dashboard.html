@@ -1,0 +1,356 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    :root {
+        --bg: #f5f7fb;
+        --card: #fff;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+    }
+
+    .pl-wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 18px 12px 36px;
+    }
+
+    .pl-head {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .pl-head h1 {
+        margin: 0;
+        font-size: 1.5rem;
+    }
+
+    .pl-sub {
+        color: var(--muted);
+        font-size: 0.9rem;
+    }
+
+    .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 16px;
+    }
+
+    .chip {
+        padding: 6px 11px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: #fff;
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+
+    .filter-card,
+    .section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+    }
+
+    .filter-card {
+        margin-bottom: 12px;
+        padding: 12px;
+    }
+
+    .filter-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 8px;
+    }
+
+    .filter-row select,
+    .card-menu select,
+    .card-menu textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
+        font-size: 0.85rem;
+    }
+
+    .btn {
+        border: none;
+        border-radius: 8px;
+        padding: 9px 12px;
+        font-size: 0.83rem;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    .btn-dark {
+        background: #111827;
+        color: #fff;
+    }
+
+    .btn-light {
+        background: #eef2f7;
+        color: #1f2937;
+    }
+
+    .section {
+        margin-bottom: 12px;
+        overflow: hidden;
+    }
+
+    .section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 700;
+    }
+
+    .segment-title {
+        padding: 10px 12px 4px;
+        font-size: 0.76rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+    }
+
+    .date-title {
+        padding: 8px 12px 0;
+        font-size: 0.75rem;
+        color: var(--muted);
+        font-weight: 700;
+    }
+
+    .lead-card {
+        border-top: 1px solid var(--border);
+        padding: 10px 12px 12px;
+    }
+
+    .lead-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: flex-start;
+        margin-bottom: 7px;
+    }
+
+    .lead-name {
+        font-size: 0.98rem;
+        font-weight: 700;
+    }
+
+    .lead-score {
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        background: #f3f4f6;
+    }
+
+    .lead-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 6px;
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-bottom: 8px;
+    }
+
+    .rec {
+        background: #ecfeff;
+        border: 1px solid #a5f3fc;
+        border-radius: 8px;
+        padding: 8px;
+        font-size: 0.82rem;
+        margin-bottom: 8px;
+    }
+
+    .alert {
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 8px;
+        font-size: 0.8rem;
+        margin-bottom: 8px;
+    }
+
+    .card-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .card-menu {
+        width: 100%;
+        margin-top: 6px;
+    }
+
+    .card-menu summary {
+        cursor: pointer;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #1f2937;
+    }
+
+    .card-menu form {
+        margin-top: 8px;
+        display: grid;
+        gap: 8px;
+    }
+</style>
+
+<div class="pl-wrap">
+    <div class="pl-head">
+        <div>
+            <h1>Priority Leads Dashboard</h1>
+            <div class="pl-sub">Segmented by urgency and manual follow-up status, with recommended actions per lead.</div>
+        </div>
+    </div>
+
+    <div class="filter-card">
+        <form method="get" class="filter-row">
+            <select name="response_age">
+                <option value="">All response ages</option>
+                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+</option>
+                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+</option>
+                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+</option>
+                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+</option>
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week</option>
+                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks</option>
+                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks</option>
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks</option>
+            </select>
+            <button type="submit" class="btn btn-dark">Apply</button>
+            <a href="{% url 'priority_leads' %}" class="btn btn-light">Reset</a>
+        </form>
+    </div>
+
+    <div class="chip-row">
+        <div class="chip">All: {{ total_leads }}</div>
+        <div class="chip">Very Hot: {{ very_hot_leads|length }}</div>
+        <div class="chip">Hot: {{ hot_leads|length }}</div>
+        <div class="chip">Warm: {{ warm_leads|length }}</div>
+        <div class="chip">Lukewarm: {{ luke_warm_leads|length }}</div>
+        <div class="chip">Cold: {{ cold_leads|length }}</div>
+        <div class="chip">Manual Pending: {{ manual_followup_pending_count }}</div>
+        <div class="chip">Manual Done: {{ manual_followup_done_count }}</div>
+    </div>
+
+    {% for section in sections %}
+    <div class="section" id="{{ section.id }}">
+        <div class="section-head">
+            <span>{{ section.title }}</span>
+            <span>{{ section.count }}</span>
+        </div>
+
+        <div class="segment-title">Manual Follow-up Pending ({{ section.pending_count }})</div>
+        {% for group in section.pending_by_date %}
+        <div class="date-title">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-card" style="border-left: 3px solid {{ section.border }};">
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="lead-score">{{ lead.computed_score }}/100</div>
+            </div>
+            <div class="rec"><strong>Recommended action:</strong> {{ lead.recommended_action }}</div>
+            <div class="lead-meta">
+                <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
+                <div>Service: {{ lead.project_type|default:"No service" }}</div>
+                <div>Area: {{ lead.customer_area|default:"No area" }}</div>
+                <div>Recent: {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+            </div>
+            {% if lead.last_priority_alert_summary %}
+            <div class="alert"><strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
+            {% endif %}
+            <div class="card-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
+            </div>
+            <details class="card-menu">
+                <summary>Update manual follow-up and notes</summary>
+                <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <select name="manual_followup_state">
+                        <option value="">Manual follow-up state</option>
+                        <option value="pending">Mark manual follow-up pending</option>
+                        <option value="done">Mark manually followed up</option>
+                    </select>
+                    <select name="follow_up_status">
+                        <option value="">Lead follow-up status</option>
+                        {% for value, label in follow_up_status_choices %}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <textarea name="note" placeholder="Add internal note"></textarea>
+                    <button type="submit" class="btn btn-dark">Save update</button>
+                </form>
+            </details>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="lead-card">No leads in manual-follow-up pending for this section.</div>
+        {% endfor %}
+
+        <div class="segment-title">Manually Followed Up ({{ section.done_count }})</div>
+        {% for group in section.done_by_date %}
+        <div class="date-title">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-card" style="border-left: 3px solid {{ section.border }};">
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="lead-score">{{ lead.computed_score }}/100</div>
+            </div>
+            <div class="rec"><strong>Recommended action:</strong> {{ lead.recommended_action }}</div>
+            <div class="lead-meta">
+                <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
+                <div>Service: {{ lead.project_type|default:"No service" }}</div>
+                <div>Area: {{ lead.customer_area|default:"No area" }}</div>
+                <div>Recent: {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+            </div>
+            {% if lead.last_priority_alert_summary %}
+            <div class="alert"><strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
+            {% endif %}
+            <div class="card-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
+            </div>
+            <details class="card-menu">
+                <summary>Update manual follow-up and notes</summary>
+                <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <select name="manual_followup_state">
+                        <option value="">Manual follow-up state</option>
+                        <option value="pending">Mark manual follow-up pending</option>
+                        <option value="done">Mark manually followed up</option>
+                    </select>
+                    <select name="follow_up_status">
+                        <option value="">Lead follow-up status</option>
+                        {% for value, label in follow_up_status_choices %}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <textarea name="note" placeholder="Add internal note"></textarea>
+                    <button type="submit" class="btn btn-dark">Save update</button>
+                </form>
+            </details>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="lead-card">No leads marked as manually followed up for this section.</div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

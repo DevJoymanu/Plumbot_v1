@@ -1173,7 +1173,7 @@ class AppointmentsListView(ListView):
 
 @method_decorator(staff_required, name='dispatch')
 class PriorityLeadsView(TemplateView):
-    template_name = 'priority_leads.html'
+    template_name = 'priority_leads_dashboard.html'
 
     def _group_leads_by_date(self, leads_qs):
         from collections import OrderedDict
@@ -1199,6 +1199,29 @@ class PriorityLeadsView(TemplateView):
             grouped.setdefault(label, []).append(lead)
 
         return [{"label": label, "leads": items} for label, items in grouped.items()]
+
+    def _recommended_action(self, lead):
+        if lead.computed_status == 'very_hot':
+            if lead.manual_followup_done:
+                return "Finalize booking time and send confirmation details."
+            return "Call now and lock in the site visit time."
+        if lead.computed_status == 'hot':
+            if lead.manual_followup_done:
+                return "Follow up on quote details and push to booking."
+            return "Call within 30 minutes to complete missing details."
+        if lead.computed_status == 'warm':
+            if lead.manual_followup_done:
+                return "Set a reminder and wait for customer response."
+            return "Send a WhatsApp check-in for missing project info."
+        if lead.computed_score == 20:
+            return "Send a quick nudge to re-engage this lead."
+        return "Move to nurture sequence or close as cold lead."
+
+    def _enrich_leads(self, leads_qs):
+        leads = list(leads_qs)
+        for lead in leads:
+            lead.recommended_action = self._recommended_action(lead)
+        return leads
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1232,6 +1255,12 @@ class PriorityLeadsView(TemplateView):
         )
 
         response_age = self.request.GET.get('response_age', '').strip()
+        age_map_plus = {
+            '1w': timedelta(weeks=1),
+            '2w': timedelta(weeks=2),
+            '3w': timedelta(weeks=3),
+            '1m': timedelta(days=30),
+        }
         age_map_minus = {
             '1w_minus': timedelta(weeks=1),
             '2w_minus': timedelta(weeks=2),
@@ -1281,12 +1310,93 @@ class PriorityLeadsView(TemplateView):
         if response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
             leads = leads.filter(last_response_at__gte=cutoff)
+        elif response_age in age_map_plus:
+            cutoff = timezone.now() - age_map_plus[response_age]
+            leads = leads.filter(last_response_at__lte=cutoff)
 
         very_hot_leads = leads.filter(computed_status='very_hot')
         hot_leads = leads.filter(computed_status='hot')
         warm_leads = leads.filter(computed_status='warm')
         luke_warm_leads = leads.filter(computed_status='cold', computed_score=20)
         cold_leads = leads.filter(computed_status='cold', computed_score=0)
+
+        sections = [
+            {
+                'id': 'sec-vh',
+                'title': 'Very Hot Leads',
+                'icon': 'fire',
+                'css': 'sec-vh',
+                'status_bg': '#fee2e2',
+                'status_fg': '#991b1b',
+                'border': '#dc2626',
+                'empty_label': 'No very hot leads.',
+                'count': very_hot_leads.count(),
+                'pending_count': very_hot_leads.filter(manual_followup_done=False).count(),
+                'done_count': very_hot_leads.filter(manual_followup_done=True).count(),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads(very_hot_leads.filter(manual_followup_done=False))),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads(very_hot_leads.filter(manual_followup_done=True))),
+            },
+            {
+                'id': 'sec-hot',
+                'title': 'Hot Leads',
+                'icon': 'exclamation-triangle',
+                'css': 'sec-hot',
+                'status_bg': '#fef3c7',
+                'status_fg': '#92400e',
+                'border': '#f59e0b',
+                'empty_label': 'No hot leads.',
+                'count': hot_leads.count(),
+                'pending_count': hot_leads.filter(manual_followup_done=False).count(),
+                'done_count': hot_leads.filter(manual_followup_done=True).count(),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads(hot_leads.filter(manual_followup_done=False))),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads(hot_leads.filter(manual_followup_done=True))),
+            },
+            {
+                'id': 'sec-warm',
+                'title': 'Warm Leads',
+                'icon': 'sun',
+                'css': 'sec-warm',
+                'status_bg': '#d1fae5',
+                'status_fg': '#065f46',
+                'border': '#10b981',
+                'empty_label': 'No warm leads.',
+                'count': warm_leads.count(),
+                'pending_count': warm_leads.filter(manual_followup_done=False).count(),
+                'done_count': warm_leads.filter(manual_followup_done=True).count(),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads(warm_leads.filter(manual_followup_done=False))),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads(warm_leads.filter(manual_followup_done=True))),
+            },
+            {
+                'id': 'sec-luke',
+                'title': 'Luke-warm Leads',
+                'icon': 'temperature-low',
+                'css': 'sec-luke',
+                'status_bg': '#dbeafe',
+                'status_fg': '#1e3a8a',
+                'border': '#0ea5e9',
+                'empty_label': 'No luke-warm leads.',
+                'count': luke_warm_leads.count(),
+                'pending_count': luke_warm_leads.filter(manual_followup_done=False).count(),
+                'done_count': luke_warm_leads.filter(manual_followup_done=True).count(),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads(luke_warm_leads.filter(manual_followup_done=False))),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads(luke_warm_leads.filter(manual_followup_done=True))),
+            },
+            {
+                'id': 'sec-cold',
+                'title': 'Cold Leads',
+                'icon': 'snowflake',
+                'css': 'sec-cold',
+                'status_bg': '#e5e7eb',
+                'status_fg': '#374151',
+                'border': '#6b7280',
+                'empty_label': 'No cold leads.',
+                'count': cold_leads.count(),
+                'pending_count': cold_leads.filter(manual_followup_done=False).count(),
+                'done_count': cold_leads.filter(manual_followup_done=True).count(),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads(cold_leads.filter(manual_followup_done=False))),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads(cold_leads.filter(manual_followup_done=True))),
+            },
+        ]
 
         context.update(
             {
@@ -1302,9 +1412,64 @@ class PriorityLeadsView(TemplateView):
                 'cold_by_date': self._group_leads_by_date(cold_leads),
                 'total_leads': leads.count(),
                 'selected_response_age': response_age,
+                'manual_followup_pending_count': leads.filter(manual_followup_done=False).count(),
+                'manual_followup_done_count': leads.filter(manual_followup_done=True).count(),
+                'sections': sections,
+                'follow_up_status_choices': Appointment._meta.get_field('follow_up_status').choices,
             }
         )
         return context
+
+
+@staff_required
+@require_POST
+def update_priority_lead_card(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    now = timezone.now()
+    next_url = request.POST.get('next') or reverse('priority_leads')
+    if not next_url.startswith('/'):
+        next_url = reverse('priority_leads')
+
+    update_fields = []
+    manual_state = request.POST.get('manual_followup_state', '').strip()
+    follow_up_status = request.POST.get('follow_up_status', '').strip()
+    note = request.POST.get('note', '').strip()
+
+    if manual_state in {'done', 'pending'}:
+        appointment.manual_followup_done = manual_state == 'done'
+        appointment.manual_followup_updated_at = now
+        update_fields.extend(['manual_followup_done', 'manual_followup_updated_at'])
+        LeadInteraction.objects.create(
+            appointment=appointment,
+            activity_type=LeadActivityType.NOTE,
+            note=f"[MANUAL FOLLOW-UP] Marked as {'done' if appointment.manual_followup_done else 'pending'} from priority dashboard.",
+            performed_by=request.user,
+        )
+
+    valid_statuses = {choice[0] for choice in Appointment._meta.get_field('follow_up_status').choices}
+    if follow_up_status in valid_statuses:
+        appointment.follow_up_status = follow_up_status
+        update_fields.append('follow_up_status')
+
+    if note:
+        timestamp = timezone.localtime(now).strftime('%Y-%m-%d %H:%M')
+        existing_notes = appointment.admin_notes or ''
+        appointment.admin_notes = f"[Priority Dashboard {timestamp}] {note}\n{existing_notes}".strip()
+        update_fields.append('admin_notes')
+        LeadInteraction.objects.create(
+            appointment=appointment,
+            activity_type=LeadActivityType.NOTE,
+            note=f"[PRIORITY DASHBOARD NOTE] {note}",
+            performed_by=request.user,
+        )
+
+    if update_fields:
+        appointment.save(update_fields=sorted(set(update_fields)))
+        messages.success(request, 'Priority lead updated.')
+    else:
+        messages.info(request, 'No changes were submitted.')
+
+    return redirect(next_url)
 
 
 @method_decorator(staff_required, name='dispatch')
