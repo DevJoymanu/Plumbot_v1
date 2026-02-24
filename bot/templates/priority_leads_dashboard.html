@@ -374,7 +374,7 @@
                 <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
             </div>
             <details class="card-menu">
-                <summary>Update manual follow-up and notes</summary>
+                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
                 <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
@@ -389,7 +389,7 @@
                         <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
-                    <textarea name="note" placeholder="Add internal note"></textarea>
+                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
                     <button type="submit" class="btn btn-dark">Save update</button>
                 </form>
             </details>
@@ -423,7 +423,7 @@
                 <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
             </div>
             <details class="card-menu">
-                <summary>Update manual follow-up and notes</summary>
+                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
                 <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
@@ -438,7 +438,7 @@
                         <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
-                    <textarea name="note" placeholder="Add internal note"></textarea>
+                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
                     <button type="submit" class="btn btn-dark">Save update</button>
                 </form>
             </details>
