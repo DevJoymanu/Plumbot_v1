@@ -529,8 +529,8 @@ def process_message_change(value):
         messages = value.get('messages', [])
         for message in messages:
             message_type = message.get('type')
-            message_id = message.get('id')
-            sender = message.get('from')
+            message_id   = message.get('id')
+            sender       = message.get('from')
 
             if message_id:
                 try:
@@ -552,8 +552,9 @@ def process_message_change(value):
                 handle_media_message(sender, message.get('image', {}), 'image')
             elif message_type == 'document':
                 handle_media_message(sender, message.get('document', {}), 'document')
-            elif message_type == 'audio':
-                handle_audio_message(sender, message.get('audio', {}))
+            elif message_type in ('audio', 'voice'):
+                # WhatsApp sends recorded voice notes as type 'audio' OR 'voice'
+                handle_audio_message(sender, message.get('audio') or message.get('voice') or {})
             elif message_type == 'video':
                 handle_media_message(sender, message.get('video', {}), 'video')
             elif message_type == 'sticker':
@@ -562,15 +563,14 @@ def process_message_change(value):
                 handle_location_message(sender, message.get('location', {}))
             elif message_type == 'contacts':
                 handle_unsupported_media(sender, 'contacts')
-            elif message_type == 'voice':
-                handle_audio_message(sender, message.get('voice', {}))
             else:
-                print(f"⚠️ Unknown message type: {message_type}")
-                handle_unsupported_media(sender, message_type)
+                # Truly unknown type — log it so we can add a handler later
+                print(f"⚠️ Unrecognised message type from {sender}: '{message_type}' — ignoring")
+                # Do NOT call handle_unsupported_media here to avoid confusing
+                # the customer with an error message for types they didn't choose.
 
     except Exception as e:
         print(f"❌ Error processing message: {str(e)}")
-
 
 def handle_location_message(sender, location_data):
     try:
@@ -626,19 +626,39 @@ def handle_unsupported_media(sender, media_type):
         if is_chatbot_paused_for_sender(sender):
             print(f"Chatbot paused for whatsapp:+{sender}; skipping unsupported media auto response.")
             return
-        print(f"⚠️ Unsupported media type from {sender}: {media_type}")
+        print(f"⚠️ Unsupported media type from {sender}: '{media_type}'")
 
-        media_names = {'sticker': 'sticker', 'contacts': 'contact card', 'gif': 'GIF'}
-        friendly_name = media_names.get(media_type, media_type)
+        # Guard: these types have dedicated handlers — should NEVER reach here.
+        # If they do it means process_message_change has a routing bug.
+        if media_type in ('image', 'document', 'video', 'audio', 'voice'):
+            print(
+                f"⚠️ WARNING: '{media_type}' was incorrectly routed to "
+                f"handle_unsupported_media. Ignoring silently."
+            )
+            return
+
+        media_names = {
+            'sticker':  'sticker',
+            'contacts': 'contact card',
+            'gif':      'GIF',
+        }
+        # Use 'file' as the fallback instead of the raw type string,
+        # so we never say "Thanks for the unsupported!"
+        friendly_name = media_names.get(media_type, 'file')
 
         response_msg = (
             f"Thanks for the {friendly_name}! 😊\n\n"
             f"I can't process {friendly_name}s right now, but I work great with:\n"
-            f"✅ Text messages\n✅ Images (for plans)\n✅ PDF documents (for plans)\n✅ Videos\n\n"
+            f"✅ Text messages\n"
+            f"✅ Images (for plans)\n"
+            f"✅ PDF documents (for plans)\n"
+            f"✅ Videos\n\n"
             f"Could you send that as a text message instead?\n\nThanks!"
         )
         delay = get_random_delay()
-        threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
+        threading.Thread(
+            target=delayed_response, args=(sender, response_msg, delay), daemon=True
+        ).start()
 
     except Exception as e:
         print(f"❌ Error handling unsupported media: {str(e)}")
