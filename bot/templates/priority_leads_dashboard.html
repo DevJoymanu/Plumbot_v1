@@ -370,8 +370,14 @@
             {% endif %}
             <div class="card-actions">
                 <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
-                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
-                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
+                    <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call"
+                        aria-label="Call {{ lead.customer_name|default:'customer' }}">
+                        <i class="fas fa-phone" aria-hidden="true"></i> Call
+                    </a>
+                    <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa" target="_blank"
+                        rel="noopener noreferrer" aria-label="WhatsApp {{ lead.customer_name|default:'customer' }}">
+                        <i class="fab fa-whatsapp" aria-hidden="true"></i> WhatsApp
+                    </a>
             </div>
             <details class="card-menu">
                 <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
