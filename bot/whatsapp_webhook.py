@@ -841,10 +841,24 @@ def handle_text_message(sender, text_data):
             inquiry = plumbot.detect_service_inquiry(message_body)
             print(f"Service inquiry result: {inquiry}")
 
+            #
             if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
-                print(f"Service inquiry matched: {inquiry['intent']}")
-                reply = plumbot.handle_service_inquiry(inquiry['intent'], message_body)
-
+                intent = inquiry['intent']
+                
+                # Only send pricing for this intent once
+                sent_intents = appointment.sent_pricing_intents or []
+                if intent in sent_intents:
+                    print(f"⏭️ Skipping already-sent pricing for intent: {intent}")
+                    reply = None  # Fall through to normal bot flow
+                else:
+                    print(f"Service inquiry matched: {intent}")
+                    reply = plumbot.handle_service_inquiry(intent, message_body)
+                    
+                    # Record that we sent this pricing
+                    sent_intents.append(intent)
+                    appointment.sent_pricing_intents = sent_intents
+                    appointment.save(update_fields=['sent_pricing_intents'])
+                    
         # STEP 3: Pricing overview — only if this genuinely looks like a NEW
         #         pricing question and we haven't already sent the price list.
         if reply is None:

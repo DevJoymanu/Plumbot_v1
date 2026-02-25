@@ -184,6 +184,11 @@ class Appointment(models.Model):
 
     pricing_overview_sent = models.BooleanField(default=False)
 
+    sent_pricing_intents = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of pricing intents already sent to this customer"
+    )
     # Plan upload fields
     plan_file = models.FileField(
         upload_to='customer_plans/', 
