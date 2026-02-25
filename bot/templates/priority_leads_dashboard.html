@@ -2,1275 +2,463 @@
 
 {% block content %}
 <style>
-    /* 
-     DESIGN TOKENS
-     Centralised variables - change once, applies everywhere.
-   */
     :root {
-        --font-sans: 'DM Sans', system-ui, sans-serif;
-
-        /* Neutrals */
-        --bg: #f0f2f7;
-        --surface: #ffffff;
-        --border: #e4e8ef;
-        --border-subtle: #f0f2f5;
-        --text: #0f172a;
-        --text-md: #374151;
-        --text-muted: #6b7280;
-
-        /* Status palette - background / foreground / accent */
-        --vh-bg: #fff1f1;
-        --vh-fg: #991b1b;
-        --vh-accent: #dc2626;
-        --hot-bg: #fffbeb;
-        --hot-fg: #92400e;
-        --hot-accent: #f59e0b;
-        --warm-bg: #ecfdf5;
-        --warm-fg: #065f46;
-        --warm-accent: #10b981;
-        --luke-bg: #eff6ff;
-        --luke-fg: #1e3a8a;
-        --luke-accent: #3b82f6;
-        --cold-bg: #f3f4f6;
-        --cold-fg: #374151;
-        --cold-accent: #9ca3af;
-
-        /* Interaction */
-        --radius-sm: 6px;
-        --radius-md: 10px;
-        --radius-lg: 14px;
-        --radius-pill: 999px;
-        --shadow-sm: 0 1px 3px rgba(0, 0, 0, .06), 0 1px 2px rgba(0, 0, 0, .04);
-        --shadow-md: 0 4px 12px rgba(0, 0, 0, .08);
-        --transition: 150ms ease;
+        --bg: #f5f7fb;
+        --card: #fff;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
     }
 
-    /* 
-     GOOGLE FONT IMPORT
-   */
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
-
-    /* 
-     PAGE LAYOUT
-   */
-    .pld-body {
-        font-family: var(--font-sans);
-        min-height: 100vh;
-        color: var(--text);
-    }
-
-    .pld-wrap {
-        max-width: 1060px;
+    .pl-wrap {
+        max-width: 1100px;
         margin: 0 auto;
-        padding: 20px 14px 48px;
+        padding: 18px 12px 36px;
     }
 
-    /* 
-     PAGE HEADER
-   */
-    .pld-header {
-        margin-bottom: 16px;
-    }
-
-    .pld-header h1 {
-        font-size: 1.45rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        margin: 0 0 2px;
-        color: var(--text);
-    }
-
-    .pld-header p {
-        margin: 0;
-        font-size: 0.875rem;
-        color: var(--text-muted);
-        line-height: 1.5;
-    }
-
-    /* 
-     STICKY SUMMARY BAR
-     Stays visible while scrolling so you always know totals.
-   */
-    .sticky-bar {
-        position: sticky;
-        top: 0;
-        z-index: 40;
-        background: rgba(240, 242, 247, .88);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border-bottom: 1px solid var(--border);
-        padding: 8px 14px;
-        margin: 0 -14px 16px;
-        /* bleed to page edges */
+    .pl-head {
         display: flex;
-        align-items: center;
-        gap: 6px;
         flex-wrap: wrap;
-        overflow-x: auto;
-        scrollbar-width: none;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
     }
 
-    .sticky-bar::-webkit-scrollbar {
-        display: none;
+    .pl-head h1 {
+        margin: 0;
+        font-size: 1.5rem;
     }
 
-    /* Pill chips inside the sticky bar */
-    .sbar-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        padding: 5px 10px;
-        border-radius: var(--radius-pill);
-        border: 1.5px solid transparent;
-        font-size: 0.78rem;
-        font-weight: 600;
-        white-space: nowrap;
-        cursor: pointer;
-        transition: filter var(--transition), transform var(--transition);
-        text-decoration: none;
-        background: var(--surface);
-        color: var(--text-md);
-        border-color: var(--border);
-        /* min tap target */
-        min-height: 32px;
+    .pl-sub {
+        color: var(--muted);
+        font-size: 0.9rem;
     }
 
-    .sbar-chip:hover {
-        filter: brightness(.95);
-        transform: translateY(-1px);
+    .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 16px;
     }
 
-    .sbar-chip:active {
-        transform: translateY(0);
-    }
-
-    /* Per-status colour overrides */
-    .sbar-chip.vh {
-        background: var(--vh-bg);
-        color: var(--vh-fg);
-        border-color: var(--vh-accent);
-    }
-
-    .sbar-chip.hot {
-        background: var(--hot-bg);
-        color: var(--hot-fg);
-        border-color: var(--hot-accent);
-    }
-
-    .sbar-chip.warm {
-        background: var(--warm-bg);
-        color: var(--warm-fg);
-        border-color: var(--warm-accent);
-    }
-
-    .sbar-chip.luke {
-        background: var(--luke-bg);
-        color: var(--luke-fg);
-        border-color: var(--luke-accent);
-    }
-
-    .sbar-chip.cold {
-        background: var(--cold-bg);
-        color: var(--cold-fg);
-        border-color: var(--cold-accent);
-    }
-
-    .sbar-chip .chip-count {
-        font-size: 0.72rem;
-        font-weight: 700;
-        background: rgba(0, 0, 0, .10);
-        border-radius: var(--radius-pill);
-        padding: 1px 6px;
-        min-width: 20px;
-        text-align: center;
-    }
-
-    /* Divider between chip groups */
-    .sbar-divider {
-        width: 1px;
-        height: 20px;
-        background: var(--border);
-        flex-shrink: 0;
-    }
-
-    /* 
-     FILTER CARD
-   */
-    .filter-card {
-        background: var(--surface);
+    .chip {
+        padding: 6px 11px;
         border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        padding: 12px 14px;
-        margin-bottom: 16px;
-        box-shadow: var(--shadow-sm);
+        border-radius: 999px;
+        background: #fff;
+        font-size: 0.82rem;
+        font-weight: 700;
+        cursor: pointer;
     }
 
-    .filter-label {
-        display: block;
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 6px;
+    .chip i {
+        margin-right: 4px;
+    }
+
+    .chip-total {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .chip-vh {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .chip-hot {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .chip-warm {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .chip-luke {
+        background: #dbeafe;
+        color: #1e3a8a;
+    }
+
+    .chip-cold {
+        background: #e5e7eb;
+        color: #374151;
+    }
+
+    .filter-card,
+    .section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+    }
+
+    .filter-card {
+        margin-bottom: 12px;
+        padding: 12px;
     }
 
     .filter-row {
-        display: flex;
+        display: grid;
+        grid-template-columns: 1fr auto auto;
         gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
     }
 
-    .filter-select {
-        flex: 1 1 220px;
-        min-width: 0;
-        border: 1.5px solid var(--border);
-        border-radius: var(--radius-md);
-        padding: 9px 12px;
+    .filter-row select,
+    .card-menu select,
+    .card-menu textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
         font-size: 0.85rem;
-        font-family: var(--font-sans);
-        background: var(--bg);
-        color: var(--text);
-        appearance: none;
-        -webkit-appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 12px center;
-        padding-right: 32px;
-        transition: border-color var(--transition), box-shadow var(--transition);
-        cursor: pointer;
     }
 
-    .filter-select:focus {
-        outline: none;
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
-    }
-
-    /* 
-     SHARED BUTTON SYSTEM
-     All buttons are at least 40px tall for touch-friendliness.
-   */
     .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
         border: none;
-        border-radius: var(--radius-md);
-        padding: 9px 14px;
+        border-radius: 8px;
+        padding: 9px 12px;
         font-size: 0.83rem;
-        font-weight: 600;
-        font-family: var(--font-sans);
+        font-weight: 700;
         text-decoration: none;
         cursor: pointer;
-        white-space: nowrap;
-        min-height: 38px;
-        transition: filter var(--transition), transform var(--transition), box-shadow var(--transition);
-        letter-spacing: -0.01em;
     }
 
-    .btn:hover {
-        filter: brightness(.93);
-        transform: translateY(-1px);
-        box-shadow: var(--shadow-sm);
-    }
-
-    .btn:active {
-        filter: brightness(.88);
-        transform: translateY(0);
-        box-shadow: none;
-    }
-
-    .btn:focus-visible {
-        outline: 2px solid #3b82f6;
-        outline-offset: 2px;
-    }
-
-    .btn-primary {
-        background: #0f172a;
+    .btn-dark {
+        background: #111827;
         color: #fff;
     }
 
-    .btn-ghost {
-        background: #eef0f6;
-        color: var(--text-md);
-        border: 1.5px solid var(--border);
+    .btn-light {
+        background: #eef2f7;
+        color: #1f2937;
     }
 
-    .btn-call {
-        background: #ecfdf5;
-        color: #065f46;
-        border: 1.5px solid #a7f3d0;
-    }
-
-    .btn-wa {
-        background: #f0fdf4;
-        color: #15803d;
-        border: 1.5px solid #86efac;
-    }
-
-    .btn-save {
-        background: #0f172a;
-        color: #fff;
-        width: 100%;
-        justify-content: center;
-    }
-
-    .btn-danger {
-        background: #fff1f1;
-        color: #991b1b;
-        border: 1.5px solid #fca5a5;
-    }
-
-    .btn i {
-        font-size: 0.8em;
-    }
-
-    /* 
-     SECTION (collapsible details element)
-   */
-    .pld-section {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        margin-bottom: 10px;
+    .section {
+        margin-bottom: 12px;
         overflow: hidden;
-        box-shadow: var(--shadow-sm);
-
-        /* Accent left border - colour assigned per section below */
         border-left: 4px solid transparent;
-        transition: box-shadow var(--transition);
     }
 
-    .pld-section:hover {
-        box-shadow: var(--shadow-md);
-    }
-
-    /* Per-status left border colours */
-    .pld-section.sec-vh {
-        border-left-color: var(--vh-accent);
-    }
-
-    .pld-section.sec-hot {
-        border-left-color: var(--hot-accent);
-    }
-
-    .pld-section.sec-warm {
-        border-left-color: var(--warm-accent);
-    }
-
-    .pld-section.sec-luke {
-        border-left-color: var(--luke-accent);
-    }
-
-    .pld-section.sec-cold {
-        border-left-color: var(--cold-accent);
-    }
-
-    /* Remove default marker */
-    .pld-section summary {
+    .section summary {
         list-style: none;
         cursor: pointer;
     }
 
-    .pld-section summary::-webkit-details-marker {
+    .section summary::-webkit-details-marker {
         display: none;
     }
 
-    /* Section header row */
-    .sec-header {
+    .section-head {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 13px 16px;
-        gap: 10px;
-        user-select: none;
+        padding: 12px;
+        border-bottom: 1px solid transparent;
+        font-weight: 700;
     }
 
-    .pld-section[open] .sec-header {
-        border-bottom: 1px solid var(--border-subtle);
+    .section[open] .section-head {
+        border-bottom-color: var(--border);
     }
 
-    .sec-header-left {
+    .section-head-left {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
     }
 
-    /* Coloured icon badge */
-    .sec-icon {
-        width: 34px;
-        height: 34px;
-        border-radius: var(--radius-md);
+    .section-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.85rem;
-        flex-shrink: 0;
     }
 
-    .sec-vh .sec-icon {
-        background: var(--vh-bg);
-        color: var(--vh-fg);
+    .sec-vh { border-left-color: #dc2626; }
+    .sec-hot { border-left-color: #f59e0b; }
+    .sec-warm { border-left-color: #10b981; }
+    .sec-luke { border-left-color: #0ea5e9; }
+    .sec-cold { border-left-color: #6b7280; }
+
+    .sec-vh .section-icon { background: #fee2e2; color: #991b1b; }
+    .sec-hot .section-icon { background: #fef3c7; color: #92400e; }
+    .sec-warm .section-icon { background: #d1fae5; color: #065f46; }
+    .sec-luke .section-icon { background: #dbeafe; color: #1e3a8a; }
+    .sec-cold .section-icon { background: #e5e7eb; color: #374151; }
+
+    .section-rec {
+        margin: 8px 12px 2px;
+        padding: 7px 10px;
+        font-size: 0.82rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        color: #1f2937;
     }
 
-    .sec-hot .sec-icon {
-        background: var(--hot-bg);
-        color: var(--hot-fg);
+    .section-rec i {
+        color: #2563eb;
+        margin-right: 6px;
     }
 
-    .sec-warm .sec-icon {
-        background: var(--warm-bg);
-        color: var(--warm-fg);
-    }
-
-    .sec-luke .sec-icon {
-        background: var(--luke-bg);
-        color: var(--luke-fg);
-    }
-
-    .sec-cold .sec-icon {
-        background: var(--cold-bg);
-        color: var(--cold-fg);
-    }
-
-    .sec-title {
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: var(--text);
-        letter-spacing: -0.01em;
-    }
-
-    /* Small stat pills inside the section header */
-    .sec-stats {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: nowrap;
-    }
-
-    .sec-stat-pill {
-        font-size: 0.73rem;
-        font-weight: 600;
-        padding: 3px 8px;
-        border-radius: var(--radius-pill);
-        border: 1.5px solid transparent;
-        white-space: nowrap;
-    }
-
-    .sec-stat-pill.pending {
-        background: #fef3c7;
-        color: #92400e;
-        border-color: #fcd34d;
-    }
-
-    .sec-stat-pill.done {
-        background: #dcfce7;
-        color: #166534;
-        border-color: #86efac;
-    }
-
-    .sec-stat-pill.total {
-        background: #f3f4f6;
-        color: #374151;
-        border-color: var(--border);
-    }
-
-    /* Chevron rotates when open */
-    .sec-chevron {
-        color: var(--text-muted);
-        font-size: 0.75rem;
+    .section-chevron {
+        color: var(--muted);
+        margin-left: 8px;
         transition: transform 0.2s ease;
-        flex-shrink: 0;
-        margin-left: 2px;
     }
 
-    .pld-section[open] .sec-chevron {
+    .section[open] .section-chevron {
         transform: rotate(90deg);
     }
 
-    /* Recommended action banner */
-    .sec-rec {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        margin: 10px 14px 0;
-        padding: 9px 11px;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: var(--radius-md);
-        font-size: 0.81rem;
-        color: var(--text-md);
-        line-height: 1.5;
-    }
-
-    .sec-rec i {
-        color: #3b82f6;
-        margin-top: 1px;
-        flex-shrink: 0;
-        font-size: 0.85rem;
-    }
-
-    /* 
-     SEGMENT DIVIDERS (Pending / Done)
-   */
-    .segment-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 12px 14px 6px;
-        margin-top: 4px;
-    }
-
-    .segment-header span {
-        font-size: 0.72rem;
-        font-weight: 700;
+    .segment-title {
+        padding: 10px 12px 4px;
+        font-size: 0.76rem;
+        color: var(--muted);
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: var(--text-muted);
-    }
-
-    .segment-header .seg-count {
-        font-size: 0.7rem;
-        padding: 1px 7px;
-        border-radius: var(--radius-pill);
         font-weight: 700;
-        background: #f3f4f6;
-        color: var(--text-muted);
-        border: 1px solid var(--border);
     }
 
-    /* Date group label */
-    .date-group-label {
-        padding: 5px 14px 3px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        color: #94a3b8;
-        letter-spacing: 0.04em;
+    .date-title {
+        padding: 8px 12px 0;
+        font-size: 0.75rem;
+        color: var(--muted);
+        font-weight: 700;
     }
 
-    /* 
-     LEAD CARD
-   */
     .lead-card {
-        border-top: 1px solid var(--border-subtle);
-        padding: 12px 14px 14px;
-        transition: background var(--transition);
+        border-top: 1px solid var(--border);
+        padding: 10px 12px 12px;
     }
 
-    .lead-card:hover {
-        background: #fafbfd;
-    }
-
-    /* Top row: name + score */
-    .lc-top {
+    .lead-top {
         display: flex;
         justify-content: space-between;
+        gap: 8px;
         align-items: flex-start;
-        gap: 10px;
+        margin-bottom: 7px;
+    }
+
+    .lead-name {
+        font-size: 0.98rem;
+        font-weight: 700;
+    }
+
+    .lead-score {
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        background: #f3f4f6;
+    }
+
+    .lead-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 6px;
+        font-size: 0.8rem;
+        color: var(--muted);
         margin-bottom: 8px;
     }
 
-    .lc-name {
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: var(--text);
-        line-height: 1.3;
-    }
-
-    /* Score badge - inherits section colour via CSS custom property set inline */
-    .lc-score {
-        flex-shrink: 0;
-        border-radius: var(--radius-pill);
-        padding: 3px 9px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        line-height: 1.5;
-        /* Fallback neutral if not overridden */
-        background: #f3f4f6;
-        color: #374151;
-    }
-
-    .sec-vh .lc-score {
-        background: var(--vh-bg);
-        color: var(--vh-fg);
-    }
-
-    .sec-hot .lc-score {
-        background: var(--hot-bg);
-        color: var(--hot-fg);
-    }
-
-    .sec-warm .lc-score {
-        background: var(--warm-bg);
-        color: var(--warm-fg);
-    }
-
-    .sec-luke .lc-score {
-        background: var(--luke-bg);
-        color: var(--luke-fg);
-    }
-
-    .sec-cold .lc-score {
-        background: var(--cold-bg);
-        color: var(--cold-fg);
-    }
-
-    /* Meta grid: 2 columns on wide, stacks on narrow */
-    .lc-meta {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 4px 14px;
-        font-size: 0.79rem;
-        color: var(--text-muted);
-        margin-bottom: 10px;
-        line-height: 1.6;
-    }
-
-    .lc-meta-item {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    /* Small coloured icon per meta type */
-    .lc-meta-item i {
-        font-size: 0.7rem;
-        color: #94a3b8;
-        flex-shrink: 0;
-        width: 12px;
-        text-align: center;
-    }
-
-    .lc-meta-item strong {
-        color: var(--text-md);
-        font-weight: 500;
-    }
-
-    /* Alert / last-sent banner */
-    .lc-alert {
-        display: flex;
-        align-items: flex-start;
-        gap: 7px;
+    .alert {
         background: #eff6ff;
         border: 1px solid #bfdbfe;
-        border-radius: var(--radius-md);
-        padding: 8px 10px;
-        font-size: 0.78rem;
-        color: #1e40af;
-        line-height: 1.5;
-        margin-bottom: 10px;
-    }
-
-    .lc-alert i {
-        margin-top: 1px;
-        flex-shrink: 0;
+        border-radius: 8px;
+        padding: 8px;
         font-size: 0.8rem;
+        margin-bottom: 8px;
     }
 
-    /* Action button row */
-    .lc-actions {
+    .card-actions {
         display: flex;
-        gap: 7px;
+        gap: 8px;
+        align-items: center;
         flex-wrap: wrap;
-        align-items: center;
     }
 
-    /* Update panel (collapsible) */
-    .lc-update-panel {
-        margin-top: 10px;
-        border-top: 1px solid var(--border-subtle);
+    .card-menu {
+        width: 100%;
+        margin-top: 6px;
     }
 
-    /* Remove default marker on nested details */
-    .lc-update-panel summary {
-        list-style: none;
+    .card-menu summary {
         cursor: pointer;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #1f2937;
     }
 
-    .lc-update-panel summary::-webkit-details-marker {
-        display: none;
-    }
-
-    .lc-update-toggle {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: var(--text-muted);
-        padding: 8px 0 2px;
-        transition: color var(--transition);
-    }
-
-    .lc-update-panel[open] .lc-update-toggle {
-        color: var(--text-md);
-    }
-
-    .lc-update-toggle .toggle-chevron {
-        font-size: 0.65rem;
-        transition: transform 0.18s ease;
-    }
-
-    .lc-update-panel[open] .toggle-chevron {
-        transform: rotate(180deg);
-    }
-
-    /* Update form inside panel */
-    .lc-form {
+    .card-menu form {
+        margin-top: 8px;
         display: grid;
         gap: 8px;
-        padding: 8px 0 4px;
-        animation: fadeIn 0.15s ease;
-    }
-
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(-4px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    /* Form controls */
-    .lc-select,
-    .lc-textarea {
-        width: 100%;
-        box-sizing: border-box;
-        border: 1.5px solid var(--border);
-        border-radius: var(--radius-md);
-        padding: 8px 10px;
-        font-size: 0.82rem;
-        font-family: var(--font-sans);
-        color: var(--text);
-        background: var(--bg);
-        transition: border-color var(--transition), box-shadow var(--transition);
-    }
-
-    .lc-select {
-        appearance: none;
-        -webkit-appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 10px center;
-        padding-right: 28px;
-        cursor: pointer;
-    }
-
-    .lc-select:focus,
-    .lc-textarea:focus {
-        outline: none;
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, .12);
-    }
-
-    .lc-textarea {
-        resize: vertical;
-        min-height: 68px;
-        line-height: 1.5;
-    }
-
-    /* 
-     EMPTY STATE
-   */
-    .empty-state {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        padding: 24px 14px;
-        color: var(--text-muted);
-        font-size: 0.82rem;
-        text-align: center;
-    }
-
-    .empty-state i {
-        font-size: 1.4rem;
-        opacity: 0.35;
-        margin-bottom: 4px;
-    }
-
-    /* 
-     RESPONSIVE ADJUSTMENTS
-   */
-    @media (max-width: 520px) {
-        .pld-wrap {
-            padding: 12px 10px 40px;
-        }
-
-        .pld-header h1 {
-            font-size: 1.2rem;
-        }
-
-        .sec-stats {
-            display: none;
-        }
-
-        /* hide stats pills on very small screens - count still in chevron area */
-        .sec-stat-total {
-            display: inline-flex;
-        }
-
-        /* always show total */
-        .lc-meta {
-            grid-template-columns: 1fr 1fr;
-        }
-
-        .filter-row {
-            flex-direction: column;
-        }
-
-        .filter-select {
-            flex: 1 1 100%;
-        }
-
-        .sticky-bar {
-            padding: 6px 10px;
-        }
     }
 </style>
 
-<div class="pld-body">
-    <div class="pld-wrap">
-
-        <!-- 
-       PAGE HEADER
-   -->
-        <div class="pld-header">
-            <h1>Priority Leads</h1>
-            <p>Segmented by urgency and manual follow-up status, with recommended actions per lead.</p>
+<div class="pl-wrap">
+    <div class="pl-head">
+        <div>
+            <h1>Priority Leads Dashboard</h1>
+            <div class="pl-sub">Segmented by urgency and manual follow-up status, with recommended actions per lead.</div>
         </div>
+    </div>
 
-        <!-- 
-       STICKY SUMMARY / NAV BAR
-       Chips scroll-to and open the relevant section.
-   -->
-        <div class="sticky-bar" role="navigation" aria-label="Lead status navigation">
-            <button class="sbar-chip" onclick="scrollToSection('sec-vh')" aria-label="Jump to Very Hot leads">
-                <i class="fas fa-fire" aria-hidden="true"></i>
-                Very Hot <span class="chip-count">{{ very_hot_leads|length }}</span>
-            </button>
-            <button class="sbar-chip hot" onclick="scrollToSection('sec-hot')" aria-label="Jump to Hot leads">
-                <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
-                Hot <span class="chip-count">{{ hot_leads|length }}</span>
-            </button>
-            <button class="sbar-chip warm" onclick="scrollToSection('sec-warm')" aria-label="Jump to Warm leads">
-                <i class="fas fa-sun" aria-hidden="true"></i>
-                Warm <span class="chip-count">{{ warm_leads|length }}</span>
-            </button>
-            <button class="sbar-chip luke" onclick="scrollToSection('sec-luke')" aria-label="Jump to Lukewarm leads">
-                <i class="fas fa-temperature-low" aria-hidden="true"></i>
-                Lukewarm <span class="chip-count">{{ luke_warm_leads|length }}</span>
-            </button>
-            <button class="sbar-chip cold" onclick="scrollToSection('sec-cold')" aria-label="Jump to Cold leads">
-                <i class="fas fa-snowflake" aria-hidden="true"></i>
-                Cold <span class="chip-count">{{ cold_leads|length }}</span>
-            </button>
+    <div class="filter-card">
+        <form method="get" class="filter-row">
+            <select name="response_age">
+                <option value="">All response ages</option>
+                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+</option>
+                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+</option>
+                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+</option>
+                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+</option>
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week</option>
+                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks</option>
+                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks</option>
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks</option>
+            </select>
+            <button type="submit" class="btn btn-dark">Apply</button>
+            <a href="{% url 'priority_leads' %}" class="btn btn-light">Reset</a>
+        </form>
+    </div>
 
-            <div class="sbar-divider" aria-hidden="true"></div>
+    <div class="chip-row">
+        <div class="chip chip-total" onclick="scrollToSection('sec-vh')"><i class="fas fa-database"></i>All: {{ total_leads }}</div>
+        <div class="chip chip-vh" onclick="scrollToSection('sec-vh')"><i class="fas fa-fire"></i>Very Hot: {{ very_hot_leads|length }}</div>
+        <div class="chip chip-hot" onclick="scrollToSection('sec-hot')"><i class="fas fa-exclamation-triangle"></i>Hot: {{ hot_leads|length }}</div>
+        <div class="chip chip-warm" onclick="scrollToSection('sec-warm')"><i class="fas fa-sun"></i>Warm: {{ warm_leads|length }}</div>
+        <div class="chip chip-luke" onclick="scrollToSection('sec-luke')"><i class="fas fa-temperature-low"></i>Lukewarm: {{ luke_warm_leads|length }}</div>
+        <div class="chip chip-cold" onclick="scrollToSection('sec-cold')"><i class="fas fa-snowflake"></i>Cold: {{ cold_leads|length }}</div>
+        <div class="chip chip-hot" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-clock"></i>Manual Pending: {{ manual_followup_pending_count }}</div>
+        <div class="chip chip-warm" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-check"></i>Manual Done: {{ manual_followup_done_count }}</div>
+    </div>
 
-            {# Follow-up summary chips - informational, click to jump to top section #}
-            <button class="sbar-chip" onclick="scrollToSection('sec-vh')"
-                title="Manual follow-ups still pending across all sections"
-                aria-label="{{ manual_followup_pending_count }} manual follow-ups pending">
-                <i class="fas fa-user-clock" aria-hidden="true"></i>
-                Pending <span class="chip-count">{{ manual_followup_pending_count }}</span>
-            </button>
-            <button class="sbar-chip" onclick="scrollToSection('sec-vh')"
-                title="Manual follow-ups completed across all sections"
-                aria-label="{{ manual_followup_done_count }} manual follow-ups done">
-                <i class="fas fa-user-check" aria-hidden="true"></i>
-                Done <span class="chip-count">{{ manual_followup_done_count }}</span>
-            </button>
-
-            <div class="sbar-divider" aria-hidden="true"></div>
-            {# Total #}
-            <span class="sbar-chip" style="cursor:default;" aria-label="{{ total_leads }} total leads">
-                <i class="fas fa-database" aria-hidden="true"></i>
-                Total <span class="chip-count">{{ total_leads }}</span>
+    {% for section in sections %}
+    <details class="section {{ section.css }}" id="{{ section.id }}">
+        <summary class="section-head">
+            <span class="section-head-left">
+                <span class="section-icon"><i class="fas fa-{{ section.icon }}"></i></span>
+                <span>{{ section.title }}</span>
             </span>
-        </div>
+            <span>
+                {{ section.count }}
+                <i class="fas fa-chevron-right section-chevron"></i>
+            </span>
+        </summary>
+        <div class="section-rec"><i class="fas fa-info-circle"></i><strong>Recommended action:</strong> {{ section.recommended_action }}</div>
 
-        <!-- 
-       FILTER CARD
-   -->
-        <div class="filter-card">
-            <label class="filter-label" for="id_response_age">
-                <i class="fas fa-filter" aria-hidden="true"></i>
-                Filter by last response age
-            </label>
-            <form method="get" class="filter-row" role="search" aria-label="Filter leads">
-                <select name="response_age" id="id_response_age" class="filter-select" aria-label="Response age filter">
-                    <option value="">All response ages</option>
-                    <optgroup label="No response for">
-                        <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>1 week or more
-                        </option>
-                        <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>2 weeks or more
-                        </option>
-                        <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>3 weeks or more
-                        </option>
-                        <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>1 month or more
-                        </option>
-                    </optgroup>
-                    <optgroup label="Last response within">
-                        <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>1 week
-                        </option>
-                        <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>2 weeks
-                        </option>
-                        <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>3 weeks
-                        </option>
-                        <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>4 weeks
-                        </option>
-                    </optgroup>
-                </select>
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-check" aria-hidden="true"></i> Apply
-                </button>
-                <a href="{% url 'priority_leads' %}" class="btn btn-ghost">
-                    <i class="fas fa-times" aria-hidden="true"></i> Reset
-                </a>
-            </form>
-        </div>
-
-        <!-- 
-       LEAD SECTIONS
-       The section loop is unchanged from the original;
-       only the markup structure and class names are improved.
-   -->
-        {% for section in sections %}
-        <details class="pld-section {{ section.css }}" id="{{ section.id }}"
-            aria-label="{{ section.title }} - {{ section.count }} leads">
-            <summary class="sec-header">
-                <span class="sec-header-left">
-                    {# Coloured icon badge #}
-                    <span class="sec-icon" aria-hidden="true">
-                        <i class="fas fa-{{ section.icon }}"></i>
-                    </span>
-                    <span class="sec-title">{{ section.title }}</span>
-                </span>
-
-                {# Right side: stat pills + chevron #}
-                <span class="sec-stats" aria-hidden="true">
-                    <span class="sec-stat-pill total">{{ section.count }}</span>
-                    {% if section.pending_count %}
-                    <span class="sec-stat-pill pending">
-                        <i class="fas fa-clock" style="font-size:.65rem;margin-right:3px;"></i>{{ section.pending_count
-                        }} pending
-                    </span>
-                    {% endif %}
-                    {% if section.done_count %}
-                    <span class="sec-stat-pill done">
-                        <i class="fas fa-check" style="font-size:.65rem;margin-right:3px;"></i>{{ section.done_count }}
-                        done
-                    </span>
-                    {% endif %}
-                    <i class="fas fa-chevron-right sec-chevron" aria-hidden="true"></i>
-                </span>
-            </summary>
-
-            {# Recommended action banner - inside the collapsible body #}
-            <div class="sec-rec" role="note">
-                <i class="fas fa-lightbulb" aria-hidden="true"></i>
-                <div><strong>Recommended:</strong> {{ section.recommended_action }}</div>
+        <div class="segment-title">Manual Follow-up Pending ({{ section.pending_count }})</div>
+        {% for group in section.pending_by_date %}
+        <div class="date-title">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-card" style="border-left: 3px solid {{ section.border }};">
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="lead-score">{{ lead.computed_score }}/100</div>
             </div>
-
-            <!-- -- SEGMENT: MANUAL FOLLOW-UP PENDING -- -->
-            <div class="segment-header">
-                <span>Manual Follow-up Pending</span>
-                <span class="seg-count">{{ section.pending_count }}</span>
+            <div class="lead-meta">
+                <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
+                <div>Service: {{ lead.project_type|default:"No service" }}</div>
+                <div>Area: {{ lead.customer_area|default:"No area" }}</div>
+                <div>Recent: {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
             </div>
-
-            {% for group in section.pending_by_date %}
-            <div class="date-group-label" aria-label="Activity date: {{ group.label }}">
-                <i class="fas fa-calendar-day" style="margin-right:4px;font-size:.65rem;" aria-hidden="true"></i>
-                {{ group.label }}
-            </div>
-
-            {% for lead in group.leads %}
-            {#  ==  == = LEAD CARD  ==  == = #}
-            <article class="lead-card" aria-label="Lead: {{ lead.customer_name|default:'Unknown Customer' }}">
-                <div class="lc-top">
-                    <div class="lc-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="lc-score" title="Lead score: {{ lead.computed_score }}/100">
-                        {{ lead.computed_score }}<span style="opacity:.6;font-weight:400;">/100</span>
-                    </div>
-                </div>
-
-                <div class="lc-meta">
-                    <div class="lc-meta-item">
-                        <i class="fas fa-phone" aria-hidden="true"></i>
-                        <strong>{{ lead.phone_number|cut:"whatsapp:" }}</strong>
-                    </div>
-                    <div class="lc-meta-item">
-                        <i class="fas fa-wrench" aria-hidden="true"></i>
-                        {{ lead.project_type|default:"No service" }}
-                    </div>
-                    <div class="lc-meta-item">
-                        <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
-                        {{ lead.customer_area|default:"No area" }}
-                    </div>
-                    <div class="lc-meta-item">
-                        <i class="fas fa-clock" aria-hidden="true"></i>
-                        {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}
-                    </div>
-                </div>
-
-                {% if lead.last_priority_alert_summary %}
-                <div class="lc-alert" role="note">
-                    <i class="fas fa-bell" aria-hidden="true"></i>
-                    <div><strong>Last alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
-                </div>
-                {% endif %}
-
-                {# Primary actions #}
-                <div class="lc-actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-primary"
-                        aria-label="Open lead for {{ lead.customer_name|default:'this customer' }}">
-                        <i class="fas fa-arrow-right" aria-hidden="true"></i> Open Lead
-                    </a>
-                    <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call"
-                        aria-label="Call {{ lead.customer_name|default:'customer' }}">
-                        <i class="fas fa-phone" aria-hidden="true"></i> Call
-                    </a>
-                    <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa"
-                        target="_blank" rel="noopener noreferrer"
-                        aria-label="WhatsApp {{ lead.customer_name|default:'customer' }}">
-                        <i class="fab fa-whatsapp" aria-hidden="true"></i> WhatsApp
-                    </a>
-                </div>
-
-                {# Collapsible update panel #}
-                <details class="lc-update-panel">
-                    <summary class="lc-update-toggle"
-                        aria-label="Toggle update form for {{ lead.customer_name|default:'this lead' }}">
-                        <i class="fas fa-chevron-down toggle-chevron" aria-hidden="true"></i>
-                        Update follow-up and notes
-                    </summary>
-                    <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}" class="lc-form"
-                        aria-label="Update lead {{ lead.customer_name|default:'unknown' }}">
-                        {% csrf_token %}
-                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
-
-                        <select name="manual_followup_state" class="lc-select" aria-label="Manual follow-up state">
-                            <option value="">Manual follow-up state...</option>
-                            <option value="pending">Mark as pending</option>
-                            <option value="done">Mark as done</option>
-                        </select>
-
-                        <select name="follow_up_status" class="lc-select" aria-label="Lead follow-up status">
-                            <option value="">Lead status...</option>
-                            {% for value, label in follow_up_status_choices %}
-                            <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>
-                                {{ label }}
-                            </option>
-                            {% endfor %}
-                        </select>
-
-                        {#
-                        NOTE: admin_notes is pre-populated in the textarea.
-                        The backend handles saving; this preserves existing behaviour.
-                        #}
-                        <textarea name="note" class="lc-textarea" placeholder="Add internal note..."
-                            aria-label="Internal note for this lead">{{ lead.admin_notes|default:'' }}</textarea>
-
-                        <button type="submit" class="btn btn-save">
-                            <i class="fas fa-save" aria-hidden="true"></i> Save update
-                        </button>
-                    </form>
-                </details>
-            </article>
-            {#  ==  == = /LEAD CARD  ==  == = #}
-            {% endfor %}{# group.leads #}
-
-            {% empty %}
-            {# Friendly empty state when no pending leads in this date group #}
-            {% endfor %}{# pending_by_date #}
-
-            {# Empty state if the whole pending segment is empty #}
-            {% if not section.pending_count %}
-            <div class="empty-state" aria-live="polite">
-                <i class="fas fa-check-circle" aria-hidden="true"></i>
-                No pending manual follow-ups in this segment.
-            </div>
+            {% if lead.last_priority_alert_summary %}
+            <div class="alert"><strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
             {% endif %}
-
-
-            <!-- -- SEGMENT: MANUALLY FOLLOWED UP -- -->
-            <div class="segment-header" style="margin-top:6px;">
-                <span>Manually Followed Up</span>
-                <span class="seg-count">{{ section.done_count }}</span>
+            <div class="card-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
             </div>
+            <details class="card-menu">
+                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
+                <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <select name="manual_followup_state">
+                        <option value="">Manual follow-up state</option>
+                        <option value="pending">Mark manual follow-up pending</option>
+                        <option value="done">Mark manually followed up</option>
+                    </select>
+                    <select name="follow_up_status">
+                        <option value="">Lead follow-up status</option>
+                        {% for value, label in follow_up_status_choices %}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
+                    <button type="submit" class="btn btn-dark">Save update</button>
+                </form>
+            </details>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="lead-card">No leads in manual-follow-up pending for this section.</div>
+        {% endfor %}
 
-            {% for group in section.done_by_date %}
-            <div class="date-group-label" aria-label="Activity date: {{ group.label }}">
-                <i class="fas fa-calendar-day" style="margin-right:4px;font-size:.65rem;" aria-hidden="true"></i>
-                {{ group.label }}
+        <div class="segment-title">Manually Followed Up ({{ section.done_count }})</div>
+        {% for group in section.done_by_date %}
+        <div class="date-title">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-card" style="border-left: 3px solid {{ section.border }};">
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="lead-score">{{ lead.computed_score }}/100</div>
             </div>
-
-            {% for lead in group.leads %}
-            {#  ==  == = LEAD CARD (done segment - identical structure, styles auto-inherit section colour)  ==  == = #}
-            <article class="lead-card" aria-label="Lead: {{ lead.customer_name|default:'Unknown Customer' }}">
-                <div class="lc-top">
-                    <div class="lc-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="lc-score" title="Lead score: {{ lead.computed_score }}/100">
-                        {{ lead.computed_score }}<span style="opacity:.6;font-weight:400;">/100</span>
-                    </div>
-                </div>
-
-                <div class="lc-meta">
-                    <div class="lc-meta-item">
-                        <i class="fas fa-phone" aria-hidden="true"></i>
-                        <strong>{{ lead.phone_number|cut:"whatsapp:" }}</strong>
-                    </div>
-                    <div class="lc-meta-item">
-                        <i class="fas fa-wrench" aria-hidden="true"></i>
-                        {{ lead.project_type|default:"No service" }}
-                    </div>
-                    <div class="lc-meta-item">
-                        <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
-                        {{ lead.customer_area|default:"No area" }}
-                    </div>
-                    <div class="lc-meta-item">
-                        <i class="fas fa-clock" aria-hidden="true"></i>
-                        {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}
-                    </div>
-                </div>
-
-                {% if lead.last_priority_alert_summary %}
-                <div class="lc-alert" role="note">
-                    <i class="fas fa-bell" aria-hidden="true"></i>
-                    <div><strong>Last alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
-                </div>
-                {% endif %}
-
-                <div class="lc-actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-primary"
-                        aria-label="Open lead for {{ lead.customer_name|default:'this customer' }}">
-                        <i class="fas fa-arrow-right" aria-hidden="true"></i> Open Lead
-                    </a>
-                    <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call"
-                        aria-label="Call {{ lead.customer_name|default:'customer' }}">
-                        <i class="fas fa-phone" aria-hidden="true"></i> Call
-                    </a>
-                    <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa"
-                        target="_blank" rel="noopener noreferrer"
-                        aria-label="WhatsApp {{ lead.customer_name|default:'customer' }}">
-                        <i class="fab fa-whatsapp" aria-hidden="true"></i> WhatsApp
-                    </a>
-                </div>
-
-                <details class="lc-update-panel">
-                    <summary class="lc-update-toggle"
-                        aria-label="Toggle update form for {{ lead.customer_name|default:'this lead' }}">
-                        <i class="fas fa-chevron-down toggle-chevron" aria-hidden="true"></i>
-                        Update follow-up and notes
-                    </summary>
-                    <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}" class="lc-form"
-                        aria-label="Update lead {{ lead.customer_name|default:'unknown' }}">
-                        {% csrf_token %}
-                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
-
-                        <select name="manual_followup_state" class="lc-select" aria-label="Manual follow-up state">
-                            <option value="">Manual follow-up state...</option>
-                            <option value="pending">Mark as pending</option>
-                            <option value="done">Mark as done</option>
-                        </select>
-
-                        <select name="follow_up_status" class="lc-select" aria-label="Lead follow-up status">
-                            <option value="">Lead status...</option>
-                            {% for value, label in follow_up_status_choices %}
-                            <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>
-                                {{ label }}
-                            </option>
-                            {% endfor %}
-                        </select>
-
-                        <textarea name="note" class="lc-textarea" placeholder="Add internal note..."
-                            aria-label="Internal note for this lead">{{ lead.admin_notes|default:'' }}</textarea>
-
-                        <button type="submit" class="btn btn-save">
-                            <i class="fas fa-save" aria-hidden="true"></i> Save update
-                        </button>
-                    </form>
-                </details>
-            </article>
-            {#  ==  == = /LEAD CARD  ==  == = #}
-            {% endfor %}{# group.leads #}
-            {% endfor %}{# done_by_date #}
-
-            {% if not section.done_count %}
-            <div class="empty-state" aria-live="polite">
-                <i class="fas fa-inbox" aria-hidden="true"></i>
-                No manually followed-up leads in this segment yet.
+            <div class="lead-meta">
+                <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
+                <div>Service: {{ lead.project_type|default:"No service" }}</div>
+                <div>Area: {{ lead.customer_area|default:"No area" }}</div>
+                <div>Recent: {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
             </div>
+            {% if lead.last_priority_alert_summary %}
+            <div class="alert"><strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
             {% endif %}
-
-        </details>
-        {% endfor %}{# sections #}
-
-    </div>{# /pld-wrap #}
-</div>{# /pld-body #}
-
+            <div class="card-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
+            </div>
+            <details class="card-menu">
+                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
+                <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <select name="manual_followup_state">
+                        <option value="">Manual follow-up state</option>
+                        <option value="pending">Mark manual follow-up pending</option>
+                        <option value="done">Mark manually followed up</option>
+                    </select>
+                    <select name="follow_up_status">
+                        <option value="">Lead follow-up status</option>
+                        {% for value, label in follow_up_status_choices %}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
+                    <button type="submit" class="btn btn-dark">Save update</button>
+                </form>
+            </details>
+        </div>
+        {% endfor %}
+        {% empty %}
+        <div class="lead-card">No leads marked as manually followed up for this section.</div>
+        {% endfor %}
+    </details>
+    {% endfor %}
+</div>
 <script>
-    /**
-     * scrollToSection(id)
-     * Opens the target <details> element and smoothly scrolls to it.
-     * The sticky bar height (~50px) is subtracted from the offset so the
-     * section header is not hidden behind the sticky bar.
-     */
     function scrollToSection(id) {
         const el = document.getElementById(id);
         if (!el) return;
-
-        // Open the section if it isn't already
-        if (el.tagName  == = 'DETAILS') el.open = true;
-
-        // Offset by sticky bar height so the section header stays visible
-        const STICKY_HEIGHT = 58;
-        const top = el.getBoundingClientRect().top + window.scrollY - STICKY_HEIGHT;
-        window.scrollTo({ top, behavior: 'smooth' });
-    }
-
-    /**
-     * Highlight the active filter chip in the sticky bar
-     * based on the current URL query param.
-     */
-    (function highlightActiveChip() {
-        const params = new URLSearchParams(window.location.search);
-        const age = params.get('response_age');
-        if (!age) return;
-
-        // The filter select mirrors the active value - visually flag it
-        const sel = document.getElementById('id_response_age');
-        if (sel) {
-            sel.style.borderColor = '#3b82f6';
-            sel.style.background = '#eff6ff';
+        if (el.tagName === 'DETAILS') {
+            el.open = true;
         }
-    })();
-
-    /**
-     * Keyboard shortcut: pressing "1"-"5" opens/closes sections in order.
-     * Lets power users navigate without touching the mouse.
-     */
-    (function addKeyboardShortcuts() {
-        const sectionIds = ['sec-vh', 'sec-hot', 'sec-warm', 'sec-luke', 'sec-cold'];
-        document.addEventListener('keydown', (e) => {
-            // Only fire when no input/textarea is focused
-            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
-            const idx = parseInt(e.key, 10) - 1;
-            if (idx >= 0 && idx < sectionIds.length) {
-                scrollToSection(sectionIds[idx]);
-            }
-        });
-    })();
+        const top = el.getBoundingClientRect().top + window.scrollY - 10;
+        window.scrollTo({ top: top, behavior: 'smooth' });
+    }
 </script>
 {% endblock %}
