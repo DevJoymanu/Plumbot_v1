@@ -33,10 +33,16 @@ PREVIOUS_WORK_IMAGE_URLS = [
     if url.strip()
 ]
 
-# ─── Media debounce tracker ───────────────────────────────────────────────────
+# ─── Media debounce trackers ──────────────────────────────────────────────────
 _media_ack_timers: dict = {}
 _media_ack_lock = threading.Lock()
 MEDIA_DEBOUNCE_SECONDS = 8
+
+# Plumber alert debounce — accumulates file URLs across a burst of images,
+# then sends ONE consolidated alert after the burst window closes.
+_plumber_alert_timers: dict = {}          # sender → threading.Timer
+_plumber_alert_pending: dict = {}         # sender → list of file_url strings
+_plumber_alert_lock = threading.Lock()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +192,76 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
         _media_ack_timers[sender] = timer
         timer.start()
         print(f"⏳ Media ack timer set for {sender} ({MEDIA_DEBOUNCE_SECONDS}s)")
+
+
+def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: str | None, media_type: str):
+    """
+    Debounced plumber alert — resets timer on each file received.
+    After MEDIA_DEBOUNCE_SECONDS of silence, sends ONE alert listing all URLs.
+    """
+    def _send_alert():
+        with _plumber_alert_lock:
+            urls = _plumber_alert_pending.pop(sender, [])
+            _plumber_alert_timers.pop(sender, None)
+
+        try:
+            fresh = Appointment.objects.get(phone_number=f"whatsapp:+{sender}")
+        except Appointment.DoesNotExist:
+            fresh = appointment
+
+        plumber_number = (getattr(fresh, 'plumber_contact_number', None) or '263610318200')
+        plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
+
+        ai_summary = generate_conversation_summary(fresh)
+        customer_name = fresh.customer_name or "A customer"
+
+        if urls:
+            file_lines = "\n".join(f"  🔗 {u}" for u in urls)
+            file_section = f"Files ({len(urls)}):\n{file_lines}"
+        else:
+            file_section = "⚠️ Files could not be saved automatically."
+
+        alert_message = (
+            f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
+            f"Customer: {customer_name}\n"
+            f"Phone: +{sender}\n"
+            f"WhatsApp: wa.me/{sender}\n"
+            f"Media type: {media_type.upper()} ({len(urls)} file(s))\n"
+            f"{file_section}\n\n"
+            f"📋 APPOINTMENT DETAILS:\n"
+            f"  Service: {fresh.project_type or 'Not specified'}\n"
+            f"  Area: {fresh.customer_area or 'Not specified'}\n"
+            f"  Property: {fresh.property_type or 'Not specified'}\n"
+            f"  Timeline: {fresh.timeline or 'Not specified'}\n"
+            f"  Has plan: {'Yes' if fresh.has_plan is True else 'No' if fresh.has_plan is False else 'Not answered'}\n\n"
+            f"🤖 AI SUMMARY:\n{ai_summary}\n\n"
+            f"🔗 View appointment:\n"
+            f"https://plumbotv1-production.up.railway.app/appointments/{fresh.id}/"
+        )
+
+        try:
+            whatsapp_api.send_text_message(plumber_number, alert_message)
+            print(f"✅ Consolidated plumber alert sent ({len(urls)} file(s)) for {sender}")
+        except Exception as e:
+            print(f"❌ Failed to send plumber alert: {e}")
+
+    with _plumber_alert_lock:
+        # Accumulate the URL
+        if sender not in _plumber_alert_pending:
+            _plumber_alert_pending[sender] = []
+        if file_url:
+            _plumber_alert_pending[sender].append(file_url)
+
+        # Reset the timer
+        existing = _plumber_alert_timers.get(sender)
+        if existing is not None:
+            existing.cancel()
+
+        timer = threading.Timer(MEDIA_DEBOUNCE_SECONDS, _send_alert)
+        timer.daemon = True
+        _plumber_alert_timers[sender] = timer
+        timer.start()
+        print(f"⏳ Plumber alert timer reset for {sender} (accumulated {len(_plumber_alert_pending[sender])} file(s))")
 
 
 def get_random_delay() -> int:
@@ -809,8 +885,13 @@ def handle_media_message(sender, media_data, media_type):
                 print(f"✅ File URL: {file_url}")
 
                 if media_type in ('image', 'document'):
+                    # Keep the FIRST file in plan_file (legacy field used by admin/plumber views)
                     if not appointment.plan_file:
                         appointment.plan_file = saved_path
+                    # Accumulate ALL file paths in internal_notes so none are lost
+                    file_note = f"[FILE UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
+                    existing_notes = appointment.internal_notes or ''
+                    appointment.internal_notes = f"{existing_notes}\n{file_note}".strip()
                     if appointment.has_plan is None:
                         appointment.has_plan = True
                     appointment.plan_status = 'plan_uploaded'
@@ -835,36 +916,9 @@ def handle_media_message(sender, media_data, media_type):
 
         appointment.add_conversation_message("user", f"[Sent {media_type}]")
 
-        customer_name = appointment.customer_name or "A customer"
-        plumber_number = (getattr(appointment, 'plumber_contact_number', None) or '263610318200')
-        plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
-
-        ai_summary = generate_conversation_summary(appointment)
-        file_info = f"\n🔗 File URL: {file_url}" if file_url else "\n⚠️ File could not be saved automatically."
-
-        alert_message = (
-            f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
-            f"Customer: {customer_name}\n"
-            f"Phone: +{sender}\n"
-            f"WhatsApp: wa.me/{sender}\n"
-            f"Media type: {media_type.upper()}\n"
-            f"{file_info}\n\n"
-            f"📋 APPOINTMENT DETAILS:\n"
-            f"  Service: {appointment.project_type or 'Not specified'}\n"
-            f"  Area: {appointment.customer_area or 'Not specified'}\n"
-            f"  Property: {appointment.property_type or 'Not specified'}\n"
-            f"  Timeline: {appointment.timeline or 'Not specified'}\n"
-            f"  Has plan: {'Yes' if appointment.has_plan is True else 'No' if appointment.has_plan is False else 'Not answered'}\n\n"
-            f"🤖 AI SUMMARY:\n{ai_summary}\n\n"
-            f"🔗 View appointment:\n"
-            f"https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"
-        )
-
-        try:
-            whatsapp_api.send_text_message(plumber_number, alert_message)
-            print(f"✅ Plumber alerted about {media_type} from {sender}")
-        except Exception as e:
-            print(f"❌ Failed to alert plumber: {str(e)}")
+        # Debounced plumber alert — waits for burst to finish, then sends ONE message
+        # with all file URLs listed. Replaces the old per-file immediate alert.
+        _schedule_plumber_alert(sender, appointment, file_url, media_type)
 
         if not appointment.chatbot_paused:
             _schedule_media_ack(sender, appointment, media_type)

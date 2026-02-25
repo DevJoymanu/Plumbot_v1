@@ -1093,6 +1093,87 @@ class Appointment(models.Model):
         # Check if it's time based on follow-up stage
         return self._is_ready_for_next_followup(now)
     
+    def get_all_uploaded_files(appointment) -> list[dict]:
+        """
+        Return a list of all uploaded files for this appointment.
+
+        Each dict has:
+            path  — storage path (e.g. customer_plans/image_john_42_20260225.jpg)
+            url   — full URL (if derivable)
+            label — display name
+            type  — "image" | "document" | "video"
+        """
+        from django.core.files.storage import default_storage
+        import re
+
+        files = []
+
+        # 1. Legacy plan_file field (always the first image/doc)
+        if appointment.plan_file:
+            try:
+                url = default_storage.url(appointment.plan_file)
+            except Exception:
+                url = appointment.plan_file
+            files.append({
+                'path': appointment.plan_file,
+                'url': url,
+                'label': appointment.plan_file.split('/')[-1],
+                'type': 'video' if 'video' in appointment.plan_file else 'document',
+            })
+
+        # 2. All additional files logged in internal_notes
+        # Pattern: [FILE UPLOADED] <path> | URL: <url> | <timestamp>
+        #          [VIDEO UPLOADED] <path> | URL: <url> | <timestamp>
+        pattern = re.compile(
+            r'\[(FILE|VIDEO) UPLOADED\] (.+?) \| URL: (.+?) \|',
+        )
+        for match in pattern.finditer(appointment.internal_notes or ''):
+            kind, path, url = match.group(1), match.group(2).strip(), match.group(3).strip()
+            # Skip if we already added this as plan_file
+            if path == appointment.plan_file:
+                continue
+            files.append({
+                'path': path,
+                'url': url,
+                'label': path.split('/')[-1],
+                'type': 'video' if kind == 'VIDEO' else 'image',
+            })
+
+        return files
+
+    @property
+    def uploaded_file_count(self) -> int:
+        """Count of all uploaded files (plan_file + extras in internal_notes)."""
+        import re
+        count = 1 if self.plan_file else 0
+        pattern = re.compile(r'\[(FILE|VIDEO) UPLOADED\]')
+        for match in pattern.finditer(self.internal_notes or ''):
+            path_start = self.internal_notes.index(match.group(0)) + len(match.group(0))
+            path_end = self.internal_notes.index(' | URL:', path_start)
+            path = self.internal_notes[path_start:path_end].strip()
+            if path != self.plan_file:
+                count += 1
+        return count
+
+    @property
+    def all_plan_file_urls(self) -> list[str]:
+        """All uploaded file URLs in order received."""
+        import re
+        from django.core.files.storage import default_storage
+        urls = []
+        if self.plan_file:
+            try:
+                urls.append(default_storage.url(self.plan_file))
+            except Exception:
+                urls.append(self.plan_file)
+        pattern = re.compile(r'\[(FILE|VIDEO) UPLOADED\] .+? \| URL: (.+?) \|')
+        for match in pattern.finditer(self.internal_notes or ''):
+            url = match.group(2).strip()
+            if url not in urls:
+                urls.append(url)
+        return urls
+
+
     def _is_ready_for_next_followup(self, now):
         """Internal method to check if ready for next follow-up stage"""
         if self.followup_stage == 'none' or self.followup_stage == 'responded':

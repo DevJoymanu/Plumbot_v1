@@ -32,7 +32,7 @@ from django.utils.decorators import method_decorator
 from django.db.models import Count
 from django.conf import settings
 from django.forms import modelformset_factory
-from .models import Appointment, ConversationMessage
+from .models import Appointment, ConversationMessage, get_all_uploaded_files
 from .forms import AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm, QuotationForm, QuotationItemFormSet, QuotationTemplateForm, QuotationTemplateItemFormSet
 from datetime import datetime, timedelta
 from django.utils import timezone
@@ -485,6 +485,9 @@ def appointment_detail_api(request, appointment_id):
             'house_stage': appointment.house_stage or '',
             'project_description': appointment.project_description or '',
             'timeline': appointment.timeline or '',
+            'plan_file': appointment.plan_file or '',
+            'plan_file_urls': appointment.all_plan_file_urls,   # list of all URLs
+            'document_count': appointment.uploaded_file_count,  # correct count
         }
         
         return JsonResponse(data)
