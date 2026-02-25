@@ -675,21 +675,21 @@
         <form method="get" class="filter-row">
             <select name="response_age" aria-label="Filter by response age">
                 <option value="">All response ages</option>
-                <option value="1w" {% if selected_response_age=='1w' %}selected{% endif %}>No response for 1 week+
+                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+
                 </option>
-                <option value="2w" {% if selected_response_age=='2w' %}selected{% endif %}>No response for 2 weeks+
+                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+
                 </option>
-                <option value="3w" {% if selected_response_age=='3w' %}selected{% endif %}>No response for 3 weeks+
+                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+
                 </option>
-                <option value="1m" {% if selected_response_age=='1m' %}selected{% endif %}>No response for 1 month+
+                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+
                 </option>
-                <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response
                     within 1 week</option>
-                <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>Last response
+                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response
                     within 2 weeks</option>
-                <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>Last response
+                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response
                     within 3 weeks</option>
-                <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response
                     within 4 weeks</option>
             </select>
             <div class="filter-actions">
@@ -746,12 +746,9 @@
             </div>
             <div class="lead-meta">
                 <div><i class="fas fa-phone"></i> <strong>Phone:</strong> {{ lead.phone_number|cut:"whatsapp:" }}</div>
-                <div><i class="fas fa-wrench"></i> <strong>Service:</strong> {{ lead.project_type|default:"No service"
-                    }}</div>
-                <div><i class="fas fa-map-marker-alt"></i> <strong>Area:</strong> {{ lead.customer_area|default:"No
-                    area" }}</div>
-                <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y
-                    H:i"|default:"No activity" }}</div>
+                <div><i class="fas fa-wrench"></i> <strong>Service:</strong> {{ lead.project_type|default:"No service"}}</div>
+                <div><i class="fas fa-map-marker-alt"></i> <strong>Area:</strong> {{ lead.customer_area|default:"No area" }}</div>
+                <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
             </div>
             {% if lead.last_priority_alert_summary %}
             <div class="alert">
@@ -786,7 +783,7 @@
                     <select name="follow_up_status" aria-label="Lead follow-up status">
                         <option value="">Lead follow-up status</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>{{ label }}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
                         </option>
                         {% endfor %}
                     </select>
@@ -815,8 +812,7 @@
                     }}</div>
                 <div><i class="fas fa-map-marker-alt"></i> <strong>Area:</strong> {{ lead.customer_area|default:"No
                     area" }}</div>
-                <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y
-                    H:i"|default:"No activity" }}</div>
+                <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
             </div>
             {% if lead.last_priority_alert_summary %}
             <div class="alert">
@@ -851,7 +847,7 @@
                     <select name="follow_up_status" aria-label="Lead follow-up status">
                         <option value="">Lead follow-up status</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>{{ label }}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
                         </option>
                         {% endfor %}
                     </select>
