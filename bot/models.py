@@ -1093,7 +1093,7 @@ class Appointment(models.Model):
         # Check if it's time based on follow-up stage
         return self._is_ready_for_next_followup(now)
     
-    def get_all_uploaded_files(appointment) -> list[dict]:
+    def get_all_uploaded_files(self) -> list:
         """
         Return a list of all uploaded files for this appointment.
 
@@ -1294,11 +1294,6 @@ class ServiceArea(models.Model):
 from django.db import models
 from django.utils import timezone
 
-class ConversationMessage(models.Model):
-    ROLE_CHOICES = [
-        ('user', 'Customer'),
-        ('assistant', 'Bot')
-    ]
     
     appointment = models.ForeignKey(
         'Appointment',
