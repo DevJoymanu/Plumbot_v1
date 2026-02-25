@@ -32,7 +32,7 @@ from django.utils.decorators import method_decorator
 from django.db.models import Count
 from django.conf import settings
 from django.forms import modelformset_factory
-from .models import Appointment, ConversationMessage, get_all_uploaded_files
+from .models import Appointment, ConversationMessage
 from .forms import AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm, QuotationForm, QuotationItemFormSet, QuotationTemplateForm, QuotationTemplateItemFormSet
 from datetime import datetime, timedelta
 from django.utils import timezone
