@@ -9,7 +9,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from openai import OpenAI
 
-from bot.models import Appointment, LeadInteraction, LeadActivityType
+from bot.models import Appointment
 from bot.whatsapp_cloud_api import whatsapp_api
 
 logger = logging.getLogger(__name__)
@@ -58,13 +58,11 @@ class Command(BaseCommand):
         errors = 0
 
         for lead in leads:
-            marker = f"[STALE_PRIORITY_ALERT {today_local.isoformat()}]"
-            already_notified = LeadInteraction.objects.filter(
-                appointment=lead,
-                activity_type=LeadActivityType.NOTE,
-                created_at__date=today_local,
-                note__startswith=marker,
-            ).exists()
+            sent_today = (
+                lead.last_priority_alert_sent_at
+                and timezone.localtime(lead.last_priority_alert_sent_at).date() == today_local
+            )
+            already_notified = bool(sent_today)
             if already_notified:
                 skipped += 1
                 continue
@@ -103,12 +101,6 @@ class Command(BaseCommand):
                 lead.last_priority_alert_summary = message
                 lead.last_priority_alert_sent_at = timezone.now()
                 lead.save(update_fields=["last_priority_alert_summary", "last_priority_alert_sent_at"])
-
-                LeadInteraction.objects.create(
-                    appointment=lead,
-                    activity_type=LeadActivityType.NOTE,
-                    note=f"{marker}\nSent to {plumber_number}\n\n{message}",
-                )
                 sent += 1
             except Exception as exc:
                 errors += 1

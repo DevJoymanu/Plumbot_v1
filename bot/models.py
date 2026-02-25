@@ -996,6 +996,8 @@ class Appointment(models.Model):
     manual_followup_updated_at = models.DateTimeField(null=True, blank=True)
     last_priority_alert_summary = models.TextField(blank=True)
     last_priority_alert_sent_at = models.DateTimeField(null=True, blank=True)
+    last_unconfirmed_summary_text = models.TextField(blank=True)
+    last_unconfirmed_summary_at = models.DateTimeField(null=True, blank=True)
     admin_notes = models.TextField(blank=True)
     last_contacted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     next_follow_up_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -1179,37 +1181,6 @@ class AppointmentReminder(models.Model):
     
     def __str__(self):
         return f"{self.reminder_type} reminder for {self.appointment}"
-
-
-class LeadInteraction(models.Model):
-    appointment = models.ForeignKey(
-        Appointment,
-        on_delete=models.CASCADE,
-        related_name='lead_interactions'
-    )
-    activity_type = models.CharField(max_length=30, choices=LeadActivityType.choices, db_index=True)
-    call_outcome = models.CharField(max_length=30, choices=CallOutcome.choices, blank=True)
-    note = models.TextField(blank=True)
-    appointment_at = models.DateTimeField(null=True, blank=True)
-    next_follow_up_at = models.DateTimeField(null=True, blank=True)
-    performed_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='lead_interactions'
-    )
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-
-    class Meta:
-        ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['appointment', '-created_at']),
-            models.Index(fields=['activity_type', '-created_at']),
-        ]
-
-    def __str__(self):
-        return f"{self.activity_type} for {self.appointment_id} at {self.created_at}"
 
 
 class WhatsAppInboundEvent(models.Model):

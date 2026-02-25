@@ -10,8 +10,6 @@ from .models import (
     QuotationItem,
     QuotationTemplate,
     QuotationTemplateItem,
-    LeadInteraction,
-    LeadActivityType,
 )
 import requests
 import datetime
@@ -68,6 +66,13 @@ from .services.lead_scoring import refresh_lead_score, calculate_lead_score
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def _append_admin_note(appointment, message):
+    timestamp = timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M')
+    existing = appointment.admin_notes or ''
+    appointment.admin_notes = f"[{timestamp}] {message}\n{existing}".strip()
+    appointment.save(update_fields=['admin_notes'])
 
 
 
@@ -1439,16 +1444,16 @@ def update_priority_lead_card(request, pk):
     manual_state = request.POST.get('manual_followup_state', '').strip()
     follow_up_status = request.POST.get('follow_up_status', '').strip()
     note = request.POST.get('note', '').strip()
+    notes_to_prepend = []
 
     if manual_state in {'done', 'pending'}:
         appointment.manual_followup_done = manual_state == 'done'
         appointment.manual_followup_updated_at = now
         update_fields.extend(['manual_followup_done', 'manual_followup_updated_at'])
-        LeadInteraction.objects.create(
-            appointment=appointment,
-            activity_type=LeadActivityType.NOTE,
-            note=f"[MANUAL FOLLOW-UP] Marked as {'done' if appointment.manual_followup_done else 'pending'} from priority dashboard.",
-            performed_by=request.user,
+        notes_to_prepend.append(
+            f"[{timezone.localtime(now).strftime('%Y-%m-%d %H:%M')}] "
+            f"{request.user.username}: manual follow-up marked as "
+            f"{'done' if appointment.manual_followup_done else 'pending'} from priority dashboard."
         )
 
     valid_statuses = {choice[0] for choice in Appointment._meta.get_field('follow_up_status').choices}
@@ -1458,15 +1463,12 @@ def update_priority_lead_card(request, pk):
 
     if note:
         timestamp = timezone.localtime(now).strftime('%Y-%m-%d %H:%M')
+        notes_to_prepend.append(f"[Priority Dashboard {timestamp}] {note}")
+
+    if notes_to_prepend:
         existing_notes = appointment.admin_notes or ''
-        appointment.admin_notes = f"[Priority Dashboard {timestamp}] {note}\n{existing_notes}".strip()
+        appointment.admin_notes = "\n".join(notes_to_prepend + ([existing_notes] if existing_notes else []))
         update_fields.append('admin_notes')
-        LeadInteraction.objects.create(
-            appointment=appointment,
-            activity_type=LeadActivityType.NOTE,
-            note=f"[PRIORITY DASHBOARD NOTE] {note}",
-            performed_by=request.user,
-        )
 
     if update_fields:
         appointment.save(update_fields=sorted(set(update_fields)))
@@ -1741,12 +1743,7 @@ def complete_lead_appointment(request, pk):
             'updated_at',
         ]
     )
-    LeadInteraction.objects.create(
-        appointment=appointment,
-        activity_type=LeadActivityType.APPOINTMENT,
-        note='Lead marked complete by admin from appointment detail',
-        performed_by=request.user,
-    )
+    _append_admin_note(appointment, f"{request.user.username}: lead marked complete from appointment detail.")
     messages.success(request, 'Lead marked as complete and removed from Priority Leads.')
     return redirect('appointment_detail', pk=appointment.pk)
 
@@ -2571,12 +2568,7 @@ def manual_followup_check(request):
 def pause_chatbot(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
     appointment.pause_chatbot()
-    LeadInteraction.objects.create(
-        appointment=appointment,
-        activity_type=LeadActivityType.BOT_PAUSED,
-        note='Bot paused by admin',
-        performed_by=request.user,
-    )
+    _append_admin_note(appointment, f"{request.user.username}: chatbot paused.")
     messages.success(request, 'Chatbot paused for this lead.')
     return redirect('appointment_detail', pk=pk)
 
@@ -2586,12 +2578,7 @@ def pause_chatbot(request, pk):
 def resume_chatbot(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
     appointment.resume_chatbot()
-    LeadInteraction.objects.create(
-        appointment=appointment,
-        activity_type=LeadActivityType.BOT_RESUMED,
-        note='Bot resumed by admin',
-        performed_by=request.user,
-    )
+    _append_admin_note(appointment, f"{request.user.username}: chatbot resumed.")
     messages.success(request, 'Chatbot resumed for this lead.')
     return redirect('appointment_detail', pk=pk)
 

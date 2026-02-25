@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.utils import timezone
-from .models import Appointment, LeadInteraction, WhatsAppInboundEvent
+from .models import Appointment, WhatsAppInboundEvent
 import json
 from datetime import timedelta
 
@@ -462,14 +462,6 @@ class AppointmentAdmin(admin.ModelAdmin):
             'all': ('admin/custom_admin.css',)
         }
         js = ('admin/custom_admin.js',)
-
-
-@admin.register(LeadInteraction)
-class LeadInteractionAdmin(admin.ModelAdmin):
-    list_display = ('id', 'appointment', 'activity_type', 'call_outcome', 'performed_by', 'created_at')
-    list_filter = ('activity_type', 'call_outcome', 'created_at')
-    search_fields = ('appointment__customer_name', 'appointment__phone_number', 'note')
-    ordering = ('-created_at',)
 
 
 @admin.register(WhatsAppInboundEvent)

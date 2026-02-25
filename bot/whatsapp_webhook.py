@@ -9,7 +9,7 @@ from django.views.decorators.http import require_http_methods
 import json
 import os
 from .whatsapp_cloud_api import whatsapp_api, get_extension_for_mime, MEDIA_SIZE_LIMITS
-from .models import Appointment, WhatsAppInboundEvent, LeadInteraction, LeadActivityType, LeadStatus
+from .models import Appointment, WhatsAppInboundEvent, LeadStatus
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -796,11 +796,6 @@ def handle_text_message(sender, text_data):
         _, new_status = refresh_lead_score(appointment)
         if new_status != previous_status and new_status in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
             notify_admin_of_priority_lead(appointment, sender)
-        LeadInteraction.objects.create(
-            appointment=appointment,
-            activity_type=LeadActivityType.WHATSAPP_INBOUND,
-            note=message_body[:500],
-        )
 
         if appointment.chatbot_paused:
             print(f"Chatbot paused for {phone_number}; skipping auto response.")
@@ -875,11 +870,6 @@ def handle_text_message(sender, text_data):
         appointment.last_outbound_at = timezone.now()
         appointment.last_contacted_at = appointment.last_outbound_at
         appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
-        LeadInteraction.objects.create(
-            appointment=appointment,
-            activity_type=LeadActivityType.WHATSAPP_OUTBOUND,
-            note=reply[:500],
-        )
         print(f"Assistant reply saved to conversation history")
 
         delay = get_random_delay()
@@ -995,12 +985,6 @@ def handle_media_message(sender, media_data, media_type):
 
                 appointment.save()
                 refresh_lead_score(appointment)
-                LeadInteraction.objects.create(
-                    appointment=appointment,
-                    activity_type=LeadActivityType.WHATSAPP_INBOUND,
-                    note=f"[MEDIA] {media_type} received",
-                )
-
             except Exception as save_err:
                 print(f"❌ Failed to save media to storage: {save_err}")
                 import traceback

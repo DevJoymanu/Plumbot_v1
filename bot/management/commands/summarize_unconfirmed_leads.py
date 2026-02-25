@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from openai import OpenAI
 
-from bot.models import Appointment, LeadActivityType, LeadInteraction
+from bot.models import Appointment
 
 logger = logging.getLogger(__name__)
 
@@ -49,23 +49,14 @@ class Command(BaseCommand):
         errors = 0
 
         for lead in leads:
-            marker = "[UNCONFIRMED_24H_SUMMARY]"
-            already_summarized = LeadInteraction.objects.filter(
-                appointment=lead,
-                activity_type=LeadActivityType.NOTE,
-                note__startswith=marker,
-            ).exists()
+            already_summarized = lead.last_unconfirmed_summary_at is not None
             if already_summarized:
                 skipped += 1
                 continue
 
             summary = self._generate_conversation_summary(lead)
-            note_text = (
-                f"{marker}\n"
-                f"Generated at: {timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M')}\n"
-                f"Status: {lead.get_status_display()}\n\n"
-                f"{summary}"
-            )
+            timestamp_text = timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M')
+            note_text = f"[UNCONFIRMED_24H_SUMMARY {timestamp_text}] {summary}"
 
             try:
                 if dry_run:
@@ -75,18 +66,16 @@ class Command(BaseCommand):
                         )
                     )
                 else:
-                    lead.last_priority_alert_summary = note_text
-                    lead.last_priority_alert_sent_at = timezone.now()
+                    lead.last_unconfirmed_summary_text = summary
+                    lead.last_unconfirmed_summary_at = timezone.now()
+                    existing_notes = lead.admin_notes or ""
+                    lead.admin_notes = f"{note_text}\n{existing_notes}".strip()
                     lead.save(
                         update_fields=[
-                            "last_priority_alert_summary",
-                            "last_priority_alert_sent_at",
+                            "last_unconfirmed_summary_text",
+                            "last_unconfirmed_summary_at",
+                            "admin_notes",
                         ]
-                    )
-                    LeadInteraction.objects.create(
-                        appointment=lead,
-                        activity_type=LeadActivityType.NOTE,
-                        note=note_text,
                     )
                 processed += 1
             except Exception as exc:
