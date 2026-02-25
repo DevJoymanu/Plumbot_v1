@@ -25,15 +25,24 @@
                 {% for doc in documents %}
                 <div class="document-item">
                     <div class="document-info">
+                        
                         <div class="document-icon">
-                            {% if doc.file.name|lower|cut:" "|cut:"."|slice:"-3:" == 'pdf' %}
-                            <i class="fas fa-file-pdf fa-2x text-danger"></i>
-                            {% elif doc.file.name|lower|cut:" "|cut:"."|slice:"-3:" in 'jpg,jpeg,png,gif' %}
-                            <i class="fas fa-file-image fa-2x text-primary"></i>
+                            {% if doc.type == 'image' %}
+                            <img src="{{ doc.url }}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;">
+                            {% elif doc.type == 'video' %}
+                            <i class="fas fa-file-video fa-2x text-warning"></i>
                             {% else %}
-                            <i class="fas fa-file fa-2x text-secondary"></i>
+                            <i class="fas fa-file-pdf fa-2x text-danger"></i>
                             {% endif %}
                         </div>
+                        <div class="document-details">
+                            <h4>{{ doc.label }}</h4>
+                            <p class="document-description">{{ doc.type|title }}</p>
+                            {% if doc.uploaded_at %}
+                            <small class="text-muted"><i class="fas fa-calendar"></i> {{ doc.uploaded_at|date:"M d, Y H:i" }}</small>
+                            {% endif %}
+                        </div>
+
                         <div class="document-details">
                             <h4>{{ doc.type }}</h4>
                             <p class="document-description">{{ doc.description }}</p>
@@ -48,16 +57,12 @@
                         </div>
                     </div>
                     <div class="document-actions">
-                        {% if doc.file %}
-                        <a href="{{ doc.file.url }}" class="btn btn-primary" target="_blank" download>
+                        <a href="{{ doc.url }}" class="btn btn-primary" target="_blank" download>
                             <i class="fas fa-download"></i> Download
                         </a>
-                        <a href="{{ doc.file.url }}" class="btn btn-outline-primary" target="_blank">
+                        <a href="{{ doc.url }}" class="btn btn-outline-primary" target="_blank">
                             <i class="fas fa-eye"></i> View
                         </a>
-                        {% else %}
-                        <span class="text-muted">File not available</span>
-                        {% endif %}
                     </div>
                 </div>
                 {% if not forloop.last %}

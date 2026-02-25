@@ -922,26 +922,16 @@ class Appointment(models.Model):
 
     def has_uploaded_documents(self):
         """Check if any documents have been uploaded"""
-        return bool(self.plan_file)
-    
-    def get_uploaded_documents(self):
-        """Get all uploaded documents associated with this appointment"""
-        documents = []
-        
-        # Check for plan file
         if self.plan_file:
-            documents.append({
-                'type': 'Plan File',
-                'file': self.plan_file,
-                'uploaded_at': self.plan_uploaded_at,
-                'description': 'Customer uploaded plan/blueprint'
-            })
-        
-        return documents
-    
+            return True
+        return bool(re.search(r'\[(FILE|VIDEO) UPLOADED\]', self.internal_notes or ''))
+
+    def get_uploaded_documents(self):
+        """Get all uploaded files — plan_file + everything in internal_notes"""
+        return self.get_all_uploaded_files()
+
     def get_document_count(self):
-        """Get the number of uploaded documents"""
-        return len(self.get_uploaded_documents())
+        return self.uploaded_file_count
 # Keep your other models (ConversationMessage, AppointmentNote, AppointmentReminder, ServiceArea) unchanged
 
     # New follow-up tracking fields (add these after running the migration)
@@ -1093,50 +1083,39 @@ class Appointment(models.Model):
         # Check if it's time based on follow-up stage
         return self._is_ready_for_next_followup(now)
     
+
     def get_all_uploaded_files(self) -> list:
-        """
-        Return a list of all uploaded files for this appointment.
-
-        Each dict has:
-            path  — storage path (e.g. customer_plans/image_john_42_20260225.jpg)
-            url   — full URL (if derivable)
-            label — display name
-            type  — "image" | "document" | "video"
-        """
-        from django.core.files.storage import default_storage
-        import re
-
         files = []
+        seen_paths = set()
 
-        # 1. Legacy plan_file field (always the first image/doc)
-        if appointment.plan_file:
+        if self.plan_file:
+            path = str(self.plan_file)
             try:
-                url = default_storage.url(appointment.plan_file)
+                url = default_storage.url(path)
             except Exception:
-                url = appointment.plan_file
+                url = path
+            ext = path.lower()
             files.append({
-                'path': appointment.plan_file,
+                'path': path,
                 'url': url,
-                'label': appointment.plan_file.split('/')[-1],
-                'type': 'video' if 'video' in appointment.plan_file else 'document',
+                'label': path.split('/')[-1],
+                'type': 'video' if 'video' in ext else ('image' if any(e in ext for e in ['.jpg','.jpeg','.png','.webp','.gif']) else 'document'),
+                'uploaded_at': self.plan_uploaded_at,
             })
+            seen_paths.add(path)
 
-        # 2. All additional files logged in internal_notes
-        # Pattern: [FILE UPLOADED] <path> | URL: <url> | <timestamp>
-        #          [VIDEO UPLOADED] <path> | URL: <url> | <timestamp>
-        pattern = re.compile(
-            r'\[(FILE|VIDEO) UPLOADED\] (.+?) \| URL: (.+?) \|',
-        )
-        for match in pattern.finditer(appointment.internal_notes or ''):
+        pattern = re.compile(r'\[(FILE|VIDEO) UPLOADED\] (.+?) \| URL: (.+?) \|')
+        for match in pattern.finditer(self.internal_notes or ''):
             kind, path, url = match.group(1), match.group(2).strip(), match.group(3).strip()
-            # Skip if we already added this as plan_file
-            if path == appointment.plan_file:
+            if path in seen_paths:
                 continue
+            seen_paths.add(path)
             files.append({
                 'path': path,
                 'url': url,
                 'label': path.split('/')[-1],
                 'type': 'video' if kind == 'VIDEO' else 'image',
+                'uploaded_at': None,
             })
 
         return files

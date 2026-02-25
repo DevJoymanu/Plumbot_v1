@@ -1487,26 +1487,26 @@ class AppointmentDetailView(DetailView):
     template_name = 'appointment_detail.html'
     model = Appointment
     context_object_name = 'appointment'
-
+    #
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         appointment = self.get_object()
         computed_score, computed_status = calculate_lead_score(appointment)
-
         conversation_history = appointment.conversation_history
+        uploaded_files = appointment.get_all_uploaded_files()   # ← NEW
 
         context.update({
             'conversation_history': conversation_history,
             'completeness': appointment.get_customer_info_completeness(),
-            'documents': appointment.get_uploaded_documents(),
+            'documents': uploaded_files,
             'has_documents': appointment.has_uploaded_documents(),
-            'document_count': appointment.get_document_count(),
+            'document_count': len(uploaded_files),
+            'uploaded_images': [f for f in uploaded_files if f['type'] in ('image', 'video')],  # ← NEW
             'computed_lead_score': computed_score,
             'computed_lead_status': computed_status,
             'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
         })
         return context
-
     def post(self, request, *args, **kwargs):
         """Handle form submission for updating appointment"""
         appointment = self.get_object()
@@ -1565,15 +1565,14 @@ class AppointmentDocumentsView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         appointment = self.get_object()
-        
-        documents = appointment.get_uploaded_documents()
-        
+        documents = appointment.get_all_uploaded_files()   # ← was get_uploaded_documents()
+
         context.update({
             'documents': documents,
             'document_count': len(documents),
         })
         return context
-
+        
 @staff_required
 def download_document(request, pk, document_type):
     """View to download specific documents"""
