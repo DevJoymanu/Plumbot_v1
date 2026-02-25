@@ -2,10 +2,10 @@
 
 {% block content %}
 <style>
-    /* ============================================================
+    /* 
      DESIGN TOKENS
      Centralised variables - change once, applies everywhere.
-  ============================================================ */
+   */
     :root {
         --font-sans: 'DM Sans', system-ui, sans-serif;
 
@@ -45,14 +45,14 @@
         --transition: 150ms ease;
     }
 
-    /* ============================================================
+    /* 
      GOOGLE FONT IMPORT
-  ============================================================ */
+   */
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
 
-    /* ============================================================
+    /* 
      PAGE LAYOUT
-  ============================================================ */
+   */
     .pld-body {
         font-family: var(--font-sans);
         min-height: 100vh;
@@ -65,9 +65,9 @@
         padding: 20px 14px 48px;
     }
 
-    /* ============================================================
+    /* 
      PAGE HEADER
-  ============================================================ */
+   */
     .pld-header {
         margin-bottom: 16px;
     }
@@ -87,10 +87,10 @@
         line-height: 1.5;
     }
 
-    /* ============================================================
+    /* 
      STICKY SUMMARY BAR
      Stays visible while scrolling so you always know totals.
-  ============================================================ */
+   */
     .sticky-bar {
         position: sticky;
         top: 0;
@@ -193,9 +193,9 @@
         flex-shrink: 0;
     }
 
-    /* ============================================================
+    /* 
      FILTER CARD
-  ============================================================ */
+   */
     .filter-card {
         background: var(--surface);
         border: 1px solid var(--border);
@@ -248,10 +248,10 @@
         box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
     }
 
-    /* ============================================================
+    /* 
      SHARED BUTTON SYSTEM
      All buttons are at least 40px tall for touch-friendliness.
-  ============================================================ */
+   */
     .btn {
         display: inline-flex;
         align-items: center;
@@ -328,9 +328,9 @@
         font-size: 0.8em;
     }
 
-    /* ============================================================
+    /* 
      SECTION (collapsible details element)
-  ============================================================ */
+   */
     .pld-section {
         background: var(--surface);
         border: 1px solid var(--border);
@@ -513,9 +513,9 @@
         font-size: 0.85rem;
     }
 
-    /* ============================================================
+    /* 
      SEGMENT DIVIDERS (Pending / Done)
-  ============================================================ */
+   */
     .segment-header {
         display: flex;
         align-items: center;
@@ -551,9 +551,9 @@
         letter-spacing: 0.04em;
     }
 
-    /* ============================================================
+    /* 
      LEAD CARD
-  ============================================================ */
+   */
     .lead-card {
         border-top: 1px solid var(--border-subtle);
         padding: 12px 14px 14px;
@@ -779,9 +779,9 @@
         line-height: 1.5;
     }
 
-    /* ============================================================
+    /* 
      EMPTY STATE
-  ============================================================ */
+   */
     .empty-state {
         display: flex;
         flex-direction: column;
@@ -799,9 +799,9 @@
         margin-bottom: 4px;
     }
 
-    /* ============================================================
+    /* 
      RESPONSIVE ADJUSTMENTS
-  ============================================================ */
+   */
     @media (max-width: 520px) {
         .pld-wrap {
             padding: 12px 10px 40px;
@@ -842,18 +842,18 @@
 <div class="pld-body">
     <div class="pld-wrap">
 
-        <!-- ============================================================
+        <!-- 
        PAGE HEADER
-  ============================================================ -->
+   -->
         <div class="pld-header">
             <h1>Priority Leads</h1>
             <p>Segmented by urgency and manual follow-up status, with recommended actions per lead.</p>
         </div>
 
-        <!-- ============================================================
+        <!-- 
        STICKY SUMMARY / NAV BAR
        Chips scroll-to and open the relevant section.
-  ============================================================ -->
+   -->
         <div class="sticky-bar" role="navigation" aria-label="Lead status navigation">
             <button class="sbar-chip" onclick="scrollToSection('sec-vh')" aria-label="Jump to Very Hot leads">
                 <i class="fas fa-fire" aria-hidden="true"></i>
@@ -900,9 +900,9 @@
             </span>
         </div>
 
-        <!-- ============================================================
+        <!-- 
        FILTER CARD
-  ============================================================ -->
+   -->
         <div class="filter-card">
             <label class="filter-label" for="id_response_age">
                 <i class="fas fa-filter" aria-hidden="true"></i>
@@ -912,23 +912,23 @@
                 <select name="response_age" id="id_response_age" class="filter-select" aria-label="Response age filter">
                     <option value="">All response ages</option>
                     <optgroup label="No response for">
-                        <option value="1w" {% if selected_response_age=='1w' %}selected{% endif %}>1 week or more
+                        <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>1 week or more
                         </option>
-                        <option value="2w" {% if selected_response_age=='2w' %}selected{% endif %}>2 weeks or more
+                        <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>2 weeks or more
                         </option>
-                        <option value="3w" {% if selected_response_age=='3w' %}selected{% endif %}>3 weeks or more
+                        <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>3 weeks or more
                         </option>
-                        <option value="1m" {% if selected_response_age=='1m' %}selected{% endif %}>1 month or more
+                        <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>1 month or more
                         </option>
                     </optgroup>
                     <optgroup label="Last response within">
-                        <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>1 week
+                        <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>1 week
                         </option>
-                        <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>2 weeks
+                        <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>2 weeks
                         </option>
-                        <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>3 weeks
+                        <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>3 weeks
                         </option>
-                        <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>4 weeks
+                        <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>4 weeks
                         </option>
                     </optgroup>
                 </select>
@@ -941,11 +941,11 @@
             </form>
         </div>
 
-        <!-- ============================================================
+        <!-- 
        LEAD SECTIONS
        The section loop is unchanged from the original;
        only the markup structure and class names are improved.
-  ============================================================ -->
+   -->
         {% for section in sections %}
         <details class="pld-section {{ section.css }}" id="{{ section.id }}"
             aria-label="{{ section.title }} - {{ section.count }} leads">
@@ -996,7 +996,7 @@
             </div>
 
             {% for lead in group.leads %}
-            {# ===== LEAD CARD ===== #}
+            {#  ==  == = LEAD CARD  ==  == = #}
             <article class="lead-card" aria-label="Lead: {{ lead.customer_name|default:'Unknown Customer' }}">
                 <div class="lc-top">
                     <div class="lc-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
@@ -1069,7 +1069,7 @@
                         <select name="follow_up_status" class="lc-select" aria-label="Lead follow-up status">
                             <option value="">Lead status...</option>
                             {% for value, label in follow_up_status_choices %}
-                            <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>
+                            <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>
                                 {{ label }}
                             </option>
                             {% endfor %}
@@ -1088,7 +1088,7 @@
                     </form>
                 </details>
             </article>
-            {# ===== /LEAD CARD ===== #}
+            {#  ==  == = /LEAD CARD  ==  == = #}
             {% endfor %}{# group.leads #}
 
             {% empty %}
@@ -1117,7 +1117,7 @@
             </div>
 
             {% for lead in group.leads %}
-            {# ===== LEAD CARD (done segment - identical structure, styles auto-inherit section colour) ===== #}
+            {#  ==  == = LEAD CARD (done segment - identical structure, styles auto-inherit section colour)  ==  == = #}
             <article class="lead-card" aria-label="Lead: {{ lead.customer_name|default:'Unknown Customer' }}">
                 <div class="lc-top">
                     <div class="lc-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
@@ -1188,7 +1188,7 @@
                         <select name="follow_up_status" class="lc-select" aria-label="Lead follow-up status">
                             <option value="">Lead status...</option>
                             {% for value, label in follow_up_status_choices %}
-                            <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>
+                            <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>
                                 {{ label }}
                             </option>
                             {% endfor %}
@@ -1203,7 +1203,7 @@
                     </form>
                 </details>
             </article>
-            {# ===== /LEAD CARD ===== #}
+            {#  ==  == = /LEAD CARD  ==  == = #}
             {% endfor %}{# group.leads #}
             {% endfor %}{# done_by_date #}
 
@@ -1232,7 +1232,7 @@
         if (!el) return;
 
         // Open the section if it isn't already
-        if (el.tagName === 'DETAILS') el.open = true;
+        if (el.tagName  == = 'DETAILS') el.open = true;
 
         // Offset by sticky bar height so the section header stays visible
         const STICKY_HEIGHT = 58;
