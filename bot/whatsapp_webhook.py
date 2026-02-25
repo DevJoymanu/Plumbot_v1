@@ -9,7 +9,8 @@ FIXES IN THIS VERSION:
 4. Confirmation message dedup   — book_appointment_with_selected_time no longer double-sends
 5. Plan question dedup          — helper guards re-ask of plan_or_visit
 """
-
+from django.db.models import Value
+from django.db.models.functions import Concat
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -870,7 +871,7 @@ def handle_media_message(sender, media_data, media_type):
                     ext = get_extension_for_mime(mime_type)
 
                 folder = MEDIA_STORAGE_FOLDERS.get(media_type, 'customer_media')
-                timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+                timestamp = timezone.now().strftime('%Y%m%d_%H%M%S_%f')  # Added %f for microseconds to avoid filename collisions
                 customer_slug = ''.join(
                     c for c in (appointment.customer_name or 'customer') if c.isalnum()
                 )
@@ -885,30 +886,45 @@ def handle_media_message(sender, media_data, media_type):
                 print(f"✅ File URL: {file_url}")
 
                 if media_type in ('image', 'document'):
-                    # Keep the FIRST file in plan_file (legacy field used by admin/plumber views)
-                    if not appointment.plan_file:
-                        appointment.plan_file = saved_path
-                    # Accumulate ALL file paths in internal_notes so none are lost
-                    file_note = f"[FILE UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
-                    existing_notes = appointment.internal_notes or ''
-                    appointment.internal_notes = f"{existing_notes}\n{file_note}".strip()
-                    if appointment.has_plan is None:
-                        appointment.has_plan = True
-                    appointment.plan_status = 'plan_uploaded'
-                    appointment.plan_uploaded_at = timezone.now()
-                elif media_type == 'video':
-                    video_note = f"[VIDEO UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
-                    existing_notes = appointment.internal_notes or ''
-                    appointment.internal_notes = f"{existing_notes}\n{video_note}".strip()
-                    if appointment.has_plan is None:
-                        appointment.has_plan = True
-                    if not appointment.plan_status:
-                        appointment.plan_status = 'plan_uploaded'
-                    if not appointment.plan_uploaded_at:
-                        appointment.plan_uploaded_at = timezone.now()
+                    file_note = f"\n[FILE UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
 
-                appointment.save()
+                    # Atomic append to internal_notes — safe under concurrent writes
+                    update_kwargs = dict(
+                        internal_notes=Concat('internal_notes', Value(file_note)),
+                        plan_status='plan_uploaded',
+                        plan_uploaded_at=timezone.now(),
+                    )
+                    Appointment.objects.filter(pk=appointment.pk).update(**update_kwargs)
+
+                    # Only set plan_file if still empty (first image wins)
+                    Appointment.objects.filter(pk=appointment.pk, plan_file='').update(plan_file=saved_path)
+                    Appointment.objects.filter(pk=appointment.pk, plan_file__isnull=True).update(plan_file=saved_path)
+
+                    # Only set has_plan=True if it hasn't been answered yet
+                    Appointment.objects.filter(pk=appointment.pk, has_plan__isnull=True).update(has_plan=True)
+
+                elif media_type == 'video':
+                    video_note = f"\n[VIDEO UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
+
+                    # Atomic append to internal_notes
+                    Appointment.objects.filter(pk=appointment.pk).update(
+                        internal_notes=Concat('internal_notes', Value(video_note)),
+                    )
+                    # Only update these fields if not already set
+                    Appointment.objects.filter(pk=appointment.pk, has_plan__isnull=True).update(has_plan=True)
+                    Appointment.objects.filter(pk=appointment.pk, plan_status__isnull=True).update(
+                        plan_status='plan_uploaded',
+                        plan_uploaded_at=timezone.now(),
+                    )
+                    Appointment.objects.filter(pk=appointment.pk, plan_status='').update(
+                        plan_status='plan_uploaded',
+                        plan_uploaded_at=timezone.now(),
+                    )
+
+                # Refresh in-memory object so refresh_lead_score sees current state
+                appointment.refresh_from_db()
                 refresh_lead_score(appointment)
+
             except Exception as save_err:
                 print(f"❌ Failed to save media to storage: {save_err}")
                 import traceback
@@ -917,7 +933,7 @@ def handle_media_message(sender, media_data, media_type):
         appointment.add_conversation_message("user", f"[Sent {media_type}]")
 
         # Debounced plumber alert — waits for burst to finish, then sends ONE message
-        # with all file URLs listed. Replaces the old per-file immediate alert.
+        # with all file URLs listed.
         _schedule_plumber_alert(sender, appointment, file_url, media_type)
 
         if not appointment.chatbot_paused:
