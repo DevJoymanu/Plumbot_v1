@@ -2,1477 +2,463 @@
 
 {% block content %}
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap');
-
     :root {
-        --surface: #ffffff;
-        --bg: #f4f4f7;
+        --bg: #f5f7fb;
+        --card: #fff;
         --border: #e5e7eb;
         --text: #111827;
         --muted: #6b7280;
-        --radius: 16px;
-        --shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
-        --touch: 52px;
-        --safe-bottom: env(safe-area-inset-bottom, 0px);
-        --safe-top: env(safe-area-inset-top, 0px);
     }
 
-    *,
-    *::before,
-    *::after {
-        box-sizing: border-box;
-        -webkit-tap-highlight-color: transparent;
+    .pl-wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 18px 12px 36px;
     }
 
-    html {
-        scroll-behavior: smooth;
-    }
-
-    body {
-        font-family: 'DM Sans', sans-serif;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-        overflow-x: hidden;
-        min-height: 100dvh;
-    }
-
-    /* ── Sticky Page Header ── */
-    .pl-header {
-        position: sticky;
-        top: 0;
-        z-index: 50;
-        background: rgba(244, 244, 247, 0.92);
-        backdrop-filter: saturate(180%) blur(16px);
-        -webkit-backdrop-filter: saturate(180%) blur(16px);
-        padding: calc(12px + var(--safe-top)) 16px 12px;
-        border-bottom: 1px solid rgba(229, 231, 235, 0.7);
+    .pl-head {
         display: flex;
-        align-items: center;
+        flex-wrap: wrap;
         justify-content: space-between;
         gap: 10px;
-        margin-bottom: 0;
+        margin-bottom: 12px;
     }
 
-    .pl-header-left h1 {
-        font-family: 'Syne', sans-serif;
-        font-size: clamp(1.15rem, 5vw, 1.6rem);
-        font-weight: 800;
-        letter-spacing: -0.03em;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin: 0 0 2px;
-        line-height: 1.1;
-    }
-
-    .pl-header-left h1 i {
-        color: #f59e0b;
-    }
-
-    .pl-header-left p {
-        color: var(--muted);
+    .pl-head h1 {
         margin: 0;
-        font-size: 0.78rem;
-        line-height: 1.3;
-        display: none;
+        font-size: 1.5rem;
     }
 
-    /* Filter toggle (mobile only) */
-    .btn-filter-toggle {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        height: 40px;
-        padding: 0 14px;
-        border-radius: 20px;
-        background: #4f46e5;
-        color: #fff;
-        font-family: 'DM Sans', sans-serif;
-        font-size: 0.85rem;
-        font-weight: 600;
-        border: none;
-        cursor: pointer;
-        flex-shrink: 0;
-        transition: background 0.15s, transform 0.1s;
-    }
-
-    .btn-filter-toggle:active {
-        background: #4338ca;
-        transform: scale(0.96);
-    }
-
-    .filter-badge {
-        background: #fbbf24;
-        color: #78350f;
-        border-radius: 10px;
-        font-size: 0.7rem;
-        font-weight: 700;
-        padding: 1px 6px;
-        display: none;
-    }
-
-    .btn-filter-toggle.has-filter .filter-badge {
-        display: inline-block;
-    }
-
-
-    /* ── Phone action buttons ── */
-    .phone-actions {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        width: 100%;
-    }
-
-    .phone-link {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        color: inherit;
-        text-decoration: none;
+    .pl-sub {
+        color: var(--muted);
         font-size: 0.9rem;
-        font-weight: 500;
-        flex: 1;
-        min-width: 0;
     }
 
-    .phone-link span {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .phone-btns {
+    .chip-row {
         display: flex;
-        gap: 5px;
-        flex-shrink: 0;
-        position: relative;
-        z-index: 3;
-    }
-
-    .call-btn,
-    .wa-btn {
-        display: inline-flex;
-        align-items: center;
-        height: 28px;
-        padding: 0 10px;
-        border-radius: 8px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        text-decoration: none;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        transition: transform 0.1s, opacity 0.1s;
-        flex-shrink: 0;
-        -webkit-tap-highlight-color: transparent;
-    }
-
-    .call-btn:active,
-    .wa-btn:active {
-        transform: scale(0.94);
-        opacity: 0.85;
-    }
-
-    .call-btn {
-        background: #dcfce7;
-        color: #166534;
-    }
-
-    .wa-btn {
-        background: #d1fae5;
-        color: #065f46;
-    }
-
-    /* ── Bottom Sheet (mobile filter) ── */
-    .filter-overlay {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.4);
-        z-index: 100;
-        backdrop-filter: blur(2px);
-        -webkit-backdrop-filter: blur(2px);
-        opacity: 0;
-        transition: opacity 0.25s;
-    }
-
-    .filter-overlay.open {
-        display: block;
-    }
-
-    .filter-overlay.visible {
-        opacity: 1;
-    }
-
-    .filter-sheet {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 101;
-        background: var(--surface);
-        border-radius: 24px 24px 0 0;
-        padding: 0 16px calc(20px + var(--safe-bottom));
-        box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.18);
-        transform: translateY(100%);
-        transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
-        max-height: 85dvh;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-    }
-
-    .filter-sheet.open {
-        transform: translateY(0);
-    }
-
-    .sheet-handle {
-        width: 40px;
-        height: 4px;
-        background: var(--border);
-        border-radius: 2px;
-        margin: 12px auto 20px;
-    }
-
-    .sheet-title {
-        font-family: 'Syne', sans-serif;
-        font-size: 1.1rem;
-        font-weight: 700;
-        margin: 0 0 16px;
-        display: flex;
-        align-items: center;
+        flex-wrap: wrap;
         gap: 8px;
+        margin: 10px 0 16px;
     }
 
-    .sheet-title i {
-        color: #4f46e5;
-    }
-
-    .filter-select-label {
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.07em;
-        color: var(--muted);
-        margin-bottom: 6px;
-        display: block;
-    }
-
-    .filter-select-wrapper {
-        position: relative;
-        margin-bottom: 14px;
-    }
-
-    .filter-select-wrapper select,
-    .form-control {
-        width: 100% !important;
-        max-width: 100% !important;
-        padding: 0 42px 0 16px !important;
-        height: var(--touch) !important;
-        border-radius: 12px !important;
-        border: 1.5px solid var(--border) !important;
-        background-color: var(--bg) !important;
-        font-family: 'DM Sans', sans-serif !important;
-        font-size: 16px !important;
-        /* prevents iOS zoom */
-        color: var(--text) !important;
-        outline: none !important;
-        appearance: none !important;
-        -webkit-appearance: none !important;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") !important;
-        background-repeat: no-repeat !important;
-        background-position: right 16px center !important;
-        transition: border-color 0.15s;
-    }
-
-    .filter-select-wrapper select:focus,
-    .form-control:focus {
-        border-color: #6366f1 !important;
-    }
-
-    .sheet-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-top: 4px;
-    }
-
-    .btn-apply-sheet,
-    .btn-reset-sheet {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 7px;
-        height: var(--touch);
-        border-radius: 12px;
-        font-family: 'DM Sans', sans-serif;
-        font-size: 0.95rem;
-        font-weight: 600;
-        border: none;
-        cursor: pointer;
-        transition: transform 0.1s, background 0.15s;
-        text-decoration: none;
-    }
-
-    .btn-apply-sheet:active,
-    .btn-reset-sheet:active {
-        transform: scale(0.97);
-    }
-
-    .btn-apply-sheet {
-        background: #4f46e5;
-        color: #fff;
-    }
-
-    .btn-apply-sheet:active {
-        background: #4338ca;
-    }
-
-    .btn-reset-sheet {
-        background: var(--bg);
-        color: var(--muted);
-        border: 1.5px solid var(--border);
-    }
-
-    .btn-reset-sheet:active {
-        color: var(--text);
-        border-color: #9ca3af;
-    }
-
-    /* ── Desktop filter card ── */
-    .filter-card-desktop {
-        display: none;
-        background: var(--surface);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow);
-        padding: 18px 20px;
-        margin: 14px 12px 0;
-    }
-
-    .filter-card-desktop .card-label {
-        font-family: 'Syne', sans-serif;
-        font-size: 0.72rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-        margin: 0 0 12px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-
-    .filter-desktop-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .filter-desktop-row .form-control {
-        flex: 1;
-        height: 44px !important;
-    }
-
-    .filter-desktop-row .btn {
-        flex-shrink: 0;
-    }
-
-    /* ── Summary chips scroll row ── */
-    .summary-scroll {
-        display: flex;
-        gap: 8px;
-        padding: 14px 12px 2px;
-        overflow-x: auto;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-        scroll-snap-type: x mandatory;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .summary-scroll::-webkit-scrollbar {
-        display: none;
-    }
-
-    .summary-chip {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 8px 14px;
-        border-radius: 20px;
+    .chip {
+        padding: 6px 11px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: #fff;
         font-size: 0.82rem;
-        font-weight: 600;
-        white-space: nowrap;
-        flex-shrink: 0;
-        scroll-snap-align: start;
-        border: 1px solid transparent;
+        font-weight: 700;
         cursor: pointer;
-        transition: transform 0.15s;
     }
 
-    .summary-chip:active {
-        transform: scale(0.95);
+    .chip i {
+        margin-right: 4px;
     }
 
     .chip-total {
         background: #f3f4f6;
         color: #374151;
-        border-color: #e5e7eb;
     }
 
     .chip-vh {
         background: #fee2e2;
         color: #991b1b;
-        border-color: #fca5a5;
     }
 
     .chip-hot {
         background: #fef3c7;
         color: #92400e;
-        border-color: #fcd34d;
     }
 
     .chip-warm {
         background: #d1fae5;
         color: #065f46;
-        border-color: #6ee7b7;
     }
 
     .chip-luke {
         background: #dbeafe;
         color: #1e3a8a;
-        border-color: #93c5fd;
     }
 
     .chip-cold {
-        background: #f3f4f6;
-        color: #374151;
-        border-color: #d1d5db;
-    }
-
-    /* Active filter banner */
-    .filter-active-bar {
-        margin: 8px 12px 0;
-        padding: 8px 12px;
-        background: #eef2ff;
-        border-radius: 10px;
-        border: 1px solid #c7d2fe;
-        font-size: 0.82rem;
-        color: #4338ca;
-        display: none;
-        align-items: center;
-        gap: 6px;
-    }
-
-    .filter-active-bar.visible {
-        display: flex;
-    }
-
-    .filter-active-bar a {
-        margin-left: auto;
-        color: #6366f1;
-        font-weight: 600;
-        text-decoration: none;
-        padding: 2px 0;
-    }
-
-    /* ── Section wrappers ── */
-    .sections-wrapper {
-        padding: 14px 0 0;
-    }
-
-    .pl-section {
-        background: var(--surface);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow);
-        margin: 0 12px 12px;
-        overflow: hidden;
-    }
-
-    .pl-section.sec-vh {
-        border-left: 4px solid #dc2626;
-    }
-
-    .pl-section.sec-hot {
-        border-left: 4px solid #f59e0b;
-    }
-
-    .pl-section.sec-warm {
-        border-left: 4px solid #10b981;
-    }
-
-    .pl-section.sec-luke {
-        border-left: 4px solid #0ea5e9;
-    }
-
-    .pl-section.sec-cold {
-        border-left: 4px solid #6b7280;
-    }
-
-    .pl-section-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 0 16px;
-        min-height: 56px;
-        cursor: pointer;
-        user-select: none;
-        border-bottom: 1px solid transparent;
-        transition: background 0.15s, border-color 0.15s;
-    }
-
-    .pl-section-header:active {
-        background: #f9fafb;
-    }
-
-    .pl-section:not(.collapsed) .pl-section-header {
-        border-bottom-color: var(--border);
-    }
-
-    .sec-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1rem;
-        flex-shrink: 0;
-    }
-
-    .pl-section.sec-vh .sec-icon {
-        background: #fee2e2;
-        color: #dc2626;
-    }
-
-    .pl-section.sec-hot .sec-icon {
-        background: #fef3c7;
-        color: #f59e0b;
-    }
-
-    .pl-section.sec-warm .sec-icon {
-        background: #d1fae5;
-        color: #10b981;
-    }
-
-    .pl-section.sec-luke .sec-icon {
-        background: #dbeafe;
-        color: #0ea5e9;
-    }
-
-    .pl-section.sec-cold .sec-icon {
-        background: #f3f4f6;
-        color: #6b7280;
-    }
-
-    .pl-section-header h2 {
-        font-family: 'Syne', sans-serif;
-        font-size: 0.95rem;
-        font-weight: 700;
-        letter-spacing: -0.01em;
-        margin: 0;
-        flex: 1;
-    }
-
-    .pl-section.sec-vh .pl-section-header h2 {
-        color: #7f1d1d;
-    }
-
-    .pl-section.sec-hot .pl-section-header h2 {
-        color: #78350f;
-    }
-
-    .pl-section.sec-warm .pl-section-header h2 {
-        color: #064e3b;
-    }
-
-    .pl-section.sec-luke .pl-section-header h2 {
-        color: #1e3a8a;
-    }
-
-    .pl-section.sec-cold .pl-section-header h2 {
-        color: #374151;
-    }
-
-    .pl-count-pill {
-        padding: 3px 10px;
-        border-radius: 20px;
-        font-size: 0.78rem;
-        font-weight: 700;
-        flex-shrink: 0;
-    }
-
-    .pl-section.sec-vh .pl-count-pill {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-
-    .pl-section.sec-hot .pl-count-pill {
-        background: #fef3c7;
-        color: #92400e;
-    }
-
-    .pl-section.sec-warm .pl-count-pill {
-        background: #d1fae5;
-        color: #065f46;
-    }
-
-    .pl-section.sec-luke .pl-count-pill {
-        background: #dbeafe;
-        color: #1e3a8a;
-    }
-
-    .pl-section.sec-cold .pl-count-pill {
         background: #e5e7eb;
         color: #374151;
     }
 
-    .pl-chevron {
-        width: 28px;
-        height: 28px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--muted);
-        font-size: 0.7rem;
-        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        flex-shrink: 0;
-        background: var(--bg);
-        border-radius: 8px;
+    .filter-card,
+    .section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
     }
 
-    .pl-section.collapsed .pl-chevron {
-        transform: rotate(-90deg);
+    .filter-card {
+        margin-bottom: 12px;
+        padding: 12px;
     }
 
-    .pl-section-body {
-        overflow: hidden;
-        transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .pl-section.collapsed .pl-section-body {
-        max-height: 0 !important;
-    }
-
-    /* ── Date label inside sections ── */
-    .pl-date-label {
-        font-family: 'Syne', sans-serif;
-        font-size: 0.67rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--muted);
-        padding: 10px 16px 4px;
-        background: #fafafa;
-        border-bottom: 1px solid var(--border);
-        position: sticky;
-        top: 0;
-        z-index: 5;
-    }
-
-    /* ── Lead rows — override .appointment-item ── */
-    .appointment-item {
-        padding: 14px 16px !important;
-        border-bottom: 1px solid var(--border) !important;
-        border-radius: 0 !important;
-        box-shadow: none !important;
-        margin: 0 !important;
-        position: relative;
-        cursor: pointer;
-        transition: background 0.15s;
-    }
-
-    .appointment-item:last-child {
-        border-bottom: none !important;
-    }
-
-    .appointment-item:active {
-        background: #f9fafb !important;
-    }
-
-    /* Invisible full-row tap target */
-    .row-tap-target {
-        position: absolute;
-        inset: 0;
-        z-index: 1;
-    }
-
-    .appointment-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
+    .filter-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
         gap: 8px;
-        margin-bottom: 10px !important;
     }
 
-    .appointment-name {
-        font-family: 'Syne', sans-serif !important;
-        font-weight: 700 !important;
-        font-size: 1rem !important;
-        letter-spacing: -0.01em !important;
-        line-height: 1.25 !important;
-        flex: 1;
-    }
-
-    .appointment-status {
-        flex-shrink: 0 !important;
-        padding: 4px 10px !important;
-        border-radius: 20px !important;
-        font-size: 0.8rem !important;
-        font-weight: 700 !important;
-        white-space: nowrap !important;
-        align-self: flex-start !important;
-    }
-
-    /* Detail items — 2-col grid on mobile */
-    .appointment-details {
-        display: grid !important;
-        grid-template-columns: 1fr 1fr !important;
-        gap: 6px 10px !important;
-        margin-bottom: 12px !important;
-    }
-
-    .detail-item {
-        display: flex !important;
-        align-items: center !important;
-        gap: 6px !important;
-        font-size: 0.82rem !important;
-        color: var(--muted) !important;
-        overflow: hidden;
-        min-width: 0;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-    }
-
-    .detail-item i {
-        width: 14px;
-        text-align: center;
-        font-size: 0.72rem;
-        flex-shrink: 0;
-        opacity: 0.7;
-    }
-
-    /* Phone row — full width, tap-to-call */
-    .detail-item.detail-phone {
-        grid-column: 1 / -1 !important;
-        font-size: 0.9rem !important;
-        font-weight: 500 !important;
-        color: var(--text) !important;
-    }
-
-    .detail-item.detail-phone i {
-        opacity: 1;
-    }
-
-    .detail-item.detail-phone a {
-        color: inherit;
-        text-decoration: none;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        min-width: 0;
-    }
-
-    .call-badge {
-        background: #dcfce7;
-        color: #166534;
-        font-size: 0.68rem;
-        font-weight: 700;
-        padding: 2px 7px;
+    .filter-row select,
+    .card-menu select,
+    .card-menu textarea {
+        width: 100%;
+        border: 1px solid var(--border);
         border-radius: 8px;
-        flex-shrink: 0;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+        padding: 8px;
+        font-size: 0.85rem;
     }
 
-    /* Actions — full-width button, above tap overlay */
-    .actions {
-        position: relative;
-        z-index: 2;
-        margin-top: 0 !important;
-        display: flex !important;
+    .btn {
+        border: none;
+        border-radius: 8px;
+        padding: 9px 12px;
+        font-size: 0.83rem;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
     }
 
-    .actions .btn,
-    .actions .btn-sm {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        gap: 6px !important;
-        width: 100% !important;
-        height: 44px !important;
-        border-radius: 10px !important;
-        background: #111827 !important;
-        color: #fff !important;
-        font-family: 'DM Sans', sans-serif !important;
-        font-size: 0.9rem !important;
-        font-weight: 600 !important;
-        text-decoration: none !important;
-        border: none !important;
-        transition: background 0.15s, transform 0.1s !important;
-    }
-
-    .actions .btn:active,
-    .actions .btn-sm:active {
-        background: #1f2937 !important;
-        transform: scale(0.98) !important;
-    }
-
-    /* Empty state */
-    .empty-state {
-        padding: 28px 16px !important;
-        text-align: center !important;
-        color: var(--muted) !important;
-        font-size: 0.88rem !important;
-    }
-
-    .empty-state p {
-        margin: 0;
-    }
-
-    /* ── Scroll-to-top FAB ── */
-    .fab-top {
-        position: fixed;
-        bottom: calc(20px + var(--safe-bottom));
-        right: 16px;
-        z-index: 60;
-        width: 44px;
-        height: 44px;
-        border-radius: 22px;
+    .btn-dark {
         background: #111827;
         color: #fff;
-        border: none;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+
+    .btn-light {
+        background: #eef2f7;
+        color: #1f2937;
+    }
+
+    .section {
+        margin-bottom: 12px;
+        overflow: hidden;
+        border-left: 4px solid transparent;
+    }
+
+    .section summary {
+        list-style: none;
+        cursor: pointer;
+    }
+
+    .section summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        border-bottom: 1px solid transparent;
+        font-weight: 700;
+    }
+
+    .section[open] .section-head {
+        border-bottom-color: var(--border);
+    }
+
+    .section-head-left {
         display: flex;
         align-items: center;
+        gap: 8px;
+    }
+
+    .section-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
         justify-content: center;
-        font-size: 0.9rem;
+    }
+
+    .sec-vh { border-left-color: #dc2626; }
+    .sec-hot { border-left-color: #f59e0b; }
+    .sec-warm { border-left-color: #10b981; }
+    .sec-luke { border-left-color: #0ea5e9; }
+    .sec-cold { border-left-color: #6b7280; }
+
+    .sec-vh .section-icon { background: #fee2e2; color: #991b1b; }
+    .sec-hot .section-icon { background: #fef3c7; color: #92400e; }
+    .sec-warm .section-icon { background: #d1fae5; color: #065f46; }
+    .sec-luke .section-icon { background: #dbeafe; color: #1e3a8a; }
+    .sec-cold .section-icon { background: #e5e7eb; color: #374151; }
+
+    .section-rec {
+        margin: 8px 12px 2px;
+        padding: 7px 10px;
+        font-size: 0.82rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        color: #1f2937;
+    }
+
+    .section-rec i {
+        color: #2563eb;
+        margin-right: 6px;
+    }
+
+    .section-chevron {
+        color: var(--muted);
+        margin-left: 8px;
+        transition: transform 0.2s ease;
+    }
+
+    .section[open] .section-chevron {
+        transform: rotate(90deg);
+    }
+
+    .segment-title {
+        padding: 10px 12px 4px;
+        font-size: 0.76rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+    }
+
+    .date-title {
+        padding: 8px 12px 0;
+        font-size: 0.75rem;
+        color: var(--muted);
+        font-weight: 700;
+    }
+
+    .lead-card {
+        border-top: 1px solid var(--border);
+        padding: 10px 12px 12px;
+    }
+
+    .lead-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: flex-start;
+        margin-bottom: 7px;
+    }
+
+    .lead-name {
+        font-size: 0.98rem;
+        font-weight: 700;
+    }
+
+    .lead-score {
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        background: #f3f4f6;
+    }
+
+    .lead-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 6px;
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-bottom: 8px;
+    }
+
+    .alert {
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 8px;
+        font-size: 0.8rem;
+        margin-bottom: 8px;
+    }
+
+    .card-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .card-menu {
+        width: 100%;
+        margin-top: 6px;
+    }
+
+    .card-menu summary {
         cursor: pointer;
-        opacity: 0;
-        transform: translateY(12px) scale(0.85);
-        transition: opacity 0.25s, transform 0.25s;
-        pointer-events: none;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #1f2937;
     }
 
-    .fab-top.visible {
-        opacity: 1;
-        transform: none;
-        pointer-events: auto;
-    }
-
-    .fab-top:active {
-        transform: scale(0.94) !important;
-    }
-
-    .page-bottom-spacer {
-        height: calc(32px + var(--safe-bottom));
-    }
-
-    /* ── Tablet / Desktop ── */
-    @media (min-width: 640px) {
-        .pl-header {
-            padding: 20px 24px 16px;
-        }
-
-        .pl-header-left p {
-            display: block;
-        }
-
-        .btn-filter-toggle {
-            display: none;
-        }
-
-        .filter-card-desktop {
-            display: block;
-            margin: 14px 24px 0;
-        }
-
-        .filter-overlay,
-        .filter-sheet {
-            display: none !important;
-        }
-
-        .summary-scroll {
-            flex-wrap: wrap;
-            overflow: visible;
-            padding: 14px 24px 2px;
-            gap: 8px;
-        }
-
-        .filter-active-bar {
-            margin: 8px 24px 0;
-        }
-
-        .pl-section {
-            margin: 0 24px 14px;
-        }
-
-        .pl-section-header {
-            padding: 0 24px;
-            min-height: 60px;
-        }
-
-        .pl-date-label {
-            padding: 10px 24px 4px;
-        }
-
-        .appointment-item {
-            padding: 16px 24px !important;
-        }
-
-        .appointment-details {
-            grid-template-columns: repeat(4, auto) !important;
-            gap: 4px 20px !important;
-        }
-
-        .detail-item.detail-phone {
-            grid-column: auto !important;
-        }
-
-        .actions {
-            justify-content: flex-end !important;
-        }
-
-        .actions .btn,
-        .actions .btn-sm {
-            width: auto !important;
-            padding: 0 20px !important;
-        }
-
-        .fab-top {
-            right: 24px;
-        }
-    }
-
-    @media (min-width: 1024px) {
-
-        .filter-card-desktop,
-        .pl-section,
-        .summary-scroll,
-        .filter-active-bar {
-            max-width: 920px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .pl-header {
-            max-width: 920px;
-            margin: 0 auto;
-        }
-
-        .appointment-item:hover {
-            background: #fafafa !important;
-        }
-
-        .actions .btn:hover,
-        .actions .btn-sm:hover {
-            background: #1f2937 !important;
-            transform: translateY(-1px) !important;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
-        }
+    .card-menu form {
+        margin-top: 8px;
+        display: grid;
+        gap: 8px;
     }
 </style>
 
-<!-- Sticky Header -->
-<div class="pl-header">
-    <div class="pl-header-left">
-        <h1><i class="fas fa-bolt"></i> Priority Leads</h1>
-        <p>Grouped by urgency: Very Hot, Hot, Warm, Luke-warm, Cold</p>
-    </div>
-    <button class="btn-filter-toggle {% if selected_response_age %}has-filter{% endif %}" onclick="openFilter()"
-        aria-label="Open filter">
-        <i class="fas fa-sliders-h"></i> Filter
-        <span class="filter-badge">ON</span>
-    </button>
-</div>
-
-<!-- Desktop Filter Card -->
-<div class="filter-card-desktop">
-    <div class="card-label"><i class="fas fa-filter"></i> Response Age Filter</div>
-    <form method="get" class="filter-desktop-row">
-        <select name="response_age" id="desktop_age_select" class="form-control">
-            <option value="">All response ages</option>
-            <option value="1w">No response for 1 week+</option>
-            <option value="2w">No response for 2 weeks+</option>
-            <option value="3w">No response for 3 weeks+</option>
-            <option value="1m">No response for 1 month+</option>
-            <option value="1w_minus">Last response within 1 week</option>
-            <option value="2w_minus">Last response within 2 weeks</option>
-            <option value="3w_minus">Last response within 3 weeks</option>
-            <option value="4w_minus">Last response within 4 weeks</option>
-        </select>
-        <button type="submit" class="btn btn-sm"><i class="fas fa-check"></i> Apply</button>
-        <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary"><i class="fas fa-undo"></i> Reset</a>
-    </form>
-</div>
-
-<!-- Summary chips -->
-<div class="summary-scroll">
-    <div class="summary-chip chip-total" onclick="scrollToSection('sec-vh')" role="button" tabindex="0">
-        <i class="fas fa-database"></i> All: {{ total_leads }}
-    </div>
-    <div class="summary-chip chip-vh" onclick="scrollToSection('sec-vh')" role="button" tabindex="0">
-        <i class="fas fa-fire"></i> Very Hot: {{ very_hot_leads|length }}
-    </div>
-    <div class="summary-chip chip-hot" onclick="scrollToSection('sec-hot')" role="button" tabindex="0">
-        <i class="fas fa-exclamation-triangle"></i> Hot: {{ hot_leads|length }}
-    </div>
-    <div class="summary-chip chip-warm" onclick="scrollToSection('sec-warm')" role="button" tabindex="0">
-        <i class="fas fa-sun"></i> Warm: {{ warm_leads|length }}
-    </div>
-    <div class="summary-chip chip-luke" onclick="scrollToSection('sec-luke')" role="button" tabindex="0">
-        <i class="fas fa-temperature-low"></i> Lukewarm: {{ luke_warm_leads|length }}
-    </div>
-    <div class="summary-chip chip-cold" onclick="scrollToSection('sec-cold')" role="button" tabindex="0">
-        <i class="fas fa-snowflake"></i> Cold: {{ cold_leads|length }}
-    </div>
-</div>
-
-{% if selected_response_age %}
-<div class="filter-active-bar visible">
-    <i class="fas fa-filter"></i>
-    <span>Filter active: <strong>{{ selected_response_age }}</strong></span>
-    <a href="{% url 'priority_leads' %}"><i class="fas fa-times"></i> Clear</a>
-</div>
-{% endif %}
-
-<div class="sections-wrapper">
-
-    <!-- VERY HOT -->
-    <div class="pl-section sec-vh" id="sec-vh">
-        <div class="pl-section-header" onclick="toggleSection('sec-vh')" role="button" aria-expanded="true"
-            tabindex="0">
-            <div class="sec-icon"><i class="fas fa-fire"></i></div>
-            <h2>Very Hot Leads</h2>
-            <span class="pl-count-pill">{{ very_hot_leads|length }}</span>
-            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
-        </div>
-        <div class="pl-section-body">
-            {% for group in very_hot_by_date %}
-            <div class="pl-date-label">{{ group.label }}</div>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #dc2626;">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
-                    aria-label="Open {{ lead.customer_name }}"></a>
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fee2e2;color:#991b1b;">{{
-                        lead.computed_score|default:"—" }}/100</div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item detail-phone">
-                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
-                        <div class="phone-actions">
-                            <a href="tel:{{ clean_phone }}" class="phone-link">
-                                <i class="fas fa-phone"></i>
-                                <span>{{ clean_phone }}</span>
-                            </a>
-                            <div class="phone-btns">
-                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
-                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
-                                    class="wa-badge wa-btn">WhatsApp</a>
-                            </div>
-                        </div>
-                        {% endwith %}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
-                        area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
-                        H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
-                            class="fas fa-arrow-right"></i> Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state">
-                <p><i class="fas fa-fire"></i> No very hot leads.</p>
-            </div>
-            {% endfor %}
+<div class="pl-wrap">
+    <div class="pl-head">
+        <div>
+            <h1>Priority Leads Dashboard</h1>
+            <div class="pl-sub">Segmented by urgency and manual follow-up status, with recommended actions per lead.</div>
         </div>
     </div>
 
-    <!-- HOT -->
-    <div class="pl-section sec-hot" id="sec-hot">
-        <div class="pl-section-header" onclick="toggleSection('sec-hot')" role="button" aria-expanded="true"
-            tabindex="0">
-            <div class="sec-icon"><i class="fas fa-exclamation-triangle"></i></div>
-            <h2>Hot Leads</h2>
-            <span class="pl-count-pill">{{ hot_leads|length }}</span>
-            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
-        </div>
-        <div class="pl-section-body">
-            {% for group in hot_by_date %}
-            <div class="pl-date-label">{{ group.label }}</div>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #f59e0b;">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
-                    aria-label="Open {{ lead.customer_name }}"></a>
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#fef3c7;color:#92400e;">{{
-                        lead.computed_score|default:"—" }}/100</div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item detail-phone">
-                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
-                        <div class="phone-actions">
-                            <a href="tel:{{ clean_phone }}" class="phone-link">
-                                <i class="fas fa-phone"></i>
-                                <span>{{ clean_phone }}</span>
-                            </a>
-                            <div class="phone-btns">
-                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
-                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
-                                    class="wa-badge wa-btn">WhatsApp</a>
-                            </div>
-                        </div>
-                        {% endwith %}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
-                        area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
-                        H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
-                            class="fas fa-arrow-right"></i> Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state">
-                <p><i class="fas fa-exclamation-triangle"></i> No hot leads.</p>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- WARM -->
-    <div class="pl-section sec-warm" id="sec-warm">
-        <div class="pl-section-header" onclick="toggleSection('sec-warm')" role="button" aria-expanded="true"
-            tabindex="0">
-            <div class="sec-icon"><i class="fas fa-sun"></i></div>
-            <h2>Warm Leads</h2>
-            <span class="pl-count-pill">{{ warm_leads|length }}</span>
-            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
-        </div>
-        <div class="pl-section-body">
-            {% for group in warm_by_date %}
-            <div class="pl-date-label">{{ group.label }}</div>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #10b981;">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
-                    aria-label="Open {{ lead.customer_name }}"></a>
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#d1fae5;color:#065f46;">{{
-                        lead.computed_score|default:"—" }}/100</div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item detail-phone">
-                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
-                        <div class="phone-actions">
-                            <a href="tel:{{ clean_phone }}" class="phone-link">
-                                <i class="fas fa-phone"></i>
-                                <span>{{ clean_phone }}</span>
-                            </a>
-                            <div class="phone-btns">
-                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
-                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
-                                    class="wa-badge wa-btn">WhatsApp</a>
-                            </div>
-                        </div>
-                        {% endwith %}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
-                        area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
-                        H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
-                            class="fas fa-arrow-right"></i> Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state">
-                <p><i class="fas fa-sun"></i> No warm leads.</p>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- LUKE-WARM -->
-    <div class="pl-section sec-luke" id="sec-luke">
-        <div class="pl-section-header" onclick="toggleSection('sec-luke')" role="button" aria-expanded="false"
-            tabindex="0">
-            <div class="sec-icon"><i class="fas fa-temperature-low"></i></div>
-            <h2>Luke-warm Leads</h2>
-            <span class="pl-count-pill">{{ luke_warm_leads|length }}</span>
-            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
-        </div>
-        <div class="pl-section-body">
-            {% for group in luke_warm_by_date %}
-            <div class="pl-date-label">{{ group.label }}</div>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #0ea5e9;">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
-                    aria-label="Open {{ lead.customer_name }}"></a>
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#dbeafe;color:#1e3a8a;">{{
-                        lead.computed_score|default:"—" }}/100</div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item detail-phone">
-                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
-                        <div class="phone-actions">
-                            <a href="tel:{{ clean_phone }}" class="phone-link">
-                                <i class="fas fa-phone"></i>
-                                <span>{{ clean_phone }}</span>
-                            </a>
-                            <div class="phone-btns">
-                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
-                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
-                                    class="wa-badge wa-btn">WhatsApp</a>
-                            </div>
-                        </div>
-                        {% endwith %}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
-                        area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
-                        H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
-                            class="fas fa-arrow-right"></i> Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state">
-                <p><i class="fas fa-temperature-low"></i> No luke-warm leads.</p>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- COLD -->
-    <div class="pl-section sec-cold" id="sec-cold">
-        <div class="pl-section-header" onclick="toggleSection('sec-cold')" role="button" aria-expanded="false"
-            tabindex="0">
-            <div class="sec-icon"><i class="fas fa-snowflake"></i></div>
-            <h2>Cold Leads</h2>
-            <span class="pl-count-pill">{{ cold_leads|length }}</span>
-            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
-        </div>
-        <div class="pl-section-body">
-            {% for group in cold_by_date %}
-            <div class="pl-date-label">{{ group.label }}</div>
-            {% for lead in group.leads %}
-            <div class="appointment-item" style="border-left-color: #6b7280;">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
-                    aria-label="Open {{ lead.customer_name }}"></a>
-                <div class="appointment-header">
-                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                    <div class="appointment-status" style="background:#e5e7eb;color:#374151;">{{
-                        lead.computed_score|default:"—" }}/100</div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item detail-phone">
-                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
-                        <div class="phone-actions">
-                            <a href="tel:{{ clean_phone }}" class="phone-link">
-                                <i class="fas fa-phone"></i>
-                                <span>{{ clean_phone }}</span>
-                            </a>
-                            <div class="phone-btns">
-                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
-                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
-                                    class="wa-badge wa-btn">WhatsApp</a>
-                            </div>
-                        </div>
-                        {% endwith %}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
-                        area" }}</div>
-                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
-                        H:i"|default:"No activity" }}</div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
-                            class="fas fa-arrow-right"></i> Open Lead</a>
-                </div>
-            </div>
-            {% endfor %}
-            {% empty %}
-            <div class="empty-state">
-                <p><i class="fas fa-snowflake"></i> No cold leads.</p>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-</div><!-- /sections-wrapper -->
-
-<div class="page-bottom-spacer"></div>
-
-<!-- Scroll to top FAB -->
-<button class="fab-top" id="fab-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">
-    <i class="fas fa-chevron-up"></i>
-</button>
-
-<!-- Mobile bottom sheet filter -->
-<div class="filter-overlay" id="filter-overlay" onclick="closeFilter()"></div>
-<div class="filter-sheet" id="filter-sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-title"><i class="fas fa-sliders-h"></i> Filter Leads</div>
-    <form method="get">
-        <label class="filter-select-label" for="mobile_age_select">Response Age</label>
-        <div class="filter-select-wrapper">
-            <select name="response_age" id="mobile_age_select" class="form-control">
+    <div class="filter-card">
+        <form method="get" class="filter-row">
+            <select name="response_age">
                 <option value="">All response ages</option>
-                <option value="1w">No response for 1 week+</option>
-                <option value="2w">No response for 2 weeks+</option>
-                <option value="3w">No response for 3 weeks+</option>
-                <option value="1m">No response for 1 month+</option>
-                <option value="1w_minus">Last response within 1 week</option>
-                <option value="2w_minus">Last response within 2 weeks</option>
-                <option value="3w_minus">Last response within 3 weeks</option>
-                <option value="4w_minus">Last response within 4 weeks</option>
+                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+</option>
+                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+</option>
+                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+</option>
+                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+</option>
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week</option>
+                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks</option>
+                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks</option>
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks</option>
             </select>
+            <button type="submit" class="btn btn-dark">Apply</button>
+            <a href="{% url 'priority_leads' %}" class="btn btn-light">Reset</a>
+        </form>
+    </div>
+
+    <div class="chip-row">
+        <div class="chip chip-total" onclick="scrollToSection('sec-vh')"><i class="fas fa-database"></i>All: {{ total_leads }}</div>
+        <div class="chip chip-vh" onclick="scrollToSection('sec-vh')"><i class="fas fa-fire"></i>Very Hot: {{ very_hot_leads|length }}</div>
+        <div class="chip chip-hot" onclick="scrollToSection('sec-hot')"><i class="fas fa-exclamation-triangle"></i>Hot: {{ hot_leads|length }}</div>
+        <div class="chip chip-warm" onclick="scrollToSection('sec-warm')"><i class="fas fa-sun"></i>Warm: {{ warm_leads|length }}</div>
+        <div class="chip chip-luke" onclick="scrollToSection('sec-luke')"><i class="fas fa-temperature-low"></i>Lukewarm: {{ luke_warm_leads|length }}</div>
+        <div class="chip chip-cold" onclick="scrollToSection('sec-cold')"><i class="fas fa-snowflake"></i>Cold: {{ cold_leads|length }}</div>
+        <div class="chip chip-hot" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-clock"></i>Manual Pending: {{ manual_followup_pending_count }}</div>
+        <div class="chip chip-warm" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-check"></i>Manual Done: {{ manual_followup_done_count }}</div>
+    </div>
+
+    {% for section in sections %}
+    <details class="section {{ section.css }}" id="{{ section.id }}">
+        <summary class="section-head">
+            <span class="section-head-left">
+                <span class="section-icon"><i class="fas fa-{{ section.icon }}"></i></span>
+                <span>{{ section.title }}</span>
+            </span>
+            <span>
+                {{ section.count }}
+                <i class="fas fa-chevron-right section-chevron"></i>
+            </span>
+        </summary>
+        <div class="section-rec"><i class="fas fa-info-circle"></i><strong>Recommended action:</strong> {{ section.recommended_action }}</div>
+
+        <div class="segment-title">Manual Follow-up Pending ({{ section.pending_count }})</div>
+        {% for group in section.pending_by_date %}
+        <div class="date-title">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-card" style="border-left: 3px solid {{ section.border }};">
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="lead-score">{{ lead.computed_score }}/100</div>
+            </div>
+            <div class="lead-meta">
+                <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
+                <div>Service: {{ lead.project_type|default:"No service" }}</div>
+                <div>Area: {{ lead.customer_area|default:"No area" }}</div>
+                <div>Recent: {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+            </div>
+            {% if lead.last_priority_alert_summary %}
+            <div class="alert"><strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
+            {% endif %}
+            <div class="card-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
+            </div>
+            <details class="card-menu">
+                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
+                <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <select name="manual_followup_state">
+                        <option value="">Manual follow-up state</option>
+                        <option value="pending">Mark manual follow-up pending</option>
+                        <option value="done">Mark manually followed up</option>
+                    </select>
+                    <select name="follow_up_status">
+                        <option value="">Lead follow-up status</option>
+                        {% for value, label in follow_up_status_choices %}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
+                    <button type="submit" class="btn btn-dark">Save update</button>
+                </form>
+            </details>
         </div>
-        <div class="sheet-actions">
-            <button type="submit" class="btn-apply-sheet"><i class="fas fa-check"></i> Apply Filter</button>
-            <a href="{% url 'priority_leads' %}" class="btn-reset-sheet"><i class="fas fa-undo"></i> Reset</a>
+        {% endfor %}
+        {% empty %}
+        <div class="lead-card">No leads in manual-follow-up pending for this section.</div>
+        {% endfor %}
+
+        <div class="segment-title">Manually Followed Up ({{ section.done_count }})</div>
+        {% for group in section.done_by_date %}
+        <div class="date-title">{{ group.label }}</div>
+        {% for lead in group.leads %}
+        <div class="lead-card" style="border-left: 3px solid {{ section.border }};">
+            <div class="lead-top">
+                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="lead-score">{{ lead.computed_score }}/100</div>
+            </div>
+            <div class="lead-meta">
+                <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
+                <div>Service: {{ lead.project_type|default:"No service" }}</div>
+                <div>Area: {{ lead.customer_area|default:"No area" }}</div>
+                <div>Recent: {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+            </div>
+            {% if lead.last_priority_alert_summary %}
+            <div class="alert"><strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
+            {% endif %}
+            <div class="card-actions">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
+            </div>
+            <details class="card-menu">
+                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
+                <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <select name="manual_followup_state">
+                        <option value="">Manual follow-up state</option>
+                        <option value="pending">Mark manual follow-up pending</option>
+                        <option value="done">Mark manually followed up</option>
+                    </select>
+                    <select name="follow_up_status">
+                        <option value="">Lead follow-up status</option>
+                        {% for value, label in follow_up_status_choices %}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
+                    <button type="submit" class="btn btn-dark">Save update</button>
+                </form>
+            </details>
         </div>
-    </form>
+        {% endfor %}
+        {% empty %}
+        <div class="lead-card">No leads marked as manually followed up for this section.</div>
+        {% endfor %}
+    </details>
+    {% endfor %}
 </div>
-
 <script>
-    (function () {
-        var saved = "{{ selected_response_age|default:'' }}";
-        ['mobile_age_select', 'desktop_age_select'].forEach(function (id) {
-            var el = document.getElementById(id);
-            if (el && saved) el.value = saved;
-        });
-
-        // Section collapse/expand
-        function initSections() {
-            document.querySelectorAll('.pl-section-body').forEach(function (body) {
-                body.style.maxHeight = body.scrollHeight + 'px';
-            });
+    function scrollToSection(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.tagName === 'DETAILS') {
+            el.open = true;
         }
-
-        window.toggleSection = function (id) {
-            var card = document.getElementById(id);
-            var body = card.querySelector('.pl-section-body');
-            var header = card.querySelector('.pl-section-header');
-            if (card.classList.contains('collapsed')) {
-                card.classList.remove('collapsed');
-                header.setAttribute('aria-expanded', 'true');
-                requestAnimationFrame(function () {
-                    body.style.maxHeight = body.scrollHeight + 'px';
-                });
-            } else {
-                card.classList.add('collapsed');
-                header.setAttribute('aria-expanded', 'false');
-            }
-        };
-
-        // Keyboard support
-        document.querySelectorAll('.pl-section-header, .summary-chip').forEach(function (el) {
-            el.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
-            });
-        });
-
-        // Scroll to section via chip tap
-        window.scrollToSection = function (id) {
-            var el = document.getElementById(id);
-            if (!el) return;
-            if (el.classList.contains('collapsed')) toggleSection(id);
-            var headerH = (document.querySelector('.pl-header') || {}).offsetHeight || 56;
-            window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - headerH - 8, behavior: 'smooth' });
-        };
-
-        // Luke-warm + cold start collapsed on mobile
-        function applyDefaults() {
-            if (window.innerWidth < 640) {
-                ['sec-luke', 'sec-cold'].forEach(function (id) {
-                    var card = document.getElementById(id);
-                    if (card) {
-                        card.classList.add('collapsed');
-                        var h = card.querySelector('.pl-section-header');
-                        if (h) h.setAttribute('aria-expanded', 'false');
-                    }
-                });
-            }
-        }
-
-        // Bottom sheet
-        window.openFilter = function () {
-            var overlay = document.getElementById('filter-overlay');
-            var sheet = document.getElementById('filter-sheet');
-            overlay.classList.add('open');
-            requestAnimationFrame(function () {
-                overlay.classList.add('visible');
-                sheet.classList.add('open');
-            });
-            document.body.style.overflow = 'hidden';
-        };
-        window.closeFilter = function () {
-            var overlay = document.getElementById('filter-overlay');
-            var sheet = document.getElementById('filter-sheet');
-            overlay.classList.remove('visible');
-            sheet.classList.remove('open');
-            document.body.style.overflow = '';
-            setTimeout(function () { overlay.classList.remove('open'); }, 320);
-        };
-
-        // Swipe down to close
-        (function () {
-            var sheet = document.getElementById('filter-sheet');
-            var startY = 0, curY = 0, dragging = false;
-            sheet.addEventListener('touchstart', function (e) { startY = e.touches[0].clientY; dragging = true; }, { passive: true });
-            sheet.addEventListener('touchmove', function (e) {
-                if (!dragging) return;
-                curY = e.touches[0].clientY;
-                var d = curY - startY;
-                if (d > 0) { sheet.style.transform = 'translateY(' + d + 'px)'; sheet.style.transition = 'none'; }
-            }, { passive: true });
-            sheet.addEventListener('touchend', function () {
-                dragging = false;
-                sheet.style.transition = ''; sheet.style.transform = '';
-                if (curY - startY > 80) closeFilter();
-            });
-        })();
-
-        // FAB
-        var fab = document.getElementById('fab-top');
-        window.addEventListener('scroll', function () {
-            fab.classList.toggle('visible', window.scrollY > 300);
-        }, { passive: true });
-
-        document.addEventListener('DOMContentLoaded', function () {
-            initSections();
-            applyDefaults();
-        });
-    })();
+        const top = el.getBoundingClientRect().top + window.scrollY - 10;
+        window.scrollTo({ top: top, behavior: 'smooth' });
+    }
 </script>
-
 {% endblock %}
