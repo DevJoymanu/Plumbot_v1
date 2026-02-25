@@ -1025,7 +1025,62 @@
                 {% for group in very_hot_by_date %}
                 <div class="date-header">{{ group.label }}</div>
                 {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="vh" %}
+                <!-- Lead Card -->
+                <div class="lead-card">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__link"
+                        aria-label="Open {{ lead.customer_name }}"></a>
+
+                    <div class="lead-card__header">
+                        <div class="lead-card__name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                        <div class="lead-card__score">{{ lead.computed_score|default:"—" }}/100</div>
+                    </div>
+
+                    <div class="lead-card__details">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="lead-card__detail lead-card__detail--full">
+                            <div class="lead-card__phone-row">
+                                <a href="tel:{{ clean_phone }}" class="lead-card__phone-link"
+                                    aria-label="Call {{ clean_phone }}">
+                                    <i class="fas fa-phone" aria-hidden="true"></i>
+                                    <span>{{ clean_phone }}</span>
+                                </a>
+                                <div class="lead-card__phone-actions">
+                                    <a href="tel:{{ clean_phone }}" class="phone-action phone-action--call"
+                                        aria-label="Call now">
+                                        Call
+                                    </a>
+                                    <a href="https://wa.me/{{ clean_phone|cut:'+' }}" target="_blank"
+                                        class="phone-action phone-action--wa" aria-label="Open WhatsApp" rel="noopener">
+                                        WA
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endwith %}
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-tools" aria-hidden="true"></i>
+                            {{ lead.project_type|default:"No service" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
+                            {{ lead.customer_area|default:"No area" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-clock" aria-hidden="true"></i>
+                            {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}
+                        </div>
+                    </div>
+
+                    <div class="lead-card__actions">
+                        <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__open-btn">
+                            <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                            Open Lead
+                        </a>
+                    </div>
+                </div>
                 {% endfor %}
                 {% empty %}
                 <div class="empty-state">
@@ -1048,7 +1103,62 @@
                 {% for group in hot_by_date %}
                 <div class="date-header">{{ group.label }}</div>
                 {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="hot" %}
+                <!-- Lead Card -->
+                <div class="lead-card">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__link"
+                        aria-label="Open {{ lead.customer_name }}"></a>
+
+                    <div class="lead-card__header">
+                        <div class="lead-card__name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                        <div class="lead-card__score">{{ lead.computed_score|default:"—" }}/100</div>
+                    </div>
+
+                    <div class="lead-card__details">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="lead-card__detail lead-card__detail--full">
+                            <div class="lead-card__phone-row">
+                                <a href="tel:{{ clean_phone }}" class="lead-card__phone-link"
+                                    aria-label="Call {{ clean_phone }}">
+                                    <i class="fas fa-phone" aria-hidden="true"></i>
+                                    <span>{{ clean_phone }}</span>
+                                </a>
+                                <div class="lead-card__phone-actions">
+                                    <a href="tel:{{ clean_phone }}" class="phone-action phone-action--call"
+                                        aria-label="Call now">
+                                        Call
+                                    </a>
+                                    <a href="https://wa.me/{{ clean_phone|cut:'+' }}" target="_blank"
+                                        class="phone-action phone-action--wa" aria-label="Open WhatsApp" rel="noopener">
+                                        WA
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endwith %}
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-tools" aria-hidden="true"></i>
+                            {{ lead.project_type|default:"No service" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
+                            {{ lead.customer_area|default:"No area" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-clock" aria-hidden="true"></i>
+                            {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}
+                        </div>
+                    </div>
+
+                    <div class="lead-card__actions">
+                        <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__open-btn">
+                            <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                            Open Lead
+                        </a>
+                    </div>
+                </div>
                 {% endfor %}
                 {% empty %}
                 <div class="empty-state">
@@ -1071,7 +1181,62 @@
                 {% for group in warm_by_date %}
                 <div class="date-header">{{ group.label }}</div>
                 {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="warm" %}
+                <!-- Lead Card -->
+                <div class="lead-card">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__link"
+                        aria-label="Open {{ lead.customer_name }}"></a>
+
+                    <div class="lead-card__header">
+                        <div class="lead-card__name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                        <div class="lead-card__score">{{ lead.computed_score|default:"—" }}/100</div>
+                    </div>
+
+                    <div class="lead-card__details">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="lead-card__detail lead-card__detail--full">
+                            <div class="lead-card__phone-row">
+                                <a href="tel:{{ clean_phone }}" class="lead-card__phone-link"
+                                    aria-label="Call {{ clean_phone }}">
+                                    <i class="fas fa-phone" aria-hidden="true"></i>
+                                    <span>{{ clean_phone }}</span>
+                                </a>
+                                <div class="lead-card__phone-actions">
+                                    <a href="tel:{{ clean_phone }}" class="phone-action phone-action--call"
+                                        aria-label="Call now">
+                                        Call
+                                    </a>
+                                    <a href="https://wa.me/{{ clean_phone|cut:'+' }}" target="_blank"
+                                        class="phone-action phone-action--wa" aria-label="Open WhatsApp" rel="noopener">
+                                        WA
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endwith %}
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-tools" aria-hidden="true"></i>
+                            {{ lead.project_type|default:"No service" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
+                            {{ lead.customer_area|default:"No area" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-clock" aria-hidden="true"></i>
+                            {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}
+                        </div>
+                    </div>
+
+                    <div class="lead-card__actions">
+                        <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__open-btn">
+                            <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                            Open Lead
+                        </a>
+                    </div>
+                </div>
                 {% endfor %}
                 {% empty %}
                 <div class="empty-state">
@@ -1095,7 +1260,62 @@
                 {% for group in luke_warm_by_date %}
                 <div class="date-header">{{ group.label }}</div>
                 {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="luke" %}
+                <!-- Lead Card -->
+                <div class="lead-card">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__link"
+                        aria-label="Open {{ lead.customer_name }}"></a>
+
+                    <div class="lead-card__header">
+                        <div class="lead-card__name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                        <div class="lead-card__score">{{ lead.computed_score|default:"—" }}/100</div>
+                    </div>
+
+                    <div class="lead-card__details">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="lead-card__detail lead-card__detail--full">
+                            <div class="lead-card__phone-row">
+                                <a href="tel:{{ clean_phone }}" class="lead-card__phone-link"
+                                    aria-label="Call {{ clean_phone }}">
+                                    <i class="fas fa-phone" aria-hidden="true"></i>
+                                    <span>{{ clean_phone }}</span>
+                                </a>
+                                <div class="lead-card__phone-actions">
+                                    <a href="tel:{{ clean_phone }}" class="phone-action phone-action--call"
+                                        aria-label="Call now">
+                                        Call
+                                    </a>
+                                    <a href="https://wa.me/{{ clean_phone|cut:'+' }}" target="_blank"
+                                        class="phone-action phone-action--wa" aria-label="Open WhatsApp" rel="noopener">
+                                        WA
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endwith %}
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-tools" aria-hidden="true"></i>
+                            {{ lead.project_type|default:"No service" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
+                            {{ lead.customer_area|default:"No area" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-clock" aria-hidden="true"></i>
+                            {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}
+                        </div>
+                    </div>
+
+                    <div class="lead-card__actions">
+                        <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__open-btn">
+                            <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                            Open Lead
+                        </a>
+                    </div>
+                </div>
                 {% endfor %}
                 {% empty %}
                 <div class="empty-state">
@@ -1118,7 +1338,62 @@
                 {% for group in cold_by_date %}
                 <div class="date-header">{{ group.label }}</div>
                 {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="cold" %}
+                <!-- Lead Card -->
+                <div class="lead-card">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__link"
+                        aria-label="Open {{ lead.customer_name }}"></a>
+
+                    <div class="lead-card__header">
+                        <div class="lead-card__name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                        <div class="lead-card__score">{{ lead.computed_score|default:"—" }}/100</div>
+                    </div>
+
+                    <div class="lead-card__details">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="lead-card__detail lead-card__detail--full">
+                            <div class="lead-card__phone-row">
+                                <a href="tel:{{ clean_phone }}" class="lead-card__phone-link"
+                                    aria-label="Call {{ clean_phone }}">
+                                    <i class="fas fa-phone" aria-hidden="true"></i>
+                                    <span>{{ clean_phone }}</span>
+                                </a>
+                                <div class="lead-card__phone-actions">
+                                    <a href="tel:{{ clean_phone }}" class="phone-action phone-action--call"
+                                        aria-label="Call now">
+                                        Call
+                                    </a>
+                                    <a href="https://wa.me/{{ clean_phone|cut:'+' }}" target="_blank"
+                                        class="phone-action phone-action--wa" aria-label="Open WhatsApp" rel="noopener">
+                                        WA
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endwith %}
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-tools" aria-hidden="true"></i>
+                            {{ lead.project_type|default:"No service" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
+                            {{ lead.customer_area|default:"No area" }}
+                        </div>
+
+                        <div class="lead-card__detail">
+                            <i class="fas fa-clock" aria-hidden="true"></i>
+                            {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}
+                        </div>
+                    </div>
+
+                    <div class="lead-card__actions">
+                        <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__open-btn">
+                            <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                            Open Lead
+                        </a>
+                    </div>
+                </div>
                 {% endfor %}
                 {% empty %}
                 <div class="empty-state">
@@ -1360,6 +1635,4 @@
     })();
 </script>
 
-<!-- Include lead card partial -->
-{% include "includes/lead_card_partial.html" %}
 {% endblock %}
