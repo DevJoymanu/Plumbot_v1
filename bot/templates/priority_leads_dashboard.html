@@ -2,1018 +2,1151 @@
 
 {% block content %}
 <style>
-/* -------------------------------------
+    /* -------------------------------------
    DESIGN TOKENS
 ------------------------------------- */
-:root {
-    /* Colors */
-    --surface: #ffffff;
-    --bg: #f8fafc;
-    --border: #e2e8f0;
-    --text: #0f172a;
-    --text-light: #64748b;
-    --primary: #4f46e5;
-    --primary-dark: #4338ca;
-    --primary-light: #eef2ff;
-    
-    /* Temperature colors */
-    --vh: #dc2626;
-    --vh-bg: #fee2e2;
-    --hot: #f59e0b;
-    --hot-bg: #fef3c7;
-    --warm: #10b981;
-    --warm-bg: #d1fae5;
-    --luke: #0ea5e9;
-    --luke-bg: #dbeafe;
-    --cold: #64748b;
-    --cold-bg: #f1f5f9;
-    
-    /* Spacing */
-    --space-xs: 4px;
-    --space-sm: 8px;
-    --space-md: 16px;
-    --space-lg: 24px;
-    --space-xl: 32px;
-    
-    /* Typography */
-    --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
-    --font-display: 'Syne', var(--font-sans);
-    --text-xs: 0.75rem;
-    --text-sm: 0.875rem;
-    --text-base: 1rem;
-    --text-lg: 1.125rem;
-    
-    /* UI */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-    --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --safe-top: env(safe-area-inset-top, 0px);
-    --touch-target: 44px;
-}
+    :root {
+        /* Colors */
+        --surface: #ffffff;
+        --bg: #f8fafc;
+        --border: #e2e8f0;
+        --text: #0f172a;
+        --text-light: #64748b;
+        --primary: #4f46e5;
+        --primary-dark: #4338ca;
+        --primary-light: #eef2ff;
 
-/* -------------------------------------
+        /* Temperature colors */
+        --vh: #dc2626;
+        --vh-bg: #fee2e2;
+        --hot: #f59e0b;
+        --hot-bg: #fef3c7;
+        --warm: #10b981;
+        --warm-bg: #d1fae5;
+        --luke: #0ea5e9;
+        --luke-bg: #dbeafe;
+        --cold: #64748b;
+        --cold-bg: #f1f5f9;
+
+        /* Spacing */
+        --space-xs: 4px;
+        --space-sm: 8px;
+        --space-md: 16px;
+        --space-lg: 24px;
+        --space-xl: 32px;
+
+        /* Typography */
+        --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+        --font-display: 'Syne', var(--font-sans);
+        --text-xs: 0.75rem;
+        --text-sm: 0.875rem;
+        --text-base: 1rem;
+        --text-lg: 1.125rem;
+
+        /* UI */
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+        --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-top: env(safe-area-inset-top, 0px);
+        --touch-target: 44px;
+    }
+
+    /* -------------------------------------
    BASE & RESET
 ------------------------------------- */
-*,
-*::before,
-*::after {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-html {
-    -webkit-tap-highlight-color: transparent;
-    scroll-behavior: smooth;
-}
-
-body {
-    font-family: var(--font-sans);
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-    min-height: 100dvh;
-}
-
-/* -------------------------------------
-   LAYOUT
-------------------------------------- */
-.app {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 var(--space-md);
-}
-
-/* -------------------------------------
-   COMPONENTS - Header
-------------------------------------- */
-.page-header {
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    background: rgba(248, 250, 252, 0.9);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    padding: calc(var(--space-sm) + var(--safe-top)) var(--space-md) var(--space-sm);
-    margin-bottom: var(--space-sm);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-}
-
-.page-header h1 {
-    font-family: var(--font-display);
-    font-size: clamp(1.25rem, 5vw, 1.75rem);
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    color: var(--text);
-}
-
-.page-header h1 i {
-    color: var(--primary);
-    font-size: 1.5em;
-}
-
-.page-header p {
-    color: var(--text-light);
-    font-size: var(--text-sm);
-    display: none;
-}
-
-/* -------------------------------------
-   COMPONENTS - Buttons
-------------------------------------- */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
-    height: var(--touch-target);
-    padding: 0 var(--space-lg);
-    border-radius: var(--radius-md);
-    font-weight: 600;
-    font-size: var(--text-sm);
-    border: none;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    text-decoration: none;
-    white-space: nowrap;
-}
-
-.btn:active {
-    transform: scale(0.97);
-}
-
-.btn-primary {
-    background: var(--primary);
-    color: white;
-}
-
-.btn-primary:hover {
-    background: var(--primary-dark);
-}
-
-.btn-secondary {
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--border);
-}
-
-.btn-secondary:hover {
-    background: var(--bg);
-    border-color: var(--text-light);
-}
-
-.btn-icon {
-    width: var(--touch-target);
-    padding: 0;
-}
-
-.btn-small {
-    height: 36px;
-    padding: 0 var(--space-md);
-    font-size: var(--text-xs);
-}
-
-.filter-toggle {
-    background: var(--primary);
-    color: white;
-    height: 40px;
-    padding: 0 var(--space-md);
-    border-radius: 20px;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    border: none;
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-}
-
-.filter-badge {
-    background: #fbbf24;
-    color: #78350f;
-    border-radius: 10px;
-    font-size: var(--text-xs);
-    font-weight: 700;
-    padding: 2px 6px;
-}
-
-/* -------------------------------------
-   COMPONENTS - Filter Card (Desktop)
-------------------------------------- */
-.filter-card {
-    background: var(--surface);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    margin: var(--space-md) 0;
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border);
-}
-
-.filter-card__label {
-    font-family: var(--font-display);
-    font-size: var(--text-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-light);
-    margin-bottom: var(--space-sm);
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-}
-
-.filter-row {
-    display: flex;
-    gap: var(--space-sm);
-    align-items: center;
-}
-
-/* -------------------------------------
-   COMPONENTS - Form Elements
-------------------------------------- */
-.form-select {
-    flex: 1;
-    height: var(--touch-target);
-    padding: 0 var(--space-lg) 0 var(--space-md);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border);
-    background: var(--surface);
-    font-family: var(--font-sans);
-    font-size: 16px; /* Prevents iOS zoom */
-    color: var(--text);
-    appearance: none;
-    -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right var(--space-sm) center;
-    cursor: pointer;
-}
-
-.form-select:focus {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-}
-
-/* -------------------------------------
-   COMPONENTS - Summary Chips
-------------------------------------- */
-.chip-list {
-    display: flex;
-    gap: var(--space-sm);
-    padding: var(--space-sm) 0 var(--space-md);
-    overflow-x: auto;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-}
-
-.chip-list::-webkit-scrollbar {
-    display: none;
-}
-
-.chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-xs);
-    padding: var(--space-sm) var(--space-md);
-    border-radius: 20px;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    white-space: nowrap;
-    border: 1px solid transparent;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.chip:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-}
-
-.chip:active {
-    transform: scale(0.95);
-}
-
-.chip--total { background: var(--surface); color: var(--text); border-color: var(--border); }
-.chip--vh { background: var(--vh-bg); color: var(--vh); }
-.chip--hot { background: var(--hot-bg); color: var(--hot); }
-.chip--warm { background: var(--warm-bg); color: var(--warm); }
-.chip--luke { background: var(--luke-bg); color: var(--luke); }
-.chip--cold { background: var(--cold-bg); color: var(--text-light); }
-
-/* -------------------------------------
-   COMPONENTS - Filter Banner
-------------------------------------- */
-.filter-banner {
-    background: var(--primary-light);
-    border-radius: var(--radius-md);
-    padding: var(--space-sm) var(--space-md);
-    margin: var(--space-sm) 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    color: var(--primary-dark);
-    font-size: var(--text-sm);
-    border: 1px solid var(--primary);
-}
-
-.filter-banner__clear {
-    margin-left: auto;
-    color: var(--primary-dark);
-    font-weight: 600;
-    text-decoration: none;
-    padding: var(--space-xs);
-}
-
-/* -------------------------------------
-   COMPONENTS - Lead Sections
-------------------------------------- */
-.section {
-    background: var(--surface);
-    border-radius: var(--radius-lg);
-    margin-bottom: var(--space-md);
-    border: 1px solid var(--border);
-    overflow: hidden;
-}
-
-.section__header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: 0 var(--space-md);
-    min-height: 60px;
-    cursor: pointer;
-    border-bottom: 1px solid transparent;
-    transition: background 0.15s;
-}
-
-.section__header:hover {
-    background: var(--bg);
-}
-
-.section__header:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: -2px;
-}
-
-.section:not(.section--collapsed) .section__header {
-    border-bottom-color: var(--border);
-}
-
-.section__icon {
-    width: 36px;
-    height: 36px;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.section--vh .section__icon { background: var(--vh-bg); color: var(--vh); }
-.section--hot .section__icon { background: var(--hot-bg); color: var(--hot); }
-.section--warm .section__icon { background: var(--warm-bg); color: var(--warm); }
-.section--luke .section__icon { background: var(--luke-bg); color: var(--luke); }
-.section--cold .section__icon { background: var(--cold-bg); color: var(--text-light); }
-
-.section__title {
-    font-family: var(--font-display);
-    font-size: var(--text-base);
-    font-weight: 700;
-    flex: 1;
-}
-
-.section--vh .section__title { color: var(--vh); }
-.section--hot .section__title { color: var(--hot); }
-.section--warm .section__title { color: var(--warm); }
-.section--luke .section__title { color: var(--luke); }
-.section--cold .section__title { color: var(--text-light); }
-
-.section__count {
-    padding: 2px 10px;
-    border-radius: 20px;
-    font-size: var(--text-xs);
-    font-weight: 700;
-    background: var(--bg);
-}
-
-.section__chevron {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-light);
-    transition: transform 0.2s;
-    background: var(--bg);
-    border-radius: var(--radius-sm);
-}
-
-.section--collapsed .section__chevron {
-    transform: rotate(-90deg);
-}
-
-.section__body {
-    overflow: hidden;
-    transition: max-height 0.25s ease;
-}
-
-.section--collapsed .section__body {
-    max-height: 0 !important;
-}
-
-/* -------------------------------------
-   COMPONENTS - Date Headers
-------------------------------------- */
-.date-header {
-    font-family: var(--font-display);
-    font-size: var(--text-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-light);
-    padding: var(--space-sm) var(--space-md);
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 5;
-}
-
-/* -------------------------------------
-   COMPONENTS - Lead Card
-------------------------------------- */
-.lead-card {
-    position: relative;
-    padding: var(--space-md);
-    border-bottom: 1px solid var(--border);
-    transition: background 0.15s;
-}
-
-.lead-card:last-child {
-    border-bottom: none;
-}
-
-.lead-card:hover {
-    background: var(--bg);
-}
-
-.lead-card__link {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-}
-
-.lead-card__header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: var(--space-sm);
-    margin-bottom: var(--space-sm);
-}
-
-.lead-card__name {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: var(--text-base);
-    color: var(--text);
-    line-height: 1.3;
-}
-
-.lead-card__score {
-    padding: var(--space-xs) var(--space-sm);
-    border-radius: 20px;
-    font-size: var(--text-xs);
-    font-weight: 700;
-    background: var(--bg);
-    color: var(--text);
-    z-index: 2;
-}
-
-/* Temperature-specific score styling */
-.section--vh .lead-card__score { background: var(--vh-bg); color: var(--vh); }
-.section--hot .lead-card__score { background: var(--hot-bg); color: var(--hot); }
-.section--warm .lead-card__score { background: var(--warm-bg); color: var(--warm); }
-.section--luke .lead-card__score { background: var(--luke-bg); color: var(--luke); }
-.section--cold .lead-card__score { background: var(--cold-bg); color: var(--text-light); }
-
-.lead-card__details {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-xs) var(--space-sm);
-    margin-bottom: var(--space-sm);
-}
-
-.lead-card__detail {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    font-size: var(--text-sm);
-    color: var(--text-light);
-    min-width: 0;
-}
-
-.lead-card__detail i {
-    width: 16px;
-    font-size: var(--text-xs);
-    opacity: 0.7;
-}
-
-.lead-card__detail--full {
-    grid-column: 1 / -1;
-}
-
-.lead-card__phone-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-sm);
-    width: 100%;
-}
-
-.lead-card__phone-link {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    color: var(--text);
-    text-decoration: none;
-    font-weight: 500;
-    min-width: 0;
-    flex: 1;
-}
-
-.lead-card__phone-link span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.lead-card__phone-actions {
-    display: flex;
-    gap: var(--space-xs);
-    z-index: 2;
-}
-
-.phone-action {
-    display: inline-flex;
-    align-items: center;
-    height: 32px;
-    padding: 0 var(--space-sm);
-    border-radius: var(--radius-sm);
-    font-size: var(--text-xs);
-    font-weight: 700;
-    text-decoration: none;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    transition: all 0.15s;
-}
-
-.phone-action:active {
-    transform: scale(0.94);
-}
-
-.phone-action--call {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.phone-action--wa {
-    background: #d1fae5;
-    color: #065f46;
-}
-
-/* Follow-up Section */
-.lead-card__followup {
-    position: relative;
-    z-index: 2;
-    margin: var(--space-sm) 0;
-    padding: var(--space-sm);
-    background: var(--bg);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border);
-}
-
-.followup-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-xs);
-}
-
-.followup-title {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-light);
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-}
-
-.followup-badge {
-    font-size: var(--text-xs);
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: var(--surface);
-}
-
-.followup-badge--pending { color: #b45309; background: #fef3c7; }
-.followup-badge--overdue { color: #b91c1c; background: #fee2e2; }
-.followup-badge--completed { color: #065f46; background: #d1fae5; }
-
-.followup-actions {
-    display: flex;
-    gap: var(--space-xs);
-    flex-wrap: wrap;
-}
-
-.followup-select {
-    flex: 1;
-    min-width: 140px;
-    height: 36px;
-    padding: 0 var(--space-md);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    background: var(--surface);
-    font-size: var(--text-sm);
-    color: var(--text);
-}
-
-.followup-note {
-    width: 100%;
-    margin-top: var(--space-xs);
-    padding: var(--space-sm);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    background: var(--surface);
-    font-size: var(--text-sm);
-    resize: vertical;
-    min-height: 60px;
-}
-
-.followup-note:focus {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-}
-
-.followup-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-xs);
-    margin-top: var(--space-xs);
-}
-
-.lead-card__actions {
-    position: relative;
-    z-index: 2;
-    margin-top: var(--space-sm);
-    display: flex;
-    gap: var(--space-sm);
-}
-
-.lead-card__open-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
-    flex: 1;
-    height: var(--touch-target);
-    background: var(--text);
-    color: white;
-    border-radius: var(--radius-md);
-    font-weight: 600;
-    text-decoration: none;
-    transition: all 0.15s;
-}
-
-.lead-card__open-btn:active {
-    transform: scale(0.98);
-    background: #1e293b;
-}
-
-.lead-card__menu-btn {
-    width: var(--touch-target);
-    height: var(--touch-target);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text-light);
-    cursor: pointer;
-    transition: all 0.15s;
-}
-
-.lead-card__menu-btn:hover {
-    background: var(--surface);
-    border-color: var(--text-light);
-}
-
-.lead-card__menu-btn:active {
-    transform: scale(0.95);
-}
-
-/* Dropdown Menu */
-.dropdown {
-    position: relative;
-}
-
-.dropdown-menu {
-    position: absolute;
-    bottom: 100%;
-    right: 0;
-    margin-bottom: var(--space-xs);
-    background: var(--surface);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
-    border: 1px solid var(--border);
-    min-width: 200px;
-    z-index: 10;
-    display: none;
-}
-
-.dropdown-menu--open {
-    display: block;
-}
-
-.dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-md);
-    color: var(--text);
-    text-decoration: none;
-    font-size: var(--text-sm);
-    transition: background 0.15s;
-    border: none;
-    background: none;
-    width: 100%;
-    cursor: pointer;
-}
-
-.dropdown-item:hover {
-    background: var(--bg);
-}
-
-.dropdown-item i {
-    width: 16px;
-    color: var(--text-light);
-}
-
-.dropdown-divider {
-    height: 1px;
-    background: var(--border);
-    margin: var(--space-xs) 0;
-}
-
-/* -------------------------------------
-   COMPONENTS - Empty State
-------------------------------------- */
-.empty-state {
-    padding: var(--space-xl) var(--space-md);
-    text-align: center;
-    color: var(--text-light);
-    font-size: var(--text-sm);
-}
-
-/* -------------------------------------
-   COMPONENTS - Mobile Filter Sheet
-------------------------------------- */
-.sheet-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.4);
-    z-index: 99;
-    backdrop-filter: blur(4px);
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-
-.sheet-overlay--open {
-    display: block;
-}
-
-.sheet-overlay--visible {
-    opacity: 1;
-}
-
-.sheet {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    background: var(--surface);
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    padding: var(--space-sm) var(--space-md) calc(var(--space-md) + var(--safe-bottom));
-    transform: translateY(100%);
-    transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.1, 1);
-    max-height: 85dvh;
-    overflow-y: auto;
-}
-
-.sheet--open {
-    transform: translateY(0);
-}
-
-.sheet__handle {
-    width: 40px;
-    height: 4px;
-    background: var(--border);
-    border-radius: 2px;
-    margin: 0 auto var(--space-md);
-}
-
-.sheet__title {
-    font-family: var(--font-display);
-    font-size: var(--text-lg);
-    font-weight: 700;
-    margin-bottom: var(--space-md);
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-}
-
-.sheet__title i {
-    color: var(--primary);
-}
-
-.sheet__label {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-light);
-    margin-bottom: var(--space-xs);
-    display: block;
-}
-
-.sheet__actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-sm);
-    margin-top: var(--space-lg);
-}
-
-/* -------------------------------------
-   COMPONENTS - FAB
-------------------------------------- */
-.fab {
-    position: fixed;
-    bottom: calc(var(--space-md) + var(--safe-bottom));
-    right: var(--space-md);
-    z-index: 50;
-    width: var(--touch-target);
-    height: var(--touch-target);
-    border-radius: 999px;
-    background: var(--text);
-    color: white;
-    border: none;
-    box-shadow: var(--shadow-lg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    opacity: 0;
-    transform: translateY(10px);
-    transition: all 0.2s;
-    pointer-events: none;
-}
-
-.fab--visible {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-}
-
-.fab:active {
-    transform: scale(0.9);
-}
-
-/* -------------------------------------
-   UTILITIES
-------------------------------------- */
-.spacer {
-    height: calc(var(--space-md) + var(--safe-bottom));
-}
-
-.hide-mobile {
-    display: none;
-}
-
-/* -------------------------------------
-   MEDIA QUERIES
-------------------------------------- */
-@media (min-width: 640px) {
-    .app {
-        padding: 0 var(--space-lg);
-    }
-
-    .page-header p {
-        display: block;
-    }
-
-    .filter-toggle {
-        display: none;
-    }
-
-    .hide-mobile {
-        display: block;
-    }
-
-    .sheet,
-    .sheet-overlay {
-        display: none;
-    }
-
-    .chip-list {
-        flex-wrap: wrap;
-        overflow: visible;
-    }
-
-    .lead-card__details {
-        grid-template-columns: repeat(4, auto);
-        gap: var(--space-md);
-    }
-
-    .lead-card__detail--full {
-        grid-column: auto;
-    }
-
-    .followup-actions {
-        flex-wrap: nowrap;
-    }
-
-    .followup-select {
-        width: auto;
-    }
-
-    .lead-card__actions {
-        justify-content: flex-end;
-    }
-
-    .lead-card__open-btn {
-        flex: 0 1 auto;
-        padding: 0 var(--space-xl);
-    }
-
-    .dropdown-menu {
-        bottom: auto;
-        top: 100%;
-        margin-bottom: 0;
-        margin-top: var(--space-xs);
-    }
-}
-
-@media (min-width: 1024px) {
-    .filter-card,
-    .section,
-    .chip-list,
-    .filter-banner {
-        max-width: 920px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    .page-header {
-        max-width: 920px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    .lead-card__open-btn:hover {
-        background: #1e293b;
-        transform: translateY(-1px);
-        box-shadow: var(--shadow-md);
-    }
-
-    .phone-action:hover {
-        filter: brightness(0.95);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-        scroll-behavior: auto !important;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
     }
-}
+
+    html {
+        -webkit-tap-highlight-color: transparent;
+        scroll-behavior: smooth;
+    }
+
+    body {
+        font-family: var(--font-sans);
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        min-height: 100dvh;
+    }
+
+    /* -------------------------------------
+   LAYOUT
+------------------------------------- */
+    .app {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 var(--space-md);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Header
+------------------------------------- */
+    .page-header {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        background: rgba(248, 250, 252, 0.9);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        padding: calc(var(--space-sm) + var(--safe-top)) var(--space-md) var(--space-sm);
+        margin-bottom: var(--space-sm);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .page-header h1 {
+        font-family: var(--font-display);
+        font-size: clamp(1.25rem, 5vw, 1.75rem);
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        color: var(--text);
+    }
+
+    .page-header h1 i {
+        color: var(--primary);
+        font-size: 1.5em;
+    }
+
+    .page-header p {
+        color: var(--text-light);
+        font-size: var(--text-sm);
+        display: none;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Buttons
+------------------------------------- */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-sm);
+        height: var(--touch-target);
+        padding: 0 var(--space-lg);
+        border-radius: var(--radius-md);
+        font-weight: 600;
+        font-size: var(--text-sm);
+        border: none;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .btn:active {
+        transform: scale(0.97);
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-dark);
+    }
+
+    .btn-secondary {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+        background: var(--bg);
+        border-color: var(--text-light);
+    }
+
+    .btn-icon {
+        width: var(--touch-target);
+        padding: 0;
+    }
+
+    .btn-small {
+        height: 36px;
+        padding: 0 var(--space-md);
+        font-size: var(--text-xs);
+    }
+
+    .filter-toggle {
+        background: var(--primary);
+        color: white;
+        height: 40px;
+        padding: 0 var(--space-md);
+        border-radius: 20px;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+    }
+
+    .filter-badge {
+        background: #fbbf24;
+        color: #78350f;
+        border-radius: 10px;
+        font-size: var(--text-xs);
+        font-weight: 700;
+        padding: 2px 6px;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Filter Card (Desktop)
+------------------------------------- */
+    .filter-card {
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        padding: var(--space-lg);
+        margin: var(--space-md) 0;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border);
+    }
+
+    .filter-card__label {
+        font-family: var(--font-display);
+        font-size: var(--text-xs);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-light);
+        margin-bottom: var(--space-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+    }
+
+    .filter-row {
+        display: flex;
+        gap: var(--space-sm);
+        align-items: center;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Form Elements
+------------------------------------- */
+    .form-select {
+        flex: 1;
+        height: var(--touch-target);
+        padding: 0 var(--space-lg) 0 var(--space-md);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-family: var(--font-sans);
+        font-size: 16px;
+        /* Prevents iOS zoom */
+        color: var(--text);
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right var(--space-sm) center;
+        cursor: pointer;
+    }
+
+    .form-select:focus {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Summary Chips
+------------------------------------- */
+    .chip-list {
+        display: flex;
+        gap: var(--space-sm);
+        padding: var(--space-sm) 0 var(--space-md);
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .chip-list::-webkit-scrollbar {
+        display: none;
+    }
+
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-xs);
+        padding: var(--space-sm) var(--space-md);
+        border-radius: 20px;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        white-space: nowrap;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .chip:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+
+    .chip:active {
+        transform: scale(0.95);
+    }
+
+    .chip--total {
+        background: var(--surface);
+        color: var(--text);
+        border-color: var(--border);
+    }
+
+    .chip--vh {
+        background: var(--vh-bg);
+        color: var(--vh);
+    }
+
+    .chip--hot {
+        background: var(--hot-bg);
+        color: var(--hot);
+    }
+
+    .chip--warm {
+        background: var(--warm-bg);
+        color: var(--warm);
+    }
+
+    .chip--luke {
+        background: var(--luke-bg);
+        color: var(--luke);
+    }
+
+    .chip--cold {
+        background: var(--cold-bg);
+        color: var(--text-light);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Filter Banner
+------------------------------------- */
+    .filter-banner {
+        background: var(--primary-light);
+        border-radius: var(--radius-md);
+        padding: var(--space-sm) var(--space-md);
+        margin: var(--space-sm) 0;
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        color: var(--primary-dark);
+        font-size: var(--text-sm);
+        border: 1px solid var(--primary);
+    }
+
+    .filter-banner__clear {
+        margin-left: auto;
+        color: var(--primary-dark);
+        font-weight: 600;
+        text-decoration: none;
+        padding: var(--space-xs);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Lead Sections
+------------------------------------- */
+    .section {
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        margin-bottom: var(--space-md);
+        border: 1px solid var(--border);
+        overflow: hidden;
+    }
+
+    .section__header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        padding: 0 var(--space-md);
+        min-height: 60px;
+        cursor: pointer;
+        border-bottom: 1px solid transparent;
+        transition: background 0.15s;
+    }
+
+    .section__header:hover {
+        background: var(--bg);
+    }
+
+    .section__header:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+    }
+
+    .section:not(.section--collapsed) .section__header {
+        border-bottom-color: var(--border);
+    }
+
+    .section__icon {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .section--vh .section__icon {
+        background: var(--vh-bg);
+        color: var(--vh);
+    }
+
+    .section--hot .section__icon {
+        background: var(--hot-bg);
+        color: var(--hot);
+    }
+
+    .section--warm .section__icon {
+        background: var(--warm-bg);
+        color: var(--warm);
+    }
+
+    .section--luke .section__icon {
+        background: var(--luke-bg);
+        color: var(--luke);
+    }
+
+    .section--cold .section__icon {
+        background: var(--cold-bg);
+        color: var(--text-light);
+    }
+
+    .section__title {
+        font-family: var(--font-display);
+        font-size: var(--text-base);
+        font-weight: 700;
+        flex: 1;
+    }
+
+    .section--vh .section__title {
+        color: var(--vh);
+    }
+
+    .section--hot .section__title {
+        color: var(--hot);
+    }
+
+    .section--warm .section__title {
+        color: var(--warm);
+    }
+
+    .section--luke .section__title {
+        color: var(--luke);
+    }
+
+    .section--cold .section__title {
+        color: var(--text-light);
+    }
+
+    .section__count {
+        padding: 2px 10px;
+        border-radius: 20px;
+        font-size: var(--text-xs);
+        font-weight: 700;
+        background: var(--bg);
+    }
+
+    .section__chevron {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-light);
+        transition: transform 0.2s;
+        background: var(--bg);
+        border-radius: var(--radius-sm);
+    }
+
+    .section--collapsed .section__chevron {
+        transform: rotate(-90deg);
+    }
+
+    .section__body {
+        overflow: hidden;
+        transition: max-height 0.25s ease;
+    }
+
+    .section--collapsed .section__body {
+        max-height: 0 !important;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Date Headers
+------------------------------------- */
+    .date-header {
+        font-family: var(--font-display);
+        font-size: var(--text-xs);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-light);
+        padding: var(--space-sm) var(--space-md);
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Lead Card
+------------------------------------- */
+    .lead-card {
+        position: relative;
+        padding: var(--space-md);
+        border-bottom: 1px solid var(--border);
+        transition: background 0.15s;
+    }
+
+    .lead-card:last-child {
+        border-bottom: none;
+    }
+
+    .lead-card:hover {
+        background: var(--bg);
+    }
+
+    .lead-card__link {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+    }
+
+    .lead-card__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--space-sm);
+        margin-bottom: var(--space-sm);
+    }
+
+    .lead-card__name {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: var(--text-base);
+        color: var(--text);
+        line-height: 1.3;
+    }
+
+    .lead-card__score {
+        padding: var(--space-xs) var(--space-sm);
+        border-radius: 20px;
+        font-size: var(--text-xs);
+        font-weight: 700;
+        background: var(--bg);
+        color: var(--text);
+        z-index: 2;
+    }
+
+    /* Temperature-specific score styling */
+    .section--vh .lead-card__score {
+        background: var(--vh-bg);
+        color: var(--vh);
+    }
+
+    .section--hot .lead-card__score {
+        background: var(--hot-bg);
+        color: var(--hot);
+    }
+
+    .section--warm .lead-card__score {
+        background: var(--warm-bg);
+        color: var(--warm);
+    }
+
+    .section--luke .lead-card__score {
+        background: var(--luke-bg);
+        color: var(--luke);
+    }
+
+    .section--cold .lead-card__score {
+        background: var(--cold-bg);
+        color: var(--text-light);
+    }
+
+    .lead-card__details {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-xs) var(--space-sm);
+        margin-bottom: var(--space-sm);
+    }
+
+    .lead-card__detail {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+        font-size: var(--text-sm);
+        color: var(--text-light);
+        min-width: 0;
+    }
+
+    .lead-card__detail i {
+        width: 16px;
+        font-size: var(--text-xs);
+        opacity: 0.7;
+    }
+
+    .lead-card__detail--full {
+        grid-column: 1 / -1;
+    }
+
+    .lead-card__phone-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-sm);
+        width: 100%;
+    }
+
+    .lead-card__phone-link {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 500;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .lead-card__phone-link span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .lead-card__phone-actions {
+        display: flex;
+        gap: var(--space-xs);
+        z-index: 2;
+    }
+
+    .phone-action {
+        display: inline-flex;
+        align-items: center;
+        height: 32px;
+        padding: 0 var(--space-sm);
+        border-radius: var(--radius-sm);
+        font-size: var(--text-xs);
+        font-weight: 700;
+        text-decoration: none;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        transition: all 0.15s;
+    }
+
+    .phone-action:active {
+        transform: scale(0.94);
+    }
+
+    .phone-action--call {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .phone-action--wa {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    /* Notes Section */
+    .lead-card__notes {
+        position: relative;
+        z-index: 2;
+        margin: var(--space-sm) 0;
+        padding: var(--space-sm);
+        background: var(--bg);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+    }
+
+    .notes-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-xs);
+    }
+
+    .notes-title {
+        font-size: var(--text-xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-light);
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+    }
+
+    .notes-badge {
+        font-size: var(--text-xs);
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--text-light);
+    }
+
+    .notes-content {
+        font-size: var(--text-sm);
+        color: var(--text);
+        line-height: 1.5;
+        margin-bottom: var(--space-xs);
+        padding: var(--space-xs);
+        background: var(--surface);
+        border-radius: var(--radius-sm);
+        white-space: pre-wrap;
+    }
+
+    .notes-content:empty {
+        display: none;
+    }
+
+    .notes-input {
+        width: 100%;
+        padding: var(--space-sm);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: var(--text-sm);
+        resize: vertical;
+        min-height: 60px;
+        font-family: inherit;
+    }
+
+    .notes-input:focus {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+
+    .notes-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-xs);
+        margin-top: var(--space-xs);
+    }
+
+    /* Follow-up Section */
+    .lead-card__followup {
+        position: relative;
+        z-index: 2;
+        margin: var(--space-sm) 0;
+        padding: var(--space-sm);
+        background: var(--bg);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+    }
+
+    .followup-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-xs);
+    }
+
+    .followup-title {
+        font-size: var(--text-xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-light);
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+    }
+
+    .followup-date {
+        font-size: var(--text-xs);
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 12px;
+    }
+
+    .followup-date--pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .followup-date--overdue {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .followup-date--completed {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .followup-select {
+        width: 100%;
+        height: 36px;
+        padding: 0 var(--space-md);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: var(--text-sm);
+        color: var(--text);
+        margin-bottom: var(--space-xs);
+    }
+
+    .lead-card__actions {
+        position: relative;
+        z-index: 2;
+        margin-top: var(--space-sm);
+        display: flex;
+        gap: var(--space-sm);
+    }
+
+    .lead-card__open-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-sm);
+        flex: 1;
+        height: var(--touch-target);
+        background: var(--text);
+        color: white;
+        border-radius: var(--radius-md);
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.15s;
+    }
+
+    .lead-card__open-btn:active {
+        transform: scale(0.98);
+        background: #1e293b;
+    }
+
+    .lead-card__menu-btn {
+        width: var(--touch-target);
+        height: var(--touch-target);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        color: var(--text-light);
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .lead-card__menu-btn:hover {
+        background: var(--surface);
+        border-color: var(--text-light);
+    }
+
+    .lead-card__menu-btn:active {
+        transform: scale(0.95);
+    }
+
+    /* Dropdown Menu */
+    .dropdown {
+        position: relative;
+    }
+
+    .dropdown-menu {
+        position: absolute;
+        bottom: 100%;
+        right: 0;
+        margin-bottom: var(--space-xs);
+        background: var(--surface);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-lg);
+        border: 1px solid var(--border);
+        min-width: 200px;
+        z-index: 10;
+        display: none;
+    }
+
+    .dropdown-menu--open {
+        display: block;
+    }
+
+    .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        padding: var(--space-sm) var(--space-md);
+        color: var(--text);
+        text-decoration: none;
+        font-size: var(--text-sm);
+        transition: background 0.15s;
+        border: none;
+        background: none;
+        width: 100%;
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .dropdown-item:hover {
+        background: var(--bg);
+    }
+
+    .dropdown-item i {
+        width: 16px;
+        color: var(--text-light);
+    }
+
+    .dropdown-divider {
+        height: 1px;
+        background: var(--border);
+        margin: var(--space-xs) 0;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Empty State
+------------------------------------- */
+    .empty-state {
+        padding: var(--space-xl) var(--space-md);
+        text-align: center;
+        color: var(--text-light);
+        font-size: var(--text-sm);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Mobile Filter Sheet
+------------------------------------- */
+    .sheet-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 99;
+        backdrop-filter: blur(4px);
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .sheet-overlay--open {
+        display: block;
+    }
+
+    .sheet-overlay--visible {
+        opacity: 1;
+    }
+
+    .sheet {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: var(--surface);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        padding: var(--space-sm) var(--space-md) calc(var(--space-md) + var(--safe-bottom));
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.1, 1);
+        max-height: 85dvh;
+        overflow-y: auto;
+    }
+
+    .sheet--open {
+        transform: translateY(0);
+    }
+
+    .sheet__handle {
+        width: 40px;
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        margin: 0 auto var(--space-md);
+    }
+
+    .sheet__title {
+        font-family: var(--font-display);
+        font-size: var(--text-lg);
+        font-weight: 700;
+        margin-bottom: var(--space-md);
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+    }
+
+    .sheet__title i {
+        color: var(--primary);
+    }
+
+    .sheet__label {
+        font-size: var(--text-xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-light);
+        margin-bottom: var(--space-xs);
+        display: block;
+    }
+
+    .sheet__actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-sm);
+        margin-top: var(--space-lg);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - FAB
+------------------------------------- */
+    .fab {
+        position: fixed;
+        bottom: calc(var(--space-md) + var(--safe-bottom));
+        right: var(--space-md);
+        z-index: 50;
+        width: var(--touch-target);
+        height: var(--touch-target);
+        border-radius: 999px;
+        background: var(--text);
+        color: white;
+        border: none;
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.2s;
+        pointer-events: none;
+    }
+
+    .fab--visible {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+
+    .fab:active {
+        transform: scale(0.9);
+    }
+
+    /* -------------------------------------
+   UTILITIES
+------------------------------------- */
+    .spacer {
+        height: calc(var(--space-md) + var(--safe-bottom));
+    }
+
+    .hide-mobile {
+        display: none;
+    }
+
+    /* -------------------------------------
+   MEDIA QUERIES
+------------------------------------- */
+    @media (min-width: 640px) {
+        .app {
+            padding: 0 var(--space-lg);
+        }
+
+        .page-header p {
+            display: block;
+        }
+
+        .filter-toggle {
+            display: none;
+        }
+
+        .hide-mobile {
+            display: block;
+        }
+
+        .sheet,
+        .sheet-overlay {
+            display: none;
+        }
+
+        .chip-list {
+            flex-wrap: wrap;
+            overflow: visible;
+        }
+
+        .lead-card__details {
+            grid-template-columns: repeat(4, auto);
+            gap: var(--space-md);
+        }
+
+        .lead-card__detail--full {
+            grid-column: auto;
+        }
+
+        .followup-select {
+            width: auto;
+        }
+
+        .lead-card__actions {
+            justify-content: flex-end;
+        }
+
+        .lead-card__open-btn {
+            flex: 0 1 auto;
+            padding: 0 var(--space-xl);
+        }
+
+        .dropdown-menu {
+            bottom: auto;
+            top: 100%;
+            margin-bottom: 0;
+            margin-top: var(--space-xs);
+        }
+    }
+
+    @media (min-width: 1024px) {
+
+        .filter-card,
+        .section,
+        .chip-list,
+        .filter-banner {
+            max-width: 920px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .page-header {
+            max-width: 920px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .lead-card__open-btn:hover {
+            background: #1e293b;
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .phone-action:hover {
+            filter: brightness(0.95);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
 </style>
 
 <div class="app">
@@ -1026,11 +1159,8 @@ body {
             </h1>
             <p>Grouped by urgency: Very Hot → Cold</p>
         </div>
-        <button class="filter-toggle {% if selected_response_age %}has-filter{% endif %}" 
-                onclick="openFilter()"
-                aria-label="Open filter"
-                aria-expanded="false"
-                aria-controls="filter-sheet">
+        <button class="filter-toggle {% if selected_response_age %}has-filter{% endif %}" onclick="openFilter()"
+            aria-label="Open filter" aria-expanded="false" aria-controls="filter-sheet">
             <i class="fas fa-sliders-h" aria-hidden="true"></i>
             Filter
             {% if selected_response_age %}
@@ -1070,27 +1200,33 @@ body {
 
     <!-- Summary Chips -->
     <div class="chip-list" role="tablist">
-        <div class="chip chip--total" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0" aria-label="View all leads">
+        <div class="chip chip--total" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"
+            aria-label="View all leads">
             <i class="fas fa-database" aria-hidden="true"></i>
             All: {{ total_leads }}
         </div>
-        <div class="chip chip--vh" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0" aria-label="View very hot leads">
+        <div class="chip chip--vh" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"
+            aria-label="View very hot leads">
             <i class="fas fa-fire" aria-hidden="true"></i>
             Very Hot: {{ very_hot_leads|length }}
         </div>
-        <div class="chip chip--hot" onclick="scrollToSection('sec-hot')" role="tab" tabindex="0" aria-label="View hot leads">
+        <div class="chip chip--hot" onclick="scrollToSection('sec-hot')" role="tab" tabindex="0"
+            aria-label="View hot leads">
             <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
             Hot: {{ hot_leads|length }}
         </div>
-        <div class="chip chip--warm" onclick="scrollToSection('sec-warm')" role="tab" tabindex="0" aria-label="View warm leads">
+        <div class="chip chip--warm" onclick="scrollToSection('sec-warm')" role="tab" tabindex="0"
+            aria-label="View warm leads">
             <i class="fas fa-sun" aria-hidden="true"></i>
             Warm: {{ warm_leads|length }}
         </div>
-        <div class="chip chip--luke" onclick="scrollToSection('sec-luke')" role="tab" tabindex="0" aria-label="View lukewarm leads">
+        <div class="chip chip--luke" onclick="scrollToSection('sec-luke')" role="tab" tabindex="0"
+            aria-label="View lukewarm leads">
             <i class="fas fa-temperature-low" aria-hidden="true"></i>
             Lukewarm: {{ luke_warm_leads|length }}
         </div>
-        <div class="chip chip--cold" onclick="scrollToSection('sec-cold')" role="tab" tabindex="0" aria-label="View cold leads">
+        <div class="chip chip--cold" onclick="scrollToSection('sec-cold')" role="tab" tabindex="0"
+            aria-label="View cold leads">
             <i class="fas fa-snowflake" aria-hidden="true"></i>
             Cold: {{ cold_leads|length }}
         </div>
@@ -1112,21 +1248,23 @@ body {
     <main class="sections-wrapper">
         <!-- VERY HOT -->
         <section class="section section--vh" id="sec-vh" aria-labelledby="vh-title">
-            <header class="section__header" onclick="toggleSection('sec-vh')" role="button" aria-expanded="true" tabindex="0">
+            <header class="section__header" onclick="toggleSection('sec-vh')" role="button" aria-expanded="true"
+                tabindex="0">
                 <div class="section__icon"><i class="fas fa-fire" aria-hidden="true"></i></div>
                 <h2 id="vh-title" class="section__title">Very Hot Leads</h2>
-                <span class="section__count" aria-label="{{ very_hot_leads|length }} leads">{{ very_hot_leads|length }}</span>
+                <span class="section__count" aria-label="{{ very_hot_leads|length }} leads">{{ very_hot_leads|length
+                    }}</span>
                 <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
             </header>
             <div class="section__body">
                 {% for group in very_hot_by_date %}
                 <div class="date-header">{{ group.label }}</div>
                 {% for lead in group.leads %}
-                <!-- Lead Card with Follow-up -->
+                <!-- Lead Card -->
                 <div class="lead-card">
-                    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__link" 
-                       aria-label="Open {{ lead.customer_name }}"></a>
-                    
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-card__link"
+                        aria-label="Open {{ lead.customer_name }}"></a>
+
                     <div class="lead-card__header">
                         <div class="lead-card__name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
                         <div class="lead-card__score">{{ lead.computed_score|default:"—" }}/100</div>
@@ -1136,16 +1274,18 @@ body {
                         {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
                         <div class="lead-card__detail lead-card__detail--full">
                             <div class="lead-card__phone-row">
-                                <a href="tel:{{ clean_phone }}" class="lead-card__phone-link" aria-label="Call {{ clean_phone }}">
+                                <a href="tel:{{ clean_phone }}" class="lead-card__phone-link"
+                                    aria-label="Call {{ clean_phone }}">
                                     <i class="fas fa-phone" aria-hidden="true"></i>
                                     <span>{{ clean_phone }}</span>
                                 </a>
                                 <div class="lead-card__phone-actions">
-                                    <a href="tel:{{ clean_phone }}" class="phone-action phone-action--call" aria-label="Call now">
+                                    <a href="tel:{{ clean_phone }}" class="phone-action phone-action--call"
+                                        aria-label="Call now">
                                         Call
                                     </a>
-                                    <a href="https://wa.me/{{ clean_phone|cut:'+' }}" target="_blank" 
-                                       class="phone-action phone-action--wa" aria-label="Open WhatsApp" rel="noopener">
+                                    <a href="https://wa.me/{{ clean_phone|cut:'+' }}" target="_blank"
+                                        class="phone-action phone-action--wa" aria-label="Open WhatsApp" rel="noopener">
                                         WA
                                     </a>
                                 </div>
@@ -1157,19 +1297,32 @@ body {
                             <i class="fas fa-tools" aria-hidden="true"></i>
                             {{ lead.project_type|default:"No service" }}
                         </div>
-                        
+
                         <div class="lead-card__detail">
                             <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
                             {{ lead.customer_area|default:"No area" }}
                         </div>
-                        
+
                         <div class="lead-card__detail">
                             <i class="fas fa-clock" aria-hidden="true"></i>
                             {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}
                         </div>
                     </div>
 
-                    <!-- Follow-up Section -->
+                    <!-- Notes Section (static for now) -->
+                    {% if lead.notes %}
+                    <div class="lead-card__notes">
+                        <div class="notes-header">
+                            <span class="notes-title">
+                                <i class="fas fa-sticky-note"></i>
+                                Notes
+                            </span>
+                        </div>
+                        <div class="notes-content">{{ lead.notes }}</div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Follow-up Section (static for now) -->
                     <div class="lead-card__followup">
                         <div class="followup-header">
                             <span class="followup-title">
@@ -1177,44 +1330,20 @@ body {
                                 Follow-up
                             </span>
                             {% if lead.next_followup %}
-                            <span class="followup-badge 
-                                {% if lead.followup_status == 'overdue' %}followup-badge--overdue
-                                {% elif lead.followup_status == 'completed' %}followup-badge--completed
-                                {% else %}followup-badge--pending{% endif %}">
+                            <span class="followup-date followup-date--pending">
                                 {{ lead.next_followup|date:"M d" }}
                             </span>
                             {% endif %}
                         </div>
-                        
-                        <form method="post" action="{% url 'update_followup' lead.pk %}" class="followup-form">
-                            {% csrf_token %}
-                            <div class="followup-actions">
-                                <select name="followup_date" class="followup-select" aria-label="Schedule follow-up">
-                                    <option value="">Set follow-up...</option>
-                                    <option value="tomorrow">Tomorrow</option>
-                                    <option value="3days">In 3 days</option>
-                                    <option value="1week">In 1 week</option>
-                                    <option value="2weeks">In 2 weeks</option>
-                                    <option value="1month">In 1 month</option>
-                                </select>
-                                <button type="submit" name="action" value="schedule" class="btn btn-small btn-primary">
-                                    Set
-                                </button>
-                            </div>
-                            
-                            <textarea name="followup_note" class="followup-note" 
-                                      placeholder="Add follow-up notes..." 
-                                      aria-label="Follow-up notes">{{ lead.followup_notes|default:"" }}</textarea>
-                            
-                            <div class="followup-footer">
-                                <button type="submit" name="action" value="complete" class="btn btn-small btn-secondary">
-                                    <i class="fas fa-check"></i> Complete
-                                </button>
-                                <button type="submit" name="action" value="save_note" class="btn btn-small btn-primary">
-                                    Save Note
-                                </button>
-                            </div>
-                        </form>
+
+                        <!-- Simple static follow-up display (no forms) -->
+                        <div style="font-size: var(--text-sm); color: var(--text-light); padding: var(--space-xs) 0;">
+                            {% if lead.followup_notes %}
+                            {{ lead.followup_notes|truncatechars:60 }}
+                            {% else %}
+                            No follow-up scheduled
+                            {% endif %}
+                        </div>
                     </div>
 
                     <!-- Card Actions -->
@@ -1223,25 +1352,23 @@ body {
                             <i class="fas fa-arrow-right" aria-hidden="true"></i>
                             View Details
                         </a>
-                        
+
                         <div class="dropdown">
-                            <button class="lead-card__menu-btn" onclick="toggleDropdown(this)" aria-label="More options" aria-expanded="false">
+                            <button class="lead-card__menu-btn" onclick="toggleDropdown(this)" aria-label="More options"
+                                aria-expanded="false">
                                 <i class="fas fa-ellipsis-v"></i>
                             </button>
                             <div class="dropdown-menu">
-                                <a href="{% url 'edit_lead' lead.pk %}" class="dropdown-item">
+                                <a href="{% url 'appointment_detail' lead.pk %}?tab=edit" class="dropdown-item">
                                     <i class="fas fa-edit"></i> Edit Lead
                                 </a>
-                                <a href="{% url 'add_note' lead.pk %}" class="dropdown-item">
+                                <a href="{% url 'appointment_detail' lead.pk %}?tab=notes" class="dropdown-item">
                                     <i class="fas fa-sticky-note"></i> Add Note
                                 </a>
-                                <a href="{% url 'call_history' lead.pk %}" class="dropdown-item">
+                                <a href="{% url 'appointment_detail' lead.pk %}?tab=history" class="dropdown-item">
                                     <i class="fas fa-phone-alt"></i> Call History
                                 </a>
                                 <div class="dropdown-divider"></div>
-                                <a href="{% url 'lead_analytics' lead.pk %}" class="dropdown-item">
-                                    <i class="fas fa-chart-line"></i> Analytics
-                                </a>
                                 <button class="dropdown-item" onclick="shareLead('{{ lead.pk }}')">
                                     <i class="fas fa-share"></i> Share
                                 </button>
@@ -1260,7 +1387,8 @@ body {
 
         <!-- HOT -->
         <section class="section section--hot" id="sec-hot" aria-labelledby="hot-title">
-            <header class="section__header" onclick="toggleSection('sec-hot')" role="button" aria-expanded="true" tabindex="0">
+            <header class="section__header" onclick="toggleSection('sec-hot')" role="button" aria-expanded="true"
+                tabindex="0">
                 <div class="section__icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></div>
                 <h2 id="hot-title" class="section__title">Hot Leads</h2>
                 <span class="section__count" aria-label="{{ hot_leads|length }} leads">{{ hot_leads|length }}</span>
@@ -1270,10 +1398,10 @@ body {
                 {% for group in hot_by_date %}
                 <div class="date-header">{{ group.label }}</div>
                 {% for lead in group.leads %}
-                <!-- Lead Card with Follow-up (same structure as above) -->
+                <!-- Lead Card (same structure as above) -->
                 <div class="lead-card">
-                    <!-- ... same lead card content as above ... -->
-                    <!-- (Copy the entire lead card structure from VERY HOT section) -->
+                    <!-- ... copy lead card structure from above ... -->
+                    <!-- For brevity, replicate the same card structure -->
                 </div>
                 {% endfor %}
                 {% empty %}
@@ -1284,12 +1412,63 @@ body {
             </div>
         </section>
 
-        <!-- WARM, LUKE-WARM, COLD sections follow same pattern... -->
-        <!-- For brevity, I'll show just one more example, but you'd repeat for all sections -->
+        <!-- WARM -->
+        <section class="section section--warm" id="sec-warm" aria-labelledby="warm-title">
+            <header class="section__header" onclick="toggleSection('sec-warm')" role="button" aria-expanded="true"
+                tabindex="0">
+                <div class="section__icon"><i class="fas fa-sun" aria-hidden="true"></i></div>
+                <h2 id="warm-title" class="section__title">Warm Leads</h2>
+                <span class="section__count" aria-label="{{ warm_leads|length }} leads">{{ warm_leads|length }}</span>
+                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
+            </header>
+            <div class="section__body">
+                {% for group in warm_by_date %}
+                <div class="date-header">{{ group.label }}</div>
+                {% for lead in group.leads %}
+                <!-- Lead Card (same structure) -->
+                <div class="lead-card">
+                    <!-- ... copy lead card structure ... -->
+                </div>
+                {% endfor %}
+                {% empty %}
+                <div class="empty-state">
+                    <p><i class="fas fa-sun" aria-hidden="true"></i> No warm leads.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
 
-        <!-- COLD (example with collapsed by default) -->
+        <!-- LUKE-WARM -->
+        <section class="section section--luke" id="sec-luke" aria-labelledby="luke-title">
+            <header class="section__header" onclick="toggleSection('sec-luke')" role="button" aria-expanded="false"
+                tabindex="0">
+                <div class="section__icon"><i class="fas fa-temperature-low" aria-hidden="true"></i></div>
+                <h2 id="luke-title" class="section__title">Luke-warm Leads</h2>
+                <span class="section__count" aria-label="{{ luke_warm_leads|length }} leads">{{ luke_warm_leads|length
+                    }}</span>
+                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
+            </header>
+            <div class="section__body">
+                {% for group in luke_warm_by_date %}
+                <div class="date-header">{{ group.label }}</div>
+                {% for lead in group.leads %}
+                <!-- Lead Card (same structure) -->
+                <div class="lead-card">
+                    <!-- ... copy lead card structure ... -->
+                </div>
+                {% endfor %}
+                {% empty %}
+                <div class="empty-state">
+                    <p><i class="fas fa-temperature-low" aria-hidden="true"></i> No luke-warm leads.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- COLD -->
         <section class="section section--cold" id="sec-cold" aria-labelledby="cold-title">
-            <header class="section__header" onclick="toggleSection('sec-cold')" role="button" aria-expanded="false" tabindex="0">
+            <header class="section__header" onclick="toggleSection('sec-cold')" role="button" aria-expanded="false"
+                tabindex="0">
                 <div class="section__icon"><i class="fas fa-snowflake" aria-hidden="true"></i></div>
                 <h2 id="cold-title" class="section__title">Cold Leads</h2>
                 <span class="section__count" aria-label="{{ cold_leads|length }} leads">{{ cold_leads|length }}</span>
@@ -1299,9 +1478,9 @@ body {
                 {% for group in cold_by_date %}
                 <div class="date-header">{{ group.label }}</div>
                 {% for lead in group.leads %}
-                <!-- Lead Card with Follow-up (same structure) -->
+                <!-- Lead Card (same structure) -->
                 <div class="lead-card">
-                    <!-- ... same lead card content ... -->
+                    <!-- ... copy lead card structure ... -->
                 </div>
                 {% endfor %}
                 {% empty %}
@@ -1356,233 +1535,235 @@ body {
 </div>
 
 <script>
-(function() {
-    'use strict';
+    (function () {
+        'use strict';
 
-    // Configuration
-    const CONFIG = {
-        collapsedSections: ['sec-luke', 'sec-cold'],
-        scrollThreshold: 300,
-        sheetCloseThreshold: 80
-    };
+        // Configuration
+        const CONFIG = {
+            collapsedSections: ['sec-luke', 'sec-cold'],
+            scrollThreshold: 300,
+            sheetCloseThreshold: 80
+        };
 
-    // State
-    let isDragging = false;
-    let startY = 0;
-    let currentY = 0;
-    let sheet = document.getElementById('filter-sheet');
-    let fab = document.getElementById('fab');
+        // State
+        let isDragging = false;
+        let startY = 0;
+        let currentY = 0;
+        let sheet = document.getElementById('filter-sheet');
+        let fab = document.getElementById('fab');
 
-    // Initialize form selects with saved value
-    function initFormValues() {
-        const saved = "{{ selected_response_age|default:'' }}";
-        ['mobile-age-select', 'desktop-age-select'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el && saved) el.value = saved;
-        });
-    }
+        // Initialize form selects with saved value
+        function initFormValues() {
+            const saved = "{{ selected_response_age|default:'' }}";
+            ['mobile-age-select', 'desktop-age-select'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el && saved) el.value = saved;
+            });
+        }
 
-    // Section management
-    function initSections() {
-        document.querySelectorAll('.section__body').forEach(body => {
-            body.style.maxHeight = body.scrollHeight + 'px';
-        });
-    }
-
-    window.toggleSection = function(id) {
-        const section = document.getElementById(id);
-        if (!section) return;
-
-        const body = section.querySelector('.section__body');
-        const header = section.querySelector('.section__header');
-        const isCollapsed = section.classList.contains('section--collapsed');
-
-        if (isCollapsed) {
-            section.classList.remove('section--collapsed');
-            header.setAttribute('aria-expanded', 'true');
-            requestAnimationFrame(() => {
+        // Section management
+        function initSections() {
+            document.querySelectorAll('.section__body').forEach(body => {
                 body.style.maxHeight = body.scrollHeight + 'px';
             });
-        } else {
-            section.classList.add('section--collapsed');
-            header.setAttribute('aria-expanded', 'false');
-            body.style.maxHeight = '0';
-        }
-    };
-
-    // Scroll to section
-    window.scrollToSection = function(id) {
-        const section = document.getElementById(id);
-        if (!section) return;
-
-        if (section.classList.contains('section--collapsed')) {
-            toggleSection(id);
         }
 
-        const headerHeight = document.querySelector('.page-header')?.offsetHeight || 60;
-        const y = section.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
-        window.scrollTo({ top: y, behavior: 'smooth' });
-    };
+        window.toggleSection = function (id) {
+            const section = document.getElementById(id);
+            if (!section) return;
 
-    // Mobile sheet controls
-    window.openFilter = function() {
-        const overlay = document.getElementById('filter-overlay');
-        const sheet = document.getElementById('filter-sheet');
-        const toggle = document.querySelector('.filter-toggle');
+            const body = section.querySelector('.section__body');
+            const header = section.querySelector('.section__header');
+            const isCollapsed = section.classList.contains('section--collapsed');
 
-        overlay.classList.add('sheet-overlay--open');
-        toggle.setAttribute('aria-expanded', 'true');
-        
-        requestAnimationFrame(() => {
-            overlay.classList.add('sheet-overlay--visible');
-            sheet.classList.add('sheet--open');
-        });
-        
-        document.body.style.overflow = 'hidden';
-    };
-
-    window.closeFilter = function() {
-        const overlay = document.getElementById('filter-overlay');
-        const sheet = document.getElementById('filter-sheet');
-        const toggle = document.querySelector('.filter-toggle');
-
-        overlay.classList.remove('sheet-overlay--visible');
-        sheet.classList.remove('sheet--open');
-        toggle.setAttribute('aria-expanded', 'false');
-        document.body.style.overflow = '';
-        
-        setTimeout(() => {
-            overlay.classList.remove('sheet-overlay--open');
-        }, 300);
-    };
-
-    // Dropdown menu toggle
-    window.toggleDropdown = function(button) {
-        const dropdown = button.closest('.dropdown');
-        const menu = dropdown.querySelector('.dropdown-menu');
-        const isExpanded = button.getAttribute('aria-expanded') === 'true';
-        
-        // Close all other dropdowns
-        document.querySelectorAll('.dropdown-menu--open').forEach(m => {
-            if (m !== menu) {
-                m.classList.remove('dropdown-menu--open');
-                m.closest('.dropdown').querySelector('button').setAttribute('aria-expanded', 'false');
+            if (isCollapsed) {
+                section.classList.remove('section--collapsed');
+                header.setAttribute('aria-expanded', 'true');
+                requestAnimationFrame(() => {
+                    body.style.maxHeight = body.scrollHeight + 'px';
+                });
+            } else {
+                section.classList.add('section--collapsed');
+                header.setAttribute('aria-expanded', 'false');
+                body.style.maxHeight = '0';
             }
-        });
-        
-        // Toggle this one
-        menu.classList.toggle('dropdown-menu--open');
-        button.setAttribute('aria-expanded', !isExpanded);
-    };
+        };
 
-    // Close dropdowns when clicking outside
-    document.addEventListener('click', function(e) {
-        if (!e.target.closest('.dropdown')) {
-            document.querySelectorAll('.dropdown-menu--open').forEach(menu => {
-                menu.classList.remove('dropdown-menu--open');
-                menu.closest('.dropdown').querySelector('button').setAttribute('aria-expanded', 'false');
+        // Scroll to section
+        window.scrollToSection = function (id) {
+            const section = document.getElementById(id);
+            if (!section) return;
+
+            if (section.classList.contains('section--collapsed')) {
+                toggleSection(id);
+            }
+
+            const headerHeight = document.querySelector('.page-header')?.offsetHeight || 60;
+            const y = section.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
+            window.scrollTo({ top: y, behavior: 'smooth' });
+        };
+
+        // Mobile sheet controls
+        window.openFilter = function () {
+            const overlay = document.getElementById('filter-overlay');
+            const sheet = document.getElementById('filter-sheet');
+            const toggle = document.querySelector('.filter-toggle');
+
+            overlay.classList.add('sheet-overlay--open');
+            toggle.setAttribute('aria-expanded', 'true');
+
+            requestAnimationFrame(() => {
+                overlay.classList.add('sheet-overlay--visible');
+                sheet.classList.add('sheet--open');
             });
-        }
-    });
 
-    // FAB visibility
-    function updateFabVisibility() {
-        if (!fab) return;
-        fab.classList.toggle('fab--visible', window.scrollY > CONFIG.scrollThreshold);
-    }
+            document.body.style.overflow = 'hidden';
+        };
 
-    // Keyboard support
-    function initKeyboardSupport() {
-        document.querySelectorAll('.section__header, .chip, .dropdown-item').forEach(el => {
-            el.addEventListener('keydown', e => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    el.click();
+        window.closeFilter = function () {
+            const overlay = document.getElementById('filter-overlay');
+            const sheet = document.getElementById('filter-sheet');
+            const toggle = document.querySelector('.filter-toggle');
+
+            overlay.classList.remove('sheet-overlay--visible');
+            sheet.classList.remove('sheet--open');
+            toggle.setAttribute('aria-expanded', 'false');
+            document.body.style.overflow = '';
+
+            setTimeout(() => {
+                overlay.classList.remove('sheet-overlay--open');
+            }, 300);
+        };
+
+        // Dropdown menu toggle
+        window.toggleDropdown = function (button) {
+            const dropdown = button.closest('.dropdown');
+            const menu = dropdown.querySelector('.dropdown-menu');
+            const isExpanded = button.getAttribute('aria-expanded') === 'true';
+
+            // Close all other dropdowns
+            document.querySelectorAll('.dropdown-menu--open').forEach(m => {
+                if (m !== menu) {
+                    m.classList.remove('dropdown-menu--open');
+                    m.closest('.dropdown').querySelector('button').setAttribute('aria-expanded', 'false');
                 }
             });
-        });
-    }
 
-    // Mobile sheet swipe to close
-    function initSheetGestures() {
-        if (!sheet) return;
+            // Toggle this one
+            menu.classList.toggle('dropdown-menu--open');
+            button.setAttribute('aria-expanded', !isExpanded);
+        };
 
-        sheet.addEventListener('touchstart', e => {
-            startY = e.touches[0].clientY;
-            isDragging = true;
-            sheet.style.transition = 'none';
-        }, { passive: true });
-
-        sheet.addEventListener('touchmove', e => {
-            if (!isDragging) return;
-            currentY = e.touches[0].clientY;
-            const delta = currentY - startY;
-            
-            if (delta > 0) {
-                e.preventDefault();
-                sheet.style.transform = `translateY(${delta}px)`;
-            }
-        }, { passive: false });
-
-        sheet.addEventListener('touchend', () => {
-            isDragging = false;
-            sheet.style.transition = '';
-            sheet.style.transform = '';
-            
-            if (currentY - startY > CONFIG.sheetCloseThreshold) {
-                closeFilter();
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('.dropdown')) {
+                document.querySelectorAll('.dropdown-menu--open').forEach(menu => {
+                    menu.classList.remove('dropdown-menu--open');
+                    menu.closest('.dropdown').querySelector('button').setAttribute('aria-expanded', 'false');
+                });
             }
         });
-    }
 
-    // Apply mobile defaults
-    function applyMobileDefaults() {
-        if (window.innerWidth >= 640) return;
-
-        CONFIG.collapsedSections.forEach(id => {
-            const section = document.getElementById(id);
-            if (section && !section.classList.contains('section--collapsed')) {
-                section.classList.add('section--collapsed');
-                const header = section.querySelector('.section__header');
-                if (header) header.setAttribute('aria-expanded', 'false');
-                const body = section.querySelector('.section__body');
-                if (body) body.style.maxHeight = '0';
-            }
-        });
-    }
-
-    // Initialize everything
-    document.addEventListener('DOMContentLoaded', () => {
-        initFormValues();
-        initSections();
-        initKeyboardSupport();
-        initSheetGestures();
-        applyMobileDefaults();
-        updateFabVisibility();
-    });
-
-    // Scroll listener
-    window.addEventListener('scroll', updateFabVisibility, { passive: true });
-
-    // Resize listener
-    window.addEventListener('resize', () => {
-        if (window.innerWidth >= 640) {
-            document.body.style.overflow = '';
+        // FAB visibility
+        function updateFabVisibility() {
+            if (!fab) return;
+            fab.classList.toggle('fab--visible', window.scrollY > CONFIG.scrollThreshold);
         }
-    });
-})();
 
-// Share function (placeholder)
-function shareLead(leadId) {
-    if (navigator.share) {
-        navigator.share({
-            title: 'Lead Details',
-            url: window.location.href + '?share=' + leadId
-        }).catch(console.error);
-    } else {
-        alert('Share this lead: ' + window.location.href + '?share=' + leadId);
+        // Keyboard support
+        function initKeyboardSupport() {
+            document.querySelectorAll('.section__header, .chip, .dropdown-item').forEach(el => {
+                el.addEventListener('keydown', e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        el.click();
+                    }
+                });
+            });
+        }
+
+        // Mobile sheet swipe to close
+        function initSheetGestures() {
+            if (!sheet) return;
+
+            sheet.addEventListener('touchstart', e => {
+                startY = e.touches[0].clientY;
+                isDragging = true;
+                sheet.style.transition = 'none';
+            }, { passive: true });
+
+            sheet.addEventListener('touchmove', e => {
+                if (!isDragging) return;
+                currentY = e.touches[0].clientY;
+                const delta = currentY - startY;
+
+                if (delta > 0) {
+                    e.preventDefault();
+                    sheet.style.transform = `translateY(${delta}px)`;
+                }
+            }, { passive: false });
+
+            sheet.addEventListener('touchend', () => {
+                isDragging = false;
+                sheet.style.transition = '';
+                sheet.style.transform = '';
+
+                if (currentY - startY > CONFIG.sheetCloseThreshold) {
+                    closeFilter();
+                }
+            });
+        }
+
+        // Apply mobile defaults
+        function applyMobileDefaults() {
+            if (window.innerWidth >= 640) return;
+
+            CONFIG.collapsedSections.forEach(id => {
+                const section = document.getElementById(id);
+                if (section && !section.classList.contains('section--collapsed')) {
+                    section.classList.add('section--collapsed');
+                    const header = section.querySelector('.section__header');
+                    if (header) header.setAttribute('aria-expanded', 'false');
+                    const body = section.querySelector('.section__body');
+                    if (body) body.style.maxHeight = '0';
+                }
+            });
+        }
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', () => {
+            initFormValues();
+            initSections();
+            initKeyboardSupport();
+            initSheetGestures();
+            applyMobileDefaults();
+            updateFabVisibility();
+        });
+
+        // Scroll listener
+        window.addEventListener('scroll', updateFabVisibility, { passive: true });
+
+        // Resize listener
+        window.addEventListener('resize', () => {
+            if (window.innerWidth >= 640) {
+                document.body.style.overflow = '';
+            }
+        });
+    })();
+
+    // Share function
+    function shareLead(leadId) {
+        if (navigator.share) {
+            navigator.share({
+                title: 'Lead Details',
+                url: window.location.href + '?share=' + leadId
+            }).catch(() => {
+                alert('Copy this link: ' + window.location.href + '?share=' + leadId);
+            });
+        } else {
+            alert('Share this lead: ' + window.location.href + '?share=' + leadId);
+        }
     }
-}
 </script>
 
 {% endblock %}
