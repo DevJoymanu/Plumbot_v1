@@ -2,8 +2,9 @@
 
 {% block content %}
 <style>
-    /* Override base styles for dark theme while preserving navbar */
+    /* Dashboard-specific styles that complement base.html color scheme */
     :root {
+        /* Using exactly the same color variables as base.html */
         --primary: #667eea;
         --primary-dark: #764ba2;
         --secondary: #6b7280;
@@ -13,77 +14,71 @@
         --light: #f8f9fa;
         --dark: #2d3748;
 
-        /* Dashboard-specific dark variables */
-        --bg-darker: #0f1219;
-        --bg-dark-card: #1a1f2b;
-        --bg-dark-hover: #232835;
-        --border-dark: #2d3440;
-        --text-light: #e5e7eb;
-        --text-dim: #9ca3af;
-        --glow-color: rgba(102, 126, 234, 0.2);
+        /* Additional variables for dashboard layout (using base color palette) */
+        --card-bg: rgba(255, 255, 255, 0.98);
+        --border-light: rgba(255, 255, 255, 0.2);
+        --text-primary: #333;
+        --text-muted: var(--secondary);
+        --hover-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
+        --glow-color: rgba(102, 126, 234, 0.1);
     }
 
-    /* Keep base body styles but ensure dark theme */
-    body {
-        background: linear-gradient(135deg, #0f1219 0%, #1a1f2b 100%);
-        min-height: 100vh;
-        color: var(--text-light);
-    }
-
-    /* Dashboard container - matches base card styling but dark */
+    /* Dashboard container - matches base container */
     .pl-wrap {
         max-width: 1200px;
         margin: 0 auto;
-        padding: 20px 15px;
+        padding: 15px;
         width: 100%;
         box-sizing: border-box;
     }
 
-    /* Header section - matches base header but dark */
+    /* Header section - matches base header exactly */
     .pl-head {
-        background: rgba(26, 31, 43, 0.95);
+        background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
         border-radius: 12px;
         padding: 20px 15px;
         margin-bottom: 20px;
-        border: 1px solid rgba(102, 126, 234, 0.2);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        border: 1px solid var(--border-light);
     }
 
     .pl-head h1 {
         color: white;
-        font-size: clamp(1.5rem, 5vw, 2rem);
+        font-size: clamp(1.5rem, 5vw, 2.5rem);
         margin-bottom: 8px;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: 10px;
     }
 
     .pl-head h1 i {
-        color: var(--primary);
-        filter: drop-shadow(0 0 8px var(--primary));
+        color: white;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
     }
 
     .pl-sub {
-        color: rgba(255, 255, 255, 0.8);
-        font-size: clamp(0.9rem, 3vw, 1rem);
+        color: rgba(255, 255, 255, 0.9);
+        font-size: clamp(0.9rem, 3vw, 1.1rem);
     }
 
     /* Filter card - matches base card styling */
     .filter-card {
-        background: var(--bg-dark-card);
+        background: var(--card-bg);
         border-radius: 12px;
         padding: 20px;
         margin-bottom: 20px;
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(102, 126, 234, 0.15);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid var(--border-light);
+        overflow: hidden;
     }
 
     .filter-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(102, 126, 234, 0.3);
+        transform: translateY(-3px);
+        box-shadow: var(--hover-shadow);
     }
 
     .filter-row {
@@ -94,13 +89,13 @@
 
     .filter-row select {
         width: 100%;
-        border: 1px solid var(--border-dark);
+        border: 1px solid #e5e7eb;
         border-radius: 8px;
-        padding: 14px 16px;
+        padding: 12px 14px;
         font-size: clamp(0.9rem, 3.5vw, 1rem);
-        background: var(--bg-darker);
-        color: var(--text-light);
-        min-height: 52px;
+        background: white;
+        color: var(--dark);
+        min-height: 48px;
         font-family: inherit;
         -webkit-appearance: none;
         appearance: none;
@@ -114,7 +109,7 @@
     .filter-row select:focus {
         outline: none;
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
     .filter-actions {
@@ -125,27 +120,10 @@
 
     .filter-actions .btn {
         flex: 1;
-        min-height: 52px;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        border: none;
-        color: white;
-        font-weight: 600;
-        letter-spacing: 0.5px;
+        min-height: 48px;
     }
 
-    .filter-actions .btn-light {
-        background: var(--bg-darker);
-        border: 1px solid var(--border-dark);
-        color: var(--text-dim);
-    }
-
-    .filter-actions .btn-light:hover {
-        border-color: var(--primary);
-        color: white;
-        background: var(--bg-dark-hover);
-    }
-
-    /* Button styles - matching base exactly */
+    /* Button styles - exact match to base */
     .btn {
         background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
         color: white;
@@ -163,8 +141,7 @@
         text-align: center;
         -webkit-user-select: none;
         user-select: none;
-        font-weight: 600;
-        letter-spacing: 0.3px;
+        font-weight: 500;
     }
 
     .btn:active {
@@ -192,38 +169,22 @@
         background: var(--warning);
     }
 
-    /* Dark button variants */
-    .btn-dark {
-        background: linear-gradient(135deg, #2d3440 0%, #1a1f2b 100%);
-        border: 1px solid var(--primary);
-        color: white;
+    .btn-light {
+        background: var(--light);
+        color: var(--dark);
+        border: 1px solid #e5e7eb;
     }
 
-    .btn-dark:active {
-        background: linear-gradient(135deg, #34404d 0%, #232835 100%);
-    }
-
+    /* Call and WhatsApp buttons - using base colors */
     .btn-call {
-        background: linear-gradient(135deg, #2d3440 0%, #1a1f2b 100%);
-        border: 1px solid #3b82f6;
-        color: #3b82f6;
-    }
-
-    .btn-call i {
-        color: #3b82f6;
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     }
 
     .btn-wa {
-        background: linear-gradient(135deg, #2d3440 0%, #1a1f2b 100%);
-        border: 1px solid #25D366;
-        color: #25D366;
+        background: linear-gradient(135deg, #25D366 0%, #20bd5a 100%);
     }
 
-    .btn-wa i {
-        color: #25D366;
-    }
-
-    /* Chip row - stat card style */
+    /* Chip row - stat card style from base */
     .chip-row {
         display: flex;
         flex-wrap: nowrap;
@@ -242,7 +203,7 @@
 
     .chip {
         padding: 12px 20px;
-        border: 1px solid var(--border-dark);
+        border: 1px solid rgba(255, 255, 255, 0.2);
         border-radius: 30px;
         font-size: clamp(0.85rem, 3vw, 0.95rem);
         font-weight: 600;
@@ -252,17 +213,16 @@
         gap: 8px;
         flex-shrink: 0;
         min-height: 48px;
-        background: var(--bg-dark-card);
-        color: var(--text-light);
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        background: rgba(255, 255, 255, 0.98);
+        color: var(--dark);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
         transition: all 0.2s ease;
-        letter-spacing: 0.3px;
     }
 
     .chip:hover {
         transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
         border-color: var(--primary);
-        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
     }
 
     .chip:active {
@@ -276,8 +236,8 @@
 
     .chip-total {
         background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        border-color: transparent;
         color: white;
+        border-color: transparent;
     }
 
     .chip-total i {
@@ -306,18 +266,18 @@
 
     /* Section styles - matching base card styling */
     .section {
-        background: var(--bg-dark-card);
+        background: var(--card-bg);
         border-radius: 12px;
         margin-bottom: 20px;
         overflow: hidden;
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(102, 126, 234, 0.15);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+        border: 1px solid var(--border-light);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
 
     .section:hover {
         transform: translateY(-2px);
-        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(102, 126, 234, 0.3);
+        box-shadow: var(--hover-shadow);
     }
 
     .section summary {
@@ -336,16 +296,15 @@
         padding: 18px 20px;
         font-weight: 600;
         font-size: clamp(1rem, 4vw, 1.1rem);
-        background: linear-gradient(135deg, #1e232f 0%, #181d28 100%);
-        color: var(--text-light);
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+        color: var(--dark);
         border-bottom: 1px solid transparent;
         transition: all 0.2s ease;
-        letter-spacing: 0.3px;
     }
 
     .section[open] .section-head {
-        border-bottom: 1px solid var(--primary);
-        background: linear-gradient(135deg, #232835 0%, #1a1f2b 100%);
+        border-bottom: 1px solid #e5e7eb;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
     }
 
     .section-head-left {
@@ -362,36 +321,32 @@
         align-items: center;
         justify-content: center;
         font-size: 1rem;
-        background: rgba(102, 126, 234, 0.15);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        color: var(--primary);
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: white;
+        box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
     }
 
     .section-rec {
         margin: 15px;
         padding: 15px;
         font-size: clamp(0.9rem, 3.5vw, 0.95rem);
-        background: rgba(102, 126, 234, 0.1);
-        border: 1px solid rgba(102, 126, 234, 0.2);
+        background: var(--light);
+        border-left: 4px solid var(--primary);
         border-radius: 8px;
-        color: var(--text-dim);
-        display: flex;
-        gap: 12px;
-        align-items: flex-start;
+        color: var(--secondary);
     }
 
     .section-rec i {
         color: var(--primary);
-        flex-shrink: 0;
-        margin-top: 2px;
+        margin-right: 8px;
     }
 
     .section-rec strong {
-        color: var(--text-light);
+        color: var(--dark);
     }
 
     .section-chevron {
-        color: var(--text-dim);
+        color: var(--secondary);
         margin-left: 10px;
         transition: transform 0.3s ease;
     }
@@ -405,12 +360,12 @@
     .segment-title {
         padding: 15px 20px 8px;
         font-size: 0.8rem;
-        color: var(--text-dim);
+        color: var(--secondary);
         text-transform: uppercase;
         letter-spacing: 0.5px;
         font-weight: 700;
-        background: rgba(0, 0, 0, 0.2);
-        border-top: 1px solid var(--border-dark);
+        background: rgba(0, 0, 0, 0.02);
+        border-top: 1px solid #e5e7eb;
     }
 
     .date-title {
@@ -419,18 +374,17 @@
         color: var(--primary);
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.3px;
     }
 
-    /* Lead cards - appointment item style */
+    /* Lead cards - matching appointment-item exactly */
     .lead-card {
-        background: var(--bg-darker);
+        background: var(--light);
         border-radius: 8px;
         padding: 16px;
         margin: 10px 15px 15px;
         border-left: 4px solid var(--primary);
         transition: all 0.2s ease;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     }
 
     .lead-card:active {
@@ -448,7 +402,7 @@
 
     .lead-name {
         font-weight: 600;
-        color: var(--text-light);
+        color: var(--dark);
         font-size: clamp(1rem, 4vw, 1.1rem);
         flex: 1;
         min-width: 60%;
@@ -461,9 +415,8 @@
         font-weight: bold;
         text-transform: uppercase;
         white-space: nowrap;
-        background: rgba(102, 126, 234, 0.15);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        color: var(--primary);
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: white;
     }
 
     .lead-meta {
@@ -471,16 +424,13 @@
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
         gap: 8px;
         margin-top: 10px;
-        background: rgba(0, 0, 0, 0.2);
-        padding: 12px;
-        border-radius: 8px;
     }
 
     .lead-meta div {
         display: flex;
         align-items: center;
-        gap: 8px;
-        color: var(--text-dim);
+        gap: 6px;
+        color: var(--secondary);
         font-size: clamp(0.8rem, 3vw, 0.9rem);
         white-space: nowrap;
         overflow: hidden;
@@ -494,29 +444,34 @@
     }
 
     .lead-meta strong {
-        color: var(--text-light);
+        color: var(--dark);
         font-weight: 600;
         margin-right: 4px;
     }
 
     .alert {
-        background: rgba(102, 126, 234, 0.1);
+        background: #dbeafe;
+        color: #1e40af;
         border-left: 4px solid var(--primary);
         border-radius: 8px;
         padding: 12px 15px;
         font-size: clamp(0.85rem, 3.5vw, 0.9rem);
         margin: 12px 0;
-        color: var(--text-dim);
+    }
+
+    .alert i {
+        color: var(--primary);
+        margin-right: 8px;
     }
 
     .alert strong {
-        color: var(--text-light);
+        color: var(--dark);
     }
 
     /* Card actions - matching base actions */
     .card-actions {
         display: flex;
-        gap: 10px;
+        gap: 8px;
         margin: 15px 0 10px;
         flex-wrap: wrap;
     }
@@ -524,12 +479,11 @@
     .card-actions .btn {
         flex: 1 1 auto;
         min-width: 100px;
-        font-size: 0.9rem;
     }
 
     @media (max-width: 480px) {
         .card-actions .btn {
-            flex: 1 1 calc(50% - 5px);
+            flex: 1 1 calc(50% - 4px);
         }
     }
 
@@ -580,12 +534,12 @@
     .card-menu select,
     .card-menu textarea {
         width: 100%;
-        border: 1px solid var(--border-dark);
-        border-radius: 8px;
         padding: 12px 14px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
         font-size: clamp(0.9rem, 3.5vw, 1rem);
-        background: var(--bg-darker);
-        color: var(--text-light);
+        background: white;
+        color: var(--dark);
         min-height: 48px;
         font-family: inherit;
         transition: all 0.2s ease;
@@ -595,7 +549,7 @@
     .card-menu textarea:focus {
         outline: none;
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
     .card-menu textarea {
@@ -614,22 +568,13 @@
         cursor: pointer;
         transition: all 0.2s ease;
         font-size: 1rem;
-        letter-spacing: 0.3px;
     }
 
     .card-menu button:active {
         transform: scale(0.96);
     }
 
-    /* Empty state */
-    .lead-card:only-child:contains("No leads") {
-        color: var(--text-dim);
-        text-align: center;
-        padding: 30px;
-        font-style: italic;
-    }
-
-    /* Mobile optimizations */
+    /* Mobile optimizations - exact match to base */
     @media (max-width: 640px) {
         .filter-row {
             flex-direction: column;
@@ -645,17 +590,16 @@
 
         .chip {
             padding: 10px 16px;
-            font-size: 0.85rem;
         }
     }
 
     @media (max-width: 480px) {
         .pl-wrap {
-            padding: 15px 10px;
+            padding: 10px;
         }
 
         .pl-head {
-            padding: 15px;
+            padding: 15px 10px;
         }
 
         .filter-card {
@@ -673,7 +617,7 @@
 
         .lead-meta {
             grid-template-columns: 1fr;
-            padding: 10px;
+            gap: 6px;
         }
 
         .lead-meta div {
@@ -696,20 +640,19 @@
         }
     }
 
-    /* Custom scrollbar for dark theme */
+    /* Custom scrollbar - subtle */
     ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
     }
 
     ::-webkit-scrollbar-track {
-        background: var(--bg-darker);
+        background: var(--light);
     }
 
     ::-webkit-scrollbar-thumb {
-        background: var(--border-dark);
-        border-radius: 4px;
-        border: 1px solid rgba(102, 126, 234, 0.3);
+        background: var(--secondary);
+        border-radius: 3px;
     }
 
     ::-webkit-scrollbar-thumb:hover {
@@ -722,9 +665,9 @@
         <div>
             <h1>
                 <i class="fas fa-bolt"></i>
-                Priority Leads
+                Priority Leads Dashboard
             </h1>
-            <div class="pl-sub">Segmented by urgency & follow-up status</div>
+            <div class="pl-sub">Segmented by urgency and manual follow-up status</div>
         </div>
     </div>
 
@@ -732,21 +675,21 @@
         <form method="get" class="filter-row">
             <select name="response_age" aria-label="Filter by response age">
                 <option value="">All response ages</option>
-                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+
+                <option value="1w" {% if selected_response_age=='1w' %}selected{% endif %}>No response for 1 week+
                 </option>
-                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+
+                <option value="2w" {% if selected_response_age=='2w' %}selected{% endif %}>No response for 2 weeks+
                 </option>
-                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+
+                <option value="3w" {% if selected_response_age=='3w' %}selected{% endif %}>No response for 3 weeks+
                 </option>
-                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+
+                <option value="1m" {% if selected_response_age=='1m' %}selected{% endif %}>No response for 1 month+
                 </option>
-                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response
+                <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response
                     within 1 week</option>
-                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response
+                <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>Last response
                     within 2 weeks</option>
-                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response
+                <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>Last response
                     within 3 weeks</option>
-                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response
+                <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response
                     within 4 weeks</option>
             </select>
             <div class="filter-actions">
@@ -817,12 +760,12 @@
             </div>
             {% endif %}
             <div class="card-actions">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open</a>
-                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call" target="_blank"
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-sm btn-call" target="_blank"
                     rel="noopener noreferrer">
                     <i class="fas fa-phone"></i> Call
                 </a>
-                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa"
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-sm btn-wa"
                     target="_blank" rel="noopener noreferrer">
                     <i class="fab fa-whatsapp"></i> WhatsApp
                 </a>
@@ -830,7 +773,7 @@
             <details class="card-menu">
                 <summary>
                     <i class="fas fa-chevron-down"></i>
-                    Update status & notes
+                    Update manual follow-up and notes
                 </summary>
                 <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
                     {% csrf_token %}
@@ -843,7 +786,7 @@
                     <select name="follow_up_status" aria-label="Lead follow-up status">
                         <option value="">Lead follow-up status</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
+                        <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>{{ label }}
                         </option>
                         {% endfor %}
                     </select>
@@ -854,7 +797,7 @@
         </div>
         {% endfor %}
         {% empty %}
-        <div class="lead-card">No pending leads in this section</div>
+        <div class="lead-card">No leads in manual-follow-up pending for this section.</div>
         {% endfor %}
 
         <div class="segment-title">Manually Followed Up ({{ section.done_count }})</div>
@@ -882,12 +825,12 @@
             </div>
             {% endif %}
             <div class="card-actions">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open</a>
-                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call" target="_blank"
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-sm btn-call" target="_blank"
                     rel="noopener noreferrer">
                     <i class="fas fa-phone"></i> Call
                 </a>
-                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa"
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-sm btn-wa"
                     target="_blank" rel="noopener noreferrer">
                     <i class="fab fa-whatsapp"></i> WhatsApp
                 </a>
@@ -895,7 +838,7 @@
             <details class="card-menu">
                 <summary>
                     <i class="fas fa-chevron-down"></i>
-                    Update status & notes
+                    Update manual follow-up and notes
                 </summary>
                 <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
                     {% csrf_token %}
@@ -908,7 +851,7 @@
                     <select name="follow_up_status" aria-label="Lead follow-up status">
                         <option value="">Lead follow-up status</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
+                        <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>{{ label }}
                         </option>
                         {% endfor %}
                     </select>
@@ -919,7 +862,7 @@
         </div>
         {% endfor %}
         {% empty %}
-        <div class="lead-card">No completed leads in this section</div>
+        <div class="lead-card">No leads marked as manually followed up for this section.</div>
         {% endfor %}
     </details>
     {% endfor %}
@@ -941,7 +884,7 @@
         });
     }
 
-    // Better touch feedback
+    // Better touch feedback (matching base.js)
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.btn, .chip, .lead-card').forEach(el => {
             el.addEventListener('touchstart', function () {
