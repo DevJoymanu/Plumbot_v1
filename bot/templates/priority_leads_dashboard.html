@@ -419,357 +419,123 @@
     transform: none;
     box-shadow: none;
 }
-/* -------------------------------------
-   HOLOGRAPHIC BUTTON BASE
-------------------------------------- */
-.holographic {
-    position: relative;
-    background: linear-gradient(
-        135deg,
-        rgba(255, 255, 255, 0.1) 0%,
-        rgba(255, 255, 255, 0.2) 50%,
-        rgba(255, 255, 255, 0.1) 100%
-    );
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+
+/* Call button - Professional blue */
+.btn-call {
+    background: #2563eb;  /* Professional blue */
     color: white;
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-    overflow: hidden;
-    transition: all 0.3s ease;
-    z-index: 1;
+    border: none;
+    transition: all 0.2s ease;
 }
 
-/* Holographic prism effect */
-.holographic::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    background: conic-gradient(
-        from 0deg,
-        transparent 0deg,
-        rgba(255, 0, 240, 0.3) 60deg,
-        rgba(0, 255, 255, 0.3) 120deg,
-        rgba(255, 255, 0, 0.3) 180deg,
-        rgba(255, 0, 255, 0.3) 240deg,
-        rgba(0, 255, 255, 0.3) 300deg,
-        transparent 360deg
-    );
-    animation: holographic-rotate 8s linear infinite;
-    z-index: -1;
-    opacity: 0;
-    transition: opacity 0.3s ease;
+.btn-call:hover {
+    background: #1d4ed8;  /* Darker blue on hover */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
 }
 
-.holographic:hover::before {
-    opacity: 1;
+.btn-call:active {
+    transform: translateY(0);
+    background: #1e40af;
 }
 
-/* Shimmer effect */
-.holographic-shimmer {
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 50%;
-    height: 100%;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.4),
-        transparent
-    );
-    transform: skewX(-25deg);
-    animation: holographic-shimmer 3s infinite;
-    pointer-events: none;
+.btn-call i {
+    color: white;
 }
 
-/* Glow effect */
-.holographic-glow {
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(
-        circle at var(--x, 50%) var(--y, 50%),
-        rgba(255, 255, 255, 0.8) 0%,
-        transparent 50%
-    );
-    opacity: 0;
-    mix-blend-mode: overlay;
-    pointer-events: none;
-    transition: opacity 0.2s;
+/* WhatsApp button - Brand green */
+.btn-wa {
+    background: #25D366;  /* Official WhatsApp green */
+    color: white;
+    border: none;
+    transition: all 0.2s ease;
 }
 
-.holographic:hover .holographic-glow {
-    opacity: 0.5;
+.btn-wa:hover {
+    background: #20bd5a;  /* Darker green on hover */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
 }
 
-/* Prismatic border animation */
-.holographic-prism {
-    position: absolute;
-    inset: 0;
-    border: 2px solid transparent;
-    border-radius: inherit;
-    background: linear-gradient(
-        135deg,
-        #ff00f0,
-        #00ffff,
-        #ffff00,
-        #ff00ff,
-        #00ffff
-    );
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    animation: prismatic-border 4s linear infinite;
+.btn-wa:active {
+    transform: translateY(0);
+    background: #1da15a;
 }
 
-.holographic:hover .holographic-prism {
-    opacity: 1;
+.btn-wa i {
+    color: white;
 }
 
-/* Iridescent hover effect */
-.holographic:hover {
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 
-        0 0 20px rgba(255, 0, 240, 0.5),
-        0 0 40px rgba(0, 255, 255, 0.3),
-        0 0 60px rgba(255, 255, 0, 0.2);
-    border-color: rgba(255, 255, 255, 0.6);
-}
-
-.holographic:active {
-    transform: translateY(0) scale(0.98);
-}
-
-/* Specific button colors with holographic twist */
-.btn-call.holographic {
-    background: linear-gradient(
-        135deg,
-        rgba(37, 99, 235, 0.3),
-        rgba(147, 51, 234, 0.3)
-    );
-}
-
-.btn-wa.holographic {
-    background: linear-gradient(
-        135deg,
-        rgba(37, 211, 102, 0.3),
-        rgba(0, 204, 255, 0.3)
-    );
-}
-
-/* Holographic text effect */
-.holographic span,
-.holographic i {
-    position: relative;
-    z-index: 2;
-    background: linear-gradient(
-        135deg,
-        #fff 0%,
-        #ff00f0 25%,
-        #00ffff 50%,
-        #ffff00 75%,
-        #fff 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    background-size: 200% 200%;
-    animation: holographic-text 5s linear infinite;
-    font-weight: 600;
-}
-
-/* Floating prism particles */
-.holographic::after {
-    content: '';
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    background: radial-gradient(
-        circle at 20% 30%,
-        rgba(255, 255, 255, 0.8) 0%,
-        transparent 1%
-    );
-    background-size: 50px 50px;
-    opacity: 0;
-    mix-blend-mode: overlay;
-    animation: holographic-particles 4s ease infinite;
-    pointer-events: none;
-}
-
-.holographic:hover::after {
-    opacity: 0.5;
-}
-
-/* -------------------------------------
-   HOLOGRAPHIC ANIMATIONS
-------------------------------------- */
-@keyframes holographic-rotate {
-    0% {
-        transform: rotate(0deg);
-    }
-    100% {
-        transform: rotate(360deg);
-    }
-}
-
-@keyframes holographic-shimmer {
-    0% {
-        left: -100%;
-    }
-    20% {
-        left: 120%;
-    }
-    100% {
-        left: 120%;
-    }
-}
-
-@keyframes holographic-text {
-    0% {
-        background-position: 0% 0%;
-    }
-    100% {
-        background-position: 200% 0%;
-    }
-}
-
-@keyframes prismatic-border {
-    0%, 100% {
-        filter: hue-rotate(0deg);
-    }
-    50% {
-        filter: hue-rotate(180deg);
-    }
-}
-
-@keyframes holographic-particles {
-    0% {
-        transform: translate(0, 0) scale(1);
-        opacity: 0;
-    }
-    50% {
-        transform: translate(10px, -10px) scale(1.5);
-        opacity: 0.5;
-    }
-    100% {
-        transform: translate(20px, -20px) scale(2);
-        opacity: 0;
-    }
-}
-
-/* Mouse movement glow effect */
-.holographic {
-    --x: 50%;
-    --y: 50%;
-}
-
-.holographic:hover {
-    --x: attr(data-x);
-    --y: attr(data-y);
-}
-
-/* Rainbow border on hover */
-.holographic:hover {
-    border-image: linear-gradient(
-        45deg,
-        #ff00f0,
-        #00ffff,
-        #ffff00,
-        #ff00ff,
-        #00ffff
-    ) 1;
-    border-width: 2px;
-    border-style: solid;
-}
-
-/* Extra holographic sparkles */
-.holographic-sparkle {
-    position: absolute;
-    width: 4px;
-    height: 4px;
-    background: white;
-    border-radius: 50%;
-    filter: blur(1px);
-    opacity: 0;
-    animation: sparkle 2s ease infinite;
-}
-
-@keyframes sparkle {
-    0% {
-        transform: scale(0);
-        opacity: 0;
-    }
-    50% {
-        transform: scale(1);
-        opacity: 1;
-    }
-    100% {
-        transform: scale(0);
-        opacity: 0;
-    }
-}
-
-/* Responsive adjustments */
-@media (max-width: 640px) {
-    .holographic {
-        font-size: var(--text-sm);
-        padding: 0 var(--space-md);
-        min-height: 44px;
-    }
-    
-    .holographic-shimmer {
-        animation-duration: 2s;
-    }
-}
-
-/* Reduced motion preference */
-@media (prefers-reduced-motion: reduce) {
-    .holographic::before,
-    .holographic-shimmer,
-    .holographic-prism,
-    .holographic span,
-    .holographic i,
-    .holographic::after {
-        animation: none;
-    }
-    
-    .holographic:hover {
-        transform: none;
-    }
-}
-
-/* Dark mode optimization */
+/* Dark mode support */
 @media (prefers-color-scheme: dark) {
-    .holographic {
-        background: linear-gradient(
-            135deg,
-            rgba(255, 255, 255, 0.15) 0%,
-            rgba(255, 255, 255, 0.25) 50%,
-            rgba(255, 255, 255, 0.15) 100%
-        );
+    .btn-call {
+        background: #3b82f6;  /* Lighter blue for dark mode */
+    }
+    
+    .btn-wa {
+        background: #25D366;  /* WhatsApp green stays the same */
     }
 }
 
 /* High contrast mode support */
 @media (prefers-contrast: high) {
-    .holographic {
-        background: #000;
-        border: 2px solid #fff;
-        color: #fff;
+    .btn-call {
+        background: #0000ff;  /* Pure blue for high contrast */
+        outline: 2px solid white;
     }
     
-    .holographic span,
-    .holographic i {
-        background: none;
-        color: #fff;
-        animation: none;
+    .btn-wa {
+        background: #008000;  /* Pure green for high contrast */
+        outline: 2px solid white;
     }
 }
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    .btn-call,
+    .btn-wa {
+        transition: none;
+    }
+    
+    .btn-call:hover,
+    .btn-wa:hover {
+        transform: none;
+    }
+}
+
+/* Mobile optimization */
+@media (max-width: 640px) {
+    .btn-call,
+    .btn-wa {
+        padding: 0 var(--space-md);
+        font-size: var(--text-sm);
+    }
+    
+    /* Increase touch target on mobile */
+    .btn-call,
+    .btn-wa {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+    }
+}
+
+/* Focus styles for accessibility */
+.btn-call:focus-visible,
+.btn-wa:focus-visible {
+    outline: 3px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Disabled state if needed */
+.btn-call:disabled,
+.btn-wa:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    transform: none;
+    box-shadow: none;
+}
+
 
 </style>
 
@@ -846,21 +612,13 @@
                 <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
                     <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call"
                         aria-label="Call {{ lead.customer_name|default:'customer' }}">
-                    <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call holographic" target="_blank"
-                        rel="noopener noreferrer" aria-label="Call {{ lead.customer_name|default:'customer' }}">
-                        <i class="fas fa-phone" aria-hidden="true"></i>
-                        <span>Call</span>
-                        <div class="holographic-glow"></div>
-                        <div class="holographic-shimmer"></div>
-                        <div class="holographic-prism"></div>
+                    <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call" target="_blank" rel="noopener noreferrer"
+                        aria-label="Call {{ lead.customer_name|default:'customer' }}">
+                        <i class="fas fa-phone" aria-hidden="true"></i> Call
                     </a>
-                    <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa holographic" target="_blank"
+                    <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa" target="_blank"
                         rel="noopener noreferrer" aria-label="WhatsApp {{ lead.customer_name|default:'customer' }}">
-                        <i class="fab fa-whatsapp" aria-hidden="true"></i>
-                        <span>WhatsApp</span>
-                        <div class="holographic-glow"></div>
-                        <div class="holographic-shimmer"></div>
-                        <div class="holographic-prism"></div>
+                        <i class="fab fa-whatsapp" aria-hidden="true"></i> WhatsApp
                     </a>
             </div>
             <details class="card-menu">
@@ -959,31 +717,5 @@
         const top = el.getBoundingClientRect().top + window.scrollY - 10;
         window.scrollTo({ top: top, behavior: 'smooth' });
     }
-    document.querySelectorAll('.holographic').forEach(btn => {
-            btn.addEventListener('mousemove', e => {
-                const rect = btn.getBoundingClientRect();
-                const x = ((e.clientX - rect.left) / rect.width) * 100;
-                const y = ((e.clientY - rect.top) / rect.height) * 100;
-                btn.style.setProperty('--x', `${x}%`);
-                btn.style.setProperty('--y', `${y}%`);
-            });
-        });
-
-        // Add random sparkles
-        function addSparkles() {
-            document.querySelectorAll('.holographic').forEach(btn => {
-                for (let i = 0; i < 5; i++) {
-                    const sparkle = document.createElement('div');
-                    sparkle.className = 'holographic-sparkle';
-                    sparkle.style.left = Math.random() * 100 + '%';
-                    sparkle.style.top = Math.random() * 100 + '%';
-                    sparkle.style.animationDelay = Math.random() * 2 + 's';
-                    btn.appendChild(sparkle);
-                }
-            });
-        }
-
-        document.addEventListener('DOMContentLoaded', addSparkles);
-
 </script>
 {% endblock %}
