@@ -13,17 +13,18 @@
         --light: #f8f9fa;
         --dark: #2d3748;
 
-        /* Additional variables for the dashboard */
-        --bg: #f5f7fb;
-        --card: #ffffff;
-        --border: #e5e7eb;
-        --text: #111827;
-        --muted: #6b7280;
-        --vh-red: #dc2626;
-        --hot-orange: #f59e0b;
-        --warm-green: #10b981;
-        --luke-blue: #3b82f6;
-        --cold-gray: #6b7280;
+        /* Dark, sleek, edgy variables */
+        --bg-dark: #0a0c10;
+        --bg-card: #15181e;
+        --bg-card-hover: #1e232b;
+        --border-dark: #2d323c;
+        --border-glow: #333a47;
+        --text-primary: #e5e7eb;
+        --text-secondary: #9ca3af;
+        --text-muted: #6b7280;
+        --accent-glow: rgba(102, 126, 234, 0.2);
+        --accent-glow-strong: rgba(102, 126, 234, 0.4);
+
         --space-xs: 4px;
         --space-sm: 8px;
         --space-md: 12px;
@@ -36,7 +37,7 @@
         --text-xl: 1.25rem;
     }
 
-    /* Your base styles are preserved */
+    /* Your base styles - preserved */
     * {
         margin: 0;
         padding: 0;
@@ -46,24 +47,25 @@
 
     body {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        background: #0a0c10;
+        /* Solid dark background - sleek and edgy */
         min-height: 100vh;
-        color: #333;
+        color: var(--text-primary);
         line-height: 1.5;
     }
 
-    /* Dashboard container - adds white background card effect */
+    /* Dashboard container - dark card with subtle glow */
     .pl-wrap {
         max-width: 1100px;
-        margin: 20px auto;
+        margin: 0 auto;
         padding: var(--space-md) var(--space-sm) var(--space-xl);
         width: 100%;
         box-sizing: border-box;
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 24px 24px 0 0;
+        background: var(--bg-card);
         min-height: 100vh;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(102, 126, 234, 0.1) inset;
+        border-left: 1px solid var(--border-glow);
+        border-right: 1px solid var(--border-glow);
     }
 
     @media (min-width: 768px) {
@@ -72,44 +74,53 @@
             border-radius: 32px;
             min-height: auto;
             padding: var(--space-xl) var(--space-lg);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(102, 126, 234, 0.15) inset;
         }
     }
 
-    /* Header section */
+    /* Header section - edgy typography */
     .pl-head {
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
         align-items: center;
         gap: var(--space-sm);
-        margin-bottom: var(--space-sm);
+        margin-bottom: var(--space-md);
         padding: 0 var(--space-xs);
+        border-bottom: 2px solid var(--border-dark);
+        padding-bottom: var(--space-md);
     }
 
     .pl-head h1 {
         margin: 0;
         font-size: var(--text-xl);
         line-height: 1.3;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: var(--text-primary);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-weight: 800;
+        text-shadow: 0 0 10px var(--accent-glow);
+        background: linear-gradient(135deg, #fff 0%, var(--primary) 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
     }
 
     .pl-sub {
-        color: var(--muted);
+        color: var(--text-muted);
         font-size: var(--text-sm);
         margin-top: var(--space-xs);
+        letter-spacing: 0.5px;
     }
 
-    /* Filter card */
+    /* Filter card - dark and sleek */
     .filter-card {
-        background: var(--card);
-        border: 1px solid var(--border);
+        background: var(--bg-card-hover);
+        border: 1px solid var(--border-dark);
         border-radius: 20px;
         margin-bottom: var(--space-md);
         padding: var(--space-md);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 10px 20px -10px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(102, 126, 234, 0.1) inset;
     }
 
     .filter-row {
@@ -120,11 +131,12 @@
 
     .filter-row select {
         width: 100%;
-        border: 2px solid var(--border);
+        border: 1px solid var(--border-dark);
         border-radius: 16px;
         padding: 14px var(--space-md);
         font-size: var(--text-base);
-        background: white;
+        background: var(--bg-card);
+        color: var(--text-primary);
         min-height: 52px;
         font-family: inherit;
         -webkit-appearance: none;
@@ -133,13 +145,13 @@
         background-repeat: no-repeat;
         background-position: right var(--space-md) center;
         background-size: 1.2em;
-        transition: border-color 0.2s ease;
+        transition: all 0.2s ease;
     }
 
     .filter-row select:focus {
         outline: none;
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        box-shadow: 0 0 0 3px var(--accent-glow), 0 0 15px var(--primary);
     }
 
     .filter-actions {
@@ -155,7 +167,7 @@
         min-height: 52px;
     }
 
-    /* Button styles - incorporating your primary colors */
+    /* Button styles - dark and edgy with glow effects */
     .btn {
         border: none;
         border-radius: 16px;
@@ -171,50 +183,66 @@
         transition: all 0.2s ease;
         min-height: 48px;
         -webkit-tap-highlight-color: transparent;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     }
 
     .btn-dark {
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        color: white;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        background: linear-gradient(135deg, #1e232b 0%, #0a0c10 100%);
+        color: var(--text-primary);
+        border: 1px solid var(--primary);
+        text-shadow: 0 0 8px var(--primary);
     }
 
     .btn-dark:hover {
+        background: linear-gradient(135deg, #2d323c 0%, #15181e 100%);
+        box-shadow: 0 0 20px var(--accent-glow-strong), 0 0 0 1px var(--primary);
         transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
     }
 
     .btn-dark:active {
         transform: translateY(0);
+        box-shadow: 0 0 10px var(--primary);
     }
 
     .btn-light {
-        background: var(--light);
-        color: var(--dark);
-        border: 2px solid var(--border);
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-dark);
     }
 
-    .btn-light:active {
-        background: #e2e8f0;
-        transform: scale(0.98);
+    .btn-light:hover {
+        border-color: var(--primary);
+        color: var(--text-primary);
+        box-shadow: 0 0 15px var(--accent-glow);
     }
 
     .btn-call {
-        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        color: white;
-        border: none;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        background: linear-gradient(135deg, #1e232b 0%, #0a0c10 100%);
+        color: #3b82f6;
+        border: 1px solid #3b82f6;
+        text-shadow: 0 0 8px #3b82f6;
+    }
+
+    .btn-call:hover {
+        background: linear-gradient(135deg, #2d323c 0%, #15181e 100%);
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
     }
 
     .btn-wa {
-        background: linear-gradient(135deg, #25D366 0%, #20bd5a 100%);
-        color: white;
-        border: none;
-        box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+        background: linear-gradient(135deg, #1e232b 0%, #0a0c10 100%);
+        color: #25D366;
+        border: 1px solid #25D366;
+        text-shadow: 0 0 8px #25D366;
     }
 
-    /* Chip row */
+    .btn-wa:hover {
+        background: linear-gradient(135deg, #2d323c 0%, #15181e 100%);
+        box-shadow: 0 0 20px rgba(37, 211, 102, 0.4);
+    }
+
+    /* Chip row - dark with neon accents */
     .chip-row {
         display: flex;
         flex-wrap: nowrap;
@@ -233,7 +261,7 @@
 
     .chip {
         padding: 10px 18px;
-        border: none;
+        border: 1px solid var(--border-dark);
         border-radius: 40px;
         font-size: var(--text-sm);
         font-weight: 700;
@@ -243,59 +271,94 @@
         gap: var(--space-xs);
         flex-shrink: 0;
         min-height: 44px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        background: var(--bg-card);
+        color: var(--text-primary);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
         transition: all 0.2s ease;
         -webkit-tap-highlight-color: transparent;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .chip:hover {
+        border-color: var(--primary);
+        box-shadow: 0 0 15px var(--accent-glow);
+        transform: translateY(-2px);
     }
 
     .chip:active {
-        transform: scale(0.97);
+        transform: translateY(0);
     }
 
     .chip i {
         font-size: var(--text-sm);
+        color: var(--primary);
     }
 
     .chip-total {
-        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-        color: white;
+        border-left-color: var(--primary);
+        border-left-width: 3px;
     }
 
     .chip-vh {
-        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-        color: white;
+        border-left-color: var(--danger);
+        border-left-width: 3px;
+    }
+
+    .chip-vh i {
+        color: var(--danger);
     }
 
     .chip-hot {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        color: white;
+        border-left-color: var(--warning);
+        border-left-width: 3px;
+    }
+
+    .chip-hot i {
+        color: var(--warning);
     }
 
     .chip-warm {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        color: white;
+        border-left-color: var(--success);
+        border-left-width: 3px;
+    }
+
+    .chip-warm i {
+        color: var(--success);
     }
 
     .chip-luke {
-        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        color: white;
+        border-left-color: var(--primary);
+        border-left-width: 3px;
+    }
+
+    .chip-luke i {
+        color: var(--primary);
     }
 
     .chip-cold {
-        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-        color: white;
+        border-left-color: var(--secondary);
+        border-left-width: 3px;
     }
 
-    /* Section styles */
+    .chip-cold i {
+        color: var(--secondary);
+    }
+
+    /* Section styles - dark and sleek */
     .section {
-        background: var(--card);
-        border: 1px solid var(--border);
+        background: var(--bg-card);
+        border: 1px solid var(--border-dark);
         border-radius: 24px;
         margin-bottom: var(--space-md);
         overflow: hidden;
-        border-left-width: 6px;
-        border-left-style: solid;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 10px 20px -10px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(102, 126, 234, 0.1) inset;
+        transition: all 0.3s ease;
+    }
+
+    .section:hover {
+        border-color: var(--border-glow);
+        box-shadow: 0 15px 30px -10px rgba(0, 0, 0, 0.9), 0 0 0 1px var(--primary) inset;
     }
 
     .section summary {
@@ -315,17 +378,21 @@
         padding: var(--space-lg);
         font-weight: 700;
         font-size: var(--text-base);
-        background: white;
-        transition: background 0.2s ease;
+        background: linear-gradient(135deg, #1e232b 0%, #15181e 100%);
+        color: var(--text-primary);
+        border-bottom: 1px solid transparent;
+        transition: all 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 
     .section-head:active {
-        background: #f8fafc;
+        background: #1e232b;
     }
 
     .section[open] .section-head {
-        border-bottom: 2px solid var(--border);
-        background: linear-gradient(to right, rgba(102, 126, 234, 0.05), transparent);
+        border-bottom: 1px solid var(--primary);
+        box-shadow: 0 5px 15px -5px var(--accent-glow);
     }
 
     .section-head-left {
@@ -342,90 +409,57 @@
         align-items: center;
         justify-content: center;
         font-size: var(--text-base);
-        color: white;
-    }
-
-    /* Section color variants */
-    .sec-vh {
-        border-left-color: var(--danger);
-    }
-
-    .sec-hot {
-        border-left-color: var(--warning);
-    }
-
-    .sec-warm {
-        border-left-color: var(--success);
-    }
-
-    .sec-luke {
-        border-left-color: var(--primary);
-    }
-
-    .sec-cold {
-        border-left-color: var(--secondary);
-    }
-
-    .sec-vh .section-icon {
-        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-    }
-
-    .sec-hot .section-icon {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    }
-
-    .sec-warm .section-icon {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    }
-
-    .sec-luke .section-icon {
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    }
-
-    .sec-cold .section-icon {
-        background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+        background: var(--bg-card-hover);
+        border: 1px solid var(--border-dark);
+        color: var(--primary);
+        box-shadow: 0 0 10px var(--accent-glow);
     }
 
     .section-rec {
         margin: var(--space-md);
         padding: var(--space-md);
         font-size: var(--text-sm);
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-        border: 1px solid rgba(102, 126, 234, 0.2);
+        background: rgba(102, 126, 234, 0.1);
+        border: 1px solid var(--primary);
         border-radius: 16px;
-        color: var(--dark);
+        color: var(--text-primary);
         display: flex;
         gap: var(--space-sm);
         align-items: flex-start;
+        box-shadow: 0 0 20px var(--accent-glow);
+        backdrop-filter: blur(10px);
     }
 
     .section-rec i {
         color: var(--primary);
         flex-shrink: 0;
         margin-top: 2px;
+        text-shadow: 0 0 8px var(--primary);
     }
 
     .section-chevron {
-        color: var(--muted);
+        color: var(--text-muted);
         margin-left: var(--space-sm);
-        transition: transform 0.2s ease;
+        transition: all 0.3s ease;
     }
 
     .section[open] .section-chevron {
         transform: rotate(90deg);
         color: var(--primary);
+        text-shadow: 0 0 8px var(--primary);
     }
 
-    /* Segment titles */
+    /* Segment titles - edgy */
     .segment-title {
         padding: var(--space-md) var(--space-lg) var(--space-sm);
         font-size: var(--text-xs);
-        color: var(--muted);
+        color: var(--text-muted);
         text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-weight: 700;
-        background: #fafafa;
-        border-top: 2px solid var(--border);
+        letter-spacing: 1px;
+        font-weight: 800;
+        background: rgba(0, 0, 0, 0.3);
+        border-top: 1px solid var(--border-dark);
+        border-bottom: 1px solid var(--border-dark);
     }
 
     .date-title {
@@ -433,18 +467,27 @@
         font-size: var(--text-xs);
         color: var(--primary);
         font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        text-shadow: 0 0 8px var(--primary);
     }
 
-    /* Lead cards */
+    /* Lead cards - dark and sleek */
     .lead-card {
-        border-top: 1px solid var(--border);
+        border-top: 1px solid var(--border-dark);
         padding: var(--space-lg);
         transition: all 0.2s ease;
         position: relative;
+        background: var(--bg-card);
+    }
+
+    .lead-card:hover {
+        background: var(--bg-card-hover);
+        box-shadow: 0 0 30px var(--accent-glow);
     }
 
     .lead-card:active {
-        background: linear-gradient(to right, rgba(102, 126, 234, 0.05), transparent);
+        background: #1e232b;
     }
 
     .lead-top {
@@ -458,21 +501,26 @@
 
     .lead-name {
         font-size: var(--text-lg);
-        font-weight: 700;
+        font-weight: 800;
         line-height: 1.3;
         word-break: break-word;
-        color: var(--dark);
+        color: var(--text-primary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
     }
 
     .lead-score {
         border-radius: 40px;
         padding: 6px 14px;
         font-size: var(--text-xs);
-        font-weight: 700;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        color: white;
+        font-weight: 800;
+        background: var(--bg-card-hover);
+        color: var(--primary);
+        border: 1px solid var(--primary);
         white-space: nowrap;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 0 15px var(--accent-glow);
+        letter-spacing: 0.5px;
     }
 
     .lead-meta {
@@ -480,11 +528,12 @@
         grid-template-columns: repeat(2, 1fr);
         gap: var(--space-sm);
         font-size: var(--text-sm);
-        color: var(--muted);
+        color: var(--text-secondary);
         margin-bottom: var(--space-md);
-        background: #f8fafc;
+        background: rgba(0, 0, 0, 0.3);
         padding: var(--space-sm);
         border-radius: 16px;
+        border: 1px solid var(--border-dark);
     }
 
     .lead-meta div {
@@ -493,22 +542,29 @@
     }
 
     .lead-meta strong {
-        color: var(--dark);
+        color: var(--primary);
+        font-weight: 800;
+        text-transform: uppercase;
+        font-size: var(--text-xs);
     }
 
     .alert {
         background: rgba(102, 126, 234, 0.1);
-        border: 1px solid rgba(102, 126, 234, 0.2);
+        border: 1px solid var(--primary);
         border-radius: 16px;
         padding: var(--space-md);
         font-size: var(--text-sm);
         margin-bottom: var(--space-md);
         line-height: 1.5;
-        color: var(--dark);
+        color: var(--text-primary);
+        box-shadow: 0 0 20px var(--accent-glow);
+        backdrop-filter: blur(10px);
     }
 
     .alert strong {
         color: var(--primary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 
     /* Card actions */
@@ -524,7 +580,7 @@
         min-height: 52px;
     }
 
-    /* Card menu */
+    /* Card menu - dark and sleek */
     .card-menu {
         width: 100%;
         margin-top: var(--space-sm);
@@ -540,10 +596,13 @@
         align-items: center;
         gap: var(--space-sm);
         -webkit-tap-highlight-color: transparent;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        text-shadow: 0 0 8px var(--primary);
     }
 
     .card-menu summary i {
-        transition: transform 0.2s ease;
+        transition: transform 0.3s ease;
         color: var(--primary);
     }
 
@@ -561,11 +620,12 @@
     .card-menu select,
     .card-menu textarea {
         width: 100%;
-        border: 2px solid var(--border);
+        border: 1px solid var(--border-dark);
         border-radius: 16px;
         padding: 14px var(--space-md);
         font-size: var(--text-base);
-        background: white;
+        background: var(--bg-card);
+        color: var(--text-primary);
         min-height: 52px;
         font-family: inherit;
         transition: all 0.2s ease;
@@ -575,7 +635,7 @@
     .card-menu textarea:focus {
         outline: none;
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        box-shadow: 0 0 0 3px var(--accent-glow), 0 0 20px var(--primary);
     }
 
     .card-menu textarea {
@@ -586,17 +646,26 @@
     .card-menu button {
         width: 100%;
         min-height: 52px;
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        color: white;
-        border: none;
+        background: linear-gradient(135deg, #1e232b 0%, #0a0c10 100%);
+        color: var(--primary);
+        border: 1px solid var(--primary);
         border-radius: 16px;
-        font-weight: 700;
+        font-weight: 800;
         cursor: pointer;
         transition: all 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        box-shadow: 0 0 15px var(--accent-glow);
+    }
+
+    .card-menu button:hover {
+        background: linear-gradient(135deg, #2d323c 0%, #15181e 100%);
+        box-shadow: 0 0 30px var(--primary);
+        transform: translateY(-2px);
     }
 
     .card-menu button:active {
-        transform: scale(0.98);
+        transform: translateY(0);
     }
 
     /* Tablet and desktop improvements */
@@ -664,47 +733,12 @@
         }
     }
 
-    /* Dark mode support - preserving your gradients */
-    @media (prefers-color-scheme: dark) {
-        :root {
-            --bg: #1a1a1a;
-            --card: #2d2d2d;
-            --border: #404040;
-            --text: #f3f4f6;
-            --muted: #9ca3af;
-            --light: #374151;
-            --dark: #f3f4f6;
-        }
+    /* Dark mode is default now - but ensuring consistency */
+    @media (prefers-color-scheme: light) {
 
+        /* Force dark mode */
         body {
-            background: linear-gradient(135deg, #4a3f7a 0%, #5a3d7a 100%);
-        }
-
-        .pl-wrap {
-            background: rgba(26, 26, 26, 0.95);
-        }
-
-        .filter-card,
-        .section,
-        .lead-card,
-        .card-menu select,
-        .card-menu textarea,
-        .section-head {
-            background: var(--card);
-            color: var(--text);
-        }
-
-        .lead-meta {
-            background: #374151;
-        }
-
-        .lead-meta strong {
-            color: var(--text);
-        }
-
-        .segment-title {
-            background: #374151;
-            color: #9ca3af;
+            background: #0a0c10;
         }
     }
 
@@ -720,8 +754,8 @@
         }
 
         .btn:hover,
-        .chip:active,
-        .lead-card:active {
+        .chip:hover,
+        .lead-card:hover {
             transform: none;
         }
     }
@@ -752,69 +786,85 @@
             transform: scale(0.98);
         }
     }
+
+    /* Custom scrollbar for dark mode */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: var(--bg-card);
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: var(--border-dark);
+        border-radius: 4px;
+        border: 1px solid var(--primary);
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--primary);
+    }
 </style>
 
 <div class="pl-wrap">
     <div class="pl-head">
         <div>
-            <h1>Priority Leads Dashboard</h1>
-            <div class="pl-sub">Segmented by urgency and manual follow-up status</div>
+            <h1>PRIORITY LEADS DASHBOARD</h1>
+            <div class="pl-sub">Segmented by urgency & follow-up status</div>
         </div>
     </div>
 
     <div class="filter-card">
         <form method="get" class="filter-row">
             <select name="response_age" aria-label="Filter by response age">
-                <option value="">All response ages</option>
-                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+
-                </option>
-                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+
-                </option>
-                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+
-                </option>
-                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+
-                </option>
-                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response
-                    within 1 week</option>
-                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response
-                    within 2 weeks</option>
-                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response
-                    within 3 weeks</option>
-                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response
-                    within 4 weeks</option>
+                <option value="">ALL RESPONSE AGES</option>
+                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>NO RESPONSE 1 WEEK+</option>
+                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>NO RESPONSE 2 WEEKS+</option>
+                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>NO RESPONSE 3 WEEKS+</option>
+                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>NO RESPONSE 1 MONTH+</option>
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>RESPONSE WITHIN 1
+                    WEEK</option>
+                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>RESPONSE WITHIN 2
+                    WEEKS</option>
+                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>RESPONSE WITHIN 3
+                    WEEKS</option>
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>RESPONSE WITHIN 4
+                    WEEKS</option>
             </select>
             <div class="filter-actions">
-                <button type="submit" class="btn btn-dark">Apply</button>
-                <a href="{% url 'priority_leads' %}" class="btn btn-light" role="button">Reset</a>
+                <button type="submit" class="btn btn-dark">APPLY</button>
+                <a href="{% url 'priority_leads' %}" class="btn btn-light" role="button">RESET</a>
             </div>
         </form>
     </div>
 
     <div class="chip-row" role="tablist">
         <div class="chip chip-total" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"><i
-                class="fas fa-database" aria-hidden="true"></i>All: {{ total_leads }}</div>
-        <div class="chip chip-vh" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"><i class="fas fa-fire"
-                aria-hidden="true"></i>Very Hot: {{ very_hot_leads|length }}</div>
+                class="fas fa-database"></i>ALL: {{ total_leads }}</div>
+        <div class="chip chip-vh" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"><i
+                class="fas fa-fire"></i>VERY HOT: {{ very_hot_leads|length }}</div>
         <div class="chip chip-hot" onclick="scrollToSection('sec-hot')" role="tab" tabindex="0"><i
-                class="fas fa-exclamation-triangle" aria-hidden="true"></i>Hot: {{ hot_leads|length }}</div>
-        <div class="chip chip-warm" onclick="scrollToSection('sec-warm')" role="tab" tabindex="0"><i class="fas fa-sun"
-                aria-hidden="true"></i>Warm: {{ warm_leads|length }}</div>
+                class="fas fa-exclamation-triangle"></i>HOT: {{ hot_leads|length }}</div>
+        <div class="chip chip-warm" onclick="scrollToSection('sec-warm')" role="tab" tabindex="0"><i
+                class="fas fa-sun"></i>WARM: {{ warm_leads|length }}</div>
         <div class="chip chip-luke" onclick="scrollToSection('sec-luke')" role="tab" tabindex="0"><i
-                class="fas fa-temperature-low" aria-hidden="true"></i>Lukewarm: {{ luke_warm_leads|length }}</div>
+                class="fas fa-temperature-low"></i>LUKEWARM: {{ luke_warm_leads|length }}</div>
         <div class="chip chip-cold" onclick="scrollToSection('sec-cold')" role="tab" tabindex="0"><i
-                class="fas fa-snowflake" aria-hidden="true"></i>Cold: {{ cold_leads|length }}</div>
+                class="fas fa-snowflake"></i>COLD: {{ cold_leads|length }}</div>
         <div class="chip chip-hot" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"><i
-                class="fas fa-user-clock" aria-hidden="true"></i>Pending: {{ manual_followup_pending_count }}</div>
+                class="fas fa-user-clock"></i>PENDING: {{ manual_followup_pending_count }}</div>
         <div class="chip chip-warm" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"><i
-                class="fas fa-user-check" aria-hidden="true"></i>Done: {{ manual_followup_done_count }}</div>
+                class="fas fa-user-check"></i>DONE: {{ manual_followup_done_count }}</div>
     </div>
 
     {% for section in sections %}
-    <details class="section {{ section.css }}" id="{{ section.id }}">
+    <details class="section" id="{{ section.id }}">
         <summary class="section-head" role="button">
             <span class="section-head-left">
                 <span class="section-icon" aria-hidden="true"><i class="fas fa-{{ section.icon }}"></i></span>
-                <span>{{ section.title }}</span>
+                <span>{{ section.title|upper }}</span>
             </span>
             <span>
                 {{ section.count }}
@@ -823,131 +873,131 @@
         </summary>
         <div class="section-rec">
             <i class="fas fa-info-circle" aria-hidden="true"></i>
-            <div><strong>Recommended action:</strong> {{ section.recommended_action }}</div>
+            <div><strong>RECOMMENDED ACTION:</strong> {{ section.recommended_action|upper }}</div>
         </div>
 
-        <div class="segment-title">Manual Follow-up Pending ({{ section.pending_count }})</div>
+        <div class="segment-title">MANUAL FOLLOW-UP PENDING ({{ section.pending_count }})</div>
         {% for group in section.pending_by_date %}
-        <div class="date-title">{{ group.label }}</div>
+        <div class="date-title">{{ group.label|upper }}</div>
         {% for lead in group.leads %}
         <div class="lead-card">
             <div class="lead-top">
-                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="lead-name">{{ lead.customer_name|default:"UNKNOWN CUSTOMER" }}</div>
                 <div class="lead-score">{{ lead.computed_score }}/100</div>
             </div>
             <div class="lead-meta">
-                <div><strong>Phone:</strong> {{ lead.phone_number|cut:"whatsapp:" }}</div>
-                <div><strong>Service:</strong> {{ lead.project_type|default:"No service" }}</div>
-                <div><strong>Area:</strong> {{ lead.customer_area|default:"No area" }}</div>
-                <div><strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div><strong>PHONE:</strong> {{ lead.phone_number|cut:"whatsapp:" }}</div>
+                <div><strong>SERVICE:</strong> {{ lead.project_type|default:"NO SERVICE" }}</div>
+                <div><strong>AREA:</strong> {{ lead.customer_area|default:"NO AREA" }}</div>
+                <div><strong>RECENT:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"NO ACTIVITY" }}</div>
             </div>
             {% if lead.last_priority_alert_summary %}
             <div class="alert">
-                <strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:160 }}
+                <strong>LAST ALERT:</strong> {{ lead.last_priority_alert_summary|truncatechars:160|upper }}
             </div>
             {% endif %}
             <div class="card-actions">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">OPEN LEAD</a>
                 <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call" target="_blank"
                     rel="noopener noreferrer" aria-label="Call {{ lead.customer_name|default:'customer' }}">
-                    <i class="fas fa-phone" aria-hidden="true"></i> Call
+                    <i class="fas fa-phone" aria-hidden="true"></i> CALL
                 </a>
                 <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa"
                     target="_blank" rel="noopener noreferrer"
                     aria-label="WhatsApp {{ lead.customer_name|default:'customer' }}">
-                    <i class="fab fa-whatsapp" aria-hidden="true"></i> WhatsApp
+                    <i class="fab fa-whatsapp" aria-hidden="true"></i> WHATSAPP
                 </a>
             </div>
             <details class="card-menu">
                 <summary>
                     <i class="fas fa-chevron-down" aria-hidden="true"></i>
-                    Update manual follow-up and notes
+                    UPDATE STATUS & NOTES
                 </summary>
                 <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
                     <select name="manual_followup_state" aria-label="Manual follow-up state">
-                        <option value="">Manual follow-up state</option>
-                        <option value="pending">Mark manual follow-up pending</option>
-                        <option value="done">Mark manually followed up</option>
+                        <option value="">MANUAL FOLLOW-UP STATE</option>
+                        <option value="pending">MARK PENDING</option>
+                        <option value="done">MARK COMPLETED</option>
                     </select>
                     <select name="follow_up_status" aria-label="Lead follow-up status">
-                        <option value="">Lead follow-up status</option>
+                        <option value="">LEAD STATUS</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
-                        </option>
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{
+                            label|upper }}</option>
                         {% endfor %}
                     </select>
-                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
-                    <button type="submit" class="btn">Save update</button>
+                    <textarea name="note" placeholder="ADD INTERNAL NOTE">{{ lead.admin_notes|default:'' }}</textarea>
+                    <button type="submit">SAVE UPDATE</button>
                 </form>
             </details>
         </div>
         {% endfor %}
         {% empty %}
-        <div class="lead-card">No leads in manual-follow-up pending for this section.</div>
+        <div class="lead-card">NO PENDING LEADS IN THIS SECTION</div>
         {% endfor %}
 
-        <div class="segment-title">Manually Followed Up ({{ section.done_count }})</div>
+        <div class="segment-title">MANUALLY FOLLOWED UP ({{ section.done_count }})</div>
         {% for group in section.done_by_date %}
-        <div class="date-title">{{ group.label }}</div>
+        <div class="date-title">{{ group.label|upper }}</div>
         {% for lead in group.leads %}
         <div class="lead-card">
             <div class="lead-top">
-                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="lead-name">{{ lead.customer_name|default:"UNKNOWN CUSTOMER" }}</div>
                 <div class="lead-score">{{ lead.computed_score }}/100</div>
             </div>
             <div class="lead-meta">
-                <div><strong>Phone:</strong> {{ lead.phone_number|cut:"whatsapp:" }}</div>
-                <div><strong>Service:</strong> {{ lead.project_type|default:"No service" }}</div>
-                <div><strong>Area:</strong> {{ lead.customer_area|default:"No area" }}</div>
-                <div><strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div><strong>PHONE:</strong> {{ lead.phone_number|cut:"whatsapp:" }}</div>
+                <div><strong>SERVICE:</strong> {{ lead.project_type|default:"NO SERVICE" }}</div>
+                <div><strong>AREA:</strong> {{ lead.customer_area|default:"NO AREA" }}</div>
+                <div><strong>RECENT:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"NO ACTIVITY" }}</div>
             </div>
             {% if lead.last_priority_alert_summary %}
             <div class="alert">
-                <strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:160 }}
+                <strong>LAST ALERT:</strong> {{ lead.last_priority_alert_summary|truncatechars:160|upper }}
             </div>
             {% endif %}
             <div class="card-actions">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">OPEN LEAD</a>
                 <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call" target="_blank"
                     rel="noopener noreferrer" aria-label="Call {{ lead.customer_name|default:'customer' }}">
-                    <i class="fas fa-phone" aria-hidden="true"></i> Call
+                    <i class="fas fa-phone" aria-hidden="true"></i> CALL
                 </a>
                 <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa"
                     target="_blank" rel="noopener noreferrer"
                     aria-label="WhatsApp {{ lead.customer_name|default:'customer' }}">
-                    <i class="fab fa-whatsapp" aria-hidden="true"></i> WhatsApp
+                    <i class="fab fa-whatsapp" aria-hidden="true"></i> WHATSAPP
                 </a>
             </div>
             <details class="card-menu">
                 <summary>
                     <i class="fas fa-chevron-down" aria-hidden="true"></i>
-                    Update manual follow-up and notes
+                    UPDATE STATUS & NOTES
                 </summary>
                 <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
                     <select name="manual_followup_state" aria-label="Manual follow-up state">
-                        <option value="">Manual follow-up state</option>
-                        <option value="pending">Mark manual follow-up pending</option>
-                        <option value="done">Mark manually followed up</option>
+                        <option value="">MANUAL FOLLOW-UP STATE</option>
+                        <option value="pending">MARK PENDING</option>
+                        <option value="done">MARK COMPLETED</option>
                     </select>
                     <select name="follow_up_status" aria-label="Lead follow-up status">
-                        <option value="">Lead follow-up status</option>
+                        <option value="">LEAD STATUS</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
-                        </option>
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{
+                            label|upper }}</option>
                         {% endfor %}
                     </select>
-                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
-                    <button type="submit" class="btn">Save update</button>
+                    <textarea name="note" placeholder="ADD INTERNAL NOTE">{{ lead.admin_notes|default:'' }}</textarea>
+                    <button type="submit">SAVE UPDATE</button>
                 </form>
             </details>
         </div>
         {% endfor %}
         {% empty %}
-        <div class="lead-card">No leads marked as manually followed up for this section.</div>
+        <div class="lead-card">NO COMPLETED LEADS IN THIS SECTION</div>
         {% endfor %}
     </details>
     {% endfor %}
