@@ -297,6 +297,129 @@
         display: grid;
         gap: 8px;
     }
+    .card-menu summary i {
+    transition: transform 0.2s ease;
+}
+
+.card-menu[open] summary i {
+    transform: rotate(180deg);
+}
+/* Call button - Professional blue */
+.btn-call {
+    background: #2563eb;  /* Professional blue */
+    color: white;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.btn-call:hover {
+    background: #1d4ed8;  /* Darker blue on hover */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.btn-call:active {
+    transform: translateY(0);
+    background: #1e40af;
+}
+
+.btn-call i {
+    color: white;
+}
+
+/* WhatsApp button - Brand green */
+.btn-wa {
+    background: #25D366;  /* Official WhatsApp green */
+    color: white;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.btn-wa:hover {
+    background: #20bd5a;  /* Darker green on hover */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+}
+
+.btn-wa:active {
+    transform: translateY(0);
+    background: #1da15a;
+}
+
+.btn-wa i {
+    color: white;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .btn-call {
+        background: #3b82f6;  /* Lighter blue for dark mode */
+    }
+    
+    .btn-wa {
+        background: #25D366;  /* WhatsApp green stays the same */
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .btn-call {
+        background: #0000ff;  /* Pure blue for high contrast */
+        outline: 2px solid white;
+    }
+    
+    .btn-wa {
+        background: #008000;  /* Pure green for high contrast */
+        outline: 2px solid white;
+    }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    .btn-call,
+    .btn-wa {
+        transition: none;
+    }
+    
+    .btn-call:hover,
+    .btn-wa:hover {
+        transform: none;
+    }
+}
+
+/* Mobile optimization */
+@media (max-width: 640px) {
+    .btn-call,
+    .btn-wa {
+        padding: 0 var(--space-md);
+        font-size: var(--text-sm);
+    }
+    
+    /* Increase touch target on mobile */
+    .btn-call,
+    .btn-wa {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+    }
+}
+
+/* Focus styles for accessibility */
+.btn-call:focus-visible,
+.btn-wa:focus-visible {
+    outline: 3px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Disabled state if needed */
+.btn-call:disabled,
+.btn-wa:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    transform: none;
+    box-shadow: none;
+}
+
 </style>
 
 <div class="pl-wrap">
@@ -380,7 +503,10 @@
                     </a>
             </div>
             <details class="card-menu">
-                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
+                <summary>
+                    <i class="fas fa-chevron-down"></i>
+                    Update manual follow-up and notes
+                </summary>
                 <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
@@ -425,8 +551,14 @@
             {% endif %}
             <div class="card-actions">
                 <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
-                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
-                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
+                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-call" target="_blank" rel="noopener noreferrer"
+                    aria-label="Call {{ lead.customer_name|default:'customer' }}">
+                    <i class="fas fa-phone" aria-hidden="true"></i> Call
+                </a>
+                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-wa" target="_blank"
+                    rel="noopener noreferrer" aria-label="WhatsApp {{ lead.customer_name|default:'customer' }}">
+                    <i class="fab fa-whatsapp" aria-hidden="true"></i> WhatsApp
+                </a>
             </div>
             <details class="card-menu">
                 <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
