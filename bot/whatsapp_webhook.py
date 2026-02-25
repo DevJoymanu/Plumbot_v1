@@ -669,13 +669,23 @@ def handle_text_message(sender, text_data):
             return  # Stop here — do NOT also run normal bot flow
 
         # ── STEP 2: Service-specific pricing inquiry ─────────────────────────
-        # Only fires when NOT mid-conversation (same guard as before).
+        # Block service inquiry responses once:
+        #   (a) we are mid-conversation (collecting booking details), OR
+        #   (b) ANY pricing has already been sent (overview or specific intent), OR
+        #   (c) the specific intent was already sent to this lead.
+        any_pricing_sent = (
+            getattr(appointment, 'pricing_overview_sent', False) or
+            bool(appointment.sent_pricing_intents)
+        )
         mid_conversation = (
-            appointment.project_type is not None and
+            any_pricing_sent or
             (
-                appointment.has_plan is not None or
-                appointment.customer_area is not None or
-                appointment.property_type is not None
+                appointment.project_type is not None and
+                (
+                    appointment.has_plan is not None or
+                    appointment.customer_area is not None or
+                    appointment.property_type is not None
+                )
             )
         )
 
@@ -695,6 +705,8 @@ def handle_text_message(sender, text_data):
                     print(f"Service inquiry matched (first time): {intent}")
                     reply = plumbot.handle_service_inquiry(intent, message_body)
                     _mark_pricing_intent_sent(appointment, intent)
+        else:
+            print(f"⏭️ Skipping service inquiry check — mid-conversation or pricing already sent")
 
         # ── STEP 3: Full pricing overview ────────────────────────────────────
         # FIX 2: _is_genuine_pricing_question now also blocks if any specific

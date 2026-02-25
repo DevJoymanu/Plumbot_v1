@@ -2778,19 +2778,32 @@ class Plumbot:
         """Check service inquiries ONLY when not mid-conversation."""
         try:
             current_question = self.get_next_question_to_ask()
-
+            #
+            any_pricing_sent = (
+                getattr(self.appointment, 'pricing_overview_sent', False) or
+                bool(getattr(self.appointment, 'sent_pricing_intents', None))
+            )
             mid_conversation = (
+                any_pricing_sent or
                 self.appointment.project_type is not None
             )
 
             if not mid_conversation:
                 inquiry = self.detect_service_inquiry(incoming_message)
                 if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
-                    print(f"💡 Handling service inquiry: {inquiry['intent']}")
-                    reply = self.handle_service_inquiry(inquiry['intent'], incoming_message)
-                    self.appointment.add_conversation_message("user", incoming_message)
-                    self.appointment.add_conversation_message("assistant", reply)
-                    return reply
+                    intent = inquiry['intent']
+                    sent = list(getattr(self.appointment, 'sent_pricing_intents', None) or [])
+                    if intent in sent:
+                        print(f"⏭️ Skipping already-sent service inquiry in generate_response: {intent}")
+                    else:
+                        print(f"💡 Handling service inquiry: {intent}")
+                        reply = self.handle_service_inquiry(intent, incoming_message)
+                        sent.append(intent)
+                        self.appointment.sent_pricing_intents = sent
+                        self.appointment.save(update_fields=['sent_pricing_intents'])
+                        self.appointment.add_conversation_message("user", incoming_message)
+                        self.appointment.add_conversation_message("assistant", reply)
+                        return reply
 
             # ✅ THIS BLOCK must be at the same indent level as the if above (8 spaces)
             if (self.appointment.has_plan is True and
@@ -3907,50 +3920,53 @@ I understand this is time-sensitive!"""
             print(f"❌ DeepSeek alternative selection error: {e}")
             return None
 
+
     def book_appointment_with_selected_time(self, selected_datetime):
-        """Book appointment with specifically selected alternative time"""
+        """Book appointment with specifically selected alternative time.
+
+        NOTE: Notifications (customer confirmation + team alert) are handled
+        inside book_appointment(), which this method delegates to after setting
+        the datetime.  Do NOT call send_confirmation_message / notify_team here
+        to avoid sending duplicate messages.
+        """
         try:
             print(f"🔄 Booking appointment with selected time: {selected_datetime}")
-            
+
             is_available, conflict_info = self.check_appointment_availability(selected_datetime)
-            
+
             if is_available:
+                # Store the chosen datetime so book_appointment() picks it up
                 self.appointment.scheduled_datetime = selected_datetime
-                self.appointment.status = 'confirmed'
-                self.appointment.save()
-                
-                #
-                print(f"✅ Appointment booked successfully: {selected_datetime}")
-                
-                # ✅ Send notifications immediately at booking time
-                appointment_details = self.extract_appointment_details()
-                try:
-                    self.send_confirmation_message(appointment_details, selected_datetime)
-                except Exception as e:
-                    print(f"⚠️ Confirmation message error: {e}")
-                try:
-                    self.notify_team(appointment_details, selected_datetime)
-                except Exception as e:
-                    print(f"⚠️ Team notification error: {e}")
-                
-                display_datetime = self.format_datetime_for_display(selected_datetime)
-                return {
-                    'success': True,
-                    'datetime': display_datetime.strftime('%B %d, %Y at %I:%M %p')
-                }
+                self.appointment.save(update_fields=['scheduled_datetime'])
+
+                # Delegate to book_appointment — it handles status, notifications, calendar
+                result = self.book_appointment(message=None)
+
+                if result['success']:
+                    print(f"✅ Appointment booked via selected time: {selected_datetime}")
+                    return result
+                else:
+                    # Availability race — suggest alternatives
+                    alternatives = self.get_alternative_time_suggestions(selected_datetime)
+                    return {
+                        'success': False,
+                        'error': 'Time became unavailable',
+                        'alternatives': alternatives,
+                    }
             else:
                 print(f"❌ Selected time not available: {conflict_info}")
                 alternatives = self.get_alternative_time_suggestions(selected_datetime)
-                
                 return {
                     'success': False,
                     'error': 'Selected time not available',
-                    'alternatives': alternatives
+                    'alternatives': alternatives,
                 }
-                
+
         except Exception as e:
             print(f"❌ Error booking with selected time: {str(e)}")
             return {'success': False, 'error': str(e)}
+
+
 
     def extract_appointment_details(self):
         """Extract customer details from appointment data"""
