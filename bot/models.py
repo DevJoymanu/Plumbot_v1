@@ -181,6 +181,9 @@ class Appointment(models.Model):
     customer_rating = models.IntegerField(blank=True, null=True, help_text="Customer rating 1-5")
     completion_notes = models.TextField(blank=True, null=True, help_text="Notes after job completion")
 
+
+    pricing_overview_sent = models.BooleanField(default=False)
+
     # Plan upload fields
     plan_file = models.FileField(
         upload_to='customer_plans/', 

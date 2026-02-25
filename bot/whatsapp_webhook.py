@@ -132,7 +132,7 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
 def get_random_delay() -> int:
     """Returns random delay between 1-5 minutes in seconds"""
     minutes = random.randint(1, 5)
-    seconds = minutes * 60
+    seconds = minutes * 1
     print(f"⏱️ Random delay: {minutes} minute(s)")
     return seconds
 
@@ -169,6 +169,47 @@ def detect_objection_type(message: str) -> str:
         return 'availability'
     
     return 'other'
+
+def _is_genuine_pricing_question(message: str, appointment) -> bool:
+    """
+    Return True ONLY when the message is a fresh, standalone pricing inquiry
+    that we should respond to with the full price list.
+
+    Blocks the pricing response when:
+    - We already sent the pricing overview to this lead
+    - The message is an acknowledgment / thanks (contains 'ok', 'thank', etc.)
+    - The message has more context than just asking price (e.g. contains 'scratch',
+      'start', 'need to', 'want to') — these should go to the normal bot flow
+    - The message is very short follow-on noise ("ok", "yes", "sure")
+    """
+    # Never send twice for the same lead
+    if getattr(appointment, 'pricing_overview_sent', False):
+        return False
+
+    msg = message.lower().strip()
+
+    # Acknowledgment / thank-you messages — let bot handle
+    ack_phrases = [
+        'ok thank', 'thank u', 'thank you', 'thanks', 'ok cool', 'noted',
+        'alright', 'got it', 'ok ok', 'okay', 'understood'
+    ]
+    if any(phrase in msg for phrase in ack_phrases):
+        return False
+
+    # Messages expressing intent / next step — these belong to normal bot flow
+    intent_phrases = [
+        'start from scratch', 'need to start', 'want to start',
+        'i need', 'i want', 'let me', 'can you', 'please help',
+        'i would like', 'we would like', 'looking to', 'looking for',
+    ]
+    if any(phrase in msg for phrase in intent_phrases):
+        return False
+
+    # Very short or single-word follow-ons
+    if len(msg.split()) <= 2 and 'price' not in msg and 'cost' not in msg:
+        return False
+
+    return True
 
 
 def is_previous_work_photo_request(message: str) -> bool:
@@ -809,14 +850,20 @@ def handle_text_message(sender, text_data):
                 print(f"Service inquiry matched: {inquiry['intent']}")
                 reply = plumbot.handle_service_inquiry(inquiry['intent'], message_body)
 
-        # STEP 3: Pricing objection ONLY if no service inquiry matched
+        # STEP 3: Pricing overview — only if this genuinely looks like a NEW
+        #         pricing question and we haven't already sent the price list.
         if reply is None:
             objection_type = detect_objection_type(message_body)
             print(f"Objection type: {objection_type}")
 
-            #
-            if objection_type == 'pricing':
+            if objection_type == 'pricing' and _is_genuine_pricing_question(
+                message_body, appointment
+            ):
                 reply = plumbot.generate_pricing_overview(message_body)
+                # Mark so we never send the full list again for this lead
+                appointment.pricing_overview_sent = True
+                appointment.save(update_fields=['pricing_overview_sent'])
+
         # STEP 4: Normal Plumbot processing
         if reply is None:
             print(f"Running normal Plumbot processing")
