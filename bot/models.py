@@ -1291,24 +1291,6 @@ class ServiceArea(models.Model):
     def get_postal_codes_list(self):
         return [code.strip() for code in self.postal_codes.split(',') if code.strip()]
 
-from django.db import models
-from django.utils import timezone
-
-    
-    appointment = models.ForeignKey(
-        'Appointment',
-        on_delete=models.CASCADE,
-        related_name='conversation_messages'
-    )
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
-    content = models.TextField()
-    timestamp = models.DateTimeField(default=timezone.now)
-    
-    class Meta:
-        ordering = ['timestamp']
-    
-    def __str__(self):
-        return f"{self.get_role_display()} message at {self.timestamp}"
 
 class Job(models.Model):
     site_visit = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='jobs')
