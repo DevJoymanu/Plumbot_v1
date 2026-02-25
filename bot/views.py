@@ -2783,6 +2783,10 @@ class Plumbot:
                 getattr(self.appointment, 'pricing_overview_sent', False) or
                 bool(getattr(self.appointment, 'sent_pricing_intents', None))
             )
+            any_pricing_sent = (
+                getattr(self.appointment, 'pricing_overview_sent', False) or
+                bool(getattr(self.appointment, 'sent_pricing_intents', None))
+            )
             mid_conversation = (
                 any_pricing_sent or
                 self.appointment.project_type is not None
@@ -2794,7 +2798,7 @@ class Plumbot:
                     intent = inquiry['intent']
                     sent = list(getattr(self.appointment, 'sent_pricing_intents', None) or [])
                     if intent in sent:
-                        print(f"⏭️ Skipping already-sent service inquiry in generate_response: {intent}")
+                        print(f"⏭️ Skipping already-sent service inquiry: {intent}")
                     else:
                         print(f"💡 Handling service inquiry: {intent}")
                         reply = self.handle_service_inquiry(intent, incoming_message)
@@ -2938,6 +2942,31 @@ class Plumbot:
         except Exception as e:
             print(f"❌ API Error: {str(e)}")
             return "I'm having some trouble connecting to our system. Could you try again in a moment?"
+
+    def _plan_question_already_pending(self) -> bool:
+        """
+        Return True if the bot's most recent message already asked about
+        plan vs site visit. Prevents asking the same question twice in a row.
+        """
+        try:
+            history = self.appointment.conversation_history or []
+            for msg in reversed(history):
+                if msg.get('role') == 'assistant':
+                    content = msg.get('content', '').lower()
+                    plan_phrases = [
+                        'do you have a plan',
+                        'have a plan',
+                        'site visit',
+                        'picture or pdf',
+                        'plan already',
+                        'plan or visit',
+                        'photo/plan',
+                        'photo or plan',
+                    ]
+                    return any(phrase in content for phrase in plan_phrases)
+            return False
+        except Exception:
+            return False
 
     def handle_plan_later_response(self, message):
         """
@@ -3922,12 +3951,10 @@ I understand this is time-sensitive!"""
 
 
     def book_appointment_with_selected_time(self, selected_datetime):
-        """Book appointment with specifically selected alternative time.
+        """Book appointment with a customer-selected alternative time.
 
-        NOTE: Notifications (customer confirmation + team alert) are handled
-        inside book_appointment(), which this method delegates to after setting
-        the datetime.  Do NOT call send_confirmation_message / notify_team here
-        to avoid sending duplicate messages.
+        Delegates entirely to book_appointment() which handles status update,
+        confirmation message, team alert, and calendar — no duplicate sends.
         """
         try:
             print(f"🔄 Booking appointment with selected time: {selected_datetime}")
@@ -3935,37 +3962,27 @@ I understand this is time-sensitive!"""
             is_available, conflict_info = self.check_appointment_availability(selected_datetime)
 
             if is_available:
-                # Store the chosen datetime so book_appointment() picks it up
                 self.appointment.scheduled_datetime = selected_datetime
                 self.appointment.save(update_fields=['scheduled_datetime'])
 
-                # Delegate to book_appointment — it handles status, notifications, calendar
+                # book_appointment() handles everything from here
                 result = self.book_appointment(message=None)
 
                 if result['success']:
                     print(f"✅ Appointment booked via selected time: {selected_datetime}")
                     return result
-                else:
-                    # Availability race — suggest alternatives
-                    alternatives = self.get_alternative_time_suggestions(selected_datetime)
-                    return {
-                        'success': False,
-                        'error': 'Time became unavailable',
-                        'alternatives': alternatives,
-                    }
+
+                alternatives = self.get_alternative_time_suggestions(selected_datetime)
+                return {'success': False, 'error': 'Time became unavailable', 'alternatives': alternatives}
+
             else:
                 print(f"❌ Selected time not available: {conflict_info}")
                 alternatives = self.get_alternative_time_suggestions(selected_datetime)
-                return {
-                    'success': False,
-                    'error': 'Selected time not available',
-                    'alternatives': alternatives,
-                }
+                return {'success': False, 'error': 'Selected time not available', 'alternatives': alternatives}
 
         except Exception as e:
             print(f"❌ Error booking with selected time: {str(e)}")
             return {'success': False, 'error': str(e)}
-
 
 
     def extract_appointment_details(self):
@@ -4743,8 +4760,9 @@ I understand this is time-sensitive!"""
                 acknowledgments.append(f"service: {service_display}")
             
             #
-            if next_question == "plan_or_visit" and retry_count > 0:
-                # Customer's previous response was unclear - use AI to rephrase
+            if next_question == "plan_or_visit" and self._plan_question_already_pending():
+                # Bot already asked this — customer's reply was ambiguous.
+                # Rephrase rather than asking fresh to avoid sounding like a broken record.
                 clarifying_question = self.generate_clarifying_question_for_plan_status(retry_count)
                 return clarifying_question
 
