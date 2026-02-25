@@ -592,6 +592,9 @@
             --muted: #9ca3af;
         }
 
+        body {
+            color: var(--text);
+        }
 
         .btn-call {
             background: #3b82f6;
@@ -679,21 +682,21 @@
         <form method="get" class="filter-row">
             <select name="response_age" aria-label="Filter by response age">
                 <option value="">All response ages</option>
-                <option value="1w" {% if selected_response_age=='1w' %}selected{% endif %}>No response for 1 week+
+                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+
                 </option>
-                <option value="2w" {% if selected_response_age=='2w' %}selected{% endif %}>No response for 2 weeks+
+                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+
                 </option>
-                <option value="3w" {% if selected_response_age=='3w' %}selected{% endif %}>No response for 3 weeks+
+                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+
                 </option>
-                <option value="1m" {% if selected_response_age=='1m' %}selected{% endif %}>No response for 1 month+
+                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+
                 </option>
-                <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response
                     within 1 week</option>
-                <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>Last response
+                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response
                     within 2 weeks</option>
-                <option value="3w_minus" {% if selected_response_age=='3w_minus' %}selected{% endif %}>Last response
+                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response
                     within 3 weeks</option>
-                <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response
                     within 4 weeks</option>
             </select>
             <div class="filter-actions">
@@ -787,7 +790,7 @@
                     <select name="follow_up_status" aria-label="Lead follow-up status">
                         <option value="">Lead follow-up status</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>{{ label }}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
                         </option>
                         {% endfor %}
                     </select>
@@ -849,7 +852,7 @@
                     <select name="follow_up_status" aria-label="Lead follow-up status">
                         <option value="">Lead follow-up status</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>{{ label }}
+                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
                         </option>
                         {% endfor %}
                     </select>
