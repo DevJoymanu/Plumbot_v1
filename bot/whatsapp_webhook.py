@@ -546,11 +546,9 @@ def process_message_change(value):
             except Exception as e:
                 print(f"⚠️ Could not mark as read: {str(e)}")
 
-            # FIXED: Proper message type routing
             if message_type == 'text':
                 handle_text_message(sender, message.get('text', {}))
             elif message_type == 'image':
-                # This should go to media handler, not unsupported
                 handle_media_message(sender, message.get('image', {}), 'image')
             elif message_type == 'document':
                 handle_media_message(sender, message.get('document', {}), 'document')
@@ -558,18 +556,21 @@ def process_message_change(value):
                 handle_audio_message(sender, message.get('audio', {}))
             elif message_type == 'video':
                 handle_media_message(sender, message.get('video', {}), 'video')
-            elif message_type == 'voice':
-                handle_audio_message(sender, message.get('voice', {}))
+            elif message_type == 'sticker':
+                handle_unsupported_media(sender, 'sticker')
             elif message_type == 'location':
                 handle_location_message(sender, message.get('location', {}))
-            elif message_type in ['sticker', 'contacts']:
-                handle_unsupported_media(sender, message_type)
+            elif message_type == 'contacts':
+                handle_unsupported_media(sender, 'contacts')
+            elif message_type == 'voice':
+                handle_audio_message(sender, message.get('voice', {}))
             else:
                 print(f"⚠️ Unknown message type: {message_type}")
                 handle_unsupported_media(sender, message_type)
 
     except Exception as e:
         print(f"❌ Error processing message: {str(e)}")
+
 
 def handle_location_message(sender, location_data):
     try:
