@@ -2,1151 +2,1349 @@
 
 {% block content %}
 <style>
-    /* -------------------------------------
-   DESIGN TOKENS
-------------------------------------- */
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap');
+
     :root {
-        /* Colors */
         --surface: #ffffff;
-        --bg: #f8fafc;
-        --border: #e2e8f0;
-        --text: #0f172a;
-        --text-light: #64748b;
-        --primary: #4f46e5;
-        --primary-dark: #4338ca;
-        --primary-light: #eef2ff;
-
-        /* Temperature colors */
-        --vh: #dc2626;
-        --vh-bg: #fee2e2;
-        --hot: #f59e0b;
-        --hot-bg: #fef3c7;
-        --warm: #10b981;
-        --warm-bg: #d1fae5;
-        --luke: #0ea5e9;
-        --luke-bg: #dbeafe;
-        --cold: #64748b;
-        --cold-bg: #f1f5f9;
-
-        /* Spacing */
-        --space-xs: 4px;
-        --space-sm: 8px;
-        --space-md: 16px;
-        --space-lg: 24px;
-        --space-xl: 32px;
-
-        /* Typography */
-        --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
-        --font-display: 'Syne', var(--font-sans);
-        --text-xs: 0.75rem;
-        --text-sm: 0.875rem;
-        --text-base: 1rem;
-        --text-lg: 1.125rem;
-
-        /* UI */
-        --radius-sm: 8px;
-        --radius-md: 12px;
-        --radius-lg: 16px;
-        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
-        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-        --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+        --bg: #f4f4f7;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --radius: 16px;
+        --shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+        --touch: 52px;
         --safe-bottom: env(safe-area-inset-bottom, 0px);
         --safe-top: env(safe-area-inset-top, 0px);
-        --touch-target: 44px;
     }
 
-    /* -------------------------------------
-   BASE & RESET
-------------------------------------- */
     *,
     *::before,
     *::after {
         box-sizing: border-box;
-        margin: 0;
-        padding: 0;
+        -webkit-tap-highlight-color: transparent;
     }
 
     html {
-        -webkit-tap-highlight-color: transparent;
         scroll-behavior: smooth;
     }
 
     body {
-        font-family: var(--font-sans);
-        background: var(--bg);
-        color: var(--text);
-        line-height: 1.5;
+        font-family: 'DM Sans', sans-serif;
         -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        overflow-x: hidden;
         min-height: 100dvh;
     }
 
-    /* -------------------------------------
-   LAYOUT
-------------------------------------- */
-    .app {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 0 var(--space-md);
-    }
-
-    /* -------------------------------------
-   COMPONENTS - Header
-------------------------------------- */
-    .page-header {
+    /* ── Sticky Page Header ── */
+    .pl-header {
         position: sticky;
         top: 0;
-        z-index: 40;
-        background: rgba(248, 250, 252, 0.9);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        padding: calc(var(--space-sm) + var(--safe-top)) var(--space-md) var(--space-sm);
-        margin-bottom: var(--space-sm);
+        z-index: 50;
+        background: rgba(244, 244, 247, 0.92);
+        backdrop-filter: saturate(180%) blur(16px);
+        -webkit-backdrop-filter: saturate(180%) blur(16px);
+        padding: calc(12px + var(--safe-top)) 16px 12px;
+        border-bottom: 1px solid rgba(229, 231, 235, 0.7);
         display: flex;
         align-items: center;
         justify-content: space-between;
-        border-bottom: 1px solid var(--border);
+        gap: 10px;
+        margin-bottom: 0;
     }
 
-    .page-header h1 {
-        font-family: var(--font-display);
-        font-size: clamp(1.25rem, 5vw, 1.75rem);
+    .pl-header-left h1 {
+        font-family: 'Syne', sans-serif;
+        font-size: clamp(1.15rem, 5vw, 1.6rem);
         font-weight: 800;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.03em;
         display: flex;
         align-items: center;
-        gap: var(--space-sm);
-        color: var(--text);
+        gap: 8px;
+        margin: 0 0 2px;
+        line-height: 1.1;
     }
 
-    .page-header h1 i {
-        color: var(--primary);
-        font-size: 1.5em;
+    .pl-header-left h1 i {
+        color: #f59e0b;
     }
 
-    .page-header p {
-        color: var(--text-light);
-        font-size: var(--text-sm);
+    .pl-header-left p {
+        color: var(--muted);
+        margin: 0;
+        font-size: 0.78rem;
+        line-height: 1.3;
         display: none;
     }
 
-    /* -------------------------------------
-   COMPONENTS - Buttons
-------------------------------------- */
-    .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: var(--space-sm);
-        height: var(--touch-target);
-        padding: 0 var(--space-lg);
-        border-radius: var(--radius-md);
-        font-weight: 600;
-        font-size: var(--text-sm);
-        border: none;
-        cursor: pointer;
-        transition: all 0.15s ease;
-        text-decoration: none;
-        white-space: nowrap;
-    }
-
-    .btn:active {
-        transform: scale(0.97);
-    }
-
-    .btn-primary {
-        background: var(--primary);
-        color: white;
-    }
-
-    .btn-primary:hover {
-        background: var(--primary-dark);
-    }
-
-    .btn-secondary {
-        background: var(--surface);
-        color: var(--text);
-        border: 1px solid var(--border);
-    }
-
-    .btn-secondary:hover {
-        background: var(--bg);
-        border-color: var(--text-light);
-    }
-
-    .btn-icon {
-        width: var(--touch-target);
-        padding: 0;
-    }
-
-    .filter-toggle {
-        background: var(--primary);
-        color: white;
-        height: 40px;
-        padding: 0 var(--space-md);
-        border-radius: 20px;
-        font-size: var(--text-sm);
-        font-weight: 600;
-        border: none;
+    /* Filter toggle (mobile only) */
+    .btn-filter-toggle {
         display: flex;
         align-items: center;
-        gap: var(--space-sm);
+        gap: 6px;
+        height: 40px;
+        padding: 0 14px;
+        border-radius: 20px;
+        background: #4f46e5;
+        color: #fff;
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn-filter-toggle:active {
+        background: #4338ca;
+        transform: scale(0.96);
     }
 
     .filter-badge {
         background: #fbbf24;
         color: #78350f;
         border-radius: 10px;
-        font-size: var(--text-xs);
+        font-size: 0.7rem;
         font-weight: 700;
-        padding: 2px 6px;
-    }
-
-    /* -------------------------------------
-   COMPONENTS - Filter Card (Desktop)
-------------------------------------- */
-    .filter-card {
-        background: var(--surface);
-        border-radius: var(--radius-lg);
-        padding: var(--space-lg);
-        margin: var(--space-md) 0;
-        box-shadow: var(--shadow-sm);
-        border: 1px solid var(--border);
-    }
-
-    .filter-card__label {
-        font-family: var(--font-display);
-        font-size: var(--text-xs);
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--text-light);
-        margin-bottom: var(--space-sm);
-        display: flex;
-        align-items: center;
-        gap: var(--space-xs);
-    }
-
-    .filter-row {
-        display: flex;
-        gap: var(--space-sm);
-        align-items: center;
-    }
-
-    /* -------------------------------------
-   COMPONENTS - Form Elements
-------------------------------------- */
-    .form-select {
-        flex: 1;
-        height: var(--touch-target);
-        padding: 0 var(--space-lg) 0 var(--space-md);
-        border-radius: var(--radius-md);
-        border: 1px solid var(--border);
-        background: var(--surface);
-        font-family: var(--font-sans);
-        font-size: 16px;
-        /* Prevents iOS zoom */
-        color: var(--text);
-        appearance: none;
-        -webkit-appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right var(--space-sm) center;
-        cursor: pointer;
-    }
-
-    .form-select:focus {
-        outline: 2px solid var(--primary);
-        outline-offset: 2px;
-    }
-
-    /* -------------------------------------
-   COMPONENTS - Summary Chips
-------------------------------------- */
-    .chip-list {
-        display: flex;
-        gap: var(--space-sm);
-        padding: var(--space-sm) 0 var(--space-md);
-        overflow-x: auto;
-        scrollbar-width: none;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .chip-list::-webkit-scrollbar {
+        padding: 1px 6px;
         display: none;
     }
 
-    .chip {
+    .btn-filter-toggle.has-filter .filter-badge {
+        display: inline-block;
+    }
+
+
+    /* ── Phone action buttons ── */
+    .phone-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .phone-link {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: inherit;
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 500;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .phone-link span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .phone-btns {
+        display: flex;
+        gap: 5px;
+        flex-shrink: 0;
+        position: relative;
+        z-index: 3;
+    }
+
+    .call-btn,
+    .wa-btn {
         display: inline-flex;
         align-items: center;
-        gap: var(--space-xs);
-        padding: var(--space-sm) var(--space-md);
-        border-radius: 20px;
-        font-size: var(--text-sm);
-        font-weight: 600;
-        white-space: nowrap;
-        border: 1px solid transparent;
-        cursor: pointer;
-        transition: all 0.15s ease;
-    }
-
-    .chip:focus-visible {
-        outline: 2px solid var(--primary);
-        outline-offset: 2px;
-    }
-
-    .chip:active {
-        transform: scale(0.95);
-    }
-
-    .chip--total {
-        background: var(--surface);
-        color: var(--text);
-        border-color: var(--border);
-    }
-
-    .chip--vh {
-        background: var(--vh-bg);
-        color: var(--vh);
-    }
-
-    .chip--hot {
-        background: var(--hot-bg);
-        color: var(--hot);
-    }
-
-    .chip--warm {
-        background: var(--warm-bg);
-        color: var(--warm);
-    }
-
-    .chip--luke {
-        background: var(--luke-bg);
-        color: var(--luke);
-    }
-
-    .chip--cold {
-        background: var(--cold-bg);
-        color: var(--text-light);
-    }
-
-    /* -------------------------------------
-   COMPONENTS - Filter Banner
-------------------------------------- */
-    .filter-banner {
-        background: var(--primary-light);
-        border-radius: var(--radius-md);
-        padding: var(--space-sm) var(--space-md);
-        margin: var(--space-sm) 0;
-        display: flex;
-        align-items: center;
-        gap: var(--space-sm);
-        color: var(--primary-dark);
-        font-size: var(--text-sm);
-        border: 1px solid var(--primary);
-    }
-
-    .filter-banner__clear {
-        margin-left: auto;
-        color: var(--primary-dark);
-        font-weight: 600;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 8px;
+        font-size: 0.72rem;
+        font-weight: 700;
         text-decoration: none;
-        padding: var(--space-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        transition: transform 0.1s, opacity 0.1s;
+        flex-shrink: 0;
+        -webkit-tap-highlight-color: transparent;
     }
 
-    /* -------------------------------------
-   COMPONENTS - Lead Sections
-------------------------------------- */
-    .section {
+    .call-btn:active,
+    .wa-btn:active {
+        transform: scale(0.94);
+        opacity: 0.85;
+    }
+
+    .call-btn {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .wa-btn {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    /* ── Bottom Sheet (mobile filter) ── */
+    .filter-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 100;
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        opacity: 0;
+        transition: opacity 0.25s;
+    }
+
+    .filter-overlay.open {
+        display: block;
+    }
+
+    .filter-overlay.visible {
+        opacity: 1;
+    }
+
+    .filter-sheet {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 101;
         background: var(--surface);
-        border-radius: var(--radius-lg);
-        margin-bottom: var(--space-md);
-        border: 1px solid var(--border);
-        overflow: hidden;
+        border-radius: 24px 24px 0 0;
+        padding: 0 16px calc(20px + var(--safe-bottom));
+        box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.18);
+        transform: translateY(100%);
+        transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+        max-height: 85dvh;
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
 
-    .section__header {
+    .filter-sheet.open {
+        transform: translateY(0);
+    }
+
+    .sheet-handle {
+        width: 40px;
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        margin: 12px auto 20px;
+    }
+
+    .sheet-title {
+        font-family: 'Syne', sans-serif;
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin: 0 0 16px;
         display: flex;
         align-items: center;
-        gap: var(--space-sm);
-        padding: 0 var(--space-md);
-        min-height: 60px;
-        cursor: pointer;
-        border-bottom: 1px solid transparent;
-        transition: background 0.15s;
+        gap: 8px;
     }
 
-    .section__header:hover {
-        background: var(--bg);
+    .sheet-title i {
+        color: #4f46e5;
     }
 
-    .section__header:focus-visible {
-        outline: 2px solid var(--primary);
-        outline-offset: -2px;
+    .filter-select-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--muted);
+        margin-bottom: 6px;
+        display: block;
     }
 
-    .section:not(.section--collapsed) .section__header {
-        border-bottom-color: var(--border);
+    .filter-select-wrapper {
+        position: relative;
+        margin-bottom: 14px;
     }
 
-    .section__icon {
-        width: 36px;
-        height: 36px;
-        border-radius: var(--radius-sm);
+    .filter-select-wrapper select,
+    .form-control {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 42px 0 16px !important;
+        height: var(--touch) !important;
+        border-radius: 12px !important;
+        border: 1.5px solid var(--border) !important;
+        background-color: var(--bg) !important;
+        font-family: 'DM Sans', sans-serif !important;
+        font-size: 16px !important;
+        /* prevents iOS zoom */
+        color: var(--text) !important;
+        outline: none !important;
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+        background-repeat: no-repeat !important;
+        background-position: right 16px center !important;
+        transition: border-color 0.15s;
+    }
+
+    .filter-select-wrapper select:focus,
+    .form-control:focus {
+        border-color: #6366f1 !important;
+    }
+
+    .sheet-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 4px;
+    }
+
+    .btn-apply-sheet,
+    .btn-reset-sheet {
         display: flex;
         align-items: center;
         justify-content: center;
+        gap: 7px;
+        height: var(--touch);
+        border-radius: 12px;
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.95rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: transform 0.1s, background 0.15s;
+        text-decoration: none;
+    }
+
+    .btn-apply-sheet:active,
+    .btn-reset-sheet:active {
+        transform: scale(0.97);
+    }
+
+    .btn-apply-sheet {
+        background: #4f46e5;
+        color: #fff;
+    }
+
+    .btn-apply-sheet:active {
+        background: #4338ca;
+    }
+
+    .btn-reset-sheet {
+        background: var(--bg);
+        color: var(--muted);
+        border: 1.5px solid var(--border);
+    }
+
+    .btn-reset-sheet:active {
+        color: var(--text);
+        border-color: #9ca3af;
+    }
+
+    /* ── Desktop filter card ── */
+    .filter-card-desktop {
+        display: none;
+        background: var(--surface);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 18px 20px;
+        margin: 14px 12px 0;
+    }
+
+    .filter-card-desktop .card-label {
+        font-family: 'Syne', sans-serif;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 0 0 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .filter-desktop-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .filter-desktop-row .form-control {
+        flex: 1;
+        height: 44px !important;
+    }
+
+    .filter-desktop-row .btn {
         flex-shrink: 0;
     }
 
-    .section--vh .section__icon {
-        background: var(--vh-bg);
-        color: var(--vh);
+    /* ── Summary chips scroll row ── */
+    .summary-scroll {
+        display: flex;
+        gap: 8px;
+        padding: 14px 12px 2px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
     }
 
-    .section--hot .section__icon {
-        background: var(--hot-bg);
-        color: var(--hot);
+    .summary-scroll::-webkit-scrollbar {
+        display: none;
     }
 
-    .section--warm .section__icon {
-        background: var(--warm-bg);
-        color: var(--warm);
+    .summary-chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        white-space: nowrap;
+        flex-shrink: 0;
+        scroll-snap-align: start;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: transform 0.15s;
     }
 
-    .section--luke .section__icon {
-        background: var(--luke-bg);
-        color: var(--luke);
+    .summary-chip:active {
+        transform: scale(0.95);
     }
 
-    .section--cold .section__icon {
-        background: var(--cold-bg);
-        color: var(--text-light);
+    .chip-total {
+        background: #f3f4f6;
+        color: #374151;
+        border-color: #e5e7eb;
     }
 
-    .section__title {
-        font-family: var(--font-display);
-        font-size: var(--text-base);
+    .chip-vh {
+        background: #fee2e2;
+        color: #991b1b;
+        border-color: #fca5a5;
+    }
+
+    .chip-hot {
+        background: #fef3c7;
+        color: #92400e;
+        border-color: #fcd34d;
+    }
+
+    .chip-warm {
+        background: #d1fae5;
+        color: #065f46;
+        border-color: #6ee7b7;
+    }
+
+    .chip-luke {
+        background: #dbeafe;
+        color: #1e3a8a;
+        border-color: #93c5fd;
+    }
+
+    .chip-cold {
+        background: #f3f4f6;
+        color: #374151;
+        border-color: #d1d5db;
+    }
+
+    /* Active filter banner */
+    .filter-active-bar {
+        margin: 8px 12px 0;
+        padding: 8px 12px;
+        background: #eef2ff;
+        border-radius: 10px;
+        border: 1px solid #c7d2fe;
+        font-size: 0.82rem;
+        color: #4338ca;
+        display: none;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .filter-active-bar.visible {
+        display: flex;
+    }
+
+    .filter-active-bar a {
+        margin-left: auto;
+        color: #6366f1;
+        font-weight: 600;
+        text-decoration: none;
+        padding: 2px 0;
+    }
+
+    /* ── Section wrappers ── */
+    .sections-wrapper {
+        padding: 14px 0 0;
+    }
+
+    .pl-section {
+        background: var(--surface);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        margin: 0 12px 12px;
+        overflow: hidden;
+    }
+
+    .pl-section.sec-vh {
+        border-left: 4px solid #dc2626;
+    }
+
+    .pl-section.sec-hot {
+        border-left: 4px solid #f59e0b;
+    }
+
+    .pl-section.sec-warm {
+        border-left: 4px solid #10b981;
+    }
+
+    .pl-section.sec-luke {
+        border-left: 4px solid #0ea5e9;
+    }
+
+    .pl-section.sec-cold {
+        border-left: 4px solid #6b7280;
+    }
+
+    .pl-section-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 16px;
+        min-height: 56px;
+        cursor: pointer;
+        user-select: none;
+        border-bottom: 1px solid transparent;
+        transition: background 0.15s, border-color 0.15s;
+    }
+
+    .pl-section-header:active {
+        background: #f9fafb;
+    }
+
+    .pl-section:not(.collapsed) .pl-section-header {
+        border-bottom-color: var(--border);
+    }
+
+    .sec-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+
+    .pl-section.sec-vh .sec-icon {
+        background: #fee2e2;
+        color: #dc2626;
+    }
+
+    .pl-section.sec-hot .sec-icon {
+        background: #fef3c7;
+        color: #f59e0b;
+    }
+
+    .pl-section.sec-warm .sec-icon {
+        background: #d1fae5;
+        color: #10b981;
+    }
+
+    .pl-section.sec-luke .sec-icon {
+        background: #dbeafe;
+        color: #0ea5e9;
+    }
+
+    .pl-section.sec-cold .sec-icon {
+        background: #f3f4f6;
+        color: #6b7280;
+    }
+
+    .pl-section-header h2 {
+        font-family: 'Syne', sans-serif;
+        font-size: 0.95rem;
         font-weight: 700;
+        letter-spacing: -0.01em;
+        margin: 0;
         flex: 1;
     }
 
-    .section--vh .section__title {
-        color: var(--vh);
+    .pl-section.sec-vh .pl-section-header h2 {
+        color: #7f1d1d;
     }
 
-    .section--hot .section__title {
-        color: var(--hot);
+    .pl-section.sec-hot .pl-section-header h2 {
+        color: #78350f;
     }
 
-    .section--warm .section__title {
-        color: var(--warm);
+    .pl-section.sec-warm .pl-section-header h2 {
+        color: #064e3b;
     }
 
-    .section--luke .section__title {
-        color: var(--luke);
+    .pl-section.sec-luke .pl-section-header h2 {
+        color: #1e3a8a;
     }
 
-    .section--cold .section__title {
-        color: var(--text-light);
+    .pl-section.sec-cold .pl-section-header h2 {
+        color: #374151;
     }
 
-    .section__count {
-        padding: 2px 10px;
+    .pl-count-pill {
+        padding: 3px 10px;
         border-radius: 20px;
-        font-size: var(--text-xs);
+        font-size: 0.78rem;
         font-weight: 700;
-        background: var(--bg);
+        flex-shrink: 0;
     }
 
-    .section__chevron {
+    .pl-section.sec-vh .pl-count-pill {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .pl-section.sec-hot .pl-count-pill {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .pl-section.sec-warm .pl-count-pill {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .pl-section.sec-luke .pl-count-pill {
+        background: #dbeafe;
+        color: #1e3a8a;
+    }
+
+    .pl-section.sec-cold .pl-count-pill {
+        background: #e5e7eb;
+        color: #374151;
+    }
+
+    .pl-chevron {
         width: 28px;
         height: 28px;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--text-light);
-        transition: transform 0.2s;
+        color: var(--muted);
+        font-size: 0.7rem;
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        flex-shrink: 0;
         background: var(--bg);
-        border-radius: var(--radius-sm);
+        border-radius: 8px;
     }
 
-    .section--collapsed .section__chevron {
+    .pl-section.collapsed .pl-chevron {
         transform: rotate(-90deg);
     }
 
-    .section__body {
+    .pl-section-body {
         overflow: hidden;
-        transition: max-height 0.25s ease;
+        transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    .section--collapsed .section__body {
+    .pl-section.collapsed .pl-section-body {
         max-height: 0 !important;
     }
 
-    /* -------------------------------------
-   COMPONENTS - Date Headers
-------------------------------------- */
-    .date-header {
-        font-family: var(--font-display);
-        font-size: var(--text-xs);
+    /* ── Date label inside sections ── */
+    .pl-date-label {
+        font-family: 'Syne', sans-serif;
+        font-size: 0.67rem;
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--text-light);
-        padding: var(--space-sm) var(--space-md);
-        background: var(--bg);
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        padding: 10px 16px 4px;
+        background: #fafafa;
         border-bottom: 1px solid var(--border);
         position: sticky;
         top: 0;
         z-index: 5;
     }
 
-    /* -------------------------------------
-   COMPONENTS - Lead Card
-------------------------------------- */
-    .lead-card {
+    /* ── Lead rows — override .appointment-item ── */
+    .appointment-item {
+        padding: 14px 16px !important;
+        border-bottom: 1px solid var(--border) !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        margin: 0 !important;
         position: relative;
-        padding: var(--space-md);
-        border-bottom: 1px solid var(--border);
+        cursor: pointer;
         transition: background 0.15s;
     }
 
-    .lead-card:last-child {
-        border-bottom: none;
+    .appointment-item:last-child {
+        border-bottom: none !important;
     }
 
-    .lead-card:hover {
-        background: var(--bg);
+    .appointment-item:active {
+        background: #f9fafb !important;
     }
 
-    .lead-card__link {
+    /* Invisible full-row tap target */
+    .row-tap-target {
         position: absolute;
         inset: 0;
         z-index: 1;
     }
 
-    .lead-card__header {
+    .appointment-header {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        gap: var(--space-sm);
-        margin-bottom: var(--space-sm);
+        gap: 8px;
+        margin-bottom: 10px !important;
     }
 
-    .lead-card__name {
-        font-family: var(--font-display);
-        font-weight: 700;
-        font-size: var(--text-base);
-        color: var(--text);
-        line-height: 1.3;
-    }
-
-    .lead-card__score {
-        padding: var(--space-xs) var(--space-sm);
-        border-radius: 20px;
-        font-size: var(--text-xs);
-        font-weight: 700;
-        background: var(--bg);
-        color: var(--text);
-        z-index: 2;
-    }
-
-    /* Temperature-specific score styling */
-    .section--vh .lead-card__score {
-        background: var(--vh-bg);
-        color: var(--vh);
-    }
-
-    .section--hot .lead-card__score {
-        background: var(--hot-bg);
-        color: var(--hot);
-    }
-
-    .section--warm .lead-card__score {
-        background: var(--warm-bg);
-        color: var(--warm);
-    }
-
-    .section--luke .lead-card__score {
-        background: var(--luke-bg);
-        color: var(--luke);
-    }
-
-    .section--cold .lead-card__score {
-        background: var(--cold-bg);
-        color: var(--text-light);
-    }
-
-    .lead-card__details {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: var(--space-xs) var(--space-sm);
-        margin-bottom: var(--space-sm);
-    }
-
-    .lead-card__detail {
-        display: flex;
-        align-items: center;
-        gap: var(--space-xs);
-        font-size: var(--text-sm);
-        color: var(--text-light);
-        min-width: 0;
-    }
-
-    .lead-card__detail i {
-        width: 16px;
-        font-size: var(--text-xs);
-        opacity: 0.7;
-    }
-
-    .lead-card__detail--full {
-        grid-column: 1 / -1;
-    }
-
-    .lead-card__phone-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--space-sm);
-        width: 100%;
-    }
-
-    .lead-card__phone-link {
-        display: flex;
-        align-items: center;
-        gap: var(--space-xs);
-        color: var(--text);
-        text-decoration: none;
-        font-weight: 500;
-        min-width: 0;
+    .appointment-name {
+        font-family: 'Syne', sans-serif !important;
+        font-weight: 700 !important;
+        font-size: 1rem !important;
+        letter-spacing: -0.01em !important;
+        line-height: 1.25 !important;
         flex: 1;
     }
 
-    .lead-card__phone-link span {
+    .appointment-status {
+        flex-shrink: 0 !important;
+        padding: 4px 10px !important;
+        border-radius: 20px !important;
+        font-size: 0.8rem !important;
+        font-weight: 700 !important;
+        white-space: nowrap !important;
+        align-self: flex-start !important;
+    }
+
+    /* Detail items — 2-col grid on mobile */
+    .appointment-details {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 6px 10px !important;
+        margin-bottom: 12px !important;
+    }
+
+    .detail-item {
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        font-size: 0.82rem !important;
+        color: var(--muted) !important;
         overflow: hidden;
-        text-overflow: ellipsis;
+        min-width: 0;
         white-space: nowrap;
+        text-overflow: ellipsis;
     }
 
-    .lead-card__phone-actions {
-        display: flex;
-        gap: var(--space-xs);
-        z-index: 2;
-    }
-
-    .phone-action {
-        display: inline-flex;
-        align-items: center;
-        height: 32px;
-        padding: 0 var(--space-sm);
-        border-radius: var(--radius-sm);
-        font-size: var(--text-xs);
-        font-weight: 700;
-        text-decoration: none;
-        text-transform: uppercase;
-        letter-spacing: 0.02em;
-        transition: all 0.15s;
-    }
-
-    .phone-action:active {
-        transform: scale(0.94);
-    }
-
-    .phone-action--call {
-        background: #dcfce7;
-        color: #166534;
-    }
-
-    .phone-action--wa {
-        background: #d1fae5;
-        color: #065f46;
-    }
-
-    .lead-card__actions {
-        position: relative;
-        z-index: 2;
-        margin-top: var(--space-sm);
-    }
-
-    .lead-card__open-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: var(--space-sm);
-        width: 100%;
-        height: var(--touch-target);
-        background: var(--text);
-        color: white;
-        border-radius: var(--radius-md);
-        font-weight: 600;
-        text-decoration: none;
-        transition: all 0.15s;
-    }
-
-    .lead-card__open-btn:active {
-        transform: scale(0.98);
-        background: #1e293b;
-    }
-
-    /* -------------------------------------
-   COMPONENTS - Empty State
-------------------------------------- */
-    .empty-state {
-        padding: var(--space-xl) var(--space-md);
+    .detail-item i {
+        width: 14px;
         text-align: center;
-        color: var(--text-light);
-        font-size: var(--text-sm);
+        font-size: 0.72rem;
+        flex-shrink: 0;
+        opacity: 0.7;
     }
 
-    /* -------------------------------------
-   COMPONENTS - Mobile Filter Sheet
-------------------------------------- */
-    .sheet-overlay {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.4);
-        z-index: 99;
-        backdrop-filter: blur(4px);
-        opacity: 0;
-        transition: opacity 0.2s;
+    /* Phone row — full width, tap-to-call */
+    .detail-item.detail-phone {
+        grid-column: 1 / -1 !important;
+        font-size: 0.9rem !important;
+        font-weight: 500 !important;
+        color: var(--text) !important;
     }
 
-    .sheet-overlay--open {
-        display: block;
-    }
-
-    .sheet-overlay--visible {
+    .detail-item.detail-phone i {
         opacity: 1;
     }
 
-    .sheet {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 100;
-        background: var(--surface);
-        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-        padding: var(--space-sm) var(--space-md) calc(var(--space-md) + var(--safe-bottom));
-        transform: translateY(100%);
-        transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.1, 1);
-        max-height: 85dvh;
-        overflow-y: auto;
-    }
-
-    .sheet--open {
-        transform: translateY(0);
-    }
-
-    .sheet__handle {
-        width: 40px;
-        height: 4px;
-        background: var(--border);
-        border-radius: 2px;
-        margin: 0 auto var(--space-md);
-    }
-
-    .sheet__title {
-        font-family: var(--font-display);
-        font-size: var(--text-lg);
-        font-weight: 700;
-        margin-bottom: var(--space-md);
+    .detail-item.detail-phone a {
+        color: inherit;
+        text-decoration: none;
         display: flex;
         align-items: center;
-        gap: var(--space-sm);
+        gap: 6px;
+        min-width: 0;
     }
 
-    .sheet__title i {
-        color: var(--primary);
-    }
-
-    .sheet__label {
-        font-size: var(--text-xs);
-        font-weight: 600;
+    .call-badge {
+        background: #dcfce7;
+        color: #166534;
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 8px;
+        flex-shrink: 0;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--text-light);
-        margin-bottom: var(--space-xs);
-        display: block;
+        letter-spacing: 0.04em;
     }
 
-    .sheet__actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: var(--space-sm);
-        margin-top: var(--space-lg);
+    /* Actions — full-width button, above tap overlay */
+    .actions {
+        position: relative;
+        z-index: 2;
+        margin-top: 0 !important;
+        display: flex !important;
     }
 
-    /* -------------------------------------
-   COMPONENTS - FAB
-------------------------------------- */
-    .fab {
+    .actions .btn,
+    .actions .btn-sm {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 6px !important;
+        width: 100% !important;
+        height: 44px !important;
+        border-radius: 10px !important;
+        background: #111827 !important;
+        color: #fff !important;
+        font-family: 'DM Sans', sans-serif !important;
+        font-size: 0.9rem !important;
+        font-weight: 600 !important;
+        text-decoration: none !important;
+        border: none !important;
+        transition: background 0.15s, transform 0.1s !important;
+    }
+
+    .actions .btn:active,
+    .actions .btn-sm:active {
+        background: #1f2937 !important;
+        transform: scale(0.98) !important;
+    }
+
+    /* Empty state */
+    .empty-state {
+        padding: 28px 16px !important;
+        text-align: center !important;
+        color: var(--muted) !important;
+        font-size: 0.88rem !important;
+    }
+
+    .empty-state p {
+        margin: 0;
+    }
+
+    /* ── Scroll-to-top FAB ── */
+    .fab-top {
         position: fixed;
-        bottom: calc(var(--space-md) + var(--safe-bottom));
-        right: var(--space-md);
-        z-index: 50;
-        width: var(--touch-target);
-        height: var(--touch-target);
-        border-radius: 999px;
-        background: var(--text);
-        color: white;
+        bottom: calc(20px + var(--safe-bottom));
+        right: 16px;
+        z-index: 60;
+        width: 44px;
+        height: 44px;
+        border-radius: 22px;
+        background: #111827;
+        color: #fff;
         border: none;
-        box-shadow: var(--shadow-lg);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
         display: flex;
         align-items: center;
         justify-content: center;
+        font-size: 0.9rem;
         cursor: pointer;
         opacity: 0;
-        transform: translateY(10px);
-        transition: all 0.2s;
+        transform: translateY(12px) scale(0.85);
+        transition: opacity 0.25s, transform 0.25s;
         pointer-events: none;
     }
 
-    .fab--visible {
+    .fab-top.visible {
         opacity: 1;
-        transform: translateY(0);
+        transform: none;
         pointer-events: auto;
     }
 
-    .fab:active {
-        transform: scale(0.9);
+    .fab-top:active {
+        transform: scale(0.94) !important;
     }
 
-    /* -------------------------------------
-   UTILITIES
-------------------------------------- */
-    .spacer {
-        height: calc(var(--space-md) + var(--safe-bottom));
+    .page-bottom-spacer {
+        height: calc(32px + var(--safe-bottom));
     }
 
-    .hide-mobile {
-        display: none;
-    }
-
-    /* -------------------------------------
-   MEDIA QUERIES
-------------------------------------- */
+    /* ── Tablet / Desktop ── */
     @media (min-width: 640px) {
-        .app {
-            padding: 0 var(--space-lg);
+        .pl-header {
+            padding: 20px 24px 16px;
         }
 
-        .page-header p {
+        .pl-header-left p {
             display: block;
         }
 
-        .filter-toggle {
+        .btn-filter-toggle {
             display: none;
         }
 
-        .hide-mobile {
+        .filter-card-desktop {
             display: block;
+            margin: 14px 24px 0;
         }
 
-        .sheet,
-        .sheet-overlay {
-            display: none;
+        .filter-overlay,
+        .filter-sheet {
+            display: none !important;
         }
 
-        .chip-list {
+        .summary-scroll {
             flex-wrap: wrap;
             overflow: visible;
+            padding: 14px 24px 2px;
+            gap: 8px;
         }
 
-        .lead-card__details {
-            grid-template-columns: repeat(4, auto);
-            gap: var(--space-md);
+        .filter-active-bar {
+            margin: 8px 24px 0;
         }
 
-        .lead-card__detail--full {
-            grid-column: auto;
+        .pl-section {
+            margin: 0 24px 14px;
         }
 
-        .lead-card__open-btn {
-            width: auto;
-            padding: 0 var(--space-xl);
+        .pl-section-header {
+            padding: 0 24px;
+            min-height: 60px;
         }
 
-        .lead-card__actions {
-            text-align: right;
+        .pl-date-label {
+            padding: 10px 24px 4px;
+        }
+
+        .appointment-item {
+            padding: 16px 24px !important;
+        }
+
+        .appointment-details {
+            grid-template-columns: repeat(4, auto) !important;
+            gap: 4px 20px !important;
+        }
+
+        .detail-item.detail-phone {
+            grid-column: auto !important;
+        }
+
+        .actions {
+            justify-content: flex-end !important;
+        }
+
+        .actions .btn,
+        .actions .btn-sm {
+            width: auto !important;
+            padding: 0 20px !important;
+        }
+
+        .fab-top {
+            right: 24px;
         }
     }
 
     @media (min-width: 1024px) {
 
-        .filter-card,
-        .section,
-        .chip-list,
-        .filter-banner {
+        .filter-card-desktop,
+        .pl-section,
+        .summary-scroll,
+        .filter-active-bar {
             max-width: 920px;
             margin-left: auto;
             margin-right: auto;
         }
 
-        .page-header {
+        .pl-header {
             max-width: 920px;
-            margin-left: auto;
-            margin-right: auto;
+            margin: 0 auto;
         }
 
-        .lead-card__open-btn:hover {
-            background: #1e293b;
-            transform: translateY(-1px);
-            box-shadow: var(--shadow-md);
+        .appointment-item:hover {
+            background: #fafafa !important;
         }
 
-        .phone-action:hover {
-            filter: brightness(0.95);
-        }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-
-        *,
-        *::before,
-        *::after {
-            animation-duration: 0.01ms !important;
-            animation-iteration-count: 1 !important;
-            transition-duration: 0.01ms !important;
-            scroll-behavior: auto !important;
+        .actions .btn:hover,
+        .actions .btn-sm:hover {
+            background: #1f2937 !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
         }
     }
 </style>
 
-<div class="app">
-    <!-- Sticky Header -->
-    <header class="page-header">
-        <div>
-            <h1>
-                <i class="fas fa-bolt" aria-hidden="true"></i>
-                Priority Leads
-            </h1>
-            <p>Grouped by urgency: Very Hot → Cold</p>
-        </div>
-        <button class="filter-toggle {% if selected_response_age %}has-filter{% endif %}" onclick="openFilter()"
-            aria-label="Open filter" aria-expanded="false" aria-controls="filter-sheet">
-            <i class="fas fa-sliders-h" aria-hidden="true"></i>
-            Filter
-            {% if selected_response_age %}
-            <span class="filter-badge" aria-label="Filter active">ON</span>
-            {% endif %}
-        </button>
-    </header>
-
-    <!-- Desktop Filter Card -->
-    <div class="filter-card hide-mobile">
-        <div class="filter-card__label">
-            <i class="fas fa-filter" aria-hidden="true"></i>
-            Response Age Filter
-        </div>
-        <form method="get" class="filter-row">
-            <select name="response_age" id="desktop-age-select" class="form-select" aria-label="Filter by response age">
-                <option value="">All response ages</option>
-                <option value="1w">No response for 1 week+</option>
-                <option value="2w">No response for 2 weeks+</option>
-                <option value="3w">No response for 3 weeks+</option>
-                <option value="1m">No response for 1 month+</option>
-                <option value="1w_minus">Last response within 1 week</option>
-                <option value="2w_minus">Last response within 2 weeks</option>
-                <option value="3w_minus">Last response within 3 weeks</option>
-                <option value="4w_minus">Last response within 4 weeks</option>
-            </select>
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-check" aria-hidden="true"></i>
-                Apply
-            </button>
-            <a href="{% url 'priority_leads' %}" class="btn btn-secondary">
-                <i class="fas fa-undo" aria-hidden="true"></i>
-                Reset
-            </a>
-        </form>
+<!-- Sticky Header -->
+<div class="pl-header">
+    <div class="pl-header-left">
+        <h1><i class="fas fa-bolt"></i> Priority Leads</h1>
+        <p>Grouped by urgency: Very Hot, Hot, Warm, Luke-warm, Cold</p>
     </div>
-
-    <!-- Summary Chips -->
-    <div class="chip-list" role="tablist">
-        <div class="chip chip--total" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"
-            aria-label="View all leads">
-            <i class="fas fa-database" aria-hidden="true"></i>
-            All: {{ total_leads }}
-        </div>
-        <div class="chip chip--vh" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"
-            aria-label="View very hot leads">
-            <i class="fas fa-fire" aria-hidden="true"></i>
-            Very Hot: {{ very_hot_leads|length }}
-        </div>
-        <div class="chip chip--hot" onclick="scrollToSection('sec-hot')" role="tab" tabindex="0"
-            aria-label="View hot leads">
-            <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
-            Hot: {{ hot_leads|length }}
-        </div>
-        <div class="chip chip--warm" onclick="scrollToSection('sec-warm')" role="tab" tabindex="0"
-            aria-label="View warm leads">
-            <i class="fas fa-sun" aria-hidden="true"></i>
-            Warm: {{ warm_leads|length }}
-        </div>
-        <div class="chip chip--luke" onclick="scrollToSection('sec-luke')" role="tab" tabindex="0"
-            aria-label="View lukewarm leads">
-            <i class="fas fa-temperature-low" aria-hidden="true"></i>
-            Lukewarm: {{ luke_warm_leads|length }}
-        </div>
-        <div class="chip chip--cold" onclick="scrollToSection('sec-cold')" role="tab" tabindex="0"
-            aria-label="View cold leads">
-            <i class="fas fa-snowflake" aria-hidden="true"></i>
-            Cold: {{ cold_leads|length }}
-        </div>
-    </div>
-
-    <!-- Active Filter Banner -->
-    {% if selected_response_age %}
-    <div class="filter-banner" role="status">
-        <i class="fas fa-filter" aria-hidden="true"></i>
-        <span>Filter active: <strong>{{ selected_response_age }}</strong></span>
-        <a href="{% url 'priority_leads' %}" class="filter-banner__clear" aria-label="Clear filter">
-            <i class="fas fa-times" aria-hidden="true"></i>
-            Clear
-        </a>
-    </div>
-    {% endif %}
-
-    <!-- Lead Sections -->
-    <main class="sections-wrapper">
-        <!-- VERY HOT -->
-        <section class="section section--vh" id="sec-vh" aria-labelledby="vh-title">
-            <header class="section__header" onclick="toggleSection('sec-vh')" role="button" aria-expanded="true"
-                tabindex="0">
-                <div class="section__icon"><i class="fas fa-fire" aria-hidden="true"></i></div>
-                <h2 id="vh-title" class="section__title">Very Hot Leads</h2>
-                <span class="section__count" aria-label="{{ very_hot_leads|length }} leads">{{ very_hot_leads|length
-                    }}</span>
-                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
-            </header>
-            <div class="section__body">
-                {% for group in very_hot_by_date %}
-                <div class="date-header">{{ group.label }}</div>
-                {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="vh" %}
-                {% endfor %}
-                {% empty %}
-                <div class="empty-state">
-                    <p><i class="fas fa-fire" aria-hidden="true"></i> No very hot leads.</p>
-                </div>
-                {% endfor %}
-            </div>
-        </section>
-
-        <!-- HOT -->
-        <section class="section section--hot" id="sec-hot" aria-labelledby="hot-title">
-            <header class="section__header" onclick="toggleSection('sec-hot')" role="button" aria-expanded="true"
-                tabindex="0">
-                <div class="section__icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></div>
-                <h2 id="hot-title" class="section__title">Hot Leads</h2>
-                <span class="section__count" aria-label="{{ hot_leads|length }} leads">{{ hot_leads|length }}</span>
-                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
-            </header>
-            <div class="section__body">
-                {% for group in hot_by_date %}
-                <div class="date-header">{{ group.label }}</div>
-                {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="hot" %}
-                {% endfor %}
-                {% empty %}
-                <div class="empty-state">
-                    <p><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> No hot leads.</p>
-                </div>
-                {% endfor %}
-            </div>
-        </section>
-
-        <!-- WARM -->
-        <section class="section section--warm" id="sec-warm" aria-labelledby="warm-title">
-            <header class="section__header" onclick="toggleSection('sec-warm')" role="button" aria-expanded="true"
-                tabindex="0">
-                <div class="section__icon"><i class="fas fa-sun" aria-hidden="true"></i></div>
-                <h2 id="warm-title" class="section__title">Warm Leads</h2>
-                <span class="section__count" aria-label="{{ warm_leads|length }} leads">{{ warm_leads|length }}</span>
-                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
-            </header>
-            <div class="section__body">
-                {% for group in warm_by_date %}
-                <div class="date-header">{{ group.label }}</div>
-                {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="warm" %}
-                {% endfor %}
-                {% empty %}
-                <div class="empty-state">
-                    <p><i class="fas fa-sun" aria-hidden="true"></i> No warm leads.</p>
-                </div>
-                {% endfor %}
-            </div>
-        </section>
-
-        <!-- LUKE-WARM -->
-        <section class="section section--luke" id="sec-luke" aria-labelledby="luke-title">
-            <header class="section__header" onclick="toggleSection('sec-luke')" role="button" aria-expanded="false"
-                tabindex="0">
-                <div class="section__icon"><i class="fas fa-temperature-low" aria-hidden="true"></i></div>
-                <h2 id="luke-title" class="section__title">Luke-warm Leads</h2>
-                <span class="section__count" aria-label="{{ luke_warm_leads|length }} leads">{{ luke_warm_leads|length
-                    }}</span>
-                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
-            </header>
-            <div class="section__body">
-                {% for group in luke_warm_by_date %}
-                <div class="date-header">{{ group.label }}</div>
-                {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="luke" %}
-                {% endfor %}
-                {% empty %}
-                <div class="empty-state">
-                    <p><i class="fas fa-temperature-low" aria-hidden="true"></i> No luke-warm leads.</p>
-                </div>
-                {% endfor %}
-            </div>
-        </section>
-
-        <!-- COLD -->
-        <section class="section section--cold" id="sec-cold" aria-labelledby="cold-title">
-            <header class="section__header" onclick="toggleSection('sec-cold')" role="button" aria-expanded="false"
-                tabindex="0">
-                <div class="section__icon"><i class="fas fa-snowflake" aria-hidden="true"></i></div>
-                <h2 id="cold-title" class="section__title">Cold Leads</h2>
-                <span class="section__count" aria-label="{{ cold_leads|length }} leads">{{ cold_leads|length }}</span>
-                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
-            </header>
-            <div class="section__body">
-                {% for group in cold_by_date %}
-                <div class="date-header">{{ group.label }}</div>
-                {% for lead in group.leads %}
-                {% include "includes/lead_card.html" with lead=lead section="cold" %}
-                {% endfor %}
-                {% empty %}
-                <div class="empty-state">
-                    <p><i class="fas fa-snowflake" aria-hidden="true"></i> No cold leads.</p>
-                </div>
-                {% endfor %}
-            </div>
-        </section>
-    </main>
-
-    <div class="spacer"></div>
-
-    <!-- Scroll to top FAB -->
-    <button class="fab" id="fab" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">
-        <i class="fas fa-chevron-up" aria-hidden="true"></i>
+    <button class="btn-filter-toggle {% if selected_response_age %}has-filter{% endif %}" onclick="openFilter()"
+        aria-label="Open filter">
+        <i class="fas fa-sliders-h"></i> Filter
+        <span class="filter-badge">ON</span>
     </button>
+</div>
 
-    <!-- Mobile Filter Sheet -->
-    <div class="sheet-overlay" id="filter-overlay" onclick="closeFilter()" aria-hidden="true"></div>
-    <div class="sheet" id="filter-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-        <div class="sheet__handle" aria-hidden="true"></div>
-        <h3 id="sheet-title" class="sheet__title">
-            <i class="fas fa-sliders-h" aria-hidden="true"></i>
-            Filter Leads
-        </h3>
-        <form method="get">
-            <label class="sheet__label" for="mobile-age-select">Response Age</label>
-            <select name="response_age" id="mobile-age-select" class="form-select" aria-label="Filter by response age">
+<!-- Desktop Filter Card -->
+<div class="filter-card-desktop">
+    <div class="card-label"><i class="fas fa-filter"></i> Response Age Filter</div>
+    <form method="get" class="filter-desktop-row">
+        <select name="response_age" id="desktop_age_select" class="form-control">
+            <option value="">All response ages</option>
+            <option value="1w">No response for 1 week+</option>
+            <option value="2w">No response for 2 weeks+</option>
+            <option value="3w">No response for 3 weeks+</option>
+            <option value="1m">No response for 1 month+</option>
+            <option value="1w_minus">Last response within 1 week</option>
+            <option value="2w_minus">Last response within 2 weeks</option>
+            <option value="3w_minus">Last response within 3 weeks</option>
+            <option value="4w_minus">Last response within 4 weeks</option>
+        </select>
+        <button type="submit" class="btn btn-sm"><i class="fas fa-check"></i> Apply</button>
+        <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+    </form>
+</div>
+
+<!-- Summary chips -->
+<div class="summary-scroll">
+    <div class="summary-chip chip-total" onclick="scrollToSection('sec-vh')" role="button" tabindex="0">
+        <i class="fas fa-database"></i> All: {{ total_leads }}
+    </div>
+    <div class="summary-chip chip-vh" onclick="scrollToSection('sec-vh')" role="button" tabindex="0">
+        <i class="fas fa-fire"></i> Very Hot: {{ very_hot_leads|length }}
+    </div>
+    <div class="summary-chip chip-hot" onclick="scrollToSection('sec-hot')" role="button" tabindex="0">
+        <i class="fas fa-exclamation-triangle"></i> Hot: {{ hot_leads|length }}
+    </div>
+    <div class="summary-chip chip-warm" onclick="scrollToSection('sec-warm')" role="button" tabindex="0">
+        <i class="fas fa-sun"></i> Warm: {{ warm_leads|length }}
+    </div>
+    <div class="summary-chip chip-luke" onclick="scrollToSection('sec-luke')" role="button" tabindex="0">
+        <i class="fas fa-temperature-low"></i> Lukewarm: {{ luke_warm_leads|length }}
+    </div>
+    <div class="summary-chip chip-cold" onclick="scrollToSection('sec-cold')" role="button" tabindex="0">
+        <i class="fas fa-snowflake"></i> Cold: {{ cold_leads|length }}
+    </div>
+</div>
+
+{% if selected_response_age %}
+<div class="filter-active-bar visible">
+    <i class="fas fa-filter"></i>
+    <span>Filter active: <strong>{{ selected_response_age }}</strong></span>
+    <a href="{% url 'priority_leads' %}"><i class="fas fa-times"></i> Clear</a>
+</div>
+{% endif %}
+
+<div class="sections-wrapper">
+
+    <!-- VERY HOT -->
+    <div class="pl-section sec-vh" id="sec-vh">
+        <div class="pl-section-header" onclick="toggleSection('sec-vh')" role="button" aria-expanded="true"
+            tabindex="0">
+            <div class="sec-icon"><i class="fas fa-fire"></i></div>
+            <h2>Very Hot Leads</h2>
+            <span class="pl-count-pill">{{ very_hot_leads|length }}</span>
+            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
+        </div>
+        <div class="pl-section-body">
+            {% for group in very_hot_by_date %}
+            <div class="pl-date-label">{{ group.label }}</div>
+            {% for lead in group.leads %}
+            <div class="appointment-item" style="border-left-color: #dc2626;">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
+                    aria-label="Open {{ lead.customer_name }}"></a>
+                <div class="appointment-header">
+                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status" style="background:#fee2e2;color:#991b1b;">{{
+                        lead.computed_score|default:"—" }}/100</div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item detail-phone">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
+                        area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
+                        H:i"|default:"No activity" }}</div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
+                            class="fas fa-arrow-right"></i> Open Lead</a>
+                </div>
+            </div>
+            {% endfor %}
+            {% empty %}
+            <div class="empty-state">
+                <p><i class="fas fa-fire"></i> No very hot leads.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- HOT -->
+    <div class="pl-section sec-hot" id="sec-hot">
+        <div class="pl-section-header" onclick="toggleSection('sec-hot')" role="button" aria-expanded="true"
+            tabindex="0">
+            <div class="sec-icon"><i class="fas fa-exclamation-triangle"></i></div>
+            <h2>Hot Leads</h2>
+            <span class="pl-count-pill">{{ hot_leads|length }}</span>
+            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
+        </div>
+        <div class="pl-section-body">
+            {% for group in hot_by_date %}
+            <div class="pl-date-label">{{ group.label }}</div>
+            {% for lead in group.leads %}
+            <div class="appointment-item" style="border-left-color: #f59e0b;">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
+                    aria-label="Open {{ lead.customer_name }}"></a>
+                <div class="appointment-header">
+                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status" style="background:#fef3c7;color:#92400e;">{{
+                        lead.computed_score|default:"—" }}/100</div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item detail-phone">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
+                        area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
+                        H:i"|default:"No activity" }}</div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
+                            class="fas fa-arrow-right"></i> Open Lead</a>
+                </div>
+            </div>
+            {% endfor %}
+            {% empty %}
+            <div class="empty-state">
+                <p><i class="fas fa-exclamation-triangle"></i> No hot leads.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- WARM -->
+    <div class="pl-section sec-warm" id="sec-warm">
+        <div class="pl-section-header" onclick="toggleSection('sec-warm')" role="button" aria-expanded="true"
+            tabindex="0">
+            <div class="sec-icon"><i class="fas fa-sun"></i></div>
+            <h2>Warm Leads</h2>
+            <span class="pl-count-pill">{{ warm_leads|length }}</span>
+            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
+        </div>
+        <div class="pl-section-body">
+            {% for group in warm_by_date %}
+            <div class="pl-date-label">{{ group.label }}</div>
+            {% for lead in group.leads %}
+            <div class="appointment-item" style="border-left-color: #10b981;">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
+                    aria-label="Open {{ lead.customer_name }}"></a>
+                <div class="appointment-header">
+                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status" style="background:#d1fae5;color:#065f46;">{{
+                        lead.computed_score|default:"—" }}/100</div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item detail-phone">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
+                        area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
+                        H:i"|default:"No activity" }}</div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
+                            class="fas fa-arrow-right"></i> Open Lead</a>
+                </div>
+            </div>
+            {% endfor %}
+            {% empty %}
+            <div class="empty-state">
+                <p><i class="fas fa-sun"></i> No warm leads.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- LUKE-WARM -->
+    <div class="pl-section sec-luke" id="sec-luke">
+        <div class="pl-section-header" onclick="toggleSection('sec-luke')" role="button" aria-expanded="false"
+            tabindex="0">
+            <div class="sec-icon"><i class="fas fa-temperature-low"></i></div>
+            <h2>Luke-warm Leads</h2>
+            <span class="pl-count-pill">{{ luke_warm_leads|length }}</span>
+            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
+        </div>
+        <div class="pl-section-body">
+            {% for group in luke_warm_by_date %}
+            <div class="pl-date-label">{{ group.label }}</div>
+            {% for lead in group.leads %}
+            <div class="appointment-item" style="border-left-color: #0ea5e9;">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
+                    aria-label="Open {{ lead.customer_name }}"></a>
+                <div class="appointment-header">
+                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status" style="background:#dbeafe;color:#1e3a8a;">{{
+                        lead.computed_score|default:"—" }}/100</div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item detail-phone">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
+                        area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
+                        H:i"|default:"No activity" }}</div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
+                            class="fas fa-arrow-right"></i> Open Lead</a>
+                </div>
+            </div>
+            {% endfor %}
+            {% empty %}
+            <div class="empty-state">
+                <p><i class="fas fa-temperature-low"></i> No luke-warm leads.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- COLD -->
+    <div class="pl-section sec-cold" id="sec-cold">
+        <div class="pl-section-header" onclick="toggleSection('sec-cold')" role="button" aria-expanded="false"
+            tabindex="0">
+            <div class="sec-icon"><i class="fas fa-snowflake"></i></div>
+            <h2>Cold Leads</h2>
+            <span class="pl-count-pill">{{ cold_leads|length }}</span>
+            <div class="pl-chevron"><i class="fas fa-chevron-down"></i></div>
+        </div>
+        <div class="pl-section-body">
+            {% for group in cold_by_date %}
+            <div class="pl-date-label">{{ group.label }}</div>
+            {% for lead in group.leads %}
+            <div class="appointment-item" style="border-left-color: #6b7280;">
+                <a href="{% url 'appointment_detail' lead.pk %}" class="row-tap-target"
+                    aria-label="Open {{ lead.customer_name }}"></a>
+                <div class="appointment-header">
+                    <div class="appointment-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                    <div class="appointment-status" style="background:#e5e7eb;color:#374151;">{{
+                        lead.computed_score|default:"—" }}/100</div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item detail-phone">
+                        {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                        <div class="phone-actions">
+                            <a href="tel:{{ clean_phone }}" class="phone-link">
+                                <i class="fas fa-phone"></i>
+                                <span>{{ clean_phone }}</span>
+                            </a>
+                            <div class="phone-btns">
+                                <a href="tel:{{ clean_phone }}" class="call-badge call-btn">Call</a>
+                                <a href="https://wa.me/{{ clean_phone|cut:" +" }}" target="_blank"
+                                    class="wa-badge wa-btn">WhatsApp</a>
+                            </div>
+                        </div>
+                        {% endwith %}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-tools"></i>{{ lead.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item"><i class="fas fa-map-marker-alt"></i>{{ lead.customer_area|default:"No
+                        area" }}</div>
+                    <div class="detail-item"><i class="fas fa-clock"></i>{{ lead.recent_activity|date:"M d, Y
+                        H:i"|default:"No activity" }}</div>
+                </div>
+                <div class="actions">
+                    <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm"><i
+                            class="fas fa-arrow-right"></i> Open Lead</a>
+                </div>
+            </div>
+            {% endfor %}
+            {% empty %}
+            <div class="empty-state">
+                <p><i class="fas fa-snowflake"></i> No cold leads.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+</div><!-- /sections-wrapper -->
+
+<div class="page-bottom-spacer"></div>
+
+<!-- Scroll to top FAB -->
+<button class="fab-top" id="fab-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">
+    <i class="fas fa-chevron-up"></i>
+</button>
+
+<!-- Mobile bottom sheet filter -->
+<div class="filter-overlay" id="filter-overlay" onclick="closeFilter()"></div>
+<div class="filter-sheet" id="filter-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title"><i class="fas fa-sliders-h"></i> Filter Leads</div>
+    <form method="get">
+        <label class="filter-select-label" for="mobile_age_select">Response Age</label>
+        <div class="filter-select-wrapper">
+            <select name="response_age" id="mobile_age_select" class="form-control">
                 <option value="">All response ages</option>
                 <option value="1w">No response for 1 week+</option>
                 <option value="2w">No response for 2 weeks+</option>
@@ -1157,209 +1355,124 @@
                 <option value="3w_minus">Last response within 3 weeks</option>
                 <option value="4w_minus">Last response within 4 weeks</option>
             </select>
-            <div class="sheet__actions">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-check" aria-hidden="true"></i>
-                    Apply Filter
-                </button>
-                <a href="{% url 'priority_leads' %}" class="btn btn-secondary">
-                    <i class="fas fa-undo" aria-hidden="true"></i>
-                    Reset
-                </a>
-            </div>
-        </form>
-    </div>
+        </div>
+        <div class="sheet-actions">
+            <button type="submit" class="btn-apply-sheet"><i class="fas fa-check"></i> Apply Filter</button>
+            <a href="{% url 'priority_leads' %}" class="btn-reset-sheet"><i class="fas fa-undo"></i> Reset</a>
+        </div>
+    </form>
 </div>
 
 <script>
     (function () {
-        'use strict';
+        var saved = "{{ selected_response_age|default:'' }}";
+        ['mobile_age_select', 'desktop_age_select'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el && saved) el.value = saved;
+        });
 
-        // Configuration
-        const CONFIG = {
-            collapsedSections: ['sec-luke', 'sec-cold'],
-            scrollThreshold: 300,
-            sheetCloseThreshold: 80
-        };
-
-        // State
-        let isDragging = false;
-        let startY = 0;
-        let currentY = 0;
-        let sheet = document.getElementById('filter-sheet');
-        let fab = document.getElementById('fab');
-
-        // Initialize form selects with saved value
-        function initFormValues() {
-            const saved = "{{ selected_response_age|default:'' }}";
-            ['mobile-age-select', 'desktop-age-select'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el && saved) el.value = saved;
-            });
-        }
-
-        // Section management
+        // Section collapse/expand
         function initSections() {
-            document.querySelectorAll('.section__body').forEach(body => {
+            document.querySelectorAll('.pl-section-body').forEach(function (body) {
                 body.style.maxHeight = body.scrollHeight + 'px';
             });
         }
 
         window.toggleSection = function (id) {
-            const section = document.getElementById(id);
-            if (!section) return;
-
-            const body = section.querySelector('.section__body');
-            const header = section.querySelector('.section__header');
-            const isCollapsed = section.classList.contains('section--collapsed');
-
-            if (isCollapsed) {
-                section.classList.remove('section--collapsed');
+            var card = document.getElementById(id);
+            var body = card.querySelector('.pl-section-body');
+            var header = card.querySelector('.pl-section-header');
+            if (card.classList.contains('collapsed')) {
+                card.classList.remove('collapsed');
                 header.setAttribute('aria-expanded', 'true');
-                requestAnimationFrame(() => {
+                requestAnimationFrame(function () {
                     body.style.maxHeight = body.scrollHeight + 'px';
                 });
             } else {
-                section.classList.add('section--collapsed');
+                card.classList.add('collapsed');
                 header.setAttribute('aria-expanded', 'false');
-                body.style.maxHeight = '0';
             }
         };
-
-        // Scroll to section
-        window.scrollToSection = function (id) {
-            const section = document.getElementById(id);
-            if (!section) return;
-
-            if (section.classList.contains('section--collapsed')) {
-                toggleSection(id);
-            }
-
-            const headerHeight = document.querySelector('.page-header')?.offsetHeight || 60;
-            const y = section.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
-            window.scrollTo({ top: y, behavior: 'smooth' });
-        };
-
-        // Mobile sheet controls
-        window.openFilter = function () {
-            const overlay = document.getElementById('filter-overlay');
-            const sheet = document.getElementById('filter-sheet');
-            const toggle = document.querySelector('.filter-toggle');
-
-            overlay.classList.add('sheet-overlay--open');
-            toggle.setAttribute('aria-expanded', 'true');
-
-            requestAnimationFrame(() => {
-                overlay.classList.add('sheet-overlay--visible');
-                sheet.classList.add('sheet--open');
-            });
-
-            document.body.style.overflow = 'hidden';
-        };
-
-        window.closeFilter = function () {
-            const overlay = document.getElementById('filter-overlay');
-            const sheet = document.getElementById('filter-sheet');
-            const toggle = document.querySelector('.filter-toggle');
-
-            overlay.classList.remove('sheet-overlay--visible');
-            sheet.classList.remove('sheet--open');
-            toggle.setAttribute('aria-expanded', 'false');
-            document.body.style.overflow = '';
-
-            setTimeout(() => {
-                overlay.classList.remove('sheet-overlay--open');
-            }, 300);
-        };
-
-        // FAB visibility
-        function updateFabVisibility() {
-            if (!fab) return;
-            fab.classList.toggle('fab--visible', window.scrollY > CONFIG.scrollThreshold);
-        }
 
         // Keyboard support
-        function initKeyboardSupport() {
-            document.querySelectorAll('.section__header, .chip').forEach(el => {
-                el.addEventListener('keydown', e => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        el.click();
-                    }
-                });
+        document.querySelectorAll('.pl-section-header, .summary-chip').forEach(function (el) {
+            el.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
             });
-        }
-
-        // Mobile sheet swipe to close
-        function initSheetGestures() {
-            if (!sheet) return;
-
-            sheet.addEventListener('touchstart', e => {
-                startY = e.touches[0].clientY;
-                isDragging = true;
-                sheet.style.transition = 'none';
-            }, { passive: true });
-
-            sheet.addEventListener('touchmove', e => {
-                if (!isDragging) return;
-                currentY = e.touches[0].clientY;
-                const delta = currentY - startY;
-
-                if (delta > 0) {
-                    e.preventDefault();
-                    sheet.style.transform = `translateY(${delta}px)`;
-                }
-            }, { passive: false });
-
-            sheet.addEventListener('touchend', () => {
-                isDragging = false;
-                sheet.style.transition = '';
-                sheet.style.transform = '';
-
-                if (currentY - startY > CONFIG.sheetCloseThreshold) {
-                    closeFilter();
-                }
-            });
-        }
-
-        // Apply mobile defaults
-        function applyMobileDefaults() {
-            if (window.innerWidth >= 640) return;
-
-            CONFIG.collapsedSections.forEach(id => {
-                const section = document.getElementById(id);
-                if (section && !section.classList.contains('section--collapsed')) {
-                    section.classList.add('section--collapsed');
-                    const header = section.querySelector('.section__header');
-                    if (header) header.setAttribute('aria-expanded', 'false');
-                    const body = section.querySelector('.section__body');
-                    if (body) body.style.maxHeight = '0';
-                }
-            });
-        }
-
-        // Initialize everything
-        document.addEventListener('DOMContentLoaded', () => {
-            initFormValues();
-            initSections();
-            initKeyboardSupport();
-            initSheetGestures();
-            applyMobileDefaults();
-            updateFabVisibility();
         });
 
-        // Scroll listener
-        window.addEventListener('scroll', updateFabVisibility, { passive: true });
+        // Scroll to section via chip tap
+        window.scrollToSection = function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            if (el.classList.contains('collapsed')) toggleSection(id);
+            var headerH = (document.querySelector('.pl-header') || {}).offsetHeight || 56;
+            window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - headerH - 8, behavior: 'smooth' });
+        };
 
-        // Resize listener
-        window.addEventListener('resize', () => {
-            if (window.innerWidth >= 640) {
-                document.body.style.overflow = '';
+        // Luke-warm + cold start collapsed on mobile
+        function applyDefaults() {
+            if (window.innerWidth < 640) {
+                ['sec-luke', 'sec-cold'].forEach(function (id) {
+                    var card = document.getElementById(id);
+                    if (card) {
+                        card.classList.add('collapsed');
+                        var h = card.querySelector('.pl-section-header');
+                        if (h) h.setAttribute('aria-expanded', 'false');
+                    }
+                });
             }
+        }
+
+        // Bottom sheet
+        window.openFilter = function () {
+            var overlay = document.getElementById('filter-overlay');
+            var sheet = document.getElementById('filter-sheet');
+            overlay.classList.add('open');
+            requestAnimationFrame(function () {
+                overlay.classList.add('visible');
+                sheet.classList.add('open');
+            });
+            document.body.style.overflow = 'hidden';
+        };
+        window.closeFilter = function () {
+            var overlay = document.getElementById('filter-overlay');
+            var sheet = document.getElementById('filter-sheet');
+            overlay.classList.remove('visible');
+            sheet.classList.remove('open');
+            document.body.style.overflow = '';
+            setTimeout(function () { overlay.classList.remove('open'); }, 320);
+        };
+
+        // Swipe down to close
+        (function () {
+            var sheet = document.getElementById('filter-sheet');
+            var startY = 0, curY = 0, dragging = false;
+            sheet.addEventListener('touchstart', function (e) { startY = e.touches[0].clientY; dragging = true; }, { passive: true });
+            sheet.addEventListener('touchmove', function (e) {
+                if (!dragging) return;
+                curY = e.touches[0].clientY;
+                var d = curY - startY;
+                if (d > 0) { sheet.style.transform = 'translateY(' + d + 'px)'; sheet.style.transition = 'none'; }
+            }, { passive: true });
+            sheet.addEventListener('touchend', function () {
+                dragging = false;
+                sheet.style.transition = ''; sheet.style.transform = '';
+                if (curY - startY > 80) closeFilter();
+            });
+        })();
+
+        // FAB
+        var fab = document.getElementById('fab-top');
+        window.addEventListener('scroll', function () {
+            fab.classList.toggle('visible', window.scrollY > 300);
+        }, { passive: true });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            initSections();
+            applyDefaults();
         });
     })();
 </script>
 
-<!-- Include lead card partial -->
-{% include "includes/lead_card_partial.html" %}
 {% endblock %}
