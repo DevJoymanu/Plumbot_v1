@@ -2,463 +2,1364 @@
 
 {% block content %}
 <style>
+    /* -------------------------------------
+   DESIGN TOKENS
+------------------------------------- */
     :root {
-        --bg: #f5f7fb;
-        --card: #fff;
-        --border: #e5e7eb;
-        --text: #111827;
-        --muted: #6b7280;
+        /* Colors */
+        --surface: #ffffff;
+        --bg: #f8fafc;
+        --border: #e2e8f0;
+        --text: #0f172a;
+        --text-light: #64748b;
+        --primary: #4f46e5;
+        --primary-dark: #4338ca;
+        --primary-light: #eef2ff;
+
+        /* Temperature colors */
+        --vh: #dc2626;
+        --vh-bg: #fee2e2;
+        --hot: #f59e0b;
+        --hot-bg: #fef3c7;
+        --warm: #10b981;
+        --warm-bg: #d1fae5;
+        --luke: #0ea5e9;
+        --luke-bg: #dbeafe;
+        --cold: #64748b;
+        --cold-bg: #f1f5f9;
+
+        /* Spacing */
+        --space-xs: 4px;
+        --space-sm: 8px;
+        --space-md: 16px;
+        --space-lg: 24px;
+        --space-xl: 32px;
+
+        /* Typography */
+        --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+        --font-display: 'Syne', var(--font-sans);
+        --text-xs: 0.75rem;
+        --text-sm: 0.875rem;
+        --text-base: 1rem;
+        --text-lg: 1.125rem;
+
+        /* UI */
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+        --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-top: env(safe-area-inset-top, 0px);
+        --touch-target: 44px;
     }
 
-    .pl-wrap {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 18px 12px 36px;
-    }
-
-    .pl-head {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        gap: 10px;
-        margin-bottom: 12px;
-    }
-
-    .pl-head h1 {
+    /* -------------------------------------
+   BASE & RESET
+------------------------------------- */
+    *,
+    *::before,
+    *::after {
+        box-sizing: border-box;
         margin: 0;
-        font-size: 1.5rem;
+        padding: 0;
     }
 
-    .pl-sub {
-        color: var(--muted);
-        font-size: 0.9rem;
+    html {
+        -webkit-tap-highlight-color: transparent;
+        scroll-behavior: smooth;
     }
 
-    .chip-row {
+    body {
+        font-family: var(--font-sans);
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        min-height: 100dvh;
+    }
+
+    /* -------------------------------------
+   LAYOUT
+------------------------------------- */
+    .app {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 var(--space-md);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Header
+------------------------------------- */
+    .page-header {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        background: rgba(248, 250, 252, 0.9);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        padding: calc(var(--space-sm) + var(--safe-top)) var(--space-md) var(--space-sm);
+        margin-bottom: var(--space-sm);
         display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin: 10px 0 16px;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
     }
 
-    .chip {
-        padding: 6px 11px;
+    .page-header h1 {
+        font-family: var(--font-display);
+        font-size: clamp(1.25rem, 5vw, 1.75rem);
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        color: var(--text);
+    }
+
+    .page-header h1 i {
+        color: var(--primary);
+        font-size: 1.5em;
+    }
+
+    .page-header p {
+        color: var(--text-light);
+        font-size: var(--text-sm);
+        display: none;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Buttons
+------------------------------------- */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-sm);
+        height: var(--touch-target);
+        padding: 0 var(--space-lg);
+        border-radius: var(--radius-md);
+        font-weight: 600;
+        font-size: var(--text-sm);
+        border: none;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .btn:active {
+        transform: scale(0.97);
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-dark);
+    }
+
+    .btn-secondary {
+        background: var(--surface);
+        color: var(--text);
         border: 1px solid var(--border);
-        border-radius: 999px;
-        background: #fff;
-        font-size: 0.82rem;
+    }
+
+    .btn-secondary:hover {
+        background: var(--bg);
+        border-color: var(--text-light);
+    }
+
+    .btn-icon {
+        width: var(--touch-target);
+        padding: 0;
+    }
+
+    .filter-toggle {
+        background: var(--primary);
+        color: white;
+        height: 40px;
+        padding: 0 var(--space-md);
+        border-radius: 20px;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+    }
+
+    .filter-badge {
+        background: #fbbf24;
+        color: #78350f;
+        border-radius: 10px;
+        font-size: var(--text-xs);
         font-weight: 700;
+        padding: 2px 6px;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Filter Card (Desktop)
+------------------------------------- */
+    .filter-card {
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        padding: var(--space-lg);
+        margin: var(--space-md) 0;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border);
+    }
+
+    .filter-card__label {
+        font-family: var(--font-display);
+        font-size: var(--text-xs);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-light);
+        margin-bottom: var(--space-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+    }
+
+    .filter-row {
+        display: flex;
+        gap: var(--space-sm);
+        align-items: center;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Form Elements
+------------------------------------- */
+    .form-select {
+        flex: 1;
+        height: var(--touch-target);
+        padding: 0 var(--space-lg) 0 var(--space-md);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-family: var(--font-sans);
+        font-size: 16px;
+        /* Prevents iOS zoom */
+        color: var(--text);
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right var(--space-sm) center;
         cursor: pointer;
     }
 
-    .chip i {
-        margin-right: 4px;
+    .form-select:focus {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
     }
 
-    .chip-total {
-        background: #f3f4f6;
-        color: #374151;
+    /* -------------------------------------
+   COMPONENTS - Summary Chips
+------------------------------------- */
+    .chip-list {
+        display: flex;
+        gap: var(--space-sm);
+        padding: var(--space-sm) 0 var(--space-md);
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
     }
 
-    .chip-vh {
-        background: #fee2e2;
-        color: #991b1b;
+    .chip-list::-webkit-scrollbar {
+        display: none;
     }
 
-    .chip-hot {
-        background: #fef3c7;
-        color: #92400e;
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-xs);
+        padding: var(--space-sm) var(--space-md);
+        border-radius: 20px;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        white-space: nowrap;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s ease;
     }
 
-    .chip-warm {
+    .chip:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+
+    .chip:active {
+        transform: scale(0.95);
+    }
+
+    .chip--total {
+        background: var(--surface);
+        color: var(--text);
+        border-color: var(--border);
+    }
+
+    .chip--vh {
+        background: var(--vh-bg);
+        color: var(--vh);
+    }
+
+    .chip--hot {
+        background: var(--hot-bg);
+        color: var(--hot);
+    }
+
+    .chip--warm {
+        background: var(--warm-bg);
+        color: var(--warm);
+    }
+
+    .chip--luke {
+        background: var(--luke-bg);
+        color: var(--luke);
+    }
+
+    .chip--cold {
+        background: var(--cold-bg);
+        color: var(--text-light);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Filter Banner
+------------------------------------- */
+    .filter-banner {
+        background: var(--primary-light);
+        border-radius: var(--radius-md);
+        padding: var(--space-sm) var(--space-md);
+        margin: var(--space-sm) 0;
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        color: var(--primary-dark);
+        font-size: var(--text-sm);
+        border: 1px solid var(--primary);
+    }
+
+    .filter-banner__clear {
+        margin-left: auto;
+        color: var(--primary-dark);
+        font-weight: 600;
+        text-decoration: none;
+        padding: var(--space-xs);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Lead Sections
+------------------------------------- */
+    .section {
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        margin-bottom: var(--space-md);
+        border: 1px solid var(--border);
+        overflow: hidden;
+    }
+
+    .section__header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        padding: 0 var(--space-md);
+        min-height: 60px;
+        cursor: pointer;
+        border-bottom: 1px solid transparent;
+        transition: background 0.15s;
+    }
+
+    .section__header:hover {
+        background: var(--bg);
+    }
+
+    .section__header:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+    }
+
+    .section:not(.section--collapsed) .section__header {
+        border-bottom-color: var(--border);
+    }
+
+    .section__icon {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .section--vh .section__icon {
+        background: var(--vh-bg);
+        color: var(--vh);
+    }
+
+    .section--hot .section__icon {
+        background: var(--hot-bg);
+        color: var(--hot);
+    }
+
+    .section--warm .section__icon {
+        background: var(--warm-bg);
+        color: var(--warm);
+    }
+
+    .section--luke .section__icon {
+        background: var(--luke-bg);
+        color: var(--luke);
+    }
+
+    .section--cold .section__icon {
+        background: var(--cold-bg);
+        color: var(--text-light);
+    }
+
+    .section__title {
+        font-family: var(--font-display);
+        font-size: var(--text-base);
+        font-weight: 700;
+        flex: 1;
+    }
+
+    .section--vh .section__title {
+        color: var(--vh);
+    }
+
+    .section--hot .section__title {
+        color: var(--hot);
+    }
+
+    .section--warm .section__title {
+        color: var(--warm);
+    }
+
+    .section--luke .section__title {
+        color: var(--luke);
+    }
+
+    .section--cold .section__title {
+        color: var(--text-light);
+    }
+
+    .section__count {
+        padding: 2px 10px;
+        border-radius: 20px;
+        font-size: var(--text-xs);
+        font-weight: 700;
+        background: var(--bg);
+    }
+
+    .section__chevron {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-light);
+        transition: transform 0.2s;
+        background: var(--bg);
+        border-radius: var(--radius-sm);
+    }
+
+    .section--collapsed .section__chevron {
+        transform: rotate(-90deg);
+    }
+
+    .section__body {
+        overflow: hidden;
+        transition: max-height 0.25s ease;
+    }
+
+    .section--collapsed .section__body {
+        max-height: 0 !important;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Date Headers
+------------------------------------- */
+    .date-header {
+        font-family: var(--font-display);
+        font-size: var(--text-xs);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-light);
+        padding: var(--space-sm) var(--space-md);
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Lead Card
+------------------------------------- */
+    .lead-card {
+        position: relative;
+        padding: var(--space-md);
+        border-bottom: 1px solid var(--border);
+        transition: background 0.15s;
+    }
+
+    .lead-card:last-child {
+        border-bottom: none;
+    }
+
+    .lead-card:hover {
+        background: var(--bg);
+    }
+
+    .lead-card__link {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+    }
+
+    .lead-card__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--space-sm);
+        margin-bottom: var(--space-sm);
+    }
+
+    .lead-card__name {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: var(--text-base);
+        color: var(--text);
+        line-height: 1.3;
+    }
+
+    .lead-card__score {
+        padding: var(--space-xs) var(--space-sm);
+        border-radius: 20px;
+        font-size: var(--text-xs);
+        font-weight: 700;
+        background: var(--bg);
+        color: var(--text);
+        z-index: 2;
+    }
+
+    /* Temperature-specific score styling */
+    .section--vh .lead-card__score {
+        background: var(--vh-bg);
+        color: var(--vh);
+    }
+
+    .section--hot .lead-card__score {
+        background: var(--hot-bg);
+        color: var(--hot);
+    }
+
+    .section--warm .lead-card__score {
+        background: var(--warm-bg);
+        color: var(--warm);
+    }
+
+    .section--luke .lead-card__score {
+        background: var(--luke-bg);
+        color: var(--luke);
+    }
+
+    .section--cold .lead-card__score {
+        background: var(--cold-bg);
+        color: var(--text-light);
+    }
+
+    .lead-card__details {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-xs) var(--space-sm);
+        margin-bottom: var(--space-sm);
+    }
+
+    .lead-card__detail {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+        font-size: var(--text-sm);
+        color: var(--text-light);
+        min-width: 0;
+    }
+
+    .lead-card__detail i {
+        width: 16px;
+        font-size: var(--text-xs);
+        opacity: 0.7;
+    }
+
+    .lead-card__detail--full {
+        grid-column: 1 / -1;
+    }
+
+    .lead-card__phone-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-sm);
+        width: 100%;
+    }
+
+    .lead-card__phone-link {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 500;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .lead-card__phone-link span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .lead-card__phone-actions {
+        display: flex;
+        gap: var(--space-xs);
+        z-index: 2;
+    }
+
+    .phone-action {
+        display: inline-flex;
+        align-items: center;
+        height: 32px;
+        padding: 0 var(--space-sm);
+        border-radius: var(--radius-sm);
+        font-size: var(--text-xs);
+        font-weight: 700;
+        text-decoration: none;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        transition: all 0.15s;
+    }
+
+    .phone-action:active {
+        transform: scale(0.94);
+    }
+
+    .phone-action--call {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .phone-action--wa {
         background: #d1fae5;
         color: #065f46;
     }
 
-    .chip-luke {
-        background: #dbeafe;
-        color: #1e3a8a;
+    .lead-card__actions {
+        position: relative;
+        z-index: 2;
+        margin-top: var(--space-sm);
     }
 
-    .chip-cold {
-        background: #e5e7eb;
-        color: #374151;
-    }
-
-    .filter-card,
-    .section {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-    }
-
-    .filter-card {
-        margin-bottom: 12px;
-        padding: 12px;
-    }
-
-    .filter-row {
-        display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: 8px;
-    }
-
-    .filter-row select,
-    .card-menu select,
-    .card-menu textarea {
+    .lead-card__open-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-sm);
         width: 100%;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px;
-        font-size: 0.85rem;
-    }
-
-    .btn {
-        border: none;
-        border-radius: 8px;
-        padding: 9px 12px;
-        font-size: 0.83rem;
-        font-weight: 700;
+        height: var(--touch-target);
+        background: var(--text);
+        color: white;
+        border-radius: var(--radius-md);
+        font-weight: 600;
         text-decoration: none;
+        transition: all 0.15s;
+    }
+
+    .lead-card__open-btn:active {
+        transform: scale(0.98);
+        background: #1e293b;
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Empty State
+------------------------------------- */
+    .empty-state {
+        padding: var(--space-xl) var(--space-md);
+        text-align: center;
+        color: var(--text-light);
+        font-size: var(--text-sm);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - Mobile Filter Sheet
+------------------------------------- */
+    .sheet-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 99;
+        backdrop-filter: blur(4px);
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .sheet-overlay--open {
+        display: block;
+    }
+
+    .sheet-overlay--visible {
+        opacity: 1;
+    }
+
+    .sheet {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: var(--surface);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        padding: var(--space-sm) var(--space-md) calc(var(--space-md) + var(--safe-bottom));
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.1, 1);
+        max-height: 85dvh;
+        overflow-y: auto;
+    }
+
+    .sheet--open {
+        transform: translateY(0);
+    }
+
+    .sheet__handle {
+        width: 40px;
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        margin: 0 auto var(--space-md);
+    }
+
+    .sheet__title {
+        font-family: var(--font-display);
+        font-size: var(--text-lg);
+        font-weight: 700;
+        margin-bottom: var(--space-md);
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+    }
+
+    .sheet__title i {
+        color: var(--primary);
+    }
+
+    .sheet__label {
+        font-size: var(--text-xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-light);
+        margin-bottom: var(--space-xs);
+        display: block;
+    }
+
+    .sheet__actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-sm);
+        margin-top: var(--space-lg);
+    }
+
+    /* -------------------------------------
+   COMPONENTS - FAB
+------------------------------------- */
+    .fab {
+        position: fixed;
+        bottom: calc(var(--space-md) + var(--safe-bottom));
+        right: var(--space-md);
+        z-index: 50;
+        width: var(--touch-target);
+        height: var(--touch-target);
+        border-radius: 999px;
+        background: var(--text);
+        color: white;
+        border: none;
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
         cursor: pointer;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.2s;
+        pointer-events: none;
     }
 
-    .btn-dark {
-        background: #111827;
-        color: #fff;
+    .fab--visible {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
     }
 
-    .btn-light {
-        background: #eef2f7;
-        color: #1f2937;
+    .fab:active {
+        transform: scale(0.9);
     }
 
-    .section {
-        margin-bottom: 12px;
-        overflow: hidden;
-        border-left: 4px solid transparent;
+    /* -------------------------------------
+   UTILITIES
+------------------------------------- */
+    .spacer {
+        height: calc(var(--space-md) + var(--safe-bottom));
     }
 
-    .section summary {
-        list-style: none;
-        cursor: pointer;
-    }
-
-    .section summary::-webkit-details-marker {
+    .hide-mobile {
         display: none;
     }
 
-    .section-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px;
-        border-bottom: 1px solid transparent;
-        font-weight: 700;
+    /* -------------------------------------
+   MEDIA QUERIES
+------------------------------------- */
+    @media (min-width: 640px) {
+        .app {
+            padding: 0 var(--space-lg);
+        }
+
+        .page-header p {
+            display: block;
+        }
+
+        .filter-toggle {
+            display: none;
+        }
+
+        .hide-mobile {
+            display: block;
+        }
+
+        .sheet,
+        .sheet-overlay {
+            display: none;
+        }
+
+        .chip-list {
+            flex-wrap: wrap;
+            overflow: visible;
+        }
+
+        .lead-card__details {
+            grid-template-columns: repeat(4, auto);
+            gap: var(--space-md);
+        }
+
+        .lead-card__detail--full {
+            grid-column: auto;
+        }
+
+        .lead-card__open-btn {
+            width: auto;
+            padding: 0 var(--space-xl);
+        }
+
+        .lead-card__actions {
+            text-align: right;
+        }
     }
 
-    .section[open] .section-head {
-        border-bottom-color: var(--border);
+    @media (min-width: 1024px) {
+
+        .filter-card,
+        .section,
+        .chip-list,
+        .filter-banner {
+            max-width: 920px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .page-header {
+            max-width: 920px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .lead-card__open-btn:hover {
+            background: #1e293b;
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .phone-action:hover {
+            filter: brightness(0.95);
+        }
     }
 
-    .section-head-left {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
+    @media (prefers-reduced-motion: reduce) {
 
-    .section-icon {
-        width: 30px;
-        height: 30px;
-        border-radius: 8px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .sec-vh { border-left-color: #dc2626; }
-    .sec-hot { border-left-color: #f59e0b; }
-    .sec-warm { border-left-color: #10b981; }
-    .sec-luke { border-left-color: #0ea5e9; }
-    .sec-cold { border-left-color: #6b7280; }
-
-    .sec-vh .section-icon { background: #fee2e2; color: #991b1b; }
-    .sec-hot .section-icon { background: #fef3c7; color: #92400e; }
-    .sec-warm .section-icon { background: #d1fae5; color: #065f46; }
-    .sec-luke .section-icon { background: #dbeafe; color: #1e3a8a; }
-    .sec-cold .section-icon { background: #e5e7eb; color: #374151; }
-
-    .section-rec {
-        margin: 8px 12px 2px;
-        padding: 7px 10px;
-        font-size: 0.82rem;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        color: #1f2937;
-    }
-
-    .section-rec i {
-        color: #2563eb;
-        margin-right: 6px;
-    }
-
-    .section-chevron {
-        color: var(--muted);
-        margin-left: 8px;
-        transition: transform 0.2s ease;
-    }
-
-    .section[open] .section-chevron {
-        transform: rotate(90deg);
-    }
-
-    .segment-title {
-        padding: 10px 12px 4px;
-        font-size: 0.76rem;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-weight: 700;
-    }
-
-    .date-title {
-        padding: 8px 12px 0;
-        font-size: 0.75rem;
-        color: var(--muted);
-        font-weight: 700;
-    }
-
-    .lead-card {
-        border-top: 1px solid var(--border);
-        padding: 10px 12px 12px;
-    }
-
-    .lead-top {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        align-items: flex-start;
-        margin-bottom: 7px;
-    }
-
-    .lead-name {
-        font-size: 0.98rem;
-        font-weight: 700;
-    }
-
-    .lead-score {
-        border-radius: 999px;
-        padding: 4px 9px;
-        font-size: 0.75rem;
-        font-weight: 700;
-        background: #f3f4f6;
-    }
-
-    .lead-meta {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 6px;
-        font-size: 0.8rem;
-        color: var(--muted);
-        margin-bottom: 8px;
-    }
-
-    .alert {
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        border-radius: 8px;
-        padding: 8px;
-        font-size: 0.8rem;
-        margin-bottom: 8px;
-    }
-
-    .card-actions {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
-    }
-
-    .card-menu {
-        width: 100%;
-        margin-top: 6px;
-    }
-
-    .card-menu summary {
-        cursor: pointer;
-        font-size: 0.82rem;
-        font-weight: 700;
-        color: #1f2937;
-    }
-
-    .card-menu form {
-        margin-top: 8px;
-        display: grid;
-        gap: 8px;
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
     }
 </style>
 
-<div class="pl-wrap">
-    <div class="pl-head">
+<div class="app">
+    <!-- Sticky Header -->
+    <header class="page-header">
         <div>
-            <h1>Priority Leads Dashboard</h1>
-            <div class="pl-sub">Segmented by urgency and manual follow-up status, with recommended actions per lead.</div>
+            <h1>
+                <i class="fas fa-bolt" aria-hidden="true"></i>
+                Priority Leads
+            </h1>
+            <p>Grouped by urgency: Very Hot → Cold</p>
         </div>
-    </div>
+        <button class="filter-toggle {% if selected_response_age %}has-filter{% endif %}" onclick="openFilter()"
+            aria-label="Open filter" aria-expanded="false" aria-controls="filter-sheet">
+            <i class="fas fa-sliders-h" aria-hidden="true"></i>
+            Filter
+            {% if selected_response_age %}
+            <span class="filter-badge" aria-label="Filter active">ON</span>
+            {% endif %}
+        </button>
+    </header>
 
-    <div class="filter-card">
+    <!-- Desktop Filter Card -->
+    <div class="filter-card hide-mobile">
+        <div class="filter-card__label">
+            <i class="fas fa-filter" aria-hidden="true"></i>
+            Response Age Filter
+        </div>
         <form method="get" class="filter-row">
-            <select name="response_age">
+            <select name="response_age" id="desktop-age-select" class="form-select" aria-label="Filter by response age">
                 <option value="">All response ages</option>
-                <option value="1w" {% if selected_response_age == '1w' %}selected{% endif %}>No response for 1 week+</option>
-                <option value="2w" {% if selected_response_age == '2w' %}selected{% endif %}>No response for 2 weeks+</option>
-                <option value="3w" {% if selected_response_age == '3w' %}selected{% endif %}>No response for 3 weeks+</option>
-                <option value="1m" {% if selected_response_age == '1m' %}selected{% endif %}>No response for 1 month+</option>
-                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 1 week</option>
-                <option value="2w_minus" {% if selected_response_age == '2w_minus' %}selected{% endif %}>Last response within 2 weeks</option>
-                <option value="3w_minus" {% if selected_response_age == '3w_minus' %}selected{% endif %}>Last response within 3 weeks</option>
-                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 4 weeks</option>
+                <option value="1w">No response for 1 week+</option>
+                <option value="2w">No response for 2 weeks+</option>
+                <option value="3w">No response for 3 weeks+</option>
+                <option value="1m">No response for 1 month+</option>
+                <option value="1w_minus">Last response within 1 week</option>
+                <option value="2w_minus">Last response within 2 weeks</option>
+                <option value="3w_minus">Last response within 3 weeks</option>
+                <option value="4w_minus">Last response within 4 weeks</option>
             </select>
-            <button type="submit" class="btn btn-dark">Apply</button>
-            <a href="{% url 'priority_leads' %}" class="btn btn-light">Reset</a>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-check" aria-hidden="true"></i>
+                Apply
+            </button>
+            <a href="{% url 'priority_leads' %}" class="btn btn-secondary">
+                <i class="fas fa-undo" aria-hidden="true"></i>
+                Reset
+            </a>
         </form>
     </div>
 
-    <div class="chip-row">
-        <div class="chip chip-total" onclick="scrollToSection('sec-vh')"><i class="fas fa-database"></i>All: {{ total_leads }}</div>
-        <div class="chip chip-vh" onclick="scrollToSection('sec-vh')"><i class="fas fa-fire"></i>Very Hot: {{ very_hot_leads|length }}</div>
-        <div class="chip chip-hot" onclick="scrollToSection('sec-hot')"><i class="fas fa-exclamation-triangle"></i>Hot: {{ hot_leads|length }}</div>
-        <div class="chip chip-warm" onclick="scrollToSection('sec-warm')"><i class="fas fa-sun"></i>Warm: {{ warm_leads|length }}</div>
-        <div class="chip chip-luke" onclick="scrollToSection('sec-luke')"><i class="fas fa-temperature-low"></i>Lukewarm: {{ luke_warm_leads|length }}</div>
-        <div class="chip chip-cold" onclick="scrollToSection('sec-cold')"><i class="fas fa-snowflake"></i>Cold: {{ cold_leads|length }}</div>
-        <div class="chip chip-hot" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-clock"></i>Manual Pending: {{ manual_followup_pending_count }}</div>
-        <div class="chip chip-warm" onclick="scrollToSection('sec-vh')"><i class="fas fa-user-check"></i>Manual Done: {{ manual_followup_done_count }}</div>
+    <!-- Summary Chips -->
+    <div class="chip-list" role="tablist">
+        <div class="chip chip--total" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"
+            aria-label="View all leads">
+            <i class="fas fa-database" aria-hidden="true"></i>
+            All: {{ total_leads }}
+        </div>
+        <div class="chip chip--vh" onclick="scrollToSection('sec-vh')" role="tab" tabindex="0"
+            aria-label="View very hot leads">
+            <i class="fas fa-fire" aria-hidden="true"></i>
+            Very Hot: {{ very_hot_leads|length }}
+        </div>
+        <div class="chip chip--hot" onclick="scrollToSection('sec-hot')" role="tab" tabindex="0"
+            aria-label="View hot leads">
+            <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+            Hot: {{ hot_leads|length }}
+        </div>
+        <div class="chip chip--warm" onclick="scrollToSection('sec-warm')" role="tab" tabindex="0"
+            aria-label="View warm leads">
+            <i class="fas fa-sun" aria-hidden="true"></i>
+            Warm: {{ warm_leads|length }}
+        </div>
+        <div class="chip chip--luke" onclick="scrollToSection('sec-luke')" role="tab" tabindex="0"
+            aria-label="View lukewarm leads">
+            <i class="fas fa-temperature-low" aria-hidden="true"></i>
+            Lukewarm: {{ luke_warm_leads|length }}
+        </div>
+        <div class="chip chip--cold" onclick="scrollToSection('sec-cold')" role="tab" tabindex="0"
+            aria-label="View cold leads">
+            <i class="fas fa-snowflake" aria-hidden="true"></i>
+            Cold: {{ cold_leads|length }}
+        </div>
     </div>
 
-    {% for section in sections %}
-    <details class="section {{ section.css }}" id="{{ section.id }}">
-        <summary class="section-head">
-            <span class="section-head-left">
-                <span class="section-icon"><i class="fas fa-{{ section.icon }}"></i></span>
-                <span>{{ section.title }}</span>
-            </span>
-            <span>
-                {{ section.count }}
-                <i class="fas fa-chevron-right section-chevron"></i>
-            </span>
-        </summary>
-        <div class="section-rec"><i class="fas fa-info-circle"></i><strong>Recommended action:</strong> {{ section.recommended_action }}</div>
+    <!-- Active Filter Banner -->
+    {% if selected_response_age %}
+    <div class="filter-banner" role="status">
+        <i class="fas fa-filter" aria-hidden="true"></i>
+        <span>Filter active: <strong>{{ selected_response_age }}</strong></span>
+        <a href="{% url 'priority_leads' %}" class="filter-banner__clear" aria-label="Clear filter">
+            <i class="fas fa-times" aria-hidden="true"></i>
+            Clear
+        </a>
+    </div>
+    {% endif %}
 
-        <div class="segment-title">Manual Follow-up Pending ({{ section.pending_count }})</div>
-        {% for group in section.pending_by_date %}
-        <div class="date-title">{{ group.label }}</div>
-        {% for lead in group.leads %}
-        <div class="lead-card" style="border-left: 3px solid {{ section.border }};">
-            <div class="lead-top">
-                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                <div class="lead-score">{{ lead.computed_score }}/100</div>
+    <!-- Lead Sections -->
+    <main class="sections-wrapper">
+        <!-- VERY HOT -->
+        <section class="section section--vh" id="sec-vh" aria-labelledby="vh-title">
+            <header class="section__header" onclick="toggleSection('sec-vh')" role="button" aria-expanded="true"
+                tabindex="0">
+                <div class="section__icon"><i class="fas fa-fire" aria-hidden="true"></i></div>
+                <h2 id="vh-title" class="section__title">Very Hot Leads</h2>
+                <span class="section__count" aria-label="{{ very_hot_leads|length }} leads">{{ very_hot_leads|length
+                    }}</span>
+                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
+            </header>
+            <div class="section__body">
+                {% for group in very_hot_by_date %}
+                <div class="date-header">{{ group.label }}</div>
+                {% for lead in group.leads %}
+                {% include "includes/lead_card.html" with lead=lead section="vh" %}
+                {% endfor %}
+                {% empty %}
+                <div class="empty-state">
+                    <p><i class="fas fa-fire" aria-hidden="true"></i> No very hot leads.</p>
+                </div>
+                {% endfor %}
             </div>
-            <div class="lead-meta">
-                <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
-                <div>Service: {{ lead.project_type|default:"No service" }}</div>
-                <div>Area: {{ lead.customer_area|default:"No area" }}</div>
-                <div>Recent: {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
-            </div>
-            {% if lead.last_priority_alert_summary %}
-            <div class="alert"><strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
-            {% endif %}
-            <div class="card-actions">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
-                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
-                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
-            </div>
-            <details class="card-menu">
-                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
-                <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    <select name="manual_followup_state">
-                        <option value="">Manual follow-up state</option>
-                        <option value="pending">Mark manual follow-up pending</option>
-                        <option value="done">Mark manually followed up</option>
-                    </select>
-                    <select name="follow_up_status">
-                        <option value="">Lead follow-up status</option>
-                        {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
-                    <button type="submit" class="btn btn-dark">Save update</button>
-                </form>
-            </details>
-        </div>
-        {% endfor %}
-        {% empty %}
-        <div class="lead-card">No leads in manual-follow-up pending for this section.</div>
-        {% endfor %}
+        </section>
 
-        <div class="segment-title">Manually Followed Up ({{ section.done_count }})</div>
-        {% for group in section.done_by_date %}
-        <div class="date-title">{{ group.label }}</div>
-        {% for lead in group.leads %}
-        <div class="lead-card" style="border-left: 3px solid {{ section.border }};">
-            <div class="lead-top">
-                <div class="lead-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
-                <div class="lead-score">{{ lead.computed_score }}/100</div>
+        <!-- HOT -->
+        <section class="section section--hot" id="sec-hot" aria-labelledby="hot-title">
+            <header class="section__header" onclick="toggleSection('sec-hot')" role="button" aria-expanded="true"
+                tabindex="0">
+                <div class="section__icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></div>
+                <h2 id="hot-title" class="section__title">Hot Leads</h2>
+                <span class="section__count" aria-label="{{ hot_leads|length }} leads">{{ hot_leads|length }}</span>
+                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
+            </header>
+            <div class="section__body">
+                {% for group in hot_by_date %}
+                <div class="date-header">{{ group.label }}</div>
+                {% for lead in group.leads %}
+                {% include "includes/lead_card.html" with lead=lead section="hot" %}
+                {% endfor %}
+                {% empty %}
+                <div class="empty-state">
+                    <p><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> No hot leads.</p>
+                </div>
+                {% endfor %}
             </div>
-            <div class="lead-meta">
-                <div>Phone: {{ lead.phone_number|cut:"whatsapp:" }}</div>
-                <div>Service: {{ lead.project_type|default:"No service" }}</div>
-                <div>Area: {{ lead.customer_area|default:"No area" }}</div>
-                <div>Recent: {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+        </section>
+
+        <!-- WARM -->
+        <section class="section section--warm" id="sec-warm" aria-labelledby="warm-title">
+            <header class="section__header" onclick="toggleSection('sec-warm')" role="button" aria-expanded="true"
+                tabindex="0">
+                <div class="section__icon"><i class="fas fa-sun" aria-hidden="true"></i></div>
+                <h2 id="warm-title" class="section__title">Warm Leads</h2>
+                <span class="section__count" aria-label="{{ warm_leads|length }} leads">{{ warm_leads|length }}</span>
+                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
+            </header>
+            <div class="section__body">
+                {% for group in warm_by_date %}
+                <div class="date-header">{{ group.label }}</div>
+                {% for lead in group.leads %}
+                {% include "includes/lead_card.html" with lead=lead section="warm" %}
+                {% endfor %}
+                {% empty %}
+                <div class="empty-state">
+                    <p><i class="fas fa-sun" aria-hidden="true"></i> No warm leads.</p>
+                </div>
+                {% endfor %}
             </div>
-            {% if lead.last_priority_alert_summary %}
-            <div class="alert"><strong>Last sent alert:</strong> {{ lead.last_priority_alert_summary|truncatechars:260 }}</div>
-            {% endif %}
-            <div class="card-actions">
-                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-dark">Open Lead</a>
-                <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-light">Call</a>
-                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-light" target="_blank">WhatsApp</a>
+        </section>
+
+        <!-- LUKE-WARM -->
+        <section class="section section--luke" id="sec-luke" aria-labelledby="luke-title">
+            <header class="section__header" onclick="toggleSection('sec-luke')" role="button" aria-expanded="false"
+                tabindex="0">
+                <div class="section__icon"><i class="fas fa-temperature-low" aria-hidden="true"></i></div>
+                <h2 id="luke-title" class="section__title">Luke-warm Leads</h2>
+                <span class="section__count" aria-label="{{ luke_warm_leads|length }} leads">{{ luke_warm_leads|length
+                    }}</span>
+                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
+            </header>
+            <div class="section__body">
+                {% for group in luke_warm_by_date %}
+                <div class="date-header">{{ group.label }}</div>
+                {% for lead in group.leads %}
+                {% include "includes/lead_card.html" with lead=lead section="luke" %}
+                {% endfor %}
+                {% empty %}
+                <div class="empty-state">
+                    <p><i class="fas fa-temperature-low" aria-hidden="true"></i> No luke-warm leads.</p>
+                </div>
+                {% endfor %}
             </div>
-            <details class="card-menu">
-                <summary><i class="fas fa-chevron-down"></i> Update manual follow-up and notes</summary>
-                <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    <select name="manual_followup_state">
-                        <option value="">Manual follow-up state</option>
-                        <option value="pending">Mark manual follow-up pending</option>
-                        <option value="done">Mark manually followed up</option>
-                    </select>
-                    <select name="follow_up_status">
-                        <option value="">Lead follow-up status</option>
-                        {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                    <textarea name="note" placeholder="Add internal note">{{ lead.admin_notes|default:'' }}</textarea>
-                    <button type="submit" class="btn btn-dark">Save update</button>
-                </form>
-            </details>
-        </div>
-        {% endfor %}
-        {% empty %}
-        <div class="lead-card">No leads marked as manually followed up for this section.</div>
-        {% endfor %}
-    </details>
-    {% endfor %}
+        </section>
+
+        <!-- COLD -->
+        <section class="section section--cold" id="sec-cold" aria-labelledby="cold-title">
+            <header class="section__header" onclick="toggleSection('sec-cold')" role="button" aria-expanded="false"
+                tabindex="0">
+                <div class="section__icon"><i class="fas fa-snowflake" aria-hidden="true"></i></div>
+                <h2 id="cold-title" class="section__title">Cold Leads</h2>
+                <span class="section__count" aria-label="{{ cold_leads|length }} leads">{{ cold_leads|length }}</span>
+                <div class="section__chevron"><i class="fas fa-chevron-down" aria-hidden="true"></i></div>
+            </header>
+            <div class="section__body">
+                {% for group in cold_by_date %}
+                <div class="date-header">{{ group.label }}</div>
+                {% for lead in group.leads %}
+                {% include "includes/lead_card.html" with lead=lead section="cold" %}
+                {% endfor %}
+                {% empty %}
+                <div class="empty-state">
+                    <p><i class="fas fa-snowflake" aria-hidden="true"></i> No cold leads.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+
+    <div class="spacer"></div>
+
+    <!-- Scroll to top FAB -->
+    <button class="fab" id="fab" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">
+        <i class="fas fa-chevron-up" aria-hidden="true"></i>
+    </button>
+
+    <!-- Mobile Filter Sheet -->
+    <div class="sheet-overlay" id="filter-overlay" onclick="closeFilter()" aria-hidden="true"></div>
+    <div class="sheet" id="filter-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+        <div class="sheet__handle" aria-hidden="true"></div>
+        <h3 id="sheet-title" class="sheet__title">
+            <i class="fas fa-sliders-h" aria-hidden="true"></i>
+            Filter Leads
+        </h3>
+        <form method="get">
+            <label class="sheet__label" for="mobile-age-select">Response Age</label>
+            <select name="response_age" id="mobile-age-select" class="form-select" aria-label="Filter by response age">
+                <option value="">All response ages</option>
+                <option value="1w">No response for 1 week+</option>
+                <option value="2w">No response for 2 weeks+</option>
+                <option value="3w">No response for 3 weeks+</option>
+                <option value="1m">No response for 1 month+</option>
+                <option value="1w_minus">Last response within 1 week</option>
+                <option value="2w_minus">Last response within 2 weeks</option>
+                <option value="3w_minus">Last response within 3 weeks</option>
+                <option value="4w_minus">Last response within 4 weeks</option>
+            </select>
+            <div class="sheet__actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-check" aria-hidden="true"></i>
+                    Apply Filter
+                </button>
+                <a href="{% url 'priority_leads' %}" class="btn btn-secondary">
+                    <i class="fas fa-undo" aria-hidden="true"></i>
+                    Reset
+                </a>
+            </div>
+        </form>
+    </div>
 </div>
+
 <script>
-    function scrollToSection(id) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        if (el.tagName === 'DETAILS') {
-            el.open = true;
+    (function () {
+        'use strict';
+
+        // Configuration
+        const CONFIG = {
+            collapsedSections: ['sec-luke', 'sec-cold'],
+            scrollThreshold: 300,
+            sheetCloseThreshold: 80
+        };
+
+        // State
+        let isDragging = false;
+        let startY = 0;
+        let currentY = 0;
+        let sheet = document.getElementById('filter-sheet');
+        let fab = document.getElementById('fab');
+
+        // Initialize form selects with saved value
+        function initFormValues() {
+            const saved = "{{ selected_response_age|default:'' }}";
+            ['mobile-age-select', 'desktop-age-select'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el && saved) el.value = saved;
+            });
         }
-        const top = el.getBoundingClientRect().top + window.scrollY - 10;
-        window.scrollTo({ top: top, behavior: 'smooth' });
-    }
+
+        // Section management
+        function initSections() {
+            document.querySelectorAll('.section__body').forEach(body => {
+                body.style.maxHeight = body.scrollHeight + 'px';
+            });
+        }
+
+        window.toggleSection = function (id) {
+            const section = document.getElementById(id);
+            if (!section) return;
+
+            const body = section.querySelector('.section__body');
+            const header = section.querySelector('.section__header');
+            const isCollapsed = section.classList.contains('section--collapsed');
+
+            if (isCollapsed) {
+                section.classList.remove('section--collapsed');
+                header.setAttribute('aria-expanded', 'true');
+                requestAnimationFrame(() => {
+                    body.style.maxHeight = body.scrollHeight + 'px';
+                });
+            } else {
+                section.classList.add('section--collapsed');
+                header.setAttribute('aria-expanded', 'false');
+                body.style.maxHeight = '0';
+            }
+        };
+
+        // Scroll to section
+        window.scrollToSection = function (id) {
+            const section = document.getElementById(id);
+            if (!section) return;
+
+            if (section.classList.contains('section--collapsed')) {
+                toggleSection(id);
+            }
+
+            const headerHeight = document.querySelector('.page-header')?.offsetHeight || 60;
+            const y = section.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
+            window.scrollTo({ top: y, behavior: 'smooth' });
+        };
+
+        // Mobile sheet controls
+        window.openFilter = function () {
+            const overlay = document.getElementById('filter-overlay');
+            const sheet = document.getElementById('filter-sheet');
+            const toggle = document.querySelector('.filter-toggle');
+
+            overlay.classList.add('sheet-overlay--open');
+            toggle.setAttribute('aria-expanded', 'true');
+
+            requestAnimationFrame(() => {
+                overlay.classList.add('sheet-overlay--visible');
+                sheet.classList.add('sheet--open');
+            });
+
+            document.body.style.overflow = 'hidden';
+        };
+
+        window.closeFilter = function () {
+            const overlay = document.getElementById('filter-overlay');
+            const sheet = document.getElementById('filter-sheet');
+            const toggle = document.querySelector('.filter-toggle');
+
+            overlay.classList.remove('sheet-overlay--visible');
+            sheet.classList.remove('sheet--open');
+            toggle.setAttribute('aria-expanded', 'false');
+            document.body.style.overflow = '';
+
+            setTimeout(() => {
+                overlay.classList.remove('sheet-overlay--open');
+            }, 300);
+        };
+
+        // FAB visibility
+        function updateFabVisibility() {
+            if (!fab) return;
+            fab.classList.toggle('fab--visible', window.scrollY > CONFIG.scrollThreshold);
+        }
+
+        // Keyboard support
+        function initKeyboardSupport() {
+            document.querySelectorAll('.section__header, .chip').forEach(el => {
+                el.addEventListener('keydown', e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        el.click();
+                    }
+                });
+            });
+        }
+
+        // Mobile sheet swipe to close
+        function initSheetGestures() {
+            if (!sheet) return;
+
+            sheet.addEventListener('touchstart', e => {
+                startY = e.touches[0].clientY;
+                isDragging = true;
+                sheet.style.transition = 'none';
+            }, { passive: true });
+
+            sheet.addEventListener('touchmove', e => {
+                if (!isDragging) return;
+                currentY = e.touches[0].clientY;
+                const delta = currentY - startY;
+
+                if (delta > 0) {
+                    e.preventDefault();
+                    sheet.style.transform = `translateY(${delta}px)`;
+                }
+            }, { passive: false });
+
+            sheet.addEventListener('touchend', () => {
+                isDragging = false;
+                sheet.style.transition = '';
+                sheet.style.transform = '';
+
+                if (currentY - startY > CONFIG.sheetCloseThreshold) {
+                    closeFilter();
+                }
+            });
+        }
+
+        // Apply mobile defaults
+        function applyMobileDefaults() {
+            if (window.innerWidth >= 640) return;
+
+            CONFIG.collapsedSections.forEach(id => {
+                const section = document.getElementById(id);
+                if (section && !section.classList.contains('section--collapsed')) {
+                    section.classList.add('section--collapsed');
+                    const header = section.querySelector('.section__header');
+                    if (header) header.setAttribute('aria-expanded', 'false');
+                    const body = section.querySelector('.section__body');
+                    if (body) body.style.maxHeight = '0';
+                }
+            });
+        }
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', () => {
+            initFormValues();
+            initSections();
+            initKeyboardSupport();
+            initSheetGestures();
+            applyMobileDefaults();
+            updateFabVisibility();
+        });
+
+        // Scroll listener
+        window.addEventListener('scroll', updateFabVisibility, { passive: true });
+
+        // Resize listener
+        window.addEventListener('resize', () => {
+            if (window.innerWidth >= 640) {
+                document.body.style.overflow = '';
+            }
+        });
+    })();
 </script>
+
+<!-- Include lead card partial -->
+{% include "includes/lead_card_partial.html" %}
 {% endblock %}
