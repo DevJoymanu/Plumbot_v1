@@ -4,7 +4,7 @@
 <style>
     /* ============================================================
      DESIGN TOKENS
-     Centralised variables — change once, applies everywhere.
+     Centralised variables - change once, applies everywhere.
   ============================================================ */
     :root {
         --font-sans: 'DM Sans', system-ui, sans-serif;
@@ -18,7 +18,7 @@
         --text-md: #374151;
         --text-muted: #6b7280;
 
-        /* Status palette — background / foreground / accent */
+        /* Status palette - background / foreground / accent */
         --vh-bg: #fff1f1;
         --vh-fg: #991b1b;
         --vh-accent: #dc2626;
@@ -55,7 +55,6 @@
   ============================================================ */
     .pld-body {
         font-family: var(--font-sans);
-        background: var(--bg);
         min-height: 100vh;
         color: var(--text);
     }
@@ -340,7 +339,7 @@
         overflow: hidden;
         box-shadow: var(--shadow-sm);
 
-        /* Accent left border — colour assigned per section below */
+        /* Accent left border - colour assigned per section below */
         border-left: 4px solid transparent;
         transition: box-shadow var(--transition);
     }
@@ -581,7 +580,7 @@
         line-height: 1.3;
     }
 
-    /* Score badge — inherits section colour via CSS custom property set inline */
+    /* Score badge - inherits section colour via CSS custom property set inline */
     .lc-score {
         flex-shrink: 0;
         border-radius: var(--radius-pill);
@@ -816,7 +815,7 @@
             display: none;
         }
 
-        /* hide stats pills on very small screens — count still in chevron area */
+        /* hide stats pills on very small screens - count still in chevron area */
         .sec-stat-total {
             display: inline-flex;
         }
@@ -879,7 +878,7 @@
 
             <div class="sbar-divider" aria-hidden="true"></div>
 
-            {# Follow-up summary chips — informational, click to jump to top section #}
+            {# Follow-up summary chips - informational, click to jump to top section #}
             <button class="sbar-chip" onclick="scrollToSection('sec-vh')"
                 title="Manual follow-ups still pending across all sections"
                 aria-label="{{ manual_followup_pending_count }} manual follow-ups pending">
@@ -912,7 +911,7 @@
             <form method="get" class="filter-row" role="search" aria-label="Filter leads">
                 <select name="response_age" id="id_response_age" class="filter-select" aria-label="Response age filter">
                     <option value="">All response ages</option>
-                    <optgroup label="No response for…">
+                    <optgroup label="No response for">
                         <option value="1w" {% if selected_response_age=='1w' %}selected{% endif %}>1 week or more
                         </option>
                         <option value="2w" {% if selected_response_age=='2w' %}selected{% endif %}>2 weeks or more
@@ -922,7 +921,7 @@
                         <option value="1m" {% if selected_response_age=='1m' %}selected{% endif %}>1 month or more
                         </option>
                     </optgroup>
-                    <optgroup label="Last response within…">
+                    <optgroup label="Last response within">
                         <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>1 week
                         </option>
                         <option value="2w_minus" {% if selected_response_age=='2w_minus' %}selected{% endif %}>2 weeks
@@ -949,7 +948,7 @@
   ============================================================ -->
         {% for section in sections %}
         <details class="pld-section {{ section.css }}" id="{{ section.id }}"
-            aria-label="{{ section.title }} — {{ section.count }} leads">
+            aria-label="{{ section.title }} - {{ section.count }} leads">
             <summary class="sec-header">
                 <span class="sec-header-left">
                     {# Coloured icon badge #}
@@ -978,13 +977,13 @@
                 </span>
             </summary>
 
-            {# Recommended action banner — inside the collapsible body #}
+            {# Recommended action banner - inside the collapsible body #}
             <div class="sec-rec" role="note">
                 <i class="fas fa-lightbulb" aria-hidden="true"></i>
                 <div><strong>Recommended:</strong> {{ section.recommended_action }}</div>
             </div>
 
-            <!-- ── SEGMENT: MANUAL FOLLOW-UP PENDING ── -->
+            <!-- -- SEGMENT: MANUAL FOLLOW-UP PENDING -- -->
             <div class="segment-header">
                 <span>Manual Follow-up Pending</span>
                 <span class="seg-count">{{ section.pending_count }}</span>
@@ -1054,7 +1053,7 @@
                     <summary class="lc-update-toggle"
                         aria-label="Toggle update form for {{ lead.customer_name|default:'this lead' }}">
                         <i class="fas fa-chevron-down toggle-chevron" aria-hidden="true"></i>
-                        Update follow-up &amp; notes
+                        Update follow-up and notes
                     </summary>
                     <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}" class="lc-form"
                         aria-label="Update lead {{ lead.customer_name|default:'unknown' }}">
@@ -1062,13 +1061,13 @@
                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
 
                         <select name="manual_followup_state" class="lc-select" aria-label="Manual follow-up state">
-                            <option value="">Manual follow-up state…</option>
+                            <option value="">Manual follow-up state...</option>
                             <option value="pending">Mark as pending</option>
                             <option value="done">Mark as done</option>
                         </select>
 
                         <select name="follow_up_status" class="lc-select" aria-label="Lead follow-up status">
-                            <option value="">Lead status…</option>
+                            <option value="">Lead status...</option>
                             {% for value, label in follow_up_status_choices %}
                             <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>
                                 {{ label }}
@@ -1080,7 +1079,7 @@
                         NOTE: admin_notes is pre-populated in the textarea.
                         The backend handles saving; this preserves existing behaviour.
                         #}
-                        <textarea name="note" class="lc-textarea" placeholder="Add internal note…"
+                        <textarea name="note" class="lc-textarea" placeholder="Add internal note..."
                             aria-label="Internal note for this lead">{{ lead.admin_notes|default:'' }}</textarea>
 
                         <button type="submit" class="btn btn-save">
@@ -1105,7 +1104,7 @@
             {% endif %}
 
 
-            <!-- ── SEGMENT: MANUALLY FOLLOWED UP ── -->
+            <!-- -- SEGMENT: MANUALLY FOLLOWED UP -- -->
             <div class="segment-header" style="margin-top:6px;">
                 <span>Manually Followed Up</span>
                 <span class="seg-count">{{ section.done_count }}</span>
@@ -1118,7 +1117,7 @@
             </div>
 
             {% for lead in group.leads %}
-            {# ===== LEAD CARD (done segment — identical structure, styles auto-inherit section colour) ===== #}
+            {# ===== LEAD CARD (done segment - identical structure, styles auto-inherit section colour) ===== #}
             <article class="lead-card" aria-label="Lead: {{ lead.customer_name|default:'Unknown Customer' }}">
                 <div class="lc-top">
                     <div class="lc-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
@@ -1173,7 +1172,7 @@
                     <summary class="lc-update-toggle"
                         aria-label="Toggle update form for {{ lead.customer_name|default:'this lead' }}">
                         <i class="fas fa-chevron-down toggle-chevron" aria-hidden="true"></i>
-                        Update follow-up &amp; notes
+                        Update follow-up and notes
                     </summary>
                     <form method="post" action="{% url 'update_priority_lead_card' lead.pk %}" class="lc-form"
                         aria-label="Update lead {{ lead.customer_name|default:'unknown' }}">
@@ -1181,13 +1180,13 @@
                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
 
                         <select name="manual_followup_state" class="lc-select" aria-label="Manual follow-up state">
-                            <option value="">Manual follow-up state…</option>
+                            <option value="">Manual follow-up state...</option>
                             <option value="pending">Mark as pending</option>
                             <option value="done">Mark as done</option>
                         </select>
 
                         <select name="follow_up_status" class="lc-select" aria-label="Lead follow-up status">
-                            <option value="">Lead status…</option>
+                            <option value="">Lead status...</option>
                             {% for value, label in follow_up_status_choices %}
                             <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>
                                 {{ label }}
@@ -1195,7 +1194,7 @@
                             {% endfor %}
                         </select>
 
-                        <textarea name="note" class="lc-textarea" placeholder="Add internal note…"
+                        <textarea name="note" class="lc-textarea" placeholder="Add internal note..."
                             aria-label="Internal note for this lead">{{ lead.admin_notes|default:'' }}</textarea>
 
                         <button type="submit" class="btn btn-save">
@@ -1250,7 +1249,7 @@
         const age = params.get('response_age');
         if (!age) return;
 
-        // The filter select mirrors the active value — visually flag it
+        // The filter select mirrors the active value - visually flag it
         const sel = document.getElementById('id_response_age');
         if (sel) {
             sel.style.borderColor = '#3b82f6';
@@ -1259,7 +1258,7 @@
     })();
 
     /**
-     * Keyboard shortcut: pressing "1"–"5" opens/closes sections in order.
+     * Keyboard shortcut: pressing "1"-"5" opens/closes sections in order.
      * Lets power users navigate without touching the mouse.
      */
     (function addKeyboardShortcuts() {
