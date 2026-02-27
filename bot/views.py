@@ -2537,7 +2537,66 @@ class Plumbot:
             defaults={'status': 'pending'}
         )
 
+    
     #
+    # ── FIX 3 helpers ────────────────────────────────────────────────────────
+
+    def _is_delay_or_exit_signal(self, message: str) -> bool:
+        """
+        Return True if the customer is signalling they want to pause / end
+        the conversation for now — without opting out permanently.
+        """
+        msg = message.lower().strip()
+
+        # Short acks — customer is done reading, not asking a question
+        short_acks = {
+            'ok', 'okay', 'ok.', 'okay.', 'ok thanks', 'ok thank you',
+            'thanks', 'thank you', 'thank u', 'thx', 'thnx',
+            'noted', 'got it', 'alright', 'cool', 'nice', 'great',
+            '👍', '🙏', '✅', '😊', 'ooh ok', 'ooh okay',
+        }
+        if msg in short_acks:
+            return True
+
+        # Delay phrases
+        delay_phrases = [
+            "i'll talk", "i will talk", "talk later", "will contact",
+            "contact later", "i'll be in touch", "get back to you",
+            "busy now", "busy at the moment", "not right now",
+            "will let you know", "will come back", "come back to you",
+            "in a bit", "later today", "i'll get back",
+            "let me think", "need to think", "thinking about it",
+            "no rush", "no problem", "no worries",
+            "i will talk to you later", "talk to you later",
+        ]
+        if any(phrase in msg for phrase in delay_phrases):
+            return True
+
+        return False
+
+    def _get_delay_acknowledgment(self) -> str:
+        """Return a warm, pressure-free acknowledgment for delay/exit signals."""
+        return (
+            "No problem at all! 😊 Whenever you're ready, just drop us a message and "
+            "we'll pick up right where we left off.\\n\\n"
+            "— Homebase Plumbers"
+        )
+
+# In generate_response(), add this block immediately AFTER the plan-upload
+# checks (the `if self.appointment.has_plan is True and plan_status == ...` blocks)
+# and BEFORE `extracted_data = self.extract_all_available_info_with_ai(incoming_message)`:
+
+DELAY_CHECK_INSERTION = '''
+            # ── FIX 3: Graceful exit for "later / busy / thanks" signals ─────
+            if self._is_delay_or_exit_signal(incoming_message):
+                print(f"⏸️ FIX 3: Delay/exit signal detected — not pushing further")
+                reply = self._get_delay_acknowledgment()
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
+'''    
+
+
     def generate_response(self, incoming_message):
         """Check service inquiries ONLY when not mid-conversation."""
         try:
@@ -2706,6 +2765,9 @@ class Plumbot:
         except Exception as e:
             print(f"❌ API Error: {str(e)}")
             return "I'm having some trouble connecting to our system. Could you try again in a moment?"
+
+
+
 
 
     def validate_plan_status_with_ai(self, extracted_status: str, original_message: str) -> tuple:
@@ -3373,6 +3435,20 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             if not reply:
                 reply = self.generate_contextual_response(message, self.get_next_question_to_ask(), [])
 
+            # ── FIX 2: Append site-visit close if no clear next-step present ──
+            # This prevents the bot from falling back to "which service?" and
+            # instead keeps momentum moving toward a site visit / booking.
+            site_visit_triggers = [
+                'site visit', 'send a plan', 'send plan', 'accurate quotation',
+                'accurate quote', 'would you like', 'shall we',
+                'book an appointment', 'free site',
+            ]
+            if not any(t in reply.lower() for t in site_visit_triggers):
+                reply += (
+                    "\\n\\nWould you like us to come do a *free site visit* and give you "
+                    "an exact price? Just let us know your area and when suits you 😊"
+                )
+
             return reply
 
         except Exception as e:
@@ -3412,7 +3488,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
 
     ⚠️ These are approximate prices and may vary depending on the scope of work on site. For an accurate quote, we can do a *site visit* or you can send us a *photo/plan*.
 
-    Which service are you interested in?"""
+    Which were you looking at — supply only or supply + install??"""
 
     def notify_plumber_about_plan(self):
         """Send plan details to plumber via WhatsApp"""
@@ -4783,6 +4859,24 @@ I understand this is time-sensitive!"""
             retry_count = getattr(self.appointment, 'retry_count', 0)
             is_retry = retry_count > 0
             
+            depends_phrases = [
+                'depends on', 'depend on', 'depending on',
+                'subject to', 'based on', 'after the quote', 'after quote',
+                'after site visit', 'after assessment', 'after seeing the work',
+                'once i see', 'once we see', 'wait for quote', 'wait for the quote',
+                'when i get the', 'when i have the', 'after i get',
+                'scope of work',
+            ]
+            if (next_question == "timeline" and
+                    any(p in incoming_message.lower() for p in depends_phrases)):
+                print("✅ FIX 4: 'Depends on quote' accepted as timeline — moving on")
+                self.appointment.timeline = "After site visit / quote"
+                self.appointment.save(update_fields=["timeline"])
+                refresh_lead_score(self.appointment)
+                # Recalculate next question now that timeline is filled
+                next_question = self.get_next_question_to_ask()
+
+
             # Build acknowledgment of received information
             acknowledgments = []
             if 'service_type' in updated_fields:
