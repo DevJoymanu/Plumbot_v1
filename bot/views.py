@@ -2582,19 +2582,6 @@ class Plumbot:
             "— Homebase Plumbers"
         )
 
-# In generate_response(), add this block immediately AFTER the plan-upload
-# checks (the `if self.appointment.has_plan is True and plan_status == ...` blocks)
-# and BEFORE `extracted_data = self.extract_all_available_info_with_ai(incoming_message)`:
-
-DELAY_CHECK_INSERTION = '''
-            # ── FIX 3: Graceful exit for "later / busy / thanks" signals ─────
-            if self._is_delay_or_exit_signal(incoming_message):
-                print(f"⏸️ FIX 3: Delay/exit signal detected — not pushing further")
-                reply = self._get_delay_acknowledgment()
-                self.appointment.add_conversation_message("user", incoming_message)
-                self.appointment.add_conversation_message("assistant", reply)
-                return reply
-'''    
 
 
     def generate_response(self, incoming_message):
@@ -2675,6 +2662,16 @@ DELAY_CHECK_INSERTION = '''
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
             
+            
+            if self._is_delay_or_exit_signal(incoming_message):
+                print(f"⏸️ FIX 3: Delay/exit signal detected — not pushing further")
+                reply = self._get_delay_acknowledgment()
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
+
+
+
             # STEP 2: Extract ALL available information from the message
             extracted_data = self.extract_all_available_info_with_ai(incoming_message)
             
