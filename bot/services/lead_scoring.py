@@ -44,9 +44,7 @@ def refresh_lead_score(lead, persist=True):
     score, classification = calculate_lead_score(lead)
     lead.lead_score = score
     lead.lead_status = classification
-    if classification == LeadStatus.VERY_HOT:
-        lead.chatbot_paused = True
+    # Chatbot is only paused manually — never auto-paused here
     if persist:
-        lead.save(update_fields=['lead_score', 'lead_status', 'chatbot_paused'])
+        lead.save(update_fields=['lead_score', 'lead_status'])
     return score, classification
-

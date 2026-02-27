@@ -4457,69 +4457,92 @@ I understand this is time-sensitive!"""
     # ALSO UPDATE YOUR notify_team METHOD:
 
     def notify_team(self, appointment_info, appointment_datetime):
-        """Notify team about new appointment - immediately via WhatsApp Cloud API"""
-        try:
-            # Format datetime for display
-            display_datetime = self.format_datetime_for_display(appointment_datetime)
+            """Notify team about new appointment booking via WhatsApp."""
+            try:
+                import os
 
-            service_name = appointment_info.get('project_type', 'Plumbing service')
-            if service_name:
-                service_map = {
-                    'bathroom_renovation': 'Bathroom Renovation',
-                    'new_plumbing_installation': 'New Plumbing Installation',
-                    'kitchen_renovation': 'Kitchen Renovation'
-                }
-                service_name = service_map.get(service_name, service_name.replace('_', ' ').title())
+                # Format datetime for display
+                display_datetime = self.format_datetime_for_display(appointment_datetime)
 
-            plan_status = "Not specified"
-            if appointment_info.get('has_plan') is not None:
-                plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
+                service_name = appointment_info.get('project_type', 'Plumbing service')
+                if service_name:
+                    service_map = {
+                        'bathroom_renovation': 'Bathroom Renovation',
+                        'new_plumbing_installation': 'New Plumbing Installation',
+                        'kitchen_renovation': 'Kitchen Renovation'
+                    }
+                    service_name = service_map.get(service_name, service_name.replace('_', ' ').title())
 
-            # Generate AI conversation summary
-            from bot.whatsapp_webhook import generate_conversation_summary
-            ai_summary = generate_conversation_summary(self.appointment)
+                plan_status = "Not specified"
+                if appointment_info.get('has_plan') is not None:
+                    plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
 
-            customer_phone = self.phone_number.replace('whatsapp:+', '').replace('whatsapp:', '').replace('+', '')
+                # AI conversation summary
+                from bot.whatsapp_webhook import generate_conversation_summary
+                ai_summary = generate_conversation_summary(self.appointment)
 
-            team_message = (
-                f"🚨 NEW APPOINTMENT BOOKED!\n\n"
-                f"Customer: {appointment_info.get('name', 'Unknown')}\n"
-                f"Phone: +{customer_phone}\n"
-                f"WhatsApp: wa.me/{customer_phone}\n\n"
-                f"📋 APPOINTMENT DETAILS:\n"
-                f"  Date/Time: {display_datetime.strftime('%A, %B %d at %I:%M %p')}\n"
-                f"  Service: {service_name}\n"
-                f"  Area: {appointment_info.get('area', 'Not provided')}\n"
-                f"  Property: {appointment_info.get('property_type', 'Not specified')}\n"
-                f"  Timeline: {appointment_info.get('timeline', 'Not specified')}\n"
-                f"  Plan Status: {plan_status}\n\n"
-                f"🤖 AI CONVERSATION SUMMARY:\n{ai_summary}\n\n"
-                f"🔗 View full appointment:\n"
-                f"https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/"
-            )
+                customer_phone = (
+                    self.phone_number
+                    .replace('whatsapp:+', '')
+                    .replace('whatsapp:', '')
+                    .replace('+', '')
+                )
 
-            TEAM_NUMBERS = ['263610318200']
+                team_message = (
+                    f"🚨 NEW APPOINTMENT BOOKED!\n\n"
+                    f"👤 Customer: {appointment_info.get('name', 'Unknown')}\n"
+                    f"📞 Phone: +{customer_phone}\n"
+                    f"💬 WhatsApp: wa.me/{customer_phone}\n\n"
+                    f"📋 APPOINTMENT DETAILS:\n"
+                    f"  📅 Date/Time: {display_datetime.strftime('%A, %B %d at %I:%M %p')}\n"
+                    f"  🔧 Service: {service_name}\n"
+                    f"  📍 Area: {appointment_info.get('area', 'Not provided')}\n"
+                    f"  🏠 Property: {appointment_info.get('property_type', 'Not specified')}\n"
+                    f"  ⏰ Timeline: {appointment_info.get('timeline', 'Not specified')}\n"
+                    f"  📐 Plan: {plan_status}\n\n"
+                    f"🤖 AI SUMMARY:\n{ai_summary}\n\n"
+                    f"🔗 View: https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/"
+                )
 
-            print(f"📤 Sending booking notifications to {len(TEAM_NUMBERS)} team members...")
+                # Build recipient list from env var → appointment field → hardcoded fallback
+                team_numbers = []
 
-            sent_count = 0
-            for number in TEAM_NUMBERS:
-                try:
-                    whatsapp_api.send_text_message(number, team_message)
-                    print(f"✅ Booking notification sent to {number}")
-                    sent_count += 1
-                except Exception as msg_error:
-                    print(f"❌ Failed to send booking notification to {number}: {str(msg_error)}")
+                env_numbers = os.environ.get('TEAM_NUMBERS', '')
+                for n in env_numbers.replace('\n', ',').split(','):
+                    n = n.strip().replace('whatsapp:', '').replace('+', '')
+                    if n:
+                        team_numbers.append(n)
 
-            if sent_count > 0:
-                print(f"✅ Successfully sent {sent_count} booking notifications")
+                plumber_contact = getattr(self.appointment, 'plumber_contact_number', None)
+                if plumber_contact:
+                    n = plumber_contact.replace('whatsapp:', '').replace('+', '').strip()
+                    if n and n not in team_numbers:
+                        team_numbers.append(n)
 
-        except Exception as e:
-            print(f"❌ Team notification error: {str(e)}")
-            import traceback
-            traceback.print_exc()
+                if not team_numbers:
+                    team_numbers = ['263610318200']
+                    print("⚠️ TEAM_NUMBERS env var not set — using hardcoded fallback")
 
+                print(f"📤 Sending booking notifications to {len(team_numbers)} team member(s)...")
 
+                sent_count = 0
+                for number in team_numbers:
+                    try:
+                        whatsapp_api.send_text_message(number, team_message)
+                        print(f"✅ Booking notification sent to {number}")
+                        sent_count += 1
+                    except Exception as msg_error:
+                        print(f"❌ Failed to send to {number}: {msg_error}")
+
+                if sent_count == 0:
+                    print("❌ No booking notifications sent — check TEAM_NUMBERS env var and WhatsApp API config")
+
+            except Exception as e:
+                print(f"❌ Team notification error: {str(e)}")
+                import traceback
+                traceback.print_exc()
+
+                
     def add_to_google_calendar(self, appointment_info, appointment_datetime):
         """Add appointment to Google Calendar"""
         try:
