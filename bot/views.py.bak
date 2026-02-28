@@ -2578,7 +2578,7 @@ class Plumbot:
         """Return a warm, pressure-free acknowledgment for delay/exit signals."""
         return (
             "No problem at all! 😊 Whenever you're ready, just drop us a message and "
-            "we'll pick up right where we left off.\n\n"
+            "we'll pick up right where we left off.\\n\\n"
             "— Homebase Plumbers"
         )
 
@@ -3442,7 +3442,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             ]
             if not any(t in reply.lower() for t in site_visit_triggers):
                 reply += (
-                    "\n\nWould you like us to come do a *free site visit* and give you "
+                    "\\n\\nWould you like us to come do a *free site visit* and give you "
                     "an exact price? Just let us know your area and when suits you 😊"
                 )
 
@@ -4240,32 +4240,6 @@ I understand this is time-sensitive!"""
     def get_next_question_to_ask(self):
         """Determine which question to ask next - FIXED for early uploads"""
         
-        # ── FIX 6: Infer project_type from sent_pricing_intents ──────────────
-        # If the bot already answered a specific pricing question (toilet, tub,
-        # chamber…) but project_type was never saved, recover it now so we
-        # never re-ask "which service?".
-        if not self.appointment.project_type:
-            _intent_map = {
-                "toilet":               "bathroom_renovation",
-                "chamber":              "bathroom_renovation",
-                "standalone_tub":       "bathroom_renovation",
-                "bathtub_installation": "bathroom_renovation",
-                "tub_sales":            "bathroom_renovation",
-                "shower_cubicle":       "bathroom_renovation",
-                "vanity":               "bathroom_renovation",
-                "geyser":               "bathroom_renovation",
-            }
-            _sent = list(getattr(self.appointment, 'sent_pricing_intents', None) or [])
-            for _intent in _sent:
-                if _intent in _intent_map:
-                    self.appointment.project_type = _intent_map[_intent]
-                    self.appointment.save(update_fields=["project_type"])
-                    print(
-                        f"✅ FIX 6: Inferred project_type='{self.appointment.project_type}'"
-                        f" from sent_pricing_intents"
-                    )
-                    break
-
         if not self.appointment.project_type:
             return "service_type"
         
