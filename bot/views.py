@@ -4854,8 +4854,6 @@ I understand this is time-sensitive!"""
             # Get current state
             appointment_context = self.get_appointment_context()
             retry_count = getattr(self.appointment, 'retry_count', 0)
-            is_retry = retry_count > 0
-            
             depends_phrases = [
                 'depends on', 'depend on', 'depending on',
                 'subject to', 'based on', 'after the quote', 'after quote',
@@ -4872,6 +4870,8 @@ I understand this is time-sensitive!"""
                 refresh_lead_score(self.appointment)
                 # Recalculate next question now that timeline is filled
                 next_question = self.get_next_question_to_ask()
+            is_retry = retry_count > 0
+            
 
 
             # Build acknowledgment of received information
