@@ -142,6 +142,26 @@ class Command(BaseCommand):
 
     # ─── Per-lead processing ──────────────────────────────────────────────────
 
+    def _clean_phone(self, phone):
+        """Clean and validate phone number."""
+        if not phone:
+            return None
+        
+        # Handle "Unknown Customer - Pending" sentinel value
+        phone_str = str(phone).strip()
+        if 'Unknown' in phone_str or 'Pending' in phone_str:
+            return None
+        
+        # Remove formatting
+        clean = phone_str.replace('whatsapp:', '').replace('+', '').strip()
+        
+        # Must be at least 10 digits (Zimbabwe/SA standard)
+        if not clean or len(clean) < 10 or not clean.isdigit():
+            return None
+        
+        return clean
+
+
     def _process_lead(self, lead, now_local, dry_run, force):
         ready, reason = self._is_ready_for_followup(lead, now_local, force)
         if not ready:
@@ -162,25 +182,27 @@ class Command(BaseCommand):
             )
             return {'status': 'retired'}
 
-        # ─── VALIDATE PHONE NUMBER ─────────────────────────────────────────────
-        raw_phone = lead.phone_number or ''
-        clean_phone = self._clean_phone(raw_phone)
-        
-        if not clean_phone or len(clean_phone) < 10 or clean_phone == 'Unknown Customer - Pending':
-            logger.error(f'Invalid phone number for lead {lead.id}: "{raw_phone}" (cleaned: "{clean_phone}")')
+        # ✅ NEW: Validate phone number EARLY
+        clean_phone = self._clean_phone(lead.phone_number)
+        if not clean_phone:
+            logger.error(f'Invalid phone number for lead {lead.id}: "{lead.phone_number}"')
             self.stdout.write(
                 self.style.ERROR(
-                    f'❌ Lead {lead.id}: Invalid phone number "{raw_phone}" — marking as error'
+                    f'❌ Lead {lead.id}: Invalid phone "{lead.phone_number}" — deactivating'
                 )
             )
-            # Optionally deactivate this lead since we can't contact them
+            
             if not dry_run:
                 lead.is_lead_active = False
-                lead.save(update_fields=['is_lead_active'])
-            return {'status': 'errors'}
+                lead.followup_stage = 'completed'
+                lead.lead_marked_inactive_at = timezone.now()
+                lead.save()
+            
+            return {'status': 'deactivated'}
 
+        # ✅ Rest of logic uses validated clean_phone
         next_q  = self._get_next_question(lead)
-        attempt = lead.followup_count + 1   # 1-based
+        attempt = lead.followup_count + 1
         result  = self._generate_message(lead, next_q, attempt)
         message = result['message']
 
@@ -195,7 +217,7 @@ class Command(BaseCommand):
             )
             return {'status': 'sent', **result}
 
-        # Send with validated clean_phone
+        # ✅ Send with validated clean_phone
         try:
             whatsapp_api.send_text_message(clean_phone, message)
         except Exception as exc:
@@ -203,13 +225,10 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f'❌ Lead {lead.id}: {exc}'))
             return {'status': 'errors'}
 
-        # ... rest of your existing code ...
-        clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-        whatsapp_api.send_text_message(clean_phone, message)
-
+        # Update and save
         lead.last_followup_sent = timezone.now()
-        lead.followup_count    += 1
-        lead.followup_stage     = self._stage_label(lead)
+        lead.followup_count += 1
+        lead.followup_stage = self._stage_label(lead)
         lead.save()
 
         lead.add_conversation_message('assistant', f'[AUTO FOLLOW-UP] {message}')
@@ -229,7 +248,7 @@ class Command(BaseCommand):
         tag = '🤖 AI' if result['ai_generated'] else '📄 Template'
         self.stdout.write(
             self.style.SUCCESS(
-                f'✅ {tag} → {lead.phone_number} '
+                f'✅ {tag} → {clean_phone} '
                 f'attempt #{lead.followup_count}/{MAX_FOLLOWUPS}'
             )
         )
@@ -615,10 +634,4 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
     # ─── Utility ──────────────────────────────────────────────────────────────
 
     def _clean_phone(self, phone):
-        if not phone:
-            return ''
-        # Handle the specific "Unknown Customer - Pending" case
-        phone_str = str(phone).strip()
-        if 'Unknown' in phone_str or 'Pending' in phone_str:
-            return ''
-        return phone_str.replace('whatsapp:', '').replace('+', '').strip()
+        return phone.replace('whatsapp:', '').replace('+', '').strip()
