@@ -58,7 +58,8 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 CONTACT_WINDOWS = [
     (8, 10),    # morning commute
     (12, 13),   # lunch break
-    (17, 23),   # after work / evening
+#    (17, 19),   # after work / evening
+    (21, 22),   # after work / evening
 ]
 
 # ─── Fixed intervals per attempt (hours) — same for all lead temperatures ────
