@@ -4815,7 +4815,7 @@ I understand this is time-sensitive!"""
             if isinstance(incoming_message, list):
                 incoming_message = " ".join(incoming_message)
             incoming_message = incoming_message or ""
-            
+
             try:
                 # Plan upload states — handle directly, no AI needed
                 if next_question == "initiate_plan_upload":
@@ -4914,7 +4914,12 @@ I understand this is time-sensitive!"""
 
     area:
     Great choice, let's get you booked in.\n
-    Our on-site assessment is a full technical review — we check layout, water pressure, drainage and access points so nothing gets missed and your quote is airtight.\n
+    Our on-site assessment is a full technical review: 
+    - we check layout
+    - water pressure
+    - drainage 
+    - access points 
+    this ensurez nothing gets missed and your quote is airtight.\n
     Which suburb are you in?\n
 
     availability:
