@@ -4806,275 +4806,235 @@ I understand this is time-sensitive!"""
             return False
 
 
-    def generate_contextual_response(self, next_question, conversation_context):
-        """FIXED: Handle plan upload initiation properly"""
-        appointment = self.appointment  
-        try:
-            # Check if we need to initiate plan upload
-            if next_question == "initiate_plan_upload":
-                return self.initiate_plan_upload_flow()
-            
-            # Check if we're awaiting plan upload
-            if next_question == "awaiting_plan_upload":
-                return "I'm waiting for your plan. Please send your images or PDF documents now."
-            
-            # Check if plan is with plumber
-            if next_question == "plan_with_plumber":
-                return "Your plan has been sent to our plumber. They'll contact you within 24 hours to discuss the project and provide a quote."
-            
-            # Get current state
-            appointment_context = self.get_appointment_context()
-            retry_count = getattr(self.appointment, 'retry_count', 0)
-            depends_phrases = [
-                'depends on', 'depend on', 'depending on',
-                'subject to', 'based on', 'after the quote', 'after quote',
-                'after site visit', 'after assessment', 'after seeing the work',
-                'once i see', 'once we see', 'wait for quote', 'wait for the quote',
-                'when i get the', 'when i have the', 'after i get',
-                'scope of work',
-            ]
-            if (next_question == "timeline" and
-                    any(p in incoming_message.lower() for p in depends_phrases)):
-                print("✅ FIX 4: 'Depends on quote' accepted as timeline — moving on")
-                self.appointment.timeline = "After site visit / quote"
-                self.appointment.save(update_fields=["timeline"])
-                refresh_lead_score(self.appointment)
-                # Recalculate next question now that timeline is filled
-                next_question = self.get_next_question_to_ask()
-            is_retry = retry_count > 0
-            
+    def generate_contextual_response(self, next_question, conversation_context, incoming_message="", updated_fields=None):
+            """Handle contextual response generation for each booking flow step."""
+            appointment = self.appointment
+            updated_fields = updated_fields or []
 
+            try:
+                # Plan upload states — handle directly, no AI needed
+                if next_question == "initiate_plan_upload":
+                    return self.initiate_plan_upload_flow()
 
-            # Build acknowledgment of received information
-            acknowledgments = []
-            if 'service_type' in updated_fields:
-                service_display = self.appointment.project_type.replace('_', ' ').title()
-                acknowledgments.append(f"service: {service_display}")
-            
-            #
-            if next_question == "plan_or_visit" and self._plan_question_already_pending():
-                # Bot already asked this — customer's reply was ambiguous.
-                # Rephrase rather than asking fresh to avoid sounding like a broken record.
-                clarifying_question = self.generate_clarifying_question_for_plan_status(retry_count)
-                return clarifying_question
+                if next_question == "awaiting_plan_upload":
+                    return "Got it — we're waiting on the plan. Send it here whenever you're ready and we'll get the quote turned around within 24 hours."
 
+                if next_question == "plan_with_plumber":
+                    return "Your plan is with our senior plumber now. We'll have a detailed quote back to you within 24 hours."
 
-            if 'plan_status' in updated_fields:
-                plan_text = "you have a plan" if self.appointment.has_plan else "you'd like a site visit"
-                acknowledgments.append(f"plan status: {plan_text}")
-            
-            if 'area' in updated_fields:
-                acknowledgments.append(f"area: {self.appointment.customer_area}")
-            
-            if 'property_type' in updated_fields:
-                acknowledgments.append(f"property type: {self.appointment.property_type}")
-            
-            # ✅ Check if customer is suggesting Saturday for their timeline/availability
-            saturday_indicators = ['saturday', 'sat']
-            if any(s in incoming_message.lower() for s in saturday_indicators):
-                alternatives = self.get_alternative_time_suggestions(
-                    timezone.now() + timedelta(days=1)
+                # ── "depends on quote" accepted as timeline ──────────────────────
+                depends_phrases = [
+                    'depends on', 'depend on', 'depending on',
+                    'subject to', 'based on', 'after the quote', 'after quote',
+                    'after site visit', 'after assessment', 'after seeing the work',
+                    'once i see', 'once we see', 'wait for quote', 'wait for the quote',
+                    'when i get the', 'when i have the', 'after i get',
+                    'scope of work',
+                ]
+                if (next_question == "timeline" and incoming_message and
+                        any(p in incoming_message.lower() for p in depends_phrases)):
+                    print("✅ 'Depends on quote' accepted as timeline — moving on")
+                    self.appointment.timeline = "After site visit / quote"
+                    self.appointment.save(update_fields=["timeline"])
+                    refresh_lead_score(self.appointment)
+                    next_question = self.get_next_question_to_ask()
+
+                # ── Saturday check ────────────────────────────────────────────────
+                if incoming_message and any(s in incoming_message.lower() for s in ['saturday', 'sat']):
+                    alternatives = self.get_alternative_time_suggestions(
+                        timezone.now() + timedelta(days=1)
+                    )
+                    alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
+                    reply = (
+                        "We unfortunately don't operate on Saturdays. 😊\n\n"
+                        "Our working hours are Monday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                    )
+                    if alt_text:
+                        reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
+                    else:
+                        reply += "Could you please choose a different day that works for you?"
+                    return reply
+
+                # ── Ambiguous plan/visit answer — rephrase rather than repeat ────
+                retry_count = getattr(self.appointment, 'retry_count', 0)
+                if next_question == "plan_or_visit" and self._plan_question_already_pending():
+                    return self.generate_clarifying_question_for_plan_status(retry_count)
+
+                # ── Build system prompt ───────────────────────────────────────────
+                system_prompt = f"""You are a professional booking assistant for a Harare plumbing and renovation company.
+    Your sole job is to move the conversation forward to a confirmed site-visit booking (or plan upload).
+    Be conversational, warm, and brief. Never use bullet points or numbered lists in your replies
+    unless the template below explicitly includes them. Never invent services or prices.
+
+    CURRENT STATE:
+    - Question to ask now: {next_question}
+    - Project type collected: {appointment.project_type or 'not yet'}
+    - Has plan: {appointment.has_plan}
+    - Customer area: {appointment.customer_area or 'not yet'}
+    - Scheduled datetime: {appointment.scheduled_datetime or 'not yet'}
+    - Customer name: {appointment.customer_name or 'not yet'}
+    - Plan status: {appointment.plan_status or 'n/a'}
+
+    CONVERSATION HISTORY (last 6 messages):
+    {conversation_context}
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    QUESTION TEMPLATES — use the exact copy below for each step.
+    You may shorten naturally if the customer has already answered part of it,
+    but do not rephrase the core value points.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    service_type:
+    We do bathroom renovations, kitchen renovations and new plumbing installations — all in Harare.
+    Most of our clients start with a free site visit so we can give them an accurate quote.
+    What are you thinking of getting sorted?
+
+    plan_or_visit:
+    To give you an accurate fixed quote (not rough estimates), we have two fast options:
+
+    *Option 1 — Send Your Plan*
+    If you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.
+
+    *Option 2 — Free On-Site Assessment*
+    We come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site.
+
+    This does three things for you:
+    1. Eliminates guesswork — no assumptions, no surprises
+    2. Locks in your fixed price — you know exactly what you're paying before a single pipe is touched
+    3. Saves you money — catching problems before the job starts costs nothing. Catching them during costs a lot.
+
+    Most serious clients choose the visit because it saves money long term.
+
+    Which works better for you — send a plan, or have us come out?
+
+    area:
+    Great choice, let's get you booked in.
+    Our on-site assessment is a full technical review — we check layout, water pressure, drainage and access points so nothing gets missed and your quote is airtight.
+    Which suburb are you in?
+
+    availability:
+    What day works on your end? We'll fit around your schedule — just drop a date and time (e.g. Monday 2pm).
+
+    name:
+    To complete your booking, what's your full name?
+
+    complete:
+    You're all set. We'll see you then — if anything changes, just message here and we'll sort it.
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    LANGUAGE & TONE:
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    You are speaking to residents of Harare, Zimbabwe. Customers may write in:
+    a) English only
+    b) Shona only
+    c) Chimix — the natural code-switch blend of Shona and English that most
+        urban Zimbabweans use in casual conversation (e.g. "Ndoda bathroom renovation,
+        how much inoita?")
+
+    MIRROR THE CUSTOMER'S LANGUAGE EXACTLY:
+    - If they write in English → reply in English
+    - If they write in Shona → reply in Shona, but keep technical terms
+    (bathroom, quote, plumber, site visit) in English as locals naturally do
+    - If they write in Chimix → reply in Chimix at the same ratio they use.
+    Do not force full Shona if they are mixing.
+
+    CHIMIX TONE GUIDE — sound like a trusted local professional, not a translated
+    corporate bot. Examples of natural phrasing:
+
+    service_type (Chimix):
+        "Tinoita bathroom renovations, kitchen renovations ne new plumbing — tese
+        tichibata Harare. Vazhinji vedu vanotanga ne free site visit kuti tipe
+        accurate quote. Iwe uri kufunga kugadzirisa chii?"
+
+    plan_or_visit (Chimix):
+        "Kuti tikupe accurate fixed quote, tine nzira mbiri dzekuita:
+
+        *Option 1 — Tuma Plan Yako*
+        Kana une drawing kana photo, tumira pano uye senior plumber wedu
+        anoona mukati memaawa 24.
+
+        *Option 2 — Free On-Site Assessment*
+        Tinouya, tiyere zvinhu zvese — water pressure, drainage, layout —
+        todesigna pamwe newe pane site.
+
+        Izvi zvinokuita zvinhu zvitatu:
+        1. Kuita kuti pasave ne guesswork — hapana ma-assumption, hapana
+        ma-surprise ekupedzisira
+        2. Kukuisa fixed price — unoziva chaunobhadhara before pipe imwe
+        isati yabatwa
+        3. Kukuchengetedza mari — kugadzirisa problems before job inotanga
+        hapana mari. Kuzogadzirisa pakati pejob inodhura.
+
+        Vazhinji vedu vanoona kuti site visit inoyevedza kupfura.
+
+        Ndeipi inakuita — kutuma plan, kana kuti tiuye?"
+
+    area (Chimix):
+        "Sarudzo yakanaka, ngatiise booking yako.
+        Uri musuburb ipi?"
+
+    availability (Chimix):
+        "Zuva ripi rinakuita? Tichikurovera schedule yako — drop date ne time
+        (semuenzaniso: Monday 2pm)."
+
+    price objection (Chimix):
+        "Tinoita fixed quotes, kwete ma-estimate chete — site visit ndiyo
+        inotiita tikupe nhamba chaiyo. Haibhadharwi."
+
+    IMPORTANT:
+    - Never mix in Ndebele unless the customer initiates it.
+    - Never use overly formal Shona (chiShona chepaper) — keep it conversational.
+    - Greetings: "Mhoro" (hi), "Makadii" (how are you), "Ndeiwo" (acknowledgement)
+    are all natural and welcome where appropriate.
+    - Do not translate the entire plan_or_visit template into Shona word-for-word —
+    use the Chimix version above which preserves the persuasive structure while
+    sounding natural to a Harare resident.
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    BEHAVIOUR RULES:
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    1. Ask only the question for the current step ({next_question}). Do not jump ahead.
+    2. If the customer answers the current question AND volunteers info for a future step,
+    acknowledge it naturally and do not ask for it again.
+    3. If the customer asks about price, handle it in their language using the price
+    objection template above (English or Chimix as appropriate).
+    4. If the customer seems hesitant, restate the value calmly — never add urgency.
+    5. Never mention competitor names or make comparisons.
+    6. Never confirm a booking yourself — the system handles confirmation automatically.
+    7. Keep replies under 5 sentences unless delivering plan_or_visit for the first time.
+    8. WhatsApp formatting only: *bold* for option headings, plain text everywhere else.
+    No markdown headers, no dashes as bullet points."""
+
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Customer message: '{incoming_message}'"}
+                ]
+
+                response = deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=150,
                 )
-                alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
-                
-                reply = (
-                    "We unfortunately don't operate on Saturdays. 😊\n\n"
-                    "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
-                )
-                if alt_text:
-                    reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
+
+                reply = response.choices[0].message.content.strip()
+
+                # Track retries
+                if updated_fields:
+                    self.appointment.retry_count = 0
                 else:
-                    reply += "Could you please choose a different day that works for you?"
+                    self.appointment.retry_count = getattr(self.appointment, 'retry_count', 0) + 1
+                self.appointment.save()
+
                 return reply
 
-            system_prompt = f"""You are a professional booking assistant for a Harare plumbing and renovation company.
-            Your sole job is to move the conversation forward to a confirmed site-visit booking (or plan upload).
-            Be conversational, warm, and brief. Never use bullet points or numbered lists in your replies
-            unless the template below explicitly includes them. Never invent services or prices.
-
-            CURRENT STATE:
-            - Question to ask now: {next_question}
-            - Project type collected: {appointment.project_type or 'not yet'}
-            - Has plan: {appointment.has_plan}
-            - Customer area: {appointment.customer_area or 'not yet'}
-            - Scheduled datetime: {appointment.scheduled_datetime or 'not yet'}
-            - Customer name: {appointment.customer_name or 'not yet'}
-            - Plan status: {appointment.plan_status or 'n/a'}
-
-            CONVERSATION HISTORY (last 6 messages):
-            {conversation_context}
-
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            QUESTION TEMPLATES — use the exact copy below for each step.
-            You may shorten naturally if the customer has already answered part of it,
-            but do not rephrase the core value points.
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-            service_type:
-            We do bathroom renovations, kitchen renovations and new plumbing installations — all in Harare.
-            Most of our clients start with a free site visit so we can give them an accurate quote.
-            What are you thinking of getting sorted?
-
-            plan_or_visit:
-            To give you an accurate fixed quote (not rough estimates), we have two fast options:
-
-            *Option 1 — Send Your Plan*
-            If you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.
-
-            *Option 2 — Free On-Site Assessment*
-            We come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site.
-
-            This does three things for you:
-            1. Eliminates guesswork — no assumptions, no surprises
-            2. Locks in your fixed price — you know exactly what you're paying before a single pipe is touched
-            3. Saves you money — catching problems before the job starts costs nothing. Catching them during costs a lot.
-
-            Most serious clients choose the visit because it saves money long term.
-
-            Which works better for you — send a plan, or have us come out?
-
-            area:
-            Great choice, let's get you booked in.
-            Our on-site assessment is a full technical review — we check layout, water pressure, drainage and access points so nothing gets missed and your quote is airtight.
-            Which suburb are you in?
-
-            availability:
-            What day works on your end? We'll fit around your schedule — just drop a date and time (e.g. Monday 2pm).
-
-            initiate_plan_upload:
-            Perfect. Send your drawing or photo here and our senior plumber will have a detailed quote back to you within 24 hours.
-
-            awaiting_plan_upload:
-            Got it — we're waiting on the plan. Send it here whenever you're ready and we'll get the quote turned around within 24 hours.
-
-            plan_with_plumber:
-            Your plan is with our senior plumber now. We'll have a detailed quote back to you within 24 hours.
-
-            name:
-            To complete your booking, what's your full name?
-
-            complete:
-            You're all set. We'll see you then — if anything changes, just message here and we'll sort it.
-
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            LANGUAGE & TONE:
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-            You are speaking to residents of Harare, Zimbabwe. Customers may write in:
-            a) English only
-            b) Shona only
-            c) Chimix — the natural code-switch blend of Shona and English that most
-                urban Zimbabweans use in casual conversation (e.g. "Ndoda bathroom renovation,
-                how much inoita?")
-
-            MIRROR THE CUSTOMER'S LANGUAGE EXACTLY:
-            - If they write in English → reply in English
-            - If they write in Shona → reply in Shona, but keep technical terms
-            (bathroom, quote, plumber, site visit) in English as locals naturally do
-            - If they write in Chimix → reply in Chimix at the same ratio they use.
-            Do not force full Shona if they are mixing.
-
-            CHIMIX TONE GUIDE — sound like a trusted local professional, not a translated
-            corporate bot. Examples of natural phrasing:
-
-            service_type (Chimix):
-                "Tinoita bathroom renovations, kitchen renovations ne new plumbing — tese
-                tichibata Harare. Vazhinji vedu vanotanga ne free site visit kuti tipe
-                accurate quote. Iwe uri kufunga kugadzirisa chii?"
-
-            plan_or_visit (Chimix):
-                "Kuti tikupe accurate fixed quote, tine nzira mbiri dzekuita:
-
-                *Option 1 — Tuma Plan Yako*
-                Kana une drawing kana photo, tumira pano uye senior plumber wedu
-                anoona mukati memaawa 24.
-
-                *Option 2 — Free On-Site Assessment*
-                Tinouya, tiyere zvinhu zvese — water pressure, drainage, layout —
-                todesigna pamwe newe pane site.
-
-                Izvi zvinokuita zvinhu zvitatu:
-                1. Kuita kuti pasave ne guesswork — hapana ma-assumption, hapana
-                ma-surprise ekupedzisira
-                2. Kukuisa fixed price — unoziva chaunobhadhara before pipe imwe
-                isati yabatwa
-                3. Kukuchengetedza mari — kugadzirisa problems before job inotanga
-                hapana mari. Kuzogadzirisa pakati pejob inodhura.
-
-                Vazhinji vedu vanoona kuti site visit inoyevedza kupfura.
-
-                Ndeipi inakuita — kutuma plan, kana kuti tiuye?"
-
-            area (Chimix):
-                "Sarudzo yakanaka, ngatiise booking yako.
-                Uri musuburb ipi?"
-
-            availability (Chimix):
-                "Zuva ripi rinakuita? Tichikurovera schedule yako — drop date ne time
-                (semuenzaniso: Monday 2pm)."
-
-            price objection (Chimix):
-                "Tinoita fixed quotes, kwete ma-estimate chete — site visit ndiyo
-                inotiita tikupe nhamba chaiyo. Haibhadharwi."
-
-            IMPORTANT:
-            - Never mix in Ndebele unless the customer initiates it.
-            - Never use overly formal Shona (chiShona chepaper) — keep it conversational.
-            - Greetings: "Mhoro" (hi), "Makadii" (how are you), "Ndeiwo" (acknowledgement)
-            are all natural and welcome where appropriate.
-            - Do not translate the entire plan_or_visit template into Shona word-for-word —
-            use the Chimix version above which preserves the persuasive structure while
-            sounding natural to a Harare resident.
-
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            BEHAVIOUR RULES:
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-            1. Ask only the question for the current step ({next_question}). Do not jump ahead.
-            2. If the customer answers the current question AND volunteers info for a future step
-            (e.g. mentions their suburb while answering the service question), acknowledge it
-            naturally and continue — do not ask for it again later.
-            3. If the customer asks about price, handle it in their language using the price
-            objection template above (English or Chimix version as appropriate).
-            4. If the customer seems hesitant, do not push or add urgency. Simply restate the
-            value of the next step calmly and ask the question again.
-            5. Never mention competitor names or make comparisons.
-            6. Never confirm a booking yourself — only collect the information. The system
-            handles confirmation automatically once all 4 fields are collected.
-            7. Keep replies under 5 sentences unless you are delivering the plan_or_visit template,
-            which should be sent in full the first time.
-            8. Use WhatsApp-friendly formatting: *bold* for option headings, plain text everywhere else.
-            No markdown headers, no dashes as bullet points."""
-            
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Customer message: '{incoming_message}'"}
-            ]
-
-            response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=messages,
-                temperature=0.7,
-                max_tokens=150
-            )
-            
-            reply = response.choices[0].message.content.strip()
-            
-            # Reset retry count if we successfully extracted new information
-            if updated_fields:
-                self.appointment.retry_count = 0
-                self.appointment.save()
-            else:
-                # Increment retry count if no new info was extracted
-                self.appointment.retry_count = getattr(self.appointment, 'retry_count', 0) + 1
-                self.appointment.save()
-            
-            return reply
-            
-        except Exception as e:
-            print(f"❌ Error generating contextual response: {str(e)}")
-            return "I understand. Let me ask you about the next detail we need for your appointment."
-
+            except Exception as e:
+                print(f"❌ Error generating contextual response: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return "I understand. Let me ask you about the next detail we need for your appointment."
 
 
     def smart_booking_check(self):
