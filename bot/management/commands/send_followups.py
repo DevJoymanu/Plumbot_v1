@@ -454,7 +454,6 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             # ── Attempt 3: casual, empathetic, low pressure ───────────────────
             # ── Attempt 4: ultra-short, human, final ─────────────────────────
             #
-        templates = {
 
             # ── STAGE 1: Lead went silent after "which service?" ──────────────
             'service_type': [
