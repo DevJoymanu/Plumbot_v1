@@ -4240,9 +4240,6 @@ I understand this is time-sensitive!"""
             return {}
 
 
-
-
-
     def get_next_question_to_ask(self):
         if not self.appointment.project_type:
             return "service_type"
@@ -4254,25 +4251,17 @@ I understand this is time-sensitive!"""
                 self.appointment.has_plan = True
                 self.appointment.save()
         
-        if self.appointment.has_plan is True:
-            if not self.appointment.plan_file and self.appointment.plan_status not in ('plan_uploaded', 'plan_reviewed', 'ready_to_book'):
-                return "initiate_plan_upload"
-            if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
-                return "awaiting_plan_upload"
-            if self.appointment.plan_status == 'plan_uploaded':
-                return "plan_with_plumber"
-            if not self.appointment.customer_area:
-                return "area"
-
         if self.appointment.has_plan is False:
             if not self.appointment.customer_area:
                 return "area"
             if not self.appointment.scheduled_datetime:
                 return "availability"
+            # Only ask for name AFTER booking is confirmed
             if not self.appointment.customer_name and self.appointment.status == 'confirmed':
                 return "name"
         
         return "complete"
+
 
 
     def smart_booking_check(self):
