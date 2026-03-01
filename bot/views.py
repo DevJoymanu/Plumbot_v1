@@ -4850,7 +4850,8 @@ I understand this is time-sensitive!"""
                 self.appointment.save(update_fields=["timeline"])
                 refresh_lead_score(self.appointment)
                 # Recalculate next question now that timeline is filled
-                next_question = self.get_next_question_to_ask()            is_retry = retry_count > 0
+                next_question = self.get_next_question_to_ask()            
+                is_retry = retry_count > 0
             
 
 
