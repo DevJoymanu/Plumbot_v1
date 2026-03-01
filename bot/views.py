@@ -2597,11 +2597,20 @@ class Plumbot:
                 getattr(self.appointment, 'pricing_overview_sent', False) or
                 bool(getattr(self.appointment, 'sent_pricing_intents', None))
             )
+            #
+            # Only consider mid-conversation once we've moved past the first question.
+            # Having project_type alone (e.g. auto-classified) is not enough —
+            # the customer must have also answered the plan question or provided area.
             mid_conversation = (
                 any_pricing_sent or
-                self.appointment.project_type is not None
+                (
+                    appointment.project_type is not None and
+                    (
+                        appointment.has_plan is not None or
+                        appointment.customer_area is not None
+                    )
+                )
             )
-
             if not mid_conversation:
                 inquiry = self.detect_service_inquiry(incoming_message)
                 if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
@@ -4823,36 +4832,16 @@ I understand this is time-sensitive!"""
             # Check if we need to initiate plan upload
             if next_question == "initiate_plan_upload":
                 return self.initiate_plan_upload_flow()
-            
-            # Check if we're awaiting plan upload
             if next_question == "awaiting_plan_upload":
                 return "I'm waiting for your plan. Please send your images or PDF documents now."
-            
-            # Check if plan is with plumber
             if next_question == "plan_with_plumber":
                 return "Your plan has been sent to our plumber. They'll contact you within 24 hours to discuss the project and provide a quote."
-            
+
             # Get current state
             appointment_context = self.get_appointment_context()
             retry_count = getattr(self.appointment, 'retry_count', 0)
-            depends_phrases = [
-                'depends on', 'depend on', 'depending on',
-                'subject to', 'based on', 'after the quote', 'after quote',
-                'after site visit', 'after assessment', 'after seeing the work',
-                'once i see', 'once we see', 'wait for quote', 'wait for the quote',
-                'when i get the', 'when i have the', 'after i get',
-                'scope of work',
-            ]
-            if (next_question == "timeline" and
-                    any(p in incoming_message.lower() for p in depends_phrases)):
-                print("✅ FIX 4: 'Depends on quote' accepted as timeline — moving on")
-                self.appointment.timeline = "After site visit / quote"
-                self.appointment.save(update_fields=["timeline"])
-                refresh_lead_score(self.appointment)
-                # Recalculate next question now that timeline is filled
-                next_question = self.get_next_question_to_ask()            
-                is_retry = retry_count > 0
-            
+            is_retry = retry_count > 0          # ← MUST be here, before system_prompt
+        
 
 
             # Build acknowledgment of received information
