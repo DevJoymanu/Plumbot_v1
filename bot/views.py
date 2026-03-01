@@ -4811,6 +4811,11 @@ I understand this is time-sensitive!"""
             appointment = self.appointment
             updated_fields = updated_fields or []
 
+            # Guard: ensure incoming_message is always a string
+            if isinstance(incoming_message, list):
+                incoming_message = " ".join(incoming_message)
+            incoming_message = incoming_message or ""
+            
             try:
                 # Plan upload states — handle directly, no AI needed
                 if next_question == "initiate_plan_upload":
