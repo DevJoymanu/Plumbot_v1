@@ -4240,11 +4240,28 @@ I understand this is time-sensitive!"""
             return "service_type"
         
         if self.appointment.has_plan is None:
+            # Only ask if they haven't uploaded anything yet
             if not self.appointment.plan_file:
                 return "plan_or_visit"
             else:
-                self.appointment.has_plan = True
+                # They uploaded early - skip to next question
+                print(f"⏭️ Skipping plan question - customer already uploaded plan")
+                self.appointment.has_plan = True  # Mark as having plan
                 self.appointment.save()
+        
+        # If they have a plan, IMMEDIATELY ask them to send it before anything else
+        if self.appointment.has_plan is True:
+            # Plan not yet uploaded - ask for it RIGHT NOW, before area/property questions
+            if not self.appointment.plan_file and self.appointment.plan_status not in ('plan_uploaded', 'plan_reviewed', 'ready_to_book'):
+                return "initiate_plan_upload"
+            
+            # Plan uploaded but awaiting completion confirmation
+            if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
+                return "awaiting_plan_upload"
+            
+            # Plan already with plumber
+            if self.appointment.plan_status == 'plan_uploaded':
+                return "plan_with_plumber"
         
         if self.appointment.has_plan is False:
             if not self.appointment.customer_area:
