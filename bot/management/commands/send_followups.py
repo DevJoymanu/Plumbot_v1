@@ -344,7 +344,7 @@ class Command(BaseCommand):
                 'TONE: Ultra-short and human — the "9-word email" style. '
                 'One sentence only. Direct, personal, zero pressure. '
                 'Example: "Still thinking about the bathroom reno?" '
-                'No preamble. No explanation. End with "– Homebase Plumbers" on a new line. '
+                'No preamble. No explanation.'
                 'This is the last message they will ever get from us if they do not reply.'
             ),
         }
