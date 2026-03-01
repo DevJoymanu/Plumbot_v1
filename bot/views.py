@@ -2604,10 +2604,10 @@ class Plumbot:
             mid_conversation = (
                 any_pricing_sent or
                 (
-                    appointment.project_type is not None and
+                    self.appointment.project_type is not None and
                     (
-                        appointment.has_plan is not None or
-                        appointment.customer_area is not None
+                        self.appointment.has_plan is not None or
+                        self.appointment.customer_area is not None
                     )
                 )
             )
