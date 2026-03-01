@@ -4808,6 +4808,7 @@ I understand this is time-sensitive!"""
 
     def generate_contextual_response(self, incoming_message, next_question, updated_fields):
         """FIXED: Handle plan upload initiation properly"""
+        appointment = self.appointment  
         try:
             # Check if we need to initiate plan upload
             if next_question == "initiate_plan_upload":
