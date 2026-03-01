@@ -3791,7 +3791,13 @@ I understand this is time-sensitive!"""
         try:
             updated_fields = []
             next_question = self.get_next_question_to_ask()
-            
+
+            if updated_fields:
+                next_question = self.get_next_question_to_ask()  # recalculate after save
+                
+            reply = self.generate_contextual_response(
+                next_question, conversation_context, incoming_message, updated_fields
+            )                        
             print(f"🔄 Updating appointment - Current question: {next_question}")
             print(f"📦 Extracted data: {extracted_data}")
             
