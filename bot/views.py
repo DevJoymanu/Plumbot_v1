@@ -4940,26 +4940,17 @@ I understand this is time-sensitive!"""
             
             #
             QUESTION TEMPLATES — use these EXACT messages, word for word, when asking each question:
+            
+            - service_type: "We do bathroom renovations, kitchen renovations and new plumbing installations.\n\nMost of our clients start with a free site visit so we can give them an accurate quote.\n\nWhat are you thinking of getting sorted?"
+            - plan_or_visit: "To give you an accurate fixed quote (not rough estimates), we have two fast options:\n\nOption 1 — Send Your Plan\nIf you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.\n\nOption 2 — Free On-Site Assessment\nWe come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site. This does three things for you:\n1. Eliminates guesswork — no assumptions, no surprises\n2. Locks in your fixed price — you know exactly what you're paying before a single pipe is touched\n3. Saves you money — catching problems before the job starts costs nothing. Catching them during costs a lot.\n\nMost serious clients choose the visit because it saves money long term. Which works better for you — send a plan, or have us come out?"
+            - area: "Great choice, let's get you booked in.\n\nOur on-site assessment is a full technical review. We check everything that matters — layout, water pressure, drainage, access points — so nothing gets missed and your quote is airtight.\n\nWhich suburb are you in?"
+            - availability: "What day works on your end?\n\nWe'll fit around your schedule — just drop a date and time (e.g. Monday 2pm)."
+            - name: "To complete your booking, may I have your full name?"        
 
-                        - service_type:
-                        "We do bathroom renovations, kitchen renovations and new plumbing installations.\n\n
-                        Most of our clients start with a free site visit so we can give them an accurate quote.\n\n 
-                        What are you thinking of getting sorted?"
-
-                        - plan_or_visit:
-                        "To give you an accurate fixed quote (not rough estimates), we have two fast options:\n\nOption 1 — Send Your Plan\nIf you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.\n\nOption 2 — Free On-Site Assessment\nWe come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site. This does three things for you:\n1. Eliminates guesswork — no assumptions, no surprises\n2. Locks in your fixed price — you know exactly what you're paying before a single pipe is touched\n3. Saves you money — catching problems before the job starts costs nothing. Catching them during costs a lot.\n\nMost serious clients choose the visit because it saves money long term. Which works better for you — send a plan, or have us come out?"
-
-                        - area (only asked when customer chose site visit):
-                        "Great choice, let's get you booked in.\n\nOur on-site assessment is a full technical review. We check everything that matters — layout, water pressure, drainage, access points — so nothing gets missed and your quote is airtight.\n\nWhich suburb are you in?"
-
-                        - availability:
-                        "What day works on your end?\n\nWe'll fit around your schedule — just drop a date and time (e.g. Monday 2pm)."
-
-                        - name: "To complete your booking, may I have your full name?"            
             RESPONSE RULES:
             - Ask only the next needed question
             - Professional tone
-            - Concise (1-2 sentences max)
+            - Concise
             - No markdown formatting
             
             Generate response:"""
