@@ -4238,50 +4238,29 @@ I understand this is time-sensitive!"""
 
 
     def get_next_question_to_ask(self):
-        """Determine which question to ask next - FIXED for early uploads"""
-        
         if not self.appointment.project_type:
             return "service_type"
         
-        # FIXED: Skip plan question if customer already uploaded plan early
         if self.appointment.has_plan is None:
-            # Only ask if they haven't uploaded anything yet
             if not self.appointment.plan_file:
                 return "plan_or_visit"
             else:
-                # They uploaded early - skip to next question
-                print(f"⏭️ Skipping plan question - customer already uploaded plan")
-                self.appointment.has_plan = True  # Mark as having plan
+                self.appointment.has_plan = True
                 self.appointment.save()
         
-        # If they have a plan, IMMEDIATELY ask them to send it before anything else
         if self.appointment.has_plan is True:
-            # Plan not yet uploaded - ask for it RIGHT NOW, before area/property questions
             if not self.appointment.plan_file and self.appointment.plan_status not in ('plan_uploaded', 'plan_reviewed', 'ready_to_book'):
                 return "initiate_plan_upload"
-            
-            # Plan uploaded but awaiting completion confirmation
             if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
                 return "awaiting_plan_upload"
-            
-            # Plan already with plumber
             if self.appointment.plan_status == 'plan_uploaded':
                 return "plan_with_plumber"
-            
-            # Plan done - now collect any remaining info
             if not self.appointment.customer_area:
                 return "area"
-            if not self.appointment.property_type:
-                return "property_type"
 
-        # If they don't have a plan (False), continue normal flow
         if self.appointment.has_plan is False:
             if not self.appointment.customer_area:
                 return "area"
-            if not self.appointment.timeline:
-                return "timeline"
-            if not self.appointment.property_type:
-                return "property_type"
             if not self.appointment.scheduled_datetime:
                 return "availability"
             if not self.appointment.customer_name and self.appointment.status == 'confirmed':
@@ -4290,15 +4269,11 @@ I understand this is time-sensitive!"""
         return "complete"
 
 
-
     def smart_booking_check(self):
-        """Check if we have enough information to attempt booking - FIXED"""
         required_for_booking = [
             self.appointment.project_type,
-            self.appointment.has_plan is not None,  # ✅ Must be answered (True or False)
+            self.appointment.has_plan is not None,
             self.appointment.customer_area,
-            self.appointment.timeline,
-            self.appointment.property_type,
             self.appointment.scheduled_datetime
         ]
         
@@ -4307,23 +4282,18 @@ I understand this is time-sensitive!"""
         
         if not self.appointment.project_type:
             missing_fields.append("service type")
-        if self.appointment.has_plan is None:  # ✅ Check for None
+        if self.appointment.has_plan is None:
             missing_fields.append("plan preference")
         if not self.appointment.customer_area:
             missing_fields.append("area")
-        if not self.appointment.timeline:
-            missing_fields.append("timeline")
-        if not self.appointment.property_type:
-            missing_fields.append("property type")
         if not self.appointment.scheduled_datetime:
             missing_fields.append("availability")
         
         return {
             'ready_to_book': has_all_required,
             'missing_fields': missing_fields,
-            'completion_percentage': ((6 - len(missing_fields)) / 6) * 100
+            'completion_percentage': ((4 - len(missing_fields)) / 4) * 100
         }
-
 
     def check_appointment_availability(self, requested_datetime):
         """Check if requested time slot is available"""
@@ -4968,14 +4938,13 @@ I understand this is time-sensitive!"""
             3. Keep it conversational and professional
             4. If this is a retry ({is_retry}), rephrase the question differently
             
+            #
             QUESTION TEMPLATES:
             - service_type: "Which service are you interested in? We offer: Bathroom Renovation, New Plumbing Installation, or Kitchen Renovation"
-            - plan_or_visit: "Do you have a plan(a picture of space or pdf) already, or would you like us to do a site visit?"
-            - area: "Which area are you located in? (e.g. Harare Hatfield, Harare Avondale)"
-            - timeline: "When were you hoping to get this done?"
-            - property_type: "Is this for a house, apartment, or business?"
-            - availability: "When would you be available for an appointment? Please provide both the day and time (e.g., Monday at 2pm, tomorrow at 10am)"
-            - name: "To complete your booking, may I have your full name?"
+            - plan_or_visit: "Do you have a plan (a picture of space or pdf) already, or would you like us to do a site visit?"
+            - area: "Which area of Harare are you in? (e.g. Hatfield, Avondale, Glen View)"
+            - availability: "What day works on your end? We'll fit around your schedule — just drop a date and time (e.g. Monday 2pm)"
+            - name: "To complete your booking, may I have your full name?"            
             
             RESPONSE RULES:
             - Ask only the next needed question
