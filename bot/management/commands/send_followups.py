@@ -112,6 +112,7 @@ class Command(BaseCommand):
             )
             return
 
+        self._print_eligibility_breakdown(now_local, force)
         leads = self._get_eligible_leads(now_local, force)
         self.stdout.write(f'📊 {leads.count()} leads eligible for follow-up')
 
@@ -161,6 +162,47 @@ class Command(BaseCommand):
             leads = leads.exclude(cold_warm_sent_today)
 
         return leads.order_by('last_customer_response', 'created_at')
+
+    def _print_eligibility_breakdown(self, now_local, force):
+        from django.db.models import Q
+
+        response_window = now_local - timedelta(hours=24)
+        plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book']) | Q(plan_status='pending_upload')
+
+        q0 = Appointment.objects.filter(is_lead_active=True, status='pending')
+        c0 = q0.count()
+
+        q1 = q0.exclude(followup_stage='completed')
+        c1 = q1.count()
+
+        q2 = q1.exclude(last_customer_response__gte=response_window)
+        c2 = q2.count()
+
+        q3 = q2.exclude(plan_block_q)
+        c3 = q3.count()
+
+        removed_daily_cap = 0
+        c4 = c3
+        if not force:
+            today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            cold_warm_sent_today = Q(
+                last_followup_sent__gte=today_start,
+                lead_status__in=[LeadStatus.COLD, LeadStatus.WARM]
+            )
+            q4 = q3.exclude(cold_warm_sent_today)
+            c4 = q4.count()
+            removed_daily_cap = c3 - c4
+
+        self.stdout.write(self.style.WARNING('🔎 Eligibility breakdown'))
+        self.stdout.write(f'  active_pending: {c0}')
+        self.stdout.write(f'  excluded_completed_stage: {c0 - c1}')
+        self.stdout.write(f'  excluded_recent_response_24h: {c1 - c2}')
+        self.stdout.write(f'  excluded_plan_flow: {c2 - c3}')
+        if force:
+            self.stdout.write('  excluded_cold_warm_sent_today: 0 (force mode)')
+        else:
+            self.stdout.write(f'  excluded_cold_warm_sent_today: {removed_daily_cap}')
+        self.stdout.write(f'  eligible_after_filters: {c4}')
 
     # ─── Per-lead processing ──────────────────────────────────────────────────
 
