@@ -4885,32 +4885,32 @@ I understand this is time-sensitive!"""
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     service_type:
-    We do bathroom renovations, kitchen renovations and new plumbing installations — all in Harare.
-    Most of our clients start with a free site visit so we can give them an accurate quote.
+    We do bathroom renovations, kitchen renovations and new plumbing installations.\n
+    Most of our clients start with a free site visit so we can give them an accurate quote.\n
     What are you thinking of getting sorted?
 
     plan_or_visit:
-    To give you an accurate fixed quote (not rough estimates), we have two fast options:
+    To give you an accurate fixed quote (not rough estimates), we have two fast options:\n
 
-    *Option 1 — Send Your Plan*
-    If you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.
+    *Option 1 — Send Your Plan*\n
+    If you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.\n
 
-    *Option 2 — Free On-Site Assessment*
-    We come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site.
+    *Option 2 — Free On-Site Assessment*\n
+    We come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site.\n
 
-    This does three things for you:
-    1. Eliminates guesswork — no assumptions, no surprises
-    2. Locks in your fixed price — you know exactly what you're paying before a single pipe is touched
-    3. Saves you money — catching problems before the job starts costs nothing. Catching them during costs a lot.
+    This does three things for you:\n
+    1. Eliminates guesswork — no assumptions, no surprises\n
+    2. Locks in your fixed price — you know exactly what you're paying before a single pipe is touched\n
+    3. Saves you money — catching problems before the job starts costs nothing. Catching them during costs a lot.\n
 
-    Most serious clients choose the visit because it saves money long term.
+    Most serious clients choose the visit because it saves money long term.\n
 
     Which works better for you — send a plan, or have us come out?
 
     area:
-    Great choice, let's get you booked in.
-    Our on-site assessment is a full technical review — we check layout, water pressure, drainage and access points so nothing gets missed and your quote is airtight.
-    Which suburb are you in?
+    Great choice, let's get you booked in.\n
+    Our on-site assessment is a full technical review — we check layout, water pressure, drainage and access points so nothing gets missed and your quote is airtight.\n
+    Which suburb are you in?\n
 
     availability:
     What day works on your end? We'll fit around your schedule — just drop a date and time (e.g. Monday 2pm).
