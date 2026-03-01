@@ -4806,7 +4806,7 @@ I understand this is time-sensitive!"""
             return False
 
 
-    def generate_contextual_response(self, incoming_message, next_question, updated_fields):
+    def generate_contextual_response(self, next_question, conversation_context):
         """FIXED: Handle plan upload initiation properly"""
         appointment = self.appointment  
         try:
