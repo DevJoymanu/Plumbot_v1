@@ -63,7 +63,7 @@ CONTACT_WINDOWS = [
 
 # ─── Fixed intervals per attempt (hours) — same for all lead temperatures ────
 # attempt_index: 0=first, 1=second, 2=third, 3=fourth+
-ATTEMPT_INTERVALS = (1/60, 5/60, 5/60, 5/60)   # cumulative wait from previous message
+ATTEMPT_INTERVALS = (1/60, 48, 72, 96)   # cumulative wait from previous message
 
 # All leads get exactly 4 attempts. No exceptions.
 MAX_FOLLOWUPS = 4
