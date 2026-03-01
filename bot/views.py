@@ -3867,30 +3867,25 @@ I understand this is time-sensitive!"""
             
             # Timeline - only update if we don't have one and AI found one
             # Timeline - only update if we don't have one and AI found one
-            if (extracted_data.get('timeline') and 
-                extracted_data.get('timeline') != 'null' and
-                not self.appointment.timeline):
-                
+            # Timeline — capture passively if volunteered; no longer gates progress
+            if (extracted_data.get('timeline') and
+                    extracted_data.get('timeline') != 'null' and
+                    not self.appointment.timeline):
                 timeline_value = extracted_data['timeline']
-                
-                # ✅ Block Saturday from being stored as a timeline
                 saturday_indicators = ['saturday', 'sat']
-                if any(s in timeline_value.lower() for s in saturday_indicators):
-                    print(f"⚠️ Blocked Saturday as timeline value: '{timeline_value}'")
-                    extracted_data['timeline'] = None  # Don't save it
-                else:
+                if not any(s in timeline_value.lower() for s in saturday_indicators):
                     self.appointment.timeline = timeline_value
                     updated_fields.append('timeline')
-                    print(f"✅ Updated timeline: {self.appointment.timeline}")
-            
-            # Property type - only update if we don't have one and AI found one
-            if (extracted_data.get('property_type') and 
-                extracted_data.get('property_type') != 'null' and
-                not self.appointment.property_type):
+                    print(f"✅ Captured timeline passively: {self.appointment.timeline}")
+
+            # Property type — capture passively if volunteered; no longer gates progress
+            if (extracted_data.get('property_type') and
+                    extracted_data.get('property_type') != 'null' and
+                    not self.appointment.property_type):
                 self.appointment.property_type = extracted_data['property_type']
                 updated_fields.append('property_type')
-                print(f"✅ Updated property_type: {self.appointment.property_type}")
-            
+                print(f"✅ Captured property_type passively: {self.appointment.property_type}")
+
             # Availability/DateTime
             if (extracted_data.get('availability') and 
                 extracted_data.get('availability') != 'null'):
@@ -4235,94 +4230,80 @@ I understand this is time-sensitive!"""
 
 
 
-
-
     def get_next_question_to_ask(self):
-        """Determine which question to ask next - FIXED for early uploads"""
-        
-        if not self.appointment.project_type:
-            return "service_type"
-        
-        # FIXED: Skip plan question if customer already uploaded plan early
-        if self.appointment.has_plan is None:
-            # Only ask if they haven't uploaded anything yet
-            if not self.appointment.plan_file:
-                return "plan_or_visit"
-            else:
-                # They uploaded early - skip to next question
-                print(f"⏭️ Skipping plan question - customer already uploaded plan")
-                self.appointment.has_plan = True  # Mark as having plan
-                self.appointment.save()
-        
-        # If they have a plan, IMMEDIATELY ask them to send it before anything else
-        if self.appointment.has_plan is True:
-            # Plan not yet uploaded - ask for it RIGHT NOW, before area/property questions
-            if not self.appointment.plan_file and self.appointment.plan_status not in ('plan_uploaded', 'plan_reviewed', 'ready_to_book'):
-                return "initiate_plan_upload"
-            
-            # Plan uploaded but awaiting completion confirmation
-            if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
-                return "awaiting_plan_upload"
-            
-            # Plan already with plumber
-            if self.appointment.plan_status == 'plan_uploaded':
-                return "plan_with_plumber"
-            
-            # Plan done - now collect any remaining info
-            if not self.appointment.customer_area:
-                return "area"
-            if not self.appointment.property_type:
-                return "property_type"
+            """Determine which question to ask next — 4-question flow:
+            service_type → plan_or_visit → area → availability
+            Name is collected after booking confirmation only.
+            """
 
-        # If they don't have a plan (False), continue normal flow
-        if self.appointment.has_plan is False:
-            if not self.appointment.customer_area:
-                return "area"
-            if not self.appointment.timeline:
-                return "timeline"
-            if not self.appointment.property_type:
-                return "property_type"
-            if not self.appointment.scheduled_datetime:
-                return "availability"
-            if not self.appointment.customer_name and self.appointment.status == 'confirmed':
-                return "name"
-        
-        return "complete"
+            # Step 1: Which service?
+            if not self.appointment.project_type:
+                return "service_type"
+
+            # Step 2: Plan or site visit?
+            if self.appointment.has_plan is None:
+                if not self.appointment.plan_file:
+                    return "plan_or_visit"
+                else:
+                    # Customer already uploaded — skip question
+                    print("⏭️ Skipping plan question — customer already uploaded")
+                    self.appointment.has_plan = True
+                    self.appointment.save()
+
+            # If they have a plan, handle upload flow first
+            if self.appointment.has_plan is True:
+                if not self.appointment.plan_file and self.appointment.plan_status not in (
+                        'plan_uploaded', 'plan_reviewed', 'ready_to_book'):
+                    return "initiate_plan_upload"
+                if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
+                    return "awaiting_plan_upload"
+                if self.appointment.plan_status == 'plan_uploaded':
+                    return "plan_with_plumber"
+                # Plan done — fall through to area
+                if not self.appointment.customer_area:
+                    return "area"
+
+            # Step 3: Which suburb?
+            if self.appointment.has_plan is False:
+                if not self.appointment.customer_area:
+                    return "area"
+                # Step 4: Availability
+                if not self.appointment.scheduled_datetime:
+                    return "availability"
+                # Name collected after confirmed booking
+                if not self.appointment.customer_name and self.appointment.status == "confirmed":
+                    return "name"
+
+            return "complete"
 
 
 
     def smart_booking_check(self):
-        """Check if we have enough information to attempt booking - FIXED"""
-        required_for_booking = [
-            self.appointment.project_type,
-            self.appointment.has_plan is not None,  # ✅ Must be answered (True or False)
-            self.appointment.customer_area,
-            self.appointment.timeline,
-            self.appointment.property_type,
-            self.appointment.scheduled_datetime
-        ]
-        
-        has_all_required = all(required_for_booking)
-        missing_fields = []
-        
-        if not self.appointment.project_type:
-            missing_fields.append("service type")
-        if self.appointment.has_plan is None:  # ✅ Check for None
-            missing_fields.append("plan preference")
-        if not self.appointment.customer_area:
-            missing_fields.append("area")
-        if not self.appointment.timeline:
-            missing_fields.append("timeline")
-        if not self.appointment.property_type:
-            missing_fields.append("property type")
-        if not self.appointment.scheduled_datetime:
-            missing_fields.append("availability")
-        
-        return {
-            'ready_to_book': has_all_required,
-            'missing_fields': missing_fields,
-            'completion_percentage': ((6 - len(missing_fields)) / 6) * 100
-        }
+            """Check if we have enough information to attempt booking — 4-question flow."""
+            required_for_booking = [
+                self.appointment.project_type,
+                self.appointment.has_plan is not None,
+                self.appointment.customer_area,
+                self.appointment.scheduled_datetime,
+            ]
+
+            has_all_required = all(required_for_booking)
+            missing_fields = []
+
+            if not self.appointment.project_type:
+                missing_fields.append("service type")
+            if self.appointment.has_plan is None:
+                missing_fields.append("plan preference")
+            if not self.appointment.customer_area:
+                missing_fields.append("area")
+            if not self.appointment.scheduled_datetime:
+                missing_fields.append("availability")
+
+            return {
+                'ready_to_book': has_all_required,
+                'missing_fields': missing_fields,
+                'completion_percentage': ((4 - len(missing_fields)) / 4) * 100
+            }
 
 
     def check_appointment_availability(self, requested_datetime):
@@ -4869,8 +4850,7 @@ I understand this is time-sensitive!"""
                 self.appointment.save(update_fields=["timeline"])
                 refresh_lead_score(self.appointment)
                 # Recalculate next question now that timeline is filled
-                next_question = self.get_next_question_to_ask()
-            is_retry = retry_count > 0
+                next_question = self.get_next_question_to_ask()            is_retry = retry_count > 0
             
 
 
@@ -4968,15 +4948,22 @@ I understand this is time-sensitive!"""
             3. Keep it conversational and professional
             4. If this is a retry ({is_retry}), rephrase the question differently
             
-            QUESTION TEMPLATES:
-            - service_type: "Which service are you interested in? We offer: Bathroom Renovation, New Plumbing Installation, or Kitchen Renovation"
-            - plan_or_visit: "Do you have a plan(a picture of space or pdf) already, or would you like us to do a site visit?"
-            - area: "Which area are you located in? (e.g. Harare Hatfield, Harare Avondale)"
-            - timeline: "When were you hoping to get this done?"
-            - property_type: "Is this for a house, apartment, or business?"
-            - availability: "When would you be available for an appointment? Please provide both the day and time (e.g., Monday at 2pm, tomorrow at 10am)"
-            - name: "To complete your booking, may I have your full name?"
-            
+            #
+            QUESTION TEMPLATES — use these EXACT messages, word for word, when asking each question:
+
+                        - service_type:
+                        "We do bathroom renovations, kitchen renovations and new plumbing installations — all in Harare. Most of our clients start with a free site visit so we can give them an accurate quote. What are you thinking of getting sorted?"
+
+                        - plan_or_visit:
+                        "To give you an accurate fixed quote (not rough estimates), we have two fast options:\n\nOption 1 — Send Your Plan\nIf you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.\n\nOption 2 — Free On-Site Assessment\nWe come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site. This does three things for you:\n1. Eliminates guesswork — no assumptions, no surprises\n2. Locks in your fixed price — you know exactly what you're paying before a single pipe is touched\n3. Saves you money — catching problems before the job starts costs nothing. Catching them during costs a lot.\n\nMost serious clients choose the visit because it saves money long term. Which works better for you — send a plan, or have us come out?"
+
+                        - area (only asked when customer chose site visit):
+                        "Great choice, let's get you booked in.\n\nOur on-site assessment is a full technical review. We check everything that matters — layout, water pressure, drainage, access points — so nothing gets missed and your quote is airtight.\n\nWhich suburb are you in?"
+
+                        - availability:
+                        "What day works on your end? We'll fit around your schedule — just drop a date and time (e.g. Monday 2pm)."
+
+                        - name: "To complete your booking, may I have your full name?"            
             RESPONSE RULES:
             - Ask only the next needed question
             - Professional tone
@@ -5017,38 +5004,32 @@ I understand this is time-sensitive!"""
 
 
     def smart_booking_check(self):
-        """Check if we have enough information to attempt booking"""
-        required_for_booking = [
-            self.appointment.project_type,
-            self.appointment.has_plan is not None,
-            self.appointment.customer_area,
-            self.appointment.timeline,
-            self.appointment.property_type,
-            self.appointment.scheduled_datetime
-        ]
-        
-        has_all_required = all(required_for_booking)
-        missing_fields = []
-        
-        if not self.appointment.project_type:
-            missing_fields.append("service type")
-        if self.appointment.has_plan is None:
-            missing_fields.append("plan preference")
-        if not self.appointment.customer_area:
-            missing_fields.append("area")
-        if not self.appointment.timeline:
-            missing_fields.append("timeline")
-        if not self.appointment.property_type:
-            missing_fields.append("property type")
-        if not self.appointment.scheduled_datetime:
-            missing_fields.append("availability")
-        
-        return {
-            'ready_to_book': has_all_required,
-            'missing_fields': missing_fields,
-            'completion_percentage': ((6 - len(missing_fields)) / 6) * 100
-        }
+            """Check if we have enough information to attempt booking — 4-question flow."""
+            required_for_booking = [
+                self.appointment.project_type,
+                self.appointment.has_plan is not None,
+                self.appointment.customer_area,
+                self.appointment.scheduled_datetime,
+            ]
 
+            has_all_required = all(required_for_booking)
+            missing_fields = []
+
+            if not self.appointment.project_type:
+                missing_fields.append("service type")
+            if self.appointment.has_plan is None:
+                missing_fields.append("plan preference")
+            if not self.appointment.customer_area:
+                missing_fields.append("area")
+            if not self.appointment.scheduled_datetime:
+                missing_fields.append("availability")
+
+            return {
+                'ready_to_book': has_all_required,
+                'missing_fields': missing_fields,
+                'completion_percentage': ((4 - len(missing_fields)) / 4) * 100
+            }
+            
     def handle_early_datetime_provision(self, message):
         """Handle cases where customer provides date/time before we ask for availability"""
         try:
