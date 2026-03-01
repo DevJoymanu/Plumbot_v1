@@ -60,18 +60,16 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
 # ─── Contact windows (local hour, half-open) ─────────────────────────────────
 CONTACT_WINDOWS = [
-    (8, 10),    # morning commute
-    (12, 13),   # lunch break
-    (22, 23),   # after work / evening
+    (22, 23),   # temporary test window: 10 PM - 11 PM
 ]
 
 # ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
 # Each tuple is (attempt_1, attempt_2, attempt_3, attempt_4+)
 TIER_INTERVALS = {
-    LeadStatus.VERY_HOT: (2/60,  8,  24,  48),
-    LeadStatus.HOT:      (2/60, 36, 60,  120),
-    LeadStatus.WARM:     (2/60, 72, 144, 240),
-    LeadStatus.COLD:     (2/60, 120, 240, 504),
+    LeadStatus.VERY_HOT: (2/60, 2/60, 2/60, 2/60),
+    LeadStatus.HOT:      (2/60, 2/60, 2/60, 2/60),
+    LeadStatus.WARM:     (2/60, 2/60, 2/60, 2/60),
+    LeadStatus.COLD:     (2/60, 2/60, 2/60, 2/60),
 }
 
 MAX_FOLLOWUPS_PER_STATUS = {
@@ -229,9 +227,8 @@ class Command(BaseCommand):
         intervals     = TIER_INTERVALS.get(lead.lead_status, TIER_INTERVALS[LeadStatus.COLD])
         base_hours    = intervals[attempt_index]
 
-        # Backoff: if customer hasn't replied since last follow-up, double the wait
-        # (capped so we don't wait months between messages)
-        backoff_factor = self._backoff_factor(lead)
+        # Temporary test mode: keep follow-up cadence fixed at 2 minutes.
+        backoff_factor = 1
         wait_hours     = min(base_hours * backoff_factor, base_hours * 4)
 
         reference = (
