@@ -143,71 +143,30 @@ class Command(BaseCommand):
     # ─── Per-lead processing ──────────────────────────────────────────────────
 
     def _process_lead(self, lead, now_local, dry_run, force):
-        ready, reason = self._is_ready_for_followup(lead, now_local, force)
-        if not ready:
-            logger.debug(f'Lead {lead.id} skipped: {reason}')
-            return {'status': 'skipped'}
-
-        # Hard cap: 4 attempts. Retire after that.
-        if lead.followup_count >= MAX_FOLLOWUPS:
-            if not dry_run:
-                lead.followup_stage = 'completed'
-                lead.is_lead_active = False
-                lead.lead_marked_inactive_at = timezone.now()
-                lead.save()
-            self.stdout.write(
-                self.style.WARNING(
-                    f'💀 Lead {lead.id} retired — no response after {lead.followup_count} follow-ups'
-                )
-            )
-            return {'status': 'retired'}
-
-        next_q  = self._get_next_question(lead)
-        attempt = lead.followup_count + 1   # 1-based
-        result  = self._generate_message(lead, next_q, attempt)
-        message = result['message']
+        # ... existing code ...
+        
+        # Add this validation BEFORE sending
+        clean_phone = self._clean_phone(lead.phone_number or '')
+        
+        if not clean_phone or len(clean_phone) < 10:
+            logger.error(f'Invalid phone number for lead {lead.id}: "{lead.phone_number}"')
+            self.stdout.write(self.style.ERROR(f'❌ Lead {lead.id}: Invalid phone number "{lead.phone_number}"'))
+            return {'status': 'errors'}
 
         if dry_run:
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f'🧪 Would send to {lead.phone_number} '
-                    f'[{lead.get_lead_status_display()}] '
-                    f'attempt #{attempt}/{MAX_FOLLOWUPS}, q={next_q}\n'
-                    f'   "{message[:140]}…"'
-                )
-            )
+            # ... existing dry-run code ...
             return {'status': 'sent', **result}
 
-        clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-        whatsapp_api.send_text_message(clean_phone, message)
+        # Now send with validated phone
+        try:
+            whatsapp_api.send_text_message(clean_phone, message)
+        except Exception as exc:
+            logger.error(f'WhatsApp API error for lead {lead.id}: {exc}')
+            self.stdout.write(self.style.ERROR(f'❌ Lead {lead.id}: {exc}'))
+            return {'status': 'errors'}
+        
+    # ... rest of your code ...
 
-        lead.last_followup_sent = timezone.now()
-        lead.followup_count    += 1
-        lead.followup_stage     = self._stage_label(lead)
-        lead.save()
-
-        lead.add_conversation_message('assistant', f'[AUTO FOLLOW-UP] {message}')
-
-        # Retire immediately after attempt 4 is sent
-        if lead.followup_count >= MAX_FOLLOWUPS:
-            lead.followup_stage = 'completed'
-            lead.is_lead_active = False
-            lead.lead_marked_inactive_at = timezone.now()
-            lead.save()
-            self.stdout.write(
-                self.style.WARNING(
-                    f'💀 Lead {lead.id} marked dead — final follow-up sent'
-                )
-            )
-
-        tag = '🤖 AI' if result['ai_generated'] else '📄 Template'
-        self.stdout.write(
-            self.style.SUCCESS(
-                f'✅ {tag} → {lead.phone_number} '
-                f'attempt #{lead.followup_count}/{MAX_FOLLOWUPS}'
-            )
-        )
-        return {'status': 'sent', **result}
 
     # ─── Timing ───────────────────────────────────────────────────────────────
 
