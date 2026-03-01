@@ -4964,7 +4964,7 @@ I understand this is time-sensitive!"""
                 model="deepseek-chat",
                 messages=messages,
                 temperature=0.7,
-                max_tokens=150
+                max_tokens=300
             )
             
             reply = response.choices[0].message.content.strip()
