@@ -62,16 +62,16 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 CONTACT_WINDOWS = [
     (8, 10),    # morning commute
     (12, 13),   # lunch break
-    (17, 19),   # after work / evening
+    (22, 23),   # after work / evening
 ]
 
 # ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
 # Each tuple is (attempt_1, attempt_2, attempt_3, attempt_4+)
 TIER_INTERVALS = {
-    LeadStatus.VERY_HOT: (4,  8,  24,  48),
-    LeadStatus.HOT:      (20, 36, 60,  120),
-    LeadStatus.WARM:     (36, 72, 144, 240),
-    LeadStatus.COLD:     (48, 120, 240, 504),
+    LeadStatus.VERY_HOT: (2/60,  8,  24,  48),
+    LeadStatus.HOT:      (2/60, 36, 60,  120),
+    LeadStatus.WARM:     (2/60, 72, 144, 240),
+    LeadStatus.COLD:     (2/60, 120, 240, 504),
 }
 
 MAX_FOLLOWUPS_PER_STATUS = {
