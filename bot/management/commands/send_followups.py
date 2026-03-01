@@ -1,42 +1,38 @@
 # bot/management/commands/send_followups.py
 #
-# HIGH-CONVERTING FOLLOW-UP SYSTEM
+# FOLLOW-UP SYSTEM — 4-ATTEMPT PARAPHRASE STRATEGY
 #
-# Principles applied (Hormozi + conversion psychology):
+# Core principle (Hormozi-aligned, but simplified):
 #
-#  1. SPECIFICITY SELLS — vague messages get ignored. Every message references
-#     exactly what the customer said they need. "Your bathroom" beats "your project".
+#  Every lead gets exactly 4 follow-up attempts.
+#  Attempt 1: Original message — warm, specific, value-first.
+#  Attempt 2: Paraphrase of attempt 1 — same core message, different wording.
+#  Attempt 3: Another paraphrase — keeps the warmth, shifts the angle slightly.
+#  Attempt 4: Final paraphrase — last chance, softest tone, no pressure.
 #
-#  2. VALUE BEFORE ASK — each follow-up leads with something useful (insight,
-#     social proof, a concrete next step) before asking for anything.
+#  After attempt 4 with no response → lead is marked inactive (dead).
 #
-#  3. PATTERN INTERRUPTS — message #2+ deliberately break the pattern of the
-#     previous one. Different length, different opener, different angle.
-#     Same message twice = unsubscribe.
+#  Why 4 attempts max?
+#  - More than 4 messages without a reply = harassment, not sales.
+#  - Quality > quantity. A well-crafted paraphrase beats a new angle.
+#  - Clean pipeline: dead leads are removed, not just deprioritised.
 #
-#  4. URGENCY WITHOUT LYING — real constraints only: limited slots, real wait
-#     times, genuine price change warnings. Never fake scarcity.
+# TIMING (same for all tiers — simple, predictable):
+#   Attempt 1: 24h after last customer response (or creation)
+#   Attempt 2: 48h after attempt 1
+#   Attempt 3: 72h after attempt 2
+#   Attempt 4: 96h after attempt 3
 #
-#  5. MICRO-COMMITMENTS — each message asks for the smallest possible "yes"
-#     that moves the sale forward one step, not the whole thing at once.
+#  Total follow-up window: ~10 days. After that, they're gone.
 #
-#  6. TIMING LOGIC (Hormozi: "speed to lead" + "9-word email"):
-#       - Very hot (booked slot): 4h → 8h → 1d → 2d (chase fast, they're ready)
-#       - Hot (4 fields): 20h → 36h → 60h → 5d (consistent, not desperate)
-#       - Warm (2-3 fields): 36h → 3d → 6d → 10d (patient, educational)
-#       - Cold (0-1 fields): 48h → 5d → 10d → 21d (nurture, don't push)
+# CONTACT WINDOWS — only reach during high-read-rate times:
+#   8-10am (commute), 12-1pm (lunch), 5-7pm (after work).
 #
-#  7. CONTACT WINDOWS — only reach during high-read-rate windows.
-#     Research: 8-10am (commute), 12-1pm (lunch), 5-7pm (after work).
-#
-#  8. EXPONENTIAL BACKOFF — each ignored message doubles the wait.
-#     Respect = better deliverability + warmer reception when they do reply.
-#
-#  9. THE "9-WORD EMAIL" (Hormozi) — attempt 4+ uses ultra-short messages.
-#     "Are you still looking for a plumber?" converts better than paragraphs.
-#
-# 10. ZIMBABWE/SA CONTEXT — warm, direct, professional. No American hype.
-#     Prices in USD. Informal but not sloppy.
+# TONE PROGRESSION:
+#   1 → Warm & specific (full context, value-first)
+#   2 → Slightly shorter, reworded, same warmth
+#   3 → More casual, empathetic, low pressure
+#   4 → Ultra-short, direct, human — the "9-word" style
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -62,32 +58,20 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 CONTACT_WINDOWS = [
     (8, 10),    # morning commute
     (12, 13),   # lunch break
-    (17, 19),   # after work / evening
+    (17, 23),   # after work / evening
 ]
 
-# ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
-# Each tuple is (attempt_1, attempt_2, attempt_3, attempt_4+)
-TIER_INTERVALS = {
-    LeadStatus.VERY_HOT: (4,  8,  24,  48),
-    LeadStatus.HOT:      (20, 36, 60,  120),
-    LeadStatus.WARM:     (36, 72, 144, 240),
-    LeadStatus.COLD:     (48, 120, 240, 504),
-}
+# ─── Fixed intervals per attempt (hours) — same for all lead temperatures ────
+# attempt_index: 0=first, 1=second, 2=third, 3=fourth+
+ATTEMPT_INTERVALS = (5/60, 5/60, 5/60, 5/60)   # cumulative wait from previous message
 
-MAX_FOLLOWUPS_PER_STATUS = {
-    LeadStatus.VERY_HOT: 6,
-    LeadStatus.HOT:      5,
-    LeadStatus.WARM:     4,
-    LeadStatus.COLD:     3,
-}
-
-# After this many attempts with zero response, lead goes cold/inactive
-GHOSTED_THRESHOLD = 4
+# All leads get exactly 4 attempts. No exceptions.
+MAX_FOLLOWUPS = 4
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 class Command(BaseCommand):
-    help = 'High-converting follow-ups: Hormozi timing, value-first messaging, pattern interrupts'
+    help = '4-attempt paraphrase follow-up: same message, progressively softer tone, dead after attempt 4'
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true',
@@ -117,7 +101,7 @@ class Command(BaseCommand):
         leads = self._get_eligible_leads(now_local, force)
         self.stdout.write(f'📊 {leads.count()} leads eligible for follow-up')
 
-        totals = dict(sent=0, skipped=0, errors=0, completed=0, ai=0, template=0)
+        totals = dict(sent=0, skipped=0, errors=0, retired=0, ai=0, template=0)
 
         for lead in leads:
             try:
@@ -154,14 +138,6 @@ class Command(BaseCommand):
             .exclude(plan_status='pending_upload')
         )
 
-        if not force:
-            today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-            cold_warm_sent_today = Q(
-                last_followup_sent__gte=today_start,
-                lead_status__in=[LeadStatus.COLD, LeadStatus.WARM]
-            )
-            leads = leads.exclude(cold_warm_sent_today)
-
         return leads.order_by('last_customer_response', 'created_at')
 
     # ─── Per-lead processing ──────────────────────────────────────────────────
@@ -172,8 +148,8 @@ class Command(BaseCommand):
             logger.debug(f'Lead {lead.id} skipped: {reason}')
             return {'status': 'skipped'}
 
-        max_followups = MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 3)
-        if lead.followup_count >= max_followups:
+        # Hard cap: 4 attempts. Retire after that.
+        if lead.followup_count >= MAX_FOLLOWUPS:
             if not dry_run:
                 lead.followup_stage = 'completed'
                 lead.is_lead_active = False
@@ -181,13 +157,13 @@ class Command(BaseCommand):
                 lead.save()
             self.stdout.write(
                 self.style.WARNING(
-                    f'✔️  Lead {lead.id} retired after {lead.followup_count} follow-ups'
+                    f'💀 Lead {lead.id} retired — no response after {lead.followup_count} follow-ups'
                 )
             )
-            return {'status': 'completed'}
+            return {'status': 'retired'}
 
         next_q  = self._get_next_question(lead)
-        attempt = lead.followup_count + 1   # 1-based attempt number
+        attempt = lead.followup_count + 1   # 1-based
         result  = self._generate_message(lead, next_q, attempt)
         message = result['message']
 
@@ -196,7 +172,7 @@ class Command(BaseCommand):
                 self.style.SUCCESS(
                     f'🧪 Would send to {lead.phone_number} '
                     f'[{lead.get_lead_status_display()}] '
-                    f'attempt #{attempt}, q={next_q}\n'
+                    f'attempt #{attempt}/{MAX_FOLLOWUPS}, q={next_q}\n'
                     f'   "{message[:140]}…"'
                 )
             )
@@ -212,12 +188,23 @@ class Command(BaseCommand):
 
         lead.add_conversation_message('assistant', f'[AUTO FOLLOW-UP] {message}')
 
+        # Retire immediately after attempt 4 is sent
+        if lead.followup_count >= MAX_FOLLOWUPS:
+            lead.followup_stage = 'completed'
+            lead.is_lead_active = False
+            lead.lead_marked_inactive_at = timezone.now()
+            lead.save()
+            self.stdout.write(
+                self.style.WARNING(
+                    f'💀 Lead {lead.id} marked dead — final follow-up sent'
+                )
+            )
+
         tag = '🤖 AI' if result['ai_generated'] else '📄 Template'
         self.stdout.write(
             self.style.SUCCESS(
                 f'✅ {tag} → {lead.phone_number} '
-                f'[{lead.get_lead_status_display()}] '
-                f'attempt #{lead.followup_count}'
+                f'attempt #{lead.followup_count}/{MAX_FOLLOWUPS}'
             )
         )
         return {'status': 'sent', **result}
@@ -225,14 +212,11 @@ class Command(BaseCommand):
     # ─── Timing ───────────────────────────────────────────────────────────────
 
     def _is_ready_for_followup(self, lead, now_local, force):
-        attempt_index = min(lead.followup_count, 3)   # 0-3, maps to tuple index
-        intervals     = TIER_INTERVALS.get(lead.lead_status, TIER_INTERVALS[LeadStatus.COLD])
-        base_hours    = intervals[attempt_index]
+        if force:
+            return True, ''
 
-        # Backoff: if customer hasn't replied since last follow-up, double the wait
-        # (capped so we don't wait months between messages)
-        backoff_factor = self._backoff_factor(lead)
-        wait_hours     = min(base_hours * backoff_factor, base_hours * 4)
+        attempt_index = min(lead.followup_count, 3)   # 0→3
+        wait_hours    = ATTEMPT_INTERVALS[attempt_index]
 
         reference = (
             lead.last_customer_response
@@ -242,23 +226,12 @@ class Command(BaseCommand):
         elapsed = (timezone.now() - reference).total_seconds() / 3600
 
         if elapsed < wait_hours:
-            return False, f'{elapsed:.1f}h elapsed, need {wait_hours:.1f}h'
+            return False, f'{elapsed:.1f}h elapsed, need {wait_hours}h'
         return True, ''
 
-    def _backoff_factor(self, lead):
-        """
-        How many follow-ups have been sent since the customer last replied?
-        Each one doubles the wait. Cap at 4× so we don't disappear entirely.
-        """
-        if (lead.last_customer_response and lead.last_followup_sent
-                and lead.last_customer_response > lead.last_followup_sent):
-            return 1   # They replied after last message — no backoff
-
-        ignored = lead.followup_count
-        return min(2 ** ignored, 4)
-
     def _stage_label(self, lead):
-        labels = ['day_1', 'day_3', 'week_1', 'week_2', 'month_1', 'completed']
+        """Map followup_count → human-readable stage label."""
+        labels = ['attempt_1', 'attempt_2', 'attempt_3', 'attempt_4', 'completed']
         idx    = min(lead.followup_count, len(labels) - 1)
         return labels[idx]
 
@@ -275,10 +248,6 @@ class Command(BaseCommand):
             return 'plan_or_visit'
         if not lead.customer_area:
             return 'area'
-        if not lead.timeline:
-            return 'timeline'
-        if not lead.property_type:
-            return 'property_type'
         if not lead.scheduled_datetime:
             return 'availability'
         return 'complete'
@@ -286,6 +255,7 @@ class Command(BaseCommand):
     # ─── Conversation context helpers ────────────────────────────────────────
 
     def _last_bot_question(self, lead):
+        """Return the last substantive question the bot asked (for paraphrasing)."""
         history = lead.conversation_history or []
         skip_prefixes = (
             '[AUTO FOLLOW-UP]', '[AUTOMATIC FOLLOW-UP]',
@@ -297,6 +267,7 @@ class Command(BaseCommand):
             if msg.get('role') != 'assistant':
                 continue
             content = msg.get('content', '').strip()
+            # Strip known prefixes
             for prefix in ('[AUTO FOLLOW-UP] ', '[AUTOMATIC FOLLOW-UP] ',
                            '[MANUAL FOLLOW-UP] ', '[BULK MANUAL FOLLOW-UP] '):
                 if content.startswith(prefix):
@@ -342,69 +313,49 @@ class Command(BaseCommand):
     # ─── AI message ──────────────────────────────────────────────────────────
 
     def _ai_message(self, lead, next_question, attempt, last_question):
-        service   = self._service_label(lead)
-        time_ref  = self._elapsed_description(lead)
-        area      = lead.customer_area or ''
-        status    = lead.get_lead_status_display()
+        service  = self._service_label(lead)
+        time_ref = self._elapsed_description(lead)
+        area     = lead.customer_area or ''
 
-        # ── Angle selector — deliberately different per attempt ──────────────
-        # Each angle is a conversion strategy. Rotating them provides the
-        # pattern interrupt that keeps open rates high.
-        angles = {
-            1: {
-                'name': 'value_reminder',
-                'instruction': (
-                    'Open by referencing something specific about their project '
-                    f'({service}{" in " + area if area else ""}). '
-                    'Lead with ONE piece of genuinely useful insight — a common mistake '
-                    'people make with this type of project, or what makes a big difference '
-                    'to the outcome. Then ask the one question we need. '
-                    'This shows expertise and gives them a reason to reply.'
-                ),
-            },
-            2: {
-                'name': 'social_proof',
-                'instruction': (
-                    'Briefly mention that you recently completed a similar project '
-                    f'({service}) — keep it to one sentence, specific and credible '
-                    '(e.g. "We just wrapped a full bathroom reno in Avondale last week"). '
-                    'Then pivot with "Anyway —" and ask the one question we need. '
-                    'Pattern interrupt: shorter and more casual than message #1.'
-                ),
-            },
-            3: {
-                'name': 'soft_urgency',
-                'instruction': (
-                    'Mention a real, honest constraint — booking slots fill up, '
-                    'material prices have been moving, or the team has capacity now '
-                    'but not guaranteed in a few weeks. '
-                    'NOT fake scarcity. Frame it as helpful information, not pressure. '
-                    'Then ask the smallest possible question that moves things forward. '
-                    'Be direct. This message should be noticeably shorter than the previous ones.'
-                ),
-            },
-            4: {
-                'name': 'nine_word',
-                'instruction': (
-                    'Write the shortest possible message — the "9-word email" concept. '
-                    'Something like: "Are you still looking for a plumber?" or '
-                    '"Still keen to get the bathroom sorted?" '
-                    'No preamble. One sentence. A direct, human question. '
-                    'This works because it feels personal, not automated. '
-                    'End with "– Homebase Plumbers" on a new line.'
-                ),
-            },
+        # ── Tone progression — same core message, progressively softer ───────
+        tone_guides = {
+            1: (
+                'TONE: Warm and specific. Reference their project directly. '
+                'Lead with ONE genuinely useful insight — something that saves them '
+                'time or money on this type of project. Then ask the one question '
+                'we need. Full context, value-first. This is the freshest message '
+                'they will receive from us.'
+            ),
+            2: (
+                'TONE: Slightly softer than attempt 1. Same warmth, but a little '
+                'shorter. Reword the previous message — same core point, different '
+                'phrasing. No new angle, just a fresh way of saying the same thing. '
+                'Acknowledge implicitly that life gets busy without saying it. '
+                'Still ask the one question we need.'
+            ),
+            3: (
+                'TONE: More casual and empathetic. No pressure at all. '
+                'Keep it brief — 2 sentences max before the question. '
+                'Sound like a real person checking in, not a business chasing a sale. '
+                'Still ask the same question as before, but phrase it as gently as possible. '
+                'Make it easy for them to say "not yet" without feeling guilty.'
+            ),
+            4: (
+                'TONE: Ultra-short and human — the "9-word email" style. '
+                'One sentence only. Direct, personal, zero pressure. '
+                'Example: "Still thinking about the bathroom reno?" '
+                'No preamble. No explanation. End with "– Homebase Plumbers" on a new line. '
+                'This is the last message they will ever get from us if they do not reply.'
+            ),
         }
 
-        angle = angles.get(attempt, angles[4])
+        tone_guide = tone_guides.get(attempt, tone_guides[4])
 
-        # ── What question to embed ────────────────────────────────────────────
+        # ── What to ask ───────────────────────────────────────────────────────
         field_context = {
             'service_type':  'which service they need — bathroom renovation, kitchen renovation, or new plumbing installation',
             'plan_or_visit': 'whether they have existing plans/blueprints, or prefer a site visit first',
             'area':          'which area or suburb they are in',
-            'timeline':      'roughly when they want to get started',
-            'property_type': 'whether it is a house, apartment, or business',
             'availability':  'what day and time suits them for an appointment',
             'complete':      None,
         }
@@ -417,8 +368,8 @@ class Command(BaseCommand):
         elif last_question and attempt <= 3:
             question_block = (
                 f'The last question we asked (unanswered) was:\n"""\n{last_question}\n"""\n\n'
-                f'Rephrase it using a COMPLETELY different angle and wording. '
-                f'Same information needed, totally fresh phrasing. '
+                f'Rephrase it using a COMPLETELY different wording — same information needed, '
+                f'totally fresh phrasing. Match the tone guide above. '
                 f'Never hint that you already asked this.'
             )
         else:
@@ -431,12 +382,10 @@ class Command(BaseCommand):
 LEAD CONTEXT:
 - Interest: {service}
 - Area: {area or 'not yet shared'}
-- Lead temperature: {status}
 - Last heard from them: {time_ref}
-- This is follow-up attempt #{attempt}
+- This is follow-up attempt #{attempt} of 4
 
-CONVERSION ANGLE FOR THIS MESSAGE:
-{angle['instruction']}
+{tone_guide}
 
 QUESTION TO EMBED (do this naturally, not bolted on):
 {question_block}
@@ -446,13 +395,14 @@ RULES — every single one must be followed:
 2. NEVER ask for the customer's name — that only happens at booking confirmation
 3. Be specific — use "{service}"{(' in "' + area + '"') if area else ''} not vague words like "your project"
 4. One question maximum — embedded in the flow, not a standalone line at the end
-5. 2 to 4 sentences total for attempts 1-3. Attempt 4+ = 1-2 sentences only
+5. Attempt 1-3: 2-4 sentences. Attempt 4: 1-2 sentences MAXIMUM
 6. End with "– Homebase Plumbers" on its own line
 7. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
 8. Zero markdown, zero bold, zero bullet points
 9. At most one emoji — only if it fits naturally. Attempt 4 = no emoji
 10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
 11. Sound like a real person texting, not a marketing email
+12. DO NOT mention that this is a follow-up or that you've messaged before
 
 Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
@@ -464,7 +414,8 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                     'content': (
                         'You write short, high-converting WhatsApp messages. '
                         'Sound like a real person, not a bot or marketer. '
-                        'Value-first, specific, one question, no pressure. '
+                        'Each attempt should be a paraphrase of the previous one — '
+                        'same core message, progressively softer tone. '
                         'Never use or ask for the customer name — open with "Hi there,".'
                     ),
                 },
@@ -476,12 +427,12 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
         message = response.choices[0].message.content.strip()
 
-        # Safety: strip any accidental markdown
+        # Strip any accidental markdown
         message = message.replace('**', '').replace('__', '')
 
         logger.info(
-            f'AI follow-up | lead={lead.id} attempt={attempt} '
-            f'angle={angle["name"]} q={next_question} '
+            f'AI follow-up | lead={lead.id} attempt={attempt}/{MAX_FOLLOWUPS} '
+            f'q={next_question} '
             f'rephrase={"yes" if last_question and attempt <= 3 else "no"}'
         )
         return {'message': message, 'ai_generated': True, 'template_fallback': False}
@@ -490,142 +441,148 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
     def _template_message(self, lead, next_question, attempt):
         """
-        Hand-crafted fallback templates. Each attempt uses a different angle
-        so the customer doesn't receive the same message twice.
+        Hand-crafted fallback templates.
+        Each attempt is a progressively softer paraphrase of attempt 1.
+        Attempt 4 is ultra-short — the last message they will ever receive.
         """
         service = self._service_label(lead)
         area    = f' in {lead.customer_area}' if lead.customer_area else ''
 
-        # Attempt 1 — value-led
-        # Attempt 2 — social proof + casual
-        # Attempt 3 — soft urgency
-        # Attempt 4+ — nine-word style
-
         templates = {
+            # ── Attempt 1: warm, specific, value-first ────────────────────────
+            # ── Attempt 2: reworded, slightly shorter ─────────────────────────
+            # ── Attempt 3: casual, empathetic, low pressure ───────────────────
+            # ── Attempt 4: ultra-short, human, final ─────────────────────────
+            #
+        templates = {
+
+            # ── STAGE 1: Lead went silent after "which service?" ──────────────
             'service_type': [
                 (
-                    f"Hi there, one thing that catches people off guard with plumbing projects is how much the scope varies depending on the service. "
-                    f"Are you looking at a bathroom renovation, kitchen reno, or a new installation{area}?\n\n– Homebase Plumbers"
+                    "Hi there,\n\n"
+                    "What made you reach out? Most people don't message unless "
+                    "something's actually bothering them about their space.\n\n"
+                    "Help me understand — what's going on?"
                 ),
                 (
-                    f"Hi there, we just finished a bathroom reno in Borrowdale last week — "
-                    f"came out beautifully. Anyway, what type of plumbing work are you after?\n\n– Homebase Plumbers"
+                    "Hi there,\n\n"
+                    "I get the sense you might still be weighing things up. "
+                    "That's completely fair — most people do before they see the quote.\n\n"
+                    "Was it a bathroom renovation, kitchen reno, or a new plumbing installation?"
                 ),
                 (
-                    f"Hi there, our schedule{area} is filling up for the next few weeks. "
-                    f"What service were you looking at — bathroom, kitchen, or new installation?\n\n– Homebase Plumbers"
+                    "Hi there,\n\n"
+                    "I recently helped someone who wasn't sure where to start either, "
+                    "and they ended up loving how polished and complete the space felt afterwards.\n\n"
+                    "Was it a bathroom, kitchen, or plumbing installation you had in mind?"
                 ),
                 (
-                    f"Hi there, still looking for a plumber?\n\n– Homebase Plumbers"
+                    "Hi there,\n\n"
+                    "Still looking for a plumber?"
                 ),
             ],
+
+            # ── STAGE 2: Lead went silent after "plan or site visit?" ─────────
             'plan_or_visit': [
                 (
-                    f"Hi there, one of the biggest time-savers on a {service} is having a clear plan before we start. "
-                    f"Do you have existing blueprints, or would a quick site visit make more sense?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"What made you reach out about your {service}? "
+                    "Most people don't message unless something's genuinely bothering them.\n\n"
+                    "Help me understand — what's going on?"
                 ),
                 (
-                    f"Hi there, we knocked out a {service} last week where the client had a plan ready — "
-                    f"saved them two days on site. Do you have plans, or should we come take a look first?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    "I get the sense you might be wondering if a site visit is worth the time. "
+                    "It genuinely catches things you'd miss and locks your pricing in properly.\n\n"
+                    "But I could be wrong — what's actually making you hesitate?"
                 ),
                 (
-                    f"Hi there, we have a few open slots{area} this week for site visits. "
-                    f"Do you have existing plans, or would you like us to come assess first?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"I recently worked with someone on their {service} who felt unsure at first, "
+                    "and they ended up loving the result because everything was clear before work even started.\n\n"
+                    "Do you already have plans, or should we come take a look?"
                 ),
                 (
-                    f"Hi there, do you have plans for the {service} yet?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"Do you have plans for the {service} yet?"
                 ),
             ],
+
+            # ── STAGE 3: Lead went silent after "which suburb?" ───────────────
             'area': [
                 (
-                    f"Hi there, the cost and timeline for a {service} can vary quite a bit by area — "
-                    f"mainly travel and materials. Which suburb are you in?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"What made you reach out about your {service}? "
+                    "Most people don't message unless something's actually bothering them.\n\n"
+                    "Help me understand — what's going on?"
                 ),
                 (
-                    f"Hi there, we have teams across Harare and surrounds. "
-                    f"Which area are you based in so I can check who's closest?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    "Sometimes people pause because they're unsure about logistics. "
+                    "Once we know the area, we can give you clear pricing and timing.\n\n"
+                    "Which suburb are you based in?"
                 ),
                 (
-                    f"Hi there, we're booking {service} jobs for the coming weeks — "
-                    f"which area are you in?\n\n– Homebase Plumbers"
+                    "Hi there,\n\n"
+                    "I recently helped a client who thought their project would be complicated, "
+                    "but once we saw the location, everything became straightforward.\n\n"
+                    "Where are you based?"
                 ),
                 (
-                    f"Hi there, where are you located?\n\n– Homebase Plumbers"
+                    "Hi there,\n\n"
+                    "Which area are you in?"
                 ),
             ],
-            'timeline': [
-                (
-                    f"Hi there, the earlier we plan a {service}, the better the options for materials and scheduling. "
-                    f"Roughly when were you hoping to get started?\n\n– Homebase Plumbers"
-                ),
-                (
-                    f"Hi there, just sorted a {service} for a client who thought they'd need 6 weeks — "
-                    f"we got it done in 10 days. When are you looking to start?\n\n– Homebase Plumbers"
-                ),
-                (
-                    f"Hi there, our {area[4:] + ' ' if area else ''}calendar is starting to fill up. "
-                    f"When were you hoping to kick off the {service}?\n\n– Homebase Plumbers"
-                ),
-                (
-                    f"Hi there, when do you need the {service} done by?\n\n– Homebase Plumbers"
-                ),
-            ],
-            'property_type': [
-                (
-                    f"Hi there, the approach for a {service} differs quite a bit between a house, flat, and commercial space — "
-                    f"mainly the pipe access and council requirements. Which type is yours?\n\n– Homebase Plumbers"
-                ),
-                (
-                    f"Hi there, we do residential and commercial work across the board. "
-                    f"Is your {service} for a house, apartment, or a business property?\n\n– Homebase Plumbers"
-                ),
-                (
-                    f"Hi there, one last detail before we can put together a proper quote for your {service} — "
-                    f"is it a house, apartment, or commercial space?\n\n– Homebase Plumbers"
-                ),
-                (
-                    f"Hi there, house, apartment, or business?\n\n– Homebase Plumbers"
-                ),
-            ],
+
+            # ── STAGE 4: Lead went silent after availability question ─────────
             'availability': [
                 (
-                    f"Hi there, we have everything we need for your {service}{area} — "
-                    f"the only thing left is locking in a time. What day and time works for you?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"We have everything we need for your {service}{area}. "
+                    "The only thing left is locking in a time.\n\n"
+                    "What day works for you?"
                 ),
                 (
-                    f"Hi there, we wrapped up a {service} in {lead.customer_area or 'the area'} recently — "
-                    f"the client wished they'd booked sooner. When can we come to you?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"Once your {service} is booked, you'll have full clarity on timing and cost.\n\n"
+                    "Which day would suit you best?"
                 ),
                 (
-                    f"Hi there, we have open slots this week and next for your {service}. "
-                    f"What day and time works?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"Happy to work around your schedule for the {service}.\n\n"
+                    "Is there a day that might work for you?"
                 ),
                 (
-                    f"Hi there, when are you free to book?\n\n– Homebase Plumbers"
+                    "Hi there,\n\n"
+                    "Should I close this out for now?"
                 ),
             ],
+
             'complete': [
                 (
-                    f"Hi there, we have everything we need for your {service}{area}. "
-                    f"Just say the word and we'll lock in the appointment — it takes 2 minutes.\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"We have everything we need for your {service}{area}.\n\n"
+                    "Just say the word and we'll lock in the appointment."
                 ),
                 (
-                    f"Hi there, all set on our end for your {service}. "
-                    f"What's the best time to confirm?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"All set on our end for your {service}.\n\n"
+                    "What time works best to confirm?"
                 ),
                 (
-                    f"Hi there, your {service} slot is ready to book whenever you are. "
-                    f"Shall I lock it in?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"Your {service} slot is ready whenever you are.\n\n"
+                    "Shall I lock it in?"
                 ),
                 (
-                    f"Hi there, still want to get the {service} sorted?\n\n– Homebase Plumbers"
+                    f"Hi there,\n\n"
+                    f"Still want to get the {service} sorted?"
                 ),
             ],
         }
-
         options = templates.get(next_question, templates['complete'])
-        # Pick by attempt number, cycling back to last option if past the list
-        idx = min(attempt - 1, len(options) - 1)
+        # attempt is 1-based; list is 0-indexed; clamp to last option if past the list
+        idx     = min(attempt - 1, len(options) - 1)
         message = options[idx]
 
         return {'message': message, 'ai_generated': False, 'template_fallback': True}
