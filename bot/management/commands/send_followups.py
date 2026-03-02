@@ -479,99 +479,99 @@ class Command(BaseCommand):
         # Attempt 2 — social proof + casual
         # Attempt 3 — soft urgency
         # Attempt 4+ — nine-word style
-        #
+    
         templates = {
-                    'service_type': [
-                        (
-                            f"Hi there, what made you reach out? Most people don't message unless something's actually bothering them about their space.\n\n"
-                            f"Help me understand — is it a price thing, or is it that you're still figuring out exactly what needs to be done?"
-                        ),
-                        (
-                            f"Hey! Just so I point you in the right direction — are you looking at a bathroom renovation, kitchen reno, or a new installation?\n\n"
-                            f"Whatever it is, we price the job upfront so you know exactly what you're paying before anything starts."
-                        ),
-                        (
-                            f"I might be off, but when people hesitate here it's usually because they're still figuring out exactly what they want done.\n\n"
-                            f"If you had to choose today, which direction are you leaning — bathroom, kitchen, or installation?"
-                        ),
-                        (
-                            f"If now's not the right time to explore it, that's completely fine.\n\n"
-                            f"Just let me know, should we park this for now, or are you still looking to get something sorted?"
-                        ),
-                    ],
-                    'plan_or_visit': [
-                        (
-                            f"Hi there, is it that you're not sure if the visit is worth it, or is it more of a timing thing?\n\n"
-                            f"Either way — the visit is free, takes about an hour, and locks your price in before anything starts."
-                        ),
-                        (
-                            f"Hi there, we knocked out a {service} last week where the client had a plan ready, "
-                            f"saved them two days on site. Do you have plans already, or should we come take a look first?\n\n"
-                            f"Most people who hesitate here are just unsure which option saves them more money — the visit usually wins."
-                        ),
-                        (
-                            f"I could be wrong, but sometimes people delay the visit because they're worried it'll come with a big quote.\n\n"
-                            f"The visit itself is free, and it actually locks in your price so there are no surprises mid-job. Would there be any reason not to book it?"
-                        ),
-                        (
-                            f"No pressure at all.\n\n"
-                            f"Should we organise the visit for your {service}, or would you prefer to pause this for now?"
-                        ),
-                    ],
-                    'area': [
-                        (
-                            f"Hi there, is it that you're still comparing options, or is it more of a budget concern at this stage?\n\n"
-                            f"Either is fine — I just want to make sure I'm pointing you in the right direction. Which area are you based in?"
-                        ),
-                        (
-                            f"Hi there, sometimes people hesitate sharing their area because they're worried distance will push the price up.\n\n"
-                            f"We price the job, not the distance — which suburb would we be working in?"
-                        ),
-                        (
-                            f"I might be off, but sometimes people hesitate sharing their area because they're still comparing options.\n\n"
-                            f"If we're the right fit, which suburb would we be working in?"
-                        ),
-                        (
-                            f"If you'd rather not continue right now, no stress.\n\n"
-                            f"Should we close this off, or are you still wanting help with your {service}?"
-                        ),
-                    ],
-                    'availability': [
-                        (
-                            f"Hi there, is it a timing thing, or is the price still feeling uncertain?\n\n"
-                            f"Once we lock in the visit, you get a fixed quote — no hourly rates, no bill shock. What day works for you?"
-                        ),
-                        (
-                            f"Hi there, most people who go quiet at this stage are either waiting on budget or comparing other quotes.\n\n"
-                            f"Either way — booking a slot costs nothing and you can always reschedule. Would that work?"
-                        ),
-                        (
-                            f"Most people who hesitate here are either comparing quotes or waiting to see if the budget clears.\n\n"
-                            f"Either way, locking in a slot costs nothing and you can always reschedule. Would that work for you?"
-                        ),
-                        (
-                            f"Totally fine if now's not the time.\n\n"
-                            f"Just let me know — should I close this out, or lock in your slot?"
-                        ),
-                    ],
-                    'complete': [
-                        (
-                            f"Hi there, is it a price thing, or is something else making you hesitate?\n\n"
-                            f"Your fixed quote is already set — there's nothing extra coming. Just say the word and I'll lock in your {service}."
-                        ),
-                        (
-                            f"Hi there, all set on our end for your {service}. "
-                            f"The price is fixed once we confirm — what's the best time to lock it in?"
-                        ),
-                        (
-                            f"Hi there, your {service} slot is ready to book whenever you are. "
-                            f"Shall I lock it in?"
-                        ),
-                        (
-                            f"Hi there, still want to get the {service} sorted?"
-                        ),
-                    ],
-                }
+            'service_type': [
+                (
+                    f"Hi there, what made you reach out? Most people don't message unless something's actually bothering them about their space.\n\n"
+                    f"Help me understand — is it a price thing, or is it that you're still figuring out exactly what needs to be done?"
+                ),
+                (
+                    f"Hey! Just so I point you in the right direction — are you looking at a bathroom renovation, kitchen reno, or a new installation?\n\n"
+                    f"Whatever it is, we price the job upfront so you know exactly what you're paying before anything starts."
+                ),
+                (
+                    f"I might be off, but when people hesitate here it's usually because they're still figuring out exactly what they want done.\n\n"
+                    f"If you had to choose today, which direction are you leaning — bathroom, kitchen, or installation?"
+                ),
+                (
+                    f"If now's not the right time to explore it, that's completely fine.\n\n"
+                    f"Just let me know, should we park this for now, or are you still looking to get something sorted?"
+                ),
+            ],
+            'plan_or_visit': [
+                (
+                    f"Hi there, is it that you're not sure if the visit is worth it, or is it more of a timing thing?\n\n"
+                    f"Either way — the visit is free, takes about an hour, and locks your price in before anything starts."
+                ),
+                (
+                    f"Hi there, we knocked out a {service} last week where the client had a plan ready, "
+                    f"saved them two days on site. Do you have plans already, or should we come take a look first?\n\n"
+                    f"Most people who hesitate here are just unsure which option saves them more money — the visit usually wins."
+                ),
+                (
+                    f"I could be wrong, but sometimes people delay the visit because they're worried it'll come with a big quote.\n\n"
+                    f"The visit itself is free, and it actually locks in your price so there are no surprises mid-job. Would there be any reason not to book it?"
+                ),
+                (
+                    f"No pressure at all.\n\n"
+                    f"Should we organise the visit for your {service}, or would you prefer to pause this for now?"
+                ),
+            ],
+            'area': [
+                (
+                    f"Hi there, is it that you're still comparing options, or is it more of a budget concern at this stage?\n\n"
+                    f"Either is fine — I just want to make sure I'm pointing you in the right direction. Which area are you based in?"
+                ),
+                (
+                    f"Hi there, sometimes people hesitate sharing their area because they're worried distance will push the price up.\n\n"
+                    f"We price the job, not the distance — which suburb would we be working in?"
+                ),
+                (
+                    f"I might be off, but sometimes people hesitate sharing their area because they're still comparing options.\n\n"
+                    f"If we're the right fit, which suburb would we be working in?"
+                ),
+                (
+                    f"If you'd rather not continue right now, no stress.\n\n"
+                    f"Should we close this off, or are you still wanting help with your {service}?"
+                ),
+            ],
+            'availability': [
+                (
+                    f"Hi there, is it a timing thing, or is the price still feeling uncertain?\n\n"
+                    f"Once we lock in the visit, you get a fixed quote — no hourly rates, no bill shock. What day works for you?"
+                ),
+                (
+                    f"Hi there, most people who go quiet at this stage are either waiting on budget or comparing other quotes.\n\n"
+                    f"Either way — booking a slot costs nothing and you can always reschedule. Would that work?"
+                ),
+                (
+                    f"Most people who hesitate here are either comparing quotes or waiting to see if the budget clears.\n\n"
+                    f"Either way, locking in a slot costs nothing and you can always reschedule. Would that work for you?"
+                ),
+                (
+                    f"Totally fine if now's not the time.\n\n"
+                    f"Just let me know — should I close this out, or lock in your slot?"
+                ),
+            ],
+            'complete': [
+                (
+                    f"Hi there, is it a price thing, or is something else making you hesitate?\n\n"
+                    f"Your fixed quote is already set — there's nothing extra coming. Just say the word and I'll lock in your {service}."
+                ),
+                (
+                    f"Hi there, all set on our end for your {service}. "
+                    f"The price is fixed once we confirm — what's the best time to lock it in?"
+                ),
+                (
+                    f"Hi there, your {service} slot is ready to book whenever you are. "
+                    f"Shall I lock it in?"
+                ),
+                (
+                    f"Hi there, still want to get the {service} sorted?"
+                ),
+            ],
+        }
 
         options = templates.get(next_question, templates['complete'])
         # Pick by attempt number, cycling back to last option if past the list
