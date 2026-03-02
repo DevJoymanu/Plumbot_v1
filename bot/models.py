@@ -1007,6 +1007,7 @@ class Appointment(models.Model):
         self.last_inbound_at = self.last_customer_response
         self.followup_stage = 'responded'
         self.is_lead_active = True
+        self.retry_count = 0  # ADD THIS LINE
         self.save()
 
     def recalculate_lead_scoring(self, persist=True):
