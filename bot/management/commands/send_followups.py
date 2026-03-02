@@ -60,7 +60,7 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
 # ─── Contact windows (local hour, half-open) ─────────────────────────────────
 CONTACT_WINDOWS = [
-    (22, 23),   # temporary test window: 10 PM - 11 PM
+    (8, 20),    # All day: 8 AM - 8 PM SAST
 ]
 
 # ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
