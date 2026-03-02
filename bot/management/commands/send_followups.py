@@ -159,7 +159,7 @@ class Command(BaseCommand):
                 last_followup_sent__gte=today_start,
                 lead_status__in=[LeadStatus.COLD, LeadStatus.WARM]
             )
-            leads = leads.exclude(cold_warm_sent_today)
+            #leads = leads.exclude(cold_warm_sent_today)
 
         return leads.order_by('last_customer_response', 'created_at')
 
@@ -430,7 +430,6 @@ class Command(BaseCommand):
                     '"Still keen to get the bathroom sorted?" '
                     'No preamble. One sentence. A direct, human question. '
                     'This works because it feels personal, not automated. '
-                    'End with "– Homebase Plumbers" on a new line.'
                 ),
             },
         }
@@ -486,12 +485,11 @@ RULES — every single one must be followed:
 3. Be specific — use "{service}"{(' in "' + area + '"') if area else ''} not vague words like "your project"
 4. One question maximum — embedded in the flow, not a standalone line at the end
 5. 2 to 4 sentences total for attempts 1-3. Attempt 4+ = 1-2 sentences only
-6. End with "– Homebase Plumbers" on its own line
-7. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
-8. Zero markdown, zero bold, zero bullet points
-9. At most one emoji — only if it fits naturally. Attempt 4 = no emoji
-10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
-11. Sound like a real person texting, not a marketing email
+6. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
+7. Zero markdown, zero bold, zero bullet points
+8. At most one emoji — only if it fits naturally. Attempt 4 = no emoji
+9. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
+10. Sound like a real person texting, not a marketing email
 
 Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
@@ -544,120 +542,120 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             'service_type': [
                 (
                     f"Hi there, one thing that catches people off guard with plumbing projects is how much the scope varies depending on the service. "
-                    f"Are you looking at a bathroom renovation, kitchen reno, or a new installation{area}?\n\n– Homebase Plumbers"
+                    f"Are you looking at a bathroom renovation, kitchen reno, or a new installation{area}?\n\n"
                 ),
                 (
                     f"Hi there, we just finished a bathroom reno in Borrowdale last week — "
-                    f"came out beautifully. Anyway, what type of plumbing work are you after?\n\n– Homebase Plumbers"
+                    f"came out beautifully. Anyway, what type of plumbing work are you after?\n\n"
                 ),
                 (
                     f"Hi there, our schedule{area} is filling up for the next few weeks. "
-                    f"What service were you looking at — bathroom, kitchen, or new installation?\n\n– Homebase Plumbers"
+                    f"What service were you looking at — bathroom, kitchen, or new installation?\n\n"
                 ),
                 (
-                    f"Hi there, still looking for a plumber?\n\n– Homebase Plumbers"
+                    f"Hi there, still looking for a plumber?\n\n"
                 ),
             ],
             'plan_or_visit': [
                 (
                     f"Hi there, one of the biggest time-savers on a {service} is having a clear plan before we start. "
-                    f"Do you have existing blueprints, or would a quick site visit make more sense?\n\n– Homebase Plumbers"
+                    f"Do you have existing blueprints, or would a quick site visit make more sense?\n\n"
                 ),
                 (
                     f"Hi there, we knocked out a {service} last week where the client had a plan ready — "
-                    f"saved them two days on site. Do you have plans, or should we come take a look first?\n\n– Homebase Plumbers"
+                    f"saved them two days on site. Do you have plans, or should we come take a look first?\n\n"
                 ),
                 (
                     f"Hi there, we have a few open slots{area} this week for site visits. "
-                    f"Do you have existing plans, or would you like us to come assess first?\n\n– Homebase Plumbers"
+                    f"Do you have existing plans, or would you like us to come assess first?\n\n"
                 ),
                 (
-                    f"Hi there, do you have plans for the {service} yet?\n\n– Homebase Plumbers"
+                    f"Hi there, do you have plans for the {service} yet?\n\n"
                 ),
             ],
             'area': [
                 (
                     f"Hi there, the cost and timeline for a {service} can vary quite a bit by area — "
-                    f"mainly travel and materials. Which suburb are you in?\n\n– Homebase Plumbers"
+                    f"mainly travel and materials. Which suburb are you in?\n\n"
                 ),
                 (
                     f"Hi there, we have teams across Harare and surrounds. "
-                    f"Which area are you based in so I can check who's closest?\n\n– Homebase Plumbers"
+                    f"Which area are you based in so I can check who's closest?\n\n"
                 ),
                 (
                     f"Hi there, we're booking {service} jobs for the coming weeks — "
-                    f"which area are you in?\n\n– Homebase Plumbers"
+                    f"which area are you in?\n\n"
                 ),
                 (
-                    f"Hi there, where are you located?\n\n– Homebase Plumbers"
+                    f"Hi there, where are you located?\n\n"
                 ),
             ],
             'timeline': [
                 (
                     f"Hi there, the earlier we plan a {service}, the better the options for materials and scheduling. "
-                    f"Roughly when were you hoping to get started?\n\n– Homebase Plumbers"
+                    f"Roughly when were you hoping to get started?\n\n"
                 ),
                 (
                     f"Hi there, just sorted a {service} for a client who thought they'd need 6 weeks — "
-                    f"we got it done in 10 days. When are you looking to start?\n\n– Homebase Plumbers"
+                    f"we got it done in 10 days. When are you looking to start?\n\n"
                 ),
                 (
                     f"Hi there, our {area[4:] + ' ' if area else ''}calendar is starting to fill up. "
-                    f"When were you hoping to kick off the {service}?\n\n– Homebase Plumbers"
+                    f"When were you hoping to kick off the {service}?\n\n"
                 ),
                 (
-                    f"Hi there, when do you need the {service} done by?\n\n– Homebase Plumbers"
+                    f"Hi there, when do you need the {service} done by?\n\n"
                 ),
             ],
             'property_type': [
                 (
                     f"Hi there, the approach for a {service} differs quite a bit between a house, flat, and commercial space — "
-                    f"mainly the pipe access and council requirements. Which type is yours?\n\n– Homebase Plumbers"
+                    f"mainly the pipe access and council requirements. Which type is yours?\n\n"
                 ),
                 (
                     f"Hi there, we do residential and commercial work across the board. "
-                    f"Is your {service} for a house, apartment, or a business property?\n\n– Homebase Plumbers"
+                    f"Is your {service} for a house, apartment, or a business property?\n\n"
                 ),
                 (
                     f"Hi there, one last detail before we can put together a proper quote for your {service} — "
-                    f"is it a house, apartment, or commercial space?\n\n– Homebase Plumbers"
+                    f"is it a house, apartment, or commercial space?\n\n"
                 ),
                 (
-                    f"Hi there, house, apartment, or business?\n\n– Homebase Plumbers"
+                    f"Hi there, house, apartment, or business?\n\n"
                 ),
             ],
             'availability': [
                 (
                     f"Hi there, we have everything we need for your {service}{area} — "
-                    f"the only thing left is locking in a time. What day and time works for you?\n\n– Homebase Plumbers"
+                    f"the only thing left is locking in a time. What day and time works for you?\n\n"
                 ),
                 (
                     f"Hi there, we wrapped up a {service} in {lead.customer_area or 'the area'} recently — "
-                    f"the client wished they'd booked sooner. When can we come to you?\n\n– Homebase Plumbers"
+                    f"the client wished they'd booked sooner. When can we come to you?\n\n"
                 ),
                 (
                     f"Hi there, we have open slots this week and next for your {service}. "
-                    f"What day and time works?\n\n– Homebase Plumbers"
+                    f"What day and time works?\n\n"
                 ),
                 (
-                    f"Hi there, when are you free to book?\n\n– Homebase Plumbers"
+                    f"Hi there, when are you free to book?\n\n"
                 ),
             ],
             'complete': [
                 (
                     f"Hi there, we have everything we need for your {service}{area}. "
-                    f"Just say the word and we'll lock in the appointment — it takes 2 minutes.\n\n– Homebase Plumbers"
+                    f"Just say the word and we'll lock in the appointment — it takes 2 minutes.\n\n"
                 ),
                 (
                     f"Hi there, all set on our end for your {service}. "
-                    f"What's the best time to confirm?\n\n– Homebase Plumbers"
+                    f"What's the best time to confirm?\n\n"
                 ),
                 (
                     f"Hi there, your {service} slot is ready to book whenever you are. "
-                    f"Shall I lock it in?\n\n– Homebase Plumbers"
+                    f"Shall I lock it in?\n\n"
                 ),
                 (
-                    f"Hi there, still want to get the {service} sorted?\n\n– Homebase Plumbers"
+                    f"Hi there, still want to get the {service} sorted?\n\n"
                 ),
             ],
         }
