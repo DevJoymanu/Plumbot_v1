@@ -441,10 +441,7 @@ class Command(BaseCommand):
             'service_type':  'which service they need — bathroom renovation, kitchen renovation, or new plumbing installation',
             'plan_or_visit': 'whether they have existing plans/blueprints, or prefer a site visit first',
             'area':          'which area or suburb they are in',
-            'timeline':      'roughly when they want to get started',
-            'property_type': 'whether it is a house, apartment, or business',
             'availability':  'what day and time suits them for an appointment',
-            'complete':      None,
         }
 
         if next_question == 'complete':
@@ -557,7 +554,6 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                     f"Just let me know, should we park this for now, or are you still looking to get something sorted?"
                 ),
             ],
-            #
             'plan_or_visit': [
                 (
                     f"I get the sense you might be wondering if a site visit is worth the time. It genuinely catches things you\'d miss, and it locks your price in stone. But I could be off—what\'s actually making you hesitate? "

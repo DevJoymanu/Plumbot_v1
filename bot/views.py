@@ -2554,6 +2554,7 @@ class Plumbot:
             'thanks', 'thank you', 'thank u', 'thx', 'thnx',
             'noted', 'got it', 'alright', 'cool', 'nice', 'great',
             '👍', '🙏', '✅', '😊', 'ooh ok', 'ooh okay',
+            'sharp', 'sharp!','shap','bo','bho',  # ← ADD THIS
         }
         if msg in short_acks:
             return True
@@ -5148,8 +5149,8 @@ I understand this is time-sensitive!"""
         
         # Remove common non-name words
         name_clean = name.strip().lower()
-        invalid_words = ['yes', 'no', 'ok', 'sure', 'thanks', 'hello', 'hi', 'good', 'fine']
-        
+        invalid_words = ['yes', 'no', 'ok', 'sure', 'thanks', 'hello', 'hi', 'good', 'fine', 
+                        'sharp', 'cool', 'noted', 'great', 'alright', 'okay', 'perfect', 'nice']        
         if name_clean in invalid_words:
             return False
             
