@@ -4,7 +4,7 @@
 #
 # Principles applied (Hormozi + conversion psychology):
 #
-#  1. SPECIFICITY SELLS — vague messages get ignored. Every message references
+#  1. SPECIFICITY SELLS, vague messages get ignored. Every message references
 #     exactly what the customer said they need. "Your bathroom" beats "your project".
 #
 #  2. VALUE BEFORE ASK — each follow-up leads with something useful (insight,
@@ -541,110 +541,80 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
         templates = {
             'service_type': [
                 (
-                    f"Hi there, one thing that catches people off guard with plumbing projects is how much the scope varies depending on the service. "
-                    f"Are you looking at a bathroom renovation, kitchen reno, or a new installation{area}?\n\n"
+                    f"Hi there, what made you reach out? Most people don’t message unless something’s actually bothering them about their space. "
+                    f"Help me understand, what’s going on?"
                 ),
                 (
-                    f"Hi there, we just finished a bathroom reno in Borrowdale last week — "
-                    f"came out beautifully. Anyway, what type of plumbing work are you after?\n\n"
+                    f"Hey! Just so I point you in the right direction, what’s prompting this? "
+                    f"Are you looking at a bathroom renovation, kitchen reno, or a new installation?"
                 ),
                 (
-                    f"Hi there, our schedule{area} is filling up for the next few weeks. "
-                    f"What service were you looking at — bathroom, kitchen, or new installation?\n\n"
+                    f"I might be off, but when people hesitate here it’s usually because they’re still figuring out exactly what they want done.\n\n"
+                    f"If you had to choose today, which direction are you leaning, bathroom, kitchen, or installation?"
                 ),
                 (
-                    f"Hi there, still looking for a plumber?\n\n"
+                    f"If now’s not the right time to explore it, that’s completely fine.\n\n"
+                    f"Just let me know, should we park this for now, or are you still looking to get something sorted?"
                 ),
             ],
+            #
             'plan_or_visit': [
                 (
-                    f"Hi there, one of the biggest time-savers on a {service} is having a clear plan before we start. "
-                    f"Do you have existing blueprints, or would a quick site visit make more sense?\n\n"
+                    f"I get the sense you might be wondering if a site visit is worth the time. It genuinely catches things you\'d miss, and it locks your price in stone. But I could be off—what\'s actually making you hesitate? "
                 ),
                 (
-                    f"Hi there, we knocked out a {service} last week where the client had a plan ready — "
+                    f"Hi there, we knocked out a {service} last week where the client had a plan ready, "
                     f"saved them two days on site. Do you have plans, or should we come take a look first?\n\n"
                 ),
-                (
-                    f"Hi there, we have a few open slots{area} this week for site visits. "
-                    f"Do you have existing plans, or would you like us to come assess first?\n\n"
+                 (
+                    f"I could be wrong, but sometimes when someone delays a visit it’s because they’re unsure if it’s necessary.\n\n"
+                    f"If it guaranteed a clear quote and no surprises, would there be any reason not to book the visit?\n\n"
                 ),
                 (
-                    f"Hi there, do you have plans for the {service} yet?\n\n"
+                    f"No pressure at all.\n\n"
+                    f"Should we organise the visit for your {service}, or would you prefer to pause this for now?\n\n"
                 ),
             ],
             'area': [
                 (
-                    f"Hi there, the cost and timeline for a {service} can vary quite a bit by area — "
-                    f"mainly travel and materials. Which suburb are you in?\n\n"
+                    f"I had a client in Borrowdale who was in the same boat, and they ended up loving it because the room actually felt like a hotel. "
+                    f"Somewhere they could actually relax and enjoy. We’d love to get you sorted the same way, where are you based?\n\n"
                 ),
                 (
-                    f"Hi there, we have teams across Harare and surrounds. "
-                    f"Which area are you based in so I can check who's closest?\n\n"
+                    f"Hi there! Our teams cover all suburbs around Harare, and I want to make sure we don’t keep you waiting. "
+                    f"Which area are you located in so we can schedule the quickest possible visit?\n\n"
                 ),
                 (
-                    f"Hi there, we're booking {service} jobs for the coming weeks — "
-                    f"which area are you in?\n\n"
+                    f"I might be off, but sometimes people hesitate sharing their area because they’re still comparing options.\n\n"
+                    f"If we’re the right fit, which suburb would we be working in?\n\n"
                 ),
                 (
-                    f"Hi there, where are you located?\n\n"
-                ),
-            ],
-            'timeline': [
-                (
-                    f"Hi there, the earlier we plan a {service}, the better the options for materials and scheduling. "
-                    f"Roughly when were you hoping to get started?\n\n"
-                ),
-                (
-                    f"Hi there, just sorted a {service} for a client who thought they'd need 6 weeks — "
-                    f"we got it done in 10 days. When are you looking to start?\n\n"
-                ),
-                (
-                    f"Hi there, our {area[4:] + ' ' if area else ''}calendar is starting to fill up. "
-                    f"When were you hoping to kick off the {service}?\n\n"
-                ),
-                (
-                    f"Hi there, when do you need the {service} done by?\n\n"
-                ),
-            ],
-            'property_type': [
-                (
-                    f"Hi there, the approach for a {service} differs quite a bit between a house, flat, and commercial space — "
-                    f"mainly the pipe access and council requirements. Which type is yours?\n\n"
-                ),
-                (
-                    f"Hi there, we do residential and commercial work across the board. "
-                    f"Is your {service} for a house, apartment, or a business property?\n\n"
-                ),
-                (
-                    f"Hi there, one last detail before we can put together a proper quote for your {service} — "
-                    f"is it a house, apartment, or commercial space?\n\n"
-                ),
-                (
-                    f"Hi there, house, apartment, or business?\n\n"
+                    f"If you’d rather not continue right now, no stress.\n\n"
+                    f"Should we close this off, or are you still wanting help with your {service}?\n\n"
                 ),
             ],
             'availability': [
                 (
-                    f"Hi there, we have everything we need for your {service}{area} — "
+                    f"Hi there, we have everything we need for your {service} in {area}, "
                     f"the only thing left is locking in a time. What day and time works for you?\n\n"
                 ),
                 (
-                    f"Hi there, we wrapped up a {service} in {lead.customer_area or 'the area'} recently — "
-                    f"the client wished they'd booked sooner. When can we come to you?\n\n"
+                    f"I might be off here, but usually when someone goes quiet at this stage it’s because they’re unsure about committing.\n\n"
+                    f"If everything makes sense, would there be any reason not to secure your {service} now?\n\n"
                 ),
                 (
-                    f"Hi there, we have open slots this week and next for your {service}. "
-                    f"What day and time works?\n\n"
+                    f"I might be off here, but usually when someone goes quiet at this stage it’s because they’re unsure about committing.\n\n"
+                    f"If everything makes sense, would there be any reason not to secure your {service} now?\n\n"
                 ),
                 (
-                    f"Hi there, when are you free to book?\n\n"
+                    f"Totally fine if now’s not the time.\n\n"
+                    f"Just let me know, should I close this out, or lock in your slot?\n\n"
                 ),
             ],
             'complete': [
                 (
                     f"Hi there, we have everything we need for your {service}{area}. "
-                    f"Just say the word and we'll lock in the appointment — it takes 2 minutes.\n\n"
+                    f"Just say the word and we'll lock in the appointment, it takes 2 minutes.\n\n"
                 ),
                 (
                     f"Hi there, all set on our end for your {service}. "
