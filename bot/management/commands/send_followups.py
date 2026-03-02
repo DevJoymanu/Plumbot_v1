@@ -150,7 +150,7 @@ class Command(BaseCommand):
             .exclude(last_customer_response__gte=response_window)
             # Don't interfere with plan-upload flows
             .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
-            .exclude(plan_status='pending_upload')
+#            .exclude(plan_status='pending_upload')
         )
 
         if not force:
