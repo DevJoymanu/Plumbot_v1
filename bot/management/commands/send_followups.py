@@ -141,7 +141,7 @@ class Command(BaseCommand):
         from django.db.models import Q
 
         # Don't interrupt a customer who engaged in the last 24h
-        response_window = now_local - timedelta(hours=24)
+        response_window = now_local - timedelta(hours=2/60)
 
         leads = (
             Appointment.objects
@@ -166,7 +166,7 @@ class Command(BaseCommand):
     def _print_eligibility_breakdown(self, now_local, force):
         from django.db.models import Q
 
-        response_window = now_local - timedelta(hours=24)
+        response_window = now_local - timedelta(hours=2/60)
         plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book']) | Q(plan_status='pending_upload')
 
         q0 = Appointment.objects.filter(is_lead_active=True, status='pending')
