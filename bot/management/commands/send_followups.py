@@ -381,68 +381,13 @@ class Command(BaseCommand):
     # ─── AI message ──────────────────────────────────────────────────────────
 
     def _ai_message(self, lead, next_question, attempt, last_question):
-        service   = self._service_label(lead)
-        time_ref  = self._elapsed_description(lead)
-        area      = lead.customer_area or ''
-        status    = lead.get_lead_status_display()
+        service  = self._service_label(lead)
+        time_ref = self._elapsed_description(lead)
+        area     = lead.customer_area or ''
 
-        # ── Angle selector — deliberately different per attempt ──────────────
-        # Each angle is a conversion strategy. Rotating them provides the
-        # pattern interrupt that keeps open rates high.
-        angles = {
-            1: {
-                'name': 'value_reminder',
-                'instruction': (
-                    'Open by referencing something specific about their project '
-                    f'({service}{" in " + area if area else ""}). '
-                    'Lead with ONE piece of genuinely useful insight — a common mistake '
-                    'people make with this type of project, or what makes a big difference '
-                    'to the outcome. Then ask the one question we need. '
-                    'This shows expertise and gives them a reason to reply.'
-                ),
-            },
-            2: {
-                'name': 'social_proof',
-                'instruction': (
-                    'Briefly mention that you recently completed a similar project '
-                    f'({service}) — keep it to one sentence, specific and credible '
-                    '(e.g. "We just wrapped a full bathroom reno in Avondale last week"). '
-                    'Then pivot with "Anyway —" and ask the one question we need. '
-                    'Pattern interrupt: shorter and more casual than message #1.'
-                ),
-            },
-            3: {
-                'name': 'soft_urgency',
-                'instruction': (
-                    'Mention a real, honest constraint — booking slots fill up, '
-                    'material prices have been moving, or the team has capacity now '
-                    'but not guaranteed in a few weeks. '
-                    'NOT fake scarcity. Frame it as helpful information, not pressure. '
-                    'Then ask the smallest possible question that moves things forward. '
-                    'Be direct. This message should be noticeably shorter than the previous ones.'
-                ),
-            },
-            4: {
-                'name': 'nine_word',
-                'instruction': (
-                    'Write the shortest possible message — the "9-word email" concept. '
-                    'Something like: "Are you still looking for a plumber?" or '
-                    '"Still keen to get the bathroom sorted?" '
-                    'No preamble. One sentence. A direct, human question. '
-                    'This works because it feels personal, not automated. '
-                ),
-            },
-        }
-
-        angle = angles.get(attempt, angles[4])
-
-        # ── What question to embed ────────────────────────────────────────────
-        field_context = {
-            'service_type':  'which service they need — bathroom renovation, kitchen renovation, or new plumbing installation',
-            'plan_or_visit': 'whether they have existing plans/blueprints, or prefer a site visit first',
-            'area':          'which area or suburb they are in',
-            'availability':  'what day and time suits them for an appointment',
-        }
+        # Pull the template for this question/attempt as the required base
+        template_result = self._template_message(lead, next_question, attempt)
+        template_text   = template_result['message']
 
         if next_question == 'complete':
             question_block = (
@@ -452,43 +397,47 @@ class Command(BaseCommand):
         elif last_question and attempt <= 3:
             question_block = (
                 f'The last question we asked (unanswered) was:\n"""\n{last_question}\n"""\n\n'
-                f'Rephrase it using a COMPLETELY different angle and wording. '
-                f'Same information needed, totally fresh phrasing. '
+                f'Rephrase it with completely different wording. '
+                f'Same information needed, fresh phrasing. '
                 f'Never hint that you already asked this.'
             )
         else:
-            question_block = (
-                f'Ask ONE question to find out: {field_context.get(next_question, "what they need")}.'
-            )
+            question_block = ''
 
-        prompt = f"""You are writing a WhatsApp follow-up message for Homebase Plumbers — a professional, luxury plumbing company in Zimbabwe/South Africa.
+        length_instruction = (
+            '2 to 4 sentences total.' if attempt <= 3
+            else '1 to 2 sentences only — keep it short and human.'
+        )
 
-LEAD CONTEXT:
-- Interest: {service}
-- Area: {area or 'not yet shared'}
-- Lead temperature: {status}
-- Last heard from them: {time_ref}
-- This is follow-up attempt #{attempt}
+        prompt = f"""You are writing a WhatsApp follow-up message for Homebase Plumbers — a professional plumbing company in Zimbabwe/South Africa.
 
-CONVERSION ANGLE FOR THIS MESSAGE:
-{angle['instruction']}
+    LEAD CONTEXT:
+    - Interest: {service}
+    - Area: {area or 'not yet shared'}
+    - Last heard from them: {time_ref}
+    - This is follow-up attempt #{attempt}
 
-QUESTION TO EMBED (do this naturally, not bolted on):
-{question_block}
+    BASE TEMPLATE (your starting point — do not stray far from this):
+    \"\"\"
+    {template_text}
+    \"\"\"
 
-RULES — every single one must be followed:
-1. Open with "Hi there," — we do not have their name, never use one
-2. NEVER ask for the customer's name — that only happens at booking confirmation
-3. Be specific — use "{service}"{(' in "' + area + '"') if area else ''} not vague words like "your project"
-4. One question maximum — embedded in the flow, not a standalone line at the end
-5. 2 to 4 sentences total for attempts 1-3. Attempt 4+ = 1-2 sentences only
-6. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
-7. Zero markdown, zero bold, zero bullet points
-8. At most one emoji — only if it fits naturally. Attempt 4 = no emoji
-9. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
-10. Sound like a real person texting, not a marketing email
+    {"QUESTION TO EMBED (rephrase naturally into the message):" + chr(10) + question_block if question_block else "Use the base template's question as-is or rephrase it very lightly."}
 
-Output ONLY the message text. No labels, no quotes around it, no explanation."""
+    RULES — every single one must be followed:
+    1. Stay close to the base template — same intent, same question, same tone
+    2. You may lightly rephrase for naturalness but do not invent new angles or content
+    3. Open with "Hi there," — we do not have their name, never use one
+    4. NEVER ask for the customer's name
+    5. One question maximum
+    6. {length_instruction}
+    7. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
+    8. Zero markdown, zero bold, zero bullet points
+    9. At most one emoji — only if it fits naturally. Attempt 4+ = no emoji
+    10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
+    11. Sound like a real person texting, not a marketing email
+
+    Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
         response = deepseek_client.chat.completions.create(
             model='deepseek-chat',
@@ -496,30 +445,26 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                 {
                     'role': 'system',
                     'content': (
-                        'You write short, high-converting WhatsApp messages. '
-                        'Sound like a real person, not a bot or marketer. '
-                        'Value-first, specific, one question, no pressure. '
+                        'You write short WhatsApp messages based on provided templates. '
+                        'Stay faithful to the template. Sound like a real person. '
                         'Never use or ask for the customer name — open with "Hi there,".'
                     ),
                 },
                 {'role': 'user', 'content': prompt},
             ],
-            temperature=0.85,
+            temperature=0.4,
             max_tokens=180,
         )
 
         message = response.choices[0].message.content.strip()
-
-        # Safety: strip any accidental markdown
         message = message.replace('**', '').replace('__', '')
 
         logger.info(
             f'AI follow-up | lead={lead.id} attempt={attempt} '
-            f'angle={angle["name"]} q={next_question} '
+            f'q={next_question} '
             f'rephrase={"yes" if last_question and attempt <= 3 else "no"}'
         )
         return {'message': message, 'ai_generated': True, 'template_fallback': False}
-
     # ─── Template fallback (no AI) ────────────────────────────────────────────
 
     def _template_message(self, lead, next_question, attempt):
