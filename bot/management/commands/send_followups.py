@@ -159,7 +159,7 @@ class Command(BaseCommand):
                 last_followup_sent__gte=today_start,
                 lead_status__in=[LeadStatus.COLD, LeadStatus.WARM]
             )
-            #leads = leads.exclude(cold_warm_sent_today)
+            leads = leads.exclude(cold_warm_sent_today)
 
         return leads.order_by('last_customer_response', 'created_at')
 
