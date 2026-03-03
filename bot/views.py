@@ -5105,6 +5105,7 @@ I understand this is time-sensitive!"""
                     Current retry count: {retry_count}
 
                     ══ LANGUAGE RULES ══
+                    - only use one * to make text bold, never use **. Example: *bold text* not **bold text**.
                     - Default to English.
                     - If customer writes Shona only → respond in Shona.
                     - If customer mixes → mirror their mix.
