@@ -3371,61 +3371,192 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             language = lang_response.choices[0].message.content.strip().lower()
             print(f"🌍 Detected language: {language}")
 
-            plumber_number = self.appointment.plumber_contact_number or '+263610318200'
+            plumber_number = self.appointment.plumber_contact_number or '+27610318200'
 
             pricing_info = {
+                # Hormozi principle: lead with the NUMBER, earn the question.
+                # Give a range FIRST. Show confidence. Then ask ONE easy qualifying
+                # question or offer the free site visit. Never gate price behind intake.
+
                 "tub_sales": {
-                    "en": f"We don't operate as a retail store, but we can supply and install tubs as part of a renovation project. 🛁 Standalone tubs start from US$400 depending on the design and quality.\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like us to assist with supply and installation? 😊",
-                    "sn": f"Hatitengesi setshopu, asi tinogona kuita supply neinstallation yetub sebhizimisi rekuvandudza imba yako. 🛁 Tubs dzinotangira kuUS$400 zvichienda nedhizaini nequality.\n\n⚠️ Mitengo iyi yakangofanana - inogona kushanduka zvichienda nebasa riri pasite. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here kuti tikubatsire? 😊"
+                    "en": (
+                        "Tubs start from US$400 supply-only, or US$500–$800 supply + install — "
+                        "depends on the style and size. 🛁\n\n"
+                        "Do you know what size space you're working with, or would it be easier "
+                        "to have us come measure and give you a fixed price on the spot? "
+                        "(Site assessment is free)"
+                    ),
+                    "sn": (
+                        "Tubs dzinotangira kuUS$400 supply chete, kana US$500–$800 supply neinstallation — "
+                        "zvichienda nemhando neukuru. 🛁\n\n"
+                        "Unoziva ukuru hwenzvimbo yako here, kana tiuye tiite free assessment "
+                        "tikupe mutengo wakakwana pasite?"
+                    ),
                 },
                 "standalone_tub": {
-                    "en": f"Standalone tubs start from US$400, depending on the design and quality. 🛁\n\nFor bathtub installation:\n• Ordinary tub (with wall finishing) starts from US$80\n• Free-standing tub supply starts from US$450\n• Free-standing mixer starts from US$150\n• Mixer installation: US$120\n• Side chamber: US$130 (installation US$30)\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like installation included as well? 🔧✨",
-                    "sn": f"Tubs dzinomira dzega dzinotangira kuUS$400, zvichienda nedhizaini nequality. 🛁\n\nNeinstallation:\n• Tub yakajairwa (ine wall finishing) inotangira kuUS$80\n• Free-standing tub inotangira kuUS$450\n• Free-standing mixer: US$150\n• Kuisa mixer: US$120\n• Side chamber: US$130 (installation US$30)\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here installation zvakare? 🔧"
+                    "en": (
+                        "Standalone / freestanding tubs run US$450–$800 supply, plus US$120–$200 "
+                        "to fit and finish. 🛁\n\n"
+                        "Full breakdown:\n"
+                        "• Free-standing tub supply: from US$450\n"
+                        "• Free-standing mixer: from US$150\n"
+                        "• Mixer + tub installation: US$120\n"
+                        "• Side chamber: US$130 (installation US$30)\n\n"
+                        "Most customers are all-in at US$750–$1,200 depending on the tub they pick.\n\n"
+                        "Do you already know which tub style you want, or would you like us to come "
+                        "out and show you options on-site? (Free visit, no obligation)"
+                    ),
+                    "sn": (
+                        "Free-standing tubs dzinotangira kuUS$450 supply, neUS$120–$200 "
+                        "yeinstallation. 🛁\n\n"
+                        "• Free-standing tub: kubva US$450\n"
+                        "• Free-standing mixer: kubva US$150\n"
+                        "• Kuisa mixer netub: US$120\n"
+                        "• Side chamber: US$130 (installation US$30)\n\n"
+                        "Vazhinji vanobhadhara US$750–$1,200 zvichienda netub yavasarudza.\n\n"
+                        "Unoziva mhando yetub yaungada here, kana tiuye tikuratidze zvinosarudzwa pasite?"
+                    ),
                 },
                 "geyser": {
-                    "en": f"Yes, we do geyser installations! 🔥\n\nGeyser installation starts from US$80, depending on the type and size of the geyser.\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWhat size geyser are you installing?",
-                    "sn": f"Hongu, tinoisa ma geyser! 🔥\n\nKuisa geyser kunotangira kuUS$80, zvichienda nemhando neukuru hwegeyser.\n\n⚠️ Mutengo uyu wakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nGeyser yekuisa yakura zvakadini?"
+                    "en": (
+                        "Geyser installation starts from US$80 — most jobs land between US$80–$180 "
+                        "depending on the geyser size and access. 🔥\n\n"
+                        "What size geyser are you putting in? (100L, 150L, 200L?) — "
+                        "that'll let me give you a tighter number right now."
+                    ),
+                    "sn": (
+                        "Kuisa geyser kunotangira kuUS$80 — mazhinji mapoka anosvika US$80–$180 "
+                        "zvichienda nekukura kwegeyser. 🔥\n\n"
+                        "Geyser yaunoda yakura zvakadini? (100L, 150L, 200L?) — "
+                        "ndingakupe mutengo wakajika zviri nani."
+                    ),
                 },
                 "shower_cubicle": {
-                    "en": f"We supply and install shower cubicles! 🚿\n\n• Ordinary shower cubicle (900mm x 900mm): starts from US$130\n• Installation: starts from US$40\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like supply and installation together?",
-                    "sn": f"Tinopa uye tinoisa ma shower cubicle! 🚿\n\n• Shower cubicle yakajairwa (900mm x 900mm): inotangira kuUS$130\n• Kuisa: inotangira kuUS$40\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here supply neinstallation pamwechete?"
+                    "en": (
+                        "Shower cubicles (900×900mm) start from US$130 supply + US$40 install — "
+                        "so roughly US$170 all-in for a standard fit. 🚿\n\n"
+                        "Bigger cubicles or custom sizes run a bit more. "
+                        "Do you know the rough dimensions, or should we come out and measure? "
+                        "(Free site visit)"
+                    ),
+                    "sn": (
+                        "Shower cubicles (900×900mm) dzinotangira kuUS$130 supply neUS$40 installation — "
+                        "pamwe US$170 yese. 🚿\n\n"
+                        "Huru dzakakura dzinoti nzira dzinopfuura. "
+                        "Unoziva saizi here, kana tiuye tiite free visit tiite measurement?"
+                    ),
                 },
                 "vanity": {
-                    "en": f"Yes, we do custom-made vanity units! 🪞\n\n• Vanity units start from US$150 (depending on size, type, and material)\n• Labour starts from US$30\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWhat size are you looking for?",
-                    "sn": f"Hongu, tinoita ma vanity unit akagadzirwa zvaunoda! 🪞\n\n• Ma vanity unit anotangira kuUS$150 (zvichienda nekukura, mhando, nesimba resimbi)\n• Kubhadhara vashandi kunotangira kuUS$30\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda ukuru wakaita sei?"
+                    "en": (
+                        "Custom vanity units start from US$150 + US$30 labour — "
+                        "most jobs come out at US$180–$350 depending on size and finish. 🪞\n\n"
+                        "What size are you thinking? (Width in cm helps, even roughly)"
+                    ),
+                    "sn": (
+                        "Ma vanity unit anotangira kuUS$150 neUS$30 yevashandi — "
+                        "mazhinji mapoka anosvika US$180–$350 zvichienda nekukura nekugadzirwa. 🪞\n\n"
+                        "Unofunga ukuru hwakaita sei? (Upamhi mucm unobatsira, kunyangwe wakangofanana)"
+                    ),
                 },
                 "bathtub_installation": {
-                    "en": f"Here are our bathtub installation prices: 🛁\n\n• Ordinary tub installation (with wall finishing): from US$80\n• Free-standing tub supply: from US$450\n• Free-standing mixer: from US$150\n• Mixer installation: US$120\n• Side chamber: US$130\n• Side chamber installation: US$30\n\n⚠️ These are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWhat type of bathtub are you interested in?",
-                    "sn": f"Mitengo yedu yekuisa ma bathtub: 🛁\n\n• Tub yakajairwa (ine wall finishing): kubva kuUS$80\n• Free-standing tub: kubva kuUS$450\n• Free-standing mixer: kubva kuUS$150\n• Kuisa mixer: US$120\n• Side chamber: US$130\n• Kuisa side chamber: US$30\n\n⚠️ Mitengo iyi yakangofanana. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda mhando ipi yebathtub?"
+                    "en": (
+                        "Bathtub installation runs US$80–$200 depending on the type: 🛁\n\n"
+                        "• Ordinary tub (with wall finishing): from US$80\n"
+                        "• Free-standing tub supply: from US$450\n"
+                        "• Free-standing mixer: from US$150\n"
+                        "• Mixer installation: US$120\n"
+                        "• Side chamber: US$130 (install US$30)\n\n"
+                        "What type of tub are you going with — standard built-in or freestanding?"
+                    ),
+                    "sn": (
+                        "Kuisa bathtub kunosvika US$80–$200 zvichienda nemhando: 🛁\n\n"
+                        "• Tub yakajairwa (ine wall finishing): kubva US$80\n"
+                        "• Free-standing tub: kubva US$450\n"
+                        "• Free-standing mixer: kubva US$150\n"
+                        "• Kuisa mixer: US$120\n"
+                        "• Side chamber: US$130 (install US$30)\n\n"
+                        "Unoda mhando ipi — yakavakirwa mumadziro kana inomira yega?"
+                    ),
                 },
                 "toilet": {
-                    "en": f"We supply and install toilets and side chambers! \n\n• Close-coupled toilet supply: starts from US$50\n• New toilet seat installation: starts from US$20 (depending on type)\n• Side chamber: US$130\n• Side chamber installation: US$30\n\nThese are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo or schedule a site visit.\n\nWould you like supply and installation?",
-                    "sn": f"Tinopa uye tinoisa ma toilet nema side chamber! \n\n• Close-coupled toilet: inotangira kuUS$50\n• Kuisa chigaro chitsva chetoilet: inotangira kuUS$20 (zvichienda nemhando)\n• Side chamber: US$130\n• Kuisa side chamber: US$30\n\nMitengo iyi yakangofanana. Tumira photo kana plan kana tibvumirene visit.\n\nUnoda here supply neinstallation?",
+                    "en": (
+                        "Toilet supply + install runs US$70–$120 for a standard close-coupled unit: 🚽\n\n"
+                        "• Close-coupled toilet supply: from US$50\n"
+                        "• Installation: from US$20\n"
+                        "• Side chamber: US$130 (install US$30)\n\n"
+                        "Are you replacing an existing toilet or fitting a new one in a fresh space?"
+                    ),
+                    "sn": (
+                        "Toilet supply neinstallation inosvika US$70–$120 yetoilet yakajairwa: 🚽\n\n"
+                        "• Close-coupled toilet: kubva US$50\n"
+                        "• Kuisa: kubva US$20\n"
+                        "• Side chamber: US$130 (install US$30)\n\n"
+                        "Uri kutsiva toilet yaimbopo kana kuisa itsva munzvimbo itsva?"
+                    ),
                 },
                 "chamber": {
-                    "en": f"We supply and install side chambers and toilets! \n\n• Side chamber: US$130\n• Side chamber installation: US$30\n• Close-coupled toilet supply: starts from US$50\n• New toilet seat installation: starts from US$20 (depending on type)\n\nThese are approximate prices and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo or schedule a site visit.\n\nWould you like supply and installation?",
-                    "sn": f"Tinopa uye tinoisa ma side chamber nema toilet! \n\n• Side chamber: US$130\n• Kuisa side chamber: US$30\n• Close-coupled toilet: inotangira kuUS$50\n• Kuisa chigaro chitsva chetoilet: inotangira kuUS$20\n\nMitengo iyi yakangofanana. Tumira photo kana plan kana tibvumirene visit.\n\nUnoda here supply neinstallation?",
+                    "en": (
+                        "Side chamber supply + install is US$160 all-in (US$130 supply, US$30 fit). 🚽\n\n"
+                        "If you also need a toilet: close-coupled units start from US$50 supply + US$20 install.\n\n"
+                        "Are you just doing the chamber, or the full toilet setup?"
+                    ),
+                    "sn": (
+                        "Side chamber supply neinstallation ndiUS$160 yese (US$130 supply, US$30 kuisa). 🚽\n\n"
+                        "Kana uchidawo toilet: close-coupled toilet inotangira kuUS$50 supply neUS$20 installation.\n\n"
+                        "Uri kuita chamber chete kana setup yese yetoilet?"
+                    ),
                 },
                 "facebook_package": {
-                    "en": f"The bathroom package shown on our Facebook ad starts from US$600. 📢\n\n⚠️ This is an approximate price and may vary depending on the scope of work on site. For a more accurate quotation, please send a plan/photo 📸 or schedule a site visit.\n\nWould you like us to assess your space first?",
-                    "sn": f"Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. 📢\n\n⚠️ Mutengo uyu wakangofanana - unogona kushanduka zvichienda nebasa. Tumira photo kana plan 📸 kana tibvumirene visit.\n\nUnoda here kuti tiuye titarise nzvimbo yako?"
+                    "en": (
+                        "The bathroom package from our Facebook ad starts from US$600. 📢\n\n"
+                        "That covers the core fit-out — exact price depends on the size of your bathroom "
+                        "and fixtures you choose.\n\n"
+                        "Want us to come do a free on-site assessment so we can lock in your exact number?"
+                    ),
+                    "sn": (
+                        "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. 📢\n\n"
+                        "Iyo inofukidza basa guru — mutengo wakakwana unoenderana nekukura kwebathroom "
+                        "nemhando yezvinhu zvaunosarudza.\n\n"
+                        "Unoda here kuti tiuye tiite free assessment tikupe mutengo wakajika?"
+                    ),
                 },
-                # ✅ SPLIT: location_ask = just asking address, location_visit = wants to come in person
                 "location_ask": {
                     "en": "We are based in Hatfield, Harare. 📍\n\n",
-                    "sn": "Tiri muHatfield, Harare. 📍\n\n"
+                    "sn": "Tiri muHatfield, Harare. 📍\n\n",
                 },
                 "location_visit": {
-                    "en": "We operate by appointment rather than walk-ins. 📍 We're based in Hatfield, Harare.\n\nWould you like us to arrange a site visit to your place instead?",
-                    "sn": "Tinoshandisa ne appointment, hatisi kushanda ne walk-ins. 📍 Tiri muHatfield, Harare.\n\nUnoda here kuti tiuye kwauri?"
+                    "en": (
+                        "We work by appointment rather than walk-ins. 📍 We're in Hatfield, Harare.\n\n"
+                        "Would you like us to come to you instead? We can do a free on-site assessment "
+                        "at your place — saves you the trip and gets you a fixed price on the spot."
+                    ),
+                    "sn": (
+                        "Tinoshandisa ne appointment, hatisi kushanda ne walk-ins. 📍 Tiri muHatfield, Harare.\n\n"
+                        "Unoda here kuti tiuye kwauri? Tinogona kuita free assessment paimba yako — "
+                        "kukuponesa rwendo uye tikupe mutengo wakakwana pasite."
+                    ),
                 },
                 "previous_quotation": {
-                    "en": f"Kindly contact our plumber directly and they will assist you with your previous quotation. 📄\n\nYou can reach them on: {plumber_number}",
-                    "sn": f"Ndapota taura neplumber yedu directly uye vachakubatsira nequotation yako yekare. 📄\n\nUnogona kubata: {plumber_number}"
+                    "en": (
+                        f"For your previous quotation, please reach out to our plumber directly "
+                        f"and they'll pull it up for you right away. 📄\n\n"
+                        f"Contact: {plumber_number}"
+                    ),
+                    "sn": (
+                        f"Kuti uwane quotation yako yekare, taura neplumber yedu directly "
+                        f"uye vachakubatsira nekukurumidza. 📄\n\n"
+                        f"Bata: {plumber_number}"
+                    ),
                 },
                 "pictures": {
-                    "en": f"I'll connect you with our plumber so they can send you available pictures and options. 📸\n\nPlease contact them directly on: {plumber_number}",
-                    "sn": f"Ndichakubatanidza neplumber wedu kuti vakutumire mifananidzo uye zvinosarudzwa. 📸\n\nBata: {plumber_number}"
+                    "en": (
+                        f"Our plumber can send you photos directly — they have the full portfolio. 📸\n\n"
+                        f"Contact them on: {plumber_number}"
+                    ),
+                    "sn": (
+                        f"Plumber wedu anogona kukutumira mifananidzo directly — vane portfolio yese. 📸\n\n"
+                        f"Bata: {plumber_number}"
+                    ),
                 },
             }
             responses = pricing_info.get(intent, pricing_info.get('toilet', {}))
@@ -3441,19 +3572,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             if not reply:
                 reply = self.generate_contextual_response(message, self.get_next_question_to_ask(), [])
 
-            # ── FIX 2: Append site-visit close if no clear next-step present ──
-            # This prevents the bot from falling back to "which service?" and
-            # instead keeps momentum moving toward a site visit / booking.
-            site_visit_triggers = [
-                'site visit', 'send a plan', 'send plan', 'accurate quotation',
-                'accurate quote', 'would you like', 'shall we',
-                'book an appointment', 'free site',
-            ]
-            if not any(t in reply.lower() for t in site_visit_triggers):
-                reply += (
-                    "\\n\\nWould you like us to come do a *free site visit* and give you "
-                    "an exact price? Just let us know your area and when suits you 😊"
-                )
+
 
             return reply
 
