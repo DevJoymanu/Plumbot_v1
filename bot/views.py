@@ -3930,7 +3930,31 @@ I understand this is time-sensitive!"""
                 self.appointment.project_type = extracted_data['service_type']
                 updated_fields.append('service_type')
                 print(f"✅ Updated service_type: {self.appointment.project_type}")
-            
+            #
+            # AUTO-INFER: If we asked plan_or_visit and the customer replied with an area
+            # name instead of yes/no, treat it as "I want a site visit" and capture the area.
+            if (next_question == "plan_or_visit" and
+                    self.appointment.has_plan is None and
+                    extracted_data.get('area') and
+                    extracted_data.get('area') != 'null' and
+                    not extracted_data.get('plan_status')):
+                print(
+                    f"🏘️ Customer answered plan question with area "
+                    f"'{extracted_data['area']}' — inferring site visit"
+                )
+                self.appointment.has_plan = False
+                if not self.appointment.customer_area:
+                    self.appointment.customer_area = extracted_data['area']
+                    updated_fields.append('area')
+                updated_fields.append('plan_status')
+                self.appointment.save()
+                refresh_lead_score(self.appointment)
+                print(
+                    f"✅ Auto-set: has_plan=False, "
+                    f"customer_area={self.appointment.customer_area}"
+                )
+                return updated_fields
+
             # EMERGENCY FIX: Plan status with response normalization
             if extracted_data.get('plan_status') and extracted_data.get('plan_status') != 'null':
                 
