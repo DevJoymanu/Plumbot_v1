@@ -27,6 +27,8 @@ import time
 import random
 from pathlib import Path
 from .services.lead_scoring import refresh_lead_score
+from typing import Optional
+
 
 PREVIOUS_WORK_IMAGE_URLS = [
     url.strip()
@@ -195,7 +197,7 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
         print(f"⏳ Media ack timer set for {sender} ({MEDIA_DEBOUNCE_SECONDS}s)")
 
 
-def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: str | None, media_type: str):
+def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "Optional[str]", media_type: str):
     """
     Debounced plumber alert — resets timer on each file received.
     After MEDIA_DEBOUNCE_SECONDS of silence, sends ONE alert listing all URLs.
