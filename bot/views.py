@@ -5123,7 +5123,7 @@ I understand this is time-sensitive!"""
                     Do NOT use word-for-word when the customer's energy clearly calls for a warmer or more direct approach.
 
                     service_type:
-                    "We do bathroom renovations (most projects US$1,500–$6,000), kitchen renovations, and new plumbing installations.
+                    "We do bathroom renovations, kitchen renovations, and new plumbing installations.
 
                     Most clients start with a free site visit — we come out, assess everything, and lock in a fixed price on the spot.
 
