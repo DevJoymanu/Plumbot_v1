@@ -5150,7 +5150,7 @@ I understand this is time-sensitive!"""
                     "Last thing — what's your name so I can complete the booking?"
 
                     name_confirmed:
-                    "Great to meet you, {customer_name}. You're all set — see you {appointment_datetime}. 
+                    "Great to meet you, {{customer_name}}. You're all set — see you {{appointment_datetime}}. 
                     Our plumber will call you 30 minutes before arrival."
 
                     ══ RESPONSE RULES ══
