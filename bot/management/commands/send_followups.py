@@ -85,8 +85,23 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
 # ─── Contact windows (local hour, half-open) ─────────────────────────────────
 CONTACT_WINDOWS = [
-    (8, 24),    # All day: 8 AM - 8 PM SAST
+    (8, 10),    # Morning commute
+    (12, 14),   # Lunch
+    (17, 20),   # After work
 ]
+
+# ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
+# Each tuple is (attempt_1, attempt_2, attempt_3, attempt_4+)
+
+MAX_FOLLOWUPS_PER_STATUS = {
+    LeadStatus.VERY_HOT: 6,
+    LeadStatus.HOT:      5,
+    LeadStatus.WARM:     4,
+    LeadStatus.COLD:     3,
+}
+
+# After this many attempts with zero response, lead goes cold/inactive
+
 
 # ─── Plan follow-up windows ───────────────────────────────────────────────────
 PLAN_ALLOWED_WINDOW  = (19, 20)       # 19:00–20:00 SAST only
@@ -99,10 +114,10 @@ MAX_PLAN_FOLLOWUP_ATTEMPTS = 4
 # ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
 # Each tuple is (attempt_1, attempt_2, attempt_3, attempt_4+)
 TIER_INTERVALS = {
-    LeadStatus.VERY_HOT: (2/60, 2/60, 2/60, 2/60),
-    LeadStatus.HOT:      (2/60, 2/60, 2/60, 2/60),
-    LeadStatus.WARM:     (2/60, 2/60, 2/60, 2/60),
-    LeadStatus.COLD:     (2/60, 2/60, 2/60, 2/60),
+    LeadStatus.VERY_HOT: (4,  8,  24,  48),
+    LeadStatus.HOT:      (20, 36, 60,  120),
+    LeadStatus.WARM:     (36, 72, 144, 240),
+    LeadStatus.COLD:     (48, 120, 240, 504),
 }
 
 MAX_FOLLOWUPS_PER_STATUS = {
