@@ -536,8 +536,7 @@
             <!-- Document Header -->
             <div class="document-header">
                 <h1>{{ quotation.get_display_name }}</h1>
-                <p><em>Prepared for {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number
-                        }}</em></p>
+                <p><em>Prepared for {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number }}</em></p>
             </div>
 
             <!-- Customer and Quotation Info -->
@@ -569,8 +568,7 @@
                     <table class="details-table">
                         <tr>
                             <td><strong>Status:</strong></td>
-                            <td><span class="status-badge status-{{ quotation.status }}">{{ quotation.get_status_display
-                                    }}</span></td>
+                            <td><span class="status-badge status-{{ quotation.status }}">{{ quotation.get_status_display }}</span></td>
                         </tr>
                         <tr>
                             <td><strong>Created:</strong></td>
@@ -665,8 +663,7 @@
             <!-- Document Footer -->
             <div class="document-footer">
                 <p style="color: var(--secondary); font-size: 0.9em;">
-                    <strong>Prepared for:</strong> {{
-                    quotation.appointment.customer_name|default:quotation.appointment.phone_number }}<br>
+                    <strong>Prepared for:</strong> {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number }}<br>
                     If you have any questions about this quotation, please contact us at
                     <a href="mailto:info@homebaseplumbers.co.zw"
                         style="color: var(--primary);">info@homebaseplumbers.co.zw</a>
