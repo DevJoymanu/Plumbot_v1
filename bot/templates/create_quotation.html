@@ -460,7 +460,7 @@
                 </h2>
                 <div class="form-group">
                     <label for="clientName">Client Name *</label>
-                    <input type="text" id="clientName" placeholder="Enter client name" required value="{{ quotation.appointment.customer_name|default:'' }}"
+                    <input type="text" id="clientName" placeholder="Enter client name" required value="{{ appointment.customer_name|default:'' }}"
                     class="form-control">
                 </div>
 
@@ -468,7 +468,7 @@
             <div class="card">
                 <div class="form-group">
                     <label for="clientAddress">Address</label>
-                    <textarea id="clientAddress" placeholder="Describe the project scope..."></textarea>
+                    <textarea id="clientAddress" placeholder="Describe the project scope...">{{ appointment.customer_area|default:'' }}</textarea>
 
                 </div>
             </div>
@@ -480,15 +480,15 @@
                 </h2>
                 <div class="form-group">
                     <label for="projectType">Project Type *</label>
-                    <input type="text" id="projectType" placeholder="e.g., Bathroom Renovation" required>
+                    <input type="text" id="projectType" placeholder="e.g., Bathroom Renovation" required value="{{ appointment.get_project_type_display|default:'' }}">
                 </div>
                 <div class="form-group">
                     <label for="projectLocation">Project Location</label>
-                    <input type="text" id="projectLocation" placeholder="Project site address">
+                    <input type="text" id="projectLocation" placeholder="Project site address" value="{{ appointment.customer_area|default:'' }}">
                 </div>
                 <div class="form-group">
                     <label for="projectNotes">Project Notes</label>
-                    <textarea id="projectNotes" placeholder="Describe the project scope..."></textarea>
+                    <textarea id="projectNotes" placeholder="Describe the project scope...">{{ appointment.project_description|default:'' }}</textarea>
                 </div>
             </div>
 
@@ -924,16 +924,21 @@
                     return;
                 }
 
+                const setValue = (id, value) => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.value = value || '';
+                    }
+                };
+
                 // Auto-fill client information
-                document.getElementById('clientName').value = appointment.customer_name || '';
-                document.getElementById('clientEmail').value = appointment.customer_email || '';
-                document.getElementById('clientPhone').value = appointment.phone_number || '';
-                document.getElementById('clientAddress').value = appointment.customer_area || '';
+                setValue('clientName', appointment.customer_name);
+                setValue('clientAddress', appointment.customer_area);
 
                 // Auto-fill project information
                 const projectType = formatProjectType(appointment.project_type);
-                document.getElementById('projectType').value = projectType || '';
-                document.getElementById('projectLocation').value = appointment.customer_area || '';
+                setValue('projectType', projectType);
+                setValue('projectLocation', appointment.customer_area);
 
                 // Build project notes
                 let notes = appointment.project_description || '';
@@ -943,7 +948,7 @@
                 if (appointment.house_stage) {
                     notes += `\nHouse Stage: ${appointment.house_stage}`;
                 }
-                document.getElementById('projectNotes').value = notes.trim();
+                setValue('projectNotes', notes.trim());
 
                 // Auto-fill items based on project type
                 if (appointment.project_type === 'bathroom_renovation' ||
