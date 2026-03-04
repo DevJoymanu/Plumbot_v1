@@ -812,6 +812,10 @@ def send_quotation(request, pk):
     quotation = get_object_or_404(Quotation, pk=pk)
     
     try:
+        # Backfill plumber for legacy quotations created without an assignee.
+        if quotation.plumber is None and getattr(request.user, 'is_authenticated', False):
+            quotation.plumber = request.user
+
         # Format the quotation message
         message = format_quotation_message(quotation)
         
