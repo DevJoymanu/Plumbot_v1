@@ -747,6 +747,15 @@ class Appointment(models.Model):
         if self.is_emergency:
             return f"🚨 EMERGENCY: {project_display}"
         return project_display
+
+    def get_project_type_display(self):
+        """
+        Compatibility helper for code paths expecting Django's auto-generated
+        get_FOO_display() (project_type field is a plain CharField).
+        """
+        if not self.project_type:
+            return ''
+        return dict(self.PROJECT_TYPE_CHOICES).get(self.project_type, self.project_type)
     
     @property
     def is_today(self):
