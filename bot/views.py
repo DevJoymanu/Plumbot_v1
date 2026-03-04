@@ -67,6 +67,7 @@ from .services.lead_scoring import refresh_lead_score, calculate_lead_score
 from django.db import IntegrityError, connection, transaction
 from decimal import Decimal, InvalidOperation
 from django.templatetags.static import static
+import base64
 
 import logging
 logger = logging.getLogger(__name__)
@@ -90,6 +91,24 @@ def _safe_logo_url():
         except ValueError:
             continue
     return '/static/images/logo.jpg'
+
+
+def _safe_logo_data_uri():
+    """Return inline data URI for logo when static serving is unavailable."""
+    logo_candidates = [
+        os.path.join(settings.BASE_DIR, 'bot', 'static', 'images', 'logo.jpg'),
+        os.path.join(settings.BASE_DIR, 'bot', 'static', 'logo.jpg'),
+        os.path.join(settings.BASE_DIR, 'static', 'images', 'logo.jpg'),
+    ]
+    logo_path = next((p for p in logo_candidates if os.path.exists(p)), None)
+    if not logo_path:
+        return ''
+    try:
+        with open(logo_path, 'rb') as f:
+            encoded = base64.b64encode(f.read()).decode('ascii')
+        return f"data:image/jpeg;base64,{encoded}"
+    except Exception:
+        return ''
 
 
 def _reset_pk_sequence(model):
@@ -629,6 +648,7 @@ class CreateQuotationView(CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['logo_url'] = _safe_logo_url()
+        context['logo_data_uri'] = _safe_logo_data_uri()
         
         # Get appointment if pk is provided
         appointment = None
@@ -800,6 +820,7 @@ class ViewQuotationView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['logo_url'] = _safe_logo_url()
+        context['logo_data_uri'] = _safe_logo_data_uri()
         return context
 
 @method_decorator(staff_required, name='dispatch')
