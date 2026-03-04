@@ -979,11 +979,16 @@ def duplicate_quotation(request, pk):
             unit_price=item.unit_price,
         )
     new_quote.save()
-    return JsonResponse({
+    payload = {
         'success': True,
         'new_quotation_id': new_quote.id,
         'quotation_name': new_quote.get_display_name(),
-    })
+    }
+    wants_json = 'application/json' in (request.headers.get('Accept', '').lower() + (request.content_type or '').lower())
+    if wants_json:
+        return JsonResponse(payload)
+    messages.success(request, 'Quotation duplicated successfully.')
+    return redirect('edit_quotation', pk=new_quote.id)
 
 
 @staff_required
@@ -991,12 +996,20 @@ def duplicate_quotation(request, pk):
 def delete_quotation(request, pk):
     quotation = get_object_or_404(Quotation, pk=pk)
     appointment_id = quotation.appointment_id
+    quotation_name = quotation.get_display_name()
     quotation.delete()
-    return JsonResponse({
+    payload = {
         'success': True,
         'appointment_id': appointment_id,
         'redirect_url': reverse('quotations_list'),
-    })
+    }
+    wants_json = 'application/json' in (request.headers.get('Accept', '').lower() + (request.content_type or '').lower())
+    if wants_json:
+        return JsonResponse(payload)
+    messages.success(request, f'Deleted quotation: {quotation_name}')
+    if appointment_id:
+        return redirect('appointment_detail', pk=appointment_id)
+    return redirect('quotations_list')
 
 @staff_required
 def send_quotation(request, pk):

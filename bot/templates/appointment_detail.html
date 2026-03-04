@@ -284,10 +284,24 @@
                         <a href="{% url 'view_quotation' quote.id %}" class="btn btn-sm btn-outline-primary">
                             <i class="fas fa-eye"></i> View
                         </a>
-                        {% if quote.status == 'draft' %}
                         <a href="{% url 'edit_quotation' quote.id %}" class="btn btn-sm btn-outline-secondary">
                             <i class="fas fa-edit"></i> Edit
                         </a>
+                        <form method="post" action="{% url 'duplicate_quotation' quote.id %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-warning"
+                                onclick="return confirm('Duplicate this quotation?');">
+                                <i class="fas fa-copy"></i> Duplicate
+                            </button>
+                        </form>
+                        <form method="post" action="{% url 'delete_quotation' quote.id %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Delete this quotation permanently?');">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </form>
+                        {% if quote.status == 'draft' %}
                         <a href="{% url 'send_quotation' quote.id %}" class="btn btn-sm btn-success">
                             <i class="fab fa-whatsapp"></i> Send
                         </a>
