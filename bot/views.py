@@ -64,9 +64,20 @@ from django.views.decorators.http import require_GET
 from .whatsapp_cloud_api import whatsapp_api
 from .services.lead_scoring import refresh_lead_score, calculate_lead_score
 from django.db import IntegrityError, connection, transaction
+from decimal import Decimal, InvalidOperation
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def _to_decimal(value, default='0.00'):
+    """Convert API numeric inputs to Decimal safely."""
+    if value in (None, ''):
+        return Decimal(default)
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal(default)
 
 
 def _reset_pk_sequence(model):
@@ -688,9 +699,9 @@ def create_quotation_api(request):
                 with transaction.atomic():
                     quotation = Quotation.objects.create(
                         appointment=appointment,  # This is now guaranteed to exist
-                        labor_cost=data.get('labour_cost', 0),
-                        transport_cost=data.get('transport_cost', 0),
-                        materials_cost=data.get('materials_cost', 0),
+                        labor_cost=_to_decimal(data.get('labour_cost', 0)),
+                        transport_cost=_to_decimal(data.get('transport_cost', 0)),
+                        materials_cost=_to_decimal(data.get('materials_cost', 0)),
                         notes=data.get('notes', ''),
                         status='draft'
                     )
@@ -720,8 +731,8 @@ def create_quotation_api(request):
                 QuotationItem.objects.create(
                     quotation=quotation,
                     description=item_data.get('name', ''),
-                    quantity=item_data.get('qty', 1),
-                    unit_price=item_data.get('unit', 0)
+                    quantity=_to_decimal(item_data.get('qty', 1), default='1.00'),
+                    unit_price=_to_decimal(item_data.get('unit', 0))
                 )
                 items_created += 1
                 logger.debug(f"✅ Created item {idx} successfully")

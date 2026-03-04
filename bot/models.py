@@ -1332,13 +1332,20 @@ class Quotation(models.Model):
         # Calculate total
         if self.pk:
             # Existing quotation - can access items
-            items_total = sum(item.total_price for item in self.items.all())
+            items_total = sum((item.total_price for item in self.items.all()), Decimal('0.00'))
         else:
             # New quotation - save first, then update total
             super().save(*args, **kwargs)
             items_total = Decimal('0.00')
-        
-        self.total_amount = items_total + self.labor_cost + self.materials_cost + self.transport_cost
+
+        labor = Decimal(str(self.labor_cost or 0))
+        materials = Decimal(str(self.materials_cost or 0))
+        transport = Decimal(str(self.transport_cost or 0))
+
+        self.labor_cost = labor
+        self.materials_cost = materials
+        self.transport_cost = transport
+        self.total_amount = items_total + labor + materials + transport
         
         super().save(*args, **kwargs)
 
