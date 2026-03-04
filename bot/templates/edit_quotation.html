@@ -957,7 +957,7 @@
 
             // Set costs
             document.getElementById('labourCost').value = quotation.labor_cost || 0;
-            document.getElementById('transportCost').value = 0; // Default since it's not in your model
+            document.getElementById('transportCost').value = quotation.transport_cost || 0;
 
             // Load items
             items = quotation.items ? quotation.items.map(item => ({
@@ -1260,7 +1260,7 @@
                 if (response.ok && result.success) {
                     showAlert('Quotation deleted successfully!', 'success');
                     setTimeout(() => {
-                        window.location.href = '/quotations/';
+                        window.location.href = result.redirect_url || '/appointments/';
                     }, 1500);
                 } else {
                     showAlert('Failed to delete quotation: ' + (result.error || 'Unknown error'), 'error');

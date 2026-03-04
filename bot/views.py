@@ -823,6 +823,50 @@ class ViewQuotationView(DetailView):
         context['logo_data_uri'] = _safe_logo_data_uri()
         return context
 
+
+@staff_required
+@require_http_methods(["GET"])
+def quotation_detail_api(request, pk):
+    """Return quotation payload used by edit_quotation.html."""
+    quotation = get_object_or_404(Quotation, pk=pk)
+    appointment = quotation.appointment
+
+    items = [
+        {
+            'id': item.id,
+            'description': item.description,
+            'quantity': float(item.quantity),
+            'unit_price': float(item.unit_price),
+            'total_price': float(item.total_price),
+        }
+        for item in quotation.items.all().order_by('id')
+    ]
+
+    return JsonResponse({
+        'id': quotation.id,
+        'quotation_number': quotation.quotation_number,
+        'quotation_name': quotation.get_display_name(),
+        'status': quotation.status,
+        'notes': quotation.notes or '',
+        'labor_cost': float(quotation.labor_cost),
+        'materials_cost': float(quotation.materials_cost),
+        'transport_cost': float(quotation.transport_cost),
+        'total_amount': float(quotation.total_amount),
+        'created_at': quotation.created_at.isoformat() if quotation.created_at else None,
+        'updated_at': quotation.updated_at.isoformat() if quotation.updated_at else None,
+        'appointment': {
+            'id': appointment.id,
+            'customer_name': appointment.customer_name or '',
+            'customer_email': appointment.customer_email or '',
+            'phone_number': appointment.phone_number or '',
+            'customer_area': appointment.customer_area or '',
+            'project_type': appointment.project_type or '',
+            'project_type_display': appointment.get_project_type_display() if hasattr(appointment, 'get_project_type_display') else (appointment.project_type or ''),
+            'project_description': appointment.project_description or '',
+        },
+        'items': items,
+    })
+
 @method_decorator(staff_required, name='dispatch')
 class EditQuotationView(UpdateView):
     model = Quotation
@@ -851,10 +895,109 @@ class EditQuotationView(UpdateView):
         else:
             return self.render_to_response(self.get_context_data(form=form))
 
+    def post(self, request, *args, **kwargs):
+        # JSON API update path used by edit_quotation.html
+        content_type = (request.content_type or '').lower()
+        if 'application/json' in content_type:
+            quotation = self.get_object()
+            try:
+                data = json.loads(request.body or '{}')
+            except json.JSONDecodeError:
+                return JsonResponse({'success': False, 'error': 'Invalid JSON body'}, status=400)
+
+            appointment = quotation.appointment
+            appointment.customer_name = data.get('client_name', appointment.customer_name)
+            appointment.customer_email = data.get('client_email', appointment.customer_email)
+            appointment.phone_number = data.get('client_phone', appointment.phone_number)
+            appointment.customer_area = data.get('client_address', appointment.customer_area)
+            appointment.project_type = data.get('project_type', appointment.project_type)
+            appointment.project_description = data.get('project_notes', appointment.project_description)
+            appointment.save()
+
+            quotation.notes = data.get('project_notes', quotation.notes or '')
+            quotation.labor_cost = _to_decimal(data.get('labour_cost', quotation.labor_cost))
+            quotation.transport_cost = _to_decimal(data.get('transport_cost', quotation.transport_cost))
+            quotation.materials_cost = _to_decimal(data.get('materials_cost', quotation.materials_cost))
+            quotation.save()
+
+            items_data = data.get('items', [])
+            if isinstance(items_data, list):
+                quotation.items.all().delete()
+                for item in items_data:
+                    name = (item or {}).get('name', '')
+                    if not name:
+                        continue
+                    qty = _to_decimal((item or {}).get('qty', 1), default='1.00')
+                    unit = _to_decimal((item or {}).get('unit', 0))
+                    QuotationItem.objects.create(
+                        quotation=quotation,
+                        description=name,
+                        quantity=qty,
+                        unit_price=unit,
+                    )
+                quotation.save()
+
+            return JsonResponse({
+                'success': True,
+                'quotation_id': quotation.id,
+                'quotation_number': quotation.quotation_number,
+                'quotation_name': quotation.get_display_name(),
+                'total_amount': float(quotation.total_amount),
+                'updated_at': quotation.updated_at.isoformat() if quotation.updated_at else None,
+            })
+
+        return super().post(request, *args, **kwargs)
+
+
+@staff_required
+@require_http_methods(["POST"])
+def duplicate_quotation(request, pk):
+    quotation = get_object_or_404(Quotation, pk=pk)
+    new_quote = Quotation.objects.create(
+        appointment=quotation.appointment,
+        plumber=quotation.plumber,
+        labor_cost=quotation.labor_cost,
+        materials_cost=quotation.materials_cost,
+        transport_cost=quotation.transport_cost,
+        notes=quotation.notes,
+        status='draft',
+    )
+    for item in quotation.items.all():
+        QuotationItem.objects.create(
+            quotation=new_quote,
+            description=item.description,
+            quantity=item.quantity,
+            unit_price=item.unit_price,
+        )
+    new_quote.save()
+    return JsonResponse({
+        'success': True,
+        'new_quotation_id': new_quote.id,
+        'quotation_name': new_quote.get_display_name(),
+    })
+
+
+@staff_required
+@require_http_methods(["POST"])
+def delete_quotation(request, pk):
+    quotation = get_object_or_404(Quotation, pk=pk)
+    appointment_id = quotation.appointment_id
+    quotation.delete()
+    return JsonResponse({
+        'success': True,
+        'appointment_id': appointment_id,
+        'redirect_url': reverse('appointment_detail', kwargs={'pk': appointment_id}) if appointment_id else reverse('appointments_list'),
+    })
+
 @staff_required
 def send_quotation(request, pk):
     quotation = get_object_or_404(Quotation, pk=pk)
     temp_doc_path = None
+    content_type = (request.content_type or '').lower()
+    wants_json = (
+        request.method == 'POST'
+        and 'application/json' in (request.headers.get('Accept', '').lower() + content_type)
+    )
     
     try:
         # Backfill plumber for legacy quotations created without an assignee.
@@ -888,9 +1031,18 @@ def send_quotation(request, pk):
         )
         
         messages.success(request, 'Quotation sent successfully via WhatsApp!')
+        if wants_json:
+            return JsonResponse({
+                'success': True,
+                'quotation_id': quotation.id,
+                'status': quotation.status,
+                'sent_at': quotation.sent_at.isoformat() if quotation.sent_at else None,
+            })
         
     except Exception as e:
         messages.error(request, f'Failed to send quotation: {str(e)}')
+        if wants_json:
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
     finally:
         if temp_doc_path and os.path.exists(temp_doc_path):
             try:
