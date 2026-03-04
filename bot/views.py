@@ -206,6 +206,10 @@ TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
 TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER')
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
 
+# Backward-compatible aliases used across older code paths.
+ACCOUNT_SID = TWILIO_ACCOUNT_SID
+AUTH_TOKEN = TWILIO_AUTH_TOKEN
+
 
 
 
@@ -819,13 +823,8 @@ def send_quotation(request, pk):
         # Format the quotation message
         message = format_quotation_message(quotation)
         
-        # Send via WhatsApp
-        client = Client(ACCOUNT_SID, AUTH_TOKEN)
-        whatsapp_message = client.messages.create(
-            body=message,
-            from_=TWILIO_WHATSAPP_NUMBER,
-            to=quotation.appointment.phone_number
-        )
+        # Send via Meta WhatsApp Cloud API
+        whatsapp_api.send_text_message(quotation.appointment.phone_number, message)
         
         # Update quotation status
         quotation.status = 'sent'
@@ -872,7 +871,7 @@ TOTAL: R{quotation.total_amount}
 This quotation is valid for 30 days. To accept, please reply "ACCEPT" or contact us to discuss.
 
 Thank you for considering our services!
-- {quotation.plumber.get_full_name() or 'Plumbing Team'}"""
+- {(quotation.plumber.get_full_name() if quotation.plumber else '') or (quotation.plumber.username if quotation.plumber else '') or 'Plumbing Team'}"""
 
     return message
 
