@@ -11,6 +11,7 @@ from .views import (
     AppointmentDocumentsView, download_document,
     # Import the new quotation views
     CreateQuotationView, ViewQuotationView, EditQuotationView, send_quotation,create_quotation_api,
+    QuotationsListView,
     quotation_detail_api, duplicate_quotation, delete_quotation,
     # Import job scheduling views
     complete_site_visit, schedule_job, job_appointments_list, update_job_status, reschedule_job,
@@ -74,8 +75,11 @@ urlpatterns = [
     path('api/quotations/<int:pk>/', quotation_detail_api, name='quotation_detail_api'),
     
     # Quotation Views
+    path('quotations/', QuotationsListView.as_view(), name='quotations_list'),
     path('appointments/<int:pk>/create-quotation/', CreateQuotationView.as_view(), name='create_quotation'),
+    path('quotations/create/', CreateQuotationView.as_view(), name='create_quotation_standalone'),
     path('quotations/<int:pk>/', ViewQuotationView.as_view(), name='view_quotation'),
+    path('quotations/<int:pk>/preview/', ViewQuotationView.as_view(), name='preview_quotation'),
     path('quotations/<int:pk>/edit/', EditQuotationView.as_view(), name='edit_quotation'),
     path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),
     path('quotations/<int:pk>/duplicate/', duplicate_quotation, name='duplicate_quotation'),

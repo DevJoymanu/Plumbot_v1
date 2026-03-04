@@ -824,6 +824,15 @@ class ViewQuotationView(DetailView):
         return context
 
 
+@method_decorator(staff_required, name='dispatch')
+class QuotationsListView(ListView):
+    model = Quotation
+    template_name = 'quotations_list.html'
+    context_object_name = 'quotations'
+    paginate_by = 25
+    ordering = ['-created_at']
+
+
 @staff_required
 @require_http_methods(["GET"])
 def quotation_detail_api(request, pk):
@@ -986,7 +995,7 @@ def delete_quotation(request, pk):
     return JsonResponse({
         'success': True,
         'appointment_id': appointment_id,
-        'redirect_url': reverse('appointment_detail', kwargs={'pk': appointment_id}) if appointment_id else reverse('appointments_list'),
+        'redirect_url': reverse('quotations_list'),
     })
 
 @staff_required
