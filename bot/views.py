@@ -63,9 +63,29 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
 from .whatsapp_cloud_api import whatsapp_api
 from .services.lead_scoring import refresh_lead_score, calculate_lead_score
+from django.db import IntegrityError, connection, transaction
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def _reset_pk_sequence(model):
+    """Reset Postgres PK sequence to current MAX(id) for a model table."""
+    if connection.vendor != 'postgresql':
+        return False
+
+    table_name = model._meta.db_table
+    pk_column = model._meta.pk.column
+    quoted_table = connection.ops.quote_name(table_name)
+    quoted_pk = connection.ops.quote_name(pk_column)
+
+    sql = (
+        f"SELECT setval(pg_get_serial_sequence('{table_name}', '{pk_column}'), "
+        f"COALESCE(MAX({quoted_pk}), 1), true) FROM {quoted_table};"
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+    return True
 
 
 def _append_admin_note(appointment, message):
@@ -662,14 +682,32 @@ def create_quotation_api(request):
         
         # Create the quotation
         logger.debug("🧾 Creating Quotation record...")
-        quotation = Quotation.objects.create(
-            appointment=appointment,  # This is now guaranteed to exist
-            labor_cost=data.get('labour_cost', 0),
-            transport_cost=data.get('transport_cost', 0),
-            materials_cost=data.get('materials_cost', 0),
-            notes=data.get('notes', ''),
-            status='draft'
-        )
+        quotation = None
+        for attempt in range(2):
+            try:
+                with transaction.atomic():
+                    quotation = Quotation.objects.create(
+                        appointment=appointment,  # This is now guaranteed to exist
+                        labor_cost=data.get('labour_cost', 0),
+                        transport_cost=data.get('transport_cost', 0),
+                        materials_cost=data.get('materials_cost', 0),
+                        notes=data.get('notes', ''),
+                        status='draft'
+                    )
+                break
+            except IntegrityError as e:
+                error_text = str(e).lower()
+                is_sequence_collision = (
+                    "bot_quotation_pkey" in error_text
+                    and "key (id)=" in error_text
+                )
+                if attempt == 0 and is_sequence_collision and _reset_pk_sequence(Quotation):
+                    logger.warning("Reset bot_quotation id sequence after PK collision; retrying insert once.")
+                    continue
+                raise
+
+        if quotation is None:
+            raise RuntimeError("Failed to create quotation after retry")
         logger.info(f"✅ Quotation created with ID: {quotation.id}")
 
         # Create quotation items
