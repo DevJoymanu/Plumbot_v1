@@ -41,6 +41,7 @@ import os
 import requests
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+import tempfile
 from django.utils import timezone
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -814,17 +815,21 @@ class EditQuotationView(UpdateView):
 @staff_required
 def send_quotation(request, pk):
     quotation = get_object_or_404(Quotation, pk=pk)
+    temp_doc_path = None
     
     try:
         # Backfill plumber for legacy quotations created without an assignee.
         if quotation.plumber is None and getattr(request.user, 'is_authenticated', False):
             quotation.plumber = request.user
 
-        # Format the quotation message
-        message = format_quotation_message(quotation)
-        
-        # Send via Meta WhatsApp Cloud API
-        whatsapp_api.send_text_message(quotation.appointment.phone_number, message)
+        # Build and send as a PDF document
+        temp_doc_path = build_quotation_pdf_file(quotation)
+        whatsapp_api.send_local_document(
+            quotation.appointment.phone_number,
+            temp_doc_path,
+            caption=f"Quotation #{quotation.quotation_number}",
+            filename=f"Quotation-{quotation.quotation_number}.pdf"
+        )
         
         # Update quotation status
         quotation.status = 'sent'
@@ -844,6 +849,12 @@ def send_quotation(request, pk):
         
     except Exception as e:
         messages.error(request, f'Failed to send quotation: {str(e)}')
+    finally:
+        if temp_doc_path and os.path.exists(temp_doc_path):
+            try:
+                os.remove(temp_doc_path)
+            except Exception:
+                pass
     
     return redirect('appointment_detail', pk=quotation.appointment.pk)
 
@@ -874,6 +885,59 @@ Thank you for considering our services!
 - {(quotation.plumber.get_full_name() if quotation.plumber else '') or (quotation.plumber.username if quotation.plumber else '') or 'Plumbing Team'}"""
 
     return message
+
+
+def build_quotation_pdf_file(quotation):
+    """Generate a temporary quotation PDF and return local path."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    def draw_line(c, text, x, y, step=16):
+        c.drawString(x, y, text)
+        return y - step
+
+    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+        pdf_path = tmp.name
+
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    width, height = A4
+    x = 40
+    y = height - 50
+
+    y = draw_line(c, f"QUOTATION #{quotation.quotation_number}", x, y, step=22)
+    y = draw_line(c, f"Customer: {quotation.appointment.customer_name or 'Customer'}", x, y)
+    y = draw_line(c, f"Phone: {quotation.appointment.phone_number or ''}", x, y)
+    y = draw_line(c, f"Date: {timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M')}", x, y, step=22)
+
+    y = draw_line(c, "ITEMS", x, y, step=18)
+    for i, item in enumerate(quotation.items.all(), 1):
+        line = f"{i}. {item.description} | Qty: {item.quantity} | Unit: R{item.unit_price} | Total: R{item.total_price}"
+        if y < 80:
+            c.showPage()
+            y = height - 50
+        y = draw_line(c, line, x, y)
+
+    if y < 140:
+        c.showPage()
+        y = height - 50
+
+    y = draw_line(c, "", x, y)
+    y = draw_line(c, f"Labor: R{quotation.labor_cost}", x, y)
+    y = draw_line(c, f"Materials: R{quotation.materials_cost}", x, y)
+    y = draw_line(c, f"Transport: R{quotation.transport_cost}", x, y)
+    y = draw_line(c, f"TOTAL: R{quotation.total_amount}", x, y, step=22)
+
+    notes = quotation.notes or "No additional notes"
+    y = draw_line(c, "Notes:", x, y)
+    for raw in notes.splitlines() or ["No additional notes"]:
+        chunk = raw.strip() or " "
+        if y < 70:
+            c.showPage()
+            y = height - 50
+        y = draw_line(c, chunk[:120], x, y)
+
+    c.save()
+    return pdf_path
 
 
 @method_decorator(staff_required, name='dispatch')

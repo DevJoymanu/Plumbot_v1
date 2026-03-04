@@ -6,7 +6,7 @@ import pytz
 import json
 import re
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 
 class LeadQuerySet(models.QuerySet):
@@ -1319,6 +1319,18 @@ class Quotation(models.Model):
     
     class Meta:
         ordering = ['-created_at']
+
+    @staticmethod
+    def _safe_decimal(value):
+        """Convert potentially dirty numeric values to Decimal safely."""
+        if value in (None, ''):
+            return Decimal('0.00')
+        if isinstance(value, Decimal):
+            return value
+        try:
+            return Decimal(str(value).replace(',', ''))
+        except (InvalidOperation, TypeError, ValueError):
+            return Decimal('0.00')
     
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -1343,9 +1355,9 @@ class Quotation(models.Model):
             kwargs.pop('force_insert', None)
             kwargs.pop('force_update', None)
 
-        labor = Decimal(str(self.labor_cost or 0))
-        materials = Decimal(str(self.materials_cost or 0))
-        transport = Decimal(str(self.transport_cost or 0))
+        labor = self._safe_decimal(self.labor_cost)
+        materials = self._safe_decimal(self.materials_cost)
+        transport = self._safe_decimal(self.transport_cost)
 
         self.labor_cost = labor
         self.materials_cost = materials
