@@ -1321,6 +1321,8 @@ class Quotation(models.Model):
         ordering = ['-created_at']
     
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+
         # Generate quotation number if not exists
         if not self.quotation_number:
             today = timezone.now().date()
@@ -1330,13 +1332,16 @@ class Quotation(models.Model):
             self.quotation_number = f"Q{today.strftime('%Y%m%d')}{quote_count:03d}"
         
         # Calculate total
-        if self.pk:
+        if not is_new:
             # Existing quotation - can access items
             items_total = sum((item.total_price for item in self.items.all()), Decimal('0.00'))
         else:
-            # New quotation - save first, then update total
+            # New quotation - persist first so PK exists, then update totals
             super().save(*args, **kwargs)
             items_total = Decimal('0.00')
+            kwargs = kwargs.copy()
+            kwargs.pop('force_insert', None)
+            kwargs.pop('force_update', None)
 
         labor = Decimal(str(self.labor_cost or 0))
         materials = Decimal(str(self.materials_cost or 0))
