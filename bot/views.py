@@ -66,6 +66,7 @@ from .whatsapp_cloud_api import whatsapp_api
 from .services.lead_scoring import refresh_lead_score, calculate_lead_score
 from django.db import IntegrityError, connection, transaction
 from decimal import Decimal, InvalidOperation
+from django.templatetags.static import static
 
 import logging
 logger = logging.getLogger(__name__)
@@ -79,6 +80,16 @@ def _to_decimal(value, default='0.00'):
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         return Decimal(default)
+
+
+def _safe_logo_url():
+    """Return static logo URL without crashing when manifest entry is missing."""
+    for path in ('images/logo.jpg', 'logo.jpg'):
+        try:
+            return static(path)
+        except ValueError:
+            continue
+    return '/static/images/logo.jpg'
 
 
 def _reset_pk_sequence(model):
@@ -617,6 +628,7 @@ class CreateQuotationView(CreateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context['logo_url'] = _safe_logo_url()
         
         # Get appointment if pk is provided
         appointment = None
@@ -784,6 +796,11 @@ class ViewQuotationView(DetailView):
     model = Quotation
     template_name = 'view_quotation.html'
     context_object_name = 'quotation'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['logo_url'] = _safe_logo_url()
+        return context
 
 @method_decorator(staff_required, name='dispatch')
 class EditQuotationView(UpdateView):
