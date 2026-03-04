@@ -841,17 +841,39 @@
 
 
         let items = [];
-        let currentAppointmentId = null;
+        let currentAppointmentId = {% if appointment %}{{ appointment.id }}{% else %}null{% endif %};
+
+        function resolveAppointmentId() {
+            const serverId = parseInt(currentAppointmentId, 10);
+            if (!isNaN(serverId) && serverId > 0) {
+                return serverId;
+            }
+
+            const pathMatch = window.location.pathname.match(/\/appointments\/(\d+)\//);
+            if (pathMatch && pathMatch[1]) {
+                return parseInt(pathMatch[1], 10);
+            }
+
+            const params = new URLSearchParams(window.location.search);
+            const queryId = parseInt(
+                params.get('appointment_id') || params.get('appointment') || params.get('pk'),
+                10
+            );
+            if (!isNaN(queryId) && queryId > 0) {
+                return queryId;
+            }
+
+            return null;
+        }
 
         // Auto-load appointment on page load
     // Replace the existing DOMContentLoaded function
     document.addEventListener('DOMContentLoaded', function () {
-        // Get appointment ID from URL path instead of query parameters
-        const pathParts = window.location.pathname.split('/');
-        const appointmentId = pathParts[pathParts.indexOf('appointments') + 1];
+        const appointmentId = resolveAppointmentId();
 
-        if (appointmentId && !isNaN(appointmentId)) {
-            loadAppointmentData(parseInt(appointmentId));
+        if (appointmentId) {
+            currentAppointmentId = appointmentId;
+            loadAppointmentData(appointmentId);
         } else {
             showAlert('No appointment found in URL. Please access this page from an appointment detail page.', 'error');
             // Disable save button since we don't have an appointment
@@ -892,6 +914,9 @@
 
                 // Fetch appointment data from API
                 const response = await fetch(`/api/appointments/${appointmentId}/`);
+                if (!response.ok) {
+                    throw new Error(`Failed to load appointment (${response.status})`);
+                }
                 const appointment = await response.json();
 
                 if (appointment.error) {
