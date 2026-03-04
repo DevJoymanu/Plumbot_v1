@@ -467,7 +467,7 @@ def toggle_template_status(request, pk):
 
 
 @csrf_exempt
-@require_http_methods(["POST"])
+@require_http_methods(["GET", "POST"])
 @staff_required
 def appointment_detail_api(request, appointment_id):
     """API endpoint to get appointment details"""
