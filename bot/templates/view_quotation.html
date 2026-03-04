@@ -8,7 +8,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-    <title>Quotation #{{ quotation.quotation_number }} - Homebase Construction</title>
+    <title>{{ quotation.get_display_name }} - Homebase Construction</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
@@ -535,7 +535,7 @@
 
             <!-- Document Header -->
             <div class="document-header">
-                <h1>Quotation #{{ quotation.quotation_number }}</h1>
+                <h1>{{ quotation.get_display_name }}</h1>
                 <p><em>Prepared for {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number
                         }}</em></p>
             </div>
@@ -608,8 +608,8 @@
                     <tr>
                         <td>{{ item.description }}</td>
                         <td>{{ item.quantity }}</td>
-                        <td>${{ item.unit_price }}</td>
-                        <td>${{ item.total_price }}</td>
+                        <td>US${{ item.unit_price }}</td>
+                        <td>US${{ item.total_price }}</td>
                     </tr>
                     {% empty %}
                     <tr>
@@ -623,15 +623,15 @@
                 <tfoot>
                     <tr>
                         <td colspan="3"><strong>Labor Cost</strong></td>
-                        <td>${{ quotation.labor_cost }}</td>
+                        <td>US${{ quotation.labor_cost }}</td>
                     </tr>
                     <tr>
                         <td colspan="3"><strong>Materials Cost</strong></td>
-                        <td>${{ quotation.materials_cost }}</td>
+                        <td>US${{ quotation.materials_cost }}</td>
                     </tr>
                     <tr>
                         <td colspan="3"><strong>Total Amount</strong></td>
-                        <td><strong>${{ quotation.total_amount }}</strong></td>
+                        <td><strong>US${{ quotation.total_amount }}</strong></td>
                     </tr>
                 </tfoot>
             </table>

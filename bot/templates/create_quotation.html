@@ -518,7 +518,7 @@
                 <div class="totals-card">
                     <div class="totals-row">
                         <span>Material Cost:</span>
-                        <span id="materialsTotal">$0.00</span>
+                        <span id="materialsTotal">US$0.00</span>
                     </div>
                     <div class="totals-row">
                         <span>Labour Cost:</span>
@@ -531,7 +531,7 @@
                     </div>
                     <div class="totals-row">
                         <span>Total Amount:</span>
-                        <span id="grandTotal">$0.00</span>
+                        <span id="grandTotal">US$0.00</span>
                     </div>
                 </div>
             </div>
@@ -575,19 +575,19 @@
                     <div class="totals-card">
                         <div class="totals-row">
                             <span>Material cost:</span>
-                            <span id="previewMaterials">$0.00</span>
+                            <span id="previewMaterials">US$0.00</span>
                         </div>
                         <div class="totals-row">
                             <span>Labour:</span>
-                            <span id="previewLabour">$0.00</span>
+                            <span id="previewLabour">US$0.00</span>
                         </div>
                         <div class="totals-row">
                             <span>Transport:</span>
-                            <span id="previewTransport">$0.00</span>
+                            <span id="previewTransport">US$0.00</span>
                         </div>
                         <div class="totals-row">
                             <span>Total Amount:</span>
-                            <span id="previewGrandTotal">$0.00</span>
+                            <span id="previewGrandTotal">US$0.00</span>
                         </div>
                     </div>
                 </div>        </div>
@@ -731,7 +731,7 @@
                 </div>
                 <div>
                     <div style="font-size: 0.8em; color: #666;">Estimated Cost</div>
-                    <div style="font-weight: 600; color: #10b981;">${template.estimated_cost.toFixed(2)}</div>
+                    <div style="font-weight: 600; color: #10b981;">US$${template.estimated_cost.toFixed(2)}</div>
                 </div>
                 <div>
                     <div style="font-size: 0.8em; color: #666;">Used</div>
@@ -1025,7 +1025,7 @@
                                 if (itemCard) {
                                     const totalEl = itemCard.querySelector('.item-total');
                                     if (totalEl) {
-                                        totalEl.textContent = `Total: $${(item.qty * item.price).toFixed(2)}`;
+                                        totalEl.textContent = `Total: US$${(item.qty * item.price).toFixed(2)}`;
                                     }
                                 }
                             }
@@ -1061,13 +1061,13 @@
                                    oninput="updateItem(${item.id}, 'qty', this.value)">
                         </div>
                         <div>
-                            <label style="font-size: 0.85rem; color: #666;">Unit Price ($)</label>
+                            <label style="font-size: 0.85rem; color: #666;">Unit Price (US$)</label>
                             <input type="number" value="${item.price}" min="0" step="0.01"
                                    oninput="updateItem(${item.id}, 'price', this.value)">
                         </div>
                     </div>
                     <div class="item-total">
-                        Total: $${(item.qty * item.price).toFixed(2)}
+                        Total: US$${(item.qty * item.price).toFixed(2)}
                     </div>
                 </div>
             `).join('');
@@ -1081,8 +1081,8 @@
             const transport = parseFloat(document.getElementById('transportCost').value) || 0;
             const total = materials + labour + transport;
 
-            document.getElementById('materialsTotal').textContent = `$${materials.toFixed(2)}`;
-            document.getElementById('grandTotal').textContent = `$${total.toFixed(2)}`;
+            document.getElementById('materialsTotal').textContent = `US$${materials.toFixed(2)}`;
+            document.getElementById('grandTotal').textContent = `US$${total.toFixed(2)}`;
         }
 
         function showPreview() {
@@ -1111,8 +1111,8 @@
                 <tr>
                     <td>${item.name || 'Unnamed'}</td>
                     <td>${item.qty}</td>
-                    <td>$${item.price.toFixed(2)}</td>
-                    <td>$${(item.qty * item.price).toFixed(2)}</td>
+                    <td>US$${item.price.toFixed(2)}</td>
+                    <td>US$${(item.qty * item.price).toFixed(2)}</td>
                 </tr>
             `).join('');
 
@@ -1123,10 +1123,10 @@
             const labour = parseFloat(document.getElementById('labourCost').value) || 0;
             const transport = parseFloat(document.getElementById('transportCost').value) || 0;
 
-            document.getElementById('previewMaterials').textContent = `$${materials.toFixed(2)}`;
-            document.getElementById('previewLabour').textContent = `$${labour.toFixed(2)}`;
-            document.getElementById('previewTransport').textContent = `$${transport.toFixed(2)}`;
-            document.getElementById('previewGrandTotal').textContent = `$${(materials + labour + transport).toFixed(2)}`;
+            document.getElementById('previewMaterials').textContent = `US$${materials.toFixed(2)}`;
+            document.getElementById('previewLabour').textContent = `US$${labour.toFixed(2)}`;
+            document.getElementById('previewTransport').textContent = `US$${transport.toFixed(2)}`;
+            document.getElementById('previewGrandTotal').textContent = `US$${(materials + labour + transport).toFixed(2)}`;
 
             document.getElementById('previewSection').style.display = 'block';
             document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
@@ -1214,7 +1214,8 @@
             const result = await response.json();
 
             if (response.ok && result.success) {
-                showAlert('Quotation saved successfully! #' + result.quotation_number, 'success');
+                const quoteLabel = result.quotation_name || result.quotation_number;
+                showAlert('Quotation saved successfully! ' + quoteLabel, 'success');
 
                 // Redirect to the appointment detail page after 1.5 seconds
                 setTimeout(() => {
@@ -1296,3 +1297,5 @@
 </body>
 
 </html>
+
+

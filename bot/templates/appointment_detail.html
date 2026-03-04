@@ -268,13 +268,13 @@
                 {% for quote in appointment.quotations.all %}
                 <div class="quotation-item status-{{ quote.status|default:'draft' }}">
                     <div class="quotation-header">
-                        <h4>Quote #{{ quote.quotation_number|default:quote.id }}</h4>
+                        <h4>{{ quote.get_display_name }}</h4>
                         <span class="status-badge status-{{ quote.status|default:'draft' }}">
                             {{ quote.get_status_display }}
                         </span>
                     </div>
                     <div class="quotation-details">
-                        <p><strong>Total:</strong> R{{ quote.total_amount|default:"0.00" }}</p>
+                        <p><strong>Total:</strong> US${{ quote.total_amount|default:"0.00" }}</p>
                         <p><strong>Created:</strong> {{ quote.created_at|date:"M d, Y H:i" }}</p>
                         {% if quote.sent_via_whatsapp and quote.sent_at %}
                         <p><strong>Sent:</strong> {{ quote.sent_at|date:"M d, Y H:i" }}</p>
@@ -777,7 +777,7 @@
                 onmouseout="this.style.background='white'">
                 <div style="font-weight: 600; margin-bottom: 4px;">${t.name}</div>
                 <div style="font-size: 0.85em; color: #666;">
-                    ${t.items_count} items • R${t.estimated_cost.toFixed(2)}
+                    ${t.items_count} items • US$${t.estimated_cost.toFixed(2)}
                 </div>
             </a>
         `).join('');

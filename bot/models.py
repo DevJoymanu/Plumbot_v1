@@ -1320,6 +1320,22 @@ class Quotation(models.Model):
     class Meta:
         ordering = ['-created_at']
 
+    def get_display_name(self):
+        service = ''
+        if self.appointment:
+            if self.appointment.project_type:
+                try:
+                    service = self.appointment.get_project_type_display()
+                except Exception:
+                    service = self.appointment.project_type
+            client = (self.appointment.customer_name or '').strip() or (self.appointment.phone_number or '').strip()
+        else:
+            client = ''
+
+        service = service or 'Service'
+        client = client or 'Unknown Client'
+        return f"{service} for {client}"
+
     @staticmethod
     def _safe_decimal(value):
         """Convert potentially dirty numeric values to Decimal safely."""
@@ -1383,7 +1399,7 @@ class QuotationItem(models.Model):
             self.quotation.save()
     
     def __str__(self):
-        return f"{self.description} - R{self.total_price}"
+        return f"{self.description} - US${self.total_price}"
 
 
 
@@ -1475,7 +1491,7 @@ class QuotationTemplateItem(models.Model):
         ordering = ['sort_order', 'category', 'description']
     
     def __str__(self):
-        return f"{self.description} - R{self.unit_price} x {self.quantity}"
+        return f"{self.description} - US${self.unit_price} x {self.quantity}"
     
     def get_line_total(self):
         """Calculate line total"""

@@ -753,6 +753,7 @@ def create_quotation_api(request):
             'message': 'Quotation created successfully',
             'quotation_id': quotation.id,
             'quotation_number': quotation.quotation_number,
+            'quotation_name': quotation.get_display_name(),
             'appointment_id': appointment.id,
             'items_created': items_created,
             'total_amount': float(quotation.total_amount)
@@ -823,12 +824,15 @@ def send_quotation(request, pk):
             quotation.plumber = request.user
 
         # Build and send as a PDF document
+        quotation_name = quotation.get_display_name()
+        safe_name = re.sub(r'[^A-Za-z0-9 _-]+', '', quotation_name).strip().replace(' ', '_')
+        safe_name = safe_name[:80] or f"Quotation-{quotation.quotation_number}"
         temp_doc_path = build_quotation_pdf_file(quotation)
         whatsapp_api.send_local_document(
             quotation.appointment.phone_number,
             temp_doc_path,
-            caption=f"Quotation #{quotation.quotation_number}",
-            filename=f"Quotation-{quotation.quotation_number}.pdf"
+            caption=quotation_name,
+            filename=f"{safe_name}.pdf"
         )
         
         # Update quotation status
@@ -841,7 +845,7 @@ def send_quotation(request, pk):
         ConversationMessage.objects.create(
             appointment=quotation.appointment,
             role='assistant',
-            content=f"Quotation #{quotation.quotation_number} sent to customer via WhatsApp",
+            content=f"{quotation_name} sent to customer via WhatsApp",
             timestamp=timezone.now()
         )
         
@@ -862,9 +866,9 @@ def format_quotation_message(quotation):
     """Format quotation for WhatsApp message"""
     items_text = ""
     for i, item in enumerate(quotation.items.all(), 1):
-        items_text += f"{i}. {item.description}\n   Qty: {item.quantity} × R{item.unit_price} = R{item.total_price}\n"
+        items_text += f"{i}. {item.description}\n   Qty: {item.quantity} x US${item.unit_price} = US${item.total_price}\n"
     
-    message = f"""🔧 QUOTATION #{quotation.quotation_number}
+    message = f"""🔧 QUOTATION: {quotation.get_display_name()}
 
 Dear {quotation.appointment.customer_name or 'Customer'},
 
@@ -872,9 +876,9 @@ Here is your quotation for plumbing services:
 
 {items_text}
 ---
-Labor: R{quotation.labor_cost}
-Materials: R{quotation.materials_cost}
-TOTAL: R{quotation.total_amount}
+Labor: US${quotation.labor_cost}
+Materials: US${quotation.materials_cost}
+TOTAL: US${quotation.total_amount}
 
 📝 Notes:
 {quotation.notes or 'No additional notes'}
@@ -888,53 +892,143 @@ Thank you for considering our services!
 
 
 def build_quotation_pdf_file(quotation):
-    """Generate a temporary quotation PDF and return local path."""
+    """Generate quotation PDF using the same visual structure as preview."""
     from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
     from reportlab.pdfgen import canvas
-
-    def draw_line(c, text, x, y, step=16):
-        c.drawString(x, y, text)
-        return y - step
 
     with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
         pdf_path = tmp.name
 
     c = canvas.Canvas(pdf_path, pagesize=A4)
-    width, height = A4
-    x = 40
-    y = height - 50
+    page_width, page_height = A4
+    left = 40
+    right = page_width - 40
+    y = page_height - 45
 
-    y = draw_line(c, f"QUOTATION #{quotation.quotation_number}", x, y, step=22)
-    y = draw_line(c, f"Customer: {quotation.appointment.customer_name or 'Customer'}", x, y)
-    y = draw_line(c, f"Phone: {quotation.appointment.phone_number or ''}", x, y)
-    y = draw_line(c, f"Date: {timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M')}", x, y, step=22)
-
-    y = draw_line(c, "ITEMS", x, y, step=18)
-    for i, item in enumerate(quotation.items.all(), 1):
-        line = f"{i}. {item.description} | Qty: {item.quantity} | Unit: R{item.unit_price} | Total: R{item.total_price}"
-        if y < 80:
-            c.showPage()
-            y = height - 50
-        y = draw_line(c, line, x, y)
-
-    if y < 140:
+    def _new_page():
         c.showPage()
-        y = height - 50
+        return page_height - 45
 
-    y = draw_line(c, "", x, y)
-    y = draw_line(c, f"Labor: R{quotation.labor_cost}", x, y)
-    y = draw_line(c, f"Materials: R{quotation.materials_cost}", x, y)
-    y = draw_line(c, f"Transport: R{quotation.transport_cost}", x, y)
-    y = draw_line(c, f"TOTAL: R{quotation.total_amount}", x, y, step=22)
+    def _money(value):
+        return f"US${value}"
 
-    notes = quotation.notes or "No additional notes"
-    y = draw_line(c, "Notes:", x, y)
-    for raw in notes.splitlines() or ["No additional notes"]:
-        chunk = raw.strip() or " "
-        if y < 70:
-            c.showPage()
-            y = height - 50
-        y = draw_line(c, chunk[:120], x, y)
+    # Header card
+    c.setFillColor(colors.whitesmoke)
+    c.roundRect(left - 8, y - 105, right - left + 16, 95, 8, stroke=0, fill=1)
+
+    # Logo with fallbacks
+    logo_candidates = [
+        os.path.join(settings.BASE_DIR, 'bot', 'static', 'logo.jpg'),
+        os.path.join(settings.BASE_DIR, 'bot', 'static', 'images', 'logo.jpg'),
+        os.path.join(settings.BASE_DIR, 'static', 'images', 'logo.jpg'),
+    ]
+    logo_path = next((p for p in logo_candidates if os.path.exists(p)), None)
+    if logo_path:
+        try:
+            c.drawImage(logo_path, left, y - 82, width=70, height=70, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
+
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(left + 85, y - 20, "HOMEBASE CONSTRUCTION")
+    c.setFont("Helvetica-Oblique", 10)
+    c.setFillColor(colors.grey)
+    c.drawString(left + 85, y - 38, '"Quality Is Our Qualification"')
+    c.setFont("Helvetica", 9)
+    c.drawString(left + 85, y - 55, "141 Pritchard St, 2001, Johannesburg")
+    c.drawString(left + 85, y - 69, "Cell: +27610318200")
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(colors.black)
+    c.drawString(left + 85, y - 86, quotation.get_display_name()[:80])
+    y -= 125
+
+    # Client info block
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(colors.black)
+    c.drawString(left, y, "Client Information")
+    y -= 16
+    c.setFont("Helvetica", 10)
+    c.drawString(left, y, quotation.appointment.customer_name or "Customer")
+    y -= 14
+    c.drawString(left, y, quotation.appointment.customer_area or "")
+    y -= 24
+
+    # Project details block (preview style)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(left, y, "Project Details")
+    y -= 16
+    c.setFont("Helvetica", 10)
+    c.drawString(left, y, quotation.appointment.get_project_type_display() if quotation.appointment.project_type else "")
+    y -= 14
+    c.drawString(left, y, quotation.appointment.customer_area or "")
+    y -= 14
+    notes_preview = (quotation.notes or "No additional notes").splitlines()
+    for line in notes_preview[:3]:
+        c.drawString(left, y, line[:100])
+        y -= 14
+    y -= 8
+
+    # Items table header
+    if y < 180:
+        y = _new_page()
+    table_x = left
+    col_item = table_x
+    col_qty = table_x + 260
+    col_price = table_x + 330
+    col_total = table_x + 420
+
+    c.setFillColor(colors.lightgrey)
+    c.rect(table_x, y - 18, right - left, 18, stroke=0, fill=1)
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(col_item + 4, y - 12, "Item")
+    c.drawString(col_qty + 4, y - 12, "Qty")
+    c.drawString(col_price + 4, y - 12, "Price")
+    c.drawString(col_total + 4, y - 12, "Total")
+    y -= 22
+
+    # Items rows
+    c.setFont("Helvetica", 9)
+    for item in quotation.items.all():
+        if y < 90:
+            y = _new_page()
+            c.setFillColor(colors.lightgrey)
+            c.rect(table_x, y - 18, right - left, 18, stroke=0, fill=1)
+            c.setFillColor(colors.black)
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(col_item + 4, y - 12, "Item")
+            c.drawString(col_qty + 4, y - 12, "Qty")
+            c.drawString(col_price + 4, y - 12, "Price")
+            c.drawString(col_total + 4, y - 12, "Total")
+            y -= 22
+            c.setFont("Helvetica", 9)
+
+        c.setStrokeColor(colors.HexColor("#dddddd"))
+        c.line(table_x, y - 2, right, y - 2)
+        c.drawString(col_item + 4, y - 14, str(item.description)[:48])
+        c.drawRightString(col_qty + 44, y - 14, str(item.quantity))
+        c.drawRightString(col_price + 74, y - 14, _money(item.unit_price))
+        c.drawRightString(col_total + 94, y - 14, _money(item.total_price))
+        y -= 20
+
+    # Totals card
+    if y < 130:
+        y = _new_page()
+    c.setFillColor(colors.whitesmoke)
+    c.roundRect(right - 220, y - 88, 220, 88, 8, stroke=0, fill=1)
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 10)
+    c.drawString(right - 208, y - 18, "Material cost:")
+    c.drawRightString(right - 12, y - 18, _money(quotation.materials_cost))
+    c.drawString(right - 208, y - 34, "Labour:")
+    c.drawRightString(right - 12, y - 34, _money(quotation.labor_cost))
+    c.drawString(right - 208, y - 50, "Transport:")
+    c.drawRightString(right - 12, y - 50, _money(quotation.transport_cost))
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(right - 208, y - 70, "Total Amount:")
+    c.drawRightString(right - 12, y - 70, _money(quotation.total_amount))
 
     c.save()
     return pdf_path
@@ -6988,3 +7082,4 @@ def download_and_save_media(media_url, content_type, appointment, file_index):
     except Exception as e:
         print(f"❌ Error downloading/saving media: {str(e)}")
         return None
+
