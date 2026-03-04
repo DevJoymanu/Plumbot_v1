@@ -78,9 +78,25 @@ def _to_decimal(value, default='0.00'):
     if value in (None, ''):
         return Decimal(default)
     try:
-        return Decimal(str(value))
+        cleaned = str(value).strip()
+        cleaned = (
+            cleaned
+            .replace('US$', '')
+            .replace('$', '')
+            .replace(',', '')
+            .replace(' ', '')
+        )
+        return Decimal(cleaned)
     except (InvalidOperation, TypeError, ValueError):
         return Decimal(default)
+
+
+def _to_float(value, default=0.0):
+    """Safe float conversion using decimal normalizer."""
+    try:
+        return float(_to_decimal(value, default=str(default)))
+    except Exception:
+        return float(default)
 
 
 def _safe_logo_url():
@@ -844,9 +860,9 @@ def quotation_detail_api(request, pk):
         {
             'id': item.id,
             'description': item.description,
-            'quantity': float(item.quantity),
-            'unit_price': float(item.unit_price),
-            'total_price': float(item.total_price),
+            'quantity': _to_float(item.quantity),
+            'unit_price': _to_float(item.unit_price),
+            'total_price': _to_float(item.total_price),
         }
         for item in quotation.items.all().order_by('id')
     ]
@@ -857,10 +873,10 @@ def quotation_detail_api(request, pk):
         'quotation_name': quotation.get_display_name(),
         'status': quotation.status,
         'notes': quotation.notes or '',
-        'labor_cost': float(quotation.labor_cost),
-        'materials_cost': float(quotation.materials_cost),
-        'transport_cost': float(quotation.transport_cost),
-        'total_amount': float(quotation.total_amount),
+        'labor_cost': _to_float(quotation.labor_cost),
+        'materials_cost': _to_float(quotation.materials_cost),
+        'transport_cost': _to_float(quotation.transport_cost),
+        'total_amount': _to_float(quotation.total_amount),
         'created_at': quotation.created_at.isoformat() if quotation.created_at else None,
         'updated_at': quotation.updated_at.isoformat() if quotation.updated_at else None,
         'appointment': {
