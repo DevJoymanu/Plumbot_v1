@@ -3022,15 +3022,11 @@ class Plumbot:
 
 
 
-    def generate_response(self, incoming_message):
+    def generate_response(self, incoming_message, precomputed_service_inquiry=None):
         """Check service inquiries ONLY when not mid-conversation."""
         try:
             current_question = self.get_next_question_to_ask()
             #
-            any_pricing_sent = (
-                getattr(self.appointment, 'pricing_overview_sent', False) or
-                bool(getattr(self.appointment, 'sent_pricing_intents', None))
-            )
             any_pricing_sent = (
                 getattr(self.appointment, 'pricing_overview_sent', False) or
                 bool(getattr(self.appointment, 'sent_pricing_intents', None))
@@ -3050,7 +3046,7 @@ class Plumbot:
                 )
             )
             if not mid_conversation:
-                inquiry = self.detect_service_inquiry(incoming_message)
+                inquiry = precomputed_service_inquiry or self.detect_service_inquiry(incoming_message)
                 if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
                     intent = inquiry['intent']
                     sent = list(getattr(self.appointment, 'sent_pricing_intents', None) or [])

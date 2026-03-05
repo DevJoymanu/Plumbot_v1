@@ -47,6 +47,11 @@ _plumber_alert_timers: dict = {}          # sender → threading.Timer
 _plumber_alert_pending: dict = {}         # sender → list of file_url strings
 _plumber_alert_lock = threading.Lock()
 
+# Text dedupe window to suppress near-identical duplicate webhook deliveries.
+_text_dedupe_lock = threading.Lock()
+_recent_text_events: dict = {}  # key=(sender, normalized_text) -> monotonic timestamp
+TEXT_DEDUPE_WINDOW_SECONDS = 20
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FIX 1 — SERVICE-LEVEL PRICING DEDUP
@@ -296,9 +301,35 @@ def detect_objection_type(message: str) -> str:
     return 'other'
 
 
+def is_post_booking_ack_message(message: str) -> bool:
+    msg = (message or "").strip().lower()
+    if not msg:
+        return False
+    normalized = " ".join(msg.split())
+    ack_phrases = {
+        "ok", "okay", "k", "kk", "oky", "ok cool", "alright",
+        "sharp", "sharp sharp", "sho", "cool", "nice", "thanks",
+        "thank you", "noted", "got it", "sawa",
+    }
+    return normalized in ack_phrases
+
+
 def is_previous_work_photo_request(message: str) -> bool:
     """Use DeepSeek AI to detect if customer is asking to see previous work photos."""
     try:
+        message_clean = (message or "").strip().lower()
+        # Fast-path: avoid an expensive AI call for tiny acknowledgements.
+        if len(message_clean) <= 4 or message_clean in {"ok", "okay", "k", "thanks", "thank you", "cool", "fine"}:
+            return False
+
+        keyword_hints = (
+            "photo", "photos", "picture", "pictures", "pic", "pics",
+            "image", "images", "portfolio", "examples", "show me",
+            "mifananidzo", "mufananidzo", "ratidza", "ndiratidze", "basa renyu",
+        )
+        if not any(k in message_clean for k in keyword_hints):
+            return False
+
         from openai import OpenAI
 
         deepseek_client = OpenAI(
@@ -549,7 +580,7 @@ def process_message_change(value):
                 print(f"⚠️ Could not mark as read: {str(e)}")
 
             if message_type == 'text':
-                handle_text_message(sender, message.get('text', {}))
+                handle_text_message(sender, message.get('text', {}), message_id=message_id)
             elif message_type == 'image':
                 handle_media_message(sender, message.get('image', {}), 'image')
             elif message_type == 'document':
@@ -710,10 +741,40 @@ def handle_audio_message(sender, audio_data):
 # MAIN TEXT HANDLER — all dedup logic lives here
 # ─────────────────────────────────────────────────────────────────────────────
 
-def handle_text_message(sender, text_data):
+def _normalize_text_for_dedupe(text: str) -> str:
+    return " ".join((text or "").strip().lower().split())
+
+
+def _is_duplicate_text_event(sender: str, message_body: str) -> bool:
+    now = time.monotonic()
+    normalized = _normalize_text_for_dedupe(message_body)
+    key = (sender or "", normalized)
+    with _text_dedupe_lock:
+        # Evict stale keys to keep memory bounded.
+        cutoff = now - TEXT_DEDUPE_WINDOW_SECONDS
+        stale_keys = [k for k, ts in _recent_text_events.items() if ts < cutoff]
+        for stale_key in stale_keys:
+            _recent_text_events.pop(stale_key, None)
+
+        last_seen = _recent_text_events.get(key)
+        if last_seen is not None and (now - last_seen) < TEXT_DEDUPE_WINDOW_SECONDS:
+            return True
+
+        _recent_text_events[key] = now
+        return False
+
+
+def handle_text_message(sender, text_data, message_id=None):
     try:
         message_body = text_data.get('body', '').strip()
         if not message_body:
+            return
+
+        if _is_duplicate_text_event(sender, message_body):
+            print(
+                f"Duplicate text suppressed: sender={sender}, "
+                f"message_id={message_id}, body='{message_body[:80]}'"
+            )
             return
 
         print(f"Text from {sender}: {message_body}")
@@ -742,6 +803,13 @@ def handle_text_message(sender, text_data):
 
         if appointment.chatbot_paused:
             print(f"Chatbot paused for {phone_number}; skipping auto response.")
+            return
+
+        if appointment.status == 'confirmed' and is_post_booking_ack_message(message_body):
+            print(
+                f"Post-booking ack detected; no reply sent. "
+                f"sender={sender}, message='{message_body}'"
+            )
             return
 
         from .views import Plumbot
@@ -822,7 +890,10 @@ def handle_text_message(sender, text_data):
         # ── STEP 4: Normal Plumbot processing ────────────────────────────────
         if reply is None:
             print("Running normal Plumbot processing")
-            reply = plumbot.generate_response(message_body)
+            reply = plumbot.generate_response(
+                message_body,
+                precomputed_service_inquiry=inquiry if not mid_conversation else None,
+            )
 
         print(f"Final reply: {reply[:100]}...")
 
