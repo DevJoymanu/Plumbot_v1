@@ -133,7 +133,7 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
     if appointment.lead_status not in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
         return
 
-    plumber_number = (appointment.plumber_contact_number or '263610318200')
+    plumber_number = (appointment.plumber_contact_number or '263774819901')
     plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
     customer_name = appointment.customer_name or 'Unknown customer'
     message = (
@@ -168,14 +168,14 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
             customer_reply = (
                 "Thank you for sending that video! 🎥 Our plumber has been notified and will "
                 "review it and contact you directly. If it's urgent, you can also call them on "
-                f"{fresh.plumber_contact_number or '+263610318200'}."
+                f"{fresh.plumber_contact_number or '+263774819901'}."
             )
         else:
             customer_reply = (
                 "Thank you for sending your plan! 📎 Our plumber has been notified and will "
                 "be in touch with you directly to discuss your project.\n\n"
                 "If it's urgent, you can also call them on "
-                f"{fresh.plumber_contact_number or '+263610318200'}."
+                f"{fresh.plumber_contact_number or '+263774819901'}."
             )
 
         fresh.add_conversation_message("assistant", customer_reply)
@@ -217,7 +217,7 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         except Appointment.DoesNotExist:
             fresh = appointment
 
-        plumber_number = (getattr(fresh, 'plumber_contact_number', None) or '263610318200')
+        plumber_number = (getattr(fresh, 'plumber_contact_number', None) or '263774819901')
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
 
         ai_summary = generate_conversation_summary(fresh)

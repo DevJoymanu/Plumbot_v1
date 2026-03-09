@@ -1166,7 +1166,7 @@ def build_quotation_pdf_file(quotation):
     c.drawString(left + 85, y - 38, '"Quality Is Our Qualification"')
     c.setFont("Helvetica", 9)
     c.drawString(left + 85, y - 55, "141 Pritchard St, 2001, Johannesburg")
-    c.drawString(left + 85, y - 69, "Cell: +27610318200")
+    c.drawString(left + 85, y - 69, "Cell: +263774819901")
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(colors.black)
     c.drawString(left + 85, y - 86, quotation.get_display_name()[:80])
@@ -2318,7 +2318,7 @@ Job Description:
 View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         
         # Send to team
-        TEAM_NUMBERS = ['0610318200']
+        TEAM_NUMBERS = ['0774819901']
         for number in TEAM_NUMBERS:
             try:
                 whatsapp_api.send_text_message(number, team_message)
@@ -3651,7 +3651,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             plumber_number = getattr(
                 self.appointment,
                 'plumber_contact_number',
-                '+263610318200'
+                '+263774819901'
             )
 
             # Notify plumber
@@ -3683,7 +3683,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     • Once approved, they'll book your appointment or message you to complete booking
 
     🔧 PLUMBER DIRECT CONTACT:
-    If you need to reach them directly: {plumber_number.replace('+27', '0').replace('+', '')}
+    If you need to reach them directly: {plumber_number.replace('+263', '0').replace('+', '')}
 
     You don't need to do anything now — just wait for their call. They're very responsive!
 
@@ -3805,7 +3805,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             language = lang_response.choices[0].message.content.strip().lower()
             print(f"🌍 Detected language: {language}")
 
-            plumber_number = self.appointment.plumber_contact_number or '+27610318200'
+            plumber_number = self.appointment.plumber_contact_number or '+263774819901'
 
             pricing_info = {
                 # Hormozi principle: lead with the NUMBER, earn the question.
@@ -4088,7 +4088,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     """
 
             plumber_numbers = [
-                '263610318200',  # ✅ international format
+                '263774819901',  # ✅ international format
             ]
 
             for number in plumber_numbers:
@@ -4119,7 +4119,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             return """Your plan has been sent to our plumber and they'll contact you within 24 hours.
 
 If you need immediate assistance:
-📞 Call directly: 0610318200
+📞 Call directly: 0774819901
 
 Otherwise, please wait for their review and call. They're very reliable!
 
@@ -4143,13 +4143,13 @@ Your plan was sent {int(hours_since)} hours ago. Our plumber typically responds 
 
 Expected contact: Within the next {remaining_hours} hours
 
-If it's urgent, you can call directly: 0610318200
+If it's urgent, you can call directly: 0774819901
 
 Otherwise, they'll definitely contact you today!"""
         else:
             return """I see it's been over 24 hours since your plan was sent. Let me check on this for you.
 
-Please call our plumber directly at 0610318200 - they may have tried to reach you already.
+Please call our plumber directly at 0774819901 - they may have tried to reach you already.
 
 I'll also send them a follow-up message now."""
 
@@ -4184,20 +4184,20 @@ View details: http://127.0.0.1:8000/appointments/{self.appointment.id}/"""
             twilio_client.messages.create(
                 body=urgent_message,
                 from_=TWILIO_WHATSAPP_NUMBER,
-                to='whatsapp:+0610318200'
+                to='whatsapp:+0774819901'
             )
             
             return """🚨 I've marked your plan review as URGENT and notified our plumber immediately.
 
 They should contact you within the next few hours.
 
-For immediate assistance, you can also call: 0610318200
+For immediate assistance, you can also call: 0774819901
 
 I understand this is time-sensitive!"""
 
         except Exception as e:
             print(f"❌ Error handling urgent request: {str(e)}")
-            return "I've noted this is urgent. Please call our plumber directly at 0610318200 for immediate assistance."
+            return "I've noted this is urgent. Please call our plumber directly at 0774819901 for immediate assistance."
 
 
 
@@ -5160,7 +5160,7 @@ I understand this is time-sensitive!"""
                         team_numbers.append(n)
 
                 if not team_numbers:
-                    team_numbers = ['263610318200']
+                    team_numbers = ['263774819901']
                     print("⚠️ TEAM_NUMBERS env var not set — using hardcoded fallback")
 
                 print(f"📤 Sending booking notifications to {len(team_numbers)} team member(s)...")
@@ -7072,7 +7072,7 @@ If you receive this, notifications are working! ✅"""
 
         # Team numbers to test
         TEAM_NUMBERS = [
-            'whatsapp:+263610318200',  # Your plumber's number
+            'whatsapp:+263774819901',  # Your plumber's number
         ]
         
         results = []
@@ -7137,12 +7137,12 @@ def verify_whatsapp_setup():
         return False
     
     # Check team numbers format
-    TEAM_NUMBERS = ['whatsapp:+263610318200']  # Your actual numbers
+    TEAM_NUMBERS = ['whatsapp:+263774819901']  # Your actual numbers
     print(f"👥 Team numbers configured: {len(TEAM_NUMBERS)}")
     
     for number in TEAM_NUMBERS:
         if not number.startswith('whatsapp:+'):
-            print(f"⚠️  Invalid format for {number}. Should be 'whatsapp:+27XXXXXXXXX'")
+            print(f"⚠️  Invalid format for {number}. Should be 'whatsapp:+263XXXXXXXXX'")
         else:
             print(f"✅ {number} format is correct")
     
@@ -7150,7 +7150,7 @@ def verify_whatsapp_setup():
     print("1. Make sure the plumber's number is registered with WhatsApp")
     print("2. The plumber must have previously messaged your Twilio WhatsApp number")
     print("3. Check Twilio console for delivery status")
-    print("4. Verify the phone number format: whatsapp:+27XXXXXXXXX")
+    print("4. Verify the phone number format: whatsapp:+263XXXXXXXXX")
     
     return True
 
