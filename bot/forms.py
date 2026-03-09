@@ -41,7 +41,7 @@ class SettingsForm(forms.Form):
         label='Team Notification Numbers',
         widget=forms.Textarea,
         required=False,
-        help_text='One number per line, format: whatsapp:+27610318200'
+        help_text='One number per line, format: whatsapp:+263774819901'
     )
 
 class CalendarSettingsForm(forms.Form):
