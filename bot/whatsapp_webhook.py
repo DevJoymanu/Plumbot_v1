@@ -972,7 +972,17 @@ def handle_text_message(sender, text_data, message_id=None):
             inquiry = plumbot.detect_service_inquiry(message_body)
             print(f"Service inquiry result: {inquiry}")
 
-            if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
+            PRODUCT_INTENTS = {
+                'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
+                'vanity', 'bathtub_installation', 'toilet', 'chamber',
+                'facebook_package', 'location_ask', 'location_visit',
+                'previous_quotation', 'pictures',
+            }
+            if inquiry.get('intent') != 'none' and (
+                inquiry.get('confidence') == 'HIGH' or
+                inquiry.get('intent') in PRODUCT_INTENTS
+            ):
+
                 intent = inquiry['intent']
 
                 # FIX 1: Only send pricing for this intent once per lead

@@ -3047,7 +3047,16 @@ class Plumbot:
             )
             if not mid_conversation:
                 inquiry = precomputed_service_inquiry or self.detect_service_inquiry(incoming_message)
-                if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
+                PRODUCT_INTENTS = {
+                    'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
+                    'vanity', 'bathtub_installation', 'toilet', 'chamber',
+                    'facebook_package', 'location_ask', 'location_visit',
+                    'previous_quotation', 'pictures',
+                }
+                if inquiry.get('intent') != 'none' and (
+                    inquiry.get('confidence') == 'HIGH' or
+                    inquiry.get('intent') in PRODUCT_INTENTS
+                ):
                     intent = inquiry['intent']
                     sent = list(getattr(self.appointment, 'sent_pricing_intents', None) or [])
                     if intent in sent:
@@ -3757,9 +3766,23 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     - If message is ONLY an area name like "Hatfield", "Avondale", "Glen View" → intent must be "none"
 
     2. Confidence rules:
-    - HIGH = message clearly matches the intent
-    - LOW = message is ambiguous or too short to be certain
-
+    - HIGH = message clearly matches the intent. Short messages naming a specific
+      product are HIGH — product names are unambiguous regardless of length.
+      Examples that are HIGH confidence:
+        * "how much tub", "tub price", "tub cost"
+        * "geyser install", "geyser price", "how much geyser"
+        * "toilet price", "how much toilet", "toilet cost"
+        * "shower cubicle price", "how much shower"
+        * "chamber price", "side chamber cost"
+        * "vanity price", "how much vanity"
+        * "bathtub install", "bath installation"
+        * "facebook package", "the package"
+        * "where are you", "your address", "where are you located"
+        * "can I come", "can I visit your office"
+        * "send pictures", "show me photos", "got pics"
+    - LOW = message is genuinely ambiguous and could match multiple intents
+      or no specific product/service
+      
     Return ONLY this JSON:
     {{
         "intent": "one of the intents above",
