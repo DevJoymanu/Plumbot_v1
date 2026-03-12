@@ -5451,12 +5451,27 @@ I understand this is time-sensitive!"""
                 acknowledgments.append(f"service: {service_display}")
             
             #
-            if next_question == "plan_or_visit" and self._plan_question_already_pending():
-                # Bot already asked this — customer's reply was ambiguous.
-                # Rephrase rather than asking fresh to avoid sounding like a broken record.
-                clarifying_question = self.generate_clarifying_question_for_plan_status(retry_count)
-                return clarifying_question
-
+            if next_question == "plan_or_visit":
+                if self._plan_question_already_pending():
+                    # Bot already asked — rephrase to avoid repeating verbatim
+                    clarifying_question = self.generate_clarifying_question_for_plan_status(retry_count)
+                    return clarifying_question
+                else:
+                    # First time asking — return the full Hormozi-style template directly
+                    service_display = (self.appointment.project_type or 'bathroom').replace('_', ' ').title()
+                    return (
+                        f"Perfect! For your {service_display}, we have two fast options to get you an accurate fixed quote:\n\n"
+                        "*Option 1 — Send Your Plan*\n"
+                        "If you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.\n\n"
+                        "*Option 2 — Free On-Site Assessment*\n"
+                        "We come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site.\n\n"
+                        "This does three things for you:\n"
+                        "*1. Eliminates guesswork* — no assumptions, no surprises\n"
+                        "*2. Locks in your fixed price* — you know exactly what you're paying before a single pipe is touched\n"
+                        "*3. Saves you money* — catching problems before the job starts costs nothing. Catching them during costs a lot.\n\n"
+                        "Most serious clients choose the visit because it saves money long term.\n\n"
+                        "Which works better for you — send a plan, or have us come out?"
+                    )
 
             if 'plan_status' in updated_fields:
                 plan_text = "you have a plan" if self.appointment.has_plan else "you'd like a site visit"
