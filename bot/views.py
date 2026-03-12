@@ -5451,13 +5451,41 @@ I understand this is time-sensitive!"""
                 acknowledgments.append(f"service: {service_display}")
             
             #
-            if next_question == "plan_or_visit":
-                if self._plan_question_already_pending():
-                    # Bot already asked — rephrase to avoid repeating verbatim
-                    clarifying_question = self.generate_clarifying_question_for_plan_status(retry_count)
-                    return clarifying_question
-                else:
-                    # First time asking — return the full Hormozi-style template directly
+# ── First-time hardcoded responses (bypass AI for consistency) ──
+            if retry_count == 0:
+
+                if next_question == "service_type":
+                    return (
+                        "Hi there! 👋 We do three things:\n\n"
+                        "🛁 *Bathroom Renovations*\n"
+                        "🍳 *Kitchen Renovations*\n"
+                        "🔧 *New Plumbing Installations*\n\n"
+                        "All with fixed pricing — no surprises.\n\n"
+                        "What are you looking to get sorted?"
+                    )
+
+                if next_question == "area":
+                    return (
+                        "Perfect choice. 👍\n\n"
+                        "The on-site assessment gives you the most accurate fixed quote "
+                        "and catches any issues before work begins.\n\n"
+                        "Which suburb are you in? (e.g., Hatfield, Avondale, Borrowdale)"
+                    )
+
+                if next_question == "availability":
+                    area = self.appointment.customer_area or "your area"
+                    project = (self.appointment.project_type or 'plumbing work').replace('_', ' ').lower()
+                    return (
+                        f"Perfect — we're in your area. 📍 We've done quite a few "
+                        f"{project} jobs in {area}.\n\n"
+                        "*Free on-site assessment* — we come to you, measure everything, "
+                        "and give you a fixed price on the spot. No obligation.\n\n"
+                        "What day works for you? Drop a date and time and we'll lock it in."
+                    )
+
+                if next_question == "plan_or_visit":
+                    if self._plan_question_already_pending():
+                        return self.generate_clarifying_question_for_plan_status(retry_count)
                     service_display = (self.appointment.project_type or 'bathroom').replace('_', ' ').title()
                     return (
                         f"Perfect! For your {service_display}, we have two fast options to get you an accurate fixed quote:\n\n"
@@ -5473,6 +5501,10 @@ I understand this is time-sensitive!"""
                         "Which works better for you — send a plan, or have us come out?"
                     )
 
+            # ── plan_or_visit retry (already asked, rephrase) ──
+            if next_question == "plan_or_visit" and self._plan_question_already_pending():
+                return self.generate_clarifying_question_for_plan_status(retry_count)
+                
             if 'plan_status' in updated_fields:
                 plan_text = "you have a plan" if self.appointment.has_plan else "you'd like a site visit"
                 acknowledgments.append(f"plan status: {plan_text}")
