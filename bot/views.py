@@ -4106,7 +4106,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             except Exception as e:
                 print(f"❌ Error handling service inquiry: {str(e)}")
                 return self.generate_contextual_response(message, self.get_next_question_to_ask(), [])
-                
+
     def generate_pricing_overview(self, message):
         """Send approximate prices when customer asks about cost"""
         # Try to detect specific service first
@@ -5527,8 +5527,8 @@ I understand this is time-sensitive!"""
                 if next_question == "service_type":
                     return (
 
-                        "Hi there! \n\n" 
-                        "We do bathroom renovations, kitchen renovations, and new plumbing installations, all with fixed pricing so there are no surprises.\n" 
+                        "Hi there! We do bathroom renovations, kitchen renovations, and new plumbing installations.\n\n"
+                        "Most clients start with a *free site visit* - we come out, assess everything, lock in a fixed price on the spot. \n\n" 
                         "What are you looking to get sorted?"
                     )
 
