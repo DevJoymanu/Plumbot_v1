@@ -5568,15 +5568,18 @@ I understand this is time-sensitive!"""
                     "Which suburb are you in?"
 
                     plan_or_visit:
-                    "Two ways we can do this:
-
-                    *Option 1 — Send a photo or plan*
-                    Got a drawing or picture? Send it here. Our senior plumber reviews it within 24hrs and calls you directly.
-
-                    *Option 2 — Free on-site assessment*
-                    We come to you, measure everything properly, and give you a fixed price before a single pipe is touched. No guesswork, no surprises.
-
-                    Most clients go with the visit. Which works better for you?"
+                    "Perfect! For a new home bathroom with toilet installation, we recommend starting with a free on-site assessment to ensure everything is properly planned.
+                    To give you an accurate fixed quote (not rough estimates), we have two fast options:
+                    *Option 1 — Send Your Plan*
+                    If you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.
+                    *Option 2 — Free On-Site Assessment*
+                    We come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site.
+                    This does three things for you:
+                    *1. Eliminates guesswork* — no assumptions, no surprises
+                    *2. Locks in your fixed price* — you know exactly what you're paying before a single pipe is touched
+                    *3. Saves you money* — catching problems before the job starts costs nothing. Catching them during costs a lot.
+                    Most serious clients choose the visit because it saves money long term.
+                    Which works better for you — send a plan, or have us come out?"
 
                     availability:
                     "What day works for you? Drop a date and time and we'll lock it in."

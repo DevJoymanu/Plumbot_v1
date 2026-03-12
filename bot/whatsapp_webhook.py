@@ -11,6 +11,7 @@ FIXES IN THIS VERSION:
 """
 from django.db.models import Value
 from django.db.models.functions import Concat
+from django.db.models.functions import Replace
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -559,6 +560,10 @@ def process_webhook_in_background(body):
 
 def process_message_change(value):
     try:
+        statuses = value.get('statuses', [])
+        if statuses:
+            process_status_updates(statuses)
+
         messages = value.get('messages', [])
         for message in messages:
             message_type = message.get('type')
@@ -604,6 +609,112 @@ def process_message_change(value):
 
     except Exception as e:
         print(f"❌ Error processing message: {str(e)}")
+
+
+def _clean_phone(raw_phone: str) -> str:
+    return (raw_phone or "").replace("whatsapp:", "").replace("+", "").strip()
+
+
+def _find_appointment_by_recipient(recipient_id: str) -> Optional[Appointment]:
+    """
+    Best-effort lookup from webhook status recipient_id (usually digits only)
+    to our stored appointment phone formats.
+    """
+    cleaned = _clean_phone(recipient_id)
+    if not cleaned:
+        return None
+
+    direct_candidates = {
+        cleaned,
+        f"+{cleaned}",
+        f"whatsapp:{cleaned}",
+        f"whatsapp:+{cleaned}",
+    }
+    appointment = (
+        Appointment.objects.filter(phone_number__in=direct_candidates)
+        .order_by('-updated_at')
+        .first()
+    )
+    if appointment:
+        return appointment
+
+    return (
+        Appointment.objects.annotate(
+            clean_phone=Replace(
+                Replace(
+                    Replace('phone_number', Value('whatsapp:+'), Value('')),
+                    Value('whatsapp:'),
+                    Value(''),
+                ),
+                Value('+'),
+                Value(''),
+            )
+        )
+        .filter(clean_phone=cleaned)
+        .order_by('-updated_at')
+        .first()
+    )
+
+
+def _format_status_errors(errors: list) -> str:
+    if not errors:
+        return ""
+    parts = []
+    for err in errors:
+        code = err.get('code')
+        title = err.get('title') or err.get('message') or 'Unknown error'
+        details = err.get('error_data', {}).get('details')
+        piece = f"code={code}, title={title}"
+        if details:
+            piece += f", details={details}"
+        parts.append(piece)
+    return " | ".join(parts)
+
+
+def process_status_updates(statuses):
+    """
+    Handle asynchronous WhatsApp outbound delivery state updates.
+    This is the source of truth for delivered/read/failed, not send-time logs.
+    """
+    for status_obj in statuses:
+        try:
+            message_id = status_obj.get('id', '')
+            status_name = (status_obj.get('status') or 'unknown').lower()
+            recipient_id = status_obj.get('recipient_id', '')
+            timestamp = status_obj.get('timestamp', '')
+            conversation_id = (status_obj.get('conversation') or {}).get('id', '')
+            pricing_model = (status_obj.get('pricing') or {}).get('pricing_model', '')
+            billable = (status_obj.get('pricing') or {}).get('billable')
+            errors = status_obj.get('errors') or []
+            error_text = _format_status_errors(errors)
+
+            appointment = _find_appointment_by_recipient(recipient_id) if recipient_id else None
+            appointment_ref = f"appointment_id={appointment.id}" if appointment else "appointment_id=unknown"
+
+            print(
+                f"📶 WhatsApp status: status={status_name}, recipient={recipient_id}, "
+                f"message_id={message_id}, ts={timestamp}, {appointment_ref}, "
+                f"conversation_id={conversation_id or 'n/a'}, "
+                f"pricing_model={pricing_model or 'n/a'}, billable={billable}"
+            )
+
+            if error_text:
+                print(f"❌ WhatsApp delivery error: {error_text}")
+
+            # Persist failure context where team can see it in appointment details.
+            if status_name == 'failed' and appointment:
+                note = (
+                    f"[WA Delivery Failure] recipient=+{_clean_phone(recipient_id)} "
+                    f"message_id={message_id} timestamp={timestamp} "
+                    f"errors={error_text or 'unknown'}"
+                )
+                existing = (appointment.internal_notes or "").strip()
+                appointment.internal_notes = f"{note}\n{existing}".strip()
+                appointment.save(update_fields=['internal_notes'])
+
+        except Exception as status_err:
+            print(f"❌ Failed to process status update: {status_err}")
+
 
 def handle_location_message(sender, location_data):
     try:
