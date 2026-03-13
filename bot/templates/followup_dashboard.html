@@ -10,6 +10,16 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h3 mb-0">📊 Follow-up Dashboard</h1>
         <div>
+            <form method="get" class="d-inline me-2">
+                <select name="response_age" class="form-select d-inline-block" style="width:auto;" aria-label="Filter by response age">
+                    <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
+                    <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
+                    <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
+                </select>
+                <button type="submit" class="btn btn-outline-primary ms-1">
+                    <i class="bi bi-check"></i> Apply
+                </button>
+            </form>
             <form method="post" action="{% url 'manual_followup_check' %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-primary">
@@ -17,6 +27,7 @@
                 </button>
             </form>
         </div>
+    </div>
     </div>
 
     <!-- Statistics Cards -->
@@ -113,7 +124,7 @@
         <div class="col-md-6">
             <div class="card mb-4">
                 <div class="card-header bg-success text-white">
-                    <h5 class="mb-0">✅ Recent Responses (Last 7 Days)</h5>
+                    <h5 class="mb-0">✅ Recent Responses ({{ response_age_label }})</h5>
                 </div>
                 <div class="card-body">
                     {% if recent_responses %}
@@ -178,3 +189,4 @@
     }
 </style>
 {% endblock %}
+

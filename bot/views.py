@@ -1272,19 +1272,33 @@ class DashboardView(TemplateView):
 
         today = timezone.now().date()
         tomorrow = today + timedelta(days=1)
+        now = timezone.now()
+        response_age = self.request.GET.get('response_age', '').strip()
+        if not response_age:
+            response_age = '1w_minus'
+
+        age_map_minus = {
+            '1w_minus': timedelta(weeks=1),
+            '4w_minus': timedelta(weeks=4),
+        }
 
         # Add stats to context
         appointments = Appointment.objects.all()
+        if response_age != 'all' and response_age in age_map_minus:
+            cutoff = now - age_map_minus[response_age]
+            appointments = appointments.filter(last_customer_response__gte=cutoff)
+
         context.update({
+            'selected_response_age': response_age,
             'total_appointments': appointments.count(),
             'pending_appointments': appointments.filter(status='pending').count(),
             'confirmed_appointments': appointments.filter(status='confirmed').count(),
             'recent_appointments': appointments.order_by('-created_at')[:5],
-            'todays_confirmed_appointments': Appointment.objects.filter(
+            'todays_confirmed_appointments': appointments.filter(
                 status='confirmed',
                 scheduled_datetime__date=today
             ).order_by('scheduled_datetime'),
-            'tomorrows_confirmed_appointments': Appointment.objects.filter(
+            'tomorrows_confirmed_appointments': appointments.filter(
                 status='confirmed',
                 scheduled_datetime__date=tomorrow
             ).order_by('scheduled_datetime'),
@@ -1305,6 +1319,15 @@ class AppointmentsListView(ListView):
 
     def get_queryset(self):
         from django.db.models import Case, IntegerField, Q, Value, When
+
+        response_age = self.request.GET.get('response_age', '').strip()
+        if not response_age:
+            response_age = '1w_minus'
+
+        age_map_minus = {
+            '1w_minus': timedelta(weeks=1),
+            '4w_minus': timedelta(weeks=4),
+        }
 
         has_project_type = Case(
             When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
@@ -1333,7 +1356,7 @@ class AppointmentsListView(ListView):
         )
 
         completed_fields = has_project_type + has_property_type + has_area + has_timeline + has_site_visit
-        return (
+        queryset = (
             Appointment.objects.annotate(
                 computed_score=Case(
                     When(scheduled_datetime__isnull=False, then=Value(100)),
@@ -1358,24 +1381,45 @@ class AppointmentsListView(ListView):
             ).order_by('-updated_at')
         )
 
+        if response_age != 'all' and response_age in age_map_minus:
+            cutoff = timezone.now() - age_map_minus[response_age]
+            queryset = queryset.filter(last_customer_response__gte=cutoff)
+
+        return queryset
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
+        response_age = self.request.GET.get('response_age', '').strip()
+        if not response_age:
+            response_age = '1w_minus'
+
+        age_map_minus = {
+            '1w_minus': timedelta(weeks=1),
+            '4w_minus': timedelta(weeks=4),
+        }
+
+        base_qs = Appointment.objects.all()
+        if response_age != 'all' and response_age in age_map_minus:
+            cutoff = timezone.now() - age_map_minus[response_age]
+            base_qs = base_qs.filter(last_customer_response__gte=cutoff)
+
         today = timezone.now().date()
-        todays_confirmed_appointments = Appointment.objects.filter(
+        todays_confirmed_appointments = base_qs.filter(
             status='confirmed',
             scheduled_datetime__date=today
         ).order_by('scheduled_datetime')
 
 
         context['status_counts'] = {
-            'total': Appointment.objects.count(),
-            'pending': Appointment.objects.filter(status='pending').count(),
-            'confirmed': Appointment.objects.filter(status='confirmed').count(),
-            'cancelled': Appointment.objects.filter(status='cancelled').count(),
+            'total': base_qs.count(),
+            'pending': base_qs.filter(status='pending').count(),
+            'confirmed': base_qs.filter(status='confirmed').count(),
+            'cancelled': base_qs.filter(status='cancelled').count(),
             'todays_confirmed_appointments': todays_confirmed_appointments,
 
         }
+        context['selected_response_age'] = response_age
         return context
 
 
@@ -2619,20 +2663,37 @@ def followup_dashboard(request):
     from datetime import timedelta
     
     now = timezone.now()
+    response_age = request.GET.get('response_age', '').strip()
+    if not response_age:
+        response_age = '1w_minus'
+
+    age_map_minus = {
+        '1w_minus': timedelta(weeks=1),
+        '4w_minus': timedelta(weeks=4),
+    }
+    cutoff = None
+    if response_age != 'all' and response_age in age_map_minus:
+        cutoff = now - age_map_minus[response_age]
     
     # Get statistics
-    total_active_leads = Appointment.objects.filter(
+    base_active = Appointment.objects.filter(
         is_lead_active=True,
         status='pending'
-    ).count()
+    )
+    if cutoff:
+        base_active = base_active.filter(last_customer_response__gte=cutoff)
+    total_active_leads = base_active.count()
     
     # Leads by follow-up stage
     stage_counts = {}
     for stage_code, stage_name in Appointment._meta.get_field('followup_stage').choices:
-        count = Appointment.objects.filter(
+        stage_qs = Appointment.objects.filter(
             is_lead_active=True,
             followup_stage=stage_code
-        ).count()
+        )
+        if cutoff:
+            stage_qs = stage_qs.filter(last_customer_response__gte=cutoff)
+        count = stage_qs.count()
         if count > 0:
             stage_counts[stage_name] = count
     
@@ -2645,6 +2706,8 @@ def followup_dashboard(request):
     ).exclude(
         followup_stage='responded'
     )
+    if cutoff:
+        leads_needing_followup = leads_needing_followup.filter(last_customer_response__gte=cutoff)
     
     # Filter to those actually ready for follow-up
     ready_for_followup = [
@@ -2652,11 +2715,14 @@ def followup_dashboard(request):
         if lead.should_send_followup_now()
     ]
     
-    # Recent responses (last 7 days)
+    # Recent responses (based on filter)
     recent_responses = Appointment.objects.filter(
-        last_customer_response__gte=now - timedelta(days=7),
+        last_customer_response__isnull=False,
         is_lead_active=True
-    ).order_by('-last_customer_response')[:10]
+    )
+    if cutoff:
+        recent_responses = recent_responses.filter(last_customer_response__gte=cutoff)
+    recent_responses = recent_responses.order_by('-last_customer_response')[:10]
     
     # Inactive leads (last 30 days)
     recent_inactive = Appointment.objects.filter(
@@ -2671,6 +2737,10 @@ def followup_dashboard(request):
         'ready_leads': ready_for_followup[:20],  # First 20
         'recent_responses': recent_responses,
         'recent_inactive': recent_inactive,
+        'selected_response_age': response_age,
+        'response_age_label': 'All-time' if response_age == 'all' else (
+            'Last 30 Days' if response_age == '4w_minus' else 'Last 7 Days'
+        ),
     }
     
     return render(request, 'followup_dashboard.html', context)

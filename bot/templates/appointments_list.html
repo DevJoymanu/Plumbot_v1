@@ -368,6 +368,16 @@
             <h2><i class="fas fa-filter"></i> Appointments</h2>
         </div>
         <div class="actions">
+            <form method="get" class="actions" style="gap: 8px;">
+                <select name="response_age" class="btn" aria-label="Filter by response age">
+                    <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
+                    <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
+                    <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
+                </select>
+                <button type="submit" class="btn btn-secondary">
+                    <i class="fas fa-check"></i> Apply
+                </button>
+            </form>
             <a href="{% url 'export_appointments' %}" class="btn btn-secondary">
                 <i class="fas fa-download"></i> Export
             </a>
@@ -449,7 +459,7 @@
             <ul class="pagination">
                 {% if page_obj.has_previous %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}" aria-label="Previous">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}&response_age={{ selected_response_age }}" aria-label="Previous">
                         <span aria-hidden="true">&laquo;</span>
                     </a>
                 </li>
@@ -459,13 +469,13 @@
                 {% if page_obj.number == num %}
                 <li class="page-item active"><a class="page-link" href="#">{{ num }}</a></li>
                 {% else %}
-                <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ num }}&response_age={{ selected_response_age }}">{{ num }}</a></li>
                 {% endif %}
                 {% endfor %}
 
                 {% if page_obj.has_next %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}" aria-label="Next">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}&response_age={{ selected_response_age }}" aria-label="Next">
                         <span aria-hidden="true">&raquo;</span>
                     </a>
                 </li>

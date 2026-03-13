@@ -6,6 +6,24 @@
     <p>Manage WhatsApp appointments and customer communications</p>
 </div>
 
+<div class="card" style="margin-bottom: 20px;">
+    <form method="get" class="appointment-header" style="margin-bottom: 0;">
+        <div>
+            <h2><i class="fas fa-filter"></i> Lead Response Filter</h2>
+        </div>
+        <div class="actions">
+            <select name="response_age" class="btn" aria-label="Filter by response age">
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
+                <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
+            </select>
+            <button type="submit" class="btn btn-secondary">
+                <i class="fas fa-check"></i> Apply
+            </button>
+        </div>
+    </form>
+</div>
+
 <div class="dashboard-grid">
     <!-- Statistics Cards -->
     <div class="card stat-card">
