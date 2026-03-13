@@ -1463,6 +1463,8 @@ class PriorityLeadsView(TemplateView):
         )
 
         response_age = self.request.GET.get('response_age', '').strip()
+        if not response_age:
+            response_age = '1w_minus'
         age_map_plus = {
             '1w': timedelta(weeks=1),
             '2w': timedelta(weeks=2),
