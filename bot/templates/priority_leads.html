@@ -990,15 +990,9 @@
     <div class="card-label"><i class="fas fa-filter"></i> Response Age Filter</div>
     <form method="get" class="filter-desktop-row">
         <select name="response_age" id="desktop_age_select" class="form-control">
-            <option value="">All response ages</option>
-            <option value="1w">No response for 1 week+</option>
-            <option value="2w">No response for 2 weeks+</option>
-            <option value="3w">No response for 3 weeks+</option>
-            <option value="1m">No response for 1 month+</option>
-            <option value="1w_minus">Last response within 1 week</option>
-            <option value="2w_minus">Last response within 2 weeks</option>
-            <option value="3w_minus">Last response within 3 weeks</option>
-            <option value="4w_minus">Last response within 4 weeks</option>
+            <option value="1w_minus">Last response within 7 days</option>
+            <option value="4w_minus">Last response within 30 days</option>
+            <option value="all">All-time</option>
         </select>
         <button type="submit" class="btn btn-sm"><i class="fas fa-check"></i> Apply</button>
         <a href="{% url 'priority_leads' %}" class="btn btn-sm btn-secondary"><i class="fas fa-undo"></i> Reset</a>
@@ -1330,15 +1324,9 @@
         <label class="filter-select-label" for="mobile_age_select">Response Age</label>
         <div class="filter-select-wrapper">
             <select name="response_age" id="mobile_age_select" class="form-control">
-                <option value="">All response ages</option>
-                <option value="1w">No response for 1 week+</option>
-                <option value="2w">No response for 2 weeks+</option>
-                <option value="3w">No response for 3 weeks+</option>
-                <option value="1m">No response for 1 month+</option>
-                <option value="1w_minus">Last response within 1 week</option>
-                <option value="2w_minus">Last response within 2 weeks</option>
-                <option value="3w_minus">Last response within 3 weeks</option>
-                <option value="4w_minus">Last response within 4 weeks</option>
+                <option value="1w_minus">Last response within 7 days</option>
+                <option value="4w_minus">Last response within 30 days</option>
+                <option value="all">All-time</option>
             </select>
         </div>
         <div class="sheet-actions">

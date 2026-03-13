@@ -1517,7 +1517,9 @@ class PriorityLeadsView(TemplateView):
             .order_by('status_rank', F('recent_activity').desc(nulls_last=True), '-computed_score')
         )
 
-        if response_age in age_map_minus:
+        if response_age == 'all':
+            pass
+        elif response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
             leads = leads.filter(last_response_at__gte=cutoff)
         elif response_age in age_map_plus:
