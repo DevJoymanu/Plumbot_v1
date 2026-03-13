@@ -23,14 +23,13 @@
             padding: 0;
             box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
-            -webkit-text-size-adjust: 100%;
         }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             min-height: 100vh;
-            color: #000;
+            color: #333;
             line-height: 1.5;
         }
 
@@ -43,24 +42,24 @@
 
         /* Header Styles */
         .header {
-            background: #ffffff;
+            background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
             border-radius: 12px;
             padding: 20px 15px;
             margin-bottom: 20px;
             text-align: center;
-            border: 1px solid #e5e7eb;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
         .header h1 {
-            color: #000;
+            color: white;
             font-size: clamp(1.5rem, 5vw, 2.5rem);
             margin-bottom: 8px;
-            text-shadow: none;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
         }
 
         .header p {
-            color: #000;
+            color: rgba(255, 255, 255, 0.9);
             font-size: clamp(0.9rem, 3vw, 1.1rem);
         }
 
@@ -80,7 +79,6 @@
             transition: transform 0.2s ease, box-shadow 0.2s ease;
             border: 1px solid rgba(255, 255, 255, 0.2);
             overflow: hidden;
-            color: #000;
         }
 
         .card:hover {
@@ -189,7 +187,7 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            color: #000;
+            color: var(--secondary);
             font-size: clamp(0.8rem, 3vw, 0.9rem);
             white-space: nowrap;
             overflow: hidden;
@@ -257,7 +255,7 @@
         .empty-state {
             text-align: center;
             padding: 30px 20px;
-            color: #000;
+            color: var(--secondary);
         }
 
         .empty-state i {
@@ -328,7 +326,7 @@
 
         /* Navigation */
         .navbar {
-            background: #ffffff;
+            background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
             border-radius: 12px;
             padding: 15px;
@@ -336,7 +334,6 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
-            border: 1px solid #e5e7eb;
         }
 
         @media (min-width: 768px) {
@@ -348,7 +345,7 @@
         }
 
         .navbar-brand {
-            color: #000;
+            color: white;
             font-size: clamp(1.2rem, 5vw, 1.5rem);
             font-weight: bold;
             text-decoration: none;
@@ -366,7 +363,7 @@
         }
 
         .navbar-nav a {
-            color: #000;
+            color: rgba(255, 255, 255, 0.9);
             text-decoration: none;
             padding: 8px 12px;
             border-radius: 8px;
@@ -378,7 +375,7 @@
         }
 
         .navbar-nav a:active {
-            background: #e5e7eb;
+            background: rgba(255, 255, 255, 0.3);
         }
 
         /* Progress Bar */
@@ -506,35 +503,8 @@
         }
 
         .text-muted {
-            color: #000;
+            color: var(--secondary);
             font-size: 0.85em;
-        }
-
-        a {
-            color: #000;
-        }
-
-        a:hover {
-            color: #000;
-        }
-
-        img, video, canvas, svg {
-            max-width: 100%;
-            height: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .table-responsive {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        button, .btn, input, select, textarea {
-            min-height: 44px;
         }
 
         /* Mobile-specific optimizations */
@@ -600,16 +570,16 @@
                             class="nav-text">Dashboard</span></a></li>
                 <li><a href="{% url 'appointments_list' %}"><i class="fas fa-calendar-alt"></i> <span
                             class="nav-text">Appointments</span></a></li>
-                <li><a href="{% url 'priority_leads' %}"><i class="fas fa-bolt"></i> <span
-                            class="nav-text">Priority Leads</span></a></li>
+                <li><a href="{% url 'priority_leads' %}"><i class="fas fa-bolt"></i> <span class="nav-text">Priority
+                            Leads</span></a></li>
                 <li><a href="{% url 'followup_dashboard' %}"><i class="fas fa-calendar-alt"></i> <span
                             class="nav-text">Follow Ups</span></a></li>
-                            <li><a href="{% url 'job_appointments_list' %}"><i class="fas fa-hard-hat"></i> <span
+                <li><a href="{% url 'job_appointments_list' %}"><i class="fas fa-hard-hat"></i> <span
                             class="nav-text">Job appointments</span></a></li>
                 <li><a href="{% url 'quotation_templates_list' %}"><i class="fas fa-file-invoice"></i> <span
                             class="nav-text">Templates</span></a></li>
 
-             <!--   <li><a href="{% url 'calendar' %}"><i class="fas fa-calendar"></i> <span class="nav-text">Calendar</span></a></li>-->
+                <!--   <li><a href="{% url 'calendar' %}"><i class="fas fa-calendar"></i> <span class="nav-text">Calendar</span></a></li>-->
 
             </ul>
         </nav>
