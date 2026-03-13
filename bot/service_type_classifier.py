@@ -84,6 +84,14 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         'i.*m building.*extension',  # "I'm building an extension"
         'building an extension',
         'adding an extension',
+        # Shona / mixed
+        'imba itsva',                 # new house
+        'kugadzira imba itsva',       # building a new house
+        'kuvaka imba',                # building a house
+        'plumbing yeimba itsva',
+        'mapombi matsva',             # new pipes
+        'kuisa mapombi',              # install pipes
+        'kuisa plumbing',
     ]),
 
     # ── KITCHEN RENOVATION ────────────────────────────────────────────────────
@@ -111,6 +119,12 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         'kitchen water',
         'kitchen basin',
         'kitchen sink',              # unambiguous — must be before generic 'sink' rules
+        # Shona / mixed
+        'kicheni',                    # kitchen
+        'sink yekicheni',
+        'bheseni rekicheni',
+        'tap yekicheni',
+        'pombi dzekicheni',
     ]),
 
     # ── BATHROOM RENOVATION ───────────────────────────────────────────────────
@@ -156,6 +170,14 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         'shower enclosure',
         'bidet',
         'urinal',
+        # Shona / mixed
+        'chimbuzi',                  # toilet
+        'bhavhu',                    # bath tub
+        'bhavu',                     # alt spelling
+        'shawa',                     # shower
+        'bheseni',                   # basin/sink
+        'sink yemubathroom',
+        'bheseni remubathroom',
     ]),
 ]
 

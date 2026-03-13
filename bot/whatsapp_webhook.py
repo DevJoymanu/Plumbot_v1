@@ -29,6 +29,7 @@ import random
 from pathlib import Path
 from .services.lead_scoring import refresh_lead_score
 from typing import Optional
+from openai import OpenAI
 
 
 PREVIOUS_WORK_IMAGE_URLS = [
@@ -52,6 +53,69 @@ _plumber_alert_lock = threading.Lock()
 _text_dedupe_lock = threading.Lock()
 _recent_text_events: dict = {}  # key=(sender, normalized_text) -> monotonic timestamp
 TEXT_DEDUPE_WINDOW_SECONDS = 20
+
+# DeepSeek client for translation (optional)
+_DEEPSEEK_KEY = os.environ.get('DEEPSEEK_API_KEY')
+_deepseek = (
+    OpenAI(api_key=_DEEPSEEK_KEY, base_url='https://api.deepseek.com/v1')
+    if _DEEPSEEK_KEY else None
+)
+
+
+def _translate_reply_for_customer(customer_message: str, reply: str) -> str:
+    """
+    Translate the bot reply based on the customer's language.
+    - If customer writes in Shona: respond in Shona.
+    - If mixed: respond in both Shona and English (Shona first).
+    - If English: keep English.
+    """
+    if not _deepseek or not reply:
+        return reply
+
+    try:
+        prompt = f"""You are a translation + response formatter for a Zimbabwean plumbing company's chatbot.
+
+Customer message (language signal):
+\"\"\"{customer_message}\"\"\"
+
+Bot reply (to translate/format):
+\"\"\"{reply}\"\"\"
+
+TASK:
+1) Detect the customer's language: English, Shona, or Mixed.
+2) Output the bot reply based on that:
+   - If English: return the reply in English (can lightly polish but do NOT change meaning).
+   - If Shona: return the reply in Shona.
+   - If Mixed: return BOTH Shona and English, in that order, separated by a blank line.
+
+RULES:
+- Preserve all numbers, prices, dates, times, emojis, bullet points, and line breaks.
+- Do NOT add extra info or remove any details.
+- Return ONLY the final reply text, no labels or explanations.
+"""
+
+        response = _deepseek.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a precise translator. "
+                        "Return only the final reply text with preserved formatting."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            max_tokens=800,
+        )
+
+        translated = response.choices[0].message.content.strip()
+        return translated if translated else reply
+
+    except Exception as exc:
+        print(f"Translation error (DeepSeek): {exc}")
+        return reply
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -293,11 +357,20 @@ def delayed_response(sender, reply, delay_seconds):
 
 def detect_objection_type(message: str) -> str:
     message_lower = message.lower()
-    if any(k in message_lower for k in ['how much', 'cost', 'price', 'expensive', 'kuisa', 'mari']):
+    if any(k in message_lower for k in [
+        'how much', 'cost', 'price', 'expensive',
+        'kuisa', 'mari', 'mutengo', 'marii', 'bhadhara', 'zvinodhura', 'inodhura'
+    ]):
         return 'pricing'
-    if any(k in message_lower for k in ['how long', 'duration', 'when finish']):
+    if any(k in message_lower for k in [
+        'how long', 'duration', 'when finish',
+        'nguva', 'rinopera riini', 'rinopedza riini', 'mangani mazuva'
+    ]):
         return 'timeline'
-    if any(k in message_lower for k in ['when can you', 'available', 'come']):
+    if any(k in message_lower for k in [
+        'when can you', 'available', 'come',
+        'munouya rini', 'mungauya rini', 'mauya rini'
+    ]):
         return 'availability'
     return 'other'
 
@@ -1015,6 +1088,8 @@ def handle_text_message(sender, text_data, message_id=None):
                 message_body,
                 precomputed_service_inquiry=inquiry if not mid_conversation else None,
             )
+
+        reply = _translate_reply_for_customer(message_body, reply)
 
         print(f"Final reply: {reply[:100]}...")
 

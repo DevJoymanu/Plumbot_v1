@@ -4503,7 +4503,11 @@ I understand this is time-sensitive!"""
                     has_plan_indicators = [
                         'has_plan', 'has plan', 'have plan', 'got plan',
                         'yes', 'yep', 'yeah', 'yup', 'true',
-                        'have it', 'got it', 'i do', 'i have'
+                        'have it', 'got it', 'i do', 'i have',
+                        # Shona/mixed
+                        'hongu', 'ehe', 'ndine plan', 'ndinayo plan', 'tine plan',
+                        'ndine blueprint', 'ndinayo blueprint', 'ndine mapepa',
+                        'ndine drawing', 'ndinayo drawing', 'ndine maplani'
                     ]
                     
                     needs_visit_indicators = [
@@ -4511,7 +4515,10 @@ I understand this is time-sensitive!"""
                         'site visit', 'site_visit',
                         'no', 'nope', 'nah', 'false',
                         'no plan', 'dont have', "don't have",
-                        'visit', 'prefer visit'
+                        'visit', 'prefer visit',
+                        # Shona/mixed
+                        'kwete', 'handina plan', 'hapana plan', 'sina plan',
+                        'mauye muone', 'uyai muone', 'tiuye muone', 'shanyira'
                     ]
                     
                     updated = False
@@ -4780,6 +4787,7 @@ I understand this is time-sensitive!"""
             
             extraction_prompt = f"""
             You are a comprehensive data extraction assistant for a plumbing appointment system.
+            Customers may write in English, Shona, or mixed language.
             
             CRITICAL: You MUST return ONLY a valid JSON object with no markdown formatting, code blocks, or extra text.
             
@@ -4802,7 +4810,9 @@ I understand this is time-sensitive!"""
             EXTRACTION TARGETS:
             
             SERVICE TYPE - Look for:
-            - Keywords: bathroom, kitchen, plumbing, installation, renovation, repair, toilet, shower, sink
+            - English keywords: bathroom, kitchen, plumbing, installation, renovation, repair, toilet, shower, sink
+            - Shona/mixed keywords: chimbuzi (toilet), shawa (shower), bhavhu/bhavu (bathtub),
+              bheseni (basin/sink), kicheni (kitchen), mapombi (pipes), imba itsva (new house)
             - Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
             
             
@@ -4824,9 +4834,13 @@ I understand this is time-sensitive!"""
             YES indicators (customer HAS plan):
             - Direct: "yes", "yeah", "yep", "i do", "i have", "got plan", "have plan"
             - Future: "will send", "i'll send", "send later", "let me send"
+            - Shona/mixed: "hongu", "ehe", "ndine plan", "ndinayo plan", "tine plan",
+              "ndine blueprint", "ndinayo blueprint", "ndine mapepa"
             
             NO indicators (customer needs site visit):
             - Direct: "no", "nope", "don't have", "no plan", "need visit", "site visit"
+            - Shona/mixed: "kwete", "handina plan", "hapana plan", "sina plan",
+              "mauye muone", "uyai muone", "tiuye muone", "shanyira"
             
             IF IN DOUBT: Return null (better to ask again than assume wrong answer)
             
@@ -4839,7 +4853,8 @@ I understand this is time-sensitive!"""
             - Return: timeline as stated
             
             PROPERTY TYPE - Look for:
-            - Keywords: house, home, apartment, flat, business, office, commercial, shop, store
+            - English keywords: house, home, apartment, flat, business, office, commercial, shop, store
+            - Shona/mixed keywords: imba (house/home), bhizimisi (business), shopu (shop)
             - Return: "house", "apartment", or "business"
             
             AVAILABILITY/DATETIME - Look for:
@@ -4887,6 +4902,25 @@ I understand this is time-sensitive!"""
             try:
                 extracted_data = json.loads(ai_response)
                 print(f"🤖 AI extracted data: {extracted_data}")
+                # Shona fallback: plan_or_visit responses (only when actively asking)
+                if next_question == "plan_or_visit" and not extracted_data.get("plan_status"):
+                    msg = (message or "").lower().strip()
+                    has_plan_terms = [
+                        "hongu", "ehe", "ndine plan", "ndinayo plan", "tine plan",
+                        "ndine blueprint", "ndinayo blueprint", "ndine mapepa",
+                        "ndine drawing", "ndinayo drawing", "ndine maplani",
+                    ]
+                    needs_visit_terms = [
+                        "kwete", "handina plan", "hapana plan", "sina plan",
+                        "mauye muone", "uyai muone", "tiuye muone", "shanyira",
+                        "site visit", "come see", "come and see",
+                    ]
+                    if any(term in msg for term in has_plan_terms):
+                        extracted_data["plan_status"] = "has_plan"
+                        print("✅ Shona fallback: detected HAS_PLAN")
+                    elif any(term in msg for term in needs_visit_terms):
+                        extracted_data["plan_status"] = "needs_visit"
+                        print("✅ Shona fallback: detected NEEDS_VISIT")
                 
                 # ADDITIONAL SAFETY CHECK: Never extract plan_status if we already have it
                 if self.appointment.has_plan is not None and extracted_data.get('plan_status'):
@@ -7447,4 +7481,5 @@ def download_and_save_media(media_url, content_type, appointment, file_index):
     except Exception as e:
         print(f"❌ Error downloading/saving media: {str(e)}")
         return None
+
 
