@@ -45,6 +45,63 @@
         margin-bottom: 20px;
     }
 
+    .filter-card {
+        background: rgba(255, 255, 255, 0.98);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        overflow: hidden;
+    }
+
+    .filter-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    .filter-row {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .filter-row select {
+        width: 100%;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px 14px;
+        font-size: clamp(0.9rem, 3.5vw, 1rem);
+        background: white;
+        min-height: 48px;
+        font-family: inherit;
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right 16px center;
+        background-size: 1.2em;
+        transition: all 0.2s ease;
+    }
+
+    .filter-row select:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .filter-actions {
+        display: flex;
+        gap: 10px;
+        width: 100%;
+    }
+
+    .filter-actions .btn {
+        flex: 1;
+        min-height: 48px;
+    }
+
     .appointment-header h2 {
         font-size: clamp(1.2rem, 4vw, 1.5rem);
         margin: 0;
@@ -368,20 +425,24 @@
             <h2><i class="fas fa-filter"></i> Appointments</h2>
         </div>
         <div class="actions">
-            <form method="get" class="actions" style="gap: 8px;">
-                <select name="response_age" class="btn" aria-label="Filter by response age">
-                    <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
-                    <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
-                    <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
-                </select>
-                <button type="submit" class="btn btn-secondary">
-                    <i class="fas fa-check"></i> Apply
-                </button>
-            </form>
             <a href="{% url 'export_appointments' %}" class="btn btn-secondary">
                 <i class="fas fa-download"></i> Export
             </a>
         </div>
+    </div>
+
+    <div class="filter-card">
+        <form method="get" class="filter-row">
+            <select name="response_age" aria-label="Filter by response age">
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
+                <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
+            </select>
+            <div class="filter-actions">
+                <button type="submit" class="btn">Apply</button>
+                <a href="{% url 'appointments_list' %}" class="btn btn-secondary" role="button">Reset</a>
+            </div>
+        </form>
     </div>
 
     <div class="dashboard-grid">
