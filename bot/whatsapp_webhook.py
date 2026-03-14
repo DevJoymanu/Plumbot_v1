@@ -73,25 +73,29 @@ def _translate_reply_for_customer(customer_message: str, reply: str) -> str:
         return reply
 
     try:
-        prompt = f"""You are a translation + response formatter for a Zimbabwean plumbing company's chatbot.
+        prompt = f"""You are a language detector and translator for a Zimbabwean plumbing company's chatbot.
 
 Customer message (language signal):
 \"\"\"{customer_message}\"\"\"
 
-Bot reply (to translate/format):
+Bot reply (English):
 \"\"\"{reply}\"\"\"
 
 TASK:
-1) Detect the customer's language: English, Shona, or Mixed.
-2) Output the bot reply based on that:
-   - If English: return the reply in English (can lightly polish but do NOT change meaning).
-   - If Shona: return the reply in Shona.
-   - If Mixed: return BOTH Shona and English, in that order, separated by a blank line.
+1) Detect the customer's language as: "english", "shona", or "mixed".
+2) If language is "shona" or "mixed", translate the bot reply into Shona.
+3) If language is "english", do NOT translate.
 
 RULES:
-- Preserve all numbers, prices, dates, times, emojis, bullet points, and line breaks.
+- Preserve numbers, prices, dates, times, emojis, bullet points, and line breaks.
 - Do NOT add extra info or remove any details.
-- Return ONLY the final reply text, no labels or explanations.
+- Return ONLY valid JSON in the exact format below.
+
+RESPONSE JSON FORMAT:
+{{
+  "language": "english|shona|mixed",
+  "shona_reply": "translated text or empty string"
+}}
 """
 
         response = _deepseek.chat.completions.create(
@@ -99,19 +103,29 @@ RULES:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are a precise translator. "
-                        "Return only the final reply text with preserved formatting."
-                    ),
+                    "content": "Return ONLY valid JSON. No markdown or extra text.",
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.2,
-            max_tokens=800,
+            temperature=0.1,
+            max_tokens=600,
         )
 
-        translated = response.choices[0].message.content.strip()
-        return translated if translated else reply
+        raw = response.choices[0].message.content.strip()
+        raw = raw.replace('```json', '').replace('```', '').strip()
+        result = json.loads(raw)
+
+        language = (result.get('language') or '').strip().lower()
+        shona_reply = (result.get('shona_reply') or '').strip()
+
+        if language == 'shona':
+            return shona_reply or reply
+        if language == 'mixed':
+            if shona_reply:
+                return f"{shona_reply}\n\n{reply}"
+            return reply
+        # Default: English only
+        return reply
 
     except Exception as exc:
         print(f"Translation error (DeepSeek): {exc}")
