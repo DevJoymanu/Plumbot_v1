@@ -1,7 +1,11 @@
 from django.test import TestCase
 from django.utils import timezone
 
+from datetime import timedelta
+from unittest.mock import patch
+
 from .models import Appointment, LeadStatus
+from .management.commands.send_followups import Command
 from .services.lead_scoring import calculate_lead_score, refresh_lead_score
 
 
@@ -54,3 +58,36 @@ class LeadScoringTests(TestCase):
         self.assertEqual(appointment.lead_score, 100)
         self.assertEqual(appointment.lead_status, LeadStatus.VERY_HOT)
         self.assertTrue(appointment.chatbot_paused)
+
+
+class FollowUpDeliveryModeTests(TestCase):
+    def setUp(self):
+        self.command = Command()
+
+    @patch('bot.management.commands.send_followups.whatsapp_api.send_text_message')
+    @patch('bot.management.commands.send_followups.whatsapp_api.send_template_message')
+    def test_uses_freeform_text_inside_24_hour_window(self, mock_send_template, mock_send_text):
+        lead = Appointment.objects.create(
+            phone_number='whatsapp:+10000000006',
+            last_customer_response=timezone.now() - timedelta(hours=2),
+        )
+
+        mode = self.command._send_followup_message(lead, 'Checking in on your plumbing job.')
+
+        self.assertEqual(mode, 'text')
+        mock_send_text.assert_called_once_with('10000000006', 'Checking in on your plumbing job.')
+        mock_send_template.assert_not_called()
+
+    @patch('bot.management.commands.send_followups.whatsapp_api.send_text_message')
+    @patch('bot.management.commands.send_followups.whatsapp_api.send_template_message')
+    def test_rejects_outside_24_hour_window(self, mock_send_template, mock_send_text):
+        lead = Appointment.objects.create(
+            phone_number='whatsapp:+10000000007',
+            last_customer_response=timezone.now() - timedelta(days=2),
+        )
+
+        with self.assertRaises(RuntimeError):
+            self.command._send_followup_message(lead, 'Checking in on your plumbing job.')
+
+        mock_send_text.assert_not_called()
+        mock_send_template.assert_not_called()

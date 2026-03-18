@@ -82,6 +82,7 @@ deepseek_client = (
 )
 
 SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
+WHATSAPP_SERVICE_WINDOW = timedelta(hours=24)
 
 # ─── Contact windows (local hour, half-open) ─────────────────────────────────
 CONTACT_WINDOWS = [
@@ -137,6 +138,29 @@ class Command(BaseCommand):
         'pattern interrupts. Also handles plan-upload nudges for customers '
         'who promised to send a plan but have not uploaded yet.'
     )
+
+    def _latest_customer_inbound_at(self, lead):
+        return lead.last_customer_response or lead.last_inbound_at
+
+    def _is_whatsapp_service_window_open(self, lead, now=None):
+        now = now or timezone.now()
+        last_inbound = self._latest_customer_inbound_at(lead)
+        if not last_inbound:
+            return False
+        return (now - last_inbound) <= WHATSAPP_SERVICE_WINDOW
+
+    def _send_followup_message(self, lead, message, now=None):
+        now = now or timezone.now()
+        clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
+
+        if not self._is_whatsapp_service_window_open(lead, now=now):
+            raise RuntimeError(
+                'Automatic follow-ups are restricted to the free WhatsApp '
+                '24-hour service window.'
+            )
+
+        whatsapp_api.send_text_message(clean_phone, message)
+        return 'text'
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true',
@@ -251,6 +275,7 @@ class Command(BaseCommand):
 
     def _get_plan_eligible_leads(self, now_local):
         from django.db.models import Q
+        service_window_start = timezone.now() - WHATSAPP_SERVICE_WINDOW
 
         return (
             Appointment.objects
@@ -258,6 +283,10 @@ class Command(BaseCommand):
                 is_lead_active=True,
                 status='pending',
                 has_plan=True,
+            )
+            .filter(
+                Q(last_customer_response__gte=service_window_start) |
+                Q(last_inbound_at__gte=service_window_start)
             )
             # No file uploaded yet
             .filter(Q(plan_file='') | Q(plan_file__isnull=True))
@@ -295,19 +324,23 @@ class Command(BaseCommand):
             ))
             return 'skipped'
 
-        clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-        whatsapp_api.send_text_message(clean_phone, message)
+        send_mode = self._send_followup_message(lead, message)
 
         # Advance counters and set next not-before to tomorrow 19:00
+        sent_at = timezone.now()
         tomorrow_19 = (now_local + timedelta(days=1)).replace(
             hour=19, minute=0, second=0, microsecond=0
         )
         lead.plan_followup_attempts = attempt
-        lead.last_followup_sent     = timezone.now()
+        lead.last_followup_sent     = sent_at
+        lead.last_outbound_at       = sent_at
+        lead.last_contacted_at      = sent_at
         lead.plan_followup_not_before = tomorrow_19.astimezone(pytz.utc)
         lead.save(update_fields=[
             'plan_followup_attempts',
             'last_followup_sent',
+            'last_outbound_at',
+            'last_contacted_at',
             'plan_followup_not_before',
         ])
 
@@ -338,17 +371,20 @@ class Command(BaseCommand):
             ))
             return 'skipped'
 
-        clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-        whatsapp_api.send_text_message(clean_phone, message)
+        send_mode = self._send_followup_message(lead, message)
 
         # Flip to site-visit flow
         lead.has_plan              = False
         lead.plan_status           = None
         lead.plan_followup_attempts = MAX_PLAN_FOLLOWUP_ATTEMPTS   # prevents re-entry
-        lead.last_followup_sent    = timezone.now()
+        sent_at = timezone.now()
+        lead.last_followup_sent    = sent_at
+        lead.last_outbound_at      = sent_at
+        lead.last_contacted_at     = sent_at
         lead.save(update_fields=[
             'has_plan', 'plan_status',
             'plan_followup_attempts', 'last_followup_sent',
+            'last_outbound_at', 'last_contacted_at',
         ])
 
         lead.add_conversation_message('assistant', f'[PLAN PIVOT → SITE VISIT] {message}')
@@ -614,10 +650,15 @@ Return ONLY one of these tokens — nothing else:
         from django.db.models import Q
 
         response_window = now_local - timedelta(hours=2/60)
+        service_window_start = timezone.now() - WHATSAPP_SERVICE_WINDOW
 
         leads = (
             Appointment.objects
             .filter(is_lead_active=True, status='pending')
+            .filter(
+                Q(last_customer_response__gte=service_window_start) |
+                Q(last_inbound_at__gte=service_window_start)
+            )
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
             .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
@@ -637,42 +678,50 @@ Return ONLY one of these tokens — nothing else:
         from django.db.models import Q
 
         response_window = now_local - timedelta(hours=2/60)
+        service_window_start = timezone.now() - WHATSAPP_SERVICE_WINDOW
         plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book']) | Q(plan_status='pending_upload')
 
         q0 = Appointment.objects.filter(is_lead_active=True, status='pending')
         c0 = q0.count()
 
-        q1 = q0.exclude(followup_stage='completed')
+        q1 = q0.filter(
+            Q(last_customer_response__gte=service_window_start) |
+            Q(last_inbound_at__gte=service_window_start)
+        )
         c1 = q1.count()
 
-        q2 = q1.exclude(last_customer_response__gte=response_window)
+        q2 = q1.exclude(followup_stage='completed')
         c2 = q2.count()
 
-        q3 = q2.exclude(plan_block_q)
+        q3 = q2.exclude(last_customer_response__gte=response_window)
         c3 = q3.count()
 
+        q4 = q3.exclude(plan_block_q)
+        c4 = q4.count()
+
         removed_daily_cap = 0
-        c4 = c3
+        c5 = c4
         if not force:
             today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
             cold_warm_sent_today = Q(
                 last_followup_sent__gte=today_start,
                 lead_status__in=[LeadStatus.COLD, LeadStatus.WARM]
             )
-            q4 = q3.exclude(cold_warm_sent_today)
-            c4 = q4.count()
-            removed_daily_cap = c3 - c4
+            q5 = q4.exclude(cold_warm_sent_today)
+            c5 = q5.count()
+            removed_daily_cap = c4 - c5
 
         self.stdout.write(self.style.WARNING('🔎 Eligibility breakdown'))
         self.stdout.write(f'  active_pending: {c0}')
-        self.stdout.write(f'  excluded_completed_stage: {c0 - c1}')
-        self.stdout.write(f'  excluded_recent_response_24h: {c1 - c2}')
-        self.stdout.write(f'  excluded_plan_flow: {c2 - c3}')
+        self.stdout.write(f'  excluded_outside_free_24h_window: {c0 - c1}')
+        self.stdout.write(f'  excluded_completed_stage: {c1 - c2}')
+        self.stdout.write(f'  excluded_recent_response_2min: {c2 - c3}')
+        self.stdout.write(f'  excluded_plan_flow: {c3 - c4}')
         if force:
             self.stdout.write('  excluded_cold_warm_sent_today: 0 (force mode)')
         else:
             self.stdout.write(f'  excluded_cold_warm_sent_today: {removed_daily_cap}')
-        self.stdout.write(f'  eligible_after_filters: {c4}')
+        self.stdout.write(f'  eligible_after_filters: {c5}')
 
     def _process_lead(self, lead, now_local, dry_run, force):
         ready, reason = self._is_ready_for_followup(lead, now_local, force)
@@ -710,13 +759,22 @@ Return ONLY one of these tokens — nothing else:
             )
             return {'status': 'sent', **result}
 
-        clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-        whatsapp_api.send_text_message(clean_phone, message)
+        send_mode = self._send_followup_message(lead, message)
 
-        lead.last_followup_sent = timezone.now()
+        sent_at = timezone.now()
+        lead.last_followup_sent = sent_at
+        lead.last_outbound_at   = sent_at
+        lead.last_contacted_at  = sent_at
         lead.followup_count    += 1
         lead.followup_stage     = self._stage_label(lead)
-        lead.save()
+        lead.save(update_fields=[
+            'last_followup_sent',
+            'last_outbound_at',
+            'last_contacted_at',
+            'followup_count',
+            'followup_stage',
+            'updated_at',
+        ])
 
         lead.add_conversation_message('assistant', f'[AUTO FOLLOW-UP] {message}')
 

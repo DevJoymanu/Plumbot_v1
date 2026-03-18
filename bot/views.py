@@ -3066,7 +3066,15 @@ class Plumbot:
             'thanks', 'thank you', 'thank u', 'thx', 'thnx',
             'noted', 'got it', 'alright', 'cool', 'nice', 'great',
             '👍', '🙏', '✅', '😊', 'ooh ok', 'ooh okay',
-            'sharp', 'sharp!','shap','bo','bho',  # ← ADD THIS
+            'sharp', 'sharp!','shap','bo','bho',     
+            'oh ok', 'oh okay', 'oh ok thanks', 'oh okay thanks',
+            'ooh ok', 'ooh okay',
+            'ok bye', 'okay bye', 'bye', 'no worries',
+            'i see', 'understood', 'i understand',
+            'oh ok', 'oh okay', 'oh ok thanks', 'oh okay thanks',
+            'ooh ok', 'ooh okay',
+            'ok bye', 'okay bye', 'bye', 'no worries',
+            'i see', 'understood', 'i understand', # ← ADD THIS
         }
         if msg in short_acks:
             return True
@@ -3099,6 +3107,25 @@ class Plumbot:
     def generate_response(self, incoming_message, precomputed_service_inquiry=None):
         """Check service inquiries ONLY when not mid-conversation."""
         try:
+            # ── EXIT / DELAY SIGNAL — checked FIRST, before anything else ────
+            # Catches: "ok thanks", "noted", "oh ok", "no worries", 👍, etc.
+            # Only suppress auto-reply when:
+            #   (a) no service type collected yet — truly early / pre-conversation, OR
+            #   (b) appointment is already confirmed — customer is just acknowledging
+            _no_project_yet = not self.appointment.project_type
+            _already_confirmed = self.appointment.status == 'confirmed'
+            if self._is_delay_or_exit_signal(incoming_message) and (
+                _no_project_yet or _already_confirmed
+            ):
+                print(
+                    f"⏸️ Exit/delay signal at conversation start or post-confirm "
+                    f"— acknowledging and stopping"
+                )
+                reply = self._get_delay_acknowledgment()
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
+ 
             current_question = self.get_next_question_to_ask()
             #
             any_pricing_sent = (
@@ -3120,176 +3147,6 @@ class Plumbot:
                 )
             )
             if not mid_conversation:
-                inquiry = precomputed_service_inquiry or self.detect_service_inquiry(incoming_message)
-                PRODUCT_INTENTS = {
-                    'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
-                    'vanity', 'bathtub_installation', 'toilet', 'chamber',
-                    'facebook_package', 'location_ask', 'location_visit',
-                    'previous_quotation', 'pictures',
-                }
-                if inquiry.get('intent') != 'none' and (
-                    inquiry.get('confidence') == 'HIGH' or
-                    inquiry.get('intent') in PRODUCT_INTENTS
-                ):
-                    intent = inquiry['intent']
-                    sent = list(getattr(self.appointment, 'sent_pricing_intents', None) or [])
-                    if intent in sent:
-                        print(f"⏭️ Skipping already-sent service inquiry: {intent}")
-                    else:
-                        print(f"💡 Handling service inquiry: {intent}")
-                        reply = self.handle_service_inquiry(intent, incoming_message)
-                        sent.append(intent)
-                        self.appointment.sent_pricing_intents = sent
-                        self.appointment.save(update_fields=['sent_pricing_intents'])
-                        self.appointment.add_conversation_message("user", incoming_message)
-                        self.appointment.add_conversation_message("assistant", reply)
-                        return reply
-
-            # ✅ THIS BLOCK must be at the same indent level as the if above (8 spaces)
-            if (self.appointment.has_plan is True and
-                    self.appointment.plan_status == 'pending_upload'):
-                return self.handle_plan_upload_flow(incoming_message)
-
-            if (self.appointment.has_plan is True and
-                    self.appointment.plan_status == 'plan_uploaded'):
-                return self.handle_post_upload_messages(incoming_message)
-
-            # Check if user is awaiting plumber contact after plan upload
-            if (self.appointment.has_plan is True and 
-                self.appointment.plan_status == 'plan_uploaded'):
-                return self.handle_post_upload_messages(incoming_message)
-
-            # STEP 1: Check if this is an alternative time selection
-            if (self.appointment.status == 'pending' and 
-                self.appointment.project_type and 
-                self.appointment.customer_area and 
-                self.appointment.timeline and 
-                self.appointment.property_type and 
-                not self.appointment.customer_name):
-                
-                selected_time = self.process_alternative_time_selection(incoming_message)
-                
-                if selected_time:
-                    print(f"🎯 Customer selecting alternative time: {selected_time}")
-                    
-                    booking_result = self.book_appointment_with_selected_time(selected_time)
-                    
-                    if booking_result['success']:
-                        reply = f"Perfect! I've booked your appointment for {booking_result['datetime']}. To complete your booking, may I have your full name?"
-                    else:
-                        alternatives = booking_result.get('alternatives', [])
-                        if alternatives:
-                            alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
-                            reply = f"That time isn't available either. Here are some other options:\n{alt_text}\n\nWhich works better for you?"
-                        else:
-                            reply = "I'm having trouble finding available times. Could you suggest a completely different day? Our hours are 8 AM - 6 PM, Monday to Friday."
-                    
-                    self.appointment.add_conversation_message("user", incoming_message)
-                    self.appointment.add_conversation_message("assistant", reply)
-                    return reply
-            
-            
-            if self._is_delay_or_exit_signal(incoming_message):
-                print(f"⏸️ FIX 3: Delay/exit signal detected — not pushing further")
-                reply = self._get_delay_acknowledgment()
-                self.appointment.add_conversation_message("user", incoming_message)
-                self.appointment.add_conversation_message("assistant", reply)
-                return reply
-
-
-
-            # STEP 2: Extract ALL available information from the message
-            extracted_data = self.extract_all_available_info_with_ai(incoming_message)
-            
-            # ✅ NEW: Check for "I'll send it later" responses BEFORE updating
-            if self.handle_plan_later_response(incoming_message):
-                # Customer will send plan later - acknowledge and continue
-                next_question = self.get_next_question_to_ask()
-                
-                if next_question != "complete":
-                    acknowledgment = "Perfect! You can send your plan whenever you're ready. "
-                    
-                    # Generate next question
-                    reply = self.generate_contextual_response(
-                        incoming_message, 
-                        next_question, 
-                        ['plan_status']  # Indicate that plan status was handled
-                    )
-                    
-                    # Prepend acknowledgment
-                    reply = acknowledgment + reply
-                    
-                    # Update conversation history
-                    #self.appointment.add_conversation_message("user", incoming_message)
-                    #self.appointment.add_conversation_message("assistant", reply)
-                    
-                    return reply
-            
-            # STEP 3: Update appointment with extracted data
-            updated_fields = self.update_appointment_with_extracted_data(extracted_data)
-            
-            # STEP 4: Check for reschedule requests (for confirmed appointments)
-            if (self.appointment.status == 'confirmed' and 
-                self.appointment.scheduled_datetime and 
-                self.detect_reschedule_request_with_ai(incoming_message)):
-                
-                print("🤖 AI detected reschedule request, handling...")
-                reschedule_response = self.handle_reschedule_request_with_ai(incoming_message)
-                
-                self.appointment.add_conversation_message("user", incoming_message)
-                self.appointment.add_conversation_message("assistant", reschedule_response)
-                
-                return reschedule_response
-            
-            # STEP 5: Determine what to do next
-            next_question = self.get_next_question_to_ask()
-            
-            # STEP 6: Check if we can book the appointment
-            booking_status = self.smart_booking_check()
-            
-            # For users without plans, continue normal booking flow
-            if (booking_status['ready_to_book'] and 
-                self.appointment.status != 'confirmed' and
-                self.appointment.has_plan is False):
-                
-                booking_result = self.book_appointment(incoming_message)
-                
-                #
-                if booking_result['success']:
-                    reply = f"Perfect! I've booked your appointment for {booking_result['datetime']}. To complete your booking, may I have your full name?"
-                else:
-                    error = booking_result.get('error', '')
-                    alternatives = booking_result.get('alternatives', [])
-                    
-                    # ✅ Saturday-specific message
-                    if 'saturday' in error.lower() or not alternatives:
-                        alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
-                        reply = (
-                            "We unfortunately don't operate on Saturdays. 😊\n\n"
-                            "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
-                        )
-                        if alt_text:
-                            reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
-                        else:
-                            reply += "Could you please suggest a different date and time that works for you?"
-                    else:
-                        alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
-                        reply = f"That time isn't available either. Here are some other options:\n{alt_text}\n\nWhich works better for you?"
-            else:
-                # Generate contextual response
-                reply = self.generate_contextual_response(incoming_message, next_question, updated_fields)
-            
-            # Update conversation history
-            self.appointment.add_conversation_message("user", incoming_message)
-            self.appointment.add_conversation_message("assistant", reply)
-            
-            return reply
-
-        except Exception as e:
-            print(f"❌ API Error: {str(e)}")
-            return "I'm having some trouble connecting to our system. Could you try again in a moment?"
-
-
 
 
 
