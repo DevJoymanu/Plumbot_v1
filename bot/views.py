@@ -3824,6 +3824,11 @@ When you're finished sending everything, just type "done" or "finished" and I'll
 
     Customer message: "{message}"
 
+    "If the customer mentions multiple products (e.g. tub AND chamber, toilet AND
+    shower), classify as 'bathtub_installation' if a tub is mentioned, otherwise
+    pick the most prominent product.  Never return 'none' just because multiple
+    products are mentioned — pick the most specific/expensive one."
+
     INTENTS:
     - tub_sales: asking if we sell tubs or about small bathroom tubs
     - standalone_tub: asking about standalone/freestanding tub price or availability
