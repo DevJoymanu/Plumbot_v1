@@ -30,7 +30,11 @@ from pathlib import Path
 from .services.lead_scoring import refresh_lead_score
 from typing import Optional
 from openai import OpenAI
-
+from .repeated_question_detector import (
+    detect_repeated_question,
+    generate_repeat_clarification,
+    detect_language_simple,
+)
 
 PREVIOUS_WORK_IMAGE_URLS = [
     url.strip()
@@ -1094,6 +1098,42 @@ def handle_text_message(sender, text_data, message_id=None):
                 reply = plumbot.generate_pricing_overview(message_body)
                 appointment.pricing_overview_sent = True
                 appointment.save(update_fields=['pricing_overview_sent'])
+
+        # ── STEP 3b: Repeated-question detection ─────────────────────────────
+        # Fires when the customer re-asks something already answered — even with
+        # completely different wording.  Generates a reassuring, explanatory
+        # reply that acknowledges them, explains the original answer, asks if
+        # they need more clarity, and redirects technical queries to the plumber.
+        if reply is None:
+            repeat_info = detect_repeated_question(
+                message_body,
+                appointment.conversation_history or [],
+            )
+            if repeat_info:
+                print(
+                    f"🔁 Repeated question detected — matched: "
+                    f"'{repeat_info['matched_question'][:60]}'"
+                )
+                lang = detect_language_simple(message_body)
+                plumber_contact = (
+                    getattr(appointment, 'plumber_contact_number', None)
+                    or '+263774819901'
+                )
+                reply = generate_repeat_clarification(
+                    new_message=message_body,
+                    matched_question=repeat_info['matched_question'],
+                    matched_answer=repeat_info['matched_answer'],
+                    plumber_number=plumber_contact,
+                    language_hint=lang,
+                )
+ 
+        # ── STEP 4: Normal Plumbot processing ────────────────────────────────
+        if reply is None:
+            print("Running normal Plumbot processing")
+            reply = plumbot.generate_response(
+                message_body,
+                precomputed_service_inquiry=inquiry if not mid_conversation else None,
+            )
 
         # ── STEP 4: Normal Plumbot processing ────────────────────────────────
         if reply is None:
