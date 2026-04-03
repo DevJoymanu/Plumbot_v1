@@ -3075,8 +3075,10 @@ class Plumbot:
         dt = self.appointment.scheduled_datetime
         if dt is None:
             return False
-        # If hour != 0 we already stored a real time (not just a date)
-        if dt.hour != 0 or dt.minute != 0:
+        sa_tz = pytz.timezone('Africa/Johannesburg')
+        local_dt = dt.astimezone(sa_tz) if dt.tzinfo else sa_tz.localize(dt)
+        # Only treat a time as confirmed if it is non-midnight in local time.
+        if local_dt.hour != 0 or local_dt.minute != 0:
             return True
         # Fallback flag written when we auto-assign a time
         return 'TIME_CONFIRMED' in (self.appointment.internal_notes or '')
@@ -3336,6 +3338,7 @@ class Plumbot:
         generic_non_answers = {
             'hi', 'hello', 'hey', 'ok', 'okay', 'alright', 'cool', 'sharp',
             'thanks', 'thank you', 'noted', 'yes', 'no', 'bathroom',
+            'bathroom renovation', 'kitchen renovation', 'new plumbing installation',
         }
         if msg_lower in generic_non_answers:
             return False
