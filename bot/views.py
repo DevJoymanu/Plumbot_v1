@@ -3271,6 +3271,10 @@ class Plumbot:
         )
         return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
 
+    def _appointment_has_field(self, field_name: str) -> bool:
+        """Return True only if the Appointment model has this concrete field."""
+        return any(f.name == field_name for f in self.appointment._meta.concrete_fields)
+
 
     def generate_response(self, incoming_message, precomputed_service_inquiry=None):
         """Check service inquiries ONLY when not mid-conversation."""
@@ -3825,7 +3829,8 @@ system_prompt
 
             if is_plan_later:
                 self.appointment.has_plan = True
-                self.appointment.save()
+                if self._appointment_has_field('retry_count'):
+                    self.appointment.save(update_fields=['retry_count'])
                 print(f"✅ Updated: has_plan = True (customer will send plan later)")
 
             return is_plan_later
@@ -5300,7 +5305,8 @@ I understand this is time-sensitive!"""
                     print(f"✅ Updated customer_name: {self.appointment.customer_name}")
     
             if updated_fields:
-                self.appointment.save()
+                if self._appointment_has_field('retry_count'):
+                    self.appointment.save(update_fields=['retry_count'])
                 refresh_lead_score(self.appointment)
                 print(f"💾 Saved appointment with updated fields: {updated_fields}")
             else:
@@ -5345,7 +5351,8 @@ I understand this is time-sensitive!"""
                 print(f"Requested time is on Saturday (closed): weekday {weekday}")
                 # ✅ Clear the invalid datetime so it doesn't loop on every message
                 self.appointment.scheduled_datetime = None
-                self.appointment.save()
+                if self._appointment_has_field('retry_count'):
+                    self.appointment.save(update_fields=['retry_count'])
                 return False, "saturday_closed"
 
             # 3. Check business hours (8 AM - 6 PM)
@@ -5885,7 +5892,7 @@ I understand this is time-sensitive!"""
                     day_b = self._format_day(days[1]) if len(days) > 1 else "the day after"
                     visit_desc = self._describe_project_context()
                     return (
-                        f"What works better for you, {day_a} or {day_b}, for us to come through "
+                        f"Great, what works better for you, {day_a} or {day_b}, for us to come through "
                         f"and {visit_desc} so there are no surprises and we can give you an accurate quote?"
                     )
     
@@ -5965,8 +5972,9 @@ I understand this is time-sensitive!"""
                 self.appointment.retry_count = 0
             else:
                 self.appointment.retry_count = retry_count + 1
-            self.appointment.save(update_fields=['retry_count'] if hasattr(self.appointment, 'retry_count') else [])
-    
+            if self._appointment_has_field('retry_count'):
+                self.appointment.save(update_fields=['retry_count'])
+
             return reply
     
         except Exception as e:
@@ -6046,7 +6054,8 @@ I understand this is time-sensitive!"""
             if parsed_datetime:
                 # Store the datetime for later use
                 self.appointment.scheduled_datetime = parsed_datetime
-                self.appointment.save()
+                if self._appointment_has_field('retry_count'):
+                    self.appointment.save(update_fields=['retry_count'])
                 
                 print(f"📅 Early datetime provision captured: {parsed_datetime}")
                 
