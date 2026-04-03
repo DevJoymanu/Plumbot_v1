@@ -3221,6 +3221,18 @@ class Plumbot:
             "we'll pick up right where we left off."
         )
 
+    def _explicitly_requests_price(self, message: str) -> bool:
+        """Return True only when the customer clearly asks about pricing."""
+        msg = (message or '').strip().lower()
+        if not msg:
+            return False
+
+        price_markers = (
+            'price', 'pricing', 'cost', 'quote', 'quotation', 'how much',
+            'how much is', 'how much are', 'charges', 'charge', 'rate', 'rates',
+            'mutengo', 'marii', 'mari', 'zvinodhura', 'inodhura', 'bhadhara',
+        )
+        return any(marker in msg for marker in price_markers)
 
 
     def generate_response(self, incoming_message, precomputed_service_inquiry=None):
@@ -3273,13 +3285,19 @@ class Plumbot:
                     'facebook_package', 'location_ask', 'location_visit',
                     'previous_quotation', 'pictures',
                 }
+                NON_PRICING_AUTO_REPLY_INTENTS = {
+                    'location_ask', 'location_visit', 'previous_quotation', 'pictures',
+                }
                 if inquiry.get('intent') != 'none' and (
                     inquiry.get('confidence') == 'HIGH' or
                     inquiry.get('intent') in PRODUCT_INTENTS
                 ):
                     intent = inquiry['intent']
+                    price_requested = self._explicitly_requests_price(incoming_message)
                     sent = list(getattr(self.appointment, 'sent_pricing_intents', None) or [])
-                    if intent in sent:
+                    if intent not in NON_PRICING_AUTO_REPLY_INTENTS and not price_requested:
+                        print(f"Skipping priced service inquiry: {intent} - no explicit price request")
+                    elif intent in sent:
                         print(f"⏭️ Skipping already-sent service inquiry: {intent}")
                     else:
                         print(f"💡 Handling service inquiry: {intent}")

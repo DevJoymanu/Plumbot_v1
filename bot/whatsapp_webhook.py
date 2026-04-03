@@ -393,6 +393,22 @@ def detect_objection_type(message: str) -> str:
     return 'other'
 
 
+def _explicitly_requests_price(message: str) -> bool:
+    """
+    Return True only when the customer clearly asks about pricing.
+    """
+    msg = (message or '').strip().lower()
+    if not msg:
+        return False
+
+    price_markers = (
+        'price', 'pricing', 'cost', 'quote', 'quotation', 'how much',
+        'how much is', 'how much are', 'charges', 'charge', 'rate', 'rates',
+        'mutengo', 'marii', 'mari', 'zvinodhura', 'inodhura', 'bhadhara',
+    )
+    return any(marker in msg for marker in price_markers)
+
+
 def is_post_booking_ack_message(message: str) -> bool:
     msg = (message or "").strip().lower()
     if not msg:
@@ -1069,15 +1085,24 @@ def handle_text_message(sender, text_data, message_id=None):
                 'facebook_package', 'location_ask', 'location_visit',
                 'previous_quotation', 'pictures',
             }
+            NON_PRICING_AUTO_REPLY_INTENTS = {
+                'location_ask', 'location_visit', 'previous_quotation', 'pictures',
+            }
             if inquiry.get('intent') != 'none' and (
                 inquiry.get('confidence') == 'HIGH' or
                 inquiry.get('intent') in PRODUCT_INTENTS
             ):
 
                 intent = inquiry['intent']
+                price_requested = _explicitly_requests_price(message_body)
 
                 # FIX 1: Only send pricing for this intent once per lead
-                if _has_sent_pricing_for_intent(appointment, intent):
+                if intent not in NON_PRICING_AUTO_REPLY_INTENTS and not price_requested:
+                    print(
+                        f"Skipping priced service inquiry for intent: {intent} "
+                        f"- no explicit price request"
+                    )
+                elif _has_sent_pricing_for_intent(appointment, intent):
                     print(f"⏭️ Skipping already-sent pricing for intent: {intent} — falling through to bot")
                     # reply stays None → falls through to normal Plumbot below
                 else:
