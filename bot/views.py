@@ -3049,7 +3049,126 @@ class Plumbot:
             defaults={'status': 'pending'}
         )
 
+    # ─────────────────────────────────────────────────────────────────────────────
+    # NEW HELPER: _time_confirmed
+    # ─────────────────────────────────────────────────────────────────────────────
     
+    def _time_confirmed(self) -> bool:
+        """
+        Returns True when a specific time (not just a date) has been stored on
+        scheduled_datetime.  We consider the time confirmed if scheduled_datetime
+        has a non-midnight hour OR if the flag TIME_CONFIRMED is present in
+        internal_notes.
+        """
+        dt = self.appointment.scheduled_datetime
+        if dt is None:
+            return False
+        # If hour != 0 we already stored a real time (not just a date)
+        if dt.hour != 0 or dt.minute != 0:
+            return True
+        # Fallback flag written when we auto-assign a time
+        return 'TIME_CONFIRMED' in (self.appointment.internal_notes or '')
+    
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # NEW HELPER: _mark_time_confirmed
+    # ─────────────────────────────────────────────────────────────────────────────
+    
+    def _mark_time_confirmed(self):
+        notes = self.appointment.internal_notes or ''
+        if 'TIME_CONFIRMED' not in notes:
+            self.appointment.internal_notes = (notes + '\n[TIME_CONFIRMED]').strip()
+            self.appointment.save(update_fields=['internal_notes'])
+    
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # NEW HELPER: _get_next_two_available_days
+    # ─────────────────────────────────────────────────────────────────────────────
+    
+    def _get_next_two_available_days(self) -> list:
+        """
+        Return the next two calendar dates (as datetime.date objects) that:
+        - Are not Saturday (our only closed day)
+        - Are in the future (from tomorrow onwards)
+        """
+        import pytz
+        from datetime import timedelta
+        sa_tz = pytz.timezone('Africa/Johannesburg')
+        today = timezone.now().astimezone(sa_tz).date()
+        results = []
+        check = today + timedelta(days=1)
+        while len(results) < 2:
+            if check.weekday() != 5:   # 5 = Saturday
+                results.append(check)
+            check += timedelta(days=1)
+        return results
+    
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # NEW HELPER: _get_two_available_times_for_date
+    # ─────────────────────────────────────────────────────────────────────────────
+    
+    def _get_two_available_times_for_date(self, date_obj) -> list:
+        """
+        Return two available time slots (as datetime objects, timezone-aware)
+        for a given date.  Checks against existing confirmed appointments.
+        Prefers 9 AM and 2 PM; falls back to next available business-hours slots.
+        """
+        import pytz
+        from datetime import datetime as dt, timedelta
+        sa_tz = pytz.timezone('Africa/Johannesburg')
+        preferred_hours = [9, 14, 10, 11, 13, 15, 16]
+        results = []
+        for h in preferred_hours:
+            candidate = sa_tz.localize(dt.combine(date_obj, dt.min.time().replace(hour=h)))
+            if candidate <= timezone.now():
+                continue
+            is_avail, _ = self.check_appointment_availability(candidate)
+            if is_avail:
+                results.append(candidate)
+            if len(results) == 2:
+                break
+        return results
+    
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # NEW HELPER: _describe_project_context  (used in date question)
+    # ─────────────────────────────────────────────────────────────────────────────
+    
+    def _describe_project_context(self) -> str:
+        """Build a short, human-readable visit purpose based on project details."""
+        project = (self.appointment.project_type or '').lower().replace('_', ' ')
+        desc    = (self.appointment.project_description or '').lower()
+    
+        # Keyword-based specifics
+        if 'drain' in desc or 'pipe' in desc:
+            return 'have a quick look at the drains/pipes'
+        if 'toilet' in desc or 'chimbuzi' in desc:
+            return 'have a quick look at the toilet setup'
+        if 'shower' in desc or 'bath' in desc or 'tub' in desc:
+            return 'have a quick look at the bathroom space'
+        if 'kitchen' in project or 'kitchen' in desc:
+            return 'have a quick look at the kitchen plumbing'
+        if 'geyser' in desc:
+            return 'have a quick look at the geyser setup'
+        if 'installation' in project:
+            return 'have a quick look at the site for the installation'
+    
+        # Generic fallback
+        return 'have a quick look at the space'
+    
+    
+    # ─────────────────────────────────────────────────────────────────────────────
+    # NEW HELPER: _format_day  (short human-friendly date label)
+    # ─────────────────────────────────────────────────────────────────────────────
+    
+    def _format_day(self, date_obj) -> str:
+        """Return e.g. 'Monday the 7th' or 'Tuesday the 8th'."""
+        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_name  = day_names[date_obj.weekday()]
+        day_num   = date_obj.day
+        suffix    = 'th' if 11 <= day_num <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day_num % 10, 'th')
+        return f"{day_name} the {day_num}{suffix}"
     #
     # ── FIX 3 helpers ────────────────────────────────────────────────────────
 
@@ -4545,183 +4664,98 @@ I understand this is time-sensitive!"""
             print(f"Error checking conversation history: {str(e)}")
             return False
     #
-    def update_appointment_with_extracted_data(self, extracted_data):
-        """Update appointment with extracted data - FIXED VERSION"""
+    def extract_all_available_info_with_ai(self, message):
+        """
+        Extract ALL possible appointment info from any message.
+        Updated for new flow: service → description → datetime → area.
+        """
         try:
-            updated_fields = []
-            next_question = self.get_next_question_to_ask()
-            
-            print(f"🔄 Updating appointment - Current question: {next_question}")
-            print(f"📦 Extracted data: {extracted_data}")
-            
-            # Service type - only update if we don't have one and AI found one
-            if (extracted_data.get('service_type') and 
-                extracted_data.get('service_type') != 'null' and
-                not self.appointment.project_type):
-                self.appointment.project_type = extracted_data['service_type']
-                updated_fields.append('service_type')
-                print(f"✅ Updated service_type: {self.appointment.project_type}")
-            #
-            # AUTO-INFER: If we asked plan_or_visit and the customer replied with an area
-            # name instead of yes/no, treat it as "I want a site visit" and capture the area.
-            if (next_question == "plan_or_visit" and
-                    self.appointment.has_plan is None and
-                    extracted_data.get('area') and
-                    extracted_data.get('area') != 'null' and
-                    not extracted_data.get('plan_status')):
-                print(
-                    f"🏘️ Customer answered plan question with area "
-                    f"'{extracted_data['area']}' — inferring site visit"
-                )
-                self.appointment.has_plan = False
-                if not self.appointment.customer_area:
-                    self.appointment.customer_area = extracted_data['area']
-                    updated_fields.append('area')
-                updated_fields.append('plan_status')
-                self.appointment.save()
-                refresh_lead_score(self.appointment)
-                print(
-                    f"✅ Auto-set: has_plan=False, "
-                    f"customer_area={self.appointment.customer_area}"
-                )
-                return updated_fields
-
-            # EMERGENCY FIX: Plan status with response normalization
-            if extracted_data.get('plan_status') and extracted_data.get('plan_status') != 'null':
-                
-                # SAFETY CHECK 1: Never update if already set
-                if self.appointment.has_plan is not None:
-                    print(f"🛡️ SAFETY: Blocked plan_status update - already set to {self.appointment.has_plan}")
-                
-                # SAFETY CHECK 2: Only update if we're actually asking about it
-                elif next_question != "plan_or_visit":
-                    print(f"🛡️ SAFETY: Blocked plan_status update - not currently asking about plans (question: {next_question})")
-                
-                # SAFETY CHECK 3: Normalize and validate response
-                else:
-                    old_value = self.appointment.has_plan
-                    plan_status = str(extracted_data['plan_status']).lower().strip()
-                    
-                    # Map ALL possible AI responses to boolean
-                    # Handles: 'has_plan', 'yes', 'true', 'no', 'false', 'needs_visit'
-                    has_plan_indicators = [
-                        'has_plan', 'has plan', 'have plan', 'got plan',
-                        'yes', 'yep', 'yeah', 'yup', 'true',
-                        'have it', 'got it', 'i do', 'i have',
-                        # Shona/mixed
-                        'hongu', 'ehe', 'ndine plan', 'ndinayo plan', 'tine plan',
-                        'ndine blueprint', 'ndinayo blueprint', 'ndine mapepa',
-                        'ndine drawing', 'ndinayo drawing', 'ndine maplani'
-                    ]
-                    
-                    needs_visit_indicators = [
-                        'needs_visit', 'needs visit', 'need visit', 
-                        'site visit', 'site_visit',
-                        'no', 'nope', 'nah', 'false',
-                        'no plan', 'dont have', "don't have",
-                        'visit', 'prefer visit',
-                        # Shona/mixed
-                        'kwete', 'handina plan', 'hapana plan', 'sina plan',
-                        'mauye muone', 'uyai muone', 'tiuye muone', 'shanyira'
-                    ]
-                    
-                    updated = False
-                    
-                    # Check if response indicates HAS plan
-                    if any(indicator in plan_status for indicator in has_plan_indicators):
-                        self.appointment.has_plan = True
-                        updated_fields.append('plan_status')
-                        updated = True
-                        print(f"✅ Updated plan status: {old_value} -> True (matched: {plan_status})")
-                    
-                    # Check if response indicates NEEDS visit
-                    elif any(indicator in plan_status for indicator in needs_visit_indicators):
-                        self.appointment.has_plan = False
-                        updated_fields.append('plan_status')
-                        updated = True
-                        print(f"✅ Updated plan status: {old_value} -> False (matched: {plan_status})")
-                    
-                    # Unrecognized response
-                    else:
-                        print(f"⚠️ WARNING: Unrecognized plan_status value: '{plan_status}'")
-                        print(f"Expected variants of: has_plan/needs_visit or yes/no")
-                        print(f"Bot will ask the question again with different phrasing")
-            
-            # Area - only update if we don't have one and AI found one
-            if (extracted_data.get('area') and 
-                extracted_data.get('area') != 'null' and
-                not self.appointment.customer_area):
-                self.appointment.customer_area = extracted_data['area']
-                updated_fields.append('area')
-                print(f"✅ Updated area: {self.appointment.customer_area}")
-            
-            # Timeline - only update if we don't have one and AI found one
-            # Timeline - only update if we don't have one and AI found one
-            # Timeline — capture passively if volunteered; no longer gates progress
-            if (extracted_data.get('timeline') and
-                    extracted_data.get('timeline') != 'null' and
-                    not self.appointment.timeline):
-                timeline_value = extracted_data['timeline']
-                saturday_indicators = ['saturday', 'sat']
-                if not any(s in timeline_value.lower() for s in saturday_indicators):
-                    self.appointment.timeline = timeline_value
-                    updated_fields.append('timeline')
-                    print(f"✅ Captured timeline passively: {self.appointment.timeline}")
-
-            # Property type — capture passively if volunteered; no longer gates progress
-            if (extracted_data.get('property_type') and
-                    extracted_data.get('property_type') != 'null' and
-                    not self.appointment.property_type):
-                self.appointment.property_type = extracted_data['property_type']
-                updated_fields.append('property_type')
-                print(f"✅ Captured property_type passively: {self.appointment.property_type}")
-
-            # Availability/DateTime
-            if (extracted_data.get('availability') and 
-                extracted_data.get('availability') != 'null'):
-                try:
-                    parsed_dt = datetime.strptime(extracted_data['availability'], '%Y-%m-%dT%H:%M')
-                    sa_timezone = pytz.timezone('Africa/Johannesburg')
-                    localized_dt = sa_timezone.localize(parsed_dt)
-                    
-                    old_dt = self.appointment.scheduled_datetime
-                    self.appointment.scheduled_datetime = localized_dt
-                    updated_fields.append('availability')
-                    print(f"📅 Updated datetime: {old_dt} -> {localized_dt}")
-                    
-                    # Auto-fill timeline if still missing
-                    if not self.appointment.timeline:
-                        self.appointment.timeline = localized_dt.strftime('%A, %B %d')
-                        updated_fields.append('timeline')
-                        print(f"✅ Auto-filled timeline from datetime: {self.appointment.timeline}")
-                        
-                except ValueError as e:
-                    print(f"❌ Failed to parse AI datetime: {extracted_data['availability']} — {e}")
-            
-            # Customer name - only update if we don't have one and AI found one
-            if (extracted_data.get('customer_name') and 
-                extracted_data.get('customer_name') != 'null' and
-                not self.appointment.customer_name):
-                if self.is_valid_name(extracted_data['customer_name']):
-                    self.appointment.customer_name = extracted_data['customer_name']
-                    updated_fields.append('customer_name')
-                    print(f"✅ Updated customer_name: {self.appointment.customer_name}")
-            
-            # Save if anything was updated
-            if updated_fields:
-                self.appointment.save()
-                refresh_lead_score(self.appointment)
-                print(f"💾 Saved appointment with updated fields: {updated_fields}")
-            else:
-                print(f"ℹ️ No fields were updated")
-            
-            return updated_fields
-            
+            current_context  = self.get_appointment_context()
+            next_question    = self.get_next_question_to_ask()
+            current_time     = timezone.now().strftime('%Y-%m-%d %H:%M')
+    
+            extraction_prompt = f"""
+    You are a data extraction assistant for a plumbing appointment system in Zimbabwe/South Africa.
+    Customers may write in English, Shona, or a mix.
+    
+    CRITICAL: Return ONLY a valid JSON object — no markdown, no code blocks, no extra text.
+    
+    CURRENT APPOINTMENT STATE:
+    {current_context}
+    
+    NEXT QUESTION WE NEED: {next_question}
+    CUSTOMER MESSAGE: "{message}"
+    
+    EXTRACTION TARGETS:
+    
+    SERVICE TYPE — Look for any mention of the type of plumbing work needed.
+    Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
+    
+    PROJECT DESCRIPTION — Look for specific details of what the customer wants done.
+    This is their own words describing the work.  Capture verbatim if possible.
+    Return: the description as a string (max 300 chars), or null.
+    
+    AREA/LOCATION — Any suburb, neighbourhood, or city mentioned as the work location.
+    Return: the area name as stated, or null.
+    
+    AVAILABILITY / DATETIME — Look for any date + time combination.
+    Return: YYYY-MM-DDTHH:MM or null.
+    - "available all day" / "whole day" / "anytime" → return null (caller handles separately)
+    - If only date given (no time) → return YYYY-MM-DDT00:00
+    - If only time given (no date) → null
+    TODAY = {current_time[:10]}
+    
+    CUSTOMER NAME — Only if the customer explicitly gives their name.
+    Return: full name title-case, or null.
+    
+    RESPONSE FORMAT (CRITICAL — return EXACTLY this, nothing else):
+    {{
+        "service_type": "extracted_value_or_null",
+        "project_description": "extracted_value_or_null",
+        "area": "extracted_value_or_null",
+        "availability": "extracted_value_or_null",
+        "customer_name": "extracted_value_or_null"
+    }}
+    
+    CURRENT DATE: {current_time}
+    
+    Extract from: "{message}"
+    """
+    
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a data extraction assistant. "
+                            "Return ONLY valid JSON with no formatting or explanations."
+                        )
+                    },
+                    {"role": "user", "content": extraction_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=200
+            )
+    
+            ai_response = response.choices[0].message.content.strip()
+            ai_response = ai_response.replace('```json', '').replace('```', '').strip()
+    
+            try:
+                extracted_data = json.loads(ai_response)
+                print(f"🤖 AI extracted data: {extracted_data}")
+                return extracted_data
+            except json.JSONDecodeError as e:
+                print(f"❌ AI returned invalid JSON: {ai_response}")
+                print(f"JSON Error: {str(e)}")
+                return {}
+    
         except Exception as e:
-            print(f"❌ Error updating appointment: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return []
+            print(f"❌ AI extraction error: {str(e)}")
+            return {}
+
+
+
 
     def get_information_summary(self):
         """Get a summary of collected information for debugging"""
@@ -5048,79 +5082,70 @@ I understand this is time-sensitive!"""
 
 
     def get_next_question_to_ask(self):
-            """Determine which question to ask next — 4-question flow:
-            service_type → plan_or_visit → area → availability
-            Name is collected after booking confirmation only.
-            """
-
-            # Step 1: Which service?
-            if not self.appointment.project_type:
-                return "service_type"
-
-            # Step 2: Plan or site visit?
-            if self.appointment.has_plan is None:
-                if not self.appointment.plan_file:
-                    return "plan_or_visit"
-                else:
-                    # Customer already uploaded — skip question
-                    print("⏭️ Skipping plan question — customer already uploaded")
-                    self.appointment.has_plan = True
-                    self.appointment.save()
-
-            # If they have a plan, handle upload flow first
-            if self.appointment.has_plan is True:
-                if not self.appointment.plan_file and self.appointment.plan_status not in (
-                        'plan_uploaded', 'plan_reviewed', 'ready_to_book'):
-                    return "initiate_plan_upload"
-                if self.appointment.plan_status == 'pending_upload' and self.appointment.plan_file:
-                    return "awaiting_plan_upload"
-                if self.appointment.plan_status == 'plan_uploaded':
-                    return "plan_with_plumber"
-                # Plan done — fall through to area
-                if not self.appointment.customer_area:
-                    return "area"
-
-            # Step 3: Which suburb?
-            if self.appointment.has_plan is False:
-                if not self.appointment.customer_area:
-                    return "area"
-                # Step 4: Availability
-                if not self.appointment.scheduled_datetime:
-                    return "availability"
-                # Name collected after confirmed booking
-                if not self.appointment.customer_name and self.appointment.status == "confirmed":
-                    return "name"
-
-            return "complete"
+        """
+        5-step flow:
+        service_type → project_description → availability_date
+        → availability_time → area → complete
+        Name is collected after booking confirmation only.
+        """
+        # Step 1: Which service?
+        if not self.appointment.project_type:
+            return "service_type"
+    
+        # Step 2: What exactly do you want done?
+        if not self.appointment.project_description:
+            return "project_description"
+    
+        # Step 3: Which date?
+        if not self.appointment.scheduled_datetime:
+            return "availability_date"
+    
+        # Step 3b: We have a date but no confirmed time slot yet?
+        # We track whether the time has been confirmed via a helper flag stored
+        # in internal_notes so we don't need a new model field.
+        if not self._time_confirmed():
+            return "availability_time"
+    
+        # Step 4: Which area?
+        if not self.appointment.customer_area:
+            return "area"
+    
+        # Name collected after confirmed booking
+        if not self.appointment.customer_name and self.appointment.status == "confirmed":
+            return "name"
+    
+        return "complete"
 
 
 
     def smart_booking_check(self):
-            """Check if we have enough information to attempt booking — 4-question flow."""
-            required_for_booking = [
-                self.appointment.project_type,
-                self.appointment.has_plan is not None,
-                self.appointment.customer_area,
-                self.appointment.scheduled_datetime,
-            ]
-
-            has_all_required = all(required_for_booking)
-            missing_fields = []
-
-            if not self.appointment.project_type:
-                missing_fields.append("service type")
-            if self.appointment.has_plan is None:
-                missing_fields.append("plan preference")
-            if not self.appointment.customer_area:
-                missing_fields.append("area")
-            if not self.appointment.scheduled_datetime:
-                missing_fields.append("availability")
-
-            return {
-                'ready_to_book': has_all_required,
-                'missing_fields': missing_fields,
-                'completion_percentage': ((4 - len(missing_fields)) / 4) * 100
-            }
+        """
+        Check if we have enough information to confirm the booking.
+        New required fields: project_type, project_description,
+        scheduled_datetime (with confirmed time), customer_area.
+        """
+        has_service  = bool(self.appointment.project_type)
+        has_desc     = bool(self.appointment.project_description)
+        has_datetime = bool(self.appointment.scheduled_datetime) and self._time_confirmed()
+        has_area     = bool(self.appointment.customer_area)
+    
+        has_all_required = has_service and has_desc and has_datetime and has_area
+    
+        missing_fields = []
+        if not has_service:
+            missing_fields.append("service type")
+        if not has_desc:
+            missing_fields.append("project description")
+        if not has_datetime:
+            missing_fields.append("availability")
+        if not has_area:
+            missing_fields.append("area")
+    
+        return {
+            'ready_to_book': has_all_required,
+            'missing_fields': missing_fields,
+            'completion_percentage': ((4 - len(missing_fields)) / 4) * 100
+        }
 
 
     def check_appointment_availability(self, requested_datetime):
@@ -5635,281 +5660,185 @@ I understand this is time-sensitive!"""
 
 
     def generate_contextual_response(self, incoming_message, next_question, updated_fields):
-        """FIXED: Handle plan upload initiation properly"""
+        """
+        Generate the next bot message.
+        retry_count == 0  → exact hardcoded wording.
+        retry_count > 0   → AI rephrases with escalation psychology.
+        """
         try:
-            # Check if we need to initiate plan upload
-            if next_question == "initiate_plan_upload":
-                return self.initiate_plan_upload_flow()
-            if next_question == "awaiting_plan_upload":
-                return "I'm waiting for your plan. Please send your images or PDF documents now."
-            if next_question == "plan_with_plumber":
-                return "Your plan has been sent to our plumber. They'll contact you within 24 hours to discuss the project and provide a quote."
-
-            # Get current state
-            appointment_context = self.get_appointment_context()
+            import pytz as _pytz
+    
             retry_count = getattr(self.appointment, 'retry_count', 0)
-            is_retry = retry_count > 0          # ← MUST be here, before system_prompt
-        
-
-
-            # Build acknowledgment of received information
-            acknowledgments = []
-            if 'service_type' in updated_fields:
-                service_display = self.appointment.project_type.replace('_', ' ').title()
-                acknowledgments.append(f"service: {service_display}")
-            
-            #
-# ── First-time hardcoded responses (bypass AI for consistency) ──
-            if retry_count == 0:
-
-                if next_question == "service_type":
-                    return (
-
-                        "Hi there! We do bathroom renovations, kitchen renovations, and new plumbing installations.\n\n"
-                        "Most clients start with a *free site visit* - we come out, assess everything, lock in a fixed price on the spot. \n\n" 
-                        "What are you looking to get sorted?"
-                    )
-
-                if next_question == "area":
-                    return (
-                        "Perfect choice.\n\n"
-                        "The *on-site assessment* gives you the most accurate fixed quote "
-                        "and catches any issues before work begins.\n\n"
-                        "Which suburb are you in?"
-                    )
-
-                if next_question == "availability":
-                    area = self.appointment.customer_area or "your area"
-                    project = (self.appointment.project_type or 'plumbing work').replace('_', ' ').lower()
-                    return (
-                        f"Perfect — we're in your area. 📍 We've done quite a few "
-                        f"{project} jobs in {area}.\n\n"
-                        "*Free on-site assessment* — we come to you, measure everything, "
-                        "and give you a fixed price on the spot. No obligation.\n\n"
-                        "What day works for you? Drop a date and time and we'll lock it in."
-                    )
-
-                if next_question == "plan_or_visit":
-                    if self._plan_question_already_pending():
-                        return self.generate_clarifying_question_for_plan_status(retry_count)
-                    service_display = (self.appointment.project_type or 'bathroom').replace('_', ' ').title()
-                    return (
-                        f"Perfect! For your {service_display}, we have two fast options to get you an accurate fixed quote:\n\n"
-                        "*Option 1 — Send Your Plan*\n"
-                        "If you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.\n\n"
-                        "*Option 2 — Free On-Site Assessment*\n"
-                        "We come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site.\n\n"
-                        "This does three things for you:\n"
-                        "*1. Eliminates guesswork* — no assumptions, no surprises\n"
-                        "*2. Locks in your fixed price* — you know exactly what you're paying before a single pipe is touched\n"
-                        "*3. Saves you money* — catching problems before the job starts costs nothing. Catching them during costs a lot.\n\n"
-                        "Most serious clients choose the visit because it saves money long term.\n\n"
-                        "Which works better for you — send a plan, or have us come out?"
-                    )
-
-            # ── plan_or_visit retry (already asked, rephrase) ──
-            if next_question == "plan_or_visit" and self._plan_question_already_pending():
-                return self.generate_clarifying_question_for_plan_status(retry_count)
-
-            if 'plan_status' in updated_fields:
-                plan_text = "you have a plan" if self.appointment.has_plan else "you'd like a site visit"
-                acknowledgments.append(f"plan status: {plan_text}")
-            
-            if 'area' in updated_fields:
-                acknowledgments.append(f"area: {self.appointment.customer_area}")
-            
-            if 'property_type' in updated_fields:
-                acknowledgments.append(f"property type: {self.appointment.property_type}")
-            
-            # ✅ Check if customer is suggesting Saturday for their timeline/availability
+            sa_tz       = _pytz.timezone('Africa/Johannesburg')
+    
+            # ── Saturday guard ────────────────────────────────────────────────────
             saturday_indicators = ['saturday', 'sat']
             if any(s in incoming_message.lower() for s in saturday_indicators):
                 alternatives = self.get_alternative_time_suggestions(
                     timezone.now() + timedelta(days=1)
                 )
                 alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
-                
-                reply = (
-                    "We unfortunately don't operate on Saturdays. 😊\n\n"
-                    "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
-                )
+                reply = "We unfortunately don't operate on Saturdays. 😊\n\nOur working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
                 if alt_text:
                     reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
                 else:
                     reply += "Could you please choose a different day that works for you?"
                 return reply
-
-            system_prompt = f"""
-                    You are a sharp, confident sales assistant for Homebase Plumbers in Zimbabwe — a premium plumbing company.
-                    You follow Alex Hormozi's sales playbook combined with conversion psychology.
-
-                    ══ HORMOZI CORE RULES ══
-
-                    1. GIVE BEFORE YOU ASK
-                    — Lead with value, not intake forms.
-                    — If they ask about price, give a range immediately. Never say "it depends" without numbers first.
-                    — Every response must give the customer something useful before asking anything of them.
-
-                    2. SPECIFICITY BUILDS TRUST
-                    — Vague answers kill deals. "From US$80" beats "prices vary."
-                    — Use real numbers, real timelines, real outcomes.
-                    — A business that hedges on price looks scared. Show confidence.
-
-                    3. ONE QUESTION AT A TIME — MAXIMUM
-                    — Never stack questions. Pick the ONE thing that moves the deal forward fastest.
-                    — After giving value, ask ONE micro-commitment question.
-
-                    4. REMOVE FRICTION, CREATE MOMENTUM
-                    — Every response should make the next step feel obvious and easy.
-                    — Never add process steps the customer didn't ask for.
-                    — "Send us a plan" is friction. "Come out for a free look" is momentum.
-
-                    5. MEET THEM WHERE THEY ARE
-                    — Price curious → give the number, then qualify.
-                    — Ready to book → get the date, skip the questions.
-                    — Just browsing → give value, plant a hook, don't push.
-                    — Hesitant → remove risk, add authority, then ask.
-
-                    6. THE OFFER FRAMING
-                    — Always frame the site visit as the obvious next step:
-                        "Free on-site assessment — we come to you, measure everything, give you a fixed price on the spot. No obligation."
-                    — This removes risk, reduces friction, creates commitment.
-
-                    7. NEVER SOUND LIKE A FORM
-                    — "What is your property type?" = form language. Never use it.
-                    — "Is this a house or a business?" = human language. Use this.
-                    — Short sentences. Natural rhythm. WhatsApp-native tone.
-
-                    8. ACKNOWLEDGE THEN ADVANCE
-                    — Always acknowledge what they said before moving forward.
-                    — Add a micro-confirmation when they choose a path:
-                        They pick site visit → "Perfect — that's the easiest way to get a fixed price." THEN ask availability.
-                        They pick send plan → "Great — send it through whenever you're ready." THEN confirm next step.
-                    — Micro-validations increase compliance by 10–20%.
-
-                    9. SUBTLE AUTHORITY SIGNALS
-                    — Occasionally reference experience naturally:
-                        "We've done quite a few in your area."
-                        "Our senior plumber handles all site assessments personally."
-                        "Most clients in your suburb go with the visit."
-                    — Authority reduces doubt without being pushy.
-
-                    10. SILENT DISQUALIFICATION
-                        — If customer repeatedly dodges, refuses site visit, refuses area, only asks "cheapest?":
-                        "We might not be the cheapest option — we focus on quality work and fixed pricing so there are no surprises."
-                        — Protects positioning. Filters tyre-kickers.
-
-                    ══ RETRY ESCALATION PSYCHOLOGY ══
-                    Don't just rephrase on retry — escalate strategically:
-
-                    Retry 1 → Simplify. Strip the question to its bare minimum.
-                    Retry 2 → Remove friction. Offer them a choice instead of open question.
-                    Retry 3 → Add light urgency. "We're booking up this week."
-
-                    Example for availability:
-                    First:   "What day works for you? Drop a date and time."
-                    Retry 1: "We've got slots this week — what day suits you best?"
-                    Retry 2: "Tomorrow afternoon or end of week — which works better?"
-                    Retry 3: "We're booking up fast this week — want me to lock in a slot for you?"
-
-                    Current retry count: {retry_count}
-
-                    ══ LANGUAGE RULES ══
-                    - only use one * to make text bold, never use **. Example: *bold text* not **bold text**.
-                    - Default to English.
-                    - If customer writes Shona only → respond in Shona.
-                    - If customer mixes → mirror their mix.
-                    - Keep it short and punchy for WhatsApp. No walls of text.
-                    - No markdown headers. Bullets only when listing prices.
-                    - Emoji sparingly — warmth only, not noise.
-
-                    ══ CURRENT SITUATION ══
-                    {appointment_context}
-
-                    Next question needed: {next_question}
-                    New info just received: {updated_fields if updated_fields else 'None'}
-
-                    ══ QUESTION TEMPLATES ══
-                    Use these as base templates. Adapt tone when retry_count > 0 or emotional context requires it.
-                    Do NOT use word-for-word when the customer's energy clearly calls for a warmer or more direct approach.
-
-                    service_type:
-                    "We do bathroom renovations, kitchen renovations, and new plumbing installations.
-
-                    Most clients start with a free site visit — we come out, assess everything, and lock in a fixed price on the spot.
-
-                    What are you looking to get sorted?"
-
-                    area:
-                    "Which suburb are you in?"
-
-                    plan_or_visit:
-                    "Perfect! For a new home bathroom with toilet installation, we recommend starting with a free on-site assessment to ensure everything is properly planned.
-                    To give you an accurate fixed quote (not rough estimates), we have two fast options:
-                    *Option 1 — Send Your Plan*
-                    If you have a drawing or picture, send it here and our senior plumber reviews it within 24 hours.
-                    *Option 2 — Free On-Site Assessment*
-                    We come out, measure everything properly, check water pressure and drainage, and design the layout with you on-site.
-                    This does three things for you:
-                    *1. Eliminates guesswork* — no assumptions, no surprises
-                    *2. Locks in your fixed price* — you know exactly what you're paying before a single pipe is touched
-                    *3. Saves you money* — catching problems before the job starts costs nothing. Catching them during costs a lot.
-                    Most serious clients choose the visit because it saves money long term.
-                    Which works better for you — send a plan, or have us come out?"
-
-                    availability:
-                    "What day works for you? Drop a date and time and we'll lock it in."
-
-                    name:
-                    "Last thing — what's your name so I can complete the booking?"
-
-                    name_confirmed:
-                    "Great to meet you, {{customer_name}}. You're all set — see you {{appointment_datetime}}. 
-                    Our plumber will call you 30 minutes before arrival."
-
-                    ══ RESPONSE RULES ══
-                    - New info received → acknowledge in ONE sentence, then next question.
-                    - Retry > 0 → use retry escalation psychology above, not word-for-word repeat.
-                    - Customer hesitant → remove risk first, then ask.
-                    - Appointment confirmed → reassurance mode. Confirm details, personalize with their name.
-                    - Customer just gave name after booking → use name_confirmed template above.
-                    - NEVER ask for info already in the appointment context.
-                    - NEVER mention plans/blueprints to a customer who chose site visit.
-                    - Customer gives area when asked about plans → acknowledge area, auto site visit, move to availability.
-                    - After photos request → send max 4 images, then: "These were all done in Harare recently. Which suburb are you in?" — move them forward, don't ask if they want to book.
-
-                    Generate the response now:"""
-
-
-           
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Customer message: '{incoming_message}'"}
+    
+            # ── "Available all day" guard ─────────────────────────────────────────
+            all_day_phrases = [
+                'available all day', 'whole day', 'all day', 'anytime',
+                'any time', 'free all day', 'i am free', 'im free',
             ]
-
+            if (next_question in ('availability_time', 'area', 'complete') and
+                    self.appointment.scheduled_datetime and
+                    any(p in incoming_message.lower() for p in all_day_phrases)):
+                return self._handle_all_day_response()
+    
+            # ── First-pass: exact hardcoded questions (retry_count == 0) ─────────
+    
+            if retry_count == 0:
+    
+                if next_question == "service_type":
+                    return (
+                        "Hello! I'd be happy to help. Which service are you interested in? "
+                        "We offer: Bathroom Renovation, New Plumbing Installation, or Kitchen Renovation."
+                    )
+    
+                if next_question == "project_description":
+                    return (
+                        "Got it, what exactly do you want done? "
+                        "The more detail, the more accurate we can be."
+                    )
+    
+                if next_question == "availability_date":
+                    days  = self._get_next_two_available_days()
+                    day_a = self._format_day(days[0]) if len(days) > 0 else "tomorrow"
+                    day_b = self._format_day(days[1]) if len(days) > 1 else "the day after"
+                    visit_desc = self._describe_project_context()
+                    return (
+                        f"What works better for you, {day_a} or {day_b}, for us to come through "
+                        f"and {visit_desc} so there are no surprises and we can give you an accurate quote?"
+                    )
+    
+                if next_question == "availability_time":
+                    # Pull the date we already stored
+                    dt   = self.appointment.scheduled_datetime
+                    if dt:
+                        day_label = self._format_day(dt.date())
+                        times = self._get_two_available_times_for_date(dt.date())
+                        time_a = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9am"
+                        time_b = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2pm"
+                        return (
+                            f"Perfect, for {day_label}, "
+                            f"what works better: {time_a} or {time_b}?"
+                        )
+                    # Fallback if no date yet (shouldn't normally happen)
+                    return "What time works best for you — morning or afternoon?"
+    
+                if next_question == "area":
+                    return "All good, what area are you in?"
+    
+            # ── AI-driven retries ─────────────────────────────────────────────────
+            appointment_context = self.get_appointment_context()
+    
+            system_prompt = f"""
+    You are a sharp, confident sales assistant for Homebase Plumbers in Zimbabwe.
+    
+    CURRENT FLOW:
+    1. service_type          ✅ or pending
+    2. project_description   ✅ or pending
+    3. availability_date     ✅ or pending
+    4. availability_time     ✅ or pending
+    5. area                  ✅ or pending
+    
+    CURRENT SITUATION:
+    {appointment_context}
+    
+    Next question needed: {next_question}
+    New info just received: {updated_fields if updated_fields else 'None'}
+    Retry count: {retry_count}
+    
+    RETRY ESCALATION (retry_count > 0):
+    Retry 1 → Simplify the question to bare minimum.
+    Retry 2 → Offer two explicit choices instead of open question.
+    Retry 3 → Add light urgency: "We're booking up this week."
+    
+    QUESTION MAPPINGS (rephrase these — do NOT use word-for-word):
+    - service_type       → ask which of our three services they need
+    - project_description → ask what they specifically want done, more detail = better quote
+    - availability_date  → ask which of two upcoming weekday dates works for the site assessment
+    - availability_time  → ask which of two time slots (morning or afternoon) works for that date
+    - area               → ask which suburb/area they are in
+    
+    RULES:
+    - ONE question at a time. No stacking.
+    - Acknowledge new info in one sentence first.
+    - South African / Zimbabwean English tone.
+    - No markdown headers. Short sentences.
+    - NEVER ask for info already collected.
+    
+    Generate the response now:"""
+    
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",
-                messages=messages,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": f"Customer message: '{incoming_message}'"}
+                ],
                 temperature=0.7,
-                max_tokens=300
+                max_tokens=250
             )
-            
+    
             reply = response.choices[0].message.content.strip()
-            
-            # Reset retry count if we successfully extracted new information
+    
+            # Reset / increment retry counter
             if updated_fields:
                 self.appointment.retry_count = 0
-                self.appointment.save()
             else:
-                # Increment retry count if no new info was extracted
-                self.appointment.retry_count = getattr(self.appointment, 'retry_count', 0) + 1
-                self.appointment.save()
-            
+                self.appointment.retry_count = retry_count + 1
+            self.appointment.save(update_fields=['retry_count'] if hasattr(self.appointment, 'retry_count') else [])
+    
             return reply
-            
+    
         except Exception as e:
             print(f"❌ Error generating contextual response: {str(e)}")
             return "I understand. Let me ask you about the next detail we need for your appointment."
+
+
+    def _handle_all_day_response(self) -> str:
+        """
+        Customer said they're available all day.
+        Auto-assign next available time slot at or after 12:00 (noon).
+        """
+        import pytz as _pytz
+        from datetime import datetime as dt_cls
+    
+        sa_tz = _pytz.timezone('Africa/Johannesburg')
+        date_obj = self.appointment.scheduled_datetime.date()
+    
+        # Try 12:00 first, then 13, 14, 15, 16
+        for h in [12, 13, 14, 15, 16]:
+            candidate = sa_tz.localize(
+                dt_cls.combine(date_obj, dt_cls.min.time().replace(hour=h))
+            )
+            is_avail, _ = self.check_appointment_availability(candidate)
+            if is_avail:
+                self.appointment.scheduled_datetime = candidate
+                self._mark_time_confirmed()
+                self.appointment.save(update_fields=['scheduled_datetime', 'internal_notes'])
+                hour_str = candidate.strftime('%I%p').lstrip('0')
+                day_label = self._format_day(date_obj)
+                return (
+                    f"Perfect, please expect us anytime after {hour_str} on {day_label}. "
+                    f"What area are you in?"
+                )
+    
+        # No slot found — ask them to pick a time
+        return (
+            "We're quite booked that day from noon onwards. "
+            "What time works best for you — morning or afternoon?"
+        )
 
 
 
