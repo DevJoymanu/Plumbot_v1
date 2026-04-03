@@ -3267,6 +3267,10 @@ class Plumbot:
         )
         return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
 
+    def _appointment_has_field(self, field_name: str) -> bool:
+        """Return True only for real concrete Appointment model fields."""
+        return any(f.name == field_name for f in self.appointment._meta.concrete_fields)
+
 
     def generate_response(self, incoming_message, precomputed_service_inquiry=None):
         """Check service inquiries ONLY when not mid-conversation."""
@@ -5962,8 +5966,9 @@ I understand this is time-sensitive!"""
                 self.appointment.retry_count = 0
             else:
                 self.appointment.retry_count = retry_count + 1
-            self.appointment.save(update_fields=['retry_count'] if hasattr(self.appointment, 'retry_count') else [])
-    
+            if self._appointment_has_field('retry_count'):
+                self.appointment.save(update_fields=['retry_count'])
+
             return reply
     
         except Exception as e:
