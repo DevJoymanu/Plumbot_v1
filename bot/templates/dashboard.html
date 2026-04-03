@@ -95,12 +95,12 @@
 
     <div class="card stat-card">
         <div class="stat-number">{{ confirmed_appointments }}</div>
-        <div class="stat-label">Confirmed Appointments</div>
+        <div class="stat-label">Booked Appointments</div>
     </div>
 
     <!-- Today's Confirmed Appointments -->
     <div class="card">
-        <h2><i class="fas fa-calendar-day"></i> Today's Confirmed Appointments</h2>
+        <h2><i class="fas fa-calendar-day"></i> Today's Booked Appointments</h2>
         <div class="appointment-list">
             {% for appointment in todays_confirmed_appointments %}
             <div class="appointment-item">
@@ -109,7 +109,7 @@
                         {{ appointment.customer_name|default:"Unknown Customer" }}
                     </div>
                     <div class="appointment-status status-{{ appointment.status }}">
-                        {{ appointment.get_status_display }}
+                        {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
                     </div>
                 </div>
                 <div class="appointment-details">
@@ -123,7 +123,11 @@
                     </div>
                     <div class="detail-item">
                         <i class="fas fa-tools"></i>
-                        {{ appointment.project_type|default:"No service" }}
+                        {{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-align-left"></i>
+                        {{ appointment.project_description|default:"No project description yet"|truncatewords:8 }}
                     </div>
                     <div class="detail-item">
                         <i class="fas fa-fire"></i>
@@ -146,7 +150,7 @@
             {% empty %}
             <div class="empty-state">
                 <i class="fas fa-calendar-times"></i>
-                <p>No confirmed appointments for today</p>
+                <p>No booked appointments for today</p>
             </div>
             {% endfor %}
         </div>
@@ -154,7 +158,7 @@
 
     <!-- Tomorrow's Confirmed Appointments -->
     <div class="card">
-        <h2><i class="fas fa-calendar-plus"></i> Tomorrow's Confirmed Appointments</h2>
+        <h2><i class="fas fa-calendar-plus"></i> Tomorrow's Booked Appointments</h2>
         <div class="appointment-list">
             {% for appointment in tomorrows_confirmed_appointments %}
             <div class="appointment-item">
@@ -163,7 +167,7 @@
                         {{ appointment.customer_name|default:"Unknown Customer" }}
                     </div>
                     <div class="appointment-status status-{{ appointment.status }}">
-                        {{ appointment.get_status_display }}
+                        {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
                     </div>
                 </div>
                 <div class="appointment-details">
@@ -177,7 +181,11 @@
                     </div>
                     <div class="detail-item">
                         <i class="fas fa-tools"></i>
-                        {{ appointment.project_type|default:"No serv" }}
+                        {{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-align-left"></i>
+                        {{ appointment.project_description|default:"No project description yet"|truncatewords:8 }}
                     </div>
                     <div class="detail-item">
                         <i class="fas fa-fire"></i>
@@ -200,7 +208,7 @@
             {% empty %}
             <div class="empty-state">
                 <i class="fas fa-calendar-times"></i>
-                <p>No confirmed appointments for tomorrow</p>
+                <p>No booked appointments for tomorrow</p>
             </div>
             {% endfor %}
         </div>

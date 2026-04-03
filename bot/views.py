@@ -2557,11 +2557,11 @@ def appointment_data(request):
                 "date": appt.scheduled_datetime.date().isoformat(),
                 "time": appt.scheduled_datetime.time().strftime("%H:%M"),
                 "service": map_project_type_to_service_key(appt.project_type),
+                "serviceLabel": appt.get_project_type_display() if appt.project_type else "No service",
                 "area": appt.customer_area or "N/A",
                 "status": appt.status,
-                "propertyType": appt.property_type or "N/A",
-                "timeline": appt.timeline or "N/A",
-                "hasPlan": appt.has_plan
+                "statusLabel": "Booked" if appt.status == "confirmed" else appt.get_status_display(),
+                "projectDescription": appt.project_description or "No project description yet",
             })
 
     return JsonResponse(data, safe=False)

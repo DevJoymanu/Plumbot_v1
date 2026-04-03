@@ -456,7 +456,7 @@
         </div>
         <div class="card stat-card">
             <div class="stat-number">{{ status_counts.confirmed }}</div>
-            <div class="stat-label">Confirmed</div>
+            <div class="stat-label">Booked</div>
         </div>
         <div class="card stat-card">
             <div class="stat-number">{{ status_counts.cancelled }}</div>
@@ -467,12 +467,15 @@
     <div class="appointment-list">
         {% for appointment in appointments %}
         <div class="appointment-item">
-            <div class="appointment-header">
-                <div class="appointment-name">
-                    {{ appointment.computed_status_label|default:appointment.get_lead_status_display }} ({{ appointment.computed_score|default:appointment.lead_score }}/100)
+                <div class="appointment-header">
+                    <div class="appointment-name">
+                        {{ appointment.computed_status_label|default:appointment.get_lead_status_display }} ({{ appointment.computed_score|default:appointment.lead_score }}/100)
+                    </div>
+                    <div class="appointment-status status-{{ appointment.status }}">
+                        {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
+                    </div>
                 </div>
-            </div>
-            <div class="appointment-details">
+                <div class="appointment-details">
                 <div class="detail-item">
                     <i class="fas fa-phone"></i>
                     {{ appointment.phone_number }}
@@ -481,13 +484,17 @@
                     <i class="fas fa-map-marker-alt"></i>
                     {{ appointment.customer_area|default:"No area" }}
                 </div>
-                <div class="detail-item">
-                    <i class="fas fa-tools"></i>
-                    {{ appointment.project_type|default:"No service" }}
-                </div>
-                <div class="detail-item">
-                    <i class="fas fa-calendar"></i>
-                    {{ appointment.scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}
+                    <div class="detail-item">
+                        <i class="fas fa-tools"></i>
+                        {{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-align-left"></i>
+                        {{ appointment.project_description|default:"No project description yet"|truncatewords:8 }}
+                    </div>
+                    <div class="detail-item">
+                        <i class="fas fa-calendar"></i>
+                        {{ appointment.scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}
                 </div>
             </div>
             <div class="actions">

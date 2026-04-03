@@ -377,14 +377,9 @@
             </div>
 
             <div class="form-group">
-                <label for="property_type">Property Type</label>
-                <select id="property_type" name="property_type" class="form-control">
-                    {% for value, display in appointment.PROPERTY_TYPE_CHOICES %}
-                    <option value="{{ value }}" {% if appointment.property_type == value %}selected{% endif %}>
-                        {{ display }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <label for="project_description">Project Description</label>
+                <textarea id="project_description" name="project_description" class="form-control" rows="4"
+                    placeholder="What exactly does the customer want done?">{{ appointment.project_description|default:'' }}</textarea>
             </div>
 
             <div class="form-group">
@@ -394,9 +389,9 @@
             </div>
 
             <div class="form-group">
-                <label for="timeline">Timeline</label>
-                <input type="text" id="timeline" name="timeline" value="{{ appointment.timeline|default:'' }}"
-                    class="form-control">
+                <label for="scheduled_datetime">Visit Date/Time</label>
+                <input type="datetime-local" id="scheduled_datetime" name="scheduled_datetime"
+                    value="{{ appointment.scheduled_datetime|date:'Y-m-d\TH:i' }}" class="form-control">
             </div>
 
             <div class="form-group">
@@ -429,18 +424,29 @@
                     placeholder="Internal notes for lead handling">{{ appointment.admin_notes|default:'' }}</textarea>
             </div>
 
+            <div class="form-group">
+                <label for="property_type">Property Type</label>
+                <select id="property_type" name="property_type" class="form-control">
+                    {% for value, display in appointment.PROPERTY_TYPE_CHOICES %}
+                    <option value="{{ value }}" {% if appointment.property_type == value %}selected{% endif %}>
+                        {{ display }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="timeline">Legacy Timeline / Notes</label>
+                <input type="text" id="timeline" name="timeline" value="{{ appointment.timeline|default:'' }}"
+                    class="form-control" placeholder="Optional older-field value">
+            </div>
+
             {% if appointment.appointment_type == 'job_appointment' %}
             <div class="form-group">
                 <label for="job_scheduled_datetime">Job Date/Time</label>
                 <input type="datetime-local" id="job_scheduled_datetime" name="job_scheduled_datetime"
                     value="{{ appointment.job_scheduled_datetime|date:'Y-m-d\TH:i' }}" class="form-control">
-            </div>
-            {% else %}
-            <div class="form-group">
-                <label for="scheduled_datetime">Site Visit Date/Time</label>
-                <input type="datetime-local" id="scheduled_datetime" name="scheduled_datetime"
-                    value="{{ appointment.scheduled_datetime|date:'Y-m-d\TH:i' }}" class="form-control">
-            </div>
+                </div>
             {% endif %}
 
             <div class="actions">
