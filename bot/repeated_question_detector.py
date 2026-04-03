@@ -41,6 +41,15 @@ _PROJECT_DETAIL_MARKERS = (
     'pipe', 'drain',
 )
 
+_GENERIC_INFO_REQUEST_SNIPPETS = (
+    'more information',
+    'more info',
+    'tell me more',
+    'can i get more information',
+    'may i get more information',
+    'need more information',
+)
+
 
 def _extract_recent_qa_pairs(conversation_history: list) -> list[dict]:
     """
@@ -94,9 +103,14 @@ def _looks_like_project_detail_message(message: str) -> bool:
     text = (message or '').strip().lower()
     if not text:
         return False
-    if len(text.split()) < 3:
-        return False
     return any(marker in text for marker in _PROJECT_DETAIL_MARKERS)
+
+
+def _is_generic_info_request(message: str) -> bool:
+    text = (message or '').strip().lower()
+    if not text:
+        return False
+    return any(snippet in text for snippet in _GENERIC_INFO_REQUEST_SNIPPETS)
 
 
 def detect_repeated_question(
@@ -197,6 +211,17 @@ Return ONLY valid JSON:
                     logger.info(
                         "Repeat-question suppressed because matched answer was a "
                         "generic intake prompt and new message looks like project detail."
+                    )
+                    return None
+                if (
+                    _is_generic_info_request(matched_pair['question']) and
+                    _is_generic_intake_answer(matched_pair['answer']) and
+                    _looks_like_project_detail_message(new_message)
+                ):
+                    logger.info(
+                        "Repeat-question suppressed because prior exchange was "
+                        "generic info request -> intake prompt, and new message "
+                        "looks like a specific service/detail answer."
                     )
                     return None
                 return {
