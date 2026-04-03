@@ -5333,6 +5333,20 @@ I understand this is time-sensitive!"""
                 except ValueError as e:
                     print(f"❌ Failed to parse AI datetime: {extracted_data['availability']} — {e}")
     
+                elif (
+                    next_question == 'availability_date' and
+                    not self.appointment.scheduled_datetime and
+                    not extracted_data.get('availability')
+                ):
+                    # Try to parse a day name selection using the existing helper
+                    parsed = self.process_alternative_time_selection(incoming_message)
+                    if parsed:
+                        # Store date only (midnight) — time confirmed separately
+                        self.appointment.scheduled_datetime = parsed.replace(hour=0, minute=0, second=0)
+                        updated_fields.append('availability')
+                        self.appointment.save(update_fields=['scheduled_datetime'])
+                        print(f"✅ Day selection captured: {self.appointment.scheduled_datetime.date()}")
+
             # ── Customer name ─────────────────────────────────────────────────────
             if (extracted_data.get('customer_name') and
                     extracted_data.get('customer_name') != 'null' and
