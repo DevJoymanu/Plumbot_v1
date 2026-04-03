@@ -6158,14 +6158,14 @@ I understand this is time-sensitive!"""
             if is_available:
                 # Book the appointment
                 self.appointment.status = 'confirmed'
-                if self._appointment_has_field('retry_count'):
-                    self.appointment.save(update_fields=['retry_count'])
+                self.appointment.save(update_fields=['status'])
                 
                 # Get appointment details for response
                 appointment_details = self.extract_appointment_details()
                 
                 # Add to calendar and notify team
                 try:
+                    self.send_confirmation_message(appointment_details, self.appointment.scheduled_datetime)
                     self.add_to_google_calendar(appointment_details, self.appointment.scheduled_datetime)
                     self.notify_team(appointment_details, self.appointment.scheduled_datetime)
                 except Exception as notify_error:
