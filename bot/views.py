@@ -1975,6 +1975,13 @@ def confirm_appointment(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
     appointment.status = 'confirmed'
     appointment.save()
+    try:
+        if appointment.scheduled_datetime:
+            plumbot = Plumbot(appointment.phone_number)
+            appointment_details = plumbot.extract_appointment_details()
+            plumbot.send_confirmation_message(appointment_details, appointment.scheduled_datetime)
+    except Exception as exc:
+        print(f"Failed to send confirmation message for appointment {appointment.pk}: {exc}")
     messages.success(request, 'Appointment confirmed successfully')
     return redirect('appointment_detail', pk=appointment.pk)
 
