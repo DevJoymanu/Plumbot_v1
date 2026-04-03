@@ -3451,10 +3451,9 @@ class Plumbot:
             # STEP 6: Check if we can book the appointment
             booking_status = self.smart_booking_check()
             
-            # For users without plans, continue normal booking flow
+            # Once the 5 intake fields are complete, book the appointment.
             if (booking_status['ready_to_book'] and 
-                self.appointment.status != 'confirmed' and
-                self.appointment.has_plan is False):
+                self.appointment.status != 'confirmed'):
                 
                 booking_result = self.book_appointment(incoming_message)
                 
