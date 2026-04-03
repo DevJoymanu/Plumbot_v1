@@ -225,7 +225,7 @@
                         {{ appointment.customer_name|default:"Unknown Customer" }}
                     </div>
                     <div class="appointment-status status-{{ appointment.status }}">
-                        {{ appointment.get_status_display }}
+                        {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
                     </div>
                 </div>
                 <div class="appointment-details">
