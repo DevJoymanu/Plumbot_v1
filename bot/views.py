@@ -3497,7 +3497,7 @@ class Plumbot:
                 
                 #
                 if booking_result['success']:
-                    reply = f"Perfect! I've booked your appointment for {booking_result['datetime']}. To complete your booking, may I have your full name?"
+                    reply = f"Perfect! I've booked your appointment for {booking_result['datetime']}. I've also sent your confirmation details here on WhatsApp."
                 else:
                     error = booking_result.get('error', '')
                     alternatives = booking_result.get('alternatives', [])
@@ -5568,6 +5568,12 @@ I understand this is time-sensitive!"""
     Thank you for choosing us.
     - Homebase Plumbers"""
 
+            if not appointment_info.get('name'):
+                confirmation_message += (
+                    "\n\nOne last thing - what full name should we put on the booking? "
+                    "If you'd rather not share it here, just say no."
+                )
+
             clean_phone = clean_phone_number(self.phone_number)
             whatsapp_api.send_text_message(clean_phone, confirmation_message)
             print(f"✅ Confirmation sent to {clean_phone}")
@@ -6169,7 +6175,11 @@ I understand this is time-sensitive!"""
                 if self.appointment.customer_name:
                     return f"✅ Perfect! Your appointment is confirmed for {self.appointment.scheduled_datetime.strftime('%A, %B %d at %I:%M %p')}. Our team will contact you before arrival."
                 else:
-                    return f"Perfect! I've booked your appointment for {self.appointment.scheduled_datetime.strftime('%A, %B %d at %I:%M %p')}. To complete your booking, may I have your full name?"
+                    return (
+                        f"Perfect! I've booked your appointment for "
+                        f"{self.appointment.scheduled_datetime.strftime('%A, %B %d at %I:%M %p')}. "
+                        f"I've also sent your confirmation details here on WhatsApp."
+                    )
             
             else:
                 # Handle conflict
