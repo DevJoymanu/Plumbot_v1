@@ -71,7 +71,8 @@ import base64
 
 import logging
 logger = logging.getLogger(__name__)
-
+#DELETE FROM bot_appointment
+#WHERE phone_number = 'whatsapp:+263775276027';
 
 def _to_decimal(value, default='0.00'):
     """Convert API numeric inputs to Decimal safely."""
@@ -3234,6 +3235,38 @@ class Plumbot:
         )
         return any(marker in msg for marker in price_markers)
 
+    def _looks_like_project_description_reply(self, message: str) -> bool:
+        """
+        Return True when the message looks like a meaningful description of work
+        the customer wants done.
+        """
+        msg = (message or '').strip()
+        msg_lower = msg.lower()
+        if not msg:
+            return False
+
+        generic_non_answers = {
+            'hi', 'hello', 'hey', 'ok', 'okay', 'alright', 'cool', 'sharp',
+            'thanks', 'thank you', 'noted', 'yes', 'no', 'bathroom',
+        }
+        if msg_lower in generic_non_answers:
+            return False
+
+        vague_info_requests = (
+            'more information', 'more info', 'tell me more', 'can i get more information',
+            'may i get more information', 'need more information',
+        )
+        if any(phrase in msg_lower for phrase in vague_info_requests):
+            return False
+
+        detail_markers = (
+            'want', 'need', 'change', 'replace', 'install', 'fix', 'repair',
+            'move', 'remove', 'redo', 'renovat', 'upgrade', 'fit',
+            'chamber', 'shower', 'toilet', 'geyser', 'basin', 'sink',
+            'bath', 'bathtub', 'tub', 'pipe', 'drain', 'tile',
+        )
+        return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
+
 
     def generate_response(self, incoming_message, precomputed_service_inquiry=None):
         """Check service inquiries ONLY when not mid-conversation."""
@@ -3390,7 +3423,10 @@ class Plumbot:
                     return reply
             
             # STEP 3: Update appointment with extracted data
-            updated_fields = self.update_appointment_with_extracted_data(extracted_data)
+            updated_fields = self.update_appointment_with_extracted_data(
+                extracted_data,
+                incoming_message=incoming_message,
+            )
             
             # STEP 4: Check for reschedule requests (for confirmed appointments)
             if (self.appointment.status == 'confirmed' and 
@@ -5187,7 +5223,7 @@ I understand this is time-sensitive!"""
         }
 
 
-    def update_appointment_with_extracted_data(self, extracted_data):
+    def update_appointment_with_extracted_data(self, extracted_data, incoming_message=None):
         """
         Update appointment with AI-extracted data.
         New flow: service → project_description → datetime → area.
@@ -5214,6 +5250,14 @@ I understand this is time-sensitive!"""
                 self.appointment.project_description = extracted_data['project_description']
                 updated_fields.append('project_description')
                 print(f"✅ Updated project_description: {self.appointment.project_description[:60]}")
+            elif (
+                    next_question == 'project_description' and
+                    not self.appointment.project_description and
+                    self._looks_like_project_description_reply(incoming_message)
+            ):
+                self.appointment.project_description = incoming_message.strip()
+                updated_fields.append('project_description')
+                print(f"✅ Fallback project_description from raw message: {self.appointment.project_description[:60]}")
     
             # ── Area — capture passively whenever volunteered ─────────────────────
             if (extracted_data.get('area') and
@@ -7361,7 +7405,10 @@ def test_information_extraction(phone_number, test_message):
         print(f"🔍 Extracted: {extracted}")
         
         # Update appointment
-        updated_fields = plumbot.update_appointment_with_extracted_data(extracted)
+        updated_fields = plumbot.update_appointment_with_extracted_data(
+            extracted,
+            incoming_message=test_message,
+        )
         print(f"✏️ Updated fields: {updated_fields}")
         
         # Show state after
