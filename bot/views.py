@@ -5004,6 +5004,26 @@ I understand this is time-sensitive!"""
             print(f"🤖 DeepSeek alternative selection: '{message}' → {ai_response}")
 
             if ai_response in ("SATURDAY_CLOSED", "NOT_FOUND"):
+                msg = (message or '').strip().lower()
+
+                if 'tomorrow' in msg:
+                    candidate = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                    if candidate.weekday() == 5:
+                        return None
+                    print(f"✅ Manual day selection captured from 'tomorrow': {candidate}")
+                    return candidate
+
+                for i, name in enumerate(day_names):
+                    if name in msg:
+                        if name == 'saturday':
+                            return None
+                        days_ahead = (i - now.weekday()) % 7
+                        if days_ahead == 0:
+                            days_ahead = 7
+                        candidate = (now + timedelta(days=days_ahead)).replace(hour=0, minute=0, second=0, microsecond=0)
+                        print(f"✅ Manual day selection captured from '{name}': {candidate}")
+                        return candidate
+
                 return None
 
             parsed_dt = datetime.strptime(ai_response, '%Y-%m-%dT%H:%M')
