@@ -5148,6 +5148,88 @@ I understand this is time-sensitive!"""
         }
 
 
+    def update_appointment_with_extracted_data(self, extracted_data):
+        """
+        Update appointment with AI-extracted data.
+        New flow: service → project_description → datetime → area.
+        """
+        try:
+            updated_fields = []
+            next_question  = self.get_next_question_to_ask()
+    
+            print(f"🔄 Updating appointment — current question: {next_question}")
+            print(f"📦 Extracted data: {extracted_data}")
+    
+            # ── Service type ──────────────────────────────────────────────────────
+            if (extracted_data.get('service_type') and
+                    extracted_data.get('service_type') != 'null' and
+                    not self.appointment.project_type):
+                self.appointment.project_type = extracted_data['service_type']
+                updated_fields.append('service_type')
+                print(f"✅ Updated service_type: {self.appointment.project_type}")
+    
+            # ── Project description ───────────────────────────────────────────────
+            if (extracted_data.get('project_description') and
+                    extracted_data.get('project_description') != 'null' and
+                    not self.appointment.project_description):
+                self.appointment.project_description = extracted_data['project_description']
+                updated_fields.append('project_description')
+                print(f"✅ Updated project_description: {self.appointment.project_description[:60]}")
+    
+            # ── Area — capture passively whenever volunteered ─────────────────────
+            if (extracted_data.get('area') and
+                    extracted_data.get('area') != 'null' and
+                    not self.appointment.customer_area):
+                self.appointment.customer_area = extracted_data['area']
+                updated_fields.append('area')
+                print(f"✅ Updated area: {self.appointment.customer_area}")
+    
+            # ── Availability / DateTime ───────────────────────────────────────────
+            if (extracted_data.get('availability') and
+                    extracted_data.get('availability') != 'null'):
+                try:
+                    parsed_dt = datetime.strptime(extracted_data['availability'], '%Y-%m-%dT%H:%M')
+                    sa_timezone = pytz.timezone('Africa/Johannesburg')
+                    localized_dt = sa_timezone.localize(parsed_dt)
+    
+                    old_dt = self.appointment.scheduled_datetime
+                    self.appointment.scheduled_datetime = localized_dt
+                    updated_fields.append('availability')
+                    print(f"📅 Updated datetime: {old_dt} -> {localized_dt}")
+    
+                    # If time is non-midnight, mark it confirmed
+                    if localized_dt.hour != 0 or localized_dt.minute != 0:
+                        self._mark_time_confirmed()
+    
+                except ValueError as e:
+                    print(f"❌ Failed to parse AI datetime: {extracted_data['availability']} — {e}")
+    
+            # ── Customer name ─────────────────────────────────────────────────────
+            if (extracted_data.get('customer_name') and
+                    extracted_data.get('customer_name') != 'null' and
+                    not self.appointment.customer_name):
+                if self.is_valid_name(extracted_data['customer_name']):
+                    self.appointment.customer_name = extracted_data['customer_name']
+                    updated_fields.append('customer_name')
+                    print(f"✅ Updated customer_name: {self.appointment.customer_name}")
+    
+            if updated_fields:
+                self.appointment.save()
+                refresh_lead_score(self.appointment)
+                print(f"💾 Saved appointment with updated fields: {updated_fields}")
+            else:
+                print("ℹ️ No fields were updated")
+    
+            return updated_fields
+    
+        except Exception as e:
+            print(f"❌ Error updating appointment: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+
+
     def check_appointment_availability(self, requested_datetime):
         """Check if requested time slot is available"""
         try:
