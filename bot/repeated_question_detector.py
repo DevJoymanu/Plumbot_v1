@@ -26,6 +26,21 @@ PLUMBER_NUMBER_FALLBACK = '+263774819901'
 # How many recent assistant messages to look back through
 LOOKBACK_MESSAGES = 10
 
+_INTAKE_PROMPT_SNIPPETS = (
+    'what exactly do you want done',
+    'which service are you interested in',
+    'what service are you looking for',
+    'tell me a bit more about the job',
+    'the more detail, the more accurate',
+)
+
+_PROJECT_DETAIL_MARKERS = (
+    'want', 'need', 'change', 'replace', 'install', 'fix', 'repair',
+    'renovation', 'renovate', 'bathroom', 'shower', 'chamber', 'toilet',
+    'bathtub', 'tub', 'geyser', 'vanity', 'cubicle', 'basin', 'sink',
+    'pipe', 'drain',
+)
+
 
 def _extract_recent_qa_pairs(conversation_history: list) -> list[dict]:
     """
@@ -66,6 +81,22 @@ def _extract_recent_qa_pairs(conversation_history: list) -> list[dict]:
 
     pairs.reverse()  # oldest first
     return pairs
+
+
+def _is_generic_intake_answer(answer: str) -> bool:
+    text = (answer or '').strip().lower()
+    if not text:
+        return False
+    return any(snippet in text for snippet in _INTAKE_PROMPT_SNIPPETS)
+
+
+def _looks_like_project_detail_message(message: str) -> bool:
+    text = (message or '').strip().lower()
+    if not text:
+        return False
+    if len(text.split()) < 3:
+        return False
+    return any(marker in text for marker in _PROJECT_DETAIL_MARKERS)
 
 
 def detect_repeated_question(
@@ -156,10 +187,22 @@ Return ONLY valid JSON:
         if is_repeat and confidence == 'HIGH' and matched_index:
             idx = int(matched_index) - 1
             if 0 <= idx < len(pairs):
+                matched_pair = pairs[idx]
+                # If the bot only asked a generic intake question, and the new
+                # message looks like project detail, keep the intake flow moving.
+                if (
+                    _is_generic_intake_answer(matched_pair['answer']) and
+                    _looks_like_project_detail_message(new_message)
+                ):
+                    logger.info(
+                        "Repeat-question suppressed because matched answer was a "
+                        "generic intake prompt and new message looks like project detail."
+                    )
+                    return None
                 return {
                     'is_repeat': True,
-                    'matched_question': pairs[idx]['question'],
-                    'matched_answer': pairs[idx]['answer'],
+                    'matched_question': matched_pair['question'],
+                    'matched_answer': matched_pair['answer'],
                 }
 
         return None

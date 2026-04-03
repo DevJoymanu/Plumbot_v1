@@ -3966,6 +3966,13 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     pick the most prominent product.  Never return 'none' just because multiple
     products are mentioned — pick the most specific/expensive one."
 
+    EXTRA CLASSIFICATION RULES:
+    - Only choose an intent that is explicitly mentioned in the message.
+    - Never return bathtub_installation unless the message explicitly mentions
+      a tub, bathtub, bath, or freestanding tub.
+    - If multiple non-tub products are mentioned, pick the clearest mentioned
+      product instead of defaulting to bathtub_installation.
+
     INTENTS:
     - tub_sales: asking if we sell tubs or about small bathroom tubs
     - standalone_tub: asking about standalone/freestanding tub price or availability
@@ -4009,6 +4016,8 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     2. Confidence rules:
     - HIGH = message clearly matches the intent. Short messages naming a specific
       product are HIGH — product names are unambiguous regardless of length.
+      bathtub_installation is only valid when the message explicitly mentions
+      a tub, bathtub, bath, or freestanding tub.
       Examples that are HIGH confidence:
         * "how much tub", "tub price", "tub cost"
         * "geyser install", "geyser price", "how much geyser"
@@ -4038,6 +4047,18 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             ai_response = response.choices[0].message.content.strip()
             ai_response = ai_response.replace('```json', '').replace('```', '').strip()
             result = json.loads(ai_response)
+
+            message_lower = (message or '').lower()
+            tub_terms = ('tub', 'bathtub', 'bath', 'freestanding tub', 'free-standing tub')
+            if result.get('intent') == 'bathtub_installation' and not any(term in message_lower for term in tub_terms):
+                if 'shower' in message_lower:
+                    result = {"intent": "shower_cubicle", "confidence": result.get('confidence', 'HIGH')}
+                elif 'chamber' in message_lower:
+                    result = {"intent": "chamber", "confidence": result.get('confidence', 'HIGH')}
+                elif 'toilet' in message_lower:
+                    result = {"intent": "toilet", "confidence": result.get('confidence', 'HIGH')}
+                else:
+                    result = {"intent": "none", "confidence": "LOW"}
 
             print(f"🤖 Service inquiry detection: '{message}' → {result}")
             return result
