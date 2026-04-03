@@ -3118,6 +3118,56 @@ class Plumbot:
             'dont want', "don't want", 'not now'
         }
         return any(phrase in msg for phrase in decline_phrases)
+
+    def _parse_time_only_for_selected_date(self, message: str):
+        """
+        Parse a time-only reply like '2pm' or '14:00' against the appointment's
+        already-selected date.
+        """
+        base_dt = self.appointment.scheduled_datetime
+        if not base_dt:
+            return None
+
+        msg = (message or '').strip().lower()
+        if not msg:
+            return None
+
+        time_patterns = [
+            r'(\d{1,2}):(\d{2})\s*(am|pm)',
+            r'(\d{1,2})\s*(am|pm)',
+            r'(\d{1,2}):(\d{2})',
+        ]
+
+        for pattern in time_patterns:
+            match = re.search(pattern, msg)
+            if not match:
+                continue
+
+            groups = match.groups()
+            if len(groups) >= 3 and groups[2]:
+                hour = int(groups[0])
+                minute = int(groups[1]) if groups[1] and groups[1].isdigit() else 0
+                am_pm = groups[2]
+                if am_pm == 'pm' and hour != 12:
+                    hour += 12
+                elif am_pm == 'am' and hour == 12:
+                    hour = 0
+            elif len(groups) >= 2 and groups[1] in ['am', 'pm']:
+                hour = int(groups[0])
+                minute = 0
+                am_pm = groups[1]
+                if am_pm == 'pm' and hour != 12:
+                    hour += 12
+                elif am_pm == 'am' and hour == 12:
+                    hour = 0
+            else:
+                hour = int(groups[0])
+                minute = int(groups[1]) if len(groups) > 1 and groups[1] else 0
+
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return base_dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        return None
     
     
     # ─────────────────────────────────────────────────────────────────────────────
@@ -5348,6 +5398,19 @@ I understand this is time-sensitive!"""
                     print(f"✅ Day selection captured: {self.appointment.scheduled_datetime.date()}")
 
             # ── Customer name ─────────────────────────────────────────────────────
+            elif (
+                next_question == 'availability_time' and
+                self.appointment.scheduled_datetime and
+                not extracted_data.get('availability')
+            ):
+                parsed_time_only = self._parse_time_only_for_selected_date(incoming_message)
+                if parsed_time_only:
+                    old_dt = self.appointment.scheduled_datetime
+                    self.appointment.scheduled_datetime = parsed_time_only
+                    self._mark_time_confirmed()
+                    updated_fields.append('availability')
+                    print(f"âœ… Time selection captured: {old_dt} -> {self.appointment.scheduled_datetime}")
+
             if (extracted_data.get('customer_name') and
                     extracted_data.get('customer_name') != 'null' and
                     not self.appointment.customer_name):
