@@ -5305,8 +5305,20 @@ I understand this is time-sensitive!"""
                     print(f"✅ Updated customer_name: {self.appointment.customer_name}")
     
             if updated_fields:
-                if self._appointment_has_field('retry_count'):
-                    self.appointment.save(update_fields=['retry_count'])
+                update_field_map = {
+                    'service_type': 'project_type',
+                    'project_description': 'project_description',
+                    'area': 'customer_area',
+                    'availability': 'scheduled_datetime',
+                    'customer_name': 'customer_name',
+                }
+                db_update_fields = [
+                    update_field_map[field]
+                    for field in updated_fields
+                    if field in update_field_map and self._appointment_has_field(update_field_map[field])
+                ]
+                if db_update_fields:
+                    self.appointment.save(update_fields=db_update_fields)
                 refresh_lead_score(self.appointment)
                 print(f"💾 Saved appointment with updated fields: {updated_fields}")
             else:
@@ -6088,7 +6100,8 @@ I understand this is time-sensitive!"""
             if is_available:
                 # Book the appointment
                 self.appointment.status = 'confirmed'
-                self.appointment.save()
+                if self._appointment_has_field('retry_count'):
+                    self.appointment.save(update_fields=['retry_count'])
                 
                 # Get appointment details for response
                 appointment_details = self.extract_appointment_details()
@@ -6437,7 +6450,8 @@ I understand this is time-sensitive!"""
             if extracted_result and extracted_result not in ["NOT_FOUND", "ERROR"]:
                 # Reset retry count on successful extraction
                 self.appointment.retry_count = 0
-                self.appointment.save()
+                if self._appointment_has_field('retry_count'):
+                    self.appointment.save(update_fields=['retry_count'])
                 print(f"✅ Successfully extracted {next_question}: {extracted_result}")
                 return extracted_result
             else:
