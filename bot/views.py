@@ -3084,6 +3084,33 @@ class Plumbot:
         if 'TIME_CONFIRMED' not in notes:
             self.appointment.internal_notes = (notes + '\n[TIME_CONFIRMED]').strip()
             self.appointment.save(update_fields=['internal_notes'])
+
+    def _customer_name_declined(self) -> bool:
+        return 'NAME_DECLINED' in (self.appointment.internal_notes or '')
+
+    def _mark_customer_name_declined(self):
+        notes = self.appointment.internal_notes or ''
+        if 'NAME_DECLINED' not in notes:
+            self.appointment.internal_notes = (notes + '\n[NAME_DECLINED]').strip()
+            self.appointment.save(update_fields=['internal_notes'])
+
+    def _clear_customer_name_declined(self):
+        notes = self.appointment.internal_notes or ''
+        if 'NAME_DECLINED' in notes:
+            cleaned = notes.replace('\n[NAME_DECLINED]', '').replace('[NAME_DECLINED]\n', '').replace('[NAME_DECLINED]', '')
+            self.appointment.internal_notes = cleaned.strip()
+            self.appointment.save(update_fields=['internal_notes'])
+
+    def _declines_sharing_name(self, message: str) -> bool:
+        msg = (message or '').strip().lower()
+        if not msg:
+            return False
+        decline_phrases = {
+            'no', 'nope', 'nah', 'prefer not', 'rather not', 'no thanks',
+            'not comfortable', 'dont want to', "don't want to",
+            'dont want', "don't want", 'not now'
+        }
+        return any(phrase in msg for phrase in decline_phrases)
     
     
     # ─────────────────────────────────────────────────────────────────────────────
@@ -5194,7 +5221,11 @@ I understand this is time-sensitive!"""
             return "area"
     
         # Name collected after confirmed booking
-        if not self.appointment.customer_name and self.appointment.status == "confirmed":
+        if (
+            not self.appointment.customer_name and
+            self.appointment.status == "confirmed" and
+            not self._customer_name_declined()
+        ):
             return "name"
     
         return "complete"
@@ -5301,6 +5332,7 @@ I understand this is time-sensitive!"""
                     not self.appointment.customer_name):
                 if self.is_valid_name(extracted_data['customer_name']):
                     self.appointment.customer_name = extracted_data['customer_name']
+                    self._clear_customer_name_declined()
                     updated_fields.append('customer_name')
                     print(f"✅ Updated customer_name: {self.appointment.customer_name}")
     
@@ -5881,6 +5913,13 @@ I understand this is time-sensitive!"""
                     self.appointment.scheduled_datetime and
                     any(p in incoming_message.lower() for p in all_day_phrases)):
                 return self._handle_all_day_response()
+
+            if next_question == "name" and self._declines_sharing_name(incoming_message):
+                self._mark_customer_name_declined()
+                return (
+                    "No problem at all. Your appointment is still booked, and we'll use this WhatsApp number "
+                    "for updates. If you want to add your name later, just send it anytime."
+                )
     
             # ── First-pass: exact hardcoded questions (retry_count == 0) ─────────
     
@@ -5925,6 +5964,12 @@ I understand this is time-sensitive!"""
     
                 if next_question == "area":
                     return "All good, what area are you in?"
+
+                if next_question == "name":
+                    return (
+                        "Perfect, your appointment is booked. What full name should we put on it? "
+                        "If you'd rather not share it here, just say no."
+                    )
     
             # ── AI-driven retries ─────────────────────────────────────────────────
             appointment_context = self.get_appointment_context()
