@@ -1074,43 +1074,42 @@ def handle_text_message(sender, text_data, message_id=None):
             )
         )
 
-        if not mid_conversation:
-            print(f"Checking service inquiry: '{message_body}'")
-            inquiry = plumbot.detect_service_inquiry(message_body)
-            print(f"Service inquiry result: {inquiry}")
+        print(f"Checking service inquiry: '{message_body}'")
+        inquiry = plumbot.detect_service_inquiry(message_body)
+        print(f"Service inquiry result: {inquiry}")
 
-            PRODUCT_INTENTS = {
-                'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
-                'vanity', 'bathtub_installation', 'toilet', 'chamber',
-                'facebook_package', 'location_ask', 'location_visit',
-                'previous_quotation', 'pictures',
-            }
-            NON_PRICING_AUTO_REPLY_INTENTS = {
-                'location_ask', 'location_visit', 'previous_quotation', 'pictures',
-            }
-            if inquiry.get('intent') != 'none' and (
-                inquiry.get('confidence') == 'HIGH' or
-                inquiry.get('intent') in PRODUCT_INTENTS
-            ):
+        PRODUCT_INTENTS = {
+            'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
+            'vanity', 'bathtub_installation', 'toilet', 'chamber',
+            'facebook_package', 'location_ask', 'location_visit',
+            'previous_quotation', 'pictures',
+        }
+        NON_PRICING_AUTO_REPLY_INTENTS = {
+            'location_ask', 'location_visit', 'previous_quotation', 'pictures',
+        }
+        intent = inquiry.get('intent')
+        price_requested = _explicitly_requests_price(message_body)
+        should_bypass_mid_conversation_gate = (
+            intent in NON_PRICING_AUTO_REPLY_INTENTS or price_requested
+        )
 
-                intent = inquiry['intent']
-                price_requested = _explicitly_requests_price(message_body)
-
-                # FIX 1: Only send pricing for this intent once per lead
-                if intent not in NON_PRICING_AUTO_REPLY_INTENTS and not price_requested:
-                    print(
-                        f"Skipping priced service inquiry for intent: {intent} "
-                        f"- no explicit price request"
-                    )
-                elif _has_sent_pricing_for_intent(appointment, intent):
-                    print(f"⏭️ Skipping already-sent pricing for intent: {intent} — falling through to bot")
-                    # reply stays None → falls through to normal Plumbot below
+        if mid_conversation and not should_bypass_mid_conversation_gate:
+            print(f"⏭️ Skipping service inquiry reply — mid-conversation and no explicit info/price request")
+        elif intent != 'none' and (
+            inquiry.get('confidence') == 'HIGH' or intent in PRODUCT_INTENTS
+        ):
+            if intent not in NON_PRICING_AUTO_REPLY_INTENTS and not price_requested:
+                print(
+                    f"Skipping priced service inquiry for intent: {intent} "
+                    f"- no explicit price request"
+                )
+            else:
+                if _has_sent_pricing_for_intent(appointment, intent):
+                    print(f"↩️ Re-sending service inquiry reply for intent: {intent}")
                 else:
                     print(f"Service inquiry matched (first time): {intent}")
-                    reply = plumbot.handle_service_inquiry(intent, message_body)
                     _mark_pricing_intent_sent(appointment, intent)
-        else:
-            print(f"⏭️ Skipping service inquiry check — mid-conversation or pricing already sent")
+                reply = plumbot.handle_service_inquiry(intent, message_body)
 
         # ── STEP 3: Full pricing overview ────────────────────────────────────
         # FIX 2: _is_genuine_pricing_question now also blocks if any specific
