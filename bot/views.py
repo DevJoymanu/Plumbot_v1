@@ -4970,10 +4970,25 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             bool(self.appointment.customer_area)
         )
 
+        # Build context line based on what we know about the customer's project
+        project_context = ""
+        if self.appointment.project_description:
+            desc_lower = self.appointment.project_description.lower()
+            if any(w in desc_lower for w in ('tiled', 'already tiled', 'tile', 'existing')):
+                project_context = (
+                    "Since your bathroom is already tiled, the renovation cost "
+                    "focuses on fixtures and fittings rather than tiling. "
+                )
+            elif any(w in desc_lower for w in ('new', 'from scratch', 'building')):
+                project_context = (
+                    "For a new bathroom build, pricing covers both rough plumbing and fixtures. "
+                )
+
         followup = self._get_pricing_followup_prompt(language)
 
         if language == 'shona':
             reply = (
+                f"{project_context}"
                 "Mutengo unoenderana nezvaunoda, asi apa ndimwe mitengo yakajairwa:\n\n"
                 "Facebook bathroom package: kubva US$600\n"
                 "  (Iyi inofukidza basa guru — fixtures dzinowedzerwa)\n\n"
@@ -4990,6 +5005,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             )
         else:
             reply = (
+                f"{project_context}"
                 "Pricing depends on what you need, but here's a rough guide:\n\n"
                 "Facebook bathroom package: from US$600\n"
                 "  (Covers the core fit-out — fixtures added based on your choice)\n\n"
@@ -5333,8 +5349,10 @@ I understand this is time-sensitive!"""
     SERVICE TYPE — Look for any mention of the type of plumbing work needed.
     Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
     
-    PROJECT DESCRIPTION — Look for specific details of what the customer wants done.
-    This is their own words describing the work.  Capture verbatim if possible.
+    PROJECT DESCRIPTION — Look for specific details of what the customer wants done,
+    including renovation state clues like "already tiled", "new build", "existing bathroom",
+    "from scratch", "walls done", "rough plumbing done".
+    Capture verbatim where possible — these details affect pricing and the plumber's approach.
     Return: the description as a string (max 300 chars), or null.
     
     AREA/LOCATION — Any suburb, neighbourhood, or city mentioned as the work location.
@@ -5615,6 +5633,12 @@ I understand this is time-sensitive!"""
               bheseni (basin/sink), kicheni (kitchen), mapombi (pipes), imba itsva (new house)
             - Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
             
+            PROJECT DESCRIPTION - Look for specific details of what the customer wants done,
+            including renovation state clues like "already tiled", "new build", "existing bathroom",
+            "from scratch", "walls done", "rough plumbing done".
+            Capture verbatim where possible because these details affect pricing and the plumber's approach.
+            - Return: the description as a string (max 300 chars), or null
+            
             
             PLAN STATUS - ULTRA CRITICAL - STRICT EXTRACTION RULES:
             
@@ -5670,6 +5694,7 @@ I understand this is time-sensitive!"""
             Return EXACTLY this JSON structure with no additional text:
             {{
                 "service_type": "extracted_value_or_null",
+                "project_description": "extracted_value_or_null",
                 "plan_status": "extracted_value_or_null", 
                 "area": "extracted_value_or_null",
                 "timeline": "extracted_value_or_null",

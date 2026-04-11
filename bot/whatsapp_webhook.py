@@ -432,23 +432,66 @@ def is_post_booking_ack_message(message: str) -> bool:
 
 
 def is_previous_work_photo_request(message: str) -> bool:
-    """Use DeepSeek AI to detect if customer is asking to see previous work photos."""
+    """
+    Return True ONLY when the customer's PRIMARY intent is to see previous work photos.
+    Returns False when the message also contains a stronger pricing or product signal —
+    in that case the pricing path should handle the message instead.
+
+    Uses DeepSeek for accurate intent detection with a fast keyword pre-filter.
+    """
     try:
         message_clean = (message or "").strip().lower()
-        # Fast-path: avoid an expensive AI call for tiny acknowledgements.
-        if len(message_clean) <= 4 or message_clean in {"ok", "okay", "k", "thanks", "thank you", "cool", "fine"}:
+
+        # Fast-path: ignore tiny acks
+        if len(message_clean) <= 4 or message_clean in {
+            "ok", "okay", "k", "thanks", "thank you", "cool", "fine"
+        }:
             return False
 
-        keyword_hints = (
-            "photo", "photos", "picture", "pictures", "pic", "pics",
-            "image", "images", "portfolio", "examples", "show me",
-            "mifananidzo", "mufananidzo", "ratidza", "ndiratidze", "basa renyu",
+        # Fast-path: if message contains a clear pricing signal, pricing wins
+        # regardless of whether a photo word also appears
+        pricing_signals = (
+            'how much', 'price', 'cost', 'quote', 'quotation',
+            'marii', 'mari', 'mutengo', 'zvinodhura', 'inodhura',
+            'zvese', 'how much shud', 'how much should',
         )
-        if not any(k in message_clean for k in keyword_hints):
+        has_pricing_signal = any(p in message_clean for p in pricing_signals)
+
+        # Photo-only keywords — words that on their own strongly suggest a photo request
+        photo_primary_keywords = (
+            'send photo', 'send photos', 'send pic', 'send pics',
+            'show me', 'show your work', 'show me your', 'got photos',
+            'got pics', 'got pictures', 'previous work', 'portfolio',
+            'your work', 'examples of', 'ndiratidze', 'ratidza basa',
+            'basa renyu', 'ndiona basa', 'mifananidzo yebasa',
+        )
+        has_strong_photo_signal = any(p in message_clean for p in photo_primary_keywords)
+
+        # Weak photo keywords — only count if no pricing signal present
+        photo_weak_keywords = (
+            'photo', 'photos', 'picture', 'pictures', 'pic', 'pics',
+            'pix', 'image', 'images', 'papic', 'mufananidzo', 'mifananidzo',
+            'tumira', 'ndione',
+        )
+        has_weak_photo_signal = any(p in message_clean for p in photo_weak_keywords)
+
+        # Decision without DeepSeek (fast path)
+        if has_pricing_signal and not has_strong_photo_signal:
+            # Pricing wins — don't classify as photo request
+            print(f"📊 Photo check fast-path: pricing signal dominates '{message_clean[:60]}'")
             return False
 
-        from openai import OpenAI
+        if not has_strong_photo_signal and not has_weak_photo_signal:
+            # No photo keywords at all — skip DeepSeek
+            return False
 
+        # If only weak photo signal exists alongside pricing, pricing wins without DeepSeek
+        if has_pricing_signal and has_weak_photo_signal and not has_strong_photo_signal:
+            print("📊 Photo check: weak photo word + pricing signal → pricing wins")
+            return False
+
+        # DeepSeek for ambiguous cases (strong photo signal, or no pricing signal)
+        from openai import OpenAI
         deepseek_client = OpenAI(
             api_key=os.environ.get('DEEPSEEK_API_KEY'),
             base_url="https://api.deepseek.com/v1"
@@ -459,22 +502,33 @@ def is_previous_work_photo_request(message: str) -> bool:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a message intent classifier for a Zimbabwean plumbing company. Customers may write in English, Shona, or a mix of both. Reply with ONLY 'YES' or 'NO', nothing else."
+                    "content": (
+                        "You are a message intent classifier for a Zimbabwean plumbing company. "
+                        "Customers write in English, Shona, or a mix. "
+                        "Reply with ONLY 'YES' or 'NO', nothing else."
+                    )
                 },
                 {
                     "role": "user",
-                    "content": f"""Is the customer asking to see photos, pictures, images, or examples of previous/past plumbing work?
+                    "content": f"""Is the customer's PRIMARY intent to see photos or pictures of previous plumbing work?
 
-Consider English expressions like:
-- "send me photos", "show me your work", "do you have pictures", "portfolio", "examples"
-- "can I hv a pic", "send pics", "got pics"
+IMPORTANT: If the message ALSO asks about price/cost/how much, the answer is NO — pricing is the primary intent.
 
-Consider Shona expressions like:
-- "ndiratidze mifananidzo", "une mifananidzo here", "ndiona basa renyu"
-- "tumira mifananidzo", "ratidza basa renyu", "mifananidzo yebasa renyu"
-- "ndione zvamakamboita", "mufananidzo", "basa renyu"
+Say YES only when the customer is mainly asking to see photos/pictures/examples of past work, with no pricing question in the same message.
 
-Also consider mixed Shona/English and informal abbreviations like "pic", "pix", "img".
+Examples where answer is NO (pricing dominates):
+- "papic how much" → NO (asking price, photo word is incidental)
+- "show me pics and how much" → NO (pricing present)
+- "send photos and quote" → NO (pricing present)
+- "how much shud i have, papic" → NO (pricing is primary)
+- "pics and price" → NO
+
+Examples where answer is YES (photo is primary):
+- "send me photos of your work"
+- "do you have pictures"
+- "ndiratidze mifananidzo"
+- "show me your previous jobs"
+- "got any pics of bathrooms you've done"
 
 Customer message: "{message}"
 
@@ -487,21 +541,23 @@ Reply YES or NO only."""
 
         result = response.choices[0].message.content.strip().upper()
         is_request = result == "YES"
-        print(f"?? DeepSeek photo request detection: '{message}' ? {result}")
+        print(f"🤖 DeepSeek photo request detection: '{message}' → {result}")
         return is_request
 
     except Exception as e:
-        print(f"? DeepSeek photo detection error: {str(e)}, falling back to keyword check")
-        message_lower = message.lower()
-        fallback_keywords = [
-            # English — including abbreviations
-            'picture', 'photo', 'photos', 'pic', 'pics', 'pix', 'image', 'images',
-            'previous work', 'portfolio', 'show me', 'your work', 'examples',
-            # Shona
-            'mifananidzo', 'mufananidzo', 'ratidza', 'ndiratidze', 'basa renyu',
-            'ndiona', 'ndione', 'tumira',
-        ]
-        return any(kw in message_lower for kw in fallback_keywords)
+        print(f"❌ DeepSeek photo detection error: {str(e)}, falling back to keyword check")
+        message_lower = (message or "").lower()
+        # Conservative fallback: only return True for unambiguous photo-only messages
+        pricing_fallback = (
+            'how much', 'price', 'cost', 'quote', 'marii', 'mutengo', 'zvese'
+        )
+        if any(p in message_lower for p in pricing_fallback):
+            return False
+        photo_fallback = (
+            'send photo', 'send pic', 'show me', 'previous work',
+            'portfolio', 'your work', 'ndiratidze', 'basa renyu',
+        )
+        return any(kw in message_lower for kw in photo_fallback)
 
 
 PREVIOUS_WORK_IMAGES_DIR = os.environ.get(
@@ -1045,14 +1101,22 @@ def handle_text_message(sender, text_data, message_id=None):
         reply = None
 
         # -- STEP 1: Previous work photo request ------------------------------
-        # Only check for photo requests when not a clear product/service inquiry
+        # Evaluate service inquiry first — used both for photo guard and pricing below
         _quick_service_check = plumbot.detect_service_inquiry(message_body)
         _is_clear_product_inquiry = (
             _quick_service_check.get('intent') not in ('none', 'pictures') and
             _quick_service_check.get('confidence') == 'HIGH'
         )
+
+        # Check for pricing signal — if present, skip photo check entirely
+        _pricing_signals = (
+            'how much', 'price', 'cost', 'quote', 'quotation',
+            'marii', 'mari', 'mutengo', 'zvinodhura', 'zvese',
+        )
+        _has_pricing_signal = any(p in message_body.lower() for p in _pricing_signals)
+
         print(f"Checking photo request: '{message_body}'")
-        if not _is_clear_product_inquiry and is_previous_work_photo_request(message_body):
+        if not _is_clear_product_inquiry and not _has_pricing_signal and is_previous_work_photo_request(message_body):
             print("Photo request detected")
             photos_queued = send_previous_work_photos(sender, appointment)
             if photos_queued:
