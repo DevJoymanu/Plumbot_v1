@@ -3293,29 +3293,47 @@ class Plumbot:
         suffix    = 'th' if 11 <= day_num <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day_num % 10, 'th')
         return f"{day_name} the {day_num}{suffix}"
 
-    def _get_pricing_followup_prompt(self) -> str:
+    def _get_pricing_followup_prompt(self, language: str = "english") -> str:
         """Return the next booking question in a natural sales tone."""
         next_question = self.get_next_question_to_ask()
+        is_shona = language == "shona"
 
         if next_question == "service_type":
-            return "Which service are you looking at exactly?"
+            return "Uri kuda service ipi chaizvo?" if is_shona else "Which service are you looking at exactly?"
         if next_question == "project_description":
-            return "For now, could you tell me a bit more about what exactly you want done?"
+            return (
+                "Parizvino, ungandiudza zvishoma kuti chii chaizvo chamunoda kuti chiitwe?"
+                if is_shona else
+                "For now, could you tell me a bit more about what exactly you want done?"
+            )
         if next_question == "availability_date":
             days = self._get_next_two_available_days()
             if len(days) >= 2:
+                if is_shona:
+                    return (
+                        f"Kana muchida, tinogona kutanga nefree on-site assessment. "
+                        f"{self._format_day(days[0])} kana {self._format_day(days[1])}, nderipi zuva rinokukodzerai?"
+                    )
                 return (
                     f"If you'd like, we can do a free on-site assessment first. "
                     f"Would {self._format_day(days[0])} or {self._format_day(days[1])} work better for you?"
                 )
-            return "If you'd like, we can do a free on-site assessment first. Which day would suit you best?"
+            return (
+                "Kana muchida, tinogona kutanga nefree on-site assessment. Nderipi zuva rinokukodzerai?"
+                if is_shona else
+                "If you'd like, we can do a free on-site assessment first. Which day would suit you best?"
+            )
         if next_question == "availability_time":
-            return "What time would suit you best for the free on-site assessment?"
+            return "Nguva ipi ingakukodzerai ye free on-site assessment?" if is_shona else "What time would suit you best for the free on-site assessment?"
         if next_question == "area":
-            return "What area are you in so we can plan the visit properly?"
+            return "Muri munzvimbo ipi kuti tironge kuuya zvakanaka?" if is_shona else "What area are you in so we can plan the visit properly?"
         if next_question == "name":
-            return "What name should we put on the booking?"
-        return "If you'd like, I can help you book the free on-site assessment from here."
+            return "Tingaisa zita ripi pabhooking?" if is_shona else "What name should we put on the booking?"
+        return (
+            "Kana muchida, ndinogona kukubatsirai kubhuka free on-site assessment kubva pano."
+            if is_shona else
+            "If you'd like, I can help you book the free on-site assessment from here."
+        )
 
     def _build_pricing_response(
         self,
@@ -3324,20 +3342,27 @@ class Plumbot:
         total_line: str,
         cheapest_line: str,
         visit_committed: bool = False,
+        language: str = "english",
     ) -> str:
         """Build consistent pricing replies with a breakdown, rough total, and booking push."""
-        breakdown_text = "\n".join(f"• {line}" for line in breakdown_lines)
-        depends_line = (
-            "However final prices depend on the setup and can still be adjusted once our plumber sees the space."
-            if visit_committed else
-            "However final prices depend on the setup and can be negotiated once we get to come out and see the space."
-        )
+        breakdown_text = "\n".join(breakdown_lines)
+        if language == "shona":
+            depends_line = (
+                "Final price inoenderana nesetup uye inogona kugadziriswa kana plumber auya oona nzvimbo yacho."
+                if visit_committed else
+                "Final price inoenderana nesetup uye inogona kutauriranwa kana tauya kuzoona nzvimbo yacho."
+            )
+        else:
+            depends_line = (
+                "Final price depends on setup and can still be adjusted once our plumber sees the space."
+                if visit_committed else
+                "Final price depends on setup and can be negotiated once we get to come out and see the space."
+            )
         return (
             f"{breakdown_text}\n\n"
-            f"{total_line}\n\n"
-            f"{cheapest_line}\n\n"
-            f"{depends_line}\n\n"
-            f"{self._get_pricing_followup_prompt()}"
+            f"**{total_line}**\n\n"
+            f"{cheapest_line} {depends_line}\n\n"
+            f"{self._get_pricing_followup_prompt(language)}"
         )
     #
     # ── FIX 3 helpers ────────────────────────────────────────────────────────
@@ -4350,7 +4375,14 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Installation and finishing: from US$120",
                         ],
                         "total_line": "Roughly looking at about US$670 for a basic supply-and-fit setup.",
-                        "cheapest_line": "We do have cheaper options if you already have the tub or you're going with a standard built-in setup, where labour can start from US$80.",
+                        "cheapest_line": "The cheapest tub option is an ordinary tub, which starts from US$80.",
+                        "sn_breakdown_lines": [
+                            "Tub supply: kubva US$400",
+                            "Mixer kana ichidiwa: kubva US$150",
+                            "Installation ne finishing: kubva US$120",
+                        ],
+                        "sn_total_line": "Zvingangoita US$670 pa basic supply-and-fit setup.",
+                        "sn_cheapest_line": "Cheapest tub option i ordinary tub, inotangira paUS$80.",
                     },
                     "standalone_tub": {
                         "breakdown_lines": [
@@ -4359,7 +4391,14 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Mixer and tub installation: from US$120",
                         ],
                         "total_line": "Roughly looking at about US$720 for everything on a basic freestanding setup.",
-                        "cheapest_line": "We do have cheaper tub options if you go for a standard built-in tub instead, with labour starting from US$80.",
+                        "cheapest_line": "The cheapest tub option is an ordinary tub, which starts from US$80.",
+                        "sn_breakdown_lines": [
+                            "Free-standing tub supply: kubva US$450",
+                            "Free-standing mixer: kubva US$150",
+                            "Kuisa mixer netub: kubva US$120",
+                        ],
+                        "sn_total_line": "Zvingangoita US$720 yezvinhu zvese pa basic freestanding setup.",
+                        "sn_cheapest_line": "Cheapest tub option i ordinary tub, inotangira paUS$80.",
                     },
                     "geyser": {
                         "breakdown_lines": [
@@ -4369,6 +4408,13 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ],
                         "total_line": "Roughly looking at about US$100 to US$180 for a straightforward geyser installation.",
                         "cheapest_line": "The cheapest option is when you already have the geyser and it's a simple swap, where labour starts from US$80.",
+                        "sn_breakdown_lines": [
+                            "Labour yekuisa geyser: kubva US$80",
+                            "Extra fittings nema connectors kana zvichidiwa: kubva US$20",
+                            "Kana access yakaoma kana size yakakura zvinogona kuwedzera",
+                        ],
+                        "sn_total_line": "Zvingangoita US$100 kusvika US$180 pakuisa geyser kuri straightforward.",
+                        "sn_cheapest_line": "Cheapest option ndeyekuti muchitova negeyser uye iri simple swap, apo labour inotangira paUS$80.",
                     },
                     "shower_cubicle": {
                         "breakdown_lines": [
@@ -4377,6 +4423,12 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ],
                         "total_line": "Roughly looking at about US$170 for everything on a standard cubicle fit.",
                         "cheapest_line": "The cheapest option is a standard-size cubicle setup starting from US$170 all-in.",
+                        "sn_breakdown_lines": [
+                            "Standard 900x900 cubicle supply: kubva US$130",
+                            "Installation: kubva US$40",
+                        ],
+                        "sn_total_line": "Zvingangoita US$170 yezvinhu zvese pa standard cubicle fit.",
+                        "sn_cheapest_line": "Cheapest option i standard-size cubicle setup inotangira paUS$170 all-in.",
                     },
                     "vanity": {
                         "breakdown_lines": [
@@ -4385,6 +4437,12 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ],
                         "total_line": "Roughly looking at about US$180 for a basic vanity setup, and more for larger or custom finishes.",
                         "cheapest_line": "The cheapest option is a small standard vanity, or just installation if you already have one, with labour starting from US$30.",
+                        "sn_breakdown_lines": [
+                            "Vanity unit supply: kubva US$150",
+                            "Installation labour: kubva US$30",
+                        ],
+                        "sn_total_line": "Zvingangoita US$180 pa basic vanity setup, uye zvinokwira kana yakakura kana custom.",
+                        "sn_cheapest_line": "Cheapest option i small standard vanity, kana kungoiisa chete kana muchitova nayo, labour ichitangira paUS$30.",
                     },
                     "bathtub_installation": {
                         "breakdown_lines": [
@@ -4395,6 +4453,14 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ],
                         "total_line": "Roughly looking at about US$80 for a basic install if you already have the tub, or from around US$720 for a full freestanding setup.",
                         "cheapest_line": "The cheapest option is when you already have a standard built-in tub, with installation starting from US$80.",
+                        "sn_breakdown_lines": [
+                            "Labour yekuisa standard bathtub: kubva US$80",
+                            "Free-standing tub supply kana ichidiwa: kubva US$450",
+                            "Free-standing mixer kana ichidiwa: kubva US$150",
+                            "Kuisa mixer: kubva US$120",
+                        ],
+                        "sn_total_line": "Zvingangoita US$80 pa basic install kana muchitova netub, kana kubva paUS$720 pa full freestanding setup.",
+                        "sn_cheapest_line": "Cheapest option ndeyekuti muchitova ne standard built-in tub, installation ichitangira paUS$80.",
                     },
                     "toilet": {
                         "breakdown_lines": [
@@ -4403,6 +4469,12 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ],
                         "total_line": "Roughly looking at about US$70 for everything on a standard toilet replacement.",
                         "cheapest_line": "The cheapest option is when you already have the toilet and only need fitting, with labour starting from US$20.",
+                        "sn_breakdown_lines": [
+                            "Close-coupled toilet supply: kubva US$50",
+                            "Installation: kubva US$20",
+                        ],
+                        "sn_total_line": "Zvingangoita US$70 yezvinhu zvese pa standard toilet replacement.",
+                        "sn_cheapest_line": "Cheapest option ndeyekuti muchitova netoilet uye muchingoda fitting chete, labour ichitangira paUS$20.",
                     },
                     "chamber": {
                         "breakdown_lines": [
@@ -4411,6 +4483,12 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ],
                         "total_line": "Roughly looking at about US$160 for everything on a standard chamber setup.",
                         "cheapest_line": "The cheapest option is if it's only a chamber fit or adjustment, with labour starting from US$30.",
+                        "sn_breakdown_lines": [
+                            "Side chamber supply: US$130",
+                            "Installation: US$30",
+                        ],
+                        "sn_total_line": "Zvingangoita US$160 yezvinhu zvese pa standard chamber setup.",
+                        "sn_cheapest_line": "Cheapest option ndeyekuti iri chamber fit kana adjustment chete, labour ichitangira paUS$30.",
                     },
                     "facebook_package": {
                         "breakdown_lines": [
@@ -4420,14 +4498,30 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ],
                         "total_line": "Roughly looking at about US$600 upward, depending on the fixtures and layout.",
                         "cheapest_line": "The cheapest option is the basic package starting from US$600 before extra fixtures are added.",
+                        "sn_breakdown_lines": [
+                            "Core bathroom package: kubva US$600",
+                            "Fixtures dzakaita sematub, mashower, toilet nemamixer zvinowedzerwa zvichienderana nezvamunosarudza",
+                            "Installation ne finishing zvinoenderana nesetup",
+                        ],
+                        "sn_total_line": "Zvingangoita kubva paUS$600 zvichikwira, zvichienderana nema fixtures nelayout.",
+                        "sn_cheapest_line": "Cheapest option i basic package inotangira paUS$600 zvinhu zvekuwedzera zvisati zvaiswa.",
                     },
                 }
 
-                if language != 'shona' and intent in structured_pricing:
+                if intent in structured_pricing:
+                    pricing_payload = structured_pricing[intent]
+                    if language == 'shona':
+                        return self._build_pricing_response(
+                            breakdown_lines=pricing_payload.get("sn_breakdown_lines", pricing_payload["breakdown_lines"]),
+                            total_line=pricing_payload.get("sn_total_line", pricing_payload["total_line"]),
+                            cheapest_line=pricing_payload.get("sn_cheapest_line", pricing_payload["cheapest_line"]),
+                            visit_committed=visit_committed,
+                            language="shona",
+                        )
                     return self._build_pricing_response(
-                        breakdown_lines=structured_pricing[intent]["breakdown_lines"],
-                        total_line=structured_pricing[intent]["total_line"],
-                        cheapest_line=structured_pricing[intent]["cheapest_line"],
+                        breakdown_lines=pricing_payload["breakdown_lines"],
+                        total_line=pricing_payload["total_line"],
+                        cheapest_line=pricing_payload["cheapest_line"],
                         visit_committed=visit_committed,
                     )
 
