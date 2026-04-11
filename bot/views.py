@@ -3566,6 +3566,16 @@ class Plumbot:
                 extracted_data,
                 incoming_message=incoming_message,
             )
+
+            if (
+                'customer_name' in updated_fields and
+                self.appointment.status == 'confirmed' and
+                self.appointment.scheduled_datetime
+            ):
+                reply = self._build_named_booking_confirmation()
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
             
             # STEP 4: Check for reschedule requests (for confirmed appointments)
             if (self.appointment.status == 'confirmed' and 

@@ -550,7 +550,7 @@ def send_previous_work_photos(sender, appointment=None):
                 sent_count += 1
                 time.sleep(0.5)
 
-            follow_up = "Would you like to book an appointment? Just tell me what service you need! 😊"
+            follow_up = "Those are some of our recent jobs. Anything there you'd like for your bathroom? We can do a free site visit to show you exactly what's possible in your space."
             time.sleep(1)
             whatsapp_api.send_text_message(sender, follow_up)
 
@@ -1167,7 +1167,7 @@ def handle_text_message(sender, text_data, message_id=None):
         if reply is None:
             print("🔇 Conversation complete — no reply sent")
             return
-            
+
         appointment.add_conversation_message("assistant", reply)
         appointment.last_outbound_at = timezone.now()
         appointment.last_contacted_at = appointment.last_outbound_at
