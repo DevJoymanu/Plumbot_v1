@@ -4334,7 +4334,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Full breakdown:\n"
                             "• Free-standing tub supply: from US$450\n"
                             "• Free-standing mixer: from US$150\n"
-                            "• Mixer + tub installation: US$120\n"
+                            "• tub installation: US$120\n"
                             "• Side chamber: US$130 (installation US$30)\n\n"
                             "Most customers are all-in at US$750–$1,200 depending on the tub they pick.\n\n"
                             "Do you already know which tub style you want, or would you like us to come "
@@ -4501,7 +4501,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     },
 
                     "location_ask": {
-                        "en": "We are based in Hatfield, Harare. 📍\n\n",
+                        "en": "We are based in Hatfield, Harare, and yourself 📍\n\n",
                         "sn": "Tiri muHatfield, Harare. 📍\n\n",
                     },
 
