@@ -5322,7 +5322,6 @@ I understand this is time-sensitive!"""
 
 
 
-
     def smart_booking_check(self):
         """
         Ready to book when all 5 required fields are present.
@@ -6192,33 +6191,7 @@ I understand this is time-sensitive!"""
 
 
 
-    def smart_booking_check(self):
-            """Check if we have enough information to attempt booking — 4-question flow."""
-            required_for_booking = [
-                self.appointment.project_type,
-                self.appointment.has_plan is not None,
-                self.appointment.customer_area,
-                self.appointment.scheduled_datetime,
-            ]
-
-            has_all_required = all(required_for_booking)
-            missing_fields = []
-
-            if not self.appointment.project_type:
-                missing_fields.append("service type")
-            if self.appointment.has_plan is None:
-                missing_fields.append("plan preference")
-            if not self.appointment.customer_area:
-                missing_fields.append("area")
-            if not self.appointment.scheduled_datetime:
-                missing_fields.append("availability")
-
-            return {
-                'ready_to_book': has_all_required,
-                'missing_fields': missing_fields,
-                'completion_percentage': ((4 - len(missing_fields)) / 4) * 100
-            }
-            
+  
     def handle_early_datetime_provision(self, message):
         """Handle cases where customer provides date/time before we ask for availability"""
         try:
