@@ -3134,6 +3134,24 @@ class Plumbot:
         if not msg:
             return None
 
+        selected_date = self._get_selected_local_date()
+        if not selected_date:
+            return None
+
+        sa_tz = pytz.timezone('Africa/Johannesburg')
+
+        bare_hour_match = re.fullmatch(r'(\d{1,2})', msg)
+        if bare_hour_match:
+            chosen_hour = int(bare_hour_match.group(1))
+            offered_times = self._get_two_available_times_for_date(selected_date)
+            matching_slots = []
+            for slot in offered_times:
+                local_slot = slot.astimezone(sa_tz) if slot.tzinfo else sa_tz.localize(slot)
+                if local_slot.strftime('%I').lstrip('0') == str(chosen_hour):
+                    matching_slots.append(local_slot)
+            if len(matching_slots) == 1:
+                return matching_slots[0]
+
         time_patterns = [
             r'(\d{1,2}):(\d{2})\s*(am|pm)',
             r'(\d{1,2})\s*(am|pm)',
@@ -3167,9 +3185,23 @@ class Plumbot:
                 minute = int(groups[1]) if len(groups) > 1 and groups[1] else 0
 
             if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return base_dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                return sa_tz.localize(
+                    datetime.combine(
+                        selected_date,
+                        datetime.min.time().replace(hour=hour, minute=minute),
+                    )
+                )
 
         return None
+
+    def _get_selected_local_date(self):
+        """Return the appointment's selected day in Johannesburg local time."""
+        dt = self.appointment.scheduled_datetime
+        if not dt:
+            return None
+        sa_tz = pytz.timezone('Africa/Johannesburg')
+        local_dt = dt.astimezone(sa_tz) if dt.tzinfo else sa_tz.localize(dt)
+        return local_dt.date()
     
     
     # ─────────────────────────────────────────────────────────────────────────────
@@ -5431,7 +5463,7 @@ I understand this is time-sensitive!"""
                     self.appointment.scheduled_datetime = parsed.replace(hour=0, minute=0, second=0)
                     updated_fields.append('availability')
                     self.appointment.save(update_fields=['scheduled_datetime'])
-                    print(f"✅ Day selection captured: {self.appointment.scheduled_datetime.date()}")
+                    print(f"✅ Day selection captured: {self._get_selected_local_date()}")
 
             # ── Customer name ─────────────────────────────────────────────────────
             elif (
@@ -6068,8 +6100,9 @@ I understand this is time-sensitive!"""
                 if next_question == "availability_time":
                     dt = self.appointment.scheduled_datetime
                     if dt:
-                        day_label = self._format_day(dt.date())
-                        times     = self._get_two_available_times_for_date(dt.date())
+                        selected_date = self._get_selected_local_date()
+                        day_label = self._format_day(selected_date) if selected_date else "that day"
+                        times     = self._get_two_available_times_for_date(selected_date) if selected_date else []
                         time_a    = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9AM"
                         time_b    = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2PM"
                         return (
@@ -6164,7 +6197,9 @@ I understand this is time-sensitive!"""
         from datetime import datetime as dt_cls
     
         sa_tz = _pytz.timezone('Africa/Johannesburg')
-        date_obj = self.appointment.scheduled_datetime.date()
+        date_obj = self._get_selected_local_date()
+        if not date_obj:
+            return "What time works best for you — morning or afternoon?"
     
         # Try 12:00 first, then 13, 14, 15, 16
         for h in [12, 13, 14, 15, 16]:
