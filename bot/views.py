@@ -4065,6 +4065,419 @@ Reply with ONLY a JSON object:
 
 
 
+    def generate_contextual_response(self, incoming_message, next_question, updated_fields):
+        """
+        Generate the next bot message.
+
+        retry_count == 0  → exact hardcoded first-pass question, no DeepSeek call.
+        retry_count >= 1  → DeepSeek rephrases to match the customer's tone.
+                            If the customer provided info this turn, open with a
+                            thank-you + one contextual line before the question.
+        """
+        try:
+            import pytz as _pytz
+
+            retry_count = self._get_question_retry_count(next_question)
+            sa_tz = _pytz.timezone('Africa/Johannesburg')
+
+            saturday_indicators = ['saturday', 'sat']
+            if any(s in incoming_message.lower() for s in saturday_indicators):
+                alternatives = self.get_alternative_time_suggestions(
+                    timezone.now() + timedelta(days=1)
+                )
+                alt_text = (
+                    "\n".join([f"• {alt['display']}" for alt in alternatives])
+                    if alternatives else ""
+                )
+                reply = (
+                    "We unfortunately don't operate on Saturdays. 😊\n\n"
+                    "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                )
+                if alt_text:
+                    reply += (
+                        f"Here are some available slots:\n{alt_text}\n\n"
+                        "Or feel free to suggest a different date and time!"
+                    )
+                else:
+                    reply += "Could you please choose a different day that works for you?"
+                return reply
+
+            all_day_phrases = [
+                'available all day', 'whole day', 'all day', 'anytime',
+                'any time', 'free all day', 'i am free', 'im free',
+            ]
+            if (
+                next_question in ('availability_time', 'area', 'complete') and
+                self.appointment.scheduled_datetime and
+                any(p in incoming_message.lower() for p in all_day_phrases)
+            ):
+                return self._handle_all_day_response()
+
+            if next_question == "name":
+                if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
+                    return self._build_named_booking_confirmation()
+                if self._declines_sharing_name(incoming_message):
+                    self._mark_customer_name_declined()
+                    return (
+                        "No problem at all. Your appointment is still confirmed — "
+                        "we'll use this WhatsApp number for updates."
+                    )
+                return (
+                    "One last thing — what name should we put on the booking? "
+                    "If you'd rather not share it, just say no."
+                )
+
+            if retry_count == 0:
+                first_pass = self._get_first_pass_question(next_question)
+                if first_pass:
+                    self._set_question_retry_count(next_question, 1)
+                    return first_pass
+
+            new_retry = retry_count + 1
+            self._set_question_retry_count(next_question, new_retry)
+
+            return self._generate_retry_response(
+                incoming_message=incoming_message,
+                next_question=next_question,
+                updated_fields=updated_fields or [],
+                retry_count=new_retry,
+            )
+
+        except Exception as e:
+            print(f"❌ Error generating contextual response: {str(e)}")
+            return "I understand. Let me ask you about the next detail we need for your appointment."
+
+    def _get_first_pass_question(self, next_question: str) -> str:
+        """
+        Return the exact hardcoded first-pass question for a given question key.
+        Returns None if the question key is unrecognised.
+        These are sent verbatim on retry_count == 0 with no DeepSeek call.
+        """
+        if next_question == "service_type":
+            return (
+                "Hello! Happy to help. Which service are you interested in?\n\n"
+                "We offer:\n"
+                "• Bathroom Renovation\n"
+                "• New Plumbing Installation\n"
+                "• Kitchen Renovation"
+            )
+
+        if next_question == "project_description":
+            return (
+                "Got it! What exactly do you want done? "
+                "The more detail you give, the more accurate we can be with the quote."
+            )
+
+        if next_question == "availability_date":
+            days = self._get_next_two_available_days()
+            day_a = self._format_day(days[0]) if len(days) > 0 else "tomorrow"
+            day_b = self._format_day(days[1]) if len(days) > 1 else "the day after"
+            visit_desc = self._describe_project_context()
+            return (
+                f"Great, what works better for you — {day_a} or {day_b} — "
+                f"for us to come through and {visit_desc}?"
+            )
+
+        if next_question == "availability_time":
+            dt = self.appointment.scheduled_datetime
+            if dt:
+                selected_date = self._get_selected_local_date()
+                day_label = self._format_day(selected_date) if selected_date else "that day"
+                times = self._get_two_available_times_for_date(selected_date) if selected_date else []
+                time_a = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9AM"
+                time_b = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2PM"
+                return (
+                    f"Perfect, for {day_label} — "
+                    f"what works better: {time_a} or {time_b}?"
+                )
+            return "What time works best for you — morning or afternoon?"
+
+        if next_question == "area":
+            return "All good, what area are you in?"
+
+        return None
+
+    def _generate_retry_response(
+        self,
+        incoming_message: str,
+        next_question: str,
+        updated_fields: list,
+        retry_count: int,
+    ) -> str:
+        """
+        Generate a retry response that:
+        1. Opens with a thank-you + contextual line if the customer provided info.
+        2. Rephrases the next question to match the customer's tone and wording style.
+        3. Escalates naturally with each retry (simpler → choices → light urgency).
+
+        Always uses DeepSeek. Falls back to a hardcoded rephrase on error.
+        """
+        info_provided = self._describe_info_provided(updated_fields)
+        contextual_line = self._get_contextual_line(updated_fields, next_question)
+        question_instruction = self._get_question_instruction(next_question, retry_count)
+
+        msg_lower = incoming_message.lower()
+        shona_markers = [
+            'hongu', 'kwete', 'ndinoda', 'ndoda', 'chimbuzi', 'shawa',
+            'bhavhu', 'kicheni', 'mauya', 'mangwana', 'mauro', 'zvakanaka',
+        ]
+        shona_count = sum(1 for m in shona_markers if m in msg_lower)
+        language_note = (
+            "The customer is writing in Shona — respond in Shona."
+            if shona_count >= 2
+            else "The customer is writing in mixed Shona/English — match their mix."
+            if shona_count == 1 and len(msg_lower.split()) > 2
+            else "The customer is writing in English — respond in English."
+        )
+
+        if info_provided and contextual_line:
+            opening_instruction = (
+                f"Open with a brief thank-you for the information they provided "
+                f"({info_provided}), then add this specific contextual line: "
+                f"\"{contextual_line}\". Then ask the question below. "
+                f"Keep the whole message under 4 sentences."
+            )
+        elif info_provided:
+            opening_instruction = (
+                f"Open with a brief, natural thank-you for the information they "
+                f"provided ({info_provided}). Then ask the question below. "
+                f"Keep it under 3 sentences."
+            )
+        else:
+            opening_instruction = (
+                "Go straight to the question — no preamble. "
+                "The customer hasn't provided new information this turn."
+            )
+
+        if retry_count == 1:
+            escalation = "Simplify the question slightly. Same intent, fresher phrasing."
+        elif retry_count == 2:
+            escalation = (
+                "Offer two explicit choices instead of an open question. "
+                "Make it very easy to answer."
+            )
+        elif retry_count >= 3:
+            escalation = (
+                "Keep it to 1-2 sentences max. Add light urgency: "
+                "\"We're booking up this week.\" or similar real constraint."
+            )
+        else:
+            escalation = "Natural rephrasing."
+
+        prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe/South Africa.
+
+CUSTOMER'S LAST MESSAGE: "{incoming_message}"
+
+WHAT TO DO:
+{opening_instruction}
+
+QUESTION TO ASK:
+{question_instruction}
+
+TONE RULES:
+- Mirror the customer's vocabulary and sentence length exactly
+- If they wrote 3 words, your question should be short too
+- If they wrote in full sentences, match that
+- South African / Zimbabwean English ("sorted", "keen", "sharp")
+- {language_note}
+- No markdown, no bold, no bullet points in the question itself
+- One question only — never stack two questions
+- At most one emoji for retry 1-2, zero emoji for retry 3+
+- Never say "just checking in", "following up", "hope you're well"
+- Never use the customer's name (we may not know it)
+- Sound like a real person texting, not a bot
+
+RETRY COUNT: {retry_count} (higher = simpler and more direct)
+{escalation}
+
+Write ONLY the message text. No labels, no quotes around it."""
+
+        try:
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You write short WhatsApp messages for a plumbing company. "
+                            "Match the customer's tone exactly. "
+                            "Sound human. Never ask for the customer's name."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,
+                max_tokens=200,
+            )
+            reply = response.choices[0].message.content.strip()
+            reply = reply.replace('**', '').replace('__', '')
+            print(
+                f"🤖 Retry response | q={next_question} retry={retry_count} "
+                f"updated={updated_fields}"
+            )
+            return reply
+
+        except Exception as e:
+            print(f"❌ DeepSeek retry response error: {e}")
+            return self._hardcoded_retry_fallback(next_question, retry_count)
+
+    def _describe_info_provided(self, updated_fields: list) -> str:
+        """
+        Return a human-readable summary of what the customer just provided,
+        for use in the thank-you opening.
+        """
+        if not updated_fields:
+            return ""
+
+        field_labels = {
+            'service_type': 'the type of service they need',
+            'project_description': 'details about their project',
+            'area': 'their area',
+            'availability': 'their preferred time',
+            'customer_name': 'their name',
+            'property_type': 'their property type',
+            'timeline': 'their timeline',
+        }
+        labels = [field_labels.get(f, f.replace('_', ' ')) for f in updated_fields]
+        if len(labels) == 1:
+            return labels[0]
+        return ', '.join(labels[:-1]) + ' and ' + labels[-1]
+
+    def _get_contextual_line(self, updated_fields: list, next_question: str) -> str:
+        """
+        Return a specific, relevant contextual line to add after the thank-you,
+        before the next question. These lines make the bot feel human and informed
+        rather than robotic.
+        """
+        if not updated_fields:
+            return ""
+
+        area = self.appointment.customer_area or ""
+        service = (self.appointment.project_type or "").replace("_", " ").lower()
+        desc = (self.appointment.project_description or "").lower()
+
+        if 'area' in updated_fields and area:
+            return (
+                f"We've actually done a number of renovations in {area} "
+                f"over the past month alone."
+            )
+
+        if 'service_type' in updated_fields:
+            if 'bathroom' in service:
+                return "Bathroom renovations are actually our most popular service right now."
+            if 'kitchen' in service:
+                return "Kitchen plumbing is one of our specialities — great choice."
+            if 'installation' in service:
+                return "New installations are something we handle from scratch — no problem at all."
+            return "That's actually one of the services we do most frequently."
+
+        if 'project_description' in updated_fields:
+            if any(w in desc for w in ('tiled', 'already tiled', 'existing')):
+                return (
+                    "Since it's already tiled, the work focuses on fixtures and fittings "
+                    "which keeps costs down."
+                )
+            if any(w in desc for w in ('new', 'from scratch', 'building')):
+                return "Starting fresh gives us more flexibility with the layout — good to know."
+            return "That gives us a much clearer picture of the job."
+
+        if 'availability' in updated_fields and next_question == 'availability_time':
+            return "That day works well on our side."
+
+        if 'availability' in updated_fields and next_question == 'area':
+            return "That time is noted — almost there."
+
+        return ""
+
+    def _get_question_instruction(self, next_question: str, retry_count: int) -> str:
+        """
+        Return the instruction for DeepSeek describing what question to ask next.
+        Provides context-specific phrasing guidance per question.
+        """
+        if next_question == "service_type":
+            return (
+                "Ask which of our three services they need: "
+                "Bathroom Renovation, New Plumbing Installation, or Kitchen Renovation. "
+                "Don't list them as bullet points — weave them into a natural question."
+            )
+
+        if next_question == "project_description":
+            return (
+                "Ask what specifically they want done. Encourage detail by mentioning "
+                "that more detail = more accurate quote. Keep it conversational."
+            )
+
+        if next_question == "availability_date":
+            days = self._get_next_two_available_days()
+            day_a = self._format_day(days[0]) if len(days) > 0 else "tomorrow"
+            day_b = self._format_day(days[1]) if len(days) > 1 else "the day after"
+            visit_desc = self._describe_project_context()
+            return (
+                f"Ask whether {day_a} or {day_b} works better for a free on-site visit "
+                f"to {visit_desc}. Frame it as offering two specific options."
+            )
+
+        if next_question == "availability_time":
+            selected_date = self._get_selected_local_date()
+            day_label = self._format_day(selected_date) if selected_date else "that day"
+            times = self._get_two_available_times_for_date(selected_date) if selected_date else []
+            time_a = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9AM"
+            time_b = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2PM"
+            return (
+                f"Ask whether {time_a} or {time_b} works better on {day_label}. "
+                "Two options only — make it easy to reply."
+            )
+
+        if next_question == "area":
+            return (
+                "Ask which suburb or area they are in. Keep it short — "
+                "just need the location to plan the visit."
+            )
+
+        if next_question == "name":
+            return (
+                "Ask what name to put on the booking. "
+                "Mention they can decline if they prefer not to share."
+            )
+
+        return "Ask the most natural next question to move the booking forward."
+
+    def _hardcoded_retry_fallback(self, next_question: str, retry_count: int) -> str:
+        """
+        Fallback retry questions used when DeepSeek is unavailable.
+        Progressively simpler with each retry.
+        """
+        fallbacks = {
+            'service_type': [
+                "Which service were you after — bathroom, kitchen, or a new installation?",
+                "Bathroom, kitchen, or new installation — which one?",
+                "Just to confirm — which service do you need?",
+            ],
+            'project_description': [
+                "Could you tell me a bit more about what you'd like done?",
+                "What exactly needs doing — the more detail the better for the quote.",
+                "What's the main thing you want sorted?",
+            ],
+            'availability_date': [
+                "Which day works better for the site visit?",
+                "Would tomorrow or the day after suit you better?",
+                "What day works for you?",
+            ],
+            'availability_time': [
+                "Morning or afternoon — which works better for you?",
+                "What time suits you best?",
+                "Morning or afternoon?",
+            ],
+            'area': [
+                "Which area are you based in?",
+                "What suburb are you in?",
+                "Which area?",
+            ],
+        }
+        options = fallbacks.get(next_question, ["What's the best next step for you?"])
+        idx = min(retry_count - 1, len(options) - 1)
+        return options[idx]
+
     def validate_plan_status_with_ai(self, extracted_status: str, original_message: str) -> tuple:
         """
         Use AI to validate and normalize plan status responses
@@ -6241,6 +6654,21 @@ I understand this is time-sensitive!"""
                 if db_update_fields:
                     self.appointment.save(update_fields=db_update_fields)
                 refresh_lead_score(self.appointment)
+
+                # Reset retry count for every question that was just answered
+                # so the NEXT unanswered question starts fresh at 0
+                question_to_field = {
+                    'service_type': 'service_type',
+                    'project_description': 'project_description',
+                    'area': 'area',
+                    'availability_date': 'availability',
+                    'availability_time': 'availability',
+                    'customer_name': 'customer_name',
+                }
+                for question_key, field_key in question_to_field.items():
+                    if field_key in updated_fields:
+                        self._set_question_retry_count(question_key, 0)
+                        print(f"🔄 Reset retry count for question: {question_key}")
                 print(f"💾 Saved appointment with updated fields: {updated_fields}")
             else:
                 print("ℹ️ No fields were updated")
@@ -6776,7 +7204,7 @@ I understand this is time-sensitive!"""
             return False
 
 
-    def generate_contextual_response(self, incoming_message, next_question, updated_fields):
+    def _generate_contextual_response_legacy(self, incoming_message, next_question, updated_fields):
         """
         Generate the next bot message.
         retry_count == 0  → exact hardcoded wording.
