@@ -3537,6 +3537,7 @@ class Plumbot:
                 return reschedule_response
             
             # ── STEP 5 & 6: Book if ready, otherwise ask next question ───────
+# ── STEP 5 & 6: Book if ready, otherwise ask next question ───────
             next_question  = self.get_next_question_to_ask()
             booking_status = self.smart_booking_check()
 
@@ -3585,7 +3586,8 @@ class Plumbot:
             else:
                 reply = self.generate_contextual_response(
                     incoming_message, next_question, updated_fields
-                )            # Update conversation history
+                )
+
             self.appointment.add_conversation_message("user", incoming_message)
             self.appointment.add_conversation_message("assistant", reply)
             
@@ -5282,7 +5284,6 @@ I understand this is time-sensitive!"""
             return {}
 
 
-
     def get_next_question_to_ask(self):
         """
         5-question booking flow:
@@ -5322,11 +5323,11 @@ I understand this is time-sensitive!"""
 
 
 
+
     def smart_booking_check(self):
         """
-        Ready to book when all 5 required fields are present:
-        project_type, project_description, scheduled_datetime
-        (with confirmed time), customer_area.
+        Ready to book when all 5 required fields are present.
+        has_plan is NOT required — it is no longer part of the booking flow.
         """
         has_service  = bool(self.appointment.project_type)
         has_desc     = bool(self.appointment.project_description)
