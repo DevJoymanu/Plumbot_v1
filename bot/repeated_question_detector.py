@@ -5,6 +5,15 @@ Uses DeepSeek to detect when a customer is asking the same question again
 (even if worded differently), then generates a reassuring clarification response
 that explains the previous answer and gently redirects to the plumber for
 technical details.
+
+CHANGE LOG
+----------
+- Added _classify_message_intent() — DeepSeek pre-classifier that runs BEFORE
+  the repeat-question check.  Any message that expresses a booking action,
+  provides project details, or is a short affirmative/negative is immediately
+  returned as None (not a repeat), preventing the false-positive matches
+  seen in production (e.g. "I would like to book an appointment" matching
+  "May I have pictures of your work").
 """
 
 import os
@@ -51,6 +60,113 @@ _GENERIC_INFO_REQUEST_SNIPPETS = (
 )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW: DeepSeek intent pre-classifier
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _classify_message_intent(message: str) -> str:
+    """
+    Use DeepSeek to classify the customer's message into one of:
+
+        booking_action   — customer is booking, confirming, or scheduling
+        project_detail   — customer is describing their project / answering a question
+        short_response   — very short affirmative, negative, or acknowledgment
+        repeat_candidate — could genuinely be a repeated question; proceed with check
+        other            — anything else that should pass through normally
+
+    Returns the intent string.  On any error, returns 'other' (safe default —
+    lets the repeat check proceed rather than silently suppressing it).
+    """
+    if not _deepseek:
+        return 'other'
+
+    prompt = f"""You are a message intent classifier for a Zimbabwean plumbing company's WhatsApp chatbot.
+Customers write in English, Shona, or a mix of both.
+
+Classify the customer message below into EXACTLY ONE of these intents:
+
+booking_action
+  The customer is taking a step towards booking or confirming an appointment.
+  Examples: "I would like to book an appointment", "Let's go ahead", "I'm ready to book",
+            "Can we schedule?", "Yes I want to proceed", "Ndoda kubhukisha" (Shona: I want to book),
+            "Book me in", "Confirm the appointment", "I'd like to go ahead with the site visit".
+
+project_detail
+  The customer is describing their project, answering a question about what work they need,
+  or providing specific details about fixtures, rooms, or scope of work.
+  Examples: "I need a new shower cubicle and toilet", "The bathroom is 3x3 metres",
+            "We want to renovate the whole bathroom", "Replace the geyser",
+            "Ndoda kushandura chimbuzi" (Shona: I want to change the toilet).
+
+short_response
+  A very short reply (1-3 words) that is an affirmative, negative, or acknowledgment.
+  Examples: "Yes", "No", "Ok", "Sure", "Noted", "Thanks", "Nope", "Yeah", "Ok cool",
+            "Hongu" (Shona: yes), "Kwete" (Shona: no).
+
+repeat_candidate
+  The message looks like it might be asking the same question the customer already asked,
+  possibly rephrased.  Typically longer and phrased as a question.
+  Examples: "But how much does it actually cost?", "I still don't understand the price",
+            "What exactly is included in the site visit?", "Can you tell me again how it works?"
+
+other
+  Anything that doesn't fit the above — general chat, new questions, location info, etc.
+
+RULES:
+- Return ONLY the intent label, nothing else.
+- If unsure between booking_action and other, choose booking_action.
+- If unsure between short_response and anything else, choose short_response.
+- Never return repeat_candidate for booking or project messages.
+
+Customer message: "{message}"
+
+Intent:"""
+
+    try:
+        response = _deepseek.chat.completions.create(
+            model='deepseek-chat',
+            messages=[
+                {
+                    'role': 'system',
+                    'content': 'Return ONLY the intent label. No explanation, no punctuation.',
+                },
+                {'role': 'user', 'content': prompt},
+            ],
+            temperature=0.0,
+            max_tokens=10,
+        )
+        raw = response.choices[0].message.content.strip().lower()
+
+        valid_intents = {
+            'booking_action', 'project_detail', 'short_response',
+            'repeat_candidate', 'other',
+        }
+        if raw in valid_intents:
+            logger.info(f"Intent pre-classifier: '{message[:60]}' → {raw}")
+            return raw
+
+        # Fuzzy safety net
+        if 'booking' in raw:
+            return 'booking_action'
+        if 'project' in raw or 'detail' in raw:
+            return 'project_detail'
+        if 'short' in raw:
+            return 'short_response'
+        if 'repeat' in raw:
+            return 'repeat_candidate'
+
+        logger.warning(f"Intent pre-classifier returned unexpected value: {raw!r}")
+        return 'other'
+
+    except Exception as exc:
+        logger.warning(f"Intent pre-classifier failed: {exc}")
+        return 'other'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Existing helpers (unchanged)
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _extract_recent_qa_pairs(conversation_history: list) -> list[dict]:
     """
     Walk the conversation history backwards and collect (customer_question, bot_answer) pairs.
@@ -59,21 +175,17 @@ def _extract_recent_qa_pairs(conversation_history: list) -> list[dict]:
     pairs = []
     history = conversation_history or []
 
-    # Walk in reverse to find assistant messages and pair each with the
-    # customer message that immediately preceded it.
     i = len(history) - 1
     while i >= 1 and len(pairs) < 5:
         msg = history[i]
         if msg.get('role') == 'assistant':
             content = (msg.get('content') or '').strip()
-            # Skip system tags and media markers
             skip_prefixes = (
                 '[AUTO FOLLOW-UP]', '[MANUAL FOLLOW-UP]', '[BULK MANUAL FOLLOW-UP]',
                 '[PLAN FOLLOW-UP', '[PLAN PIVOT', '[Sent ', '[FILE UPLOADED]',
                 '[VIDEO UPLOADED]', 'APPOINTMENT CONFIRMED', 'NEW APPOINTMENT BOOKED',
             )
             if content and not any(content.startswith(p) for p in skip_prefixes):
-                # Find the preceding customer message
                 j = i - 1
                 while j >= 0:
                     prev = history[j]
@@ -88,7 +200,7 @@ def _extract_recent_qa_pairs(conversation_history: list) -> list[dict]:
                     j -= 1
         i -= 1
 
-    pairs.reverse()  # oldest first
+    pairs.reverse()
     return pairs
 
 
@@ -113,6 +225,10 @@ def _is_generic_info_request(message: str) -> bool:
     return any(snippet in text for snippet in _GENERIC_INFO_REQUEST_SNIPPETS)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Main public function — updated with intent pre-classifier gate
+# ─────────────────────────────────────────────────────────────────────────────
+
 def detect_repeated_question(
     new_message: str,
     conversation_history: list,
@@ -125,18 +241,30 @@ def detect_repeated_question(
         None  — if it's a fresh question (no action needed)
         dict  — {
                     'is_repeat': True,
-                    'matched_question': str,   # original phrasing
-                    'matched_answer': str,     # what the bot said before
+                    'matched_question': str,
+                    'matched_answer': str,
                 }
     """
     if not _deepseek:
         return None
 
+    # ── GATE: classify intent before doing the expensive repeat check ─────────
+    intent = _classify_message_intent(new_message)
+
+    # Booking actions, project details, and short responses are NEVER repeats.
+    # Only proceed to the full repeat-check for repeat_candidate or other.
+    if intent in ('booking_action', 'project_detail', 'short_response'):
+        logger.info(
+            f"Repeat-question check skipped — intent={intent}, "
+            f"message='{new_message[:80]}'"
+        )
+        return None
+    # ─────────────────────────────────────────────────────────────────────────
+
     pairs = _extract_recent_qa_pairs(conversation_history)
     if not pairs:
         return None
 
-    # Build a compact transcript for DeepSeek
     history_text = "\n".join(
         f"Q{idx + 1}: {p['question']}\nA{idx + 1}: {p['answer'][:300]}"
         for idx, p in enumerate(pairs)
@@ -164,6 +292,8 @@ Consider these as DIFFERENT questions:
 - Choosing between options the bot presented
 - Confirming an appointment detail
 - Providing their name, area, or availability
+- Booking or scheduling an appointment
+- Describing project work they want done
 
 Return ONLY valid JSON:
 {{
@@ -202,8 +332,6 @@ Return ONLY valid JSON:
             idx = int(matched_index) - 1
             if 0 <= idx < len(pairs):
                 matched_pair = pairs[idx]
-                # If the bot only asked a generic intake question, and the new
-                # message looks like project detail, keep the intake flow moving.
                 if (
                     _is_generic_intake_answer(matched_pair['answer']) and
                     _looks_like_project_detail_message(new_message)
@@ -246,11 +374,6 @@ def generate_repeat_clarification(
 ) -> str:
     """
     Generate a warm, reassuring response for a repeated question.
-    The response:
-      1. Acknowledges the customer and makes them feel heard
-      2. Explains why the previous answer was given
-      3. Asks if they need further clarification
-      4. Redirects to the plumber for technical / project-specific details
     """
     if not _deepseek:
         return _fallback_repeat_response(plumber_number)
