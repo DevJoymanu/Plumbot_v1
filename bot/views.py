@@ -3110,6 +3110,63 @@ class Plumbot:
             self.appointment.internal_notes = cleaned.strip()
             self.appointment.save(update_fields=['internal_notes'])
 
+    def _get_question_retry_counts(self) -> dict:
+        notes = self.appointment.internal_notes or ''
+        pattern = r'\[QUESTION_RETRY_COUNTS\](\{.*?\})'
+        match = re.search(pattern, notes, re.DOTALL)
+        if not match:
+            return {}
+        try:
+            data = json.loads(match.group(1))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_question_retry_counts(self, counts: dict):
+        notes = self.appointment.internal_notes or ''
+        cleaned = re.sub(r'\n?\[QUESTION_RETRY_COUNTS\]\{.*?\}', '', notes, flags=re.DOTALL).strip()
+        payload = f"[QUESTION_RETRY_COUNTS]{json.dumps(counts, sort_keys=True)}"
+        self.appointment.internal_notes = f"{cleaned}\n{payload}".strip() if cleaned else payload
+        self.appointment.save(update_fields=['internal_notes'])
+
+    def _get_question_retry_count(self, question: str) -> int:
+        counts = self._get_question_retry_counts()
+        try:
+            return max(0, int(counts.get(question, 0)))
+        except Exception:
+            return 0
+
+    def _set_question_retry_count(self, question: str, count: int):
+        counts = self._get_question_retry_counts()
+        counts[question] = max(0, int(count))
+        self._save_question_retry_counts(counts)
+
+    def _sync_retry_count_field(self, question: str):
+        if not self._appointment_has_field('retry_count'):
+            return
+        current = self._get_question_retry_count(question)
+        self.appointment.retry_count = current
+        self.appointment.save(update_fields=['retry_count'])
+
+    def _build_retry_context_line(self, updated_fields, next_question) -> str:
+        updated_fields = updated_fields or []
+        if 'area' in updated_fields and self.appointment.customer_area:
+            return (
+                f"Thanks for providing your area. We've actually done a number of renovations in "
+                f"{self.appointment.customer_area} recently."
+            )
+        if 'project_description' in updated_fields and self.appointment.project_description:
+            return "Thanks for the extra detail. That gives us a much clearer picture of the job."
+        if 'service_type' in updated_fields and self.appointment.project_type:
+            service_name = self.appointment.project_type.replace('_', ' ').title()
+            return f"Thanks for clarifying the service. That helps us point you in the right direction for the {service_name}."
+        if 'availability' in updated_fields:
+            if next_question == 'availability_time':
+                return "Thanks, that day is noted. We just need to lock in the best time for you."
+            if next_question == 'area':
+                return "Thanks, that time works on our side. We just need your area to finish this off."
+        return ""
+
     def _declines_sharing_name(self, message: str) -> bool:
         msg = (message or '').strip().lower()
         if not msg:
@@ -4804,33 +4861,41 @@ When you're finished sending everything, just type "done" or "finished" and I'll
         
         if inquiry.get('intent') != 'none' and inquiry.get('confidence') == 'HIGH':
             return self.handle_service_inquiry(inquiry['intent'], message)
-        
-        return """Here are our approximate prices 😊
 
-    🛁 *Bathroom Renovation*
-    - Full renovation: from US$600
-    - Bathtub installation (with wall finishing): from US$80
-    - Standalone/freestanding tub: from US$450
-    - Free-standing mixer: from US$150
+        try:
+            lang_response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Detect the language of this message. Reply with ONLY 'shona', 'english', or 'mixed'."
+                    },
+                    {
+                        "role": "user",
+                        "content": message
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=5
+            )
+            language = lang_response.choices[0].message.content.strip().lower()
+        except Exception:
+            language = "english"
 
-    🚿 *Shower*
-    - Shower cubicle (900x900mm): from US$130
-    - Installation: from US$40
+        if language == "shona":
+            return (
+                "Tub netoilet zviri paFacebook picture zvinenge zviri around US$500, "
+                "uye labour ingangoita US$150 👍\n\n"
+                "Final price inoenderana nesetup, saka tinozoconfirm kana tauya tangoona space.\n\n"
+                f"{self._get_pricing_followup_prompt('shona')}"
+            )
 
-    🚽 *Toilet & Chamber*
-    - Close-coupled toilet supply: from US$50
-    - Toilet installation: from US$20
-    - Side chamber: US$130 (installation US$30)
-
-    🔥 *Geyser*
-    - Installation: from US$80
-
-    🪞 *Vanity Units*
-    - Custom vanity: from US$150
-
-    ⚠️ These are approximate prices and may vary depending on the scope of work on site. For an accurate quote, we can do a *site visit* or you can send us a *photo/plan*.
-
-    Which were you looking at — supply only or supply + install??"""
+        return (
+            "The tub & toilet on the Facebook picture are around US$500, "
+            "and labour is about US$150 👍\n\n"
+            "Final price depends on the setup, so we confirm after a quick site check.\n\n"
+            f"{self._get_pricing_followup_prompt('english')}"
+        )
 
     def notify_plumber_about_plan(self):
         """Send plan details to plumber via WhatsApp"""
@@ -5098,7 +5163,7 @@ I understand this is time-sensitive!"""
             next_question = self.get_next_question_to_ask()
             context_parts.append(f"Next Question Needed: {next_question}")
             
-            retry_count = getattr(self.appointment, 'retry_count', 0)
+            retry_count = self._get_question_retry_count(next_question)
             context_parts.append(f"Question Retry Count: {retry_count}")
             
             completeness = self.appointment.get_customer_info_completeness()
@@ -6300,7 +6365,7 @@ I understand this is time-sensitive!"""
         try:
             import pytz as _pytz
     
-            retry_count = getattr(self.appointment, 'retry_count', 0)
+            retry_count = self._get_question_retry_count(next_question)
             sa_tz       = _pytz.timezone('Africa/Johannesburg')
     
             # ── Saturday guard ────────────────────────────────────────────────────
@@ -6403,6 +6468,7 @@ I understand this is time-sensitive!"""
                     )
             # ── AI-driven retries ─────────────────────────────────────────────────
             appointment_context = self.get_appointment_context()
+            retry_context_line = self._build_retry_context_line(updated_fields, next_question)
     
             system_prompt = f"""
     You are a sharp, confident sales assistant for Homebase Plumbers in Zimbabwe.
@@ -6419,6 +6485,7 @@ I understand this is time-sensitive!"""
     
     Next question needed: {next_question}
     New info just received: {updated_fields if updated_fields else 'None'}
+    Relevant line to weave in if helpful: {retry_context_line or 'None'}
     Retry count: {retry_count}
     
     RETRY ESCALATION (retry_count > 0):
@@ -6435,7 +6502,9 @@ I understand this is time-sensitive!"""
     
     RULES:
     - ONE question at a time. No stacking.
-    - Acknowledge new info in one sentence first.
+    - If new info was provided, start by thanking them for it.
+    - If new info was provided, add one short relevant line tied to that info before the question.
+    - Rephrase the question to match the customer's tone and wording style.
     - South African / Zimbabwean English tone.
     - No markdown headers. Short sentences.
     - NEVER ask for info already collected.
@@ -6456,11 +6525,10 @@ I understand this is time-sensitive!"""
     
             # Reset / increment retry counter
             if updated_fields:
-                self.appointment.retry_count = 0
+                self._set_question_retry_count(next_question, 0)
             else:
-                self.appointment.retry_count = retry_count + 1
-            if self._appointment_has_field('retry_count'):
-                self.appointment.save(update_fields=['retry_count'])
+                self._set_question_retry_count(next_question, retry_count + 1)
+            self._sync_retry_count_field(next_question)
 
             return reply
     
