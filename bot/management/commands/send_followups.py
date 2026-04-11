@@ -63,8 +63,8 @@ CONTACT_WINDOWS = [
 TIER_INTERVALS = {
     LeadStatus.VERY_HOT: (4,  8,  24,  48),
     LeadStatus.HOT:      (20, 36, 60,  120),
-    LeadStatus.WARM:     (36, 72, 144, 240),
-    LeadStatus.COLD:     (48, 120, 240, 504),
+    LeadStatus.WARM:     (4, 8, 12, 16),
+    LeadStatus.COLD:     (6, 12, 16, 20),
 }
 
 MAX_FOLLOWUPS_PER_STATUS = {
