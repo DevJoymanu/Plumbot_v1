@@ -6582,7 +6582,8 @@ I understand this is time-sensitive!"""
                 incoming_message.strip().lower() not in _SERVICE_TYPE_LABELS
             ):
                 self.appointment.project_description = incoming_message.strip()
-                updated_fields.append('project_description')                print(f"✅ Fallback project_description from raw message: "
+                updated_fields.append('project_description')                
+                print(f"✅ Fallback project_description from raw message: "
                     f"{self.appointment.project_description[:60]}")
 
             # ── Area — capture passively whenever volunteered ─────────────────────
