@@ -3545,16 +3545,14 @@ class Plumbot:
 
                 booking_result = self.book_appointment(incoming_message)
 
+                #
                 if booking_result['success']:
-                    reply = (
-                        f"All sorted! Your site visit is booked for "
-                        f"{booking_result['datetime']}. ✅\n\n"
-                        f"We'll be there to assess the space and give you an "
-                        f"accurate quote.\n\n"
-                        f"One last thing — what full name should we put on the "
-                        f"booking? If you'd rather not share it, just say no."
-                    )
-                else:
+                        # send_confirmation_message already fired inside book_appointment().
+                        # The bot reply to the customer is ONLY the name question — one message total.
+                        reply = (
+                            "One last thing — what name should we put on the booking? "
+                            "If you'd rather not share it, just say no."
+                        )                else:
                     error        = booking_result.get('error', '')
                     alternatives = booking_result.get('alternatives', [])
                     if 'saturday' in error.lower() or not alternatives:
@@ -5667,14 +5665,8 @@ I understand this is time-sensitive!"""
                 .replace('_', ' ').title()
             )
 
-            name_line = (
-                f"Name: {appointment_info['name']}\n"
-                if appointment_info.get('name') else ""
-            )
-
             confirmation_message = (
                 f"✅ APPOINTMENT CONFIRMED\n\n"
-                f"{name_line}"
                 f"📅 Date: {display_datetime.strftime('%A, %B %d, %Y')}\n"
                 f"🕐 Time: {display_datetime.strftime('%I:%M %p')}\n"
                 f"📍 Area: {appointment_info.get('area', 'Your area')}\n"
@@ -6036,14 +6028,13 @@ I understand this is time-sensitive!"""
                     self.appointment.scheduled_datetime and
                     any(p in incoming_message.lower() for p in all_day_phrases)):
                 return self._handle_all_day_response()
-
+            #
             if next_question == "name" and self._declines_sharing_name(incoming_message):
                 self._mark_customer_name_declined()
                 return (
-                    "No problem at all. Your appointment is still booked, and we'll use this WhatsApp number "
-                    "for updates. If you want to add your name later, just send it anytime."
-                )
-    
+                    "No problem at all. Your appointment is still confirmed — "
+                    "we'll use this WhatsApp number for updates."
+                )    
             # ── First-pass: exact hardcoded questions (retry_count == 0) ─────────
     
             if retry_count == 0:
@@ -6090,11 +6081,12 @@ I understand this is time-sensitive!"""
                 if next_question == "area":
                     return "All good, what area are you in?"
 
+                #
                 if next_question == "name":
                     return (
-                        "What full name should we put on the booking? "
-                        "If you'd rather not share it here, just say no."
-                    )    
+                        "One last thing — what name should we put on the booking? "
+                        "If you'd rather not share it, just say no."
+                    )
             # ── AI-driven retries ─────────────────────────────────────────────────
             appointment_context = self.get_appointment_context()
     
