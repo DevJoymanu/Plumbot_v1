@@ -3737,6 +3737,59 @@ Reply with ONLY a JSON object:
         )
         return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
 
+    def _is_product_availability_question(self, message: str) -> bool:
+        """
+        Return True when the customer is asking whether we HAVE or SELL a product,
+        or asking for its price — rather than describing work they want done.
+
+        Examples that return True:
+          "And vanitys if you have"
+          "do you have tubs"
+          "if you have shower cubicles"
+          "vanitys?"
+          "toilets also?"
+          "and geysers"
+
+        Examples that return False (genuine project descriptions):
+          "I want to replace my toilet and shower"
+          "bathroom renovation with new vanity"
+          "need to tile and fit new fixtures"
+        """
+        msg = (message or '').strip().lower()
+        if not msg:
+            return False
+
+        availability_patterns = (
+            'if you have',
+            'do you have',
+            'do you sell',
+            'you have',
+            'you sell',
+            'do you do',
+            'also?',
+            'as well?',
+            'too?',
+            'and also',
+        )
+        if any(p in msg for p in availability_patterns):
+            return True
+
+        product_words = (
+            'vanity', 'vanitys', 'vanities',
+            'tub', 'tubs', 'bathtub', 'bathtubs',
+            'shower', 'showers', 'cubicle', 'cubicles',
+            'toilet', 'toilets', 'chamber', 'chambers',
+            'geyser', 'geysers',
+            'basin', 'basins', 'sink', 'sinks',
+        )
+        clean = msg.removeprefix('and ').strip().rstrip('?').strip()
+        word_count = len(msg.split())
+
+        if word_count <= 5 and any(clean == p or clean.startswith(p) for p in product_words):
+            return True
+
+        return False
+
     def _appointment_has_field(self, field_name: str) -> bool:
         """Return True only if the Appointment model has this concrete field."""
         return any(f.name == field_name for f in self.appointment._meta.concrete_fields)
@@ -6091,14 +6144,16 @@ I understand this is time-sensitive!"""
             # ── Project description ───────────────────────────────────────────────
             if (extracted_data.get('project_description') and
                     extracted_data.get('project_description') != 'null' and
-                    not self.appointment.project_description):
+                    not self.appointment.project_description and
+                    not self._is_product_availability_question(incoming_message)):
                 self.appointment.project_description = extracted_data['project_description']
                 updated_fields.append('project_description')
                 print(f"✅ Updated project_description: {self.appointment.project_description[:60]}")
             elif (
                 next_question == 'project_description' and
                 not self.appointment.project_description and
-                self._looks_like_project_description_reply(incoming_message)
+                self._looks_like_project_description_reply(incoming_message) and
+                not self._is_product_availability_question(incoming_message)
             ):
                 self.appointment.project_description = incoming_message.strip()
                 updated_fields.append('project_description')

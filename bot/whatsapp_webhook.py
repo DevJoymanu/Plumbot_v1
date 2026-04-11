@@ -1170,8 +1170,26 @@ def handle_text_message(sender, text_data, message_id=None):
         }
         intent = inquiry.get('intent')
         price_requested = _explicitly_requests_price(message_body)
+
+        # Product-specific intents bypass the mid-conversation gate when:
+        # (a) no booking details have been collected yet (no area, no datetime), AND
+        # (b) the customer is asking about a specific product (not just saying "how much")
+        # This allows "And vanitys if you have" to get a vanity pricing reply
+        # even after a combined pricing overview was already sent.
+        _no_booking_yet = (
+            not appointment.scheduled_datetime and
+            not appointment.customer_area
+        )
+        _is_specific_product_inquiry = (
+            intent not in ('none', 'combined_pricing', 'pictures') and
+            inquiry.get('confidence') == 'HIGH' and
+            _no_booking_yet
+        )
+
         should_bypass_mid_conversation_gate = (
-            intent in NON_PRICING_AUTO_REPLY_INTENTS or price_requested
+            intent in NON_PRICING_AUTO_REPLY_INTENTS or
+            price_requested or
+            _is_specific_product_inquiry
         )
 
         if mid_conversation and not should_bypass_mid_conversation_gate:

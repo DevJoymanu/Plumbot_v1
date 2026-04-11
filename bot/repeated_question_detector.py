@@ -93,15 +93,20 @@ booking_action
 
 project_detail
   The customer is describing their project, answering a question about what work they need,
-  or providing specific details about fixtures, rooms, or scope of work.
+  providing specific details about fixtures, rooms, or scope of work,
+  OR asking whether you carry/sell a specific product (even if phrased as a question).
   Examples: "I need a new shower cubicle and toilet", "The bathroom is 3x3 metres",
             "We want to renovate the whole bathroom", "Replace the geyser",
-            "Ndoda kushandura chimbuzi" (Shona: I want to change the toilet).
+            "Ndoda kushandura chimbuzi" (Shona: I want to change the toilet),
+            "And vanitys if you have", "do you have tubs", "geysers?", "and chambers".
 
 short_response
-  A very short reply (1-3 words) that is an affirmative, negative, or acknowledgment.
+  A very short reply (1-3 words) that is an affirmative, negative, or simple acknowledgment
+  with NO product or service name in it.
   Examples: "Yes", "No", "Ok", "Sure", "Noted", "Thanks", "Nope", "Yeah", "Ok cool",
             "Hongu" (Shona: yes), "Kwete" (Shona: no).
+  NOT short_response if it names a product: "vanitys", "and vanitys", "shower cubicle",
+  "geyser" — those are project_detail even if short.
 
 repeat_candidate
   The message looks like it might be asking the same question the customer already asked,
