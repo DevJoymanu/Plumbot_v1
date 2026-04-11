@@ -4315,9 +4315,11 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     - location_visit: customer wants to physically come IN PERSON to our office or showroom
     - previous_quotation: saying we sent them a quotation before
     - pictures: asking to see product pictures (not previous work photos)
-    - combined_pricing: asking for total/combined cost of multiple items already discussed,
+    - combined_pricing: asking for total/combined cost, a full quotation, or general pricing,
       e.g. "how much for all", "how much zvese zvakadai", "zvese izvi zvinodhura marii",
-      "total for everything", "all together how much", "what's the total"
+      "total for everything", "all together how much", "what's the total",
+      "I want a quotation", "send me a quote", "I need a quote", "ndida quotation",
+      "how much overall", "how much is everything", "marii zvese"
     - none: none of the above
 
     CRITICAL RULES:
@@ -4362,6 +4364,8 @@ When you're finished sending everything, just type "done" or "finished" and I'll
         * "can I come", "can I visit your office"
         * "send pictures", "show me photos", "got pics"
         * "how much zvese", "zvese zvakadai", "how much for all", "total for everything"
+        * "I want quotation", "send me a quote", "I need a quote", "ndida quotation"
+        * "how much" (standalone, no product mentioned)
     - LOW = message is genuinely ambiguous and could match multiple intents
       or no specific product/service
       
@@ -4569,6 +4573,11 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         "sn_cheapest_line": "Cheapest option i basic package inotangira paUS$600 zvinhu zvekuwedzera zvisati zvaiswa.",
                     },
                 }
+
+                # combined_pricing always delegates to generate_pricing_overview
+                # for the full contextual Facebook-anchored response
+                if intent == 'combined_pricing':
+                    return self.generate_pricing_overview(message)
 
                 if intent in structured_pricing:
                     pricing_payload = structured_pricing[intent]
@@ -4882,7 +4891,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 print(f"❌ Error handling service inquiry: {str(e)}")
                 return self.generate_contextual_response(message, self.get_next_question_to_ask(), [])
 
-    def generate_pricing_overview(self, message):
+    def _generate_pricing_overview_legacy(self, message):
         """Send approximate prices when customer asks about cost"""
         # Try to detect specific service first
         inquiry = self.detect_service_inquiry(message)
@@ -4924,6 +4933,79 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             "Final price depends on the setup, so we confirm after a quick site check.\n\n"
             f"{self._get_pricing_followup_prompt('english')}"
         )
+
+    def generate_pricing_overview(self, message):
+        """
+        Send pricing overview for vague questions like 'how much', 'I want a quotation',
+        'how much zvese zvakadai', or any reference to the Facebook offer.
+        Anchors on the Facebook bathroom package, then shows individual item prices,
+        then pushes to booking.
+        """
+        # Try to detect a specific service first — if HIGH confidence, hand off
+        inquiry = self.detect_service_inquiry(message)
+        if inquiry.get('intent') not in ('none', 'combined_pricing') and inquiry.get('confidence') == 'HIGH':
+            return self.handle_service_inquiry(inquiry['intent'], message)
+
+        # Detect language
+        try:
+            lang_response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Detect the language of this message. Reply with ONLY 'shona', 'english', or 'mixed'."
+                    },
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.1,
+                max_tokens=5
+            )
+            language = lang_response.choices[0].message.content.strip().lower()
+        except Exception:
+            language = "english"
+
+        # Has the customer committed to a site visit or given their area?
+        visit_committed = (
+            self.appointment.has_plan is False or
+            bool(self.appointment.customer_area)
+        )
+
+        followup = self._get_pricing_followup_prompt(language)
+
+        if language == 'shona':
+            reply = (
+                "Mutengo unoenderana nezvaunoda, asi apa ndimwe mitengo yakajairwa:\n\n"
+                "Facebook bathroom package: kubva US$600\n"
+                "  (Iyi inofukidza basa guru — fixtures dzinowedzerwa)\n\n"
+                "Kana uchida zvimwe-zwimwe:\n"
+                "• Shower cubicle (supply + install): kubva US$170\n"
+                "• Vanity unit (supply + install): kubva US$180\n"
+                "• Toilet (supply + install): kubva US$70\n"
+                "• Side chamber (supply + install): US$160\n"
+                "• Free-standing tub (supply + install): kubva US$720\n"
+                "• Geyser installation: kubva US$80\n\n"
+                "Mutengo wakakwana unoenderana nesetup yako — "
+                "plumber wedu aona nzvimbo yako ozokuudza mutengo wakajika.\n\n"
+                f"{followup}"
+            )
+        else:
+            reply = (
+                "Pricing depends on what you need, but here's a rough guide:\n\n"
+                "Facebook bathroom package: from US$600\n"
+                "  (Covers the core fit-out — fixtures added based on your choice)\n\n"
+                "Individual items:\n"
+                "• Shower cubicle (supply + install): from US$170\n"
+                "• Vanity unit (supply + install): from US$180\n"
+                "• Toilet (supply + install): from US$70\n"
+                "• Side chamber (supply + install): US$160\n"
+                "• Free-standing tub (supply + install): from US$720\n"
+                "• Geyser installation: from US$80\n\n"
+                "Final price depends on your setup — once our plumber sees the space "
+                "they'll give you a fixed number on the spot.\n\n"
+                f"{followup}"
+            )
+
+        return reply
 
     def notify_plumber_about_plan(self):
         """Send plan details to plumber via WhatsApp"""

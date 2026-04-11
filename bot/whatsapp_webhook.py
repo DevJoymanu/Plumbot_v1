@@ -179,7 +179,11 @@ def _is_genuine_pricing_question(message: str, appointment: Appointment) -> bool
     ]
     if any(phrase in msg for phrase in intent_phrases):
         return False
-    if len(msg.split()) <= 2 and 'price' not in msg and 'cost' not in msg:
+    # Allow "how much" and "marii" even when short — they are unambiguous pricing requests
+    explicit_short_pricing = ('how much', 'marii', 'mari', 'mutengo', 'zvakadai')
+    if len(msg.split()) <= 2:
+        if any(phrase in msg for phrase in explicit_short_pricing):
+            return True  # short but unambiguous — allow
         return False
     combined_pricing_phrases = [
         'how much for all', 'how much zvese', 'zvese zvakadai', 'zvese izvi',
@@ -189,6 +193,7 @@ def _is_genuine_pricing_question(message: str, appointment: Appointment) -> bool
     ]
     if any(phrase in msg for phrase in combined_pricing_phrases):
         return True
+    # Block overview if any specific intent was already sent (customer should ask follow-ups)
     if appointment.sent_pricing_intents:
         return False
     return True
@@ -365,22 +370,35 @@ def delayed_response(sender, reply, delay_seconds):
 
 
 def detect_objection_type(message: str) -> str:
-    message_lower = message.lower()
-    if any(k in message_lower for k in [
-        'how much', 'cost', 'price', 'expensive',
-        'kuisa', 'mari', 'mutengo', 'marii', 'bhadhara', 'zvinodhura', 'inodhura'
-    ]):
+    message_lower = message.lower().strip()
+
+    # Vague pricing / quotation triggers — catches Shona, English, mixed
+    pricing_terms = [
+        # English
+        'how much', 'cost', 'price', 'expensive', 'quotation', 'quote',
+        'estimate', 'invoice', 'i want a quote', 'send me a quote',
+        'i want quotation', 'need a quote', 'need quotation',
+        'how much is it', 'what is the cost', 'what does it cost',
+        # Shona / mixed
+        'marii', 'mari', 'mutengo', 'zvinodhura', 'inodhura', 'bhadhara',
+        'zvese zvakadai', 'zvese izvi', 'zvakadai', 'how much zvese',
+        'quotation', 'invoice',
+    ]
+    if any(k in message_lower for k in pricing_terms):
         return 'pricing'
+
     if any(k in message_lower for k in [
         'how long', 'duration', 'when finish',
         'nguva', 'rinopera riini', 'rinopedza riini', 'mangani mazuva'
     ]):
         return 'timeline'
+
     if any(k in message_lower for k in [
         'when can you', 'available', 'come',
         'munouya rini', 'mungauya rini', 'mauya rini'
     ]):
         return 'availability'
+
     return 'other'
 
 
@@ -1125,6 +1143,14 @@ def handle_text_message(sender, text_data, message_id=None):
                 reply = plumbot.generate_pricing_overview(message_body)
                 appointment.pricing_overview_sent = True
                 appointment.save(update_fields=['pricing_overview_sent'])
+            elif objection_type == 'pricing' and getattr(appointment, 'pricing_overview_sent', False):
+                # Pricing overview already sent — give a short redirect instead of silence
+                reply = (
+                    "I've sent you the pricing breakdown above. "
+                    "For a more accurate quote specific to your space, our plumber will "
+                    "give you a fixed price after a free on-site visit. "
+                    f"{plumbot._get_pricing_followup_prompt('english')}"
+                )
 
         # -- STEP 3b: Repeated-question detection -----------------------------
         # Fires when the customer re-asks something already answered — even with
