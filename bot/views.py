@@ -3552,7 +3552,8 @@ class Plumbot:
                         reply = (
                             "One last thing — what name should we put on the booking? "
                             "If you'd rather not share it, just say no."
-                        )                else:
+                        )                
+                else:
                     error        = booking_result.get('error', '')
                     alternatives = booking_result.get('alternatives', [])
                     if 'saturday' in error.lower() or not alternatives:
