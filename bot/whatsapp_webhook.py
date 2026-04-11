@@ -1161,17 +1161,7 @@ def handle_text_message(sender, text_data, message_id=None):
             )
 
         # ── STEP 4: Normal Plumbot processing ────────────────────────────────
-        if reply is None:
-            print("Running normal Plumbot processing")
-            reply = plumbot.generate_response(
-                message_body,
-                precomputed_service_inquiry=inquiry if not mid_conversation else None,
-            )
-        #
-        reply = plumbot.generate_response(
-            message_body,
-            precomputed_service_inquiry=inquiry if not mid_conversation else None,
-        )
+        
 
         # ── generate_response returns None when conversation is complete ──────────
         if reply is None:
