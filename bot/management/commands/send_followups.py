@@ -2,72 +2,41 @@
 #
 # HIGH-CONVERTING FOLLOW-UP SYSTEM
 #
-# Principles applied (Hormozi + conversion psychology):
+# ── 24-HOUR WINDOW RULE ──────────────────────────────────────────────────────
 #
-#  1. SPECIFICITY SELLS, vague messages get ignored. Every message references
-#     exactly what the customer said they need. "Your bathroom" beats "your project".
+# WhatsApp's free messaging tier only allows outbound messages within 24 hours
+# of the customer's last inbound message.  Every code path in this file that
+# sends a WhatsApp message MUST pass through _send_followup_message(), which
+# calls is_window_open() before attempting delivery.
 #
-#  2. VALUE BEFORE ASK — each follow-up leads with something useful (insight,
-#     social proof, a concrete next step) before asking for anything.
+# Leads whose window is closed are logged and skipped cleanly — no exception
+# is raised, the lead is NOT deactivated, and the follow-up count is NOT
+# incremented.  The lead stays eligible and will be picked up again on the
+# next run once the customer has replied.
 #
-#  3. PATTERN INTERRUPTS — message #2+ deliberately break the pattern of the
-#     previous one. Different length, different opener, different angle.
-#     Same message twice = unsubscribe.
+# ── CONVERSION PRINCIPLES (Hormozi) ─────────────────────────────────────────
 #
-#  4. URGENCY WITHOUT LYING — real constraints only: limited slots, real wait
-#     times, genuine price change warnings. Never fake scarcity.
-#
-#  5. MICRO-COMMITMENTS — each message asks for the smallest possible "yes"
-#     that moves the sale forward one step, not the whole thing at once.
-#
-#  6. TIMING LOGIC (Hormozi: "speed to lead" + "9-word email"):
-#       - Very hot (booked slot): 4h → 8h → 1d → 2d (chase fast, they're ready)
-#       - Hot (4 fields): 20h → 36h → 60h → 5d (consistent, not desperate)
-#       - Warm (2-3 fields): 36h → 3d → 6d → 10d (patient, educational)
-#       - Cold (0-1 fields): 48h → 5d → 10d → 21d (nurture, don't push)
-#
-#  7. CONTACT WINDOWS — only reach during high-read-rate windows.
-#     Research: 8-10am (commute), 12-1pm (lunch), 5-7pm (after work).
-#
+#  1. SPECIFICITY SELLS — every message references exactly what the customer said.
+#  2. VALUE BEFORE ASK — lead with insight or social proof, then ask.
+#  3. PATTERN INTERRUPTS — each follow-up uses different length/angle/opener.
+#  4. URGENCY WITHOUT LYING — only real constraints (limited slots, wait times).
+#  5. MICRO-COMMITMENTS — ask for the smallest possible next "yes".
+#  6. TIMING (speed to lead + 9-word email):
+#       Very hot (booked slot): 4h → 8h → 1d → 2d
+#       Hot (4 fields):        20h → 36h → 60h → 5d
+#       Warm (2-3 fields):     36h → 3d → 6d → 10d
+#       Cold (0-1 fields):     48h → 5d → 10d → 21d
+#  7. CONTACT WINDOWS — 8-10 AM, 12-1 PM, 5-7 PM.
 #  8. EXPONENTIAL BACKOFF — each ignored message doubles the wait.
-#     Respect = better deliverability + warmer reception when they do reply.
-#
-#  9. THE "9-WORD EMAIL" (Hormozi) — attempt 4+ uses ultra-short messages.
-#     "Are you still looking for a plumber?" converts better than paragraphs.
-#
-# 10. ZIMBABWE/SA CONTEXT — warm, direct, professional. No American hype.
-#     Prices in USD. Informal but not sloppy.
-#
-# ── PLAN FOLLOW-UP (integrated) ──────────────────────────────────────────────
-#
-# When a customer says "I have a plan" (has_plan=True) but hasn't uploaded
-# anything yet, a separate nudge sequence fires.
-#
-# TIMING RULES for plan follow-ups:
-#   ALLOWED  : 19:00–20:00 SAST only  (after-work, high read rate)
-#   BLOCKED  : 08:00–10:00 (morning commute)
-#              12:00–13:00 (lunch)
-#
-# DYNAMIC "NOT BEFORE" GATE:
-#   If the customer said "I'll send tomorrow" / "tonight" / "on Monday",
-#   DeepSeek parses the promise and sets plan_followup_not_before so we
-#   never nudge before they said they'd send it.
-#
-# ESCALATION (4 attempts max):
-#   #1 — gentle reminder
-#   #2 — nudge + offer site-visit alternative
-#   #3 — short, direct
-#   #4 — final pivot: flip has_plan→False, offer free site visit, stop plan nudges
-#
-# NEW MODEL FIELDS REQUIRED (add to Appointment + run migration):
-#   plan_followup_attempts    = models.IntegerField(default=0)
-#   plan_followup_not_before  = models.DateTimeField(null=True, blank=True)
+#  9. THE "9-WORD EMAIL" — attempt 4+ uses ultra-short messages.
+# 10. ZIMBABWE/SA CONTEXT — warm, direct, professional. Prices in USD.
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 from bot.models import Appointment, LeadStatus
 from bot.whatsapp_cloud_api import whatsapp_api
+from bot.whatsapp_window import is_window_open, filter_queryset_by_window, hours_remaining
 from openai import OpenAI
 import os
 import logging
@@ -82,7 +51,6 @@ deepseek_client = (
 )
 
 SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
-WHATSAPP_SERVICE_WINDOW = timedelta(hours=24)
 
 # ─── Contact windows (local hour, half-open) ─────────────────────────────────
 CONTACT_WINDOWS = [
@@ -92,28 +60,6 @@ CONTACT_WINDOWS = [
 ]
 
 # ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
-# Each tuple is (attempt_1, attempt_2, attempt_3, attempt_4+)
-
-MAX_FOLLOWUPS_PER_STATUS = {
-    LeadStatus.VERY_HOT: 6,
-    LeadStatus.HOT:      5,
-    LeadStatus.WARM:     4,
-    LeadStatus.COLD:     3,
-}
-
-# After this many attempts with zero response, lead goes cold/inactive
-
-
-# ─── Plan follow-up windows ───────────────────────────────────────────────────
-PLAN_ALLOWED_WINDOW  = (19, 20)       # 19:00–20:00 SAST only
-PLAN_BLOCKED_WINDOWS = [
-    (8,  10),   # Morning commute
-    (12, 13),   # Lunch
-]
-MAX_PLAN_FOLLOWUP_ATTEMPTS = 4
-
-# ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
-# Each tuple is (attempt_1, attempt_2, attempt_3, attempt_4+)
 TIER_INTERVALS = {
     LeadStatus.VERY_HOT: (4,  8,  24,  48),
     LeadStatus.HOT:      (20, 36, 60,  120),
@@ -130,37 +76,50 @@ MAX_FOLLOWUPS_PER_STATUS = {
 
 GHOSTED_THRESHOLD = 4
 
+# ─── Plan follow-up windows ───────────────────────────────────────────────────
+PLAN_ALLOWED_WINDOW  = (19, 20)       # 19:00–20:00 SAST only
+PLAN_BLOCKED_WINDOWS = [
+    (8,  10),
+    (12, 13),
+]
+MAX_PLAN_FOLLOWUP_ATTEMPTS = 4
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 class Command(BaseCommand):
     help = (
         'High-converting follow-ups: Hormozi timing, value-first messaging, '
-        'pattern interrupts. Also handles plan-upload nudges for customers '
-        'who promised to send a plan but have not uploaded yet.'
+        'pattern interrupts. Also handles plan-upload nudges. '
+        'ALL messages respect the WhatsApp 24-hour free-messaging window — '
+        'leads whose window is closed are skipped cleanly.'
     )
+
+    # ── Window helpers ────────────────────────────────────────────────────────
 
     def _latest_customer_inbound_at(self, lead):
         return lead.last_customer_response or lead.last_inbound_at
 
-    def _is_whatsapp_service_window_open(self, lead, now=None):
-        now = now or timezone.now()
-        last_inbound = self._latest_customer_inbound_at(lead)
-        if not last_inbound:
-            return False
-        return (now - last_inbound) <= WHATSAPP_SERVICE_WINDOW
-
     def _send_followup_message(self, lead, message, now=None):
-        now = now or timezone.now()
-        clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
+        """
+        Send a follow-up message.
 
-        if not self._is_whatsapp_service_window_open(lead, now=now):
+        Raises RuntimeError if the 24-hour window is closed — caller should
+        catch this and log a clean skip (do NOT increment follow-up counters).
+        """
+        now = now or timezone.now()
+
+        if not is_window_open(lead):
+            remaining = hours_remaining(lead)
             raise RuntimeError(
-                'Automatic follow-ups are restricted to the free WhatsApp '
-                '24-hour service window.'
+                f'WhatsApp 24-hour window closed for lead {lead.id}. '
+                f'Window expires in {remaining:.1f}h. Skipping.'
             )
 
+        clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
         whatsapp_api.send_text_message(clean_phone, message)
         return 'text'
+
+    # ── Entry point ───────────────────────────────────────────────────────────
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true',
@@ -178,10 +137,10 @@ class Command(BaseCommand):
 
         now_local = timezone.now().astimezone(SA_TIMEZONE)
 
-        # ── 1. Run plan follow-ups (own window logic) ─────────────────────
+        # ── 1. Plan follow-ups ─────────────────────────────────────────────
         self._run_plan_followups(now_local, dry_run, force)
 
-        # ── 2. Run normal lead follow-ups ─────────────────────────────────
+        # ── 2. Normal lead follow-ups ──────────────────────────────────────
         if not force and not self._in_contact_window(now_local):
             self.stdout.write(
                 self.style.WARNING(
@@ -195,12 +154,13 @@ class Command(BaseCommand):
         leads = self._get_eligible_leads(now_local, force)
         self.stdout.write(f'📊 {leads.count()} leads eligible for follow-up')
 
-        totals = dict(sent=0, skipped=0, errors=0, completed=0, ai=0, template=0)
+        totals = dict(sent=0, skipped=0, window_closed=0, errors=0, completed=0, ai=0, template=0)
 
         for lead in leads:
             try:
                 result = self._process_lead(lead, now_local, dry_run, force)
-                totals[result['status']] = totals.get(result['status'], 0) + 1
+                status = result.get('status', 'skipped')
+                totals[status] = totals.get(status, 0) + 1
                 if result.get('ai_generated'):
                     totals['ai'] += 1
                 if result.get('template_fallback'):
@@ -219,10 +179,6 @@ class Command(BaseCommand):
     # =========================================================================
 
     def _run_plan_followups(self, now_local, dry_run, force):
-        """
-        Nudge customers who said they have a plan but still haven't uploaded.
-        Only fires during 19:00–20:00 SAST unless --force is passed.
-        """
         self.stdout.write(self.style.SUCCESS('\n📋 Plan follow-up check…'))
 
         if not force and not self._in_plan_window(now_local):
@@ -247,9 +203,20 @@ class Command(BaseCommand):
         leads = self._get_plan_eligible_leads(now_local)
         self.stdout.write(f'📊 {leads.count()} lead(s) awaiting plan upload')
 
-        plan_totals = dict(sent=0, skipped=0, pivoted=0, errors=0)
+        plan_totals = dict(sent=0, skipped=0, window_closed=0, pivoted=0, errors=0)
 
         for lead in leads:
+            # 24-hour window guard — check before any processing
+            if not is_window_open(lead):
+                plan_totals['window_closed'] += 1
+                self.stdout.write(
+                    self.style.WARNING(
+                        f'⏰ Window closed for plan lead {lead.id} '
+                        f'({hours_remaining(lead):.1f}h remaining) — skipping'
+                    )
+                )
+                continue
+
             try:
                 result = self._process_plan_lead(lead, now_local, dry_run)
                 plan_totals[result] = plan_totals.get(result, 0) + 1
@@ -263,55 +230,43 @@ class Command(BaseCommand):
             self.stdout.write(f'  {k}: {v}')
 
     def _in_plan_window(self, now_local):
-        """Only 19:00–20:00 SAST is allowed for plan nudges."""
         h = now_local.hour
         start, end = PLAN_ALLOWED_WINDOW
         return start <= h < end
 
     def _in_plan_blocked_window(self, now_local):
-        """Return True if we're inside a blocked window."""
         h = now_local.hour
         return any(s <= h < e for s, e in PLAN_BLOCKED_WINDOWS)
 
     def _get_plan_eligible_leads(self, now_local):
         from django.db.models import Q
-        service_window_start = timezone.now() - WHATSAPP_SERVICE_WINDOW
-
-        return (
+        qs = (
             Appointment.objects
             .filter(
                 is_lead_active=True,
                 status='pending',
                 has_plan=True,
             )
-            .filter(
-                Q(last_customer_response__gte=service_window_start) |
-                Q(last_inbound_at__gte=service_window_start)
-            )
-            # No file uploaded yet
             .filter(Q(plan_file='') | Q(plan_file__isnull=True))
-            # Still in upload-pending state (or state not set yet)
             .filter(
                 Q(plan_status='pending_upload') |
                 Q(plan_status__isnull=True) |
                 Q(plan_status='')
             )
-            # Not already completed / reviewed
             .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
-            # Haven't exceeded max attempts
             .filter(plan_followup_attempts__lt=MAX_PLAN_FOLLOWUP_ATTEMPTS)
-            # Respect the "not before" gate set from the customer's promise
             .filter(
                 Q(plan_followup_not_before__isnull=True) |
                 Q(plan_followup_not_before__lte=timezone.now())
             )
             .order_by('plan_followup_attempts', 'last_customer_response')
         )
+        # Enforce 24-hour window at the DB level
+        return filter_queryset_by_window(qs)
 
     def _process_plan_lead(self, lead, now_local, dry_run):
         attempt = (lead.plan_followup_attempts or 0) + 1
 
-        # Max attempts reached → pivot to site visit
         if attempt > MAX_PLAN_FOLLOWUP_ATTEMPTS:
             return self._pivot_plan_to_site_visit(lead, dry_run)
 
@@ -324,9 +279,15 @@ class Command(BaseCommand):
             ))
             return 'skipped'
 
-        send_mode = self._send_followup_message(lead, message)
+        try:
+            self._send_followup_message(lead, message)
+        except RuntimeError as window_err:
+            logger.info('Plan follow-up skipped (window closed): %s', window_err)
+            self.stdout.write(self.style.WARNING(
+                f'⏰ Window closed for plan lead {lead.id} — skipped'
+            ))
+            return 'window_closed'
 
-        # Advance counters and set next not-before to tomorrow 19:00
         sent_at = timezone.now()
         tomorrow_19 = (now_local + timedelta(days=1)).replace(
             hour=19, minute=0, second=0, microsecond=0
@@ -352,10 +313,6 @@ class Command(BaseCommand):
         return 'sent'
 
     def _pivot_plan_to_site_visit(self, lead, dry_run):
-        """
-        After MAX_PLAN_FOLLOWUP_ATTEMPTS the plan is clearly not coming.
-        Offer a free site visit and re-enter the normal booking flow.
-        """
         service = self._plan_service_label(lead)
         message = (
             f"Hi there, no worries if the plans are proving tricky to track down! "
@@ -371,12 +328,15 @@ class Command(BaseCommand):
             ))
             return 'skipped'
 
-        send_mode = self._send_followup_message(lead, message)
+        try:
+            self._send_followup_message(lead, message)
+        except RuntimeError as window_err:
+            logger.info('Plan pivot skipped (window closed): %s', window_err)
+            return 'window_closed'
 
-        # Flip to site-visit flow
         lead.has_plan              = False
         lead.plan_status           = None
-        lead.plan_followup_attempts = MAX_PLAN_FOLLOWUP_ATTEMPTS   # prevents re-entry
+        lead.plan_followup_attempts = MAX_PLAN_FOLLOWUP_ATTEMPTS
         sent_at = timezone.now()
         lead.last_followup_sent    = sent_at
         lead.last_outbound_at      = sent_at
@@ -469,24 +429,20 @@ Output ONLY the message text. No labels, no quotes."""
         service = self._plan_service_label(lead)
 
         templates = [
-            # Attempt 1 — warm, low pressure
             (
                 f"Hi there, just checking if you managed to get hold of that plan for your "
                 f"{service}? 📐 Pop it across whenever you're ready and our plumber will "
                 f"take a look straight away."
             ),
-            # Attempt 2 — nudge + site-visit alternative
             (
                 f"Hi there, still waiting on your plan for the {service}. "
                 f"No stress if it's taking a while — would it be easier to just book "
                 f"a free site visit instead? Our plumber comes to you and prices it up on the spot."
             ),
-            # Attempt 3 — short and direct
             (
                 f"Hi there, did you manage to find those plans for the {service}? "
                 f"If it's easier we can always do a free site visit to get things moving."
             ),
-            # Attempt 4 — final, pivot to site visit
             (
                 f"Hi there, looks like the plans are tricky to track down for your {service}. "
                 f"How about a free on-site visit instead — our plumber measures up and gives "
@@ -496,8 +452,6 @@ Output ONLY the message text. No labels, no quotes."""
 
         idx = min(attempt - 1, len(templates) - 1)
         return templates[idx]
-
-    # ── Plan helpers ───────────────────────────────────────────────────────
 
     def _plan_service_label(self, lead):
         mapping = {
@@ -511,7 +465,6 @@ Output ONLY the message text. No labels, no quotes."""
         return mapping.get(lead.project_type or '', 'plumbing project')
 
     def _last_plan_promise(self, lead):
-        """Find the customer's most recent message that mentioned the plan."""
         history = lead.conversation_history or []
         plan_keywords = [
             'send', 'upload', 'plan', 'later', 'tomorrow', 'tonight',
@@ -527,38 +480,21 @@ Output ONLY the message text. No labels, no quotes."""
         return None
 
     # =========================================================================
-    # PLAN PROMISE PARSER (called from webhook when customer replies)
+    # PLAN PROMISE PARSER
     # =========================================================================
 
     @staticmethod
     def parse_plan_promise_and_save(appointment, message: str) -> None:
-        """
-        Parse a timing promise from the customer's message ("I'll send tomorrow",
-        "tonight", "on Monday", etc.) and store the earliest follow-up datetime
-        on appointment.plan_followup_not_before.
-
-        Call this from whatsapp_webhook.handle_text_message() right after
-        appointment.mark_customer_response() whenever has_plan is True and
-        no plan has been uploaded yet.
-
-        Example (in whatsapp_webhook.py):
-            from bot.management.commands.send_followups import Command as FollowUpCommand
-            FollowUpCommand.parse_plan_promise_and_save(appointment, message_body)
-        """
         if not deepseek_client:
             logger.warning('DeepSeek not available — skipping plan promise parsing')
             return
 
-        # Quick keyword pre-filter — don't burn tokens on every message
         msg_lower = message.lower()
         timing_hints = [
             'send', 'upload', 'tomorrow', 'tonight', 'later', 'soon',
             'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
             'weekend', 'week', 'day', 'home', 'get back', 'plan',
-            'mangwana',       # Shona: tomorrow
-            'mauro',          # Shona: later today
-            'ndichatumira',   # Shona: I will send
-            'ndinotumira',
+            'mangwana', 'mauro', 'ndichatumira', 'ndinotumira',
         ]
         if not any(hint in msg_lower for hint in timing_hints):
             return
@@ -595,21 +531,15 @@ Return ONLY one of these tokens — nothing else:
             if not_before:
                 appointment.plan_followup_not_before = not_before.astimezone(pytz.utc)
                 appointment.save(update_fields=['plan_followup_not_before'])
-                logger.info(
-                    f'Lead {appointment.id}: plan follow-up not before '
-                    f'{not_before.strftime("%Y-%m-%d %H:%M %Z")}'
-                )
 
         except Exception as exc:
             logger.warning(f'Failed to parse plan promise for lead {appointment.id}: {exc}')
 
     @staticmethod
     def _resolve_not_before(token: str, now_local) -> object:
-        """Convert a promise token to a concrete 19:00 SAST datetime."""
         from datetime import datetime as dt
 
         def at_1900(base):
-            """Return base date at 19:00 SAST, pushed to next day if already past."""
             result = base.replace(hour=19, minute=0, second=0, microsecond=0)
             if result <= now_local and base.date() == now_local.date():
                 result += timedelta(days=1)
@@ -617,17 +547,14 @@ Return ONLY one of these tokens — nothing else:
 
         if token == 'TODAY':
             return at_1900(now_local)
-
         if token == 'TOMORROW':
             return at_1900(now_local + timedelta(days=1))
-
         if token.startswith('IN_N_DAYS:'):
             try:
                 n = int(token.split(':')[1])
                 return at_1900(now_local + timedelta(days=max(1, n)))
             except (IndexError, ValueError):
                 pass
-
         if token.startswith('WEEKDAY:'):
             day_name = token.split(':')[1].capitalize()
             day_map = {
@@ -639,26 +566,20 @@ Return ONLY one of these tokens — nothing else:
                 days_ahead = (target - now_local.weekday()) % 7 or 7
                 return at_1900(now_local + timedelta(days=days_ahead))
 
-        # UNKNOWN — default to tomorrow 19:00
         return at_1900(now_local + timedelta(days=1))
 
     # =========================================================================
-    # NORMAL FOLLOW-UP SECTION (unchanged from original)
+    # NORMAL FOLLOW-UP SECTION
     # =========================================================================
 
     def _get_eligible_leads(self, now_local, force):
         from django.db.models import Q
 
         response_window = now_local - timedelta(hours=2/60)
-        service_window_start = timezone.now() - WHATSAPP_SERVICE_WINDOW
 
         leads = (
             Appointment.objects
             .filter(is_lead_active=True, status='pending')
-            .filter(
-                Q(last_customer_response__gte=service_window_start) |
-                Q(last_inbound_at__gte=service_window_start)
-            )
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
             .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
@@ -672,22 +593,20 @@ Return ONLY one of these tokens — nothing else:
             )
             leads = leads.exclude(cold_warm_sent_today)
 
+        # ── Enforce 24-hour window at DB level ──
+        leads = filter_queryset_by_window(leads)
+
         return leads.order_by('last_customer_response', 'created_at')
 
     def _print_eligibility_breakdown(self, now_local, force):
         from django.db.models import Q
 
         response_window = now_local - timedelta(hours=2/60)
-        service_window_start = timezone.now() - WHATSAPP_SERVICE_WINDOW
-        plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book']) | Q(plan_status='pending_upload')
 
         q0 = Appointment.objects.filter(is_lead_active=True, status='pending')
         c0 = q0.count()
 
-        q1 = q0.filter(
-            Q(last_customer_response__gte=service_window_start) |
-            Q(last_inbound_at__gte=service_window_start)
-        )
+        q1 = filter_queryset_by_window(q0)
         c1 = q1.count()
 
         q2 = q1.exclude(followup_stage='completed')
@@ -696,6 +615,7 @@ Return ONLY one of these tokens — nothing else:
         q3 = q2.exclude(last_customer_response__gte=response_window)
         c3 = q3.count()
 
+        plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book']) | Q(plan_status='pending_upload')
         q4 = q3.exclude(plan_block_q)
         c4 = q4.count()
 
@@ -713,7 +633,7 @@ Return ONLY one of these tokens — nothing else:
 
         self.stdout.write(self.style.WARNING('🔎 Eligibility breakdown'))
         self.stdout.write(f'  active_pending: {c0}')
-        self.stdout.write(f'  excluded_outside_free_24h_window: {c0 - c1}')
+        self.stdout.write(f'  excluded_outside_24h_window: {c0 - c1}')
         self.stdout.write(f'  excluded_completed_stage: {c1 - c2}')
         self.stdout.write(f'  excluded_recent_response_2min: {c2 - c3}')
         self.stdout.write(f'  excluded_plan_flow: {c3 - c4}')
@@ -724,6 +644,15 @@ Return ONLY one of these tokens — nothing else:
         self.stdout.write(f'  eligible_after_filters: {c5}')
 
     def _process_lead(self, lead, now_local, dry_run, force):
+        # Final runtime window check (belt-and-braces after DB filter)
+        if not is_window_open(lead):
+            self.stdout.write(
+                self.style.WARNING(
+                    f'⏰ Window closed at runtime for lead {lead.id} — skipping'
+                )
+            )
+            return {'status': 'window_closed'}
+
         ready, reason = self._is_ready_for_followup(lead, now_local, force)
         if not ready:
             logger.debug(f'Lead {lead.id} skipped: {reason}')
@@ -759,7 +688,17 @@ Return ONLY one of these tokens — nothing else:
             )
             return {'status': 'sent', **result}
 
-        send_mode = self._send_followup_message(lead, message)
+        try:
+            self._send_followup_message(lead, message)
+        except RuntimeError as window_err:
+            # Window closed between DB query and actual send — safe skip
+            logger.info('Follow-up skipped (window closed at send time): %s', window_err)
+            self.stdout.write(
+                self.style.WARNING(
+                    f'⏰ Window closed at send time for lead {lead.id} — skipped'
+                )
+            )
+            return {'status': 'window_closed'}
 
         sent_at = timezone.now()
         lead.last_followup_sent = sent_at
@@ -795,9 +734,6 @@ Return ONLY one of these tokens — nothing else:
         intervals     = TIER_INTERVALS.get(lead.lead_status, TIER_INTERVALS[LeadStatus.COLD])
         base_hours    = intervals[attempt_index]
 
-        backoff_factor = 1
-        wait_hours     = min(base_hours * backoff_factor, base_hours * 4)
-
         reference = (
             lead.last_customer_response
             or lead.last_followup_sent
@@ -805,16 +741,9 @@ Return ONLY one of these tokens — nothing else:
         )
         elapsed = (timezone.now() - reference).total_seconds() / 3600
 
-        if elapsed < wait_hours:
-            return False, f'{elapsed:.1f}h elapsed, need {wait_hours:.1f}h'
+        if elapsed < base_hours:
+            return False, f'{elapsed:.1f}h elapsed, need {base_hours:.1f}h'
         return True, ''
-
-    def _backoff_factor(self, lead):
-        if (lead.last_customer_response and lead.last_followup_sent
-                and lead.last_customer_response > lead.last_followup_sent):
-            return 1
-        ignored = lead.followup_count
-        return min(2 ** ignored, 4)
 
     def _stage_label(self, lead):
         labels = ['day_1', 'day_3', 'week_1', 'week_2', 'month_1', 'completed']
@@ -898,8 +827,6 @@ Return ONLY one of these tokens — nothing else:
                 logger.warning(f'AI generation failed for lead {lead.id}: {exc}')
         return self._template_message(lead, next_question, attempt)
 
-    # ─── AI message ──────────────────────────────────────────────────────────
-
     def _ai_message(self, lead, next_question, attempt, last_question):
         service  = self._service_label(lead)
         time_ref = self._elapsed_description(lead)
@@ -930,33 +857,33 @@ Return ONLY one of these tokens — nothing else:
 
         prompt = f"""You are writing a WhatsApp follow-up message for Homebase Plumbers — a professional plumbing company in Zimbabwe/South Africa.
 
-    LEAD CONTEXT:
-    - Interest: {service}
-    - Area: {area or 'not yet shared'}
-    - Last heard from them: {time_ref}
-    - This is follow-up attempt #{attempt}
+LEAD CONTEXT:
+- Interest: {service}
+- Area: {area or 'not yet shared'}
+- Last heard from them: {time_ref}
+- This is follow-up attempt #{attempt}
 
-    BASE TEMPLATE (your starting point — do not stray far from this):
-    \"\"\"
-    {template_text}
-    \"\"\"
+BASE TEMPLATE (your starting point — do not stray far from this):
+\"\"\"
+{template_text}
+\"\"\"
 
-    {"QUESTION TO EMBED (rephrase naturally into the message):" + chr(10) + question_block if question_block else "Use the base template's question as-is or rephrase it very lightly."}
+{"QUESTION TO EMBED (rephrase naturally into the message):" + chr(10) + question_block if question_block else "Use the base template's question as-is or rephrase it very lightly."}
 
-    RULES — every single one must be followed:
-    1. Stay close to the base template — same intent, same question, same tone
-    2. You may lightly rephrase for naturalness but do not invent new angles or content
-    3. Open with "Hi there," — we do not have their name, never use one
-    4. NEVER ask for the customer's name
-    5. One question maximum
-    6. {length_instruction}
-    7. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
-    8. Zero markdown, zero bold, zero bullet points
-    9. At most one emoji — only if it fits naturally. Attempt 4+ = no emoji
-    10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
-    11. Sound like a real person texting, not a marketing email
+RULES — every single one must be followed:
+1. Stay close to the base template — same intent, same question, same tone
+2. You may lightly rephrase for naturalness but do not invent new angles or content
+3. Open with "Hi there," — we do not have their name, never use one
+4. NEVER ask for the customer's name
+5. One question maximum
+6. {length_instruction}
+7. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
+8. Zero markdown, zero bold, zero bullet points
+9. At most one emoji — only if it fits naturally. Attempt 4+ = no emoji
+10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
+11. Sound like a real person texting, not a marketing email
 
-    Output ONLY the message text. No labels, no quotes around it, no explanation."""
+Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
         response = deepseek_client.chat.completions.create(
             model='deepseek-chat',
@@ -984,8 +911,6 @@ Return ONLY one of these tokens — nothing else:
             f'rephrase={"yes" if last_question and attempt <= 3 else "no"}'
         )
         return {'message': message, 'ai_generated': True, 'template_fallback': False}
-
-    # ─── Template fallback (no AI) ────────────────────────────────────────────
 
     def _template_message(self, lead, next_question, attempt):
         service = self._service_label(lead)
@@ -1089,8 +1014,3 @@ Return ONLY one of these tokens — nothing else:
         message = options[idx]
 
         return {'message': message, 'ai_generated': False, 'template_fallback': True}
-
-    # ─── Utility ──────────────────────────────────────────────────────────────
-
-    def _clean_phone(self, phone):
-        return phone.replace('whatsapp:', '').replace('+', '').strip()

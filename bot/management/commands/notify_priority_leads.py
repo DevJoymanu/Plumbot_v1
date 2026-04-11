@@ -11,14 +11,17 @@ from openai import OpenAI
 
 from bot.models import Appointment
 from bot.whatsapp_cloud_api import whatsapp_api
+from bot.whatsapp_window import is_window_open, filter_queryset_by_window, hours_remaining
 
 logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
     help = (
-        "Notify plumber daily about leads with score >= 20 that have not responded "
-        "for 26+ hours, including AI conversation summary."
+        "Notify plumber daily about priority leads (score >= 20) that have not responded "
+        "for 26+ hours AND whose 24-hour WhatsApp window is still open. "
+        "Leads whose window is closed are skipped — the plumber is not notified "
+        "until the customer messages again and the window re-opens."
     )
 
     def add_arguments(self, parser):
@@ -55,16 +58,31 @@ class Command(BaseCommand):
 
         sent = 0
         skipped = 0
+        window_closed = 0
         errors = 0
 
         for lead in leads:
+            # ── Already alerted today? ────────────────────────────────────────
             sent_today = (
                 lead.last_priority_alert_sent_at
                 and timezone.localtime(lead.last_priority_alert_sent_at).date() == today_local
             )
-            already_notified = bool(sent_today)
-            if already_notified:
+            if sent_today:
                 skipped += 1
+                continue
+
+            # ── 24-hour window guard ──────────────────────────────────────────
+            # We alert the plumber only when we can still message the customer.
+            # If the window is closed, the alert is not useful — the customer
+            # would need to reply first before any outbound message is possible.
+            if not is_window_open(lead):
+                window_closed += 1
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"⏰ Window closed for priority lead {lead.id} "
+                        f"({hours_remaining(lead):.1f}h remaining) — skipping alert"
+                    )
+                )
                 continue
 
             summary = self._generate_conversation_summary(lead)
@@ -113,7 +131,8 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Stale-priority notifications complete | sent={sent} skipped={skipped} errors={errors}"
+                f"Stale-priority notifications complete | "
+                f"sent={sent} skipped={skipped} window_closed={window_closed} errors={errors}"
             )
         )
 
@@ -169,7 +188,9 @@ class Command(BaseCommand):
             .filter(last_response_at__lte=cutoff)
             .order_by("-computed_score", "last_response_at")
         )
-        return qs
+
+        # ── Enforce 24-hour window: only alert when we can still reach the customer ──
+        return filter_queryset_by_window(qs)
 
     def _hours_since_response(self, lead):
         reference = lead.last_customer_response or lead.created_at
@@ -223,5 +244,4 @@ class Command(BaseCommand):
             return response.choices[0].message.content.strip()
         except Exception as exc:
             logger.warning("DeepSeek summary failed for appointment %s: %s", lead.id, exc)
-            # Deterministic fallback for operational continuity.
             return " | ".join(transcript_lines[-3:])[:500]

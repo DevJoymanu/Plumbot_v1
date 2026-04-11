@@ -7,10 +7,20 @@ Run every 15 minutes via Railway Scheduler or cron:
 
 Cron:
     */15 * * * * cd /app && python manage.py send_reminders >> /var/log/reminders.log 2>&1
+
+24-HOUR WINDOW RULE
+-------------------
+WhatsApp free-tier messages may only be sent within 24 hours of the customer's
+last inbound message.  This command enforces this at the DB query level using
+filter_queryset_by_window() and also at the per-appointment level using
+is_window_open() before every send.
+
+Appointments whose window is closed are logged and skipped — reminder flags
+are NOT set, so the reminder will fire on the next run if the window has
+re-opened (i.e. the customer replied in the meantime).
 """
 
 import os
-import json
 import logging
 from datetime import timedelta, date, time as dt_time
 from collections import defaultdict
@@ -18,6 +28,8 @@ from collections import defaultdict
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db.models import Q
+
+from bot.whatsapp_window import is_window_open, filter_queryset_by_window, hours_remaining
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +347,8 @@ def appt_utc(apt):
     if dt.tzinfo is None:
         return cat.localize(dt).astimezone(pytz.utc)
     return dt.astimezone(pytz.utc)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DUPLICATE PREVENTION
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -375,7 +389,7 @@ def send_wa(phone: str, message: str) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class Command(BaseCommand):
-    help = "Send appointment reminders to leads and plumber"
+    help = "Send appointment reminders to leads and plumber (24-hour window enforced)"
 
     def handle(self, *args, **options):
         try:
@@ -402,26 +416,37 @@ class Command(BaseCommand):
         self.stdout.write(_row("  Local time:", f"{day_str}  |  {now_local.strftime('%H:%M')} CAT"))
         self.stdout.write(_row("  UTC time:",   now_utc.strftime("%Y-%m-%d %H:%M UTC")))
 
-        # ── Fetch appointments ─────────────────────────────────────────────────
-        active = list(Appointment.objects.filter(
+        # ── Fetch appointments (only those in the 24h window) ──────────────────
+        # Note: appointment reminders are sent TO customers, so we enforce the
+        # 24-hour window here.  The plumber's own schedule reminders do NOT
+        # require the customer to have messaged — those bypass the window check.
+        base_qs = Appointment.objects.filter(
             Q(status__in=["confirmed", "scheduled", "booked", "pending"]),
             Q(scheduled_datetime__date__gte=today),
             scheduled_datetime__isnull=False,
-        ).order_by("scheduled_datetime"))
+        ).order_by("scheduled_datetime")
+
+        # Apply 24h window filter for customer-facing reminders
+        active_windowed = list(filter_queryset_by_window(base_qs))
+        # All active (including window-closed) for plumber schedule reminders
+        active_all = list(base_qs)
+
+        self.stdout.write("")
+        self.stdout.write(_row("  Total confirmed:", f"{len(active_all)} appointments"))
+        self.stdout.write(_row("  In 24h window:", f"{len(active_windowed)} appointments"))
 
         # ── Overview ───────────────────────────────────────────────────────────
         self.stdout.write(_section("OVERVIEW", "APPOINTMENT SUMMARY"))
         self.stdout.write("")
 
         by_date = defaultdict(list)
-        for a in active:
-            #
+        for a in active_all:
             by_date[a.scheduled_datetime.date()].append(a)
 
         first_d = min(by_date.keys()) if by_date else None
         last_d  = max(by_date.keys()) if by_date else None
 
-        self.stdout.write(_row("  Total active:", f"{len(active)} appointments"))
+        self.stdout.write(_row("  Total active:", f"{len(active_all)} appointments"))
         self.stdout.write(_row("  Days covered:", str(len(by_date))))
         self.stdout.write(_row("  First:", str(first_d) if first_d else "none"))
         self.stdout.write(_row("  Last:",  str(last_d)  if last_d  else "none"))
@@ -441,12 +466,12 @@ class Command(BaseCommand):
                 self.stdout.write(f"    {label:<14} {len(apts_on_day)}  [{bar}]")
 
         # ─────────────────────────────────────────────────────────────────────
-        # LEAD REMINDERS
+        # LEAD REMINDERS (24h window enforced — customers only)
         # ─────────────────────────────────────────────────────────────────────
         self.stdout.write(_section("LEADS", "CUSTOMER REMINDERS"))
         self.stdout.write("")
 
-        lead_sent = lead_skipped = 0
+        lead_sent = lead_skipped = lead_window_closed = 0
         plumber_contact = f"+{PLUMBER_PHONE}" if PLUMBER_PHONE else "+263774819901"
 
         LEAD_CHECKS = [
@@ -455,7 +480,7 @@ class Command(BaseCommand):
             (0,  7, "lead_morning", msg_lead_morning, "Morning Of     [7:00 AM]"),
         ]
 
-        for apt in active:
+        for apt in active_all:  # iterate all; window check is per-apt below
             apt_u = appt_utc(apt)
             if apt_u is None:
                 continue
@@ -471,6 +496,17 @@ class Command(BaseCommand):
                         lead_skipped += 1
                         self.stdout.write(_skip(f"{label} -> {apt_label}"))
                     else:
+                        # ── 24h window check for customer messages ──
+                        if not is_window_open(apt):
+                            lead_window_closed += 1
+                            self.stdout.write(
+                                _warn(
+                                    f"{label} -> WINDOW CLOSED for {apt_label} "
+                                    f"({hours_remaining(apt):.1f}h remaining)"
+                                )
+                            )
+                            continue
+
                         msg = builder(apt, plumber_contact)
                         if send_wa(phone, msg):
                             mark_sent(apt, rtype)
@@ -486,6 +522,17 @@ class Command(BaseCommand):
                     lead_skipped += 1
                     self.stdout.write(_skip(f"2 Hours Before         -> {apt_label}"))
                 else:
+                    # ── 24h window check ──
+                    if not is_window_open(apt):
+                        lead_window_closed += 1
+                        self.stdout.write(
+                            _warn(
+                                f"2 Hours Before -> WINDOW CLOSED for {apt_label} "
+                                f"({hours_remaining(apt):.1f}h remaining)"
+                            )
+                        )
+                        continue
+
                     msg = msg_lead_2hours(apt, plumber_contact)
                     if send_wa(phone, msg):
                         mark_sent(apt, rtype)
@@ -495,20 +542,23 @@ class Command(BaseCommand):
                     else:
                         self.stdout.write(_warn(f"2 Hours Before -> FAILED for {apt_label}"))
 
-        if lead_sent == 0 and lead_skipped == 0:
+        if lead_sent == 0 and lead_skipped == 0 and lead_window_closed == 0:
             self.stdout.write(_info("No lead reminders due at this time"))
 
         self.stdout.write("")
         self.stdout.write(f"  {'-' * 56}")
         self.stdout.write(f"  Lead Summary:")
-        self.stdout.write(_row("    Sent:",    str(lead_sent)))
-        self.stdout.write(_row("    Skipped:", str(lead_skipped)))
-        self.stdout.write(_row("    Total:",   str(lead_sent + lead_skipped)))
+        self.stdout.write(_row("    Sent:",         str(lead_sent)))
+        self.stdout.write(_row("    Skipped:",      str(lead_skipped)))
+        self.stdout.write(_row("    Window Closed:", str(lead_window_closed)))
+        self.stdout.write(_row("    Total:",        str(lead_sent + lead_skipped + lead_window_closed)))
 
         # ─────────────────────────────────────────────────────────────────────
-        # PLUMBER REMINDERS
+        # PLUMBER REMINDERS (schedule-based — NOT customer-facing, no window check)
         # ─────────────────────────────────────────────────────────────────────
         self.stdout.write(_section("PLUMBER", "PLUMBER REMINDERS"))
+        self.stdout.write("")
+        self.stdout.write(_info("Note: plumber reminders use all confirmed appointments (no 24h window)"))
         self.stdout.write("")
 
         plumber_sent = 0
@@ -526,16 +576,16 @@ class Command(BaseCommand):
             # Sunday weekly @ 18:00
             if is_sunday and is_in_window(now_local, 18):
                 rtype  = f"plumber_weekly_{week_num}"
-                marker = active[0] if active else None
+                marker = active_all[0] if active_all else None
                 if marker and already_sent(marker, rtype):
                     self.stdout.write(_skip(f"Weekly Overview (Week {week_num})  [already sent]"))
-                elif active:
-                    msg = msg_plumber_weekly(active, PLUMBER_NAME)
+                elif active_all:
+                    msg = msg_plumber_weekly(active_all, PLUMBER_NAME)
                     if send_wa(PLUMBER_PHONE, msg):
                         if marker:
                             mark_sent(marker, rtype)
                         plumber_sent += 1
-                        self.stdout.write(_ok(f"Weekly Overview (Week {week_num})  |  {len(active)} appointments"))
+                        self.stdout.write(_ok(f"Weekly Overview (Week {week_num})  |  {len(active_all)} appointments"))
                         self.stdout.write(_preview(msg))
                     else:
                         self.stdout.write(_warn("Weekly Overview -- SEND FAILED"))
@@ -545,7 +595,7 @@ class Command(BaseCommand):
             # Tomorrow's appointments @ 20:00
             if is_in_window(now_local, 20):
                 tomorrow      = today + timedelta(days=1)
-                tomorrow_apts = [a for a in active if a.scheduled_datetime.date() == tomorrow]
+                tomorrow_apts = [a for a in active_all if a.scheduled_datetime.date() == tomorrow]
                 if tomorrow_apts:
                     rtype = f"plumber_nextday_{tomorrow.isoformat()}"
                     if already_sent(tomorrow_apts[0], rtype):
@@ -564,7 +614,7 @@ class Command(BaseCommand):
 
             # Morning @ 07:00
             if is_in_window(now_local, 7):
-                today_apts = [a for a in active if a.scheduled_datetime.date() == today]
+                today_apts = [a for a in active_all if a.scheduled_datetime.date() == today]
                 if today_apts:
                     rtype = f"plumber_morning_{today.isoformat()}"
                     if already_sent(today_apts[0], rtype):
@@ -582,7 +632,7 @@ class Command(BaseCommand):
                     self.stdout.write(_info("No appointments today -- morning briefing skipped"))
 
             # 2-hour alerts
-            for apt in active:
+            for apt in active_all:
                 apt_u = appt_utc(apt)
                 if apt_u is None:
                     continue
@@ -605,12 +655,13 @@ class Command(BaseCommand):
         # FINAL TALLY
         # ─────────────────────────────────────────────────────────────────────
         total_sent = lead_sent + plumber_sent
-        total_ops  = total_sent + lead_skipped
+        total_ops  = total_sent + lead_skipped + lead_window_closed
         rate       = (total_sent / total_ops * 100) if total_ops else 0.0
 
         self.stdout.write(f"\n{'=' * W}")
         self.stdout.write(f"  Final Tally:")
         self.stdout.write(_row("    Lead reminders sent:",    str(lead_sent)))
+        self.stdout.write(_row("    Lead window closed:",     str(lead_window_closed)))
         self.stdout.write(_row("    Plumber reminders sent:", str(plumber_sent)))
         self.stdout.write(_row("    TOTAL:",                  str(total_sent)))
         self.stdout.write("")
