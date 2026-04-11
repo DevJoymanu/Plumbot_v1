@@ -3292,6 +3292,53 @@ class Plumbot:
         day_num   = date_obj.day
         suffix    = 'th' if 11 <= day_num <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day_num % 10, 'th')
         return f"{day_name} the {day_num}{suffix}"
+
+    def _get_pricing_followup_prompt(self) -> str:
+        """Return the next booking question in a natural sales tone."""
+        next_question = self.get_next_question_to_ask()
+
+        if next_question == "service_type":
+            return "Which service are you looking at exactly?"
+        if next_question == "project_description":
+            return "For now, could you tell me a bit more about what exactly you want done?"
+        if next_question == "availability_date":
+            days = self._get_next_two_available_days()
+            if len(days) >= 2:
+                return (
+                    f"If you'd like, we can do a free on-site assessment first. "
+                    f"Would {self._format_day(days[0])} or {self._format_day(days[1])} work better for you?"
+                )
+            return "If you'd like, we can do a free on-site assessment first. Which day would suit you best?"
+        if next_question == "availability_time":
+            return "What time would suit you best for the free on-site assessment?"
+        if next_question == "area":
+            return "What area are you in so we can plan the visit properly?"
+        if next_question == "name":
+            return "What name should we put on the booking?"
+        return "If you'd like, I can help you book the free on-site assessment from here."
+
+    def _build_pricing_response(
+        self,
+        *,
+        breakdown_lines,
+        total_line: str,
+        cheapest_line: str,
+        visit_committed: bool = False,
+    ) -> str:
+        """Build consistent pricing replies with a breakdown, rough total, and booking push."""
+        breakdown_text = "\n".join(f"• {line}" for line in breakdown_lines)
+        depends_line = (
+            "However final prices depend on the setup and can still be adjusted once our plumber sees the space."
+            if visit_committed else
+            "However final prices depend on the setup and can be negotiated once we get to come out and see the space."
+        )
+        return (
+            f"{breakdown_text}\n\n"
+            f"{total_line}\n\n"
+            f"{cheapest_line}\n\n"
+            f"{depends_line}\n\n"
+            f"{self._get_pricing_followup_prompt()}"
+        )
     #
     # ── FIX 3 helpers ────────────────────────────────────────────────────────
 
@@ -4294,6 +4341,95 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 already_visiting = self.appointment.has_plan is False
                 has_area = bool(self.appointment.customer_area)
                 visit_committed = already_visiting or has_area
+
+                structured_pricing = {
+                    "tub_sales": {
+                        "breakdown_lines": [
+                            "Tub supply: from US$400",
+                            "Mixer if needed: from US$150",
+                            "Installation and finishing: from US$120",
+                        ],
+                        "total_line": "Roughly looking at about US$670 for a basic supply-and-fit setup.",
+                        "cheapest_line": "We do have cheaper options if you already have the tub or you're going with a standard built-in setup, where labour can start from US$80.",
+                    },
+                    "standalone_tub": {
+                        "breakdown_lines": [
+                            "Free-standing tub supply: from US$450",
+                            "Free-standing mixer: from US$150",
+                            "Mixer and tub installation: from US$120",
+                        ],
+                        "total_line": "Roughly looking at about US$720 for everything on a basic freestanding setup.",
+                        "cheapest_line": "We do have cheaper tub options if you go for a standard built-in tub instead, with labour starting from US$80.",
+                    },
+                    "geyser": {
+                        "breakdown_lines": [
+                            "Geyser installation labour: from US$80",
+                            "Extra fittings and connectors if needed: from US$20",
+                            "Access and size-related extras can add more",
+                        ],
+                        "total_line": "Roughly looking at about US$100 to US$180 for a straightforward geyser installation.",
+                        "cheapest_line": "The cheapest option is when you already have the geyser and it's a simple swap, where labour starts from US$80.",
+                    },
+                    "shower_cubicle": {
+                        "breakdown_lines": [
+                            "Standard 900x900 cubicle supply: from US$130",
+                            "Installation: from US$40",
+                        ],
+                        "total_line": "Roughly looking at about US$170 for everything on a standard cubicle fit.",
+                        "cheapest_line": "The cheapest option is a standard-size cubicle setup starting from US$170 all-in.",
+                    },
+                    "vanity": {
+                        "breakdown_lines": [
+                            "Vanity unit supply: from US$150",
+                            "Installation labour: from US$30",
+                        ],
+                        "total_line": "Roughly looking at about US$180 for a basic vanity setup, and more for larger or custom finishes.",
+                        "cheapest_line": "The cheapest option is a small standard vanity, or just installation if you already have one, with labour starting from US$30.",
+                    },
+                    "bathtub_installation": {
+                        "breakdown_lines": [
+                            "Standard bathtub installation labour: from US$80",
+                            "Free-standing tub supply if needed: from US$450",
+                            "Free-standing mixer if needed: from US$150",
+                            "Mixer installation: from US$120",
+                        ],
+                        "total_line": "Roughly looking at about US$80 for a basic install if you already have the tub, or from around US$720 for a full freestanding setup.",
+                        "cheapest_line": "The cheapest option is when you already have a standard built-in tub, with installation starting from US$80.",
+                    },
+                    "toilet": {
+                        "breakdown_lines": [
+                            "Close-coupled toilet supply: from US$50",
+                            "Installation: from US$20",
+                        ],
+                        "total_line": "Roughly looking at about US$70 for everything on a standard toilet replacement.",
+                        "cheapest_line": "The cheapest option is when you already have the toilet and only need fitting, with labour starting from US$20.",
+                    },
+                    "chamber": {
+                        "breakdown_lines": [
+                            "Side chamber supply: US$130",
+                            "Installation: US$30",
+                        ],
+                        "total_line": "Roughly looking at about US$160 for everything on a standard chamber setup.",
+                        "cheapest_line": "The cheapest option is if it's only a chamber fit or adjustment, with labour starting from US$30.",
+                    },
+                    "facebook_package": {
+                        "breakdown_lines": [
+                            "Core bathroom package: from US$600",
+                            "Fixtures like tubs, showers, toilets, and mixers are added based on what you choose",
+                            "Installation and finishing depend on the setup",
+                        ],
+                        "total_line": "Roughly looking at about US$600 upward, depending on the fixtures and layout.",
+                        "cheapest_line": "The cheapest option is the basic package starting from US$600 before extra fixtures are added.",
+                    },
+                }
+
+                if language != 'shona' and intent in structured_pricing:
+                    return self._build_pricing_response(
+                        breakdown_lines=structured_pricing[intent]["breakdown_lines"],
+                        total_line=structured_pricing[intent]["total_line"],
+                        cheapest_line=structured_pricing[intent]["cheapest_line"],
+                        visit_committed=visit_committed,
+                    )
 
                 # ── Pricing responses ──
                 # Two variants per intent where relevant:
