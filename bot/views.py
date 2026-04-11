@@ -3473,6 +3473,224 @@ class Plumbot:
             "we'll pick up right where we left off."
         )
 
+    def _is_delay_or_exit_signal(self, message: str) -> bool:
+        """
+        Return True ONLY when the customer is signalling they want to pause/end
+        AND one of the following is true:
+          1. The appointment is already confirmed (booked)
+          2. The customer has explicitly said they will reach out later
+
+        For all other cases — including mid-conversation acks like "oh ok", "sharp",
+        "shap", "cool", "noted" — return False so the bot continues naturally.
+
+        Uses DeepSeek to classify intent accurately, with a fast pre-filter to avoid
+        burning tokens on obvious non-exit messages.
+        """
+        msg = (message or '').strip()
+        if not msg:
+            return False
+
+        msg_lower = msg.lower()
+
+        if len(msg_lower.split()) > 6:
+            return False
+
+        if '?' in msg:
+            return False
+
+        engagement_signals = (
+            'how much', 'price', 'cost', 'quote', 'photo', 'pic', 'picture',
+            'bathroom', 'shower', 'toilet', 'tub', 'vanity', 'geyser', 'kitchen',
+            'marii', 'mutengo', 'chimbuzi', 'shawa', 'bhavhu', 'kicheni',
+            'when', 'where', 'what', 'which', 'who', 'can you', 'do you',
+        )
+        if any(sig in msg_lower for sig in engagement_signals):
+            return False
+
+        obvious_acks = {
+            'ok', 'okay', 'k', 'kk', 'oky', 'oh ok', 'oh okay', 'ooh ok',
+            'ooh okay', 'sharp', 'shap', 'sho', 'cool', 'nice', 'noted',
+            'got it', 'alright', 'great', 'good', 'fine', 'sure', 'yes',
+            'yep', 'yeah', 'yup', 'no', 'nope', 'nah', 'ok thanks',
+            'ok thank you', 'thanks', 'thank you', 'thank u', 'thx', 'thnx',
+            'understood', 'i see', 'ah ok', 'ah okay', 'oh ok thanks',
+            'oh okay thanks', 'ok cool', 'ok bye', 'okay bye', 'bye',
+            'no worries', '👍', '🙏', '✅', '😊', 'bo', 'bho',
+            'hongu', 'zvakanaka', 'maita basa', 'ndatenda',
+        }
+        explicit_delay_phrases = (
+            "i'll talk", "i will talk", "talk later", "will contact",
+            "contact later", "i'll be in touch", "get back to you",
+            "busy now", "busy at the moment", "not right now",
+            "will let you know", "will come back", "come back later",
+            "in a bit", "later today", "i'll get back", "let me think",
+            "need to think", "thinking about it", "i will reach out",
+            "will reach out", "i'll reach out", "ndichatumira",
+            "mangwana", "ndichauya",
+        )
+
+        is_obvious_ack = msg_lower in obvious_acks
+        is_explicit_delay = any(phrase in msg_lower for phrase in explicit_delay_phrases)
+
+        if not is_obvious_ack and not is_explicit_delay:
+            return False
+
+        appointment_confirmed = self.appointment.status == 'confirmed'
+        customer_said_later = self._customer_said_they_will_reach_out()
+
+        if appointment_confirmed or customer_said_later:
+            if is_explicit_delay or is_obvious_ack:
+                print(
+                    f"✅ Exit signal accepted: confirmed={appointment_confirmed}, "
+                    f"said_later={customer_said_later}, msg='{msg}'"
+                )
+                return True
+
+        if is_obvious_ack and not appointment_confirmed and not customer_said_later:
+            return self._deepseek_classify_exit_intent(msg)
+
+        return False
+
+    def _customer_said_they_will_reach_out(self) -> bool:
+        """
+        Scan recent conversation history for messages where the customer
+        explicitly said they will contact us later / in due time.
+        Checks the last 10 customer messages.
+        """
+        history = self.appointment.conversation_history or []
+        reach_out_phrases = (
+            "i'll reach out", "will reach out", "i'll contact",
+            "will contact you", "i'll get back", "get back to you",
+            "i'll be in touch", "will be in touch", "contact later",
+            "i'll call", "will call you", "reach out later",
+            "i'll message", "will message", "come back to this",
+            "revisit later", "when i'm ready", "when ready",
+            "ndichatumira", "ndichauya", "ndichakubata",
+            "mangwana ndichauya", "ill reach out",
+        )
+        customer_messages = [
+            m.get('content', '').lower()
+            for m in history[-20:]
+            if m.get('role') == 'user'
+        ][-10:]
+
+        for content in customer_messages:
+            if any(phrase in content for phrase in reach_out_phrases):
+                return True
+        return False
+
+    def _deepseek_classify_exit_intent(self, message: str) -> bool:
+        """
+        Use DeepSeek to determine whether a short acknowledgement message
+        means the customer wants to END/PAUSE the conversation, or whether
+        it is a mid-conversation acknowledgement that expects a bot reply.
+
+        Returns True only if DeepSeek is HIGH confidence the customer is done.
+        Defaults to False (keep conversation alive) on any error or LOW confidence.
+        """
+        try:
+            next_question = self.get_next_question_to_ask()
+            has_project = bool(self.appointment.project_type)
+            has_area = bool(self.appointment.customer_area)
+            has_datetime = bool(self.appointment.scheduled_datetime)
+            status = self.appointment.status
+
+            context_summary = (
+                f"Appointment status: {status}\n"
+                f"Service type collected: {'yes' if has_project else 'no'}\n"
+                f"Area collected: {'yes' if has_area else 'no'}\n"
+                f"Appointment datetime set: {'yes' if has_datetime else 'no'}\n"
+                f"Next question bot needs to ask: {next_question}"
+            )
+
+            history = self.appointment.conversation_history or []
+            recent = []
+            for m in history[-6:]:
+                role = "Customer" if m.get('role') == 'user' else "Bot"
+                content = (m.get('content') or '')[:200].strip()
+                if content and not content.startswith('['):
+                    recent.append(f"{role}: {content}")
+            recent_str = "\n".join(recent) if recent else "No recent messages"
+
+            prompt = f"""You are an intent classifier for a WhatsApp chatbot at a Zimbabwean plumbing company.
+
+CONVERSATION STATE:
+{context_summary}
+
+RECENT CONVERSATION:
+{recent_str}
+
+CUSTOMER'S LATEST MESSAGE: "{message}"
+
+QUESTION: Is the customer's message a signal that they want to END or PAUSE the conversation right now?
+
+Answer YES only if the customer clearly wants to stop — e.g. they said they'll think about it, they're busy, they'll get back later, or they are done asking questions and expect no reply.
+
+Answer NO if the message is a mid-conversation acknowledgement that naturally expects the bot to continue — e.g. they just said "ok" after receiving information and are waiting for the bot to ask the next question, or the conversation is clearly still in progress with unanswered questions remaining.
+
+IMPORTANT: When there are still questions to ask (next_question is not 'complete') and the appointment is not confirmed, default to NO — keep the conversation alive. A bare "ok" or "sharp" from a customer who hasn't booked yet almost always means "I heard you, continue" not "I'm done".
+
+Reply with ONLY a JSON object:
+{{"intent": "exit" or "continue", "confidence": "HIGH" or "LOW"}}"""
+
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return ONLY valid JSON. No markdown, no explanation.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=30,
+            )
+
+            raw = response.choices[0].message.content.strip()
+            raw = raw.replace('```json', '').replace('```', '').strip()
+            result = json.loads(raw)
+
+            intent = result.get('intent', 'continue')
+            confidence = result.get('confidence', 'LOW')
+
+            print(
+                f"🤖 DeepSeek exit intent: '{message}' → "
+                f"intent={intent}, confidence={confidence}"
+            )
+
+            return intent == 'exit' and confidence == 'HIGH'
+
+        except Exception as exc:
+            print(f"⚠️ DeepSeek exit classification failed: {exc} — defaulting to continue")
+            return False
+
+    def _get_delay_acknowledgment(self) -> str:
+        """
+        Return a warm acknowledgment for genuine exit signals.
+        Varies based on whether the appointment is booked or they said they'll reach out.
+        """
+        if self.appointment.status == 'confirmed' and self.appointment.scheduled_datetime:
+            import pytz
+            sa_tz = pytz.timezone('Africa/Johannesburg')
+            dt = self.appointment.scheduled_datetime.astimezone(sa_tz)
+            formatted = dt.strftime('%A, %B %d at %I:%M %p')
+            return (
+                f"Perfect — see you on {formatted}! "
+                "Our plumber will call you 30 minutes before arrival. "
+                "Feel free to message anytime if you have questions. 😊"
+            )
+
+        if self._customer_said_they_will_reach_out():
+            return (
+                "No problem at all! Whenever you're ready, just drop us a message and "
+                "we'll pick up right where we left off. 😊"
+            )
+
+        return (
+            "No problem at all! Whenever you're ready, just drop us a message and "
+            "we'll pick up right where we left off. 😊"
+        )
+
     def _explicitly_requests_price(self, message: str) -> bool:
         """Return True only when the customer clearly asks about pricing."""
         msg = (message or '').strip().lower()
@@ -3527,6 +3745,12 @@ class Plumbot:
     def generate_response(self, incoming_message, precomputed_service_inquiry=None):
         """Check service inquiries ONLY when not mid-conversation."""
         try:
+            if self._is_delay_or_exit_signal(incoming_message):
+                print(f"⏸️ Exit/delay signal accepted — acknowledging and stopping")
+                reply = self._get_delay_acknowledgment()
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
             # ── EXIT / DELAY SIGNAL — checked FIRST, before anything else ────
             # Catches: "ok thanks", "noted", "oh ok", "no worries", 👍, etc.
             # Only suppress auto-reply when:
@@ -3534,7 +3758,7 @@ class Plumbot:
             #   (b) appointment is already confirmed — customer is just acknowledging
             _no_project_yet = not self.appointment.project_type
             _already_confirmed = self.appointment.status == 'confirmed'
-            if self._is_delay_or_exit_signal(incoming_message) and (
+            if False and self._is_delay_or_exit_signal(incoming_message) and (
                 _no_project_yet or _already_confirmed
             ):
                 print(
@@ -3642,8 +3866,14 @@ class Plumbot:
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
             
-            
             if self._is_delay_or_exit_signal(incoming_message):
+                print(f"⏸️ Exit/delay signal accepted mid-conversation — acknowledging and stopping")
+                reply = self._get_delay_acknowledgment()
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
+
+            if False and self._is_delay_or_exit_signal(incoming_message):
                 print(f"⏸️ FIX 3: Delay/exit signal detected — not pushing further")
                 reply = self._get_delay_acknowledgment()
                 self.appointment.add_conversation_message("user", incoming_message)
