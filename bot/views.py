@@ -5680,6 +5680,20 @@ I understand this is time-sensitive!"""
             print(f"Error formatting datetime: {str(e)}")
             return dt
 
+    def _build_named_booking_confirmation(self):
+        """Build the final customer-facing confirmation after capturing a name."""
+        display_datetime = self.format_datetime_for_display(self.appointment.scheduled_datetime)
+        customer_name = self.appointment.customer_name or "there"
+        customer_area = self.appointment.customer_area or "your area"
+        formatted_datetime = display_datetime.strftime('%A, %B %d, %Y at %I:%M %p')
+
+        return (
+            f"Perfect — thanks, {customer_name}. You're all set for your "
+            f"*free on-site assessment* on **{formatted_datetime}** in {customer_area}. "
+            "Our senior plumber will call you 30 minutes before arrival to confirm. "
+            "See you then!"
+        )
+
 
     def send_confirmation_message(self, appointment_info, appointment_datetime):
         """Send booking confirmation to customer."""
@@ -6285,7 +6299,7 @@ I understand this is time-sensitive!"""
                 
                 # Generate confirmation message
                 if self.appointment.customer_name:
-                    return f"✅ Perfect! Your appointment is confirmed for {self.appointment.scheduled_datetime.strftime('%A, %B %d at %I:%M %p')}. Our team will contact you before arrival."
+                    return self._build_named_booking_confirmation()
                 else:
                     return (
                         f"Perfect! I've booked your appointment for "
