@@ -6555,6 +6555,13 @@ I understand this is time-sensitive!"""
                 print(f"✅ Updated service_type: {self.appointment.project_type}")
     
             # ── Project description ───────────────────────────────────────────────
+            # ── Project description ───────────────────────────────────────────────
+            _SERVICE_TYPE_LABELS = {
+                'bathroom renovation', 'bathroom',
+                'kitchen renovation', 'kitchen',
+                'new plumbing installation', 'plumbing installation',
+                'bathroom_renovation', 'kitchen_renovation', 'new_plumbing_installation',
+            }
             _extracted_desc = (extracted_data.get('project_description') or '').strip()
             if (
                 _extracted_desc and
@@ -6566,26 +6573,18 @@ I understand this is time-sensitive!"""
                 self.appointment.project_description = _extracted_desc
                 updated_fields.append('project_description')
                 print(f"✅ Updated project_description: {self.appointment.project_description[:60]}")
-            #        
-            _SERVICE_TYPE_LABELS = {
-                'bathroom renovation', 'bathroom',
-                'kitchen renovation', 'kitchen',
-                'new plumbing installation', 'plumbing installation',
-                'bathroom_renovation', 'kitchen_renovation', 'new_plumbing_installation',
-            }
-
             elif (
                 next_question == 'project_description' and
                 not self.appointment.project_description and
                 self._looks_like_project_description_reply(incoming_message) and
                 not self._is_product_availability_question(incoming_message) and
-                incoming_message.strip().lower() not in _SERVICE_TYPE_LABELS
+                (incoming_message or '').strip().lower() not in _SERVICE_TYPE_LABELS
             ):
                 self.appointment.project_description = incoming_message.strip()
-                updated_fields.append('project_description')                
+                updated_fields.append('project_description')
                 print(f"✅ Fallback project_description from raw message: "
                     f"{self.appointment.project_description[:60]}")
-
+                    
             # ── Area — capture passively whenever volunteered ─────────────────────
             if (extracted_data.get('area') and
                     extracted_data.get('area') != 'null' and
