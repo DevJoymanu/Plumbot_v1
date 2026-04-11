@@ -3572,10 +3572,11 @@ class Plumbot:
                     'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
                     'vanity', 'bathtub_installation', 'toilet', 'chamber',
                     'facebook_package', 'location_ask', 'location_visit',
-                    'previous_quotation', 'pictures',
+                    'previous_quotation', 'pictures', 'combined_pricing',
                 }
                 NON_PRICING_AUTO_REPLY_INTENTS = {
                     'location_ask', 'location_visit', 'previous_quotation', 'pictures',
+                    'combined_pricing',
                 }
                 if inquiry.get('intent') != 'none' and (
                     inquiry.get('confidence') == 'HIGH' or
@@ -4308,12 +4309,15 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     - vanity: asking about vanity units, custom vanity
     - bathtub_installation: asking about installing a bathtub, wall finishing around tub
     - toilet: asking about toilet supply or installation
-    - chamber: asking about side chamber, chamber supply or installation   # <-- ADD THIS
+    - chamber: asking about side chamber, chamber supply or installation
     - facebook_package: referencing a Facebook ad or package deal
     - location_ask: customer is ONLY asking where we are located or for our address
     - location_visit: customer wants to physically come IN PERSON to our office or showroom
     - previous_quotation: saying we sent them a quotation before
     - pictures: asking to see product pictures (not previous work photos)
+    - combined_pricing: asking for total/combined cost of multiple items already discussed,
+      e.g. "how much for all", "how much zvese zvakadai", "zvese izvi zvinodhura marii",
+      "total for everything", "all together how much", "what's the total"
     - none: none of the above
 
     CRITICAL RULES:
@@ -4357,6 +4361,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
         * "where are you", "your address", "where are you located"
         * "can I come", "can I visit your office"
         * "send pictures", "show me photos", "got pics"
+        * "how much zvese", "zvese zvakadai", "how much for all", "total for everything"
     - LOW = message is genuinely ambiguous and could match multiple intents
       or no specific product/service
       
@@ -4815,6 +4820,29 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             f"Kuti uwane quotation yako yekare, taura neplumber yedu directly "
                             f"uye vachakubatsira nekukurumidza. 📄\n\n"
                             f"Bata: {plumber_number}"
+                        ),
+                    },
+
+                    "combined_pricing": {
+                        "en": (
+                            "Here's a rough combined estimate based on everything we've discussed:\n\n"
+                            "• Shower cubicle (supply + install): from US$170\n"
+                            "• Vanity unit (supply + install): from US$180\n"
+                            "• Toilet (supply + install): from US$70\n"
+                            "• Chamber (supply + install): US$160\n"
+                            "• Freestanding tub (supply + install): from US$720\n\n"
+                            "Final price depends on your specific setup — once our plumber sees the space they'll give you a fixed number.\n\n"
+                            f"{self._get_pricing_followup_prompt('english')}"
+                        ),
+                        "sn": (
+                            "Apa mutengo wakafanana wezvinhu zvese zvatakaongorora:\n\n"
+                            "• Shower cubicle (supply + install): kubva US$170\n"
+                            "• Vanity unit (supply + install): kubva US$180\n"
+                            "• Toilet (supply + install): kubva US$70\n"
+                            "• Chamber (supply + install): US$160\n"
+                            "• Freestanding tub (supply + install): kubva US$720\n\n"
+                            "Mutengo wakakwana unoenderana nesetup yako — plumber wedu aona nzvimbo yako ozokuudza mutengo wakajika.\n\n"
+                            f"{self._get_pricing_followup_prompt('shona')}"
                         ),
                     },
 

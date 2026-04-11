@@ -1,4 +1,4 @@
-"""
+﻿"""
 WhatsApp Cloud API Webhook Handler - ASYNC VERSION
 Handles delays without blocking the webhook response
 
@@ -42,15 +42,15 @@ PREVIOUS_WORK_IMAGE_URLS = [
     if url.strip()
 ]
 
-# ─── Media debounce trackers ──────────────────────────────────────────────────
+# --- Media debounce trackers --------------------------------------------------
 _media_ack_timers: dict = {}
 _media_ack_lock = threading.Lock()
 MEDIA_DEBOUNCE_SECONDS = 8
 
 # Plumber alert debounce — accumulates file URLs across a burst of images,
 # then sends ONE consolidated alert after the burst window closes.
-_plumber_alert_timers: dict = {}          # sender → threading.Timer
-_plumber_alert_pending: dict = {}         # sender → list of file_url strings
+_plumber_alert_timers: dict = {}          # sender ? threading.Timer
+_plumber_alert_pending: dict = {}         # sender ? list of file_url strings
 _plumber_alert_lock = threading.Lock()
 
 # Text dedupe window to suppress near-identical duplicate webhook deliveries.
@@ -136,9 +136,9 @@ RESPONSE JSON FORMAT:
         return reply
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # FIX 1 — SERVICE-LEVEL PRICING DEDUP
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _has_sent_pricing_for_intent(appointment: Appointment, intent: str) -> bool:
     """Return True if we already sent pricing for this specific intent."""
@@ -155,39 +155,23 @@ def _mark_pricing_intent_sent(appointment: Appointment, intent: str) -> None:
         appointment.save(update_fields=['sent_pricing_intents'])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # FIX 2 — PRICING OVERVIEW DEDUP (also blocks if any specific intent was sent)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _is_genuine_pricing_question(message: str, appointment: Appointment) -> bool:
     """
     Return True ONLY when the message is a fresh, standalone pricing inquiry.
-
-    Blocks the pricing response when:
-    - We already sent the full pricing overview to this lead
-    - We already sent ANY specific service pricing (sent_pricing_intents is non-empty)
-    - The message is an acknowledgment / thanks
-    - The message expresses intent / next step rather than asking about price
-    - The message is very short follow-on noise
     """
-    # Never send the overview if we already did
     if getattr(appointment, 'pricing_overview_sent', False):
         return False
-
-    # Never send the overview if we already sent a specific service price
-    # (customer should ask a specific follow-up, not get the whole list again)
-    if appointment.sent_pricing_intents:
-        return False
-
     msg = message.lower().strip()
-
     ack_phrases = [
         'ok thank', 'thank u', 'thank you', 'thanks', 'ok cool', 'noted',
         'alright', 'got it', 'ok ok', 'okay', 'understood'
     ]
     if any(phrase in msg for phrase in ack_phrases):
         return False
-
     intent_phrases = [
         'start from scratch', 'need to start', 'want to start',
         'i need', 'i want', 'let me', 'can you', 'please help',
@@ -195,16 +179,23 @@ def _is_genuine_pricing_question(message: str, appointment: Appointment) -> bool
     ]
     if any(phrase in msg for phrase in intent_phrases):
         return False
-
     if len(msg.split()) <= 2 and 'price' not in msg and 'cost' not in msg:
         return False
-
+    combined_pricing_phrases = [
+        'how much for all', 'how much zvese', 'zvese zvakadai', 'zvese izvi',
+        'all of these', 'all of it', 'total cost', 'total price', 'overall cost',
+        'everything', 'all together', 'combined', 'grand total',
+        'how much all', 'mutengo wese', 'mutengo wazvose',
+    ]
+    if any(phrase in msg for phrase in combined_pricing_phrases):
+        return True
+    if appointment.sent_pricing_intents:
+        return False
     return True
 
-
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Unchanged helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def is_chatbot_paused_for_sender(sender: str) -> bool:
     phone_number = f"whatsapp:+{sender}"
@@ -249,13 +240,13 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
 
         if media_type == 'video':
             customer_reply = (
-                "Thank you for sending that video! 🎥 Our plumber has been notified and will "
+                "Thank you for sending that video! ?? Our plumber has been notified and will "
                 "review it and contact you directly. If it's urgent, you can also call them on "
                 f"{fresh.plumber_contact_number or '+263774819901'}."
             )
         else:
             customer_reply = (
-                "Thank you for sending your plan! 📎 Our plumber has been notified and will "
+                "Thank you for sending your plan! ?? Our plumber has been notified and will "
                 "be in touch with you directly to discuss your project.\n\n"
                 "If it's urgent, you can also call them on "
                 f"{fresh.plumber_contact_number or '+263774819901'}."
@@ -264,25 +255,25 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
         fresh.add_conversation_message("assistant", customer_reply)
 
         delay = get_random_delay()
-        print(f"📨 Sending single media ack to {sender} after {delay // 60}m delay")
+        print(f"?? Sending single media ack to {sender} after {delay // 60}m delay")
         time.sleep(delay)
         try:
             whatsapp_api.send_text_message(sender, customer_reply)
-            print(f"✅ Media ack sent to {sender}")
+            print(f"? Media ack sent to {sender}")
         except Exception as e:
-            print(f"❌ Failed to send media ack to {sender}: {e}")
+            print(f"? Failed to send media ack to {sender}: {e}")
 
     with _media_ack_lock:
         existing = _media_ack_timers.get(sender)
         if existing is not None:
             existing.cancel()
-            print(f"🔄 Reset media ack timer for {sender}")
+            print(f"?? Reset media ack timer for {sender}")
 
         timer = threading.Timer(MEDIA_DEBOUNCE_SECONDS, _send_ack)
         timer.daemon = True
         _media_ack_timers[sender] = timer
         timer.start()
-        print(f"⏳ Media ack timer set for {sender} ({MEDIA_DEBOUNCE_SECONDS}s)")
+        print(f"? Media ack timer set for {sender} ({MEDIA_DEBOUNCE_SECONDS}s)")
 
 
 def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "Optional[str]", media_type: str):
@@ -307,34 +298,34 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         customer_name = fresh.customer_name or "A customer"
 
         if urls:
-            file_lines = "\n".join(f"  🔗 {u}" for u in urls)
+            file_lines = "\n".join(f"  ?? {u}" for u in urls)
             file_section = f"Files ({len(urls)}):\n{file_lines}"
         else:
-            file_section = "⚠️ Files could not be saved automatically."
+            file_section = "?? Files could not be saved automatically."
 
         alert_message = (
-            f"📎 MEDIA RECEIVED FROM CUSTOMER\n\n"
+            f"?? MEDIA RECEIVED FROM CUSTOMER\n\n"
             f"Customer: {customer_name}\n"
             f"Phone: +{sender}\n"
             f"WhatsApp: wa.me/{sender}\n"
             f"Media type: {media_type.upper()} ({len(urls)} file(s))\n"
             f"{file_section}\n\n"
-            f"📋 APPOINTMENT DETAILS:\n"
+            f"?? APPOINTMENT DETAILS:\n"
             f"  Service: {fresh.project_type or 'Not specified'}\n"
             f"  Area: {fresh.customer_area or 'Not specified'}\n"
             f"  Property: {fresh.property_type or 'Not specified'}\n"
             f"  Timeline: {fresh.timeline or 'Not specified'}\n"
             f"  Has plan: {'Yes' if fresh.has_plan is True else 'No' if fresh.has_plan is False else 'Not answered'}\n\n"
-            f"🤖 AI SUMMARY:\n{ai_summary}\n\n"
-            f"🔗 View appointment:\n"
+            f"?? AI SUMMARY:\n{ai_summary}\n\n"
+            f"?? View appointment:\n"
             f"https://plumbotv1-production.up.railway.app/appointments/{fresh.id}/"
         )
 
         try:
             whatsapp_api.send_text_message(plumber_number, alert_message)
-            print(f"✅ Consolidated plumber alert sent ({len(urls)} file(s)) for {sender}")
+            print(f"? Consolidated plumber alert sent ({len(urls)} file(s)) for {sender}")
         except Exception as e:
-            print(f"❌ Failed to send plumber alert: {e}")
+            print(f"? Failed to send plumber alert: {e}")
 
     with _plumber_alert_lock:
         # Accumulate the URL
@@ -352,25 +343,25 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         timer.daemon = True
         _plumber_alert_timers[sender] = timer
         timer.start()
-        print(f"⏳ Plumber alert timer reset for {sender} (accumulated {len(_plumber_alert_pending[sender])} file(s))")
+        print(f"? Plumber alert timer reset for {sender} (accumulated {len(_plumber_alert_pending[sender])} file(s))")
 
 
 def get_random_delay() -> int:
     minutes = random.randint(1, 5)
     seconds = minutes * 1
-    print(f"⏱️ Random delay: {minutes} minute(s)")
+    print(f"?? Random delay: {minutes} minute(s)")
     return seconds
 
 
 def delayed_response(sender, reply, delay_seconds):
     try:
-        print(f"💤 Scheduling response in {delay_seconds // 60} minute(s)...")
+        print(f"?? Scheduling response in {delay_seconds // 60} minute(s)...")
         time.sleep(delay_seconds)
-        print(f"✅ Delay complete, sending response now")
+        print(f"? Delay complete, sending response now")
         whatsapp_api.send_text_message(sender, reply)
-        print(f"✅ Response sent to {sender}")
+        print(f"? Response sent to {sender}")
     except Exception as e:
-        print(f"❌ Error in delayed response: {str(e)}")
+        print(f"? Error in delayed response: {str(e)}")
 
 
 def detect_objection_type(message: str) -> str:
@@ -478,11 +469,11 @@ Reply YES or NO only."""
 
         result = response.choices[0].message.content.strip().upper()
         is_request = result == "YES"
-        print(f"🤖 DeepSeek photo request detection: '{message}' → {result}")
+        print(f"?? DeepSeek photo request detection: '{message}' ? {result}")
         return is_request
 
     except Exception as e:
-        print(f"❌ DeepSeek photo detection error: {str(e)}, falling back to keyword check")
+        print(f"? DeepSeek photo detection error: {str(e)}, falling back to keyword check")
         message_lower = message.lower()
         fallback_keywords = [
             # English — including abbreviations
@@ -505,71 +496,71 @@ SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
 def get_previous_work_images() -> list:
     images = []
     if not os.path.exists(PREVIOUS_WORK_IMAGES_DIR):
-        print(f"⚠️ Previous work images folder not found: {PREVIOUS_WORK_IMAGES_DIR}")
+        print(f"?? Previous work images folder not found: {PREVIOUS_WORK_IMAGES_DIR}")
         return images
     for filename in sorted(os.listdir(PREVIOUS_WORK_IMAGES_DIR)):
         ext = Path(filename).suffix.lower()
         if ext in SUPPORTED_IMAGE_EXTENSIONS:
             images.append(os.path.join(PREVIOUS_WORK_IMAGES_DIR, filename))
-    print(f"📸 Found {len(images)} previous work images")
+    print(f"?? Found {len(images)} previous work images")
     return images
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # FIX 3 — PREVIOUS WORK PHOTO DEDUP
 # send_previous_work_photos now returns True ONLY after photos are confirmed
 # queued; the caller must NOT send any fallback text when True is returned.
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def send_previous_work_photos(sender, appointment=None):
     """
     Send previous work photos with a small delay between each image.
     Returns True if photos were queued (caller must NOT send additional text).
     Returns False if no images are configured (caller may send a text fallback).
+    Photos are only sent once per 24-hour window per appointment to prevent duplicates.
     """
+    if appointment is not None:
+        from django.utils import timezone
+        from datetime import timedelta
+        last_sent = getattr(appointment, 'previous_work_photos_sent_at', None)
+        if last_sent and (timezone.now() - last_sent) < timedelta(hours=24):
+            print(f"Skipping previous work photos for {sender} - already sent within 24h")
+            return True
     images = get_previous_work_images()
-
     if not images:
-        print("⚠️ No previous work images found — caller should handle fallback")
-        return False  # Caller will send text fallback
-
-    intro = "Here are some examples of our previous plumbing work! 🔧✨"
-
+        print("No previous work images found - caller should handle fallback")
+        return False
+    if appointment is not None:
+        from django.utils import timezone
+        appointment.previous_work_photos_sent_at = timezone.now()
+        appointment.save(update_fields=['previous_work_photos_sent_at'])
+    intro = "Here are some examples of our previous plumbing work!"
     def send_images_with_delay():
         try:
             delay_seconds = get_random_delay()
-            print(f"💤 Waiting {delay_seconds // 60} minute(s) before sending images to {sender}")
+            print(f"Waiting {delay_seconds // 60} minute(s) before sending images to {sender}")
             time.sleep(delay_seconds)
-
             whatsapp_api.send_text_message(sender, intro)
-
             sent_count = 0
             for index, image_path in enumerate(images):
                 caption = "Our previous work - high quality plumbing & renovations" if index == 0 else None
                 whatsapp_api.send_local_image(sender, image_path, caption=caption)
                 sent_count += 1
                 time.sleep(0.5)
-
             follow_up = "Those are some of our recent jobs. Anything there you'd like for your bathroom? We can do a free site visit to show you exactly what's possible in your space."
             time.sleep(1)
             whatsapp_api.send_text_message(sender, follow_up)
-
             if appointment:
                 appointment.add_conversation_message("assistant", intro)
                 appointment.add_conversation_message(
                     "assistant", f"[MEDIA] Sent {sent_count} previous work image(s)"
                 )
                 appointment.add_conversation_message("assistant", follow_up)
-
-            print(f"✅ Sent {sent_count}/{len(images)} previous work images to {sender}")
-
+            print(f"Sent {sent_count}/{len(images)} previous work images to {sender}")
         except Exception as e:
-            print(f"❌ Failed to send images: {str(e)}")
-
+            print(f"Failed to send images: {str(e)}")
     threading.Thread(target=send_images_with_delay, daemon=True).start()
-    return True  # Photos queued — caller must not add any extra text
-
-
+    return True
 def handle_pricing_objection(appointment) -> str:
     missing = []
     if not appointment.project_type:
@@ -607,9 +598,9 @@ def handle_pricing_objection(appointment) -> str:
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Webhook entry points
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
@@ -626,19 +617,19 @@ def verify_webhook(request):
         challenge = request.GET.get('hub.challenge')
         verify_token = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'your_verify_token_here')
         if mode == 'subscribe' and token == verify_token:
-            print("✅ Webhook verified successfully")
+            print("? Webhook verified successfully")
             return HttpResponse(challenge, content_type='text/plain')
-        print("❌ Webhook verification failed")
+        print("? Webhook verification failed")
         return HttpResponse(status=403)
     except Exception as e:
-        print(f"❌ Webhook verification error: {str(e)}")
+        print(f"? Webhook verification error: {str(e)}")
         return HttpResponse(status=500)
 
 
 def handle_webhook_event(request):
     try:
         body = json.loads(request.body.decode('utf-8'))
-        print("📨 Webhook received")
+        print("?? Webhook received")
         if body.get('object') != 'whatsapp_business_account':
             return HttpResponse(status=200)
         threading.Thread(
@@ -648,10 +639,10 @@ def handle_webhook_event(request):
         ).start()
         return HttpResponse(status=200)
     except json.JSONDecodeError as e:
-        print(f"❌ Invalid JSON in webhook: {str(e)}")
+        print(f"? Invalid JSON in webhook: {str(e)}")
         return HttpResponse(status=400)
     except Exception as e:
-        print(f"❌ Webhook processing error: {str(e)}")
+        print(f"? Webhook processing error: {str(e)}")
         return HttpResponse(status=500)
 
 
@@ -662,7 +653,7 @@ def process_webhook_in_background(body):
                 if change.get('field') == 'messages':
                     process_message_change(change.get('value', {}))
     except Exception as e:
-        print(f"❌ Background processing error: {str(e)}")
+        print(f"? Background processing error: {str(e)}")
 
 
 def process_message_change(value):
@@ -684,12 +675,12 @@ def process_message_change(value):
                     print(f"Duplicate inbound message ignored: {message_id}")
                     continue
 
-            print(f"📬 Processing message from {sender}, type: {message_type}")
+            print(f"?? Processing message from {sender}, type: {message_type}")
 
             try:
                 whatsapp_api.mark_message_as_read(message_id)
             except Exception as e:
-                print(f"⚠️ Could not mark as read: {str(e)}")
+                print(f"?? Could not mark as read: {str(e)}")
 
             if message_type == 'text':
                 handle_text_message(sender, message.get('text', {}), message_id=message_id)
@@ -710,12 +701,12 @@ def process_message_change(value):
                 handle_unsupported_media(sender, 'contacts')
             else:
                 # Truly unknown type — log it so we can add a handler later
-                print(f"⚠️ Unrecognised message type from {sender}: '{message_type}' — ignoring")
+                print(f"?? Unrecognised message type from {sender}: '{message_type}' — ignoring")
                 # Do NOT call handle_unsupported_media here to avoid confusing
                 # the customer with an error message for types they didn't choose.
 
     except Exception as e:
-        print(f"❌ Error processing message: {str(e)}")
+        print(f"? Error processing message: {str(e)}")
 
 
 def _clean_phone(raw_phone: str) -> str:
@@ -799,14 +790,14 @@ def process_status_updates(statuses):
             appointment_ref = f"appointment_id={appointment.id}" if appointment else "appointment_id=unknown"
 
             print(
-                f"📶 WhatsApp status: status={status_name}, recipient={recipient_id}, "
+                f"?? WhatsApp status: status={status_name}, recipient={recipient_id}, "
                 f"message_id={message_id}, ts={timestamp}, {appointment_ref}, "
                 f"conversation_id={conversation_id or 'n/a'}, "
                 f"pricing_model={pricing_model or 'n/a'}, billable={billable}"
             )
 
             if error_text:
-                print(f"❌ WhatsApp delivery error: {error_text}")
+                print(f"? WhatsApp delivery error: {error_text}")
 
             # Persist failure context where team can see it in appointment details.
             if status_name == 'failed' and appointment:
@@ -820,7 +811,7 @@ def process_status_updates(statuses):
                 appointment.save(update_fields=['internal_notes'])
 
         except Exception as status_err:
-            print(f"❌ Failed to process status update: {status_err}")
+            print(f"? Failed to process status update: {status_err}")
 
 
 def handle_location_message(sender, location_data):
@@ -828,7 +819,7 @@ def handle_location_message(sender, location_data):
         latitude = location_data.get('latitude')
         longitude = location_data.get('longitude')
         address = location_data.get('address')
-        print(f"📍 Location from {sender}: {latitude}, {longitude}")
+        print(f"?? Location from {sender}: {latitude}, {longitude}")
 
         phone_number = f"whatsapp:+{sender}"
         try:
@@ -857,19 +848,19 @@ def handle_location_message(sender, location_data):
                 threading.Thread(target=delayed_response, args=(sender, reply, delay), daemon=True).start()
             else:
                 response_msg = (
-                    "Thanks for the location pin! 📍\n\n"
+                    "Thanks for the location pin! ??\n\n"
                     "Could you also type the area name? (e.g., Harare Hatfield, Harare Avondale)\n\n"
                     "This helps us serve you better."
                 )
                 delay = get_random_delay()
                 threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
         else:
-            response_msg = "Thanks for sharing your location! 📍\n\nI've noted it. Let me continue with your appointment details..."
+            response_msg = "Thanks for sharing your location! ??\n\nI've noted it. Let me continue with your appointment details..."
             delay = get_random_delay()
             threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
 
     except Exception as e:
-        print(f"❌ Error handling location: {str(e)}")
+        print(f"? Error handling location: {str(e)}")
 
 
 def handle_unsupported_media(sender, media_type):
@@ -877,13 +868,13 @@ def handle_unsupported_media(sender, media_type):
         if is_chatbot_paused_for_sender(sender):
             print(f"Chatbot paused for whatsapp:+{sender}; skipping unsupported media auto response.")
             return
-        print(f"⚠️ Unsupported media type from {sender}: '{media_type}'")
+        print(f"?? Unsupported media type from {sender}: '{media_type}'")
 
         # Guard: these types have dedicated handlers — should NEVER reach here.
         # If they do it means process_message_change has a routing bug.
         if media_type in ('image', 'document', 'video', 'audio', 'voice'):
             print(
-                f"⚠️ WARNING: '{media_type}' was incorrectly routed to "
+                f"?? WARNING: '{media_type}' was incorrectly routed to "
                 f"handle_unsupported_media. Ignoring silently."
             )
             return
@@ -898,12 +889,12 @@ def handle_unsupported_media(sender, media_type):
         friendly_name = media_names.get(media_type, 'file')
 
         response_msg = (
-            f"Thanks for the {friendly_name}! 😊\n\n"
+            f"Thanks for the {friendly_name}! ??\n\n"
             f"I can't process {friendly_name}s right now, but I work great with:\n"
-            f"✅ Text messages\n"
-            f"✅ Images (for plans)\n"
-            f"✅ PDF documents (for plans)\n"
-            f"✅ Videos\n\n"
+            f"? Text messages\n"
+            f"? Images (for plans)\n"
+            f"? PDF documents (for plans)\n"
+            f"? Videos\n\n"
             f"Could you send that as a text message instead?\n\nThanks!"
         )
         delay = get_random_delay()
@@ -912,7 +903,7 @@ def handle_unsupported_media(sender, media_type):
         ).start()
 
     except Exception as e:
-        print(f"❌ Error handling unsupported media: {str(e)}")
+        print(f"? Error handling unsupported media: {str(e)}")
 
 
 def handle_audio_message(sender, audio_data):
@@ -920,16 +911,16 @@ def handle_audio_message(sender, audio_data):
         if is_chatbot_paused_for_sender(sender):
             print(f"Chatbot paused for whatsapp:+{sender}; skipping audio auto response.")
             return
-        print(f"🎤 Audio message from {sender}")
+        print(f"?? Audio message from {sender}")
 
         phone_number = f"whatsapp:+{sender}"
         try:
             appointment = Appointment.objects.get(phone_number=phone_number)
         except Appointment.DoesNotExist:
             response_msg = (
-                "Hi there! 👋\n\nI received your voice message, but I work better with text messages.\n\n"
+                "Hi there! ??\n\nI received your voice message, but I work better with text messages.\n\n"
                 "Could you please type your message instead? That way I can help you book your "
-                "plumbing appointment more efficiently.\n\nThanks! 😊"
+                "plumbing appointment more efficiently.\n\nThanks! ??"
             )
             delay = get_random_delay()
             threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
@@ -938,26 +929,26 @@ def handle_audio_message(sender, audio_data):
         if appointment.plan_status == 'pending_upload':
             response_msg = (
                 "I see you sent an audio message, but I need images or PDF documents for your plan.\n\n"
-                "Please send:\n📸 Photos of your plan/blueprint\n📄 PDF document\n\n"
+                "Please send:\n?? Photos of your plan/blueprint\n?? PDF document\n\n"
                 "Or type \"done\" if you've finished uploading."
             )
         else:
             response_msg = (
-                "I received your voice message! 🎤\n\n"
+                "I received your voice message! ??\n\n"
                 "However, I work better with text messages. Could you please type your response instead?\n\n"
-                "I'll continue where we left off... 😊"
+                "I'll continue where we left off... ??"
             )
 
         delay = get_random_delay()
         threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
 
     except Exception as e:
-        print(f"❌ Error handling audio: {str(e)}")
+        print(f"? Error handling audio: {str(e)}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # MAIN TEXT HANDLER — all dedup logic lives here
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _normalize_text_for_dedupe(text: str) -> str:
     return " ".join((text or "").strip().lower().split())
@@ -1035,15 +1026,19 @@ def handle_text_message(sender, text_data, message_id=None):
 
         reply = None
 
-        # ── STEP 1: Previous work photo request ──────────────────────────────
+        # -- STEP 1: Previous work photo request ------------------------------
+        # Only check for photo requests when not a clear product/service inquiry
+        _quick_service_check = plumbot.detect_service_inquiry(message_body)
+        _is_clear_product_inquiry = (
+            _quick_service_check.get('intent') not in ('none', 'pictures') and
+            _quick_service_check.get('confidence') == 'HIGH'
+        )
         print(f"Checking photo request: '{message_body}'")
-        if is_previous_work_photo_request(message_body):
+        if not _is_clear_product_inquiry and is_previous_work_photo_request(message_body):
             print("Photo request detected")
             photos_queued = send_previous_work_photos(sender, appointment)
             if photos_queued:
-                # FIX 3: photos are queued — do NOT send any additional text
                 return
-            # No images configured — send a single fallback text (no bot reply on top)
             fallback_reply = (
                 "I can share previous-work photos, but they are not configured yet. "
                 "Please ask our team and we will send them shortly."
@@ -1051,16 +1046,17 @@ def handle_text_message(sender, text_data, message_id=None):
             appointment.add_conversation_message("assistant", fallback_reply)
             delay = get_random_delay()
             threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), daemon=True).start()
-            return  # Stop here — do NOT also run normal bot flow
+            return
 
-        # ── STEP 2: Service-specific pricing inquiry ─────────────────────────
+        # -- STEP 2: Service-specific pricing inquiry -------------------------
         # Block service inquiry responses once:
         #   (a) we are mid-conversation (collecting booking details), OR
         #   (b) ANY pricing has already been sent (overview or specific intent), OR
         #   (c) the specific intent was already sent to this lead.
         any_pricing_sent = (
             getattr(appointment, 'pricing_overview_sent', False) or
-            bool(appointment.sent_pricing_intents)
+            bool(appointment.sent_pricing_intents) or
+            getattr(appointment, 'previous_work_photos_sent_at', None) is not None
         )
         mid_conversation = (
             any_pricing_sent or
@@ -1071,21 +1067,24 @@ def handle_text_message(sender, text_data, message_id=None):
                     appointment.customer_area is not None or
                     appointment.property_type is not None
                 )
-            )
+            ) or
+            (appointment.followup_count > 0) or
+            (appointment.conversation_history and len(appointment.conversation_history) > 4)
         )
 
         print(f"Checking service inquiry: '{message_body}'")
-        inquiry = plumbot.detect_service_inquiry(message_body)
+        inquiry = _quick_service_check
         print(f"Service inquiry result: {inquiry}")
 
         PRODUCT_INTENTS = {
             'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
             'vanity', 'bathtub_installation', 'toilet', 'chamber',
             'facebook_package', 'location_ask', 'location_visit',
-            'previous_quotation', 'pictures',
+            'previous_quotation', 'pictures', 'combined_pricing',
         }
         NON_PRICING_AUTO_REPLY_INTENTS = {
             'location_ask', 'location_visit', 'previous_quotation', 'pictures',
+            'combined_pricing',
         }
         intent = inquiry.get('intent')
         price_requested = _explicitly_requests_price(message_body)
@@ -1094,7 +1093,7 @@ def handle_text_message(sender, text_data, message_id=None):
         )
 
         if mid_conversation and not should_bypass_mid_conversation_gate:
-            print(f"⏭️ Skipping service inquiry reply — mid-conversation and no explicit info/price request")
+            print("Skipping service inquiry reply - mid-conversation and no explicit info/price request")
         elif intent != 'none' and (
             inquiry.get('confidence') == 'HIGH' or intent in PRODUCT_INTENTS
         ):
@@ -1104,14 +1103,18 @@ def handle_text_message(sender, text_data, message_id=None):
                     f"- no explicit price request"
                 )
             else:
-                if _has_sent_pricing_for_intent(appointment, intent):
-                    print(f"↩️ Re-sending service inquiry reply for intent: {intent}")
+                already_sent = _has_sent_pricing_for_intent(appointment, intent)
+                if already_sent and intent != 'combined_pricing':
+                    print(f"Skipping already-sent service inquiry: {intent}")
                 else:
-                    print(f"Service inquiry matched (first time): {intent}")
-                    _mark_pricing_intent_sent(appointment, intent)
-                reply = plumbot.handle_service_inquiry(intent, message_body)
+                    if not already_sent:
+                        print(f"Service inquiry matched (first time): {intent}")
+                        _mark_pricing_intent_sent(appointment, intent)
+                    else:
+                        print(f"Re-sending combined pricing reply for: {intent}")
+                    reply = plumbot.handle_service_inquiry(intent, message_body)
 
-        # ── STEP 3: Full pricing overview ────────────────────────────────────
+        # -- STEP 3: Full pricing overview ------------------------------------
         # FIX 2: _is_genuine_pricing_question now also blocks if any specific
         # intent was already sent.
         if reply is None:
@@ -1123,7 +1126,7 @@ def handle_text_message(sender, text_data, message_id=None):
                 appointment.pricing_overview_sent = True
                 appointment.save(update_fields=['pricing_overview_sent'])
 
-        # ── STEP 3b: Repeated-question detection ─────────────────────────────
+        # -- STEP 3b: Repeated-question detection -----------------------------
         # Fires when the customer re-asks something already answered — even with
         # completely different wording.  Generates a reassuring, explanatory
         # reply that acknowledges them, explains the original answer, asks if
@@ -1135,7 +1138,7 @@ def handle_text_message(sender, text_data, message_id=None):
             )
             if repeat_info:
                 print(
-                    f"🔁 Repeated question detected — matched: "
+                    f"?? Repeated question detected — matched: "
                     f"'{repeat_info['matched_question'][:60]}'"
                 )
                 lang = detect_language_simple(message_body)
@@ -1151,7 +1154,7 @@ def handle_text_message(sender, text_data, message_id=None):
                     language_hint=lang,
                 )
  
-        # ── STEP 4: Normal Plumbot processing ────────────────────────────────
+        # -- STEP 4: Normal Plumbot processing --------------------------------
         if reply is None:
             print("Running normal Plumbot processing")
             reply = plumbot.generate_response(
@@ -1159,12 +1162,12 @@ def handle_text_message(sender, text_data, message_id=None):
                 precomputed_service_inquiry=inquiry if not mid_conversation else None,
             )
 
-        # ── STEP 4: Normal Plumbot processing ────────────────────────────────
+        # -- STEP 4: Normal Plumbot processing --------------------------------
         
 
-        # ── generate_response returns None when conversation is complete ──────────
+        # -- generate_response returns None when conversation is complete ----------
         if reply is None:
-            print("🔇 Conversation complete — no reply sent")
+            print("?? Conversation complete — no reply sent")
             return
 
         appointment.add_conversation_message("assistant", reply)
@@ -1184,9 +1187,9 @@ def handle_text_message(sender, text_data, message_id=None):
         traceback.print_exc()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Media handler (unchanged logic, kept intact)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 MEDIA_STORAGE_FOLDERS = {
     'image':    'customer_plans',
@@ -1220,9 +1223,9 @@ def handle_media_message(sender, media_data, media_type):
         if media_id:
             try:
                 file_bytes = whatsapp_api.download_media(media_id)
-                print(f"✅ Downloaded {len(file_bytes)} bytes from WhatsApp (id={media_id})")
+                print(f"? Downloaded {len(file_bytes)} bytes from WhatsApp (id={media_id})")
             except Exception as dl_err:
-                print(f"❌ Failed to download media from WhatsApp: {dl_err}")
+                print(f"? Failed to download media from WhatsApp: {dl_err}")
 
         saved_path = None
         file_url = None
@@ -1245,8 +1248,8 @@ def handle_media_message(sender, media_data, media_type):
                 saved_path = default_storage.save(storage_path, file_obj)
                 file_url = default_storage.url(saved_path)
 
-                print(f"✅ Media saved: {saved_path}")
-                print(f"✅ File URL: {file_url}")
+                print(f"? Media saved: {saved_path}")
+                print(f"? File URL: {file_url}")
 
                 if media_type in ('image', 'document'):
                     file_note = f"\n[FILE UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
@@ -1289,7 +1292,7 @@ def handle_media_message(sender, media_data, media_type):
                 refresh_lead_score(appointment)
 
             except Exception as save_err:
-                print(f"❌ Failed to save media to storage: {save_err}")
+                print(f"? Failed to save media to storage: {save_err}")
                 import traceback
                 traceback.print_exc()
 
@@ -1305,7 +1308,7 @@ def handle_media_message(sender, media_data, media_type):
             print(f"Chatbot paused for whatsapp:+{sender}; skipped media acknowledgment.")
 
     except Exception as e:
-        print(f"❌ Error handling media: {str(e)}")
+        print(f"? Error handling media: {str(e)}")
         import traceback
         traceback.print_exc()
 
@@ -1370,11 +1373,11 @@ def generate_conversation_summary(appointment) -> str:
         )
 
         summary = response.choices[0].message.content.strip()
-        print("✅ AI conversation summary generated")
+        print("? AI conversation summary generated")
         return summary
 
     except Exception as e:
-        print(f"❌ AI summary generation failed: {str(e)}")
+        print(f"? AI summary generation failed: {str(e)}")
         try:
             fallback_lines = []
             for msg in appointment.conversation_history[-3:]:
@@ -1384,3 +1387,5 @@ def generate_conversation_summary(appointment) -> str:
             return "Summary unavailable. Last messages:\n" + "\n".join(fallback_lines)
         except Exception:
             return "Summary unavailable."
+
+

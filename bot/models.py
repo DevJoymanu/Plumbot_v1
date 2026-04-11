@@ -958,6 +958,10 @@ class Appointment(models.Model):
         default=0, 
         help_text='Number of follow-ups sent'
     )
+    retry_count = models.IntegerField(
+        default=0,
+        help_text='Number of retries for current question'
+    )
     followup_stage = models.CharField(
         max_length=20,
         choices=[
@@ -1007,6 +1011,11 @@ class Appointment(models.Model):
     next_follow_up_at = models.DateTimeField(null=True, blank=True, db_index=True)
     last_inbound_at = models.DateTimeField(null=True, blank=True, db_index=True)
     last_outbound_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    previous_work_photos_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When previous work photos were last sent to this customer'
+    )
     
     # ... existing methods ...
     
