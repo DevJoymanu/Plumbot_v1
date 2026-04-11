@@ -190,7 +190,7 @@ def login_view(request):
                     messages.success(request, f'Welcome back, {user.get_full_name() or user.username}!')
                     
                     # Redirect to next parameter or dashboard
-                    next_page = request.GET.get('next', 'dashboard')
+                    next_page = request.GET.get('next', 'dashboard/')
                     return HttpResponseRedirect(next_page)
                 else:
                     messages.error(request, 'Staff access required. Contact your administrator.')
@@ -3536,44 +3536,56 @@ class Plumbot:
                 
                 return reschedule_response
             
-            # STEP 5: Determine what to do next
-            next_question = self.get_next_question_to_ask()
-            
-            # STEP 6: Check if we can book the appointment
+            # ── STEP 5 & 6: Book if ready, otherwise ask next question ───────
+            next_question  = self.get_next_question_to_ask()
             booking_status = self.smart_booking_check()
-            
-            # Once the 5 intake fields are complete, book the appointment.
-            if (booking_status['ready_to_book'] and 
-                self.appointment.status != 'confirmed'):
-                
+
+            if booking_status['ready_to_book'] and self.appointment.status != 'confirmed':
+
                 booking_result = self.book_appointment(incoming_message)
-                
-                #
+
                 if booking_result['success']:
-                    reply = f"Perfect! I've booked your appointment for {booking_result['datetime']}. I've also sent your confirmation details here on WhatsApp."
+                    reply = (
+                        f"All sorted! Your site visit is booked for "
+                        f"{booking_result['datetime']}. ✅\n\n"
+                        f"We'll be there to assess the space and give you an "
+                        f"accurate quote.\n\n"
+                        f"One last thing — what full name should we put on the "
+                        f"booking? If you'd rather not share it, just say no."
+                    )
                 else:
-                    error = booking_result.get('error', '')
+                    error        = booking_result.get('error', '')
                     alternatives = booking_result.get('alternatives', [])
-                    
-                    # ✅ Saturday-specific message
                     if 'saturday' in error.lower() or not alternatives:
-                        alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
+                        alt_text = (
+                            "\n".join([f"• {alt['display']}" for alt in alternatives])
+                            if alternatives else ""
+                        )
                         reply = (
                             "We unfortunately don't operate on Saturdays. 😊\n\n"
-                            "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                            "Our working hours are Sunday to Friday, "
+                            "8:00 AM – 6:00 PM.\n\n"
                         )
                         if alt_text:
-                            reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
+                            reply += (
+                                f"Here are some available slots:\n{alt_text}\n\n"
+                                "Or feel free to suggest a different date and time!"
+                            )
                         else:
-                            reply += "Could you please suggest a different date and time that works for you?"
+                            reply += "Could you suggest a different day and time?"
                     else:
-                        alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
-                        reply = f"That time isn't available either. Here are some other options:\n{alt_text}\n\nWhich works better for you?"
+                        alt_text = "\n".join(
+                            [f"• {alt['display']}" for alt in alternatives]
+                        )
+                        reply = (
+                            f"That slot just got taken — here are the next "
+                            f"available times:\n{alt_text}\n\n"
+                            f"Which works better for you?"
+                        )
             else:
-                # Generate contextual response
-                reply = self.generate_contextual_response(incoming_message, next_question, updated_fields)
-            
-            # Update conversation history
+                reply = self.generate_contextual_response(
+                    incoming_message, next_question, updated_fields
+                )            # Update conversation history
             self.appointment.add_conversation_message("user", incoming_message)
             self.appointment.add_conversation_message("assistant", reply)
             
@@ -5273,73 +5285,74 @@ I understand this is time-sensitive!"""
 
     def get_next_question_to_ask(self):
         """
-        5-step flow:
-        service_type → project_description → availability_date
-        → availability_time → area → complete
-        Name is collected after booking confirmation only.
+        5-question booking flow:
+        1. service_type          → which service?
+        2. project_description   → what exactly needs doing?
+        3. availability_date     → which day?
+        4. availability_time     → which time slot?
+        5. area                  → which suburb?
+
+        After all 5 are collected the appointment is booked immediately.
+        The only follow-up question is the customer's name, asked once
+        after the booking confirmation is sent.
         """
-        # Step 1: Which service?
         if not self.appointment.project_type:
             return "service_type"
-    
-        # Step 2: What exactly do you want done?
+
         if not self.appointment.project_description:
             return "project_description"
-    
-        # Step 3: Which date?
+
         if not self.appointment.scheduled_datetime:
             return "availability_date"
-    
-        # Step 3b: We have a date but no confirmed time slot yet?
-        # We track whether the time has been confirmed via a helper flag stored
-        # in internal_notes so we don't need a new model field.
+
         if not self._time_confirmed():
             return "availability_time"
-    
-        # Step 4: Which area?
+
         if not self.appointment.customer_area:
             return "area"
-    
-        # Name collected after confirmed booking
+
         if (
-            not self.appointment.customer_name and
-            self.appointment.status == "confirmed" and
-            not self._customer_name_declined()
+            not self.appointment.customer_name
+            and self.appointment.status == "confirmed"
+            and not self._customer_name_declined()
         ):
             return "name"
-    
+
         return "complete"
 
 
 
     def smart_booking_check(self):
         """
-        Check if we have enough information to confirm the booking.
-        New required fields: project_type, project_description,
-        scheduled_datetime (with confirmed time), customer_area.
+        Ready to book when all 5 required fields are present:
+        project_type, project_description, scheduled_datetime
+        (with confirmed time), customer_area.
         """
         has_service  = bool(self.appointment.project_type)
         has_desc     = bool(self.appointment.project_description)
-        has_datetime = bool(self.appointment.scheduled_datetime) and self._time_confirmed()
+        has_datetime = (
+            bool(self.appointment.scheduled_datetime) and self._time_confirmed()
+        )
         has_area     = bool(self.appointment.customer_area)
-    
-        has_all_required = has_service and has_desc and has_datetime and has_area
-    
-        missing_fields = []
+
+        has_all = has_service and has_desc and has_datetime and has_area
+
+        missing = []
         if not has_service:
-            missing_fields.append("service type")
+            missing.append("service type")
         if not has_desc:
-            missing_fields.append("project description")
+            missing.append("project description")
         if not has_datetime:
-            missing_fields.append("availability")
+            missing.append("availability")
         if not has_area:
-            missing_fields.append("area")
-    
+            missing.append("area")
+
         return {
-            'ready_to_book': has_all_required,
-            'missing_fields': missing_fields,
-            'completion_percentage': ((4 - len(missing_fields)) / 4) * 100
+            'ready_to_book':         has_all,
+            'missing_fields':        missing,
+            'completion_percentage': ((4 - len(missing)) / 4) * 100,
         }
+
 
 
     def update_appointment_with_extracted_data(self, extracted_data, incoming_message=None):
@@ -5370,14 +5383,15 @@ I understand this is time-sensitive!"""
                 updated_fields.append('project_description')
                 print(f"✅ Updated project_description: {self.appointment.project_description[:60]}")
             elif (
-                    next_question == 'project_description' and
-                    not self.appointment.project_description and
-                    self._looks_like_project_description_reply(incoming_message)
+                next_question == 'project_description' and
+                not self.appointment.project_description and
+                self._looks_like_project_description_reply(incoming_message)
             ):
                 self.appointment.project_description = incoming_message.strip()
                 updated_fields.append('project_description')
-                print(f"✅ Fallback project_description from raw message: {self.appointment.project_description[:60]}")
-    
+                print(f"✅ Fallback project_description from raw message: "
+                    f"{self.appointment.project_description[:60]}")
+
             # ── Area — capture passively whenever volunteered ─────────────────────
             if (extracted_data.get('area') and
                     extracted_data.get('area') != 'null' and
@@ -5637,47 +5651,42 @@ I understand this is time-sensitive!"""
 
 
     def send_confirmation_message(self, appointment_info, appointment_datetime):
-        """Send confirmation message to customer - FIXED TIMEZONE"""
+        """Send booking confirmation to customer."""
         try:
-            # FIX: Ensure datetime is in correct timezone for display
             display_datetime = self.format_datetime_for_display(appointment_datetime)
-            
-            service_name = appointment_info.get('project_type', 'Plumbing service')
-            if service_name:
-                service_map = {
-                    'bathroom_renovation': 'Bathroom Renovation',
-                    'new_plumbing_installation': 'New Plumbing Installation',
-                    'kitchen_renovation': 'Kitchen Renovation'
-                }
-                service_name = service_map.get(service_name, service_name.replace('_', ' ').title())
-            
-            confirmation_message = f"""🔧 APPOINTMENT CONFIRMED! 🔧
 
-    Hi {appointment_info.get('name', 'there')},
+            service_map = {
+                'bathroom_renovation':        'Bathroom Renovation',
+                'new_plumbing_installation':  'New Plumbing Installation',
+                'kitchen_renovation':         'Kitchen Renovation',
+            }
+            service_name = service_map.get(
+                appointment_info.get('project_type', ''),
+                (appointment_info.get('project_type') or 'Plumbing service')
+                .replace('_', ' ').title()
+            )
 
-    Your plumbing appointment is confirmed:
-    📅 Date: {display_datetime.strftime('%A, %B %d, %Y')}
-    🕐 Time: {display_datetime.strftime('%I:%M %p')}
-    📍 Area: {appointment_info.get('area', 'Your area')}
-    🔨 Service: {service_name}
+            name_line = (
+                f"Name: {appointment_info['name']}\n"
+                if appointment_info.get('name') else ""
+            )
 
-    Our team will contact you before arrival. 
-
-    Questions? Reply to this message.
-
-    Thank you for choosing us.
-    - Homebase Plumbers"""
-
-            if not appointment_info.get('name'):
-                confirmation_message += (
-                    "\n\nOne last thing - what full name should we put on the booking? "
-                    "If you'd rather not share it here, just say no."
-                )
+            confirmation_message = (
+                f"✅ APPOINTMENT CONFIRMED\n\n"
+                f"{name_line}"
+                f"📅 Date: {display_datetime.strftime('%A, %B %d, %Y')}\n"
+                f"🕐 Time: {display_datetime.strftime('%I:%M %p')}\n"
+                f"📍 Area: {appointment_info.get('area', 'Your area')}\n"
+                f"🔧 Service: {service_name}\n\n"
+                f"Our plumber will contact you before arrival.\n\n"
+                f"Questions? Just reply here.\n"
+                f"— Homebase Plumbers"
+            )
 
             clean_phone = clean_phone_number(self.phone_number)
             whatsapp_api.send_text_message(clean_phone, confirmation_message)
             print(f"✅ Confirmation sent to {clean_phone}")
-            
+
         except Exception as e:
             print(f"❌ Confirmation message error: {str(e)}")
 
@@ -6037,53 +6046,54 @@ I understand this is time-sensitive!"""
             # ── First-pass: exact hardcoded questions (retry_count == 0) ─────────
     
             if retry_count == 0:
-    
+
                 if next_question == "service_type":
                     return (
-                        "Hello! I'd be happy to help. Which service are you interested in? "
-                        "We offer: Bathroom Renovation, New Plumbing Installation, or Kitchen Renovation."
+                        "Hello! Happy to help. Which service are you interested in?\n\n"
+                        "We offer:\n"
+                        "• Bathroom Renovation\n"
+                        "• New Plumbing Installation\n"
+                        "• Kitchen Renovation"
                     )
-    
+
                 if next_question == "project_description":
                     return (
-                        "Got it, what exactly do you want done? "
-                        "The more detail, the more accurate we can be."
+                        "Got it! What exactly do you want done? "
+                        "The more detail you give, the more accurate we can be with "
+                        "the quote."
                     )
-    
+
                 if next_question == "availability_date":
-                    days  = self._get_next_two_available_days()
-                    day_a = self._format_day(days[0]) if len(days) > 0 else "tomorrow"
-                    day_b = self._format_day(days[1]) if len(days) > 1 else "the day after"
+                    days       = self._get_next_two_available_days()
+                    day_a      = self._format_day(days[0]) if len(days) > 0 else "tomorrow"
+                    day_b      = self._format_day(days[1]) if len(days) > 1 else "the day after"
                     visit_desc = self._describe_project_context()
                     return (
-                        f"Great, what works better for you, {day_a} or {day_b}, for us to come through "
-                        f"and {visit_desc} so there are no surprises and we can give you an accurate quote?"
+                        f"Great, what works better for you — {day_a} or {day_b} — "
+                        f"for us to come through and {visit_desc}?"
                     )
-    
+
                 if next_question == "availability_time":
-                    # Pull the date we already stored
-                    dt   = self.appointment.scheduled_datetime
+                    dt = self.appointment.scheduled_datetime
                     if dt:
                         day_label = self._format_day(dt.date())
-                        times = self._get_two_available_times_for_date(dt.date())
-                        time_a = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9am"
-                        time_b = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2pm"
+                        times     = self._get_two_available_times_for_date(dt.date())
+                        time_a    = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9AM"
+                        time_b    = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2PM"
                         return (
-                            f"Perfect, for {day_label}, "
+                            f"Perfect, for {day_label} — "
                             f"what works better: {time_a} or {time_b}?"
                         )
-                    # Fallback if no date yet (shouldn't normally happen)
                     return "What time works best for you — morning or afternoon?"
-    
+
                 if next_question == "area":
                     return "All good, what area are you in?"
 
                 if next_question == "name":
                     return (
-                        "Perfect, your appointment is booked. What full name should we put on it? "
+                        "What full name should we put on the booking? "
                         "If you'd rather not share it here, just say no."
-                    )
-    
+                    )    
             # ── AI-driven retries ─────────────────────────────────────────────────
             appointment_context = self.get_appointment_context()
     
