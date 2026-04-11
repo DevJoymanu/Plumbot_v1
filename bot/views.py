@@ -3520,7 +3520,19 @@ class Plumbot:
                 self.appointment.add_conversation_message("assistant", reply)
                 return reply
 
-
+                # ── CONFIRMED + COMPLETE — no more questions ──────────────────────────────
+            if (self.appointment.status == 'confirmed' and
+                    self.get_next_question_to_ask() == 'complete'):
+                # Appointment is fully booked and name collected (or declined).
+                # Silently acknowledge any further messages and stop.
+                if self._is_delay_or_exit_signal(incoming_message):
+                    reply = self._get_delay_acknowledgment()
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    self.appointment.add_conversation_message("assistant", reply)
+                    return reply
+                # Any other message (e.g. "Complete renovation") → silent, no reply
+                self.appointment.add_conversation_message("user", incoming_message)
+                return None
 
             # STEP 2: Extract ALL available information from the message
             extracted_data = self.extract_all_available_info_with_ai(incoming_message)
@@ -6075,12 +6087,16 @@ I understand this is time-sensitive!"""
                     any(p in incoming_message.lower() for p in all_day_phrases)):
                 return self._handle_all_day_response()
             #
-            if next_question == "name" and self._declines_sharing_name(incoming_message):
-                self._mark_customer_name_declined()
+            if next_question == "name":
+                # Name was just saved in this turn — send the final confirmation
+                if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
+                    return self._build_named_booking_confirmation()
+                # Name not yet provided — ask for it
                 return (
-                    "No problem at all. Your appointment is still confirmed — "
-                    "we'll use this WhatsApp number for updates."
-                )    
+                    "One last thing — what name should we put on the booking? "
+                    "If you'd rather not share it, just say no."
+                )
+            
             # ── First-pass: exact hardcoded questions (retry_count == 0) ─────────
     
             if retry_count == 0:
@@ -6130,6 +6146,17 @@ I understand this is time-sensitive!"""
 
                 #
                 if next_question == "name":
+                    # If name was just captured this turn, send final confirmation
+                    if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
+                        return self._build_named_booking_confirmation()
+                    # Name declined this turn
+                    if self._declines_sharing_name(incoming_message):
+                        self._mark_customer_name_declined()
+                        return (
+                            "No problem at all. Your appointment is still confirmed — "
+                            "we'll use this WhatsApp number for updates."
+                        )
+                    # Still waiting for name
                     return (
                         "One last thing — what name should we put on the booking? "
                         "If you'd rather not share it, just say no."
