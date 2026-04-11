@@ -1167,11 +1167,17 @@ def handle_text_message(sender, text_data, message_id=None):
                 message_body,
                 precomputed_service_inquiry=inquiry if not mid_conversation else None,
             )
+        #
+        reply = plumbot.generate_response(
+            message_body,
+            precomputed_service_inquiry=inquiry if not mid_conversation else None,
+        )
 
-        reply = _translate_reply_for_customer(message_body, reply)
-
-        print(f"Final reply: {reply[:100]}...")
-
+        # ── generate_response returns None when conversation is complete ──────────
+        if reply is None:
+            print("🔇 Conversation complete — no reply sent")
+            return
+            
         appointment.add_conversation_message("assistant", reply)
         appointment.last_outbound_at = timezone.now()
         appointment.last_contacted_at = appointment.last_outbound_at
