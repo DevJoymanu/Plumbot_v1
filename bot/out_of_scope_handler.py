@@ -144,14 +144,6 @@ def _fast_delay_check(message: str) -> bool:
     return any(phrase in msg for phrase in _DELAY_PHRASES)
 
 
-if _fast_oos_check(message):
-    logger.info("Possible OOS detected — requiring plumbing clarification first")
-
-    return {
-        "category": "out_of_scope",
-        "confidence": "LOW",
-        "detail": "OOS keyword matched but requires plumbing validation first"
-    }
 
 # ── DeepSeek classifier ───────────────────────────────────────────────────────
 
@@ -176,10 +168,10 @@ def classify_message(message: str, appointment) -> dict:
         logger.info("Fast delay signal detected: '%s'", message[:60])
         return {"category": "delay_signal", "confidence": "HIGH", "detail": "delay phrase matched"}
 
-    if _fast_oos_check(message):
-        logger.info("Fast OOS detected: '%s'", message[:60])
-        return {"category": "out_of_scope", "confidence": "HIGH", "detail": "OOS keyword matched"}
-
+    def _fast_oos_check(message: str) -> bool:
+        msg = (message or "").lower()
+        return any(k in msg for k in _OOS_KEYWORDS)
+        
     # -- Skip DeepSeek for very short neutral messages -----------------------
     msg_lower = (message or "").strip().lower()
     trivial_acks = {
@@ -696,11 +688,13 @@ def handle_out_of_scope(message: str, appointment) -> Optional[str]:
         return None
 
     # ── Step 4: HIGH confidence — act immediately ─────────────────────────────
+    # ── Step 4: HIGH confidence — act immediately ─────────────────────────────
+    if confidence == "HIGH":
+
         if category == "out_of_scope":
             logger.info("OOS detected — forcing plumbing clarification step first")
 
             clarifying_q = _generate_plumbing_reframe_question(message)
-
             _write_pending(appointment, "out_of_scope", message)
 
             return clarifying_q
