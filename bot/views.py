@@ -4208,7 +4208,7 @@ Reply with ONLY a JSON object:
 
         if next_question == "project_description":
             return (
-                "Got it! What exactly do you want done? "
+                "Got it! Could you tell me a bit more about what you'd like done? "
                 "The more detail you give, the more accurate we can be with the quote."
             )
 
