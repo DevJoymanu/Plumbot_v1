@@ -841,35 +841,40 @@ def verify_webhook(request):
 def handle_webhook_event(request):
     try:
         body = json.loads(request.body.decode('utf-8'))
-        if "statuses" in value:
-            print("📊 Status webhook received")
-        elif "messages" in value:
-            print("💬 Message webhook received")
+
+        print("📩 Webhook received")  # simple safe log
+
         if body.get('object') != 'whatsapp_business_account':
             return HttpResponse(status=200)
+
         threading.Thread(
             target=process_webhook_in_background,
             args=(body,),
             daemon=True
         ).start()
-        return HttpResponse(status=200)
-    except json.JSONDecodeError as e:
-        print(f"? Invalid JSON in webhook: {str(e)}")
-        return HttpResponse(status=400)
-    except Exception as e:
-        print(f"? Webhook processing error: {str(e)}")
-        return HttpResponse(status=500)
 
+        return HttpResponse(status=200)
+
+    except json.JSONDecodeError as e:
+        print(f"❌ Invalid JSON in webhook: {str(e)}")
+        return HttpResponse(status=400)
+
+    except Exception as e:
+        print(f"❌ Webhook processing error: {str(e)}")
+        return HttpResponse(status=200)  # 🔥 prevent retry loop
 
 def process_webhook_in_background(body):
     try:
         for entry in body.get('entry', []):
             for change in entry.get('changes', []):
                 if change.get('field') == 'messages':
-                    process_message_change(change.get('value', {}))
-    except Exception as e:
-        print(f"? Background processing error: {str(e)}")
+                    
+                    value = change.get('value', {})  # ✅ DEFINE VALUE HERE
+                    
+                    process_message_change(value)
 
+    except Exception as e:
+        print(f"❌ Background processing error: {str(e)}")
 
 def process_message_change(value):
     try:
