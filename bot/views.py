@@ -3869,6 +3869,16 @@ Reply with ONLY a JSON object:
  
             current_question = self.get_next_question_to_ask()
             #
+
+            from .out_of_scope_handler import handle_out_of_scope
+
+            oos_reply = handle_out_of_scope(incoming_message, self.appointment)
+            if oos_reply is not None:
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", oos_reply)
+                return oos_reply
+
+
             any_pricing_sent = (
                 getattr(self.appointment, 'pricing_overview_sent', False) or
                 bool(getattr(self.appointment, 'sent_pricing_intents', None))

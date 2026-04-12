@@ -406,7 +406,7 @@ TASK:
 Write a warm, natural WhatsApp reply that does ALL FOUR of the following — in this order:
 
 1. REASSURE & ACKNOWLEDGE — Make them feel heard. Acknowledge that their question is totally valid. 1-2 sentences.
-2. EXPLAIN THE PREVIOUS ANSWER — In simple, friendly language, briefly explain WHY the bot gave that answer (not just repeat it verbatim). 2-3 sentences max.
+2. EXPLAIN THE PREVIOUS ANSWER — In simple, friendly language, briefly explain WHY the you gave that answer (not just repeat it verbatim). 2-3 sentences max.
 3. ASK IF THEY NEED MORE CLARITY — One short, open question inviting them to say what's still unclear.
 4. REDIRECT TO THE PLUMBER — Gently explain you're just an assistant handling bookings, and for anything technical or project-specific they should speak directly to the plumber. Include their number: {plumber_number}
 

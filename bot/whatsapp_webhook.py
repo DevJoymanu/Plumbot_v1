@@ -1295,6 +1295,25 @@ def handle_text_message(sender, text_data, message_id=None):
             threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), daemon=True).start()
             return
 
+        #
+        # In handle_text_message(), after the photo check block (around line 460),
+        # add this block BEFORE the service inquiry check:
+
+        # -- STEP 1b: Out-of-scope / delay / complaint handler ---------------------
+        from .out_of_scope_handler import handle_out_of_scope
+
+        oos_reply = handle_out_of_scope(message_body, appointment)
+        if oos_reply is not None:
+            appointment.add_conversation_message("assistant", oos_reply)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response, args=(sender, oos_reply, delay), daemon=True
+            ).start()
+            return  # do NOT continue into the booking flow
+
         # -- STEP 2: Service-specific pricing inquiry -------------------------
         # Block service inquiry responses once:
         #   (a) we are mid-conversation (collecting booking details), OR
