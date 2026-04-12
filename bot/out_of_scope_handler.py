@@ -367,7 +367,7 @@ def _generate_clarifying_question(
         "Ask ONE short question to understand what the customer means.",
     )
 
-    prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe/South Africa.
+    prompt = f"""You are writing a WhatsApp message for Homebase Plumbers.
 
 SITUATION:
 {guidance}
@@ -375,24 +375,42 @@ SITUATION:
 RECENT CONVERSATION:
 {context_block}
 
-CUSTOMER'S AMBIGUOUS MESSAGE:
+CUSTOMER MESSAGE:
 "{message}"
 
 WHY IT'S AMBIGUOUS:
 {detail}
 
 TASK:
-Write ONE short clarifying question that:
-1. Leans toward plumbing — assume the customer is probably looking for plumbing help
-2. Names a specific plumbing service to anchor the question (e.g. "bathroom renovation, kitchen plumbing, geyser, or new installation")
-3. Offers the customer an easy yes/no or A/B choice
-4. Sounds natural and warm, like a real person texting
-5. Is under 2 sentences
-6. Uses South African / Zimbabwean English ("sorted", "keen", "sharp")
-7. Has no markdown, no bold, no bullet points
-8. Never mentions that you are a bot or that you are classifying their message
+Write ONE short clarifying question that steers the conversation toward plumbing services.
 
-Output ONLY the question text. No labels, no quotes, no explanation."""
+STRICT RULES:
+1. ALWAYS assume the customer probably needs plumbing help
+2. ALWAYS mention at least ONE specific plumbing service:
+   - bathroom renovation
+   - kitchen plumbing
+   - geyser installation/repair
+   - toilet/shower installation
+   - pipe repair or drain blockage
+3. ALWAYS give a simple choice (A/B or yes/no)
+4. Keep it under 2 sentences
+5. Sound natural, like WhatsApp (friendly, simple)
+6. Use local tone ("sorted", "keen", "sharp")
+7. DO NOT be vague or generic
+8. DO NOT ask open-ended questions
+
+GOOD EXAMPLES:
+- "Just to check — are you looking for bathroom plumbing or something like a geyser installation?"
+- "Got you — is this for a pipe issue or were you thinking of a full bathroom renovation?"
+- "Just checking, is this something like a blocked drain or a new installation you want sorted?"
+
+BAD EXAMPLES:
+- "Can you clarify?"
+- "What do you mean?"
+- "Could you explain more?"
+
+OUTPUT:
+Only the question text. No quotes, no labels."""
 
     try:
         response = _deepseek.chat.completions.create(
