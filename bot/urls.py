@@ -56,6 +56,11 @@ urlpatterns = [
     path('appointments/<int:pk>/complete-lead/', complete_lead_appointment, name='complete_lead_appointment'),
     path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),
     path('appointments/<int:pk>/send-image/', views.send_image_to_lead, name='send_image_to_lead'),
+    path(
+        'appointments/<int:pk>/send-portfolio/',
+        views.send_portfolio_to_lead,
+        name='send_portfolio_to_lead'
+    ),
 
         # API endpoints for fetching appointment data
     path('api/appointments/<int:appointment_id>/', appointment_detail_api, name='appointment_detail_api'),

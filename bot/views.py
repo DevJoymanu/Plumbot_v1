@@ -2982,6 +2982,18 @@ def send_followup(request, pk):
 
 
 @staff_required
+@require_POST  
+def send_portfolio_to_lead(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    clean_phone = clean_phone_number(appointment.phone_number)
+    sent = send_previous_work_photos(clean_phone, appointment)
+    if sent:
+        messages.success(request, 'Portfolio photos queued for sending.')
+    else:
+        messages.warning(request, 'No portfolio photos configured.')
+    return redirect('appointment_detail', pk=pk)
+
+@staff_required
 @require_POST
 def send_image_to_lead(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
