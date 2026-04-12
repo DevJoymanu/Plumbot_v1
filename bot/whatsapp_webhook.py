@@ -530,6 +530,7 @@ Examples where answer is YES (photo is primary):
 - "show me your previous jobs"
 - "got any pics of bathrooms you've done"
 - "may you kindly share your catalogue"
+- "Kitchen and bathroom , Can I see kitchens"
 
 Customer message: "{message}"
 

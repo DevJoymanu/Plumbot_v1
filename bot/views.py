@@ -5582,16 +5582,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ),
                     },
 
-                    "pictures": {
-                        "en": (
-                            f"Our plumber can send you photos directly — they have the full portfolio. 📸\n\n"
-                            f"Contact them on: {plumber_number}"
-                        ),
-                        "sn": (
-                            f"Plumber wedu anogona kukutumira mifananidzo directly — vane portfolio yese. 📸\n\n"
-                            f"Bata: {plumber_number}"
-                        ),
-                    },
+
                 }
 
                 responses = pricing_info.get(intent, {})
