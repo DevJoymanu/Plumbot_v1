@@ -6555,7 +6555,6 @@ I understand this is time-sensitive!"""
                 print(f"✅ Updated service_type: {self.appointment.project_type}")
     
             # ── Project description ───────────────────────────────────────────────
-            # ── Project description ───────────────────────────────────────────────
             _SERVICE_TYPE_LABELS = {
                 'bathroom renovation', 'bathroom',
                 'kitchen renovation', 'kitchen',
@@ -7277,7 +7276,7 @@ I understand this is time-sensitive!"""
 
                 if next_question == "project_description":
                     return (
-                        "Got it! What exactly do you want done? "
+                        "Got it! Could you tell me a bit more about the project? "
                         "The more detail you give, the more accurate we can be with "
                         "the quote."
                     )

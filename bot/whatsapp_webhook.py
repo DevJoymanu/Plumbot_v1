@@ -471,7 +471,7 @@ def is_previous_work_photo_request(message: str) -> bool:
         photo_weak_keywords = (
             'photo', 'photos', 'picture', 'pictures', 'pic', 'pics',
             'pix', 'image', 'images', 'papic', 'mufananidzo', 'mifananidzo',
-            'tumira', 'ndione',
+            'tumira', 'ndione', 'catalogue',
         )
         has_weak_photo_signal = any(p in message_clean for p in photo_weak_keywords)
 
@@ -529,6 +529,7 @@ Examples where answer is YES (photo is primary):
 - "ndiratidze mifananidzo"
 - "show me your previous jobs"
 - "got any pics of bathrooms you've done"
+- "may you kindly share your catalogue"
 
 Customer message: "{message}"
 
@@ -635,6 +636,7 @@ def send_previous_work_photos(sender, appointment=None):
             print(f"Failed to send images: {str(e)}")
     threading.Thread(target=send_images_with_delay, daemon=True).start()
     return True
+
 def handle_pricing_objection(appointment) -> str:
     missing = []
     if not appointment.project_type:
