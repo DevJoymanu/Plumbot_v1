@@ -873,67 +873,76 @@ def process_webhook_in_background(body):
 
 def process_message_change(value):
     try:
-        # ✅ 1. HANDLE STATUSES AND EXIT
+        # ✅ 1. HANDLE STATUSES FIRST AND EXIT
         statuses = value.get('statuses', [])
         if statuses:
+            print("📊 Status webhook received")
             process_status_updates(statuses)
-            return  # 🔥 CRITICAL: STOP HERE
+            return  # 🔥 CRITICAL FIX — stops the loop
 
-        # ✅ 2. ONLY THEN handle messages
+        # ✅ 2. HANDLE MESSAGES ONLY
         messages = value.get('messages', [])
         if not messages:
             return
+
+        print("💬 Message webhook received")
 
         for message in messages:
             message_type = message.get('type')
             message_id   = message.get('id')
             sender       = message.get('from')
 
+            # ✅ Guard against invalid/system messages
             if not sender:
-                print("⚠️ Skipping message with no sender (likely system event)")
-                continue            
-                
+                print("⚠️ Skipping message with no sender")
+                continue
+
             if message_id:
                 try:
-                    WhatsAppInboundEvent.objects.create(message_id=message_id, sender=sender or "")
+                    WhatsAppInboundEvent.objects.create(
+                        message_id=message_id,
+                        sender=sender
+                    )
                 except IntegrityError:
                     print(f"Duplicate inbound message ignored: {message_id}")
                     continue
 
-            print(f"?? Processing message from {sender}, type: {message_type}")
+            print(f"📩 Processing message from {sender}, type: {message_type}")
 
             try:
                 whatsapp_api.mark_message_as_read(message_id)
             except Exception as e:
-                print(f"?? Could not mark as read: {str(e)}")
+                print(f"⚠️ Could not mark as read: {str(e)}")
 
             if message_type == 'text':
                 handle_text_message(sender, message.get('text', {}), message_id=message_id)
+
             elif message_type == 'image':
                 handle_media_message(sender, message.get('image', {}), 'image')
+
             elif message_type == 'document':
                 handle_media_message(sender, message.get('document', {}), 'document')
+
             elif message_type in ('audio', 'voice'):
-                # WhatsApp sends recorded voice notes as type 'audio' OR 'voice'
                 handle_audio_message(sender, message.get('audio') or message.get('voice') or {})
+
             elif message_type == 'video':
                 handle_media_message(sender, message.get('video', {}), 'video')
+
             elif message_type == 'sticker':
                 handle_unsupported_media(sender, 'sticker')
+
             elif message_type == 'location':
                 handle_location_message(sender, message.get('location', {}))
+
             elif message_type == 'contacts':
                 handle_unsupported_media(sender, 'contacts')
+
             else:
-                # Truly unknown type — log it so we can add a handler later
-                print(f"?? Unrecognised message type from {sender}: '{message_type}' — ignoring")
-                # Do NOT call handle_unsupported_media here to avoid confusing
-                # the customer with an error message for types they didn't choose.
+                print(f"⚠️ Unknown message type from {sender}: '{message_type}'")
 
     except Exception as e:
-        print(f"? Error processing message: {str(e)}")
-
-
+        print(f"❌ Error processing message: {str(e)}")
 def _clean_phone(raw_phone: str) -> str:
     return (raw_phone or "").replace("whatsapp:", "").replace("+", "").strip()
 
