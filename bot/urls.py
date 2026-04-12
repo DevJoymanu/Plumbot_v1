@@ -20,7 +20,7 @@ from .views import (
     # Import quotation template views
     QuotationTemplatesListView, CreateQuotationTemplateView,CreateQuotationView, EditQuotationTemplateView,
     QuotationTemplateDetailView, duplicate_template, delete_template, 
-    use_template, toggle_template_status, quotation_templates_api, template_items_api, send_image_to_lead,send_portfolio_to_lead
+    use_template, toggle_template_status, quotation_templates_api, template_items_api, send_image_to_lead,send_portfolio_to_lead,
 )
 
 from django.conf import settings

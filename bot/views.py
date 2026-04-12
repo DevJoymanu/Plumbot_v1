@@ -68,7 +68,7 @@ from django.db import IntegrityError, connection, transaction
 from decimal import Decimal, InvalidOperation
 from django.templatetags.static import static
 import base64
-from whatsapp_webhook import send_previous_work_photos  # ✅ correct import
+from .whatsapp_webhook import send_previous_work_photos  # ✅ correct import
 
 import logging
 logger = logging.getLogger(__name__)
