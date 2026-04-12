@@ -500,7 +500,25 @@ def _resolve_pending_clarification(answer: str, pending: dict, appointment) -> O
 
     # Act on the resolved category
     if new_category == "out_of_scope":
-        return _build_oos_reply(answer, appointment)
+        lower = answer.lower()
+
+        # 🟢 If user shows ANY plumbing intent → DO NOT reject
+        plumbing_signals = [
+            "sink", "pipe", "water", "drain", "toilet",
+            "bathroom", "kitchen", "geyser", "install", "fix"
+        ]
+
+        if any(sig in lower for sig in plumbing_signals):
+            logger.info("Plumbing intent detected after OOS — treating as in_scope")
+            return None  # continue booking flow
+
+        # 🟡 If still ambiguous → ASK a final confirmation instead of rejecting
+        logger.info("OOS still uncertain after clarification — re-confirm plumbing intent")
+
+        return (
+            "Just to be sure — is this actually for any plumbing work like pipes, "
+            "drainage, or installation, or is it something outside plumbing?"
+        )
     if new_category == "delay_signal":
         return _build_delay_reply(answer, appointment)
     if new_category == "complaint":
