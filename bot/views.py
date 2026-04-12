@@ -3405,7 +3405,7 @@ class Plumbot:
             return (
                 "Parizvino, ungandiudza zvishoma kuti chii chaizvo chamunoda kuti chiitwe?"
                 if is_shona else
-                "For now, could you tell me a bit more about what exactly you want done?"
+                "For now, Could you tell me a bit more about the project?"
             )
         if next_question == "availability_date":
             days = self._get_next_two_available_days()
