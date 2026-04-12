@@ -367,7 +367,7 @@ def _generate_clarifying_question(
         "Ask ONE short question to understand what the customer means.",
     )
 
-prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe/South Africa.
+    prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe/South Africa.
 
 SITUATION:
 {guidance}
