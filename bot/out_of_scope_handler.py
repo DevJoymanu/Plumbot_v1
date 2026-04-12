@@ -144,10 +144,14 @@ def _fast_delay_check(message: str) -> bool:
     return any(phrase in msg for phrase in _DELAY_PHRASES)
 
 
-def _fast_oos_check(message: str) -> bool:
-    msg = (message or "").lower()
-    return any(kw in msg for kw in _OOS_KEYWORDS)
+if _fast_oos_check(message):
+    logger.info("Possible OOS detected — requiring plumbing clarification first")
 
+    return {
+        "category": "out_of_scope",
+        "confidence": "LOW",
+        "detail": "OOS keyword matched but requires plumbing validation first"
+    }
 
 # ── DeepSeek classifier ───────────────────────────────────────────────────────
 
@@ -316,6 +320,20 @@ _FALLBACK_CLARIFIERS: dict[str, str] = {
     ),
 }
 
+
+def _generate_plumbing_reframe_question(message: str) -> str:
+    msg = message.lower()
+
+    if "garage" in msg or "carport" in msg:
+        return "Just to check — are you looking for plumbing work in the garage like a sink, water pipes, or drainage?"
+
+    if "paint" in msg:
+        return "Just checking — is this part of a renovation where you also need plumbing like bathroom or kitchen fittings?"
+
+    if "electric" in msg:
+        return "Do you mean any plumbing work like geysers or water installations alongside the electrical work?"
+
+    return "Just to confirm — is there any plumbing or water-related work involved in this?"
 
 def _generate_clarifying_question(
     message: str,
@@ -660,10 +678,14 @@ def handle_out_of_scope(message: str, appointment) -> Optional[str]:
         return None
 
     # ── Step 4: HIGH confidence — act immediately ─────────────────────────────
-    if confidence == "HIGH":
         if category == "out_of_scope":
-            logger.info("HIGH OOS: '%s'", message[:80])
-            return _build_oos_reply(message, appointment)
+            logger.info("OOS detected — forcing plumbing clarification step first")
+
+            clarifying_q = _generate_plumbing_reframe_question(message)
+
+            _write_pending(appointment, "out_of_scope", message)
+
+            return clarifying_q
 
         if category == "delay_signal":
             logger.info("HIGH delay: '%s'", message[:80])
