@@ -539,6 +539,7 @@ Examples where answer is YES (photo is primary):
 - "any before and after photos of bathrooms you've renovated"
 - "show me examples of your plumbing jobs"
 - "have you got a gallery I can look at"
+- "Can I see"
 - "send through some images of your past projects"
 - "I'd like to see what your work looks like"
 - "can you share some recent jobs you've completed"
@@ -840,7 +841,10 @@ def verify_webhook(request):
 def handle_webhook_event(request):
     try:
         body = json.loads(request.body.decode('utf-8'))
-        print("?? Webhook received")
+        if "statuses" in value:
+            print("📊 Status webhook received")
+        elif "messages" in value:
+            print("💬 Message webhook received")
         if body.get('object') != 'whatsapp_business_account':
             return HttpResponse(status=200)
         threading.Thread(
@@ -869,16 +873,26 @@ def process_webhook_in_background(body):
 
 def process_message_change(value):
     try:
+        # ✅ 1. HANDLE STATUSES AND EXIT
         statuses = value.get('statuses', [])
         if statuses:
             process_status_updates(statuses)
+            return  # 🔥 CRITICAL: STOP HERE
 
+        # ✅ 2. ONLY THEN handle messages
         messages = value.get('messages', [])
+        if not messages:
+            return
+
         for message in messages:
             message_type = message.get('type')
             message_id   = message.get('id')
             sender       = message.get('from')
 
+            if not sender:
+                print("⚠️ Skipping message with no sender (likely system event)")
+                continue            
+                
             if message_id:
                 try:
                     WhatsAppInboundEvent.objects.create(message_id=message_id, sender=sender or "")
