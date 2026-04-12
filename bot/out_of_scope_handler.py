@@ -302,18 +302,17 @@ JSON FORMAT:
 # Hardcoded fallback clarifiers per category — used when DeepSeek is unavailable.
 _FALLBACK_CLARIFIERS: dict[str, str] = {
     "out_of_scope": (
-        "Just to make sure I point you in the right direction — "
-        "are you looking for plumbing work (bathrooms, geysers, pipes), "
-        "or something else?"
+        "Just checking — are you looking for plumbing help? "
+        "We do bathroom renovations, kitchen plumbing, geysers, and new installations. "
+        "Is any of that what you had in mind?"
     ),
     "delay_signal": (
-        "No problem — just want to make sure I understand. "
-        "Are you saying you'd like to pick this up at a later stage, "
-        "or is there something specific I can help you with right now?"
+        "No problem at all! Are you still interested in getting the plumbing sorted, "
+        "or would you prefer to pick this up at a later stage?"
     ),
     "complaint": (
-        "Thanks for your message. I want to make sure I address what you need — "
-        "is there something specific about our service or pricing that I can clarify?"
+        "Thanks for your message — happy to help sort this out. "
+        "Is there something specific about the plumbing work or pricing I can clarify?"
     ),
 }
 
@@ -368,7 +367,7 @@ def _generate_clarifying_question(
         "Ask ONE short question to understand what the customer means.",
     )
 
-    prompt = f"""You are writing a WhatsApp message for Homebase Plumbers (Zimbabwe).
+prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe/South Africa.
 
 SITUATION:
 {guidance}
@@ -384,13 +383,14 @@ WHY IT'S AMBIGUOUS:
 
 TASK:
 Write ONE short clarifying question that:
-1. Is specific to the ambiguity — not a generic "what do you mean?"
-2. Offers the customer an easy way to answer (ideally two clear options)
-3. Sounds natural and warm, like a real person texting
-4. Is under 2 sentences
-5. Uses South African / Zimbabwean English ("sorted", "keen", "sharp")
-6. Has no markdown, no bold, no bullet points
-7. Never mentions that you are a bot or that you are classifying their message
+1. Leans toward plumbing — assume the customer is probably looking for plumbing help
+2. Names a specific plumbing service to anchor the question (e.g. "bathroom renovation, kitchen plumbing, geyser, or new installation")
+3. Offers the customer an easy yes/no or A/B choice
+4. Sounds natural and warm, like a real person texting
+5. Is under 2 sentences
+6. Uses South African / Zimbabwean English ("sorted", "keen", "sharp")
+7. Has no markdown, no bold, no bullet points
+8. Never mentions that you are a bot or that you are classifying their message
 
 Output ONLY the question text. No labels, no quotes, no explanation."""
 
