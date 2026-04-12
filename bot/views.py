@@ -3448,24 +3448,35 @@ class Plumbot:
         """Build consistent pricing replies with a breakdown, rough total, and booking push."""
         breakdown_text = "\n".join(breakdown_lines)
         if language == "shona":
+            intro = (
+                "Mhoro! Pfupi pfupi — mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
+                "Plumber aonawo nzvimbo, mutengo wekupedzisira unogona kukwira kana kuderera. "
+                "Kubatanidza masevhisi kunogona kukupai discount. Apa breakdown:"
+            )
             depends_line = (
-                "Final price inoenderana nesetup uye inogona kugadziriswa kana plumber auya oona nzvimbo yacho."
+                "Mutengo wakakwana unoenderana nesetup uye inogona kugadziriswa kana plumber auya oona nzvimbo yacho."
                 if visit_committed else
-                "Final price inoenderana nesetup uye inogona kutauriranwa kana tauya kuzoona nzvimbo yacho."
+                "Mutengo wakakwana unoenderana nesetup uye inogona kutauriranwa kana tauya kuzoona nzvimbo yacho."
             )
         else:
+            intro = (
+                "Hi! Just a quick note — these prices are rough prices for supply and install "
+                "(materials included). After the plumber sees the site, the final cost may go up or down. "
+                "Bundling services can give you a discount. Here's a breakdown:"
+            )
             depends_line = (
                 "Final price depends on setup and can still be adjusted once our plumber sees the space."
                 if visit_committed else
                 "Final price depends on setup and can be negotiated once we get to come out and see the space."
             )
         return (
+            f"{intro}\n\n"
             f"{breakdown_text}\n\n"
             f"**{total_line}**\n\n"
             f"{cheapest_line} {depends_line}\n\n"
             f"{self._get_pricing_followup_prompt(language)}"
         )
-    #
+        #
     # ── FIX 3 helpers ────────────────────────────────────────────────────────
 
     def _is_delay_or_exit_signal(self, message: str) -> bool:
@@ -4218,7 +4229,7 @@ Reply with ONLY a JSON object:
 
         if next_question == "project_description":
             return (
-                "Got it! Could you tell me a bit more about what you'd like done? "
+                "Got it! Could you tell me a bit more about the project? "
                 "The more detail you give, the more accurate we can be with the quote."
             )
 
@@ -4508,7 +4519,7 @@ Write ONLY the message text. No labels, no quotes around it."""
                 "Just to confirm — which service do you need?",
             ],
             'project_description': [
-                "Could you tell me a bit more about what you'd like done?",
+                "Could you tell me a bit more about the project?",
                 "What exactly needs doing — the more detail the better for the quote.",
                 "What's the main thing you want sorted?",
             ],
@@ -5183,147 +5194,139 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 has_area = bool(self.appointment.customer_area)
                 visit_committed = already_visiting or has_area
 
+                #
                 structured_pricing = {
                     "tub_sales": {
                         "breakdown_lines": [
-                            "Tub supply: from US$400",
-                            "Mixer if needed: from US$150",
-                            "Installation and finishing: from US$120",
+                            "Tub: Supply from US$80, Install from US$80",
+                            "Free-standing tub mixer: Supply from US$150, Install from US$120",
+                            "Side chamber: Supply from US$130, Install from US$30",
                         ],
-                        "total_line": "Roughly looking at about US$670 for a basic supply-and-fit setup.",
-                        "cheapest_line": "The cheapest tub option is an ordinary tub, which starts from US$80.",
+                        "total_line": "Roughly looking at about US$190 for a basic tub supply-and-fit, or US$480+ for a full freestanding setup.",
+                        "cheapest_line": "The cheapest option is an ordinary tub starting from US$80 supply + US$80 install.",
                         "sn_breakdown_lines": [
-                            "Tub supply: kubva US$400",
-                            "Mixer kana ichidiwa: kubva US$150",
-                            "Installation ne finishing: kubva US$120",
+                            "Tub: Supply kubva US$80, Install kubva US$80",
+                            "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
+                            "Side chamber: Supply kubva US$130, Install kubva US$30",
                         ],
-                        "sn_total_line": "Zvingangoita US$670 pa basic supply-and-fit setup.",
-                        "sn_cheapest_line": "Cheapest tub option i ordinary tub, inotangira paUS$80.",
+                        "sn_total_line": "Zvingangoita US$190 pa basic tub supply-and-fit, kana US$480+ pa full freestanding setup.",
+                        "sn_cheapest_line": "Cheapest option i ordinary tub inotangira paUS$80 supply neUS$80 install.",
                     },
                     "standalone_tub": {
                         "breakdown_lines": [
-                            "Free-standing tub supply: from US$450",
-                            "Free-standing mixer: from US$150",
-                            "Mixer and tub installation: from US$120",
+                            "Tub: Supply from US$80, Install from US$80",
+                            "Free-standing tub mixer: Supply from US$150, Install from US$120",
+                            "Side chamber: Supply from US$130, Install from US$30",
                         ],
-                        "total_line": "Roughly looking at about US$720 for everything on a basic freestanding setup.",
-                        "cheapest_line": "The cheapest tub option is an ordinary tub, which starts from US$80.",
+                        "total_line": "Roughly looking at about US$480 for a full freestanding tub setup.",
+                        "cheapest_line": "The cheapest option is an ordinary tub starting from US$80 supply + US$80 install.",
                         "sn_breakdown_lines": [
-                            "Free-standing tub supply: kubva US$450",
-                            "Free-standing mixer: kubva US$150",
-                            "Kuisa mixer netub: kubva US$120",
+                            "Tub: Supply kubva US$80, Install kubva US$80",
+                            "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
+                            "Side chamber: Supply kubva US$130, Install kubva US$30",
                         ],
-                        "sn_total_line": "Zvingangoita US$720 yezvinhu zvese pa basic freestanding setup.",
-                        "sn_cheapest_line": "Cheapest tub option i ordinary tub, inotangira paUS$80.",
+                        "sn_total_line": "Zvingangoita US$480 pa full freestanding tub setup.",
+                        "sn_cheapest_line": "Cheapest option i ordinary tub inotangira paUS$80 supply neUS$80 install.",
                     },
                     "geyser": {
                         "breakdown_lines": [
-                            "Geyser installation labour: from US$80",
-                            "Extra fittings and connectors if needed: from US$20",
-                            "Access and size-related extras can add more",
+                            "Geyser: Supply from US$80, Install from US$80",
                         ],
-                        "total_line": "Roughly looking at about US$100 to US$180 for a straightforward geyser installation.",
-                        "cheapest_line": "The cheapest option is when you already have the geyser and it's a simple swap, where labour starts from US$80.",
+                        "total_line": "Roughly looking at about US$160 for a standard geyser supply and installation.",
+                        "cheapest_line": "The cheapest option is when you already have the geyser — installation only starts from US$80.",
                         "sn_breakdown_lines": [
-                            "Labour yekuisa geyser: kubva US$80",
-                            "Extra fittings nema connectors kana zvichidiwa: kubva US$20",
-                            "Kana access yakaoma kana size yakakura zvinogona kuwedzera",
+                            "Geyser: Supply kubva US$80, Install kubva US$80",
                         ],
-                        "sn_total_line": "Zvingangoita US$100 kusvika US$180 pakuisa geyser kuri straightforward.",
-                        "sn_cheapest_line": "Cheapest option ndeyekuti muchitova negeyser uye iri simple swap, apo labour inotangira paUS$80.",
+                        "sn_total_line": "Zvingangoita US$160 pa standard geyser supply ne installation.",
+                        "sn_cheapest_line": "Cheapest option ndeyekuti muchitova negeyser — installation chete inotangira paUS$80.",
                     },
                     "shower_cubicle": {
                         "breakdown_lines": [
-                            "Standard 900x900 cubicle supply: from US$130",
-                            "Installation: from US$40",
+                            "Shower cubicle: Supply from US$130, Install from US$40",
                         ],
                         "total_line": "Roughly looking at about US$170 for everything on a standard cubicle fit.",
-                        "cheapest_line": "The cheapest option is a standard-size cubicle setup starting from US$170 all-in.",
+                        "cheapest_line": "The cheapest option is a standard-size cubicle starting from US$170 all-in.",
                         "sn_breakdown_lines": [
-                            "Standard 900x900 cubicle supply: kubva US$130",
-                            "Installation: kubva US$40",
+                            "Shower cubicle: Supply kubva US$130, Install kubva US$40",
                         ],
                         "sn_total_line": "Zvingangoita US$170 yezvinhu zvese pa standard cubicle fit.",
-                        "sn_cheapest_line": "Cheapest option i standard-size cubicle setup inotangira paUS$170 all-in.",
+                        "sn_cheapest_line": "Cheapest option i standard-size cubicle inotangira paUS$170 all-in.",
                     },
                     "vanity": {
                         "breakdown_lines": [
-                            "Vanity unit supply: from US$150",
-                            "Installation labour: from US$30",
+                            "Vanity unit: Supply from US$150, Install from US$30",
                         ],
-                        "total_line": "Roughly looking at about US$180 for a basic vanity setup, and more for larger or custom finishes.",
-                        "cheapest_line": "The cheapest option is a small standard vanity, or just installation if you already have one, with labour starting from US$30.",
+                        "total_line": "Roughly looking at about US$180 for a basic vanity setup.",
+                        "cheapest_line": "The cheapest option is installation only if you already have a vanity — labour starts from US$30.",
                         "sn_breakdown_lines": [
-                            "Vanity unit supply: kubva US$150",
-                            "Installation labour: kubva US$30",
+                            "Vanity unit: Supply kubva US$150, Install kubva US$30",
                         ],
-                        "sn_total_line": "Zvingangoita US$180 pa basic vanity setup, uye zvinokwira kana yakakura kana custom.",
-                        "sn_cheapest_line": "Cheapest option i small standard vanity, kana kungoiisa chete kana muchitova nayo, labour ichitangira paUS$30.",
+                        "sn_total_line": "Zvingangoita US$180 pa basic vanity setup.",
+                        "sn_cheapest_line": "Cheapest option installation chete kana muchitova ne vanity — labour inotangira paUS$30.",
                     },
                     "bathtub_installation": {
                         "breakdown_lines": [
-                            "Standard bathtub installation labour: from US$80",
-                            "Free-standing tub supply if needed: from US$450",
-                            "Free-standing mixer if needed: from US$150",
-                            "Mixer installation: from US$120",
+                            "Tub: Supply from US$80, Install from US$80",
+                            "Free-standing tub mixer: Supply from US$150, Install from US$120",
+                            "Side chamber: Supply from US$130, Install from US$30",
                         ],
-                        "total_line": "Roughly looking at about US$80 for a basic install if you already have the tub, or from around US$720 for a full freestanding setup.",
-                        "cheapest_line": "The cheapest option is when you already have a standard built-in tub, with installation starting from US$80.",
+                        "total_line": "Roughly looking at about US$160 for a basic tub install, or US$480+ for a full freestanding setup.",
+                        "cheapest_line": "The cheapest option is an ordinary tub starting from US$80 supply + US$80 install.",
                         "sn_breakdown_lines": [
-                            "Labour yekuisa standard bathtub: kubva US$80",
-                            "Free-standing tub supply kana ichidiwa: kubva US$450",
-                            "Free-standing mixer kana ichidiwa: kubva US$150",
-                            "Kuisa mixer: kubva US$120",
+                            "Tub: Supply kubva US$80, Install kubva US$80",
+                            "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
+                            "Side chamber: Supply kubva US$130, Install kubva US$30",
                         ],
-                        "sn_total_line": "Zvingangoita US$80 pa basic install kana muchitova netub, kana kubva paUS$720 pa full freestanding setup.",
-                        "sn_cheapest_line": "Cheapest option ndeyekuti muchitova ne standard built-in tub, installation ichitangira paUS$80.",
+                        "sn_total_line": "Zvingangoita US$160 pa basic tub install, kana US$480+ pa full freestanding setup.",
+                        "sn_cheapest_line": "Cheapest option i ordinary tub inotangira paUS$80 supply neUS$80 install.",
                     },
                     "toilet": {
                         "breakdown_lines": [
-                            "Close-coupled toilet supply: from US$50",
-                            "Installation: from US$20",
+                            "Toilet seat: Supply from US$50, Install from US$20",
                         ],
                         "total_line": "Roughly looking at about US$70 for everything on a standard toilet replacement.",
-                        "cheapest_line": "The cheapest option is when you already have the toilet and only need fitting, with labour starting from US$20.",
+                        "cheapest_line": "The cheapest option is installation only if you already have the toilet — labour starts from US$20.",
                         "sn_breakdown_lines": [
-                            "Close-coupled toilet supply: kubva US$50",
-                            "Installation: kubva US$20",
+                            "Toilet seat: Supply kubva US$50, Install kubva US$20",
                         ],
                         "sn_total_line": "Zvingangoita US$70 yezvinhu zvese pa standard toilet replacement.",
-                        "sn_cheapest_line": "Cheapest option ndeyekuti muchitova netoilet uye muchingoda fitting chete, labour ichitangira paUS$20.",
+                        "sn_cheapest_line": "Cheapest option installation chete kana muchitova ne toilet — labour inotangira paUS$20.",
                     },
                     "chamber": {
                         "breakdown_lines": [
-                            "Side chamber supply: US$130",
-                            "Installation: US$30",
+                            "Side chamber: Supply from US$130, Install from US$30",
                         ],
                         "total_line": "Roughly looking at about US$160 for everything on a standard chamber setup.",
-                        "cheapest_line": "The cheapest option is if it's only a chamber fit or adjustment, with labour starting from US$30.",
+                        "cheapest_line": "The cheapest option is installation only if you already have the chamber — labour starts from US$30.",
                         "sn_breakdown_lines": [
-                            "Side chamber supply: US$130",
-                            "Installation: US$30",
+                            "Side chamber: Supply kubva US$130, Install kubva US$30",
                         ],
                         "sn_total_line": "Zvingangoita US$160 yezvinhu zvese pa standard chamber setup.",
-                        "sn_cheapest_line": "Cheapest option ndeyekuti iri chamber fit kana adjustment chete, labour ichitangira paUS$30.",
+                        "sn_cheapest_line": "Cheapest option installation chete kana muchitova ne chamber — labour inotangira paUS$30.",
                     },
                     "facebook_package": {
                         "breakdown_lines": [
-                            "Core bathroom package: from US$600",
-                            "Fixtures like tubs, showers, toilets, and mixers are added based on what you choose",
-                            "Installation and finishing depend on the setup",
+                            "Shower cubicle: Supply from US$130, Install from US$40",
+                            "Vanity unit: Supply from US$150, Install from US$30",
+                            "Toilet seat: Supply from US$50, Install from US$20",
+                            "Side chamber: Supply from US$130, Install from US$30",
+                            "Tub: Supply from US$80, Install from US$80",
+                            "Free-standing tub mixer: Supply from US$150, Install from US$120",
                         ],
-                        "total_line": "Roughly looking at about US$600 upward, depending on the fixtures and layout.",
+                        "total_line": "Roughly looking at about US$600+ for the full bathroom package, depending on the fixtures you choose.",
                         "cheapest_line": "The cheapest option is the basic package starting from US$600 before extra fixtures are added.",
                         "sn_breakdown_lines": [
-                            "Core bathroom package: kubva US$600",
-                            "Fixtures dzakaita sematub, mashower, toilet nemamixer zvinowedzerwa zvichienderana nezvamunosarudza",
-                            "Installation ne finishing zvinoenderana nesetup",
+                            "Shower cubicle: Supply kubva US$130, Install kubva US$40",
+                            "Vanity unit: Supply kubva US$150, Install kubva US$30",
+                            "Toilet seat: Supply kubva US$50, Install kubva US$20",
+                            "Side chamber: Supply kubva US$130, Install kubva US$30",
+                            "Tub: Supply kubva US$80, Install kubva US$80",
+                            "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
                         ],
-                        "sn_total_line": "Zvingangoita kubva paUS$600 zvichikwira, zvichienderana nema fixtures nelayout.",
+                        "sn_total_line": "Zvingangoita US$600+ pa full bathroom package, zvichienderana nezvinhu zvamunosarudza.",
                         "sn_cheapest_line": "Cheapest option i basic package inotangira paUS$600 zvinhu zvekuwedzera zvisati zvaiswa.",
                     },
                 }
-
                 # combined_pricing always delegates to generate_pricing_overview
                 # for the full contextual Facebook-anchored response
                 if intent == 'combined_pricing':
@@ -5582,29 +5585,38 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ),
                     },
 
+                    #
                     "combined_pricing": {
                         "en": (
-                            "Here's a rough combined estimate based on everything we've discussed:\n\n"
-                            "• Shower cubicle (supply + install): from US$170\n"
-                            "• Vanity unit (supply + install): from US$180\n"
-                            "• Toilet (supply + install): from US$70\n"
-                            "• Chamber (supply + install): US$160\n"
-                            "• Freestanding tub (supply + install): from US$720\n\n"
-                            "Final price depends on your specific setup — once our plumber sees the space they'll give you a fixed number.\n\n"
+                            "Hi! Just a quick note — these prices are rough prices for supply and install "
+                            "(materials included). After the plumber sees the site, the final cost may go up or down. "
+                            "Bundling services can give you a discount. Here's a breakdown:\n\n"
+                            "• Geyser: Supply from US$80, Install from US$80\n"
+                            "• Shower cubicle: Supply from US$130, Install from US$40\n"
+                            "• Vanity unit: Supply from US$150, Install from US$30\n"
+                            "• Tub: Supply from US$80, Install from US$80\n"
+                            "• Free-standing tub mixer: Supply from US$150, Install from US$120\n"
+                            "• Side chamber: Supply from US$130, Install from US$30\n"
+                            "• Toilet seat: Supply from US$50, Install from US$20\n\n"
+                            "Final price depends on your setup — once our plumber sees the space "
+                            "they'll give you a fixed number on the spot.\n\n"
                             f"{self._get_pricing_followup_prompt('english')}"
                         ),
                         "sn": (
-                            "Apa mutengo wakafanana wezvinhu zvese zvatakaongorora:\n\n"
-                            "• Shower cubicle (supply + install): kubva US$170\n"
-                            "• Vanity unit (supply + install): kubva US$180\n"
-                            "• Toilet (supply + install): kubva US$70\n"
-                            "• Chamber (supply + install): US$160\n"
-                            "• Freestanding tub (supply + install): kubva US$720\n\n"
+                            "Mhoro! Pfupi pfupi — mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
+                            "Plumber aonawo nzvimbo, mutengo wekupedzisira unogona kukwira kana kuderera. "
+                            "Kubatanidza masevhisi kunogona kukupai discount. Apa breakdown:\n\n"
+                            "• Geyser: Supply kubva US$80, Install kubva US$80\n"
+                            "• Shower cubicle: Supply kubva US$130, Install kubva US$40\n"
+                            "• Vanity unit: Supply kubva US$150, Install kubva US$30\n"
+                            "• Tub: Supply kubva US$80, Install kubva US$80\n"
+                            "• Free-standing tub mixer: Supply kubva US$150, Install kubva US$120\n"
+                            "• Side chamber: Supply kubva US$130, Install kubva US$30\n"
+                            "• Toilet seat: Supply kubva US$50, Install kubva US$20\n\n"
                             "Mutengo wakakwana unoenderana nesetup yako — plumber wedu aona nzvimbo yako ozokuudza mutengo wakajika.\n\n"
                             f"{self._get_pricing_followup_prompt('shona')}"
                         ),
                     },
-
 
                 }
 
@@ -5727,19 +5739,20 @@ When you're finished sending everything, just type "done" or "finished" and I'll
 
         followup = self._get_pricing_followup_prompt(language)
 
+        #
         if language == 'shona':
             reply = (
                 f"{project_context}"
-                "Mutengo unoenderana nezvaunoda, asi apa ndimwe mitengo yakajairwa:\n\n"
-                "Facebook bathroom package: kubva US$600\n"
-                "  (Iyi inofukidza basa guru — fixtures dzinowedzerwa)\n\n"
-                "Kana uchida zvimwe-zwimwe:\n"
-                "• Shower cubicle (supply + install): kubva US$170\n"
-                "• Vanity unit (supply + install): kubva US$180\n"
-                "• Toilet (supply + install): kubva US$70\n"
-                "• Side chamber (supply + install): US$160\n"
-                "• Free-standing tub (supply + install): kubva US$720\n"
-                "• Geyser installation: kubva US$80\n\n"
+                "Mhoro! Pfupi pfupi — mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
+                "Plumber aonawo nzvimbo, mutengo wekupedzisira unogona kukwira kana kuderera. "
+                "Kubatanidza masevhisi kunogona kukupai discount. Apa breakdown:\n\n"
+                "• Geyser: Supply kubva US$80, Install kubva US$80\n"
+                "• Shower cubicle: Supply kubva US$130, Install kubva US$40\n"
+                "• Vanity unit: Supply kubva US$150, Install kubva US$30\n"
+                "• Tub: Supply kubva US$80, Install kubva US$80\n"
+                "• Free-standing tub mixer: Supply kubva US$150, Install kubva US$120\n"
+                "• Side chamber: Supply kubva US$130, Install kubva US$30\n"
+                "• Toilet seat: Supply kubva US$50, Install kubva US$20\n\n"
                 "Mutengo wakakwana unoenderana nesetup yako — "
                 "plumber wedu aona nzvimbo yako ozokuudza mutengo wakajika.\n\n"
                 f"{followup}"
@@ -5747,21 +5760,20 @@ When you're finished sending everything, just type "done" or "finished" and I'll
         else:
             reply = (
                 f"{project_context}"
-                "Pricing depends on what you need, but here's a rough guide:\n\n"
-                "Facebook bathroom package: from US$600\n"
-                "  (Covers the core fit-out — fixtures added based on your choice)\n\n"
-                "Individual items:\n"
-                "• Shower cubicle (supply + install): from US$170\n"
-                "• Vanity unit (supply + install): from US$180\n"
-                "• Toilet (supply + install): from US$70\n"
-                "• Side chamber (supply + install): US$160\n"
-                "• Free-standing tub (supply + install): from US$720\n"
-                "• Geyser installation: from US$80\n\n"
+                "Hi! Just a quick note — these prices are rough prices for supply and install "
+                "(materials included). After the plumber sees the site, the final cost may go up or down. "
+                "Bundling services can give you a discount. Here's a breakdown:\n\n"
+                "• Geyser: Supply from US$80, Install from US$80\n"
+                "• Shower cubicle: Supply from US$130, Install from US$40\n"
+                "• Vanity unit: Supply from US$150, Install from US$30\n"
+                "• Tub: Supply from US$80, Install from US$80\n"
+                "• Free-standing tub mixer: Supply from US$150, Install from US$120\n"
+                "• Side chamber: Supply from US$130, Install from US$30\n"
+                "• Toilet seat: Supply from US$50, Install from US$20\n\n"
                 "Final price depends on your setup — once our plumber sees the space "
                 "they'll give you a fixed number on the spot.\n\n"
                 f"{followup}"
             )
-
         return reply
 
     def notify_plumber_about_plan(self):
