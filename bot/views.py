@@ -2982,6 +2982,37 @@ def send_followup(request, pk):
 
 
 @staff_required
+@require_POST
+def send_image_to_lead(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    image_url = request.POST.get('image_url', '').strip()
+    caption = request.POST.get('caption', '').strip()
+
+    if not image_url:
+        messages.error(request, 'No image URL provided.')
+        return redirect('appointment_detail', pk=pk)
+
+    try:
+        clean_phone = clean_phone_number(appointment.phone_number)
+        whatsapp_api.send_media_message(
+            to=clean_phone,
+            media_url=image_url,
+            media_type='image',
+            caption=caption or None,
+        )
+        appointment.add_conversation_message(
+            'assistant',
+            f'[IMAGE SENT] URL: {image_url} | Caption: {caption}'
+        )
+        appointment.last_outbound_at = timezone.now()
+        appointment.save(update_fields=['last_outbound_at'])
+        messages.success(request, 'Image sent successfully!')
+    except Exception as e:
+        messages.error(request, f'Failed to send image: {str(e)}')
+
+    return redirect('appointment_detail', pk=pk)
+
+@staff_required
 def send_bulk_followup(request):
     """Send manual follow-up to multiple leads at once"""
     if request.method == 'POST':

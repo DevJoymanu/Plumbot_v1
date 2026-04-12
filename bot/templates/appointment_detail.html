@@ -587,6 +587,12 @@
                 <button onclick="insertTemplate('reminder')" class="btn btn-sm btn-outline-secondary">
                     <i class="fas fa-bell"></i> Reminder
                 </button>
+<form method="post" action="{% url 'send_image_to_lead' appointment.pk %}">
+    {% csrf_token %}
+    <input type="url" name="image_url" placeholder="Paste public image URL..." required class="form-control mb-2">
+    <input type="text" name="caption" placeholder="Optional caption..." class="form-control mb-2">
+    <button type="submit" class="btn btn-primary">Send Image</button>
+</form>
             </div>
         </div>
 
