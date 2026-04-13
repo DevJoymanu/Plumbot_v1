@@ -6816,6 +6816,8 @@ I understand this is time-sensitive!"""
         Update appointment with AI-extracted data.
         New flow: service → project_description → datetime → area.
         """
+        from datetime import datetime
+        
         try:
             updated_fields = []
             next_question  = self.get_next_question_to_ask()
@@ -6873,7 +6875,7 @@ I understand this is time-sensitive!"""
             if (extracted_data.get('availability') and
                     extracted_data.get('availability') != 'null'):
                 try:
-                    parsed_dt = dt_cls.strptime(extracted_data['availability'], '%Y-%m-%dT%H:%M')
+                    parsed_dt = datetime.strptime(extracted_data['availability'], '%Y-%m-%dT%H:%M')
                     sa_timezone = pytz.timezone('Africa/Johannesburg')
                     localized_dt = sa_timezone.localize(parsed_dt)
     
