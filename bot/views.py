@@ -8869,12 +8869,8 @@ I understand this is time-sensitive!"""
             return "Could you tell me a bit more about what you need done?"
  
         if next_q == "service_type":
-            return"Hello! Happy to help. Which service are you interested in?\n\n"
-                "We offer:\n"
-                "• Bathroom Renovation\n"
-                "• New Plumbing Installation\n"
-                "• Kitchen Renovation"
-"
+            return"Hello! Happy to help. Which service are you interested in?\n\n We offer:\n• Bathroom Renovation\n• New Plumbing Installation\n• Kitchen Renovation"
+
  
         return ""
 
