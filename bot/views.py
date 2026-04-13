@@ -8780,12 +8780,8 @@ I understand this is time-sensitive!"""
 
             prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe, also serving South Africa.
 
-    - the initial response to greetings or generic opening messages should only be(do not add or subtract anything from this, send it word for word): 
-                        "Hello! Happy to help. Which service are you interested in?\n\n"
-                        "We offer:\n"
-                        "• Bathroom Renovation\n"
-                        "• New Plumbing Installation\n"
-                        "• Kitchen Renovation"
+    - the initial response to greetings or generic opening messages should only be: 
+        {next_q == "service_type"}
 
     SERVICES WE OFFER:
     - Bathroom renovation: toilet, shower cubicle, bathtub, vanity unit, basin/sink, geyser, side chamber, tiling, pipe work
@@ -8873,7 +8869,12 @@ I understand this is time-sensitive!"""
             return "Could you tell me a bit more about what you need done?"
  
         if next_q == "service_type":
-            return "Which service are you after — bathroom, kitchen, or new installation?"
+            return"Hello! Happy to help. Which service are you interested in?\n\n"
+                "We offer:\n"
+                "• Bathroom Renovation\n"
+                "• New Plumbing Installation\n"
+                "• Kitchen Renovation"
+"
  
         return ""
 
