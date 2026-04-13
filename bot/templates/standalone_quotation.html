@@ -4,214 +4,255 @@
 
 {% block extra_css %}
 <style>
-    /* Additional styles for quotation form that complement base template */
-    .quotation-container {
-        max-width: 100%;
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+
+    :root {
+        --ink: #0f0f0f;
+        --paper: #fafaf8;
+        --accent: #2563eb;
+        --accent-light: #eff6ff;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --success: #059669;
+        --danger: #dc2626;
+        --warning: #d97706;
+        --card: #ffffff;
+        --shadow: 0 1px 3px rgba(0, 0, 0, .08), 0 4px 12px rgba(0, 0, 0, .05);
+        --shadow-lg: 0 4px 16px rgba(0, 0, 0, .12);
     }
 
-    /* Page Header */
-    .page-header {
-        background: white;
-        padding: 20px 0;
-        margin-bottom: 24px;
-        border-bottom: 1px solid #e5e7eb;
+    * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+        font-family: 'Inter', sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.6;
+    }
+
+    /* ── PAGE HEADER ── */
+    .sq-header {
+        background: var(--ink);
+        color: white;
+        padding: 28px 32px 24px;
+        margin-bottom: 32px;
         display: flex;
-        align-items: center;
+        align-items: flex-end;
         justify-content: space-between;
         flex-wrap: wrap;
         gap: 16px;
     }
 
-    .page-header h1 {
-        color: var(--dark);
+    .sq-header-left h1 {
+        font-family: 'Syne', sans-serif;
         font-size: clamp(1.5rem, 4vw, 2rem);
+        font-weight: 800;
+        letter-spacing: -.03em;
+        margin: 0 0 4px;
+    }
+
+    .sq-header-left p {
         margin: 0;
+        opacity: .6;
+        font-size: .875rem;
     }
 
-    .page-header p {
-        color: var(--secondary);
-        font-size: 0.9rem;
-        margin: 4px 0 0;
-    }
-
-    .header-actions {
+    .sq-header-actions {
         display: flex;
         gap: 10px;
     }
 
-    /* Quotation Grid Layout */
-    .quotation-grid {
+    /* ── LAYOUT ── */
+    .sq-grid {
         display: grid;
         grid-template-columns: 1fr 380px;
         gap: 24px;
-        margin-bottom: 40px;
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 24px 80px;
     }
 
     @media (max-width: 1024px) {
-        .quotation-grid {
+        .sq-grid {
             grid-template-columns: 1fr;
         }
     }
 
-    /* Form Cards */
-    .form-card {
-        background: white;
+    /* ── CARDS ── */
+    .sq-card {
+        background: var(--card);
+        border: 1px solid var(--border);
         border-radius: 12px;
-        padding: 0;
         margin-bottom: 20px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        border: 1px solid #e5e7eb;
         overflow: hidden;
+        box-shadow: var(--shadow);
     }
 
-    .card-header {
+    .sq-card-head {
         padding: 16px 20px;
-        border-bottom: 1px solid #e5e7eb;
-        background: #f8f9fa;
+        border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
         justify-content: space-between;
+        background: #fafafa;
     }
 
-    .card-header h3 {
-        color: var(--dark);
-        font-size: 1rem;
-        font-weight: 600;
+    .sq-card-head h3 {
+        font-family: 'Syne', sans-serif;
+        font-size: .95rem;
+        font-weight: 700;
         margin: 0;
+        letter-spacing: .01em;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        font-size: .78rem;
+        color: var(--muted);
+        letter-spacing: .08em;
     }
 
-    .card-body {
+    .sq-card-body {
         padding: 20px;
     }
 
-    /* Form Fields */
-    .form-row {
+    /* ── FORM ELEMENTS ── */
+    .field-row {
         display: grid;
         gap: 16px;
         margin-bottom: 16px;
     }
 
-    .form-row.cols-2 {
+    .field-row.cols-2 {
         grid-template-columns: 1fr 1fr;
     }
 
-    .form-row.cols-3 {
+    .field-row.cols-3 {
         grid-template-columns: 1fr 1fr 1fr;
     }
 
     @media (max-width: 600px) {
 
-        .form-row.cols-2,
-        .form-row.cols-3 {
+        .field-row.cols-2,
+        .field-row.cols-3 {
             grid-template-columns: 1fr;
         }
     }
 
-    .form-field {
+    .field {
         display: flex;
         flex-direction: column;
         gap: 6px;
     }
 
-    .form-field label {
-        font-size: 0.85rem;
+    .field label {
+        font-size: .8rem;
         font-weight: 600;
-        color: var(--secondary);
+        color: var(--muted);
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: .05em;
     }
 
-    .form-field input,
-    .form-field select,
-    .form-field textarea {
+    .field input,
+    .field select,
+    .field textarea {
         padding: 10px 14px;
-        border: 1px solid #e5e7eb;
+        border: 1.5px solid var(--border);
         border-radius: 8px;
-        font-size: 0.95rem;
-        color: var(--dark);
+        font-family: 'Inter', sans-serif;
+        font-size: .9rem;
+        color: var(--ink);
         background: white;
-        transition: border-color 0.15s;
+        transition: border-color .15s;
         width: 100%;
     }
 
-    .form-field input:focus,
-    .form-field select:focus,
-    .form-field textarea:focus {
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
         outline: none;
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, .1);
     }
 
-    .form-field textarea {
+    .field textarea {
         resize: vertical;
         min-height: 80px;
     }
 
-    .required {
-        color: var(--danger);
+    .field-hint {
+        font-size: .75rem;
+        color: var(--muted);
     }
 
-    /* Items Table */
-    .items-table-wrapper {
+    /* ── ITEMS TABLE ── */
+    .items-wrap {
         overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
     }
 
     .items-table {
         width: 100%;
         border-collapse: collapse;
         min-width: 620px;
-        font-size: 0.9rem;
+        font-size: .875rem;
     }
 
     .items-table thead tr {
-        background: var(--dark);
+        background: var(--ink);
         color: white;
     }
 
     .items-table th {
         padding: 10px 12px;
         text-align: left;
-        font-size: 0.75rem;
-        font-weight: 600;
+        font-family: 'Syne', sans-serif;
+        font-size: .72rem;
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: .07em;
         white-space: nowrap;
     }
 
     .items-table td {
-        padding: 8px;
-        border-bottom: 1px solid #e5e7eb;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--border);
         vertical-align: middle;
     }
 
     .items-table tbody tr:hover {
-        background: #f8f9fa;
+        background: #f9fafb;
+    }
+
+    .items-table tbody tr.deleting {
+        opacity: .4;
+        background: #fff5f5;
     }
 
     .items-table td input,
     .items-table td select {
         width: 100%;
-        padding: 8px 10px;
-        border: 1px solid #e5e7eb;
+        padding: 7px 10px;
+        border: 1.5px solid var(--border);
         border-radius: 6px;
-        font-size: 0.9rem;
+        font-size: .85rem;
+        font-family: 'Inter', sans-serif;
         background: white;
+        transition: border-color .15s;
     }
 
     .items-table td input:focus,
     .items-table td select:focus {
         outline: none;
-        border-color: var(--primary);
+        border-color: var(--accent);
     }
 
     .items-table td input[readonly] {
         background: #f3f4f6;
         cursor: default;
-        color: var(--primary);
+        font-family: 'DM Mono', monospace;
         font-weight: 500;
+        color: var(--accent);
     }
 
     .col-desc {
@@ -226,16 +267,16 @@
         width: 110px;
     }
 
-    .col-total {
+    .col-tot {
         width: 110px;
     }
 
-    .col-action {
+    .col-del {
         width: 44px;
         text-align: center;
     }
 
-    .btn-delete {
+    .del-btn {
         width: 28px;
         height: 28px;
         border: none;
@@ -243,245 +284,398 @@
         background: #fee2e2;
         color: var(--danger);
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: .9rem;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        transition: all 0.15s;
+        transition: background .15s;
     }
 
-    .btn-delete:hover {
+    .del-btn:hover {
         background: var(--danger);
         color: white;
     }
 
-    .btn-add-row {
+    .add-row-btn {
         display: flex;
         align-items: center;
         gap: 8px;
         padding: 10px 16px;
-        border: 1.5px dashed #e5e7eb;
+        border: 1.5px dashed var(--border);
         border-radius: 8px;
         background: none;
-        color: var(--secondary);
-        font-size: 0.9rem;
+        color: var(--muted);
+        font-size: .875rem;
         cursor: pointer;
-        transition: all 0.15s;
+        transition: all .15s;
         margin-top: 12px;
         width: 100%;
         justify-content: center;
     }
 
-    .btn-add-row:hover {
-        border-color: var(--primary);
-        color: var(--primary);
-        background: rgba(102, 126, 234, 0.05);
+    .add-row-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--accent-light);
     }
 
-    /* Cost Summary */
-    .cost-summary {
+    /* ── TOTALS PANEL ── */
+    .totals-block {
         display: flex;
         flex-direction: column;
+        gap: 0;
     }
 
-    .summary-row {
+    .total-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
         padding: 12px 0;
-        border-bottom: 1px dashed #e5e7eb;
+        border-bottom: 1px dashed var(--border);
     }
 
-    .summary-row:last-child {
+    .total-row:last-child {
         border-bottom: none;
         font-weight: 700;
         font-size: 1.1rem;
     }
 
-    .summary-row label {
-        color: var(--secondary);
-        font-size: 0.9rem;
+    .total-row label {
+        color: var(--muted);
+        font-size: .85rem;
         font-weight: 500;
     }
 
-    .summary-row .value {
+    .total-row .val {
+        font-family: 'DM Mono', monospace;
         font-weight: 500;
-        font-size: 0.95rem;
+        font-size: .95rem;
     }
 
-    .summary-row.grand-total .value {
+    .total-row.grand .val {
         font-size: 1.2rem;
-        color: var(--primary);
+        color: var(--accent);
         font-weight: 700;
     }
 
-    .summary-row .cost-input {
+    .total-row .cost-input {
         width: 120px;
         padding: 6px 10px;
-        border: 1px solid #e5e7eb;
+        border: 1.5px solid var(--border);
         border-radius: 6px;
-        font-size: 0.9rem;
+        font-family: 'DM Mono', monospace;
+        font-size: .875rem;
         text-align: right;
     }
 
-    .summary-row .cost-input:focus {
+    .total-row .cost-input:focus {
         outline: none;
-        border-color: var(--primary);
+        border-color: var(--accent);
     }
 
-    /* Sidebar */
+    /* ── SIDEBAR STICKY ── */
     .sidebar-sticky {
         position: sticky;
         top: 20px;
     }
 
-    /* Appointment Search */
-    .appointment-search {
+    /* ── STATUS BADGES ── */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: .75rem;
+        font-weight: 600;
+    }
+
+    .badge-draft {
+        background: #f3f4f6;
+        color: #4b5563;
+    }
+
+    .badge-sent {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    /* ── BUTTONS ── */
+    .btn-primary {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 22px;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: .9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background .15s, transform .1s;
+        text-decoration: none;
+    }
+
+    .btn-primary:hover {
+        background: #1d4ed8;
+    }
+
+    .btn-primary:active {
+        transform: scale(.97);
+    }
+
+    .btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 22px;
+        background: white;
+        color: var(--ink);
+        border: 1.5px solid var(--border);
+        border-radius: 8px;
+        font-size: .9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background .15s;
+        text-decoration: none;
+    }
+
+    .btn-secondary:hover {
+        background: #f9fafb;
+    }
+
+    .btn-success {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 22px;
+        background: var(--success);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: .9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background .15s;
+        text-decoration: none;
+    }
+
+    .btn-success:hover {
+        background: #047857;
+    }
+
+    .btn-danger {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: #fee2e2;
+        color: var(--danger);
+        border: none;
+        border-radius: 8px;
+        font-size: .85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all .15s;
+        text-decoration: none;
+    }
+
+    .btn-danger:hover {
+        background: var(--danger);
+        color: white;
+    }
+
+    .btn-sm {
+        padding: 7px 14px !important;
+        font-size: .8rem !important;
+    }
+
+    /* ── ALERTS ── */
+    .alert {
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        font-size: .875rem;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .alert-success {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .alert-error {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .alert-info {
+        background: var(--accent-light);
+        color: #1e40af;
+    }
+
+    /* ── APPOINTMENT SEARCH ── */
+    .appt-search-wrap {
         position: relative;
     }
 
-    .appointment-dropdown {
+    .appt-dropdown {
         position: absolute;
         top: calc(100% + 4px);
         left: 0;
         right: 0;
         background: white;
-        border: 1px solid #e5e7eb;
+        border: 1.5px solid var(--border);
         border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        box-shadow: var(--shadow-lg);
         z-index: 100;
         max-height: 280px;
         overflow-y: auto;
         display: none;
     }
 
-    .appointment-dropdown.show {
+    .appt-dropdown.open {
         display: block;
     }
 
-    .appointment-item {
+    .appt-item {
         padding: 10px 14px;
         cursor: pointer;
         border-bottom: 1px solid #f3f4f6;
-        transition: background 0.1s;
-        font-size: 0.9rem;
+        transition: background .1s;
+        font-size: .875rem;
     }
 
-    .appointment-item:last-child {
+    .appt-item:last-child {
         border-bottom: none;
     }
 
-    .appointment-item:hover {
-        background: rgba(102, 126, 234, 0.1);
+    .appt-item:hover {
+        background: var(--accent-light);
     }
 
-    .appointment-item-name {
+    .appt-item-name {
         font-weight: 600;
-        color: var(--dark);
+        color: var(--ink);
     }
 
-    .appointment-item-meta {
-        color: var(--secondary);
-        font-size: 0.8rem;
+    .appt-item-meta {
+        color: var(--muted);
+        font-size: .78rem;
     }
 
-    .appointment-none {
+    .appt-none {
         padding: 16px;
         text-align: center;
-        color: var(--secondary);
-        font-size: 0.9rem;
+        color: var(--muted);
+        font-size: .875rem;
     }
 
-    .selected-appointment {
+    .selected-appt {
         display: flex;
         align-items: center;
         justify-content: space-between;
         padding: 10px 14px;
-        border: 1.5px solid var(--primary);
+        border: 1.5px solid var(--accent);
         border-radius: 8px;
-        background: rgba(102, 126, 234, 0.1);
-        font-size: 0.9rem;
+        background: var(--accent-light);
+        font-size: .875rem;
         margin-top: 6px;
     }
 
-    .selected-appointment .btn-clear {
+    .selected-appt .clear-appt {
         background: none;
         border: none;
         cursor: pointer;
-        color: var(--secondary);
+        color: var(--muted);
         font-size: 1rem;
-        padding: 4px 8px;
     }
 
-    .selected-appointment .btn-clear:hover {
+    .selected-appt .clear-appt:hover {
         color: var(--danger);
     }
 
-    /* Quick Stats */
-    .quick-stats {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        text-align: center;
-        padding: 16px;
-    }
-
-    .stat-item {
-        text-align: center;
-    }
-
-    .stat-value {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: var(--primary);
-    }
-
-    .stat-label {
-        font-size: 0.75rem;
-        color: var(--secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    /* Preview Section */
+    /* ── PREVIEW PANEL (print-ready) ── */
     .preview-section {
         display: none;
-        margin-top: 24px;
     }
 
     .preview-section.show {
         display: block;
     }
 
-    /* Modal */
-    .modal-overlay {
+    /* ── LOADING ── */
+    .btn-loading {
+        opacity: .7;
+        pointer-events: none;
+    }
+
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, .3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin .8s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* ── CATEGORY CHIP ── */
+    .category-chip {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: .7rem;
+        font-weight: 600;
+        background: #f3f4f6;
+        color: var(--muted);
+    }
+
+    /* ── TEMPLATE MODAL ── */
+    .modal-backdrop {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, .5);
         backdrop-filter: blur(3px);
-        z-index: 1000;
+        z-index: 500;
         display: none;
         align-items: center;
         justify-content: center;
     }
 
-    .modal-overlay.show {
+    .modal-backdrop.open {
         display: flex;
     }
 
-    .modal-dialog {
+    .modal-box {
         background: white;
-        border-radius: 12px;
+        border-radius: 16px;
         width: 92%;
         max-width: 700px;
         max-height: 88vh;
         overflow-y: auto;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+        box-shadow: 0 24px 64px rgba(0, 0, 0, .25);
+        animation: slideUp .2s ease;
     }
 
-    .modal-header {
+    @keyframes slideUp {
+        from {
+            transform: translateY(20px);
+            opacity: 0;
+        }
+    }
+
+    .modal-head {
         padding: 20px 24px 16px;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -491,11 +685,11 @@
         z-index: 1;
     }
 
-    .modal-header h2 {
-        font-size: 1.2rem;
-        font-weight: 600;
+    .modal-head h2 {
+        font-family: 'Syne', sans-serif;
+        font-size: 1.1rem;
+        font-weight: 700;
         margin: 0;
-        color: var(--dark);
     }
 
     .modal-close {
@@ -506,11 +700,11 @@
         background: #f3f4f6;
         cursor: pointer;
         font-size: 1.1rem;
-        color: var(--secondary);
+        color: var(--muted);
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: all 0.15s;
+        transition: background .15s;
     }
 
     .modal-close:hover {
@@ -522,22 +716,21 @@
         padding: 20px 24px;
     }
 
-    /* Template Cards */
-    .template-card {
-        border: 1.5px solid #e5e7eb;
+    .tmpl-card {
+        border: 1.5px solid var(--border);
         border-radius: 10px;
         padding: 16px;
         cursor: pointer;
-        transition: all 0.15s;
+        transition: all .15s;
         margin-bottom: 12px;
     }
 
-    .template-card:hover {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    .tmpl-card:hover {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, .1);
     }
 
-    .template-header {
+    .tmpl-card-head {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
@@ -545,71 +738,39 @@
         margin-bottom: 10px;
     }
 
-    .template-name {
-        font-weight: 600;
-        font-size: 1rem;
-        color: var(--dark);
+    .tmpl-name {
+        font-weight: 700;
+        font-size: .95rem;
     }
 
-    .template-description {
-        color: var(--secondary);
-        font-size: 0.85rem;
-        margin-top: 4px;
+    .tmpl-desc {
+        color: var(--muted);
+        font-size: .8rem;
+        margin-top: 3px;
     }
 
-    .template-stats {
+    .tmpl-stats {
         display: flex;
         gap: 20px;
         padding-top: 10px;
         border-top: 1px solid #f3f4f6;
     }
 
-    .template-stat {
-        font-size: 0.8rem;
-        color: var(--secondary);
+    .tmpl-stat-item {
+        font-size: .78rem;
+        color: var(--muted);
     }
 
-    .template-stat strong {
-        color: var(--dark);
+    .tmpl-stat-item strong {
+        color: var(--ink);
         display: block;
-        font-size: 0.95rem;
+        font-size: .9rem;
     }
 
-    /* Loading States */
-    .btn-loading {
-        opacity: 0.7;
-        pointer-events: none;
-    }
-
-    .spinner {
-        width: 16px;
-        height: 16px;
-        border: 2px solid rgba(255, 255, 255, 0.3);
-        border-top-color: white;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-        display: inline-block;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    /* Action Buttons Group */
-    .action-buttons {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    /* Print Styles */
     @media print {
 
-        .navbar,
-        .page-header,
-        .form-card,
+        .sq-header,
+        .sq-card,
         .sidebar-sticky {
             display: none !important;
         }
@@ -618,91 +779,74 @@
             display: block !important;
         }
     }
-
-    /* Mobile Optimizations */
-    @media (max-width: 480px) {
-        .page-header {
-            flex-direction: column;
-            align-items: flex-start;
-        }
-
-        .header-actions {
-            width: 100%;
-        }
-
-        .header-actions .btn {
-            flex: 1;
-        }
-
-        .card-body {
-            padding: 16px;
-        }
-    }
 </style>
 {% endblock %}
 
 {% block content %}
+
 <div id="alertContainer"></div>
 
-<!-- Page Header -->
-<div class="page-header">
-    <div>
+<!-- PAGE HEADER -->
+<div class="sq-header">
+    <div class="sq-header-left">
         <h1>New Quotation</h1>
         <p>Create a standalone quotation — with or without a linked appointment</p>
     </div>
-    <div class="header-actions">
-        <a href="{% url 'quotations_list' %}" class="btn btn-secondary">
+    <div class="sq-header-actions">
+        <a href="{% url 'quotations_list' %}" class="btn-secondary btn-sm">
             <i class="fas fa-list"></i> All Quotations
         </a>
-        <button class="btn btn-secondary" onclick="openTemplateModal()">
+        <button class="btn-secondary btn-sm" id="tmplBtn" onclick="openTemplateModal()">
             <i class="fas fa-file-invoice"></i> Load Template
         </button>
     </div>
 </div>
 
-<!-- Main Grid -->
-<div class="quotation-grid">
-    <!-- Left Column: Form -->
+<!-- MAIN GRID -->
+<div class="sq-grid">
+
+    <!-- ── LEFT COLUMN: form ── -->
     <div>
-        <!-- Appointment Link -->
-        <div class="form-card">
-            <div class="card-header">
-                <h3>Link to Appointment <span style="color:#999;font-weight:400;text-transform:none;">— optional</span>
-                </h3>
+
+        <!-- Appointment Link (optional) -->
+        <div class="sq-card">
+            <div class="sq-card-head">
+                <h3>Link to Appointment <span style="color:#aaa;font-weight:400;text-transform:none;font-size:.78rem">—
+                        optional</span></h3>
             </div>
-            <div class="card-body">
-                <div class="form-field appointment-search">
+            <div class="sq-card-body">
+                <div class="field appt-search-wrap">
                     <label>Search by name or phone</label>
                     <input type="text" id="apptSearch" placeholder="Type to search appointments…" autocomplete="off">
-                    <div class="appointment-dropdown" id="apptDropdown"></div>
+                    <div class="appt-dropdown" id="apptDropdown"></div>
                 </div>
-                <div id="selectedApptBox" style="display:none;"></div>
+                <div id="selectedApptBox" style="display:none"></div>
                 <input type="hidden" id="appointmentId" name="appointment_id" value="">
             </div>
         </div>
 
-        <!-- Client Information -->
-        <div class="form-card">
-            <div class="card-header">
+        <!-- Client Info -->
+        <div class="sq-card">
+            <div class="sq-card-head">
                 <h3>Client Information</h3>
             </div>
-            <div class="card-body">
-                <div class="form-row cols-2">
-                    <div class="form-field">
-                        <label>Client Name <span class="required">*</span></label>
+            <div class="sq-card-body">
+                <div class="field-row cols-2">
+                    <div class="field">
+                        <label>Client Name <span style="color:var(--danger)">*</span></label>
                         <input type="text" id="clientName" placeholder="Full name or company">
                     </div>
-                    <div class="form-field">
+                    <div class="field">
                         <label>Phone</label>
                         <input type="tel" id="clientPhone" placeholder="+263 77 123 4567">
                     </div>
                 </div>
-                <div class="form-row cols-2">
-                    <div class="form-field">
+                <div class="field-row cols-2">
+                    <div class="field">
                         <label>Email</label>
                         <input type="email" id="clientEmail" placeholder="client@example.com">
                     </div>
-                    <div class="form-field">
+                    <div class="field">
                         <label>Address / Area</label>
                         <input type="text" id="clientAddress" placeholder="e.g. Hatfield, Harare">
                     </div>
@@ -710,15 +854,15 @@
             </div>
         </div>
 
-        <!-- Project Details -->
-        <div class="form-card">
-            <div class="card-header">
+        <!-- Project Info -->
+        <div class="sq-card">
+            <div class="sq-card-head">
                 <h3>Project Details</h3>
             </div>
-            <div class="card-body">
-                <div class="form-row cols-2">
-                    <div class="form-field">
-                        <label>Service Type <span class="required">*</span></label>
+            <div class="sq-card-body">
+                <div class="field-row cols-2">
+                    <div class="field">
+                        <label>Service Type <span style="color:var(--danger)">*</span></label>
                         <select id="projectType">
                             <option value="">— Select service —</option>
                             <option value="bathroom_renovation">Bathroom Renovation</option>
@@ -728,160 +872,163 @@
                             <option value="other">Other</option>
                         </select>
                     </div>
-                    <div class="form-field">
+                    <div class="field">
                         <label>Project Location</label>
                         <input type="text" id="projectLocation" placeholder="Site address">
                     </div>
                 </div>
-                <div class="form-field">
+                <div class="field">
                     <label>Project Notes / Scope</label>
-                    <textarea id="projectNotes" placeholder="Describe the work scope, special requirements…"
-                        rows="3"></textarea>
+                    <textarea id="projectNotes" placeholder="Describe the work scope, special requirements…"></textarea>
                 </div>
             </div>
         </div>
 
         <!-- Line Items -->
-        <div class="form-card">
-            <div class="card-header">
+        <div class="sq-card">
+            <div class="sq-card-head">
                 <h3>Line Items</h3>
-                <button class="btn btn-secondary btn-sm" onclick="openTemplateModal()">
+                <button class="btn-secondary btn-sm" onclick="openTemplateModal()">
                     <i class="fas fa-file-invoice"></i> Load Template
                 </button>
             </div>
-            <div class="card-body">
-                <div class="items-table-wrapper">
+            <div class="sq-card-body">
+                <div class="items-wrap">
                     <table class="items-table">
                         <thead>
                             <tr>
                                 <th class="col-desc">Description</th>
                                 <th class="col-qty">Qty</th>
                                 <th class="col-unit">Unit Price (US$)</th>
-                                <th class="col-total">Line Total</th>
-                                <th class="col-action"></th>
+                                <th class="col-tot">Line Total</th>
+                                <th class="col-del"></th>
                             </tr>
                         </thead>
                         <tbody id="itemsBody"></tbody>
                     </table>
                 </div>
-                <button class="btn-add-row" onclick="addItem()">
+                <button class="add-row-btn" onclick="addItem()">
                     <i class="fas fa-plus"></i> Add Item
                 </button>
             </div>
         </div>
 
         <!-- Additional Notes -->
-        <div class="form-card">
-            <div class="card-header">
+        <div class="sq-card">
+            <div class="sq-card-head">
                 <h3>Additional Notes</h3>
             </div>
-            <div class="card-body">
-                <div class="form-field">
+            <div class="sq-card-body">
+                <div class="field">
                     <textarea id="additionalNotes" rows="3"
                         placeholder="Payment terms, warranty info, exclusions…"></textarea>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Right Column: Sidebar -->
+    </div><!-- /left -->
+
+    <!-- ── RIGHT COLUMN: sidebar ── -->
     <div class="sidebar-sticky">
+
         <!-- Cost Summary -->
-        <div class="form-card">
-            <div class="card-header">
+        <div class="sq-card">
+            <div class="sq-card-head">
                 <h3>Cost Summary</h3>
             </div>
-            <div class="card-body">
-                <div class="cost-summary">
-                    <div class="summary-row">
+            <div class="sq-card-body">
+                <div class="totals-block">
+                    <div class="total-row">
                         <label>Materials / Items</label>
-                        <span class="value" id="totalMaterials">US$0.00</span>
+                        <span class="val" id="totalMaterials">US$0.00</span>
                     </div>
-                    <div class="summary-row">
+                    <div class="total-row">
                         <label>Labour</label>
                         <input type="number" class="cost-input" id="labourCost" value="0" min="0" step="0.01"
                             oninput="recalc()">
                     </div>
-                    <div class="summary-row">
+                    <div class="total-row">
                         <label>Transport</label>
                         <input type="number" class="cost-input" id="transportCost" value="0" min="0" step="0.01"
                             oninput="recalc()">
                     </div>
-                    <div class="summary-row grand-total">
+                    <div class="total-row grand">
                         <label>Grand Total</label>
-                        <span class="value" id="grandTotal">US$0.00</span>
+                        <span class="val" id="grandTotal">US$0.00</span>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Actions -->
-        <div class="form-card">
-            <div class="card-header">
+        <div class="sq-card">
+            <div class="sq-card-head">
                 <h3>Actions</h3>
             </div>
-            <div class="card-body">
-                <div class="action-buttons">
-                    <button class="btn btn-success" id="saveBtn" onclick="saveQuotation()">
-                        <i class="fas fa-save"></i> Save Quotation
-                    </button>
-                    <button class="btn btn-secondary" onclick="showPreview()">
-                        <i class="fas fa-eye"></i> Preview
-                    </button>
-                    <button class="btn btn-secondary" onclick="downloadPDF()">
-                        <i class="fas fa-download"></i> Download PDF
-                    </button>
-                    <button class="btn btn-danger" onclick="clearAll()" style="margin-top:8px;">
-                        <i class="fas fa-trash"></i> Clear All
-                    </button>
-                </div>
+            <div class="sq-card-body" style="display:flex;flex-direction:column;gap:10px;">
+                <button class="btn-primary" id="saveBtn" onclick="saveQuotation()">
+                    <i class="fas fa-save"></i> Save Quotation
+                </button>
+                <button class="btn-secondary" onclick="showPreview()">
+                    <i class="fas fa-eye"></i> Preview
+                </button>
+                <button class="btn-secondary" onclick="downloadPDF()">
+                    <i class="fas fa-download"></i> Download PDF
+                </button>
+                <button class="btn-danger" onclick="clearAll()" style="margin-top:8px;">
+                    <i class="fas fa-trash"></i> Clear All
+                </button>
             </div>
         </div>
 
         <!-- Quick Stats -->
-        <div class="form-card">
-            <div class="card-body">
-                <div class="quick-stats">
-                    <div class="stat-item">
-                        <div class="stat-value" id="statItems">0</div>
-                        <div class="stat-label">Items</div>
+        <div class="sq-card">
+            <div class="sq-card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;text-align:center;">
+                <div>
+                    <div style="font-family:'DM Mono',monospace;font-size:1.4rem;font-weight:700;color:var(--accent)"
+                        id="statItems">0</div>
+                    <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Items
                     </div>
-                    <div class="stat-item">
-                        <div class="stat-value" id="statTotal" style="color:var(--success)">$0</div>
-                        <div class="stat-label">Total</div>
+                </div>
+                <div>
+                    <div style="font-family:'DM Mono',monospace;font-size:1.4rem;font-weight:700;color:var(--success)"
+                        id="statTotal">$0</div>
+                    <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Total
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Preview Section -->
-<div id="previewContainer" class="preview-section">
-    <div class="form-card">
-        <div class="card-header">
+    </div><!-- /sidebar -->
+
+</div><!-- /grid -->
+
+<!-- Preview Section (hidden until needed) -->
+<div id="previewContainer" class="preview-section" style="max-width:900px;margin:0 auto;padding:0 24px 80px;">
+    <div class="sq-card">
+        <div class="sq-card-head">
             <h3>Quotation Preview</h3>
-            <button class="btn btn-secondary btn-sm" onclick="hidePreview()">
+            <button class="btn-secondary btn-sm" onclick="hidePreview()">
                 <i class="fas fa-times"></i> Close Preview
             </button>
         </div>
-        <div class="card-body" id="previewContent"></div>
+        <div class="sq-card-body" id="previewContent"></div>
     </div>
 </div>
 
 <!-- Template Modal -->
-<div class="modal-overlay" id="templateModal">
-    <div class="modal-dialog">
-        <div class="modal-header">
-            <h2><i class="fas fa-file-invoice" style="color:var(--primary)"></i> Load Template</h2>
+<div class="modal-backdrop" id="templateModal">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h2><i class="fas fa-file-invoice" style="color:var(--accent)"></i> &nbsp;Load Template</h2>
             <button class="modal-close" onclick="closeTemplateModal()">✕</button>
         </div>
         <div class="modal-body">
-            <div class="form-field">
-                <input type="text" id="tmplSearch" placeholder="Search templates…" oninput="filterTemplates()">
-            </div>
+            <input type="text" id="tmplSearch" placeholder="Search templates…"
+                style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:16px;font-size:.9rem;"
+                oninput="filterTemplates()">
             <div id="tmplList">
-                <div style="text-align:center;padding:32px;color:var(--secondary);">
+                <div style="text-align:center;padding:32px;color:var(--muted);">
                     <i class="fas fa-spinner fa-spin" style="font-size:1.5rem;margin-bottom:12px;display:block;"></i>
                     Loading templates…
                 </div>
@@ -891,18 +1038,18 @@
 </div>
 
 <script>
-    // State management
+    // ─── STATE ───────────────────────────────────────────────────────────────────
     let items = [];
     let allTemplates = [];
     let selectedAppointment = null;
 
-    // Initialize
+    // ─── INIT ─────────────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
-        addItem();
+        addItem(); // start with one empty row
         initApptSearch();
     });
 
-    // Item management
+    // ─── ITEMS ────────────────────────────────────────────────────────────────────
     function addItem(prefill = {}) {
         const id = Date.now() + Math.random();
         items.push({
@@ -924,48 +1071,44 @@
         if (!item) return;
         item[field] = field === 'description' ? value : (parseFloat(value) || 0);
         if (field !== 'description') recalc();
+        // update just the line-total cell without full re-render
         const row = document.querySelector(`tr[data-id="${id}"]`);
-        if (row) {
-            const totalCell = row.querySelector('.line-total');
-            if (totalCell) totalCell.value = formatCurrency(item.qty * item.unit);
-        }
+        if (row) row.querySelector('.line-total').value = fmt(item.qty * item.unit);
     }
 
     function renderItems() {
         const tbody = document.getElementById('itemsBody');
         if (items.length === 0) {
             tbody.innerHTML = `
-                <tr>
-                    <td colspan="5" style="text-align:center;padding:28px;color:var(--secondary);">
-                        <i class="fas fa-inbox" style="opacity:0.4;font-size:2rem;display:block;margin-bottom:8px;"></i>
-                        No items yet — click <strong>Add Item</strong> to start.
-                    </td>
-                </tr>`;
+      <tr><td colspan="5" style="text-align:center;padding:28px;color:var(--muted);font-size:.875rem;">
+        <i class="fas fa-inbox" style="opacity:.4;font-size:1.8rem;display:block;margin-bottom:8px;"></i>
+        No items yet — click <strong>Add Item</strong> to start.
+      </td></tr>`;
         } else {
             tbody.innerHTML = items.map(item => `
-                <tr data-id="${item.id}">
-                    <td class="col-desc">
-                        <input type="text" value="${escapeHtml(item.description)}" placeholder="Item description"
-                            oninput="updateItem(${item.id}, 'description', this.value)">
-                    </td>
-                    <td class="col-qty">
-                        <input type="number" value="${item.qty}" min="0.01" step="0.01"
-                            oninput="updateItem(${item.id}, 'qty', this.value)">
-                    </td>
-                    <td class="col-unit">
-                        <input type="number" value="${item.unit}" min="0" step="0.01"
-                            oninput="updateItem(${item.id}, 'unit', this.value)">
-                    </td>
-                    <td class="col-total">
-                        <input type="text" class="line-total" readonly
-                            value="${formatCurrency(item.qty * item.unit)}">
-                    </td>
-                    <td class="col-action">
-                        <button class="btn-delete" onclick="removeItem(${item.id})" title="Remove">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </td>
-                </tr>`).join('');
+      <tr data-id="${item.id}">
+        <td class="col-desc">
+          <input type="text" value="${esc(item.description)}" placeholder="Item description"
+            oninput="updateItem(${item.id}, 'description', this.value)">
+        </td>
+        <td class="col-qty">
+          <input type="number" value="${item.qty}" min="0.01" step="0.01"
+            oninput="updateItem(${item.id}, 'qty', this.value)">
+        </td>
+        <td class="col-unit">
+          <input type="number" value="${item.unit}" min="0" step="0.01"
+            oninput="updateItem(${item.id}, 'unit', this.value)">
+        </td>
+        <td class="col-tot">
+          <input type="text" class="line-total" readonly
+            value="${fmt(item.qty * item.unit)}">
+        </td>
+        <td class="col-del">
+          <button class="del-btn" onclick="removeItem(${item.id})" title="Remove">
+            <i class="fas fa-times"></i>
+          </button>
+        </td>
+      </tr>`).join('');
         }
         recalc();
     }
@@ -976,13 +1119,13 @@
         const transport = parseFloat(document.getElementById('transportCost').value) || 0;
         const grand = materials + labour + transport;
 
-        document.getElementById('totalMaterials').textContent = formatCurrency(materials);
-        document.getElementById('grandTotal').textContent = formatCurrency(grand);
+        document.getElementById('totalMaterials').textContent = `US$${materials.toFixed(2)}`;
+        document.getElementById('grandTotal').textContent = `US$${grand.toFixed(2)}`;
         document.getElementById('statItems').textContent = items.length;
-        document.getElementById('statTotal').textContent = grand < 1000 ? `$${grand.toFixed(0)}` : `$${(grand / 1000).toFixed(1)}k`;
+        document.getElementById('statTotal').textContent = `$${grand < 1000 ? grand.toFixed(0) : (grand / 1000).toFixed(1) + 'k'}`;
     }
 
-    // Appointment search
+    // ─── APPOINTMENT SEARCH ───────────────────────────────────────────────────────
     function initApptSearch() {
         const input = document.getElementById('apptSearch');
         const dropdown = document.getElementById('apptDropdown');
@@ -991,24 +1134,19 @@
         input.addEventListener('input', () => {
             clearTimeout(timer);
             const q = input.value.trim();
-            if (q.length < 2) {
-                dropdown.classList.remove('show');
-                return;
-            }
+            if (q.length < 2) { dropdown.classList.remove('open'); return; }
             timer = setTimeout(() => searchAppts(q), 300);
         });
 
         document.addEventListener('click', e => {
-            if (!e.target.closest('.appointment-search')) {
-                dropdown.classList.remove('show');
-            }
+            if (!e.target.closest('.appt-search-wrap')) dropdown.classList.remove('open');
         });
     }
 
     async function searchAppts(query) {
         const dropdown = document.getElementById('apptDropdown');
-        dropdown.innerHTML = `<div class="appointment-none"><i class="fas fa-circle-notch fa-spin"></i> Searching…</div>`;
-        dropdown.classList.add('show');
+        dropdown.innerHTML = `<div class="appt-none"><i class="fas fa-circle-notch fa-spin"></i> Searching…</div>`;
+        dropdown.classList.add('open');
 
         try {
             const res = await fetch(`/api/appointments/search/?q=${encodeURIComponent(query)}`);
@@ -1016,45 +1154,44 @@
             const appts = data.appointments || data.results || data || [];
 
             if (!appts.length) {
-                dropdown.innerHTML = `<div class="appointment-none">No appointments found for "${query}"</div>`;
+                dropdown.innerHTML = `<div class="appt-none">No appointments found for "${query}"</div>`;
                 return;
             }
             dropdown.innerHTML = appts.slice(0, 10).map(a => `
-                <div class="appointment-item" onclick="selectAppt(${JSON.stringify(a).replace(/"/g, '&quot;')})">
-                    <div class="appointment-item-name">${a.customer_name || 'Unknown'}</div>
-                    <div class="appointment-item-meta">${a.phone_number || ''} • ${a.project_type || 'No service'} • ${a.customer_area || 'No area'}</div>
-                </div>`).join('');
+      <div class="appt-item" onclick="selectAppt(${JSON.stringify(a).replace(/"/g, '&quot;')})">
+        <div class="appt-item-name">${a.customer_name || 'Unknown'}</div>
+        <div class="appt-item-meta">${a.phone_number || ''} &middot; ${a.project_type || 'No service'} &middot; ${a.customer_area || 'No area'}</div>
+      </div>`).join('');
         } catch (e) {
-            dropdown.innerHTML = `<div class="appointment-none" style="color:var(--danger)">Search failed. Please try again.</div>`;
+            dropdown.innerHTML = `<div class="appt-none" style="color:var(--danger)">Search failed. Please try again.</div>`;
         }
     }
 
     function selectAppt(appt) {
         selectedAppointment = appt;
         document.getElementById('appointmentId').value = appt.id;
-        document.getElementById('apptDropdown').classList.remove('show');
+        document.getElementById('apptDropdown').classList.remove('open');
         document.getElementById('apptSearch').value = '';
 
+        // Pre-fill client fields
         if (appt.customer_name) document.getElementById('clientName').value = appt.customer_name;
         if (appt.phone_number) document.getElementById('clientPhone').value = appt.phone_number.replace('whatsapp:', '');
         if (appt.customer_email) document.getElementById('clientEmail').value = appt.customer_email;
-        if (appt.customer_area) {
-            document.getElementById('clientAddress').value = appt.customer_area;
-            document.getElementById('projectLocation').value = appt.customer_area;
-        }
+        if (appt.customer_area) document.getElementById('clientAddress').value = appt.customer_area;
         if (appt.project_type) document.getElementById('projectType').value = appt.project_type;
         if (appt.project_description) document.getElementById('projectNotes').value = appt.project_description;
+        if (appt.customer_area) document.getElementById('projectLocation').value = appt.customer_area;
 
         const box = document.getElementById('selectedApptBox');
         box.style.display = 'block';
         box.innerHTML = `
-            <div class="selected-appointment">
-                <span>
-                    <strong>${appt.customer_name || 'Unknown'}</strong>
-                    • ${appt.phone_number || ''} • #${appt.id}
-                </span>
-                <button class="btn-clear" onclick="clearAppt()" title="Unlink appointment">✕</button>
-            </div>`;
+    <div class="selected-appt">
+      <span>
+        <strong>${appt.customer_name || 'Unknown'}</strong>
+        &nbsp;&bull;&nbsp; ${appt.phone_number || ''} &nbsp;&bull;&nbsp; #${appt.id}
+      </span>
+      <button class="clear-appt" onclick="clearAppt()" title="Unlink appointment">✕</button>
+    </div>`;
         showAlert(`Linked to appointment #${appt.id} (${appt.customer_name || 'Unknown'})`, 'info');
     }
 
@@ -1064,19 +1201,19 @@
         document.getElementById('selectedApptBox').style.display = 'none';
     }
 
-    // Template modal
+    // ─── TEMPLATE MODAL ────────────────────────────────────────────────────────────
     async function openTemplateModal() {
-        document.getElementById('templateModal').classList.add('show');
+        document.getElementById('templateModal').classList.add('open');
         await loadTemplates();
     }
 
     function closeTemplateModal() {
-        document.getElementById('templateModal').classList.remove('show');
+        document.getElementById('templateModal').classList.remove('open');
     }
 
     async function loadTemplates() {
         const list = document.getElementById('tmplList');
-        list.innerHTML = `<div style="text-align:center;padding:32px;color:var(--secondary);"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:12px;"></i>Loading…</div>`;
+        list.innerHTML = `<div style="text-align:center;padding:32px;color:var(--muted);"><i class="fas fa-spinner fa-spin" style="font-size:1.5rem;display:block;margin-bottom:12px;"></i>Loading…</div>`;
         try {
             const res = await fetch('/api/quotation-templates/?active_only=true');
             const data = await res.json();
@@ -1097,24 +1234,24 @@
     function renderTemplates(templates) {
         const list = document.getElementById('tmplList');
         if (!templates.length) {
-            list.innerHTML = `<div style="text-align:center;padding:28px;color:var(--secondary);">No templates found.</div>`;
+            list.innerHTML = `<div style="text-align:center;padding:28px;color:var(--muted);">No templates found.</div>`;
             return;
         }
         list.innerHTML = templates.map(t => `
-            <div class="template-card" onclick="loadTemplate(${t.id})">
-                <div class="template-header">
-                    <div>
-                        <div class="template-name">${t.name}</div>
-                        <div class="template-description">${t.description || 'No description'}</div>
-                    </div>
-                    <span class="badge badge-draft">${t.project_type_display || t.project_type}</span>
-                </div>
-                <div class="template-stats">
-                    <div class="template-stat"><strong>${t.items_count}</strong> Items</div>
-                    <div class="template-stat"><strong>${formatCurrency(t.estimated_cost || 0)}</strong> Est.</div>
-                    <div class="template-stat"><strong>${t.use_count}</strong> Uses</div>
-                </div>
-            </div>`).join('');
+    <div class="tmpl-card" onclick="loadTemplate(${t.id})">
+      <div class="tmpl-card-head">
+        <div>
+          <div class="tmpl-name">${t.name}</div>
+          <div class="tmpl-desc">${t.description || 'No description'}</div>
+        </div>
+        <span class="badge badge-draft">${t.project_type_display || t.project_type}</span>
+      </div>
+      <div class="tmpl-stats">
+        <div class="tmpl-stat-item"><strong>${t.items_count}</strong> Items</div>
+        <div class="tmpl-stat-item"><strong>US$${(t.estimated_cost || 0).toFixed(2)}</strong> Est.</div>
+        <div class="tmpl-stat-item"><strong>${t.use_count}</strong> Uses</div>
+      </div>
+    </div>`).join('');
     }
 
     async function loadTemplate(templateId) {
@@ -1127,20 +1264,12 @@
             const tmplData = await tmplRes.json();
             const itemsData = await itemsRes.json();
             const tmpl = (tmplData.templates || [])[0];
-            if (!tmpl) {
-                showAlert('Template not found.', 'error');
-                return;
-            }
+            if (!tmpl) { showAlert('Template not found.', 'error'); return; }
 
             items = [];
             if (itemsData.success && itemsData.items) {
                 itemsData.items.forEach((item, idx) => {
-                    items.push({
-                        id: Date.now() + idx,
-                        description: item.description,
-                        qty: parseFloat(item.quantity),
-                        unit: parseFloat(item.unit_price)
-                    });
+                    items.push({ id: Date.now() + idx, description: item.description, qty: parseFloat(item.quantity), unit: parseFloat(item.unit_price) });
                 });
             }
             if (!items.length) addItem();
@@ -1157,28 +1286,18 @@
         }
     }
 
-    // Save quotation
+    // ─── SAVE ─────────────────────────────────────────────────────────────────────
     async function saveQuotation() {
         const clientName = document.getElementById('clientName').value.trim();
         const projectType = document.getElementById('projectType').value;
 
-        if (!clientName) {
-            showAlert('Client name is required.', 'error');
-            document.getElementById('clientName').focus();
-            return;
-        }
-        if (!projectType) {
-            showAlert('Please select a service type.', 'error');
-            document.getElementById('projectType').focus();
-            return;
-        }
+        if (!clientName) { showAlert('Client name is required.', 'error'); document.getElementById('clientName').focus(); return; }
+        if (!projectType) { showAlert('Please select a service type.', 'error'); document.getElementById('projectType').focus(); return; }
         if (!items.length || items.every(i => !i.description.trim())) {
-            showAlert('Add at least one line item.', 'error');
-            return;
+            showAlert('Add at least one line item.', 'error'); return;
         }
 
         const btn = document.getElementById('saveBtn');
-        const originalText = btn.innerHTML;
         btn.classList.add('btn-loading');
         btn.innerHTML = '<span class="spinner"></span> Saving…';
 
@@ -1195,11 +1314,7 @@
             project_type: projectType,
             project_location: document.getElementById('projectLocation').value.trim(),
             notes: document.getElementById('additionalNotes').value.trim(),
-            items: items.filter(i => i.description.trim()).map(i => ({
-                name: i.description,
-                qty: i.qty,
-                unit: i.unit
-            })),
+            items: items.filter(i => i.description.trim()).map(i => ({ name: i.description, qty: i.qty, unit: i.unit })),
             labour_cost: labour,
             transport_cost: transport,
             materials_cost: materials,
@@ -1209,10 +1324,7 @@
         try {
             const res = await fetch('/api/quotations/create-standalone/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCsrfToken()
-                },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
@@ -1231,11 +1343,11 @@
             showAlert('Network error. Please try again.', 'error');
         } finally {
             btn.classList.remove('btn-loading');
-            btn.innerHTML = originalText;
+            btn.innerHTML = '<i class="fas fa-save"></i> Save Quotation';
         }
     }
 
-    // Preview
+    // ─── PREVIEW ──────────────────────────────────────────────────────────────────
     function showPreview() {
         const container = document.getElementById('previewContainer');
         const content = document.getElementById('previewContent');
@@ -1254,49 +1366,49 @@
         const grand = materials + labour + transport;
 
         const rowsHtml = items.filter(i => i.description.trim()).map(i => `
-            <tr style="border-bottom:1px solid #eee;">
-                <td style="padding:10px 12px;">${escapeHtml(i.description)}</td>
-                <td style="padding:10px 12px;text-align:center;">${i.qty}</td>
-                <td style="padding:10px 12px;text-align:right;">${formatCurrency(i.unit)}</td>
-                <td style="padding:10px 12px;text-align:right;font-weight:600;">${formatCurrency(i.qty * i.unit)}</td>
-            </tr>`).join('');
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:10px 12px;">${esc(i.description)}</td>
+      <td style="padding:10px 12px;text-align:center;">${i.qty}</td>
+      <td style="padding:10px 12px;text-align:right;">US$${i.unit.toFixed(2)}</td>
+      <td style="padding:10px 12px;text-align:right;font-weight:600;">US$${(i.qty * i.unit).toFixed(2)}</td>
+    </tr>`).join('');
 
         content.innerHTML = `
-            <div style="max-width:720px;margin:0 auto;">
-                <div style="text-align:center;margin-bottom:28px;padding-bottom:20px;border-bottom:2px solid #eee;">
-                    <h2 style="font-size:1.8rem;font-weight:700;margin:0 0 4px;color:var(--dark);">HOMEBASE CONSTRUCTION</h2>
-                    <p style="color:var(--secondary);margin:0;font-style:italic;">"Quality Is Our Qualification"</p>
-                    <p style="color:var(--secondary);font-size:0.85rem;margin:6px 0 0;">141 Pritchard St, Johannesburg • +27610318200</p>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
-                    <div>
-                        <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--secondary);margin-bottom:8px;">Client</div>
-                        <strong>${clientName}</strong><br>
-                        ${clientPhone ? clientPhone + '<br>' : ''}${clientAddr}
-                    </div>
-                    <div>
-                        <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--secondary);margin-bottom:8px;">Project</div>
-                        <strong>${projLabel}</strong><br>
-                        <span style="color:var(--secondary);font-size:0.875rem;">${projNotes || '—'}</span>
-                    </div>
-                </div>
-                <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-                    <thead><tr style="background:var(--dark);color:white;">
-                        <th style="padding:10px 12px;text-align:left;font-size:0.75rem;text-transform:uppercase;">Item</th>
-                        <th style="padding:10px 12px;text-align:center;font-size:0.75rem;text-transform:uppercase;">Qty</th>
-                        <th style="padding:10px 12px;text-align:right;font-size:0.75rem;text-transform:uppercase;">Unit Price</th>
-                        <th style="padding:10px 12px;text-align:right;font-size:0.75rem;text-transform:uppercase;">Total</th>
-                    </tr></thead>
-                    <tbody>${rowsHtml || '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--secondary);">No items</td></tr>'}</tbody>
-                    <tfoot style="background:#f8f9fa;">
-                        <tr><td colspan="3" style="padding:10px 12px;text-align:right;">Materials:</td><td style="padding:10px 12px;text-align:right;">${formatCurrency(materials)}</td></tr>
-                        <tr><td colspan="3" style="padding:10px 12px;text-align:right;">Labour:</td><td style="padding:10px 12px;text-align:right;">${formatCurrency(labour)}</td></tr>
-                        <tr><td colspan="3" style="padding:10px 12px;text-align:right;">Transport:</td><td style="padding:10px 12px;text-align:right;">${formatCurrency(transport)}</td></tr>
-                        <tr style="background:rgba(102,126,234,0.1);font-size:1.1rem;font-weight:700;"><td colspan="3" style="padding:12px;text-align:right;">TOTAL:</td><td style="padding:12px;text-align:right;color:var(--primary);">${formatCurrency(grand)}</td></tr>
-                    </tfoot>
-                </table>
-                ${addNotes ? `<div style="padding:14px;background:#f8f9fa;border-left:3px solid var(--primary);border-radius:4px;font-size:0.875rem;"><strong>Notes:</strong> ${addNotes}</div>` : ''}
-            </div>`;
+    <div style="max-width:720px;margin:0 auto;">
+      <div style="text-align:center;margin-bottom:28px;padding-bottom:20px;border-bottom:2px solid #eee;">
+        <h2 style="font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;margin:0 0 4px;">HOMEBASE CONSTRUCTION</h2>
+        <p style="color:var(--muted);margin:0;font-style:italic;">"Quality Is Our Qualification"</p>
+        <p style="color:var(--muted);font-size:.85rem;margin:6px 0 0;">141 Pritchard St, Johannesburg &bull; +27610318200</p>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+        <div>
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px;">Client</div>
+          <strong>${clientName}</strong><br>
+          ${clientPhone ? clientPhone + '<br>' : ''}${clientAddr}
+        </div>
+        <div>
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px;">Project</div>
+          <strong>${projLabel}</strong><br>
+          <span style="color:var(--muted);font-size:.875rem;">${projNotes || '—'}</span>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+        <thead><tr style="background:var(--ink);color:white;">
+          <th style="padding:10px 12px;text-align:left;font-family:'Syne',sans-serif;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">Item</th>
+          <th style="padding:10px 12px;text-align:center;font-family:'Syne',sans-serif;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">Qty</th>
+          <th style="padding:10px 12px;text-align:right;font-family:'Syne',sans-serif;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">Unit Price</th>
+          <th style="padding:10px 12px;text-align:right;font-family:'Syne',sans-serif;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">Total</th>
+        </tr></thead>
+        <tbody>${rowsHtml || '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--muted);">No items</td></tr>'}</tbody>
+        <tfoot style="background:#f9fafb;">
+          <tr><td colspan="3" style="padding:10px 12px;text-align:right;">Materials:</td><td style="padding:10px 12px;text-align:right;">US$${materials.toFixed(2)}</td></tr>
+          <tr><td colspan="3" style="padding:10px 12px;text-align:right;">Labour:</td><td style="padding:10px 12px;text-align:right;">US$${labour.toFixed(2)}</td></tr>
+          <tr><td colspan="3" style="padding:10px 12px;text-align:right;">Transport:</td><td style="padding:10px 12px;text-align:right;">US$${transport.toFixed(2)}</td></tr>
+          <tr style="background:#eff6ff;font-size:1.1rem;font-weight:700;"><td colspan="3" style="padding:12px;text-align:right;">TOTAL:</td><td style="padding:12px;text-align:right;color:var(--accent);">US$${grand.toFixed(2)}</td></tr>
+        </tfoot>
+      </table>
+      ${addNotes ? `<div style="padding:14px;background:#f9fafb;border-left:3px solid var(--accent);border-radius:4px;font-size:.875rem;"><strong>Notes:</strong> ${addNotes}</div>` : ''}
+    </div>`;
 
         container.scrollIntoView({ behavior: 'smooth' });
     }
@@ -1305,48 +1417,34 @@
         document.getElementById('previewContainer').classList.remove('show');
     }
 
-    function downloadPDF() {
-        showPreview();
-        setTimeout(() => window.print(), 400);
-    }
+    function downloadPDF() { showPreview(); setTimeout(() => window.print(), 400); }
 
     function clearAll() {
         if (!confirm('Clear all data?')) return;
         items = [];
-        ['clientName', 'clientPhone', 'clientEmail', 'clientAddress', 'projectType', 'projectLocation', 'projectNotes', 'additionalNotes'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
+        ['clientName', 'clientPhone', 'clientEmail', 'clientAddress', 'projectType', 'projectLocation', 'projectNotes', 'additionalNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
         document.getElementById('labourCost').value = 0;
         document.getElementById('transportCost').value = 0;
         clearAppt();
         addItem();
-        showAlert('Form cleared', 'info');
     }
 
-    // Utility functions
-    function formatCurrency(amount) {
-        return `US$${amount.toFixed(2)}`;
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+    function fmt(n) { return n.toFixed(2); }
+    function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function getCsrf() {
+        const m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? m[1] : '';
     }
-
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    function getCsrfToken() {
-        const match = document.cookie.match(/csrftoken=([^;]+)/);
-        return match ? match[1] : '';
-    }
-
     function showAlert(msg, type = 'info') {
-        const container = document.getElementById('alertContainer');
-        const alert = document.createElement('div');
-        alert.className = `alert alert-${type}`;
-        alert.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${msg}`;
-        container.prepend(alert);
-        setTimeout(() => alert.remove(), 5000);
+        const c = document.getElementById('alertContainer');
+        const div = document.createElement('div');
+        div.className = `alert alert-${type}`;
+        div.style.cssText = 'max-width:1280px;margin:0 auto 12px;';
+        div.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${msg}`;
+        c.prepend(div);
+        setTimeout(() => div.remove(), 5000);
     }
 </script>
+
 {% endblock %}
