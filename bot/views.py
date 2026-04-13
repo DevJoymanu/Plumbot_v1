@@ -8759,7 +8759,7 @@ I understand this is time-sensitive!"""
             print(f"⚠️ Standalone question check failed: {exc}")
             return False
 
-    def _answer_standalone_question(self, message: str) -> str:
+    def _answer_standalone_question(self,next_q, message: str) -> str:
         if not deepseek_client:
             return None
         try:
