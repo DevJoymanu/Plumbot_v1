@@ -360,14 +360,12 @@ def get_random_delay() -> int:
 
 def delayed_response(sender, reply, delay_seconds):
     try:
-        print(f"?? Scheduling response in {delay_seconds // 60} minute(s)...")
         time.sleep(delay_seconds)
-        print(f"? Delay complete, sending response now")
         whatsapp_api.send_text_message(sender, reply)
-        print(f"? Response sent to {sender}")
+        preview = reply.replace('\n', ' ')[:120]
+        print(f"🤖 Bot → +{sender}: {preview}{'…' if len(reply) > 120 else ''}")
     except Exception as e:
-        print(f"? Error in delayed response: {str(e)}")
-
+        print(f"❌ Error in delayed response: {str(e)}")
 
 def detect_objection_type(message: str) -> str:
     message_lower = message.lower().strip()
@@ -842,7 +840,6 @@ def handle_webhook_event(request):
     try:
         body = json.loads(request.body.decode('utf-8'))
 
-        print("📩 Webhook received")  # simple safe log
 
         if body.get('object') != 'whatsapp_business_account':
             return HttpResponse(status=200)
@@ -881,7 +878,6 @@ def process_message_change(value):
         # ✅ 1. HANDLE STATUSES FIRST AND EXIT
         statuses = value.get('statuses', [])
         if statuses:
-            print("📊 Status webhook received")
             process_status_updates(statuses)
             return  # 🔥 CRITICAL FIX — stops the loop
 
@@ -890,7 +886,6 @@ def process_message_change(value):
         if not messages:
             return
 
-        print("💬 Message webhook received")
 
         for message in messages:
             message_type = message.get('type')
@@ -1028,15 +1023,10 @@ def process_status_updates(statuses):
             appointment = _find_appointment_by_recipient(recipient_id) if recipient_id else None
             appointment_ref = f"appointment_id={appointment.id}" if appointment else "appointment_id=unknown"
 
-            print(
-                f"?? WhatsApp status: status={status_name}, recipient={recipient_id}, "
-                f"message_id={message_id}, ts={timestamp}, {appointment_ref}, "
-                f"conversation_id={conversation_id or 'n/a'}, "
-                f"pricing_model={pricing_model or 'n/a'}, billable={billable}"
-            )
 
             if error_text:
-                print(f"? WhatsApp delivery error: {error_text}")
+                print(f"❌ WhatsApp delivery [{status_name}] +{_clean_phone(recipient_id)}: {error_text}")
+
 
             # Persist failure context where team can see it in appointment details.
             if status_name == 'failed' and appointment:
