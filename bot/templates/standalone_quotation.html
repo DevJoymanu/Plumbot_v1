@@ -605,13 +605,11 @@
     <div class="content-wrapper">
         <!-- Client Information -->
         <div class="quotation-card">
-            <h2 class="section-title">
-                <i class="fas fa-user"></i> Client Information
-            </h2>
+            <h2 class="section-title"><i class="fas fa-user"></i> Client Information</h2>
             <div class="form-group">
                 <label for="clientName">Client Name *</label>
                 <input type="text" id="clientName" placeholder="Enter client name" required
-                    value="{{ appointment.customer_name|default:'' }}" class="form-control">
+                    value="{{ appointment.customer_name|default:'' }}">
             </div>
             <div class="form-group">
                 <label for="clientPhone">Phone Number</label>
@@ -632,22 +630,25 @@
 
         <!-- Project Information -->
         <div class="quotation-card">
-            <h2 class="section-title">
-                <i class="fas fa-project-diagram"></i> Project Information
-            </h2>
+            <h2 class="section-title"><i class="fas fa-project-diagram"></i> Project Information</h2>
             <div class="form-group">
                 <label for="projectType">Project Type *</label>
                 <select id="projectType" required>
                     <option value="">Select project type</option>
-                    <option value="bathroom_renovation" {% if appointment.project_type == 'bathroom_renovation'%}selected{% endif %}>Bathroom Renovation</option>
-                    <option value="kitchen_renovation" {% if appointment.project_type == 'kitchen_renovation' %}selected{%endif %}>Kitchen Renovation</option>
-                    <option value="new_plumbing_installation" {% if appointment.project_type == 'new_plumbing_installation' %}selected{% endif %}>New Plumbing
+                    <option value="bathroom_renovation" {% if appointment.project_type=='bathroom_renovation'
+                        %}selected{% endif %}>Bathroom Renovation</option>
+                    <option value="kitchen_renovation" {% if appointment.project_type=='kitchen_renovation' %}selected{%
+                        endif %}>Kitchen Renovation</option>
+                    <option value="new_plumbing_installation" {% if
+                        appointment.project_type=='new_plumbing_installation' %}selected{% endif %}>New Plumbing
                         Installation</option>
-                    <option value="general_plumbing" {% if appointment.project_type == 'general_plumbing' %}selected{% endif %}>General Plumbing</option>
-                    <option value="electrical_installation" {% if appointment.project_type == 'electrical_installation'%}selected{% endif %}>Electrical Installation</option>
-                    <option value="roof_repair" {% if appointment.project_type == 'roof_repair' %}selected{% endif %}>Roof
+                    <option value="general_plumbing" {% if appointment.project_type=='general_plumbing' %}selected{%
+                        endif %}>General Plumbing</option>
+                    <option value="electrical_installation" {% if appointment.project_type=='electrical_installation'
+                        %}selected{% endif %}>Electrical Installation</option>
+                    <option value="roof_repair" {% if appointment.project_type=='roof_repair' %}selected{% endif %}>Roof
                         Repair</option>
-                    <option value="other" {% if appointment.project_type == 'other' %}selected{% endif %}>Other</option>
+                    <option value="other" {% if appointment.project_type=='other' %}selected{% endif %}>Other</option>
                 </select>
             </div>
             <div class="form-group">
@@ -664,9 +665,7 @@
 
         <!-- Items Section -->
         <div class="quotation-card">
-            <h2 class="section-title">
-                <i class="fas fa-list"></i> Items & Materials
-            </h2>
+            <h2 class="section-title"><i class="fas fa-list"></i> Items & Materials</h2>
             <div class="items-section">
                 <div class="items-list" id="itemsList">
                     <div class="empty-state">
@@ -675,41 +674,25 @@
                     </div>
                 </div>
             </div>
-            <button class="add-item-btn" onclick="addItem()">
-                <i class="fas fa-plus"></i> Add Item
-            </button>
+            <button class="add-item-btn" onclick="addItem()"><i class="fas fa-plus"></i> Add Item</button>
         </div>
 
         <!-- Totals -->
         <div class="quotation-card">
-            <h2 class="section-title">
-                <i class="fas fa-calculator"></i> Totals
-            </h2>
+            <h2 class="section-title"><i class="fas fa-calculator"></i> Totals</h2>
             <div class="totals-card">
-                <div class="totals-row">
-                    <span>Material Cost:</span>
-                    <span id="materialsTotal">US$0.00</span>
-                </div>
-                <div class="totals-row">
-                    <span>Labour Cost:</span>
-                    <input type="number" id="labourCost" value="0" min="0" step="0.01" oninput="calculateTotals()">
-                </div>
-                <div class="totals-row">
-                    <span>Transport Cost:</span>
-                    <input type="number" id="transportCost" value="0" min="0" step="0.01" oninput="calculateTotals()">
-                </div>
-                <div class="totals-row">
-                    <span>Total Amount:</span>
-                    <span id="grandTotal">US$0.00</span>
-                </div>
+                <div class="totals-row"><span>Material Cost:</span> <span id="materialsTotal">US$0.00</span></div>
+                <div class="totals-row"><span>Labour Cost:</span> <input type="number" id="labourCost" value="0" min="0"
+                        step="0.01" oninput="calculateTotals()"></div>
+                <div class="totals-row"><span>Transport Cost:</span> <input type="number" id="transportCost" value="0"
+                        min="0" step="0.01" oninput="calculateTotals()"></div>
+                <div class="totals-row"><span>Total Amount:</span> <span id="grandTotal">US$0.00</span></div>
             </div>
         </div>
 
         <!-- Additional Notes -->
         <div class="quotation-card">
-            <h2 class="section-title">
-                <i class="fas fa-sticky-note"></i> Additional Notes
-            </h2>
+            <h2 class="section-title"><i class="fas fa-sticky-note"></i> Additional Notes</h2>
             <div class="form-group">
                 <textarea id="additionalNotes" rows="3"
                     placeholder="Payment terms, warranty info, exclusions…"></textarea>
@@ -735,17 +718,12 @@
                 <p style="font-size: 0.85rem; color: #666; text-align: center;">141 Pritchard St, 2001, Johannesburg</p>
                 <p style="font-size: 0.85rem; color: #666; text-align: center;">Cell: +27610318200</p>
             </div>
-
-            <div class="preview-info">
-                <strong>Client Information</strong>
+            <div class="preview-info"><strong>Client Information</strong>
                 <div id="previewClient"></div>
             </div>
-
-            <div class="preview-info">
-                <strong>Project Details</strong>
+            <div class="preview-info"><strong>Project Details</strong>
                 <div id="previewProject"></div>
             </div>
-
             <table class="preview-table">
                 <thead>
                     <tr>
@@ -757,26 +735,12 @@
                 </thead>
                 <tbody id="previewItems"></tbody>
             </table>
-
             <div class="totals-card">
-                <div class="totals-row">
-                    <span>Material cost:</span>
-                    <span id="previewMaterials">US$0.00</span>
-                </div>
-                <div class="totals-row">
-                    <span>Labour:</span>
-                    <span id="previewLabour">US$0.00</span>
-                </div>
-                <div class="totals-row">
-                    <span>Transport:</span>
-                    <span id="previewTransport">US$0.00</span>
-                </div>
-                <div class="totals-row">
-                    <span>Total Amount:</span>
-                    <span id="previewGrandTotal">US$0.00</span>
-                </div>
+                <div class="totals-row"><span>Material cost:</span> <span id="previewMaterials">US$0.00</span></div>
+                <div class="totals-row"><span>Labour:</span> <span id="previewLabour">US$0.00</span></div>
+                <div class="totals-row"><span>Transport:</span> <span id="previewTransport">US$0.00</span></div>
+                <div class="totals-row"><span>Total Amount:</span> <span id="previewGrandTotal">US$0.00</span></div>
             </div>
-
             <div id="previewNotes"
                 style="margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; font-size: 0.9rem;">
             </div>
@@ -785,18 +749,10 @@
 
     <!-- Fixed Action Buttons -->
     <div class="action-buttons">
-        <button class="btn btn-primary" onclick="showPreview()">
-            <i class="fas fa-eye"></i> Preview
-        </button>
-        <button class="btn btn-outline" onclick="downloadPDF()">
-            <i class="fas fa-download"></i> Download
-        </button>
-        <button class="btn btn-secondary" onclick="clearAll()">
-            <i class="fas fa-trash"></i> Clear
-        </button>
-        <button class="btn btn-success" onclick="saveQuotation()" id="saveBtn">
-            <i class="fas fa-save"></i> Save
-        </button>
+        <button class="btn btn-primary" onclick="showPreview()"><i class="fas fa-eye"></i> Preview</button>
+        <button class="btn btn-outline" onclick="downloadPDF()"><i class="fas fa-download"></i> Download</button>
+        <button class="btn btn-secondary" onclick="clearAll()"><i class="fas fa-trash"></i> Clear</button>
+        <button class="btn btn-success" onclick="saveQuotation()" id="saveBtn"><i class="fas fa-save"></i> Save</button>
     </div>
 </div>
 
@@ -807,12 +763,10 @@
             <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
             <button class="template-modal-close" onclick="closeTemplateModal()">&times;</button>
         </div>
-
         <div style="margin-bottom: 20px;">
             <input type="text" id="templateSearch" placeholder="Search templates..."
                 style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;"
                 oninput="searchTemplates()">
-
             <select id="templateProjectFilter" onchange="filterTemplates()"
                 style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
                 <option value="">All Project Types</option>
@@ -822,16 +776,13 @@
                 <option value="general_plumbing">General Plumbing</option>
             </select>
         </div>
-
         <div id="templatesList" style="display: grid; gap: 15px;"></div>
-
-        <div id="templatesLoading" style="text-align: center; padding: 40px; color: #666;">
-            <i class="fas fa-spinner fa-spin" style="font-size: 2em;"></i>
+        <div id="templatesLoading" style="text-align: center; padding: 40px; color: #666;"><i
+                class="fas fa-spinner fa-spin" style="font-size: 2em;"></i>
             <p>Loading templates...</p>
         </div>
-
-        <div id="templatesEmpty" style="display: none; text-align: center; padding: 40px; color: #666;">
-            <i class="fas fa-inbox" style="font-size: 3em; opacity: 0.3;"></i>
+        <div id="templatesEmpty" style="display: none; text-align: center; padding: 40px; color: #666;"><i
+                class="fas fa-inbox" style="font-size: 3em; opacity: 0.3;"></i>
             <p>No templates found</p>
         </div>
     </div>
@@ -842,7 +793,6 @@
     let allTemplates = [];
     let currentAppointmentId = {% if appointment %}{ { appointment.id } } {% else %} null{% endif %};
 
-    // Default bathroom items
     const defaultBathroomItems = [
         { name: '500ml prodorite solvent cement', qty: 1, price: 4 },
         { name: '50mm pvc waste pipe', qty: 2, price: 6 },
@@ -858,8 +808,17 @@
         { name: 'Shower p trap', qty: 1, price: 3 }
     ];
 
+    function resolveAppointmentId() {
+        if (currentAppointmentId && !isNaN(parseInt(currentAppointmentId, 10))) return parseInt(currentAppointmentId, 10);
+        const pathMatch = window.location.pathname.match(/\/appointments\/(\d+)\//);
+        if (pathMatch) return parseInt(pathMatch[1], 10);
+        const params = new URLSearchParams(window.location.search);
+        const queryId = parseInt(params.get('appointment_id') || params.get('appointment') || params.get('pk'), 10);
+        if (!isNaN(queryId)) return queryId;
+        return null;
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
-        // Add "Use Template" button to header
         const header = document.querySelector('.quotation-header');
         if (header) {
             const templateBtn = document.createElement('button');
@@ -870,25 +829,18 @@
             header.appendChild(templateBtn);
         }
 
-        // Initialize with default items or appointment data
-        if (currentAppointmentId) {
-            loadAppointmentData(currentAppointmentId);
+        const appointmentId = resolveAppointmentId();
+        if (appointmentId) {
+            currentAppointmentId = appointmentId;
+            loadAppointmentData(appointmentId);
         } else {
-            // Add default items for bathroom renovation
             const projectType = document.getElementById('projectType').value;
-            if (projectType  == = 'bathroom_renovation') {
-                items = defaultBathroomItems.map((item, index) => ({
-                    id: Date.now() + index,
-                    name: item.name,
-                    qty: item.qty,
-                    price: item.price
-                }));
+            if (projectType === 'bathroom_renovation') {
+                items = defaultBathroomItems.map((item, index) => ({ id: Date.now() + index, name: item.name, qty: item.qty, price: item.price }));
                 document.getElementById('labourCost').value = 280;
                 document.getElementById('transportCost').value = 20;
             } else {
-                items = [
-                    { id: Date.now(), name: '', qty: 1, price: 0 }
-                ];
+                items = [{ id: Date.now(), name: '', qty: 1, price: 0 }];
             }
             renderItems();
         }
@@ -897,13 +849,10 @@
     async function loadAppointmentData(appointmentId) {
         try {
             showAlert('Loading appointment data...', 'info');
-
             const response = await fetch(`/api/appointments/${appointmentId}/`);
-            if (!response.ok) throw new Error(`Failed to load appointment`);
-
+            if (!response.ok) throw new Error('Failed to load appointment');
             const appointment = await response.json();
 
-            // Fill client info
             document.getElementById('clientName').value = appointment.customer_name || '';
             document.getElementById('clientPhone').value = appointment.phone_number || '';
             document.getElementById('clientEmail').value = appointment.customer_email || '';
@@ -912,107 +861,62 @@
             document.getElementById('projectLocation').value = appointment.customer_area || '';
             document.getElementById('projectNotes').value = appointment.project_description || '';
 
-            // Load items based on project type
-            if (appointment.project_type  == = 'bathroom_renovation') {
-                items = defaultBathroomItems.map((item, index) => ({
-                    id: Date.now() + index,
-                    name: item.name,
-                    qty: item.qty,
-                    price: item.price
-                }));
+            if (appointment.project_type === 'bathroom_renovation') {
+                items = defaultBathroomItems.map((item, index) => ({ id: Date.now() + index, name: item.name, qty: item.qty, price: item.price }));
                 document.getElementById('labourCost').value = 280;
                 document.getElementById('transportCost').value = 20;
             } else {
-                items = [
-                    { id: Date.now(), name: '', qty: 1, price: 0 },
-                    { id: Date.now() + 1, name: '', qty: 1, price: 0 }
-                ];
+                items = [{ id: Date.now(), name: '', qty: 1, price: 0 }, { id: Date.now() + 1, name: '', qty: 1, price: 0 }];
             }
-
             renderItems();
             showAlert('Appointment data loaded successfully!', 'success');
-
         } catch (error) {
             console.error('Error loading appointment:', error);
             showAlert('Failed to load appointment data', 'error');
         }
     }
 
-    function addItem() {
-        const id = Date.now();
-        items.push({ id, name: '', qty: 1, price: 0 });
-        renderItems();
-    }
+    function addItem() { items.push({ id: Date.now(), name: '', qty: 1, price: 0 }); renderItems(); }
 
-    function removeItem(id) {
-        items = items.filter(item => item.id ! ==  id);
-        renderItems();
-    }
+    function removeItem(id) { items = items.filter(item => item.id !== id); renderItems(); }
 
     function updateItem(id, field, value) {
-        const item = items.find(i => i.id  == = id);
+        const item = items.find(i => i.id === id);
         if (item) {
-            item[field] = field  == = 'name' ? value : parseFloat(value) || 0;
-            if (field  == = 'qty' || field  == = 'price') {
-                updateItemTotal(id);
-                calculateTotals();
-            }
+            item[field] = field === 'name' ? value : parseFloat(value) || 0;
+            if (field === 'qty' || field === 'price') { updateItemTotal(id); calculateTotals(); }
         }
     }
 
     function updateItemTotal(id) {
-        const item = items.find(i => i.id  == = id);
+        const item = items.find(i => i.id === id);
         if (item) {
             const itemCard = document.querySelector(`[data-item-id="${id}"]`);
             if (itemCard) {
                 const totalEl = itemCard.querySelector('.item-total');
-                if (totalEl) {
-                    totalEl.textContent = `Total: US$${(item.qty * item.price).toFixed(2)}`;
-                }
+                if (totalEl) totalEl.textContent = `Total: US$${(item.qty * item.price).toFixed(2)}`;
             }
         }
     }
 
     function renderItems() {
         const container = document.getElementById('itemsList');
-
-        if (items.length  == = 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-inbox"></i>
-                    <p>No items added yet</p>
-                </div>
-            `;
+        if (items.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-inbox"></i><p>No items added yet</p></div>';
             calculateTotals();
             return;
         }
-
         container.innerHTML = items.map(item => `
             <div class="item-card" data-item-id="${item.id}">
-                <button class="remove-item" onclick="removeItem(${item.id})">
-                    <i class="fas fa-trash"></i>
-                </button>
-                <input type="text" placeholder="Item description" 
-                       value="${escapeHtml(item.name)}" 
-                       oninput="updateItem(${item.id}, 'name', this.value)">
+                <button class="remove-item" onclick="removeItem(${item.id})"><i class="fas fa-trash"></i></button>
+                <input type="text" placeholder="Item description" value="${escapeHtml(item.name)}" oninput="updateItem(${item.id}, 'name', this.value)">
                 <div class="item-row">
-                    <div>
-                        <label style="font-size: 0.85rem; color: #666;">Quantity</label>
-                        <input type="number" value="${item.qty}" min="0" 
-                               oninput="updateItem(${item.id}, 'qty', this.value)">
-                    </div>
-                    <div>
-                        <label style="font-size: 0.85rem; color: #666;">Unit Price (US$)</label>
-                        <input type="number" value="${item.price}" min="0" step="0.01"
-                               oninput="updateItem(${item.id}, 'price', this.value)">
-                    </div>
+                    <div><label style="font-size: 0.85rem; color: #666;">Quantity</label><input type="number" value="${item.qty}" min="0" oninput="updateItem(${item.id}, 'qty', this.value)"></div>
+                    <div><label style="font-size: 0.85rem; color: #666;">Unit Price (US$)</label><input type="number" value="${item.price}" min="0" step="0.01" oninput="updateItem(${item.id}, 'price', this.value)"></div>
                 </div>
-                <div class="item-total">
-                    Total: US$${(item.qty * item.price).toFixed(2)}
-                </div>
+                <div class="item-total">Total: US$${(item.qty * item.price).toFixed(2)}</div>
             </div>
         `).join('');
-
         calculateTotals();
     }
 
@@ -1021,7 +925,6 @@
         const labour = parseFloat(document.getElementById('labourCost').value) || 0;
         const transport = parseFloat(document.getElementById('transportCost').value) || 0;
         const total = materials + labour + transport;
-
         document.getElementById('materialsTotal').textContent = `US$${materials.toFixed(2)}`;
         document.getElementById('grandTotal').textContent = `US$${total.toFixed(2)}`;
     }
@@ -1031,57 +934,31 @@
         const projectType = document.getElementById('projectType');
         const projectTypeText = projectType.options[projectType.selectedIndex]?.text || '';
 
-        if (!clientName || !projectType.value) {
-            showAlert('Please fill in client name and project type', 'error');
-            return;
-        }
+        if (!clientName || !projectType.value) { showAlert('Please fill in client name and project type', 'error'); return; }
 
-        const clientInfo = [];
-        clientInfo.push(`<strong>${escapeHtml(clientName)}</strong>`);
-
-        const phone = document.getElementById('clientPhone').value.trim();
-        if (phone) clientInfo.push(`Phone: ${escapeHtml(phone)}`);
-
-        const email = document.getElementById('clientEmail').value.trim();
-        if (email) clientInfo.push(`Email: ${escapeHtml(email)}`);
-
-        const address = document.getElementById('clientAddress').value.trim();
-        if (address) clientInfo.push(`Address: ${escapeHtml(address)}`);
-
+        const clientInfo = [`<strong>${escapeHtml(clientName)}</strong>`];
+        const phone = document.getElementById('clientPhone').value.trim(); if (phone) clientInfo.push(`Phone: ${escapeHtml(phone)}`);
+        const email = document.getElementById('clientEmail').value.trim(); if (email) clientInfo.push(`Email: ${escapeHtml(email)}`);
+        const address = document.getElementById('clientAddress').value.trim(); if (address) clientInfo.push(`Address: ${escapeHtml(address)}`);
         document.getElementById('previewClient').innerHTML = clientInfo.join('<br>');
 
-        const projectInfo = [];
-        projectInfo.push(`<strong>${escapeHtml(projectTypeText)}</strong>`);
-
-        const location = document.getElementById('projectLocation').value.trim();
-        if (location) projectInfo.push(`Location: ${escapeHtml(location)}`);
-
-        const notes = document.getElementById('projectNotes').value.trim();
-        if (notes) projectInfo.push(`Notes: ${escapeHtml(notes)}`);
-
+        const projectInfo = [`<strong>${escapeHtml(projectTypeText)}</strong>`];
+        const location = document.getElementById('projectLocation').value.trim(); if (location) projectInfo.push(`Location: ${escapeHtml(location)}`);
+        const notes = document.getElementById('projectNotes').value.trim(); if (notes) projectInfo.push(`Notes: ${escapeHtml(notes)}`);
         document.getElementById('previewProject').innerHTML = projectInfo.join('<br>');
 
         const itemsHtml = items.filter(i => i.name.trim()).map(item => `
-            <tr>
-                <td>${escapeHtml(item.name)}</td>
-                <td>${item.qty}</td>
-                <td>US$${item.price.toFixed(2)}</td>
-                <td>US$${(item.qty * item.price).toFixed(2)}</td>
-            </tr>
+            <tr><td>${escapeHtml(item.name)}</td><td>${item.qty}</td><td>US$${item.price.toFixed(2)}</td><td>US$${(item.qty * item.price).toFixed(2)}</td></tr>
         `).join('');
-
-        document.getElementById('previewItems').innerHTML = itemsHtml ||
-            '<tr><td colspan="4" style="text-align: center; color: #999;">No items</td></tr>';
+        document.getElementById('previewItems').innerHTML = itemsHtml || '<tr><td colspan="4" style="text-align: center; color: #999;">No items</td></tr>';
 
         const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
         const labour = parseFloat(document.getElementById('labourCost').value) || 0;
         const transport = parseFloat(document.getElementById('transportCost').value) || 0;
-        const total = materials + labour + transport;
-
         document.getElementById('previewMaterials').textContent = `US$${materials.toFixed(2)}`;
         document.getElementById('previewLabour').textContent = `US$${labour.toFixed(2)}`;
         document.getElementById('previewTransport').textContent = `US$${transport.toFixed(2)}`;
-        document.getElementById('previewGrandTotal').textContent = `US$${total.toFixed(2)}`;
+        document.getElementById('previewGrandTotal').textContent = `US$${(materials + labour + transport).toFixed(2)}`;
 
         const additionalNotes = document.getElementById('additionalNotes').value.trim();
         if (additionalNotes) {
@@ -1090,27 +967,18 @@
         } else {
             document.getElementById('previewNotes').style.display = 'none';
         }
-
         document.getElementById('previewSection').style.display = 'block';
         document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
     }
 
-    function downloadPDF() {
-        showPreview();
-        setTimeout(() => window.print(), 500);
-    }
+    function downloadPDF() { showPreview(); setTimeout(() => window.print(), 500); }
 
     function clearAll() {
         if (confirm('Clear all data? This cannot be undone.')) {
-            document.querySelectorAll('input[type=text], input[type=tel], input[type=email], textarea').forEach(input => {
-                input.value = '';
-            });
-            document.querySelectorAll('input[type=number]').forEach(input => {
-                input.value = 0;
-            });
+            document.querySelectorAll('input[type=text], input[type=tel], input[type=email], textarea').forEach(i => i.value = '');
+            document.querySelectorAll('input[type=number]').forEach(i => i.value = 0);
             document.getElementById('projectType').value = '';
-            items = [];
-            renderItems();
+            items = []; renderItems();
             document.getElementById('previewSection').style.display = 'none';
             showAlert('All data cleared', 'success');
         }
@@ -1119,22 +987,10 @@
     async function saveQuotation() {
         const clientName = document.getElementById('clientName').value.trim();
         const projectType = document.getElementById('projectType').value;
-
-        if (!clientName) {
-            showAlert('Please enter client name', 'error');
-            return;
-        }
-
-        if (!projectType) {
-            showAlert('Please select project type', 'error');
-            return;
-        }
-
+        if (!clientName) { showAlert('Please enter client name', 'error'); return; }
+        if (!projectType) { showAlert('Please select project type', 'error'); return; }
         const validItems = items.filter(i => i.name.trim());
-        if (validItems.length  == = 0) {
-            showAlert('Please add at least one item', 'error');
-            return;
-        }
+        if (validItems.length === 0) { showAlert('Please add at least one item', 'error'); return; }
 
         const saveBtn = document.getElementById('saveBtn');
         const originalText = saveBtn.innerHTML;
@@ -1154,45 +1010,26 @@
             project_type: projectType,
             project_location: document.getElementById('projectLocation').value.trim(),
             project_notes: document.getElementById('projectNotes').value.trim(),
-            items: validItems.map(item => ({
-                name: item.name,
-                qty: item.qty,
-                unit: item.price
-            })),
-            labour_cost: labour,
-            transport_cost: transport,
-            materials_cost: materials,
+            items: validItems.map(item => ({ name: item.name, qty: item.qty, unit: item.price })),
+            labour_cost: labour, transport_cost: transport, materials_cost: materials,
             total_amount: materials + labour + transport,
             notes: document.getElementById('additionalNotes').value.trim()
         };
 
         try {
             const csrftoken = getCookie('csrftoken');
-
             const response = await fetch('/api/quotations/create/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrftoken
-                },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
                 body: JSON.stringify(quotationData)
             });
-
             const result = await response.json();
-
             if (response.ok && result.success) {
                 showAlert('Quotation saved successfully! ' + (result.quotation_number || ''), 'success');
-                setTimeout(() => {
-                    if (result.appointment_id) {
-                        window.location.href = `/appointments/${result.appointment_id}/`;
-                    } else if (result.quotation_id) {
-                        window.location.href = `/quotations/${result.quotation_id}/`;
-                    }
-                }, 1500);
+                setTimeout(() => window.location.href = result.appointment_id ? `/appointments/${result.appointment_id}/` : `/quotations/${result.quotation_id}/`, 1500);
             } else {
                 showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
             }
-
         } catch (error) {
             console.error('Error saving quotation:', error);
             showAlert('Failed to save quotation. Please try again.', 'error');
@@ -1202,167 +1039,84 @@
         }
     }
 
-    // Template Modal Functions
     async function openTemplateModal() {
         document.getElementById('templateModal').style.display = 'block';
         document.getElementById('templatesLoading').style.display = 'block';
         document.getElementById('templatesList').innerHTML = '';
         document.getElementById('templatesEmpty').style.display = 'none';
-
         try {
             const response = await fetch('/api/quotation-templates/?active_only=true');
             const data = await response.json();
-
-            if (data.success && data.templates) {
-                allTemplates = data.templates;
-                displayTemplates(allTemplates);
-            } else {
-                showTemplatesEmpty();
-            }
-        } catch (error) {
-            console.error('Error loading templates:', error);
-            showAlert('Failed to load templates', 'error');
-            closeTemplateModal();
-        } finally {
-            document.getElementById('templatesLoading').style.display = 'none';
-        }
+            if (data.success && data.templates) { allTemplates = data.templates; displayTemplates(allTemplates); }
+            else { showTemplatesEmpty(); }
+        } catch (error) { showAlert('Failed to load templates', 'error'); closeTemplateModal(); }
+        finally { document.getElementById('templatesLoading').style.display = 'none'; }
     }
 
-    function closeTemplateModal() {
-        document.getElementById('templateModal').style.display = 'none';
-    }
+    function closeTemplateModal() { document.getElementById('templateModal').style.display = 'none'; }
 
     function displayTemplates(templates) {
         const container = document.getElementById('templatesList');
-
-        if (templates.length  == = 0) {
-            showTemplatesEmpty();
-            return;
-        }
-
+        if (templates.length === 0) { showTemplatesEmpty(); return; }
         container.innerHTML = templates.map(template => `
             <div class="template-card" onclick="useTemplate(${template.id})">
-                <div class="template-card-header">
-                    <div>
-                        <h3>${escapeHtml(template.name)}</h3>
-                        <p style="margin: 0; color: #666; font-size: 0.9em;">${escapeHtml(template.description || 'No description')}</p>
-                    </div>
-                    <span class="template-badge">${escapeHtml(template.project_type_display || template.project_type)}</span>
-                </div>
-                
+                <div class="template-card-header"><div><h3>${escapeHtml(template.name)}</h3><p style="margin:0;color:#666;font-size:0.9em;">${escapeHtml(template.description || 'No description')}</p></div>
+                <span class="template-badge">${escapeHtml(template.project_type_display || template.project_type)}</span></div>
                 <div class="template-stats">
-                    <div>
-                        <div class="template-stat-label">Items</div>
-                        <div class="template-stat-value">${template.items_count}</div>
-                    </div>
-                    <div>
-                        <div class="template-stat-label">Estimated Cost</div>
-                        <div class="template-stat-value success">US$${template.estimated_cost.toFixed(2)}</div>
-                    </div>
-                    <div>
-                        <div class="template-stat-label">Used</div>
-                        <div class="template-stat-value primary">${template.use_count}x</div>
-                    </div>
+                    <div><div class="template-stat-label">Items</div><div class="template-stat-value">${template.items_count}</div></div>
+                    <div><div class="template-stat-label">Estimated Cost</div><div class="template-stat-value success">US$${template.estimated_cost.toFixed(2)}</div></div>
+                    <div><div class="template-stat-label">Used</div><div class="template-stat-value primary">${template.use_count}x</div></div>
                 </div>
             </div>
         `).join('');
     }
 
-    function showTemplatesEmpty() {
-        document.getElementById('templatesList').innerHTML = '';
-        document.getElementById('templatesEmpty').style.display = 'block';
-    }
+    function showTemplatesEmpty() { document.getElementById('templatesList').innerHTML = ''; document.getElementById('templatesEmpty').style.display = 'block'; }
 
     async function useTemplate(templateId) {
-        if (!confirm('Load this template? Your current items will be replaced.')) {
-            return;
-        }
-
+        if (!confirm('Load this template? Your current items will be replaced.')) return;
         try {
             const response = await fetch(`/api/quotation-templates/?template_id=${templateId}`);
             const data = await response.json();
-
-            if (!data.success || data.templates.length  == = 0) {
-                showAlert('Failed to load template', 'error');
-                return;
-            }
-
+            if (!data.success || data.templates.length === 0) { showAlert('Failed to load template', 'error'); return; }
             const template = data.templates[0];
-
             const itemsResponse = await fetch(`/api/quotation-templates/${templateId}/items/`);
             const itemsData = await itemsResponse.json();
-
             items = [];
             if (itemsData.success && itemsData.items) {
-                items = itemsData.items.map((item, index) => ({
-                    id: Date.now() + index,
-                    name: item.description,
-                    qty: parseFloat(item.quantity),
-                    price: parseFloat(item.unit_price)
-                }));
+                items = itemsData.items.map((item, index) => ({ id: Date.now() + index, name: item.description, qty: parseFloat(item.quantity), price: parseFloat(item.unit_price) }));
             }
-
             document.getElementById('labourCost').value = template.labor_cost || 0;
             document.getElementById('transportCost').value = template.transport_cost || 0;
-
-            if (template.project_type) {
-                document.getElementById('projectType').value = template.project_type;
-            }
-
+            if (template.project_type) document.getElementById('projectType').value = template.project_type;
             const notesField = document.getElementById('projectNotes');
-            if (notesField && template.description) {
-                notesField.value = `Template: ${template.name}\n\n${template.description}`;
-            }
-
-            renderItems();
-            closeTemplateModal();
+            if (notesField && template.description) notesField.value = `Template: ${template.name}\n\n${template.description}`;
+            renderItems(); closeTemplateModal();
             showAlert(`Template "${template.name}" loaded successfully!`, 'success');
-
-        } catch (error) {
-            console.error('Error using template:', error);
-            showAlert('Failed to use template', 'error');
-        }
+        } catch (error) { showAlert('Failed to use template', 'error'); }
     }
 
     function searchTemplates() {
         const searchTerm = document.getElementById('templateSearch').value.toLowerCase();
-        const filtered = allTemplates.filter(t =>
-            t.name.toLowerCase().includes(searchTerm) ||
-            (t.description && t.description.toLowerCase().includes(searchTerm))
-        );
+        const filtered = allTemplates.filter(t => t.name.toLowerCase().includes(searchTerm) || (t.description && t.description.toLowerCase().includes(searchTerm)));
         displayTemplates(filtered);
     }
 
     function filterTemplates() {
         const projectType = document.getElementById('templateProjectFilter').value;
-
-        if (!projectType) {
-            displayTemplates(allTemplates);
-            return;
-        }
-
-        const filtered = allTemplates.filter(t => t.project_type  == = projectType);
-        displayTemplates(filtered);
+        if (!projectType) { displayTemplates(allTemplates); return; }
+        displayTemplates(allTemplates.filter(t => t.project_type === projectType));
     }
 
-    // Utility functions
-    function escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+    function escapeHtml(text) { if (!text) return ''; const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 
     function getCookie(name) {
         let cookieValue = null;
-        if (document.cookie && document.cookie ! ==  '') {
+        if (document.cookie && document.cookie !== '') {
             const cookies = document.cookie.split(';');
             for (let i = 0; i < cookies.length; i++) {
                 const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1)  == = (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
+                if (cookie.substring(0, name.length + 1) === (name + '=')) { cookieValue = decodeURIComponent(cookie.substring(name.length + 1)); break; }
             }
         }
         return cookieValue;
@@ -1372,17 +1126,11 @@
         const container = document.getElementById('alertContainer');
         const alert = document.createElement('div');
         alert.className = `alert alert-${type}`;
-        alert.innerHTML = `<i class="fas fa-${type  == = 'success' ? 'check-circle' : type  == = 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${escapeHtml(message)}`;
+        alert.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${escapeHtml(message)}`;
         container.appendChild(alert);
         setTimeout(() => alert.remove(), 4000);
     }
 
-    // Close modal when clicking outside
-    document.addEventListener('click', function (e) {
-        const modal = document.getElementById('templateModal');
-        if (e.target  == = modal) {
-            closeTemplateModal();
-        }
-    });
+    document.addEventListener('click', function (e) { if (e.target === document.getElementById('templateModal')) closeTemplateModal(); });
 </script>
 {% endblock %}
