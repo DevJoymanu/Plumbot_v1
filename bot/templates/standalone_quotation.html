@@ -2,8 +2,7 @@
 
 {% block title %}New Quotation — Homebase Construction{% endblock %}
 
-{% block content %}
-
+{% block extra_css %}
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
 
@@ -33,6 +32,13 @@
         color: var(--ink);
         font-size: 15px;
         line-height: 1.6;
+    }
+
+    /* Override container background for this page */
+    .container {
+        background: var(--paper);
+        max-width: 100%;
+        padding: 0;
     }
 
     /* ── PAGE HEADER ── */
@@ -768,11 +774,30 @@
         font-size: .9rem;
     }
 
+    /* Override navbar for this page */
+    .navbar {
+        background: var(--ink);
+        backdrop-filter: none;
+        margin-bottom: 0;
+        border-radius: 0;
+    }
+
+    .navbar-brand,
+    .navbar-nav a {
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .navbar-nav a:hover,
+    .navbar-nav a:active {
+        background: rgba(255, 255, 255, 0.15);
+    }
+
     @media print {
 
         .sq-header,
         .sq-card,
-        .sidebar-sticky {
+        .sidebar-sticky,
+        .navbar {
             display: none !important;
         }
 
@@ -780,11 +805,35 @@
             display: block !important;
         }
     }
+
+    /* Mobile adjustments */
+    @media (max-width: 480px) {
+        .sq-header {
+            padding: 20px 16px;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .sq-header-actions {
+            width: 100%;
+        }
+
+        .sq-header-actions .btn {
+            flex: 1;
+        }
+
+        .sq-grid {
+            padding: 0 12px 40px;
+        }
+
+        .sq-card-body {
+            padding: 16px;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-
 <div id="alertContainer"></div>
 
 <!-- PAGE HEADER -->
