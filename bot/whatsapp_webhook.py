@@ -1441,9 +1441,9 @@ def handle_text_message(sender, text_data, message_id=None):
             print("Running normal Plumbot processing")
             reply = plumbot.generate_response(
                 message_body,
-                precomputed_service_inquiry=inquiry if not mid_conversation else None,
+                precomputed_service_inquiry=inquiry,
             )
-
+            
         # -- STEP 4: Normal Plumbot processing --------------------------------
         
 

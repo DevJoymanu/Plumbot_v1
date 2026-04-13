@@ -3883,7 +3883,8 @@ Reply with ONLY a JSON object:
 
             from .out_of_scope_handler import handle_out_of_scope
 
-            oos_reply = handle_out_of_scope(incoming_message, self.appointment)
+            has_prior_convo = len(self.appointment.conversation_history or []) > 2
+            oos_reply = handle_out_of_scope(incoming_message, self.appointment) if has_prior_convo else None
             if oos_reply is not None:
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", oos_reply)
