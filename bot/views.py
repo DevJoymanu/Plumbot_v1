@@ -7911,6 +7911,7 @@ I understand this is time-sensitive!"""
             - Return one of: "house", "apartment", "business"
             
             If current question is "availability":
+
             - Parse complete date and time to format YYYY-MM-DDTHH:MM
             - Handle relative dates like "today", "tomorrow", weekdays
             - Return complete datetime or "PARTIAL_INFO" or "NOT_FOUND"
@@ -8132,7 +8133,7 @@ I understand this is time-sensitive!"""
     def parse_datetime(self, message):
         """Parse date and time from message - ENHANCED VERSION"""
         try:
-            import datetime
+            from datetime import datetime
             import pytz
             import re
 
