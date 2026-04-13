@@ -8781,7 +8781,7 @@ I understand this is time-sensitive!"""
             prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe, also serving South Africa.
 
     - the initial response to greetings or generic opening messages should be: 
-                            "Hello! Happy to help. Which service are you interested in?\n\n"
+                        "Hello! Happy to help. Which service are you interested in?\n\n"
                         "We offer:\n"
                         "• Bathroom Renovation\n"
                         "• New Plumbing Installation\n"
@@ -8824,7 +8824,7 @@ I understand this is time-sensitive!"""
 
     CUSTOMER'S QUESTION: "{message}"
 
-    Answer directly and honestly in 2-4 sentences.
+    Answer directly and honestly.
     - If we can do it: confirm clearly, briefly explain what's involved.
     - If we cannot (electrical, roofing, painting): say so and redirect to what we can help with.
     - If it's a pricing question: give the relevant range from the guide above.
@@ -8837,7 +8837,7 @@ I understand this is time-sensitive!"""
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=200,
+                max_tokens=100,
             )
             answer = response.choices[0].message.content.strip().replace("**", "").replace("__", "")
             print(f"🤖 Dynamic answer for: '{message[:60]}'")
