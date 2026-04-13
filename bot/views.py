@@ -8780,6 +8780,13 @@ I understand this is time-sensitive!"""
 
             prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe, also serving South Africa.
 
+    - the initial response to greetings or generic opening messages should be: 
+                            "Hello! Happy to help. Which service are you interested in?\n\n"
+                        "We offer:\n"
+                        "• Bathroom Renovation\n"
+                        "• New Plumbing Installation\n"
+                        "• Kitchen Renovation"
+
     SERVICES WE OFFER:
     - Bathroom renovation: toilet, shower cubicle, bathtub, vanity unit, basin/sink, geyser, side chamber, tiling, pipe work
     - Kitchen renovation: kitchen sink, taps/mixers, dishwasher connections, pipe work
