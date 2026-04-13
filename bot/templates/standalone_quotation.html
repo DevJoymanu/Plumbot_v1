@@ -639,15 +639,15 @@
                 <label for="projectType">Project Type *</label>
                 <select id="projectType" required>
                     <option value="">Select project type</option>
-                    <option value="bathroom_renovation" {% if appointment.project_type=='bathroom_renovation'%}selected{% endif %}>Bathroom Renovation</option>
-                    <option value="kitchen_renovation" {% if appointment.project_type=='kitchen_renovation' %}selected{%endif %}>Kitchen Renovation</option>
-                    <option value="new_plumbing_installation" {% if appointment.project_type=='new_plumbing_installation' %}selected{% endif %}>New Plumbing
+                    <option value="bathroom_renovation" {% if appointment.project_type == 'bathroom_renovation'%}selected{% endif %}>Bathroom Renovation</option>
+                    <option value="kitchen_renovation" {% if appointment.project_type == 'kitchen_renovation' %}selected{%endif %}>Kitchen Renovation</option>
+                    <option value="new_plumbing_installation" {% if appointment.project_type == 'new_plumbing_installation' %}selected{% endif %}>New Plumbing
                         Installation</option>
-                    <option value="general_plumbing" {% if appointment.project_type=='general_plumbing' %}selected{% endif %}>General Plumbing</option>
-                    <option value="electrical_installation" {% if appointment.project_type=='electrical_installation'%}selected{% endif %}>Electrical Installation</option>
-                    <option value="roof_repair" {% if appointment.project_type=='roof_repair' %}selected{% endif %}>Roof
+                    <option value="general_plumbing" {% if appointment.project_type == 'general_plumbing' %}selected{% endif %}>General Plumbing</option>
+                    <option value="electrical_installation" {% if appointment.project_type == 'electrical_installation'%}selected{% endif %}>Electrical Installation</option>
+                    <option value="roof_repair" {% if appointment.project_type == 'roof_repair' %}selected{% endif %}>Roof
                         Repair</option>
-                    <option value="other" {% if appointment.project_type=='other' %}selected{% endif %}>Other</option>
+                    <option value="other" {% if appointment.project_type == 'other' %}selected{% endif %}>Other</option>
                 </select>
             </div>
             <div class="form-group">
@@ -876,7 +876,7 @@
         } else {
             // Add default items for bathroom renovation
             const projectType = document.getElementById('projectType').value;
-            if (projectType === 'bathroom_renovation') {
+            if (projectType  == = 'bathroom_renovation') {
                 items = defaultBathroomItems.map((item, index) => ({
                     id: Date.now() + index,
                     name: item.name,
@@ -913,7 +913,7 @@
             document.getElementById('projectNotes').value = appointment.project_description || '';
 
             // Load items based on project type
-            if (appointment.project_type === 'bathroom_renovation') {
+            if (appointment.project_type  == = 'bathroom_renovation') {
                 items = defaultBathroomItems.map((item, index) => ({
                     id: Date.now() + index,
                     name: item.name,
@@ -945,15 +945,15 @@
     }
 
     function removeItem(id) {
-        items = items.filter(item => item.id !== id);
+        items = items.filter(item => item.id ! ==  id);
         renderItems();
     }
 
     function updateItem(id, field, value) {
-        const item = items.find(i => i.id === id);
+        const item = items.find(i => i.id  == = id);
         if (item) {
-            item[field] = field === 'name' ? value : parseFloat(value) || 0;
-            if (field === 'qty' || field === 'price') {
+            item[field] = field  == = 'name' ? value : parseFloat(value) || 0;
+            if (field  == = 'qty' || field  == = 'price') {
                 updateItemTotal(id);
                 calculateTotals();
             }
@@ -961,7 +961,7 @@
     }
 
     function updateItemTotal(id) {
-        const item = items.find(i => i.id === id);
+        const item = items.find(i => i.id  == = id);
         if (item) {
             const itemCard = document.querySelector(`[data-item-id="${id}"]`);
             if (itemCard) {
@@ -976,7 +976,7 @@
     function renderItems() {
         const container = document.getElementById('itemsList');
 
-        if (items.length === 0) {
+        if (items.length  == = 0) {
             container.innerHTML = `
                 <div class="empty-state">
                     <i class="fas fa-inbox"></i>
@@ -1131,7 +1131,7 @@
         }
 
         const validItems = items.filter(i => i.name.trim());
-        if (validItems.length === 0) {
+        if (validItems.length  == = 0) {
             showAlert('Please add at least one item', 'error');
             return;
         }
@@ -1235,7 +1235,7 @@
     function displayTemplates(templates) {
         const container = document.getElementById('templatesList');
 
-        if (templates.length === 0) {
+        if (templates.length  == = 0) {
             showTemplatesEmpty();
             return;
         }
@@ -1282,7 +1282,7 @@
             const response = await fetch(`/api/quotation-templates/?template_id=${templateId}`);
             const data = await response.json();
 
-            if (!data.success || data.templates.length === 0) {
+            if (!data.success || data.templates.length  == = 0) {
                 showAlert('Failed to load template', 'error');
                 return;
             }
@@ -1341,7 +1341,7 @@
             return;
         }
 
-        const filtered = allTemplates.filter(t => t.project_type === projectType);
+        const filtered = allTemplates.filter(t => t.project_type  == = projectType);
         displayTemplates(filtered);
     }
 
@@ -1355,11 +1355,11 @@
 
     function getCookie(name) {
         let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
+        if (document.cookie && document.cookie ! ==  '') {
             const cookies = document.cookie.split(';');
             for (let i = 0; i < cookies.length; i++) {
                 const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                if (cookie.substring(0, name.length + 1)  == = (name + '=')) {
                     cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
                     break;
                 }
@@ -1372,7 +1372,7 @@
         const container = document.getElementById('alertContainer');
         const alert = document.createElement('div');
         alert.className = `alert alert-${type}`;
-        alert.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${escapeHtml(message)}`;
+        alert.innerHTML = `<i class="fas fa-${type  == = 'success' ? 'check-circle' : type  == = 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${escapeHtml(message)}`;
         container.appendChild(alert);
         setTimeout(() => alert.remove(), 4000);
     }
@@ -1380,7 +1380,7 @@
     // Close modal when clicking outside
     document.addEventListener('click', function (e) {
         const modal = document.getElementById('templateModal');
-        if (e.target === modal) {
+        if (e.target  == = modal) {
             closeTemplateModal();
         }
     });
