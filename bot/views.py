@@ -4443,7 +4443,7 @@ Reply with ONLY a JSON object:
         """
         if next_question == "service_type":
             return (
-                "Hello,\n How may we assist you on plumbing services"
+                "Hello,\nHow may we assist you on plumbing services"
             )
 
         if next_question == "project_description":
@@ -6335,6 +6335,7 @@ I understand this is time-sensitive!"""
     - "available all day" / "whole day" / "anytime" → return null (caller handles separately)
     - If only date given (no time) → return YYYY-MM-DDT00:00
     - If only time given (no date) → null
+    - You must be able to extract the date/time within other text, e.g. Wednesday is ok, lets do wednesday or anything else along those lines
     TODAY = {current_time[:10]}
     
     CUSTOMER NAME — Only if the customer explicitly gives their name.
@@ -7543,7 +7544,7 @@ I understand this is time-sensitive!"""
 
                 if next_question == "service_type":
                     return (
-                        "Hello,\n How may we assist you on plumbing services"
+                        "Hello,\nHow may we assist you on plumbing services"
                     )
 
                 if next_question == "project_description":
@@ -9061,7 +9062,7 @@ I understand this is time-sensitive!"""
             return "Could you tell me a bit more about what you need done?"
  
         if next_q == "service_type":
-            return"Hello,\n How may we assist you on plumbing services"
+            return"Hello,\nHow may we assist you on plumbing services"
 
  
         return ""
