@@ -1,79 +1,69 @@
 # Update the imports section in your views.py file
 
-from django.shortcuts import render
+from django.shortcuts import render, redirect, get_object_or_404
+from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST, require_http_methods, require_GET
+from django.utils.decorators import method_decorator
 from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
+from django.urls import reverse, reverse_lazy
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
+from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
+from django.views.generic import ListView, DetailView, TemplateView, CreateView, UpdateView, DeleteView
+from django.db.models import Count, Q
+from django.db import IntegrityError, connection, transaction
+from django.utils import timezone
+from django.forms import modelformset_factory
+from django.templatetags.static import static
+from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+import requests
+import datetime
+import pytz
+import os
+import json
+import re
+import tempfile
+import base64
+import logging
+
 from twilio.rest import Client
+from openai import OpenAI
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+
 from .models import (
     Appointment,
     Quotation,
     QuotationItem,
     QuotationTemplate,
     QuotationTemplateItem,
+    ConversationMessage,
 )
-import requests
-import datetime
-import pytz
-import os
-import json
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from django.conf import settings
-from openai import OpenAI
-import re
-from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import ListView, DetailView, TemplateView, CreateView, UpdateView, DetailView
-from django.contrib import messages
-from django.urls import reverse
-from django.http import JsonResponse
-from django.views.decorators.http import require_POST
-from django.contrib.auth.decorators import login_required
-from django.utils.decorators import method_decorator
-from django.db.models import Count
-from django.conf import settings
-from django.forms import modelformset_factory
-from .models import Appointment, ConversationMessage
-from .forms import AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm, QuotationForm, QuotationItemFormSet, QuotationTemplateForm, QuotationTemplateItemFormSet
-from datetime import datetime, timedelta
-from django.utils import timezone
-from django.views import View
-import os
-import requests
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
-import tempfile
-from django.utils import timezone
-from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
-from django.contrib import messages
-from django.urls import reverse
-from django.views.decorators.http import require_http_methods
 
-# Import our custom decorators and authentication views
+from .forms import (
+    AppointmentForm,
+    SettingsForm,
+    CalendarSettingsForm,
+    AISettingsForm,
+    QuotationForm,
+    QuotationItemFormSet,
+    QuotationTemplateForm,
+    QuotationTemplateItemFormSet,
+)
+
 from .decorators import staff_required, anonymous_required, StaffRequiredMixin
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
-from django.contrib.auth import update_session_auth_hash
-
-from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
-from django.contrib import messages
-from django.urls import reverse, reverse_lazy
-from django.db.models import Q
-from .decorators import staff_required
-from django.utils.decorators import method_decorator
-from django.views.decorators.http import require_GET
 from .whatsapp_cloud_api import whatsapp_api
 from .services.lead_scoring import refresh_lead_score, calculate_lead_score
-from django.db import IntegrityError, connection, transaction
-from decimal import Decimal, InvalidOperation
-from django.templatetags.static import static
-import base64
-from .whatsapp_webhook import send_previous_work_photos  # ✅ correct import
+from .whatsapp_webhook import send_previous_work_photos
 
-import logging
 logger = logging.getLogger(__name__)
-
-
 
 #DELETE FROM bot_appointment
 #WHERE phone_number = 'whatsapp:+27610318200';
@@ -348,6 +338,216 @@ def quotation_templates_api(request):
             'error': str(e)
         }, status=500)
 
+
+ 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+ 
+def _to_dec(value, default='0.00'):
+    """Safe Decimal conversion used by the quotation APIs."""
+    if value in (None, ''):
+        return Decimal(default)
+    try:
+        return Decimal(
+            str(value).strip()
+            .replace('US$', '').replace('$', '')
+            .replace(',', '').replace(' ', '')
+        )
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal(default)
+ 
+ 
+# ── 1. Standalone quotation page ─────────────────────────────────────────────
+ 
+# Add this class to views.py
+@method_decorator(staff_required, name='dispatch')
+class StandaloneQuotationView(View):
+    """Render the standalone quotation creation form."""
+    template_name = 'standalone_quotation.html'
+ 
+    def get(self, request, *args, **kwargs):
+        return render(request, self.template_name, {
+            'logo_url':      _safe_logo_url(),
+            'logo_data_uri': _safe_logo_data_uri(),
+        })
+ 
+ 
+# ── 2. Create standalone quotation API ───────────────────────────────────────
+ 
+@csrf_exempt
+@require_http_methods(["POST"])
+@staff_required
+def create_standalone_quotation_api(request):
+    """
+    Create a quotation that may or may not be linked to an appointment.
+ 
+    If `appointment_id` is provided and resolves to a real Appointment, the
+    quotation is linked to that appointment (same as the existing API).
+ 
+    If `appointment_id` is absent/null, we still create a valid Quotation
+    by temporarily linking it to a placeholder/bare appointment that carries
+    the client info, OR by creating a quotation with appointment=None if the
+    model allows it.  We store extra client metadata in the quotation notes.
+    """
+    from .models import Appointment, Quotation, QuotationItem
+    from .views import _reset_pk_sequence
+ 
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+ 
+    client_name    = (data.get('client_name') or '').strip()
+    client_phone   = (data.get('client_phone') or '').strip()
+    client_email   = (data.get('client_email') or '').strip()
+    client_address = (data.get('client_address') or '').strip()
+    project_type   = (data.get('project_type') or '').strip()
+    project_loc    = (data.get('project_location') or '').strip()
+    notes_raw      = (data.get('notes') or '').strip()
+    items_raw      = data.get('items') or []
+    labour_cost    = _to_dec(data.get('labour_cost',    0))
+    transport_cost = _to_dec(data.get('transport_cost', 0))
+    materials_cost = _to_dec(data.get('materials_cost', 0))
+ 
+    if not client_name:
+        return JsonResponse({'success': False, 'error': 'client_name is required'}, status=400)
+ 
+    # ── Resolve (or create) appointment ───────────────────────────────────────
+    appointment    = None
+    appointment_id = data.get('appointment_id')
+ 
+    if appointment_id:
+        try:
+            appointment = Appointment.objects.get(id=int(appointment_id))
+        except (Appointment.DoesNotExist, ValueError, TypeError):
+            return JsonResponse(
+                {'success': False, 'error': f'Appointment {appointment_id} not found'},
+                status=404,
+            )
+    else:
+        # No appointment supplied — create a lightweight stub so the FK is
+        # satisfied.  Use a generated "quotation-only" phone key.
+        import uuid
+        stub_phone = f"quotation_only_{uuid.uuid4().hex[:10]}"
+        appointment = Appointment.objects.create(
+            phone_number=stub_phone,
+            customer_name=client_name or None,
+            customer_email=client_email or None,
+            customer_area=client_address or None,
+            project_type=project_type or None,
+            project_description=project_loc or None,
+            status='pending',
+        )
+ 
+    # ── Build notes string ────────────────────────────────────────────────────
+    meta_lines = []
+    if client_phone:   meta_lines.append(f"Phone: {client_phone}")
+    if client_email:   meta_lines.append(f"Email: {client_email}")
+    if client_address: meta_lines.append(f"Address: {client_address}")
+    if project_loc:    meta_lines.append(f"Site: {project_loc}")
+    if notes_raw:      meta_lines.append(notes_raw)
+    combined_notes = '\n'.join(meta_lines)
+ 
+    # ── Create Quotation ──────────────────────────────────────────────────────
+    quotation = None
+    for attempt in range(2):
+        try:
+            with transaction.atomic():
+                quotation = Quotation.objects.create(
+                    appointment=appointment,
+                    plumber=request.user if request.user.is_authenticated else None,
+                    labor_cost=labour_cost,
+                    transport_cost=transport_cost,
+                    materials_cost=materials_cost,
+                    notes=combined_notes,
+                    status='draft',
+                )
+            break
+        except IntegrityError as exc:
+            err = str(exc).lower()
+            if attempt == 0 and 'bot_quotation_pkey' in err and 'key (id)=' in err:
+                _reset_pk_sequence(Quotation)
+                continue
+            raise
+ 
+    if quotation is None:
+        return JsonResponse({'success': False, 'error': 'Failed to create quotation'}, status=500)
+ 
+    # ── Create line items ─────────────────────────────────────────────────────
+    for item in items_raw:
+        desc = (item.get('name') or item.get('description') or '').strip()
+        if not desc:
+            continue
+        qty   = _to_dec(item.get('qty')  or item.get('quantity') or 1, '1.00')
+        unit  = _to_dec(item.get('unit') or item.get('unit_price') or 0)
+        QuotationItem.objects.create(
+            quotation=quotation,
+            description=desc,
+            quantity=qty,
+            unit_price=unit,
+        )
+ 
+    # Recalculate totals after items are added
+    quotation.save()
+ 
+    logger.info(
+        f"Standalone quotation created: #{quotation.quotation_number} "
+        f"for {client_name} by {getattr(request.user, 'username', 'anon')}"
+    )
+ 
+    return JsonResponse({
+        'success':          True,
+        'quotation_id':     quotation.id,
+        'quotation_number': quotation.quotation_number,
+        'quotation_name':   quotation.get_display_name(),
+        'appointment_id':   appointment.id,
+        'total_amount':     float(quotation.total_amount),
+        'message':          f'Quotation {quotation.quotation_number} created successfully',
+    })
+ 
+ 
+# ── 3. Appointment search API ─────────────────────────────────────────────────
+ 
+@staff_required
+@require_GET
+def appointment_search_api(request):
+    """
+    GET /api/appointments/search/?q=<query>
+    Returns matching appointments for the typeahead in the standalone form.
+    """
+    from .models import Appointment
+    from django.db.models import Q
+ 
+    query = request.GET.get('q', '').strip()
+    if len(query) < 2:
+        return JsonResponse({'appointments': []})
+ 
+    qs = (
+        Appointment.objects
+        .filter(
+            Q(customer_name__icontains=query)  |
+            Q(phone_number__icontains=query)   |
+            Q(customer_area__icontains=query)  |
+            Q(project_type__icontains=query)
+        )
+        .exclude(phone_number__startswith='quotation_only_')
+        .order_by('-updated_at')[:15]
+    )
+ 
+    results = []
+    for a in qs:
+        results.append({
+            'id':                a.id,
+            'customer_name':     a.customer_name or '',
+            'phone_number':      a.phone_number or '',
+            'customer_email':    a.customer_email or '',
+            'customer_area':     a.customer_area or '',
+            'project_type':      a.project_type or '',
+            'project_description': a.project_description or '',
+            'status':            a.status,
+        })
+ 
+    return JsonResponse({'appointments': results})
+ 
 
 @method_decorator(staff_required, name='dispatch')
 class QuotationTemplatesListView(ListView):
@@ -4149,7 +4349,7 @@ Reply with ONLY a JSON object:
 
         except Exception as e:
             print(f"❌ API Error: {str(e)}")
-            return "I'm having some trouble connecting to our system. Could you try again in a moment?"
+            return " "
 
 
 
@@ -4243,11 +4443,7 @@ Reply with ONLY a JSON object:
         """
         if next_question == "service_type":
             return (
-                "Hello! Happy to help. Which service are you interested in?\n\n"
-                "We offer:\n"
-                "• Bathroom Renovation\n"
-                "• New Plumbing Installation\n"
-                "• Kitchen Renovation"
+                "Hello,\n How may we assist you on plumbing services"
             )
 
         if next_question == "project_description":
@@ -7347,11 +7543,7 @@ I understand this is time-sensitive!"""
 
                 if next_question == "service_type":
                     return (
-                        "Hello! Happy to help. Which service are you interested in?\n\n"
-                        "We offer:\n"
-                        "• Bathroom Renovation\n"
-                        "• New Plumbing Installation\n"
-                        "• Kitchen Renovation"
+                        "Hello,\n How may we assist you on plumbing services"
                     )
 
                 if next_question == "project_description":
@@ -8869,7 +9061,7 @@ I understand this is time-sensitive!"""
             return "Could you tell me a bit more about what you need done?"
  
         if next_q == "service_type":
-            return"Hello! Happy to help. Which service are you interested in?\n\n We offer:\n• Bathroom Renovation\n• New Plumbing Installation\n• Kitchen Renovation"
+            return"Hello,\n How may we assist you on plumbing services"
 
  
         return ""
