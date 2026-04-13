@@ -4114,11 +4114,33 @@ Reply with ONLY a JSON object:
                             f"available times:\n{alt_text}\n\n"
                             f"Which works better for you?"
                         )
+            #
             else:
-                reply = self.generate_contextual_response(
-                    incoming_message, next_question, updated_fields
-                )
-
+                if self._is_standalone_question(incoming_message):
+                    _inquiry   = self.detect_service_inquiry(incoming_message)
+                    _intent    = _inquiry.get('intent', 'none')
+                    PRODUCT_INTENTS = {
+                        'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
+                        'vanity', 'bathtub_installation', 'toilet', 'chamber',
+                        'facebook_package', 'location_ask', 'location_visit',
+                        'previous_quotation', 'pictures', 'combined_pricing',
+                    }
+                    direct_answer = None
+                    if _intent in PRODUCT_INTENTS and _inquiry.get('confidence') == 'HIGH':
+                        direct_answer = self.handle_service_inquiry(_intent, incoming_message)
+                    if not direct_answer:
+                        direct_answer = self._answer_standalone_question(incoming_message)
+                    if direct_answer:
+                        nudge = self._get_soft_booking_nudge()
+                        reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer
+                    else:
+                        reply = self.generate_contextual_response(
+                            incoming_message, next_question, updated_fields
+                        )
+                else:
+                    reply = self.generate_contextual_response(
+                        incoming_message, next_question, updated_fields
+                    )
             self.appointment.add_conversation_message("user", incoming_message)
             self.appointment.add_conversation_message("assistant", reply)
             
@@ -8648,7 +8670,204 @@ I understand this is time-sensitive!"""
             return None
 
 
+    def _is_standalone_question(self, message: str) -> bool:
+        msg = (message or "").strip()
+        if not msg or len(msg) < 3:
+            return False
 
+        # Fast-exit: all booking info already collected
+        if (
+            self.appointment.project_type and
+            self.appointment.customer_area and
+            self.appointment.scheduled_datetime and
+            self._time_confirmed()
+        ):
+            return False
+
+        if not deepseek_client:
+            return False
+
+        try:
+            history = self.appointment.conversation_history or []
+            last_bot = ""
+            for msg_obj in reversed(history[:-1]):
+                if msg_obj.get("role") == "assistant":
+                    content = (msg_obj.get("content") or "").strip()
+                    if content and not content.startswith("["):
+                        last_bot = content[:300]
+                        break
+
+            booking_state = []
+            if not self.appointment.project_type:
+                booking_state.append("service type: not collected")
+            if not self.appointment.project_description:
+                booking_state.append("project description: not collected")
+            if not self.appointment.scheduled_datetime:
+                booking_state.append("appointment date: not collected")
+            elif not self._time_confirmed():
+                booking_state.append("appointment time: not confirmed")
+            if not self.appointment.customer_area:
+                booking_state.append("area: not collected")
+            booking_state_str = ", ".join(booking_state) or "all booking details collected"
+
+            prompt = f"""You are an intent classifier for a Zimbabwean plumbing company's WhatsApp chatbot.
+
+    BOOKING STATE: {booking_state_str}
+
+    BOT'S LAST MESSAGE:
+    "{last_bot}"
+
+    CUSTOMER'S REPLY:
+    "{message}"
+
+    Classify as GENUINE_QUESTION if the customer is:
+    - Asking whether a specific service can be done
+    - Asking about pricing, costs, or what's included
+    - Asking about the company, its process, or how something works
+    - Asking about materials, brands, or product availability
+    - Asking anything that is clearly NOT answering what the bot just asked
+
+    Classify as BOOKING_ANSWER if the customer is:
+    - Providing a date, day name, time, or availability
+    - Providing their area, suburb, or location
+    - Saying yes/no/ok/sure to the bot's question
+    - Describing their project in response to being asked
+    - Giving their name
+
+    Reply with ONLY valid JSON:
+    {{"classification": "GENUINE_QUESTION" or "BOOKING_ANSWER", "confidence": "HIGH" or "LOW"}}"""
+
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "Return ONLY valid JSON. No markdown."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=30,
+            )
+            raw = response.choices[0].message.content.strip().replace("```json", "").replace("```", "").strip()
+            result = json.loads(raw)
+            classification = result.get("classification", "BOOKING_ANSWER")
+            confidence     = result.get("confidence", "LOW")
+            is_question = (classification == "GENUINE_QUESTION" and confidence == "HIGH")
+            print(f"🤖 Standalone Q check: '{message[:60]}' → {classification} ({confidence})")
+            return is_question
+
+        except Exception as exc:
+            print(f"⚠️ Standalone question check failed: {exc}")
+            return False
+
+    def _answer_standalone_question(self, message: str) -> str:
+        if not deepseek_client:
+            return None
+        try:
+            service     = (self.appointment.project_type or "").replace("_", " ").lower()
+            area        = self.appointment.customer_area or ""
+            description = self.appointment.project_description or ""
+
+            history = self.appointment.conversation_history or []
+            skip = ("[AUTO", "[MANUAL", "[BULK", "[24HR", "[Sent ", "[FILE", "[VIDEO")
+            recent_lines = []
+            for msg_obj in history[-8:]:
+                content = (msg_obj.get("content") or "").strip()
+                if not content or any(content.startswith(p) for p in skip):
+                    continue
+                role = "Customer" if msg_obj.get("role") == "user" else "Bot"
+                recent_lines.append(f"{role}: {content[:200]}")
+            context_block = "\n".join(recent_lines) if recent_lines else "No prior conversation."
+
+            prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe, also serving South Africa.
+
+    SERVICES WE OFFER:
+    - Bathroom renovation: toilet, shower cubicle, bathtub, vanity unit, basin/sink, geyser, side chamber, tiling, pipe work
+    - Kitchen renovation: kitchen sink, taps/mixers, dishwasher connections, pipe work
+    - New plumbing installation: new builds, extensions, full house piping, borehole connections, JoJo tank setups
+    - General plumbing: leak repairs, pipe repairs, drain unblocking, pressure pump installation
+    - We CAN install sinks, taps, or water points in garages, outbuildings, and workshops
+    - We supply AND install all fixtures (or install customer-supplied fixtures)
+
+    PRICING GUIDE (rough supply + install):
+    - Toilet: supply from US$50, install from US$20
+    - Shower cubicle (900x900mm): supply from US$130, install from US$40
+    - Vanity unit: supply from US$150, install from US$30
+    - Geyser: supply from US$80, install from US$80
+    - Bathtub (ordinary): supply from US$80, install from US$80
+    - Freestanding tub: supply from US$450, mixer from US$150, install US$120
+    - Side chamber: supply from US$130, install from US$30
+    - Full bathroom package: from US$600+
+    - Site assessment / visit: FREE
+
+    COMPANY INFO:
+    - Based in Hatfield, Harare
+    - Works by appointment (not walk-ins)
+    - Monday–Sunday except Saturday (closed Saturdays)
+    - Business hours: 8 AM – 6 PM
+    - Site assessment is free, plumber gives fixed quote on the spot
+    - Plumber direct contact: {self.appointment.plumber_contact_number or "+263774819901"}
+
+    CUSTOMER CONTEXT:
+    - Service interest: {service or "not yet specified"}
+    - Area: {area or "not yet specified"}
+    - Project description: {description or "not yet provided"}
+
+    RECENT CONVERSATION:
+    {context_block}
+
+    CUSTOMER'S QUESTION: "{message}"
+
+    Answer directly and honestly in 2-4 sentences.
+    - If we can do it: confirm clearly, briefly explain what's involved.
+    - If we cannot (electrical, roofing, painting): say so and redirect to what we can help with.
+    - If it's a pricing question: give the relevant range from the guide above.
+    - South African / Zimbabwean English. No bold, no bullets. Do NOT end with a question."""
+
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "Answer customer questions for a plumbing company. Direct, helpful, human. No bullet points. No markdown. Do not end with a question."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,
+                max_tokens=200,
+            )
+            answer = response.choices[0].message.content.strip().replace("**", "").replace("__", "")
+            print(f"🤖 Dynamic answer for: '{message[:60]}'")
+            return answer
+
+        except Exception as exc:
+            print(f"⚠️ Dynamic answer generation failed: {exc}")
+            return None
+
+
+    def _get_soft_booking_nudge(self) -> str:
+        """
+        Return a single soft one-line booking nudge to append after answering
+        a standalone question. Picks the right nudge for whatever is still missing.
+        """
+        next_q = self.get_next_question_to_ask()
+ 
+        if next_q == "availability_date":
+            days = self._get_next_two_available_days()
+            if len(days) >= 2:
+                day_a = self._format_day(days[0])
+                day_b = self._format_day(days[1])
+                return f"Would {day_a} or {day_b} work for a free site visit?"
+            return "Would you like to book a free site visit?"
+ 
+        if next_q == "availability_time":
+            return "What time suits you best for the visit?"
+ 
+        if next_q == "area":
+            return "Which area are you in?"
+ 
+        if next_q == "project_description":
+            return "Could you tell me a bit more about what you need done?"
+ 
+        if next_q == "service_type":
+            return "Which service are you after — bathroom, kitchen, or new installation?"
+ 
+        return ""
 
 
     def send_message(self, message_text):
