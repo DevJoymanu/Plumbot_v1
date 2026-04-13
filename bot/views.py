@@ -6817,7 +6817,8 @@ I understand this is time-sensitive!"""
         New flow: service → project_description → datetime → area.
         """
         from datetime import datetime
-        
+        import pytz
+
         try:
             updated_fields = []
             next_question  = self.get_next_question_to_ask()
