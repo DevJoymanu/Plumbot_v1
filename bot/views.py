@@ -6759,14 +6759,15 @@ I understand this is time-sensitive!"""
         if not self.appointment.project_description:
             return "project_description"
 
+        if not self.appointment.customer_area:
+            return "area"
+
         if not self.appointment.scheduled_datetime:
             return "availability_date"
 
         if not self._time_confirmed():
             return "availability_time"
 
-        if not self.appointment.customer_area:
-            return "area"
 
         if (
             not self.appointment.customer_name
