@@ -6413,6 +6413,7 @@ I understand this is time-sensitive!"""
 
     def process_alternative_time_selection(self, message):
         """Use DeepSeek to detect and parse when customer selects an alternative time slot"""
+        from datetime import datetime, timedelta
         try:
             sa_timezone = pytz.timezone('Africa/Johannesburg')
             now = timezone.now().astimezone(sa_timezone)
