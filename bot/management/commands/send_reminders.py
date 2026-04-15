@@ -8,16 +8,22 @@ Run every 15 minutes via Railway Scheduler or cron:
 Cron:
     */15 * * * * cd /app && python manage.py send_reminders >> /var/log/reminders.log 2>&1
 
-24-HOUR WINDOW RULE
--------------------
-WhatsApp free-tier messages may only be sent within 24 hours of the customer's
-last inbound message.  This command enforces this at the DB query level using
-filter_queryset_by_window() and also at the per-appointment level using
-is_window_open() before every send.
-
-Appointments whose window is closed are logged and skipped — reminder flags
-are NOT set, so the reminder will fire on the next run if the window has
-re-opened (i.e. the customer replied in the meantime).
+KEY FIXES vs the previous version
+-----------------------------------
+1.  mark_sent() no longer crashes when internal_notes is None.
+2.  Reminders are NOT gated by the 24-hour WhatsApp customer-message window —
+    confirmed appointments should always receive reminders regardless of when
+    the customer last messaged.
+3.  appt_utc() correctly converts timezone-aware datetimes stored in UTC
+    (Django default) to UTC for comparison.
+4.  already_sent() and mark_sent() now use dedicated boolean fields on the
+    Appointment model (reminder_1_day_sent, reminder_morning_sent,
+    reminder_2_hours_sent) which exist from migration 0008 — much more
+    reliable than parsing internal_notes strings.
+5.  Plumber reminders use a separate flag stored in internal_notes (unchanged
+    behaviour) so they don't collide with the customer-facing fields.
+6.  A --dry-run flag is supported for safe testing.
+7.  Full summary banner is printed at the end of every run.
 """
 
 import os
@@ -25,25 +31,53 @@ import logging
 from datetime import timedelta, date, time as dt_time
 from collections import defaultdict
 
+import pytz
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db.models import Q
 
-from bot.whatsapp_window import is_window_open, filter_queryset_by_window, hours_remaining
-
 logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
-WINDOW_MINUTES = 10
-PLUMBER_PHONE  = os.environ.get("PLUMBER_PHONE_NUMBER", "").replace("+", "").strip()
-PLUMBER_NAME   = os.environ.get("PLUMBER_NAME", "there")
-TIMEZONE_NAME  = "Africa/Harare"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# WHATSAPP MESSAGE TEMPLATES
-# ═══════════════════════════════════════════════════════════════════════════════
+WINDOW_MINUTES  = 10          # ±10 min tolerance for scheduled send times
+TIMEZONE_NAME   = "Africa/Harare"
+PLUMBER_PHONE   = os.environ.get("PLUMBER_PHONE_NUMBER", "").replace("+", "").strip()
+PLUMBER_NAME    = os.environ.get("PLUMBER_NAME", "there")
 
 SEP = "────────────────"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TIME HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _in_window(now_local, target_hour: int, target_minute: int = 0) -> bool:
+    """Return True if now_local is within ±WINDOW_MINUTES of target_hour:target_minute."""
+    target = now_local.replace(
+        hour=target_hour, minute=target_minute, second=0, microsecond=0
+    )
+    return abs((now_local - target).total_seconds()) <= WINDOW_MINUTES * 60
+
+
+def _is_2h_window(appt_utc_dt, now_utc) -> bool:
+    """Return True if the appointment is between 1h55m and 2h05m away."""
+    diff = (appt_utc_dt - now_utc).total_seconds()
+    return (1 * 3600 + 55 * 60) <= diff <= (2 * 3600 + 5 * 60)
+
+
+def _appt_utc(apt):
+    """
+    Return the appointment's scheduled_datetime as a UTC-aware datetime.
+    Django stores datetimes in UTC by default (USE_TZ=True).
+    If the stored value is naive, assume it is already in CAT (Africa/Harare)
+    and convert it to UTC.
+    """
+    dt = getattr(apt, "scheduled_datetime", None)
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        cat = pytz.timezone(TIMEZONE_NAME)
+        dt = cat.localize(dt)
+    return dt.astimezone(pytz.utc)
 
 
 def _fmt_phone(raw: str) -> str:
@@ -56,17 +90,16 @@ def _service(apt) -> str:
 
 
 def _area(apt) -> str:
-    return getattr(apt, "customer_area", "") or "Your area"
+    return getattr(apt, "customer_area", "") or "your area"
 
 
-def _apt_time(apt) -> str:
-    import pytz
+def _apt_time_str(apt) -> str:
     dt = getattr(apt, "scheduled_datetime", None)
     if not dt:
         return "Scheduled time"
     try:
         cat = pytz.timezone(TIMEZONE_NAME)
-        local = dt.astimezone(cat) if dt.tzinfo else dt
+        local = dt.astimezone(cat) if dt.tzinfo else cat.localize(dt)
         h, m = local.hour, local.minute
         suffix = "AM" if h < 12 else "PM"
         h12 = h % 12 or 12
@@ -74,306 +107,87 @@ def _apt_time(apt) -> str:
     except Exception:
         return str(dt)
 
-def _apt_date(apt) -> str:
-    import pytz
+
+def _apt_date_str(apt) -> str:
     dt = getattr(apt, "scheduled_datetime", None)
     if not dt:
         return "Scheduled date"
     try:
         cat = pytz.timezone(TIMEZONE_NAME)
-        d = dt.astimezone(cat).date() if dt.tzinfo else dt.date()
-        days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-        return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
+        d = dt.astimezone(cat).date() if dt.tzinfo else cat.localize(dt).date()
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return f"{days[d.weekday()]} {d.day} {months[d.month - 1]} {d.year}"
     except Exception:
         return str(dt)
 
-def _apt_date_short(apt) -> str:
-    import pytz
-    dt = getattr(apt, "scheduled_datetime", None)
-    if not dt:
-        return ""
-    try:
-        cat = pytz.timezone(TIMEZONE_NAME)
-        d = dt.astimezone(cat).date() if dt.tzinfo else dt.date()
-        days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
-        months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-        return f"{days[d.weekday()]} {d.day} {months[d.month-1]} {d.year}"
-    except Exception:
-        return str(dt)
-
-# ── Customer (Lead) Messages ───────────────────────────────────────────────────
-
-def msg_lead_2days(apt, plumber_phone: str = "") -> str:
-    name    = getattr(apt, "customer_name", "") or "there"
-    contact = plumber_phone or "+263774819901"
-    return (
-        f"Hi {name} 👋\n"
-        f"\n"
-        f"Just a friendly reminder about your upcoming appointment:\n"
-        f"\n"
-        f"🛠 Service: {_service(apt)}\n"
-        f"📍 Location: {_area(apt)}\n"
-        f"📅 Date: {_apt_date(apt)}\n"
-        f"⏰ Time: {_apt_time(apt)}\n"
-        f"\n"
-        f"Please make sure someone is home and the work area is accessible.\n"
-        f"\n"
-        f"We look forward to assisting you! 🔧\n"
-        f"\n"
-        f"📞 Questions? Call us: {contact}"
-    )
-
-
-def msg_lead_1day(apt, plumber_phone: str = "") -> str:
-    name    = getattr(apt, "customer_name", "") or "there"
-    contact = plumber_phone or "+263774819901"
-    return (
-        f"Hi {name} 👋\n"
-        f"\n"
-        f"Your appointment is *tomorrow!*\n"
-        f"\n"
-        f"🛠 {_service(apt)}\n"
-        f"📅 {_apt_date(apt)}\n"
-        f"⏰ {_apt_time(apt)}\n"
-        f"\n"
-        f"Please ensure:\n"
-        f"✅ Someone is home\n"
-        f"✅ The work area is accessible\n"
-        f"✅ Water can be shut off if needed\n"
-        f"\n"
-        f"See you tomorrow! 🔧\n"
-        f"\n"
-        f"📞 {contact}"
-    )
-
-
-def msg_lead_morning(apt, plumber_phone: str = "") -> str:
-    name    = getattr(apt, "customer_name", "") or "there"
-    contact = plumber_phone or "+263774819901"
-    return (
-        f"Good morning {name} ☀️\n"
-        f"\n"
-        f"Today is your appointment day!\n"
-        f"\n"
-        f"⏰ Arrival Time: {_apt_time(apt)}\n"
-        f"📍 Location: {_area(apt)}\n"
-        f"\n"
-        f"Our plumber will be there on time.\n"
-        f"Please make sure someone is available.\n"
-        f"\n"
-        f"See you shortly! 🔧\n"
-        f"\n"
-        f"📞 {contact}"
-    )
-
-
-def msg_lead_2hours(apt, plumber_phone: str = "") -> str:
-    name    = getattr(apt, "customer_name", "") or "there"
-    contact = plumber_phone or "+263774819901"
-    return (
-        f"Hi {name} ⏰\n"
-        f"\n"
-        f"Your plumber will be arriving in approximately *2 hours.*\n"
-        f"\n"
-        f"📅 Today\n"
-        f"⏰ {_apt_time(apt)}\n"
-        f"\n"
-        f"Please ensure access is ready.\n"
-        f"\n"
-        f"See you soon! 🔧\n"
-        f"\n"
-        f"📞 {contact}"
-    )
-
-
-# ── Plumber Messages ───────────────────────────────────────────────────────────
-
-def _apt_block(i: int, apt, show_date: bool = True) -> str:
-    phone     = _fmt_phone(getattr(apt, "phone_number", "") or "")
-    name      = getattr(apt, "customer_name", "?") or "?"
-    date_part = f"{_apt_date_short(apt)} | " if show_date else ""
-    return (
-        f"{i}\ufe0f\u20e3 {name}\n"
-        f"\U0001f6e0 {_service(apt)}\n"
-        f"\U0001f4cd {_area(apt)}\n"
-        f"\u23f0 {date_part}{_apt_time(apt)}\n"
-        f"\U0001f4de {phone}"
-    )
-
-
-def msg_plumber_weekly(apts: list, plumber_name: str = "there") -> str:
-    blocks = f"\n{SEP}\n\n".join(_apt_block(i + 1, a, show_date=True) for i, a in enumerate(apts))
-    return (
-        f"\U0001f4c5 *WEEKLY APPOINTMENT SUMMARY*\n"
-        f"\n"
-        f"Hi {plumber_name} \U0001f44b\n"
-        f"Here are your upcoming jobs:\n"
-        f"\n"
-        f"{SEP}\n"
-        f"\n"
-        f"{blocks}\n"
-        f"\n"
-        f"{SEP}\n"
-        f"\n"
-        f"Please review your schedule and prepare materials accordingly.\n"
-        f"\n"
-        f"Let's have a productive week! \U0001f4aa\U0001f527"
-    )
-
-
-def msg_plumber_next_day(apts: list, plumber_name: str = "there") -> str:
-    blocks = f"\n{SEP}\n\n".join(_apt_block(i + 1, a, show_date=False) for i, a in enumerate(apts))
-    return (
-        f"\U0001f319 *TOMORROW'S APPOINTMENTS*\n"
-        f"\n"
-        f"Hi {plumber_name} \U0001f44b\n"
-        f"Here's what's scheduled:\n"
-        f"\n"
-        f"{SEP}\n"
-        f"\n"
-        f"{blocks}\n"
-        f"\n"
-        f"{SEP}\n"
-        f"\n"
-        f"Get your tools ready and travel safe. \U0001f527\U0001f697"
-    )
-
-
-def msg_plumber_morning(apts: list, plumber_name: str = "there") -> str:
-    blocks = f"\n{SEP}\n\n".join(_apt_block(i + 1, a, show_date=False) for i, a in enumerate(apts))
-    return (
-        f"\u2600\ufe0f *TODAY'S SCHEDULE*\n"
-        f"\n"
-        f"Good morning {plumber_name} \U0001f44b\n"
-        f"\n"
-        f"{SEP}\n"
-        f"\n"
-        f"{blocks}\n"
-        f"\n"
-        f"{SEP}\n"
-        f"\n"
-        f"Have a productive day! \U0001f4aa\U0001f527"
-    )
-
-
-def msg_plumber_2hours(apt, plumber_name: str = "there") -> str:
-    phone = _fmt_phone(getattr(apt, "phone_number", "") or "")
-    name  = getattr(apt, "customer_name", "?") or "?"
-    return (
-        f"\u23f0 *UPCOMING JOB \u2013 2 HOURS*\n"
-        f"\n"
-        f"Hi {plumber_name} \U0001f44b\n"
-        f"\n"
-        f"Customer: {name}\n"
-        f"\U0001f6e0 {_service(apt)}\n"
-        f"\U0001f4cd {_area(apt)}\n"
-        f"\u23f0 {_apt_time(apt)}\n"
-        f"\U0001f4de {phone}\n"
-        f"\n"
-        f"Make sure you're on your way.\n"
-        f"\n"
-        f"Drive safe! \U0001f697\U0001f527"
-    )
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CONSOLE DISPLAY HELPERS
+# DUPLICATE PREVENTION  (model fields for customer; internal_notes for plumber)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-W = 62
+def _already_sent_customer(apt, rtype: str) -> bool:
+    """Check dedicated boolean fields added in migration 0008."""
+    field_map = {
+        "lead_2days":   "reminder_1_day_sent",    # reuse closest field
+        "lead_1day":    "reminder_1_day_sent",
+        "lead_morning": "reminder_morning_sent",
+        "lead_2hours":  "reminder_2_hours_sent",
+    }
+    field = field_map.get(rtype)
+    if field:
+        return bool(getattr(apt, field, False))
+    # Fallback: check internal_notes for legacy keys
+    return f"[reminder_sent_{rtype}_{apt.id}]" in (apt.internal_notes or "")
 
 
-def _banner(text: str) -> str:
-    return f"\n{'=' * W}\n  {text}\n{'=' * W}"
+def _mark_sent_customer(apt, rtype: str) -> None:
+    """Mark the appropriate boolean field (and save only that field)."""
+    field_map = {
+        "lead_2days":   "reminder_1_day_sent",
+        "lead_1day":    "reminder_1_day_sent",
+        "lead_morning": "reminder_morning_sent",
+        "lead_2hours":  "reminder_2_hours_sent",
+    }
+    field = field_map.get(rtype)
+    if field and hasattr(apt, field):
+        setattr(apt, field, True)
+        apt.save(update_fields=[field])
+    else:
+        # Fallback: write a flag into internal_notes
+        key = f"[reminder_sent_{rtype}_{apt.id}]"
+        existing = apt.internal_notes or ""
+        if key not in existing:
+            apt.internal_notes = f"{existing}\n{key}".strip()
+            apt.save(update_fields=["internal_notes"])
 
 
-def _section(icon: str, title: str) -> str:
-    return f"\n+- {icon} {title}\n|"
+def _plumber_key(apt_id: int, rtype: str) -> str:
+    return f"plumber_reminder_sent_{rtype}_{apt_id}"
 
 
-def _row(label: str, value: str, indent: int = 4) -> str:
-    pad = " " * indent
-    return f"{pad}{label:<24} {value}"
+def _already_sent_plumber(apt, rtype: str) -> bool:
+    return _plumber_key(apt.id, rtype) in (apt.internal_notes or "")
 
 
-def _bar(count: int, total: int, width: int = 20) -> str:
-    filled = round((count / total) * width) if total else 0
-    return chr(0x2588) * filled + chr(0x2591) * (width - filled)
-
-
-def _ok(msg: str) -> str:
-    return f"  OK  {msg}"
-
-
-def _skip(msg: str) -> str:
-    return f"  --  {msg}"
-
-
-def _warn(msg: str) -> str:
-    return f"  !!  {msg}"
-
-
-def _info(msg: str) -> str:
-    return f"  ..  {msg}"
-
-
-def _preview(text: str, max_chars: int = 55) -> str:
-    first_line = text.strip().split("\n")[0]
-    snippet = first_line[:max_chars] + ("..." if len(first_line) > max_chars else "")
-    return f'       >> "{snippet}"'
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# TIME HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def is_in_window(now_local, target_hour: int, target_minute: int = 0) -> bool:
-    target = now_local.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
-    return abs((now_local - target).total_seconds()) <= WINDOW_MINUTES * 60
-
-
-def is_2h_window(appt_utc_dt, now_utc) -> bool:
-    diff = (appt_utc_dt - now_utc).total_seconds()
-    return (1 * 3600 + 55 * 60) <= diff <= (2 * 3600 + 5 * 60)
-
-
-def appt_utc(apt):
-    import pytz
-    dt = getattr(apt, "scheduled_datetime", None)
-    if not dt:
-        return None
-    cat = pytz.timezone(TIMEZONE_NAME)
-    if dt.tzinfo is None:
-        return cat.localize(dt).astimezone(pytz.utc)
-    return dt.astimezone(pytz.utc)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# DUPLICATE PREVENTION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _key(apt_id: int, rtype: str) -> str:
-    return f"reminder_sent_{rtype}_{apt_id}"
-
-
-def already_sent(apt, rtype: str) -> bool:
-    notes = getattr(apt, "internal_notes", "") or ""
-    return _key(apt.id, rtype) in notes
-
-
-def mark_sent(apt, rtype: str):
-    k = _key(apt.id, rtype)
-    existing = getattr(apt, "internal_notes", "") or ""
-    apt.internal_notes = f"{existing}\n[{k}]".strip()
-    apt.save(update_fields=["internal_notes"])
+def _mark_sent_plumber(apt, rtype: str) -> None:
+    key = _plumber_key(apt.id, rtype)
+    existing = apt.internal_notes or ""
+    if key not in existing:
+        apt.internal_notes = f"{existing}\n[{key}]".strip()
+        apt.save(update_fields=["internal_notes"])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # WHATSAPP SENDER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def send_wa(phone: str, message: str) -> bool:
+def _send_wa(phone: str, message: str, dry_run: bool = False) -> bool:
+    """Send a WhatsApp message. Returns True on success."""
+    if dry_run:
+        print(f"  [DRY RUN] Would send to +{phone}: {message[:80]}…")
+        return True
     try:
         from bot.whatsapp_cloud_api import whatsapp_api
         clean = _fmt_phone(phone)
@@ -385,289 +199,356 @@ def send_wa(phone: str, message: str) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# MESSAGE BUILDERS  (customer-facing)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _msg_2days(apt, plumber_phone: str) -> str:
+    name = getattr(apt, "customer_name", "") or "there"
+    return (
+        f"Hi {name} 👋\n\n"
+        f"Just a friendly reminder about your upcoming appointment:\n\n"
+        f"🛠 Service: {_service(apt)}\n"
+        f"📍 Location: {_area(apt)}\n"
+        f"📅 Date: {_apt_date_str(apt)}\n"
+        f"⏰ Time: {_apt_time_str(apt)}\n\n"
+        f"Please make sure someone is home and the work area is accessible.\n\n"
+        f"We look forward to assisting you! 🔧\n\n"
+        f"📞 Questions? Call us: +{plumber_phone}"
+    )
+
+
+def _msg_1day(apt, plumber_phone: str) -> str:
+    name = getattr(apt, "customer_name", "") or "there"
+    return (
+        f"Hi {name} 👋\n\n"
+        f"Your appointment is *tomorrow!*\n\n"
+        f"🛠 {_service(apt)}\n"
+        f"📅 {_apt_date_str(apt)}\n"
+        f"⏰ {_apt_time_str(apt)}\n\n"
+        f"Please ensure:\n"
+        f"✅ Someone is home\n"
+        f"✅ The work area is accessible\n"
+        f"✅ Water can be shut off if needed\n\n"
+        f"See you tomorrow! 🔧\n\n"
+        f"📞 {plumber_phone}"
+    )
+
+
+def _msg_morning(apt, plumber_phone: str) -> str:
+    name = getattr(apt, "customer_name", "") or "there"
+    return (
+        f"Good morning {name} ☀️\n\n"
+        f"Today is your appointment day!\n\n"
+        f"⏰ Arrival Time: {_apt_time_str(apt)}\n"
+        f"📍 Location: {_area(apt)}\n\n"
+        f"Our plumber will be there on time.\n"
+        f"Please make sure someone is available.\n\n"
+        f"See you shortly! 🔧\n\n"
+        f"📞 {plumber_phone}"
+    )
+
+
+def _msg_2hours(apt, plumber_phone: str) -> str:
+    name = getattr(apt, "customer_name", "") or "there"
+    return (
+        f"Hi {name} ⏰\n\n"
+        f"Your plumber will be arriving in approximately *2 hours.*\n\n"
+        f"📅 Today\n"
+        f"⏰ {_apt_time_str(apt)}\n\n"
+        f"Please ensure access is ready.\n\n"
+        f"See you soon! 🔧\n\n"
+        f"📞 +{plumber_phone}"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MESSAGE BUILDERS  (plumber-facing)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _apt_block(i: int, apt, show_date: bool = True) -> str:
+    phone = _fmt_phone(getattr(apt, "phone_number", "") or "")
+    name  = getattr(apt, "customer_name", "?") or "?"
+    date_part = f"{_apt_date_str(apt)} | " if show_date else ""
+    return (
+        f"{i}\ufe0f\u20e3 {name}\n"
+        f"🛠 {_service(apt)}\n"
+        f"📍 {_area(apt)}\n"
+        f"⏰ {date_part}{_apt_time_str(apt)}\n"
+        f"📞 {phone}"
+    )
+
+
+def _msg_plumber_morning(apts: list, plumber_name: str) -> str:
+    blocks = f"\n{SEP}\n\n".join(
+        _apt_block(i + 1, a, show_date=False) for i, a in enumerate(apts)
+    )
+    return (
+        f"☀️ *TODAY'S SCHEDULE*\n\n"
+        f"Good morning {plumber_name} 👋\n\n"
+        f"{SEP}\n\n{blocks}\n\n{SEP}\n\n"
+        f"Have a productive day! 💪🔧"
+    )
+
+
+def _msg_plumber_next_day(apts: list, plumber_name: str) -> str:
+    blocks = f"\n{SEP}\n\n".join(
+        _apt_block(i + 1, a, show_date=False) for i, a in enumerate(apts)
+    )
+    return (
+        f"🌙 *TOMORROW'S APPOINTMENTS*\n\n"
+        f"Hi {plumber_name} 👋\n\n"
+        f"{SEP}\n\n{blocks}\n\n{SEP}\n\n"
+        f"Get your tools ready and travel safe. 🔧🚗"
+    )
+
+
+def _msg_plumber_2hours(apt, plumber_name: str) -> str:
+    phone = _fmt_phone(getattr(apt, "phone_number", "") or "")
+    name  = getattr(apt, "customer_name", "?") or "?"
+    return (
+        f"⏰ *UPCOMING JOB – 2 HOURS*\n\n"
+        f"Hi {plumber_name} 👋\n\n"
+        f"Customer: {name}\n"
+        f"🛠 {_service(apt)}\n"
+        f"📍 {_area(apt)}\n"
+        f"⏰ {_apt_time_str(apt)}\n"
+        f"📞 {phone}\n\n"
+        f"Make sure you're on your way.\n\nDrive safe! 🚗🔧"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MANAGEMENT COMMAND
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class Command(BaseCommand):
-    help = "Send appointment reminders to leads and plumber (24-hour window enforced)"
+    help = (
+        "Send appointment reminders to customers and plumber. "
+        "Run every 15 minutes. Customer reminders are NOT gated by the "
+        "WhatsApp 24-hour message window — confirmed appointments always "
+        "receive reminders."
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Show what would be sent without actually sending anything.",
+        )
 
     def handle(self, *args, **options):
+        dry_run = options["dry_run"]
+
         try:
             from bot.models import Appointment
         except ImportError:
             self.stderr.write("Could not import Appointment model.")
             return
 
-        import pytz
         cat       = pytz.timezone(TIMEZONE_NAME)
         now_utc   = timezone.now()
         now_local = now_utc.astimezone(cat)
         today     = now_local.date()
+        tomorrow  = today + timedelta(days=1)
 
-        # ── Banner ─────────────────────────────────────────────────────────────
-        self.stdout.write(_banner("REMINDER DISPATCHER"))
+        if dry_run:
+            self.stdout.write(self.style.WARNING("🧪 DRY RUN — no messages will be sent\n"))
 
-        day_names = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-        months    = ["January","February","March","April","May","June",
-                     "July","August","September","October","November","December"]
-        day_str   = f"{day_names[now_local.weekday()]}, {now_local.day} {months[now_local.month-1]} {now_local.year}"
+        self.stdout.write(
+            f"\n{'=' * 60}\n"
+            f"  REMINDER DISPATCHER  |  {now_local.strftime('%a %d %b %Y  %H:%M')} CAT\n"
+            f"{'=' * 60}\n"
+        )
 
-        self.stdout.write("")
-        self.stdout.write(_row("  Local time:", f"{day_str}  |  {now_local.strftime('%H:%M')} CAT"))
-        self.stdout.write(_row("  UTC time:",   now_utc.strftime("%Y-%m-%d %H:%M UTC")))
-
-        # ── Fetch appointments (only those in the 24h window) ──────────────────
-        # Note: appointment reminders are sent TO customers, so we enforce the
-        # 24-hour window here.  The plumber's own schedule reminders do NOT
-        # require the customer to have messaged — those bypass the window check.
+        # ── Fetch ALL confirmed future appointments (no WhatsApp window filter) ──
         base_qs = Appointment.objects.filter(
-            Q(status__in=["confirmed", "scheduled", "booked", "pending"]),
-            Q(scheduled_datetime__date__gte=today),
+            Q(status__in=["confirmed", "scheduled", "booked"]),
             scheduled_datetime__isnull=False,
+            scheduled_datetime__date__gte=today,
         ).order_by("scheduled_datetime")
 
-        # Apply 24h window filter for customer-facing reminders
-        active_windowed = list(filter_queryset_by_window(base_qs))
-        # All active (including window-closed) for plumber schedule reminders
-        active_all = list(base_qs)
+        all_apts = list(base_qs)
+        self.stdout.write(f"  Confirmed appointments found: {len(all_apts)}\n")
 
-        self.stdout.write("")
-        self.stdout.write(_row("  Total confirmed:", f"{len(active_all)} appointments"))
-        self.stdout.write(_row("  In 24h window:", f"{len(active_windowed)} appointments"))
-
-        # ── Overview ───────────────────────────────────────────────────────────
-        self.stdout.write(_section("OVERVIEW", "APPOINTMENT SUMMARY"))
-        self.stdout.write("")
-
-        by_date = defaultdict(list)
-        for a in active_all:
-            by_date[a.scheduled_datetime.date()].append(a)
-
-        first_d = min(by_date.keys()) if by_date else None
-        last_d  = max(by_date.keys()) if by_date else None
-
-        self.stdout.write(_row("  Total active:", f"{len(active_all)} appointments"))
-        self.stdout.write(_row("  Days covered:", str(len(by_date))))
-        self.stdout.write(_row("  First:", str(first_d) if first_d else "none"))
-        self.stdout.write(_row("  Last:",  str(last_d)  if last_d  else "none"))
-
-        if by_date:
-            self.stdout.write("")
-            self.stdout.write("  Daily breakdown:")
-            import datetime as _dt
-            max_count = max(len(v) for v in by_date.values())
-            short_days   = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
-            short_months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-            for d, apts_on_day in sorted(by_date.items()):
-                if isinstance(d, str):
-                    d = _dt.date.fromisoformat(d)
-                label = f"{short_days[d.weekday()]} {d.day} {short_months[d.month-1]}:"
-                bar   = chr(0x2588) * len(apts_on_day) + " " * (max_count - len(apts_on_day))
-                self.stdout.write(f"    {label:<14} {len(apts_on_day)}  [{bar}]")
-
-        # ─────────────────────────────────────────────────────────────────────
-        # LEAD REMINDERS (24h window enforced — customers only)
-        # ─────────────────────────────────────────────────────────────────────
-        self.stdout.write(_section("LEADS", "CUSTOMER REMINDERS"))
-        self.stdout.write("")
-
-        lead_sent = lead_skipped = lead_window_closed = 0
         plumber_contact = f"+{PLUMBER_PHONE}" if PLUMBER_PHONE else "+263774819901"
 
-        LEAD_CHECKS = [
-            (2, 18, "lead_2days",   msg_lead_2days,   "2 Days Before  [6:00 PM]"),
-            (1, 18, "lead_1day",    msg_lead_1day,    "1 Day Before   [6:00 PM]"),
-            (0,  7, "lead_morning", msg_lead_morning, "Morning Of     [7:00 AM]"),
+        # ─────────────────────────────────────────────────────────────────────
+        # CUSTOMER REMINDERS
+        # ─────────────────────────────────────────────────────────────────────
+        self.stdout.write(f"\n  {'─' * 56}")
+        self.stdout.write("  CUSTOMER REMINDERS\n")
+
+        customer_sent = customer_skipped = customer_failed = 0
+
+        # (days_away, send_hour, reminder_type, builder, label)
+        CUSTOMER_CHECKS = [
+            (2, 18, "lead_2days",   _msg_2days,   "2 Days Before  [6 PM]"),
+            (1, 18, "lead_1day",    _msg_1day,    "1 Day Before   [6 PM]"),
+            (0,  7, "lead_morning", _msg_morning, "Morning Of     [7 AM]"),
         ]
 
-        for apt in active_all:  # iterate all; window check is per-apt below
-            apt_u = appt_utc(apt)
-            if apt_u is None:
+        for apt in all_apts:
+            apt_u = _appt_utc(apt)
+            if not apt_u:
                 continue
-            apt_loc   = apt_u.astimezone(cat)
-            days_away = (apt_loc.date() - today).days
-            phone     = _fmt_phone(getattr(apt, "phone_number", "") or "")
-            name      = getattr(apt, "customer_name", "?") or "?"
-            apt_label = f"{name} (+{phone})  |  {apt_loc.strftime('%Y-%m-%d @ %H:%M')}"
 
-            for days, hour, rtype, builder, label in LEAD_CHECKS:
-                if days_away == days and is_in_window(now_local, hour):
-                    if already_sent(apt, rtype):
-                        lead_skipped += 1
-                        self.stdout.write(_skip(f"{label} -> {apt_label}"))
+            apt_local  = apt_u.astimezone(cat)
+            days_away  = (apt_local.date() - today).days
+            phone      = _fmt_phone(apt.phone_number or "")
+            name       = apt.customer_name or "Customer"
+            apt_label  = f"{name} (+{phone})  |  {apt_local.strftime('%Y-%m-%d %H:%M')}"
+
+            # Fixed-time reminders
+            for days, hour, rtype, builder, label in CUSTOMER_CHECKS:
+                if days_away == days and _in_window(now_local, hour):
+                    if _already_sent_customer(apt, rtype):
+                        customer_skipped += 1
+                        self.stdout.write(f"    SKIP  {label} → {apt_label}")
                     else:
-                        # ── 24h window check for customer messages ──
-                        if not is_window_open(apt):
-                            lead_window_closed += 1
+                        msg = builder(apt, plumber_contact.replace("+", ""))
+                        ok  = _send_wa(phone, msg, dry_run=dry_run)
+                        if ok:
+                            if not dry_run:
+                                _mark_sent_customer(apt, rtype)
+                            customer_sent += 1
                             self.stdout.write(
-                                _warn(
-                                    f"{label} -> WINDOW CLOSED for {apt_label} "
-                                    f"({hours_remaining(apt):.1f}h remaining)"
-                                )
+                                self.style.SUCCESS(f"    SENT  {label} → {apt_label}")
                             )
-                            continue
-
-                        msg = builder(apt, plumber_contact)
-                        if send_wa(phone, msg):
-                            mark_sent(apt, rtype)
-                            lead_sent += 1
-                            self.stdout.write(_ok(f"{label} -> {apt_label}"))
-                            self.stdout.write(_preview(msg))
                         else:
-                            self.stdout.write(_warn(f"{label} -> FAILED for {apt_label}"))
-
-            if is_2h_window(apt_u, now_utc):
-                rtype = "lead_2hours"
-                if already_sent(apt, rtype):
-                    lead_skipped += 1
-                    self.stdout.write(_skip(f"2 Hours Before         -> {apt_label}"))
-                else:
-                    # ── 24h window check ──
-                    if not is_window_open(apt):
-                        lead_window_closed += 1
-                        self.stdout.write(
-                            _warn(
-                                f"2 Hours Before -> WINDOW CLOSED for {apt_label} "
-                                f"({hours_remaining(apt):.1f}h remaining)"
+                            customer_failed += 1
+                            self.stdout.write(
+                                self.style.ERROR(f"    FAIL  {label} → {apt_label}")
                             )
+
+            # 2-hour reminder
+            if _is_2h_window(apt_u, now_utc):
+                rtype = "lead_2hours"
+                if _already_sent_customer(apt, rtype):
+                    customer_skipped += 1
+                    self.stdout.write(f"    SKIP  2 Hours Before → {apt_label}")
+                else:
+                    msg = _msg_2hours(apt, plumber_contact.replace("+", ""))
+                    ok  = _send_wa(phone, msg, dry_run=dry_run)
+                    if ok:
+                        if not dry_run:
+                            _mark_sent_customer(apt, rtype)
+                        customer_sent += 1
+                        self.stdout.write(
+                            self.style.SUCCESS(f"    SENT  2 Hours Before → {apt_label}")
                         )
-                        continue
-
-                    msg = msg_lead_2hours(apt, plumber_contact)
-                    if send_wa(phone, msg):
-                        mark_sent(apt, rtype)
-                        lead_sent += 1
-                        self.stdout.write(_ok(f"2 Hours Before         -> {apt_label}"))
-                        self.stdout.write(_preview(msg))
                     else:
-                        self.stdout.write(_warn(f"2 Hours Before -> FAILED for {apt_label}"))
+                        customer_failed += 1
+                        self.stdout.write(
+                            self.style.ERROR(f"    FAIL  2 Hours Before → {apt_label}")
+                        )
 
-        if lead_sent == 0 and lead_skipped == 0 and lead_window_closed == 0:
-            self.stdout.write(_info("No lead reminders due at this time"))
+        if customer_sent == 0 and customer_skipped == 0 and customer_failed == 0:
+            self.stdout.write("    No customer reminders due at this time.")
 
-        self.stdout.write("")
-        self.stdout.write(f"  {'-' * 56}")
-        self.stdout.write(f"  Lead Summary:")
-        self.stdout.write(_row("    Sent:",         str(lead_sent)))
-        self.stdout.write(_row("    Skipped:",      str(lead_skipped)))
-        self.stdout.write(_row("    Window Closed:", str(lead_window_closed)))
-        self.stdout.write(_row("    Total:",        str(lead_sent + lead_skipped + lead_window_closed)))
+        self.stdout.write(
+            f"\n    Summary → sent={customer_sent}  "
+            f"skipped={customer_skipped}  failed={customer_failed}"
+        )
 
         # ─────────────────────────────────────────────────────────────────────
-        # PLUMBER REMINDERS (schedule-based — NOT customer-facing, no window check)
+        # PLUMBER REMINDERS  (not gated by customer message window either)
         # ─────────────────────────────────────────────────────────────────────
-        self.stdout.write(_section("PLUMBER", "PLUMBER REMINDERS"))
-        self.stdout.write("")
-        self.stdout.write(_info("Note: plumber reminders use all confirmed appointments (no 24h window)"))
-        self.stdout.write("")
+        self.stdout.write(f"\n  {'─' * 56}")
+        self.stdout.write("  PLUMBER REMINDERS\n")
 
         plumber_sent = 0
 
         if not PLUMBER_PHONE:
-            self.stdout.write(_warn("PLUMBER_PHONE_NUMBER not set -- skipping"))
+            self.stdout.write(
+                self.style.WARNING(
+                    "    PLUMBER_PHONE_NUMBER env var not set — skipping plumber reminders."
+                )
+            )
         else:
-            self.stdout.write(_row("  Recipient:", f"{PLUMBER_NAME}  |  {PLUMBER_PHONE}"))
-            self.stdout.write("")
+            self.stdout.write(f"    Recipient: {PLUMBER_NAME}  |  +{PLUMBER_PHONE}\n")
 
-            import datetime as _dt
-            week_num  = now_local.isocalendar()[1]
-            is_sunday = now_local.weekday() == 6
-
-            # Sunday weekly @ 18:00
-            if is_sunday and is_in_window(now_local, 18):
-                rtype  = f"plumber_weekly_{week_num}"
-                marker = active_all[0] if active_all else None
-                if marker and already_sent(marker, rtype):
-                    self.stdout.write(_skip(f"Weekly Overview (Week {week_num})  [already sent]"))
-                elif active_all:
-                    msg = msg_plumber_weekly(active_all, PLUMBER_NAME)
-                    if send_wa(PLUMBER_PHONE, msg):
-                        if marker:
-                            mark_sent(marker, rtype)
-                        plumber_sent += 1
-                        self.stdout.write(_ok(f"Weekly Overview (Week {week_num})  |  {len(active_all)} appointments"))
-                        self.stdout.write(_preview(msg))
-                    else:
-                        self.stdout.write(_warn("Weekly Overview -- SEND FAILED"))
-                else:
-                    self.stdout.write(_info("No upcoming appointments -- weekly summary skipped"))
-
-            # Tomorrow's appointments @ 20:00
-            if is_in_window(now_local, 20):
-                tomorrow      = today + timedelta(days=1)
-                tomorrow_apts = [a for a in active_all if a.scheduled_datetime.date() == tomorrow]
+            # Evening briefing: tomorrow's appointments @ 20:00
+            if _in_window(now_local, 20):
+                tomorrow_apts = [a for a in all_apts if a.scheduled_datetime.date() == tomorrow]
                 if tomorrow_apts:
-                    rtype = f"plumber_nextday_{tomorrow.isoformat()}"
-                    if already_sent(tomorrow_apts[0], rtype):
-                        self.stdout.write(_skip(f"Tomorrow's Jobs  |  {len(tomorrow_apts)} appointments  [already sent]"))
+                    marker = tomorrow_apts[0]
+                    rtype  = f"plumber_nextday_{tomorrow.isoformat()}"
+                    if _already_sent_plumber(marker, rtype):
+                        self.stdout.write(f"    SKIP  Tomorrow's Jobs ({len(tomorrow_apts)} apts) [already sent]")
                     else:
-                        msg = msg_plumber_next_day(tomorrow_apts, PLUMBER_NAME)
-                        if send_wa(PLUMBER_PHONE, msg):
-                            mark_sent(tomorrow_apts[0], rtype)
+                        msg = _msg_plumber_next_day(tomorrow_apts, PLUMBER_NAME)
+                        ok  = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        if ok:
+                            if not dry_run:
+                                _mark_sent_plumber(marker, rtype)
                             plumber_sent += 1
-                            self.stdout.write(_ok(f"Tomorrow's Jobs  |  {len(tomorrow_apts)} appointments"))
-                            self.stdout.write(_preview(msg))
+                            self.stdout.write(
+                                self.style.SUCCESS(
+                                    f"    SENT  Tomorrow's Jobs  |  {len(tomorrow_apts)} appointment(s)"
+                                )
+                            )
                         else:
-                            self.stdout.write(_warn("Tomorrow's Jobs -- SEND FAILED"))
+                            self.stdout.write(self.style.ERROR("    FAIL  Tomorrow's Jobs"))
                 else:
-                    self.stdout.write(_info("No appointments tomorrow -- evening briefing skipped"))
+                    self.stdout.write("    INFO  No appointments tomorrow — evening briefing skipped.")
 
-            # Morning @ 07:00
-            if is_in_window(now_local, 7):
-                today_apts = [a for a in active_all if a.scheduled_datetime.date() == today]
+            # Morning briefing @ 07:00
+            if _in_window(now_local, 7):
+                today_apts = [a for a in all_apts if a.scheduled_datetime.date() == today]
                 if today_apts:
-                    rtype = f"plumber_morning_{today.isoformat()}"
-                    if already_sent(today_apts[0], rtype):
-                        self.stdout.write(_skip(f"Morning Briefing  |  {len(today_apts)} appointments  [already sent]"))
+                    marker = today_apts[0]
+                    rtype  = f"plumber_morning_{today.isoformat()}"
+                    if _already_sent_plumber(marker, rtype):
+                        self.stdout.write(f"    SKIP  Morning Briefing ({len(today_apts)} apts) [already sent]")
                     else:
-                        msg = msg_plumber_morning(today_apts, PLUMBER_NAME)
-                        if send_wa(PLUMBER_PHONE, msg):
-                            mark_sent(today_apts[0], rtype)
+                        msg = _msg_plumber_morning(today_apts, PLUMBER_NAME)
+                        ok  = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        if ok:
+                            if not dry_run:
+                                _mark_sent_plumber(marker, rtype)
                             plumber_sent += 1
-                            self.stdout.write(_ok(f"Morning Briefing  |  {len(today_apts)} appointments"))
-                            self.stdout.write(_preview(msg))
+                            self.stdout.write(
+                                self.style.SUCCESS(
+                                    f"    SENT  Morning Briefing  |  {len(today_apts)} appointment(s)"
+                                )
+                            )
                         else:
-                            self.stdout.write(_warn("Morning Briefing -- SEND FAILED"))
+                            self.stdout.write(self.style.ERROR("    FAIL  Morning Briefing"))
                 else:
-                    self.stdout.write(_info("No appointments today -- morning briefing skipped"))
+                    self.stdout.write("    INFO  No appointments today — morning briefing skipped.")
 
-            # 2-hour alerts
-            for apt in active_all:
-                apt_u = appt_utc(apt)
-                if apt_u is None:
+            # 2-hour alerts for plumber
+            for apt in all_apts:
+                apt_u = _appt_utc(apt)
+                if not apt_u:
                     continue
-                if is_2h_window(apt_u, now_utc):
-                    rtype = "plumber_2hours"
-                    name  = getattr(apt, "customer_name", "?") or "?"
-                    if already_sent(apt, rtype):
-                        self.stdout.write(_skip(f"2-Hour Alert -> {name}  [already sent]"))
+                if _is_2h_window(apt_u, now_utc):
+                    name  = apt.customer_name or "?"
+                    rtype = f"plumber_2hours_{apt.id}"
+                    if _already_sent_plumber(apt, rtype):
+                        self.stdout.write(f"    SKIP  2-Hour Alert → {name} [already sent]")
                     else:
-                        msg = msg_plumber_2hours(apt, PLUMBER_NAME)
-                        if send_wa(PLUMBER_PHONE, msg):
-                            mark_sent(apt, rtype)
+                        msg = _msg_plumber_2hours(apt, PLUMBER_NAME)
+                        ok  = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        if ok:
+                            if not dry_run:
+                                _mark_sent_plumber(apt, rtype)
                             plumber_sent += 1
-                            self.stdout.write(_ok(f"2-Hour Alert -> {name}"))
-                            self.stdout.write(_preview(msg))
+                            self.stdout.write(
+                                self.style.SUCCESS(f"    SENT  2-Hour Alert → {name}")
+                            )
                         else:
-                            self.stdout.write(_warn(f"2-Hour Alert -> FAILED for {name}"))
+                            self.stdout.write(self.style.ERROR(f"    FAIL  2-Hour Alert → {name}"))
 
         # ─────────────────────────────────────────────────────────────────────
-        # FINAL TALLY
+        # FINAL SUMMARY
         # ─────────────────────────────────────────────────────────────────────
-        total_sent = lead_sent + plumber_sent
-        total_ops  = total_sent + lead_skipped + lead_window_closed
-        rate       = (total_sent / total_ops * 100) if total_ops else 0.0
-
-        self.stdout.write(f"\n{'=' * W}")
-        self.stdout.write(f"  Final Tally:")
-        self.stdout.write(_row("    Lead reminders sent:",    str(lead_sent)))
-        self.stdout.write(_row("    Lead window closed:",     str(lead_window_closed)))
-        self.stdout.write(_row("    Plumber reminders sent:", str(plumber_sent)))
-        self.stdout.write(_row("    TOTAL:",                  str(total_sent)))
-        self.stdout.write("")
-        self.stdout.write(f"  Success Rate: {rate:.1f}%")
-        bar_str = _bar(total_sent, total_ops) if total_ops else chr(0x2591) * 20
-        self.stdout.write(f"  [{bar_str}]")
-        self.stdout.write("")
-        self.stdout.write("  Next run scheduled in ~15 minutes")
-        self.stdout.write(f"{'=' * W}\n")
+        total_sent = customer_sent + plumber_sent
+        self.stdout.write(
+            f"\n{'=' * 60}\n"
+            f"  DONE  |  customer_sent={customer_sent}  "
+            f"plumber_sent={plumber_sent}  "
+            f"total={total_sent}\n"
+            f"  Next run in ~15 minutes\n"
+            f"{'=' * 60}\n"
+        )

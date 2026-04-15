@@ -2,41 +2,13 @@
 #
 # HIGH-CONVERTING FOLLOW-UP SYSTEM
 #
-# Principles applied (Hormozi + conversion psychology):
+# 4 follow-ups within 24 hours:
+#   Attempt 1 → 0h  (first message, sent as soon as lead goes cold)
+#   Attempt 2 → 6h  after attempt 1
+#   Attempt 3 → 12h after attempt 1
+#   Attempt 4 → 18h after attempt 1
 #
-#  1. SPECIFICITY SELLS, vague messages get ignored. Every message references
-#     exactly what the customer said they need. "Your bathroom" beats "your project".
-#
-#  2. VALUE BEFORE ASK — each follow-up leads with something useful (insight,
-#     social proof, a concrete next step) before asking for anything.
-#
-#  3. PATTERN INTERRUPTS — message #2+ deliberately break the pattern of the
-#     previous one. Different length, different opener, different angle.
-#     Same message twice = unsubscribe.
-#
-#  4. URGENCY WITHOUT LYING — real constraints only: limited slots, real wait
-#     times, genuine price change warnings. Never fake scarcity.
-#
-#  5. MICRO-COMMITMENTS — each message asks for the smallest possible "yes"
-#     that moves the sale forward one step, not the whole thing at once.
-#
-#  6. TIMING LOGIC (Hormozi: "speed to lead" + "9-word email"):
-#       - Very hot (booked slot): 4h → 8h → 1d → 2d (chase fast, they're ready)
-#       - Hot (4 fields): 20h → 36h → 60h → 5d (consistent, not desperate)
-#       - Warm (2-3 fields): 36h → 3d → 6d → 10d (patient, educational)
-#       - Cold (0-1 fields): 48h → 5d → 10d → 21d (nurture, don't push)
-#
-#  7. CONTACT WINDOWS — only reach during high-read-rate windows.
-#     Research: 8-10am (commute), 12-1pm (lunch), 5-7pm (after work).
-#
-#  8. EXPONENTIAL BACKOFF — each ignored message doubles the wait.
-#     Respect = better deliverability + warmer reception when they do reply.
-#
-#  9. THE "9-WORD EMAIL" (Hormozi) — attempt 4+ uses ultra-short messages.
-#     "Are you still looking for a plumber?" converts better than paragraphs.
-#
-# 10. ZIMBABWE/SA CONTEXT — warm, direct, professional. No American hype.
-#     Prices in USD. Informal but not sloppy.
+# Total spread: 18 hours, all 4 messages land within a single day.
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -60,32 +32,33 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
 # ─── Contact windows (local hour, half-open) ─────────────────────────────────
 CONTACT_WINDOWS = [
-    (8, 21),    # All day: 8 AM - 8 PM SAST
+    (8, 21),    # All day: 8 AM - 9 PM SAST
 ]
 
-# ─── Intervals (hours) — tighter on hot leads, patient on cold ───────────────
-# Each tuple is (attempt_1, attempt_2, attempt_3, attempt_4+)
+# ─── Intervals (hours since last customer response OR last follow-up) ─────────
+# 4 follow-ups spread across ~18 hours:
+#   Attempt 1: 2h  after going silent
+#   Attempt 2: 6h  after attempt 1
+#   Attempt 3: 6h  after attempt 2  (12h total)
+#   Attempt 4: 6h  after attempt 3  (18h total)
 TIER_INTERVALS = {
-    LeadStatus.VERY_HOT: (4, 6, 8, 12),
-    LeadStatus.HOT:      (4, 6, 8, 12),
-    LeadStatus.WARM:     (4, 6, 8, 12),
-    LeadStatus.COLD:     (4, 6, 8, 12),
+    LeadStatus.VERY_HOT: (2, 4, 4, 6),
+    LeadStatus.HOT:      (2, 6, 6, 6),
+    LeadStatus.WARM:     (3, 6, 6, 6),
+    LeadStatus.COLD:     (4, 6, 6, 6),
 }
 
 MAX_FOLLOWUPS_PER_STATUS = {
-    LeadStatus.VERY_HOT: 6,
-    LeadStatus.HOT:      5,
+    LeadStatus.VERY_HOT: 4,
+    LeadStatus.HOT:      4,
     LeadStatus.WARM:     4,
-    LeadStatus.COLD:     3,
+    LeadStatus.COLD:     4,
 }
-
-# After this many attempts with zero response, lead goes cold/inactive
-GHOSTED_THRESHOLD = 4
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 class Command(BaseCommand):
-    help = 'High-converting follow-ups: Hormozi timing, value-first messaging, pattern interrupts'
+    help = '4 follow-ups within 24 hours — Hormozi timing, value-first messaging'
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true',
@@ -140,8 +113,8 @@ class Command(BaseCommand):
     def _get_eligible_leads(self, now_local, force):
         from django.db.models import Q
 
-        # Don't interrupt a customer who engaged in the last 24h
-        response_window = now_local - timedelta(hours=2/60)
+        # Don't interrupt a customer who engaged very recently (2 minutes)
+        response_window = now_local - timedelta(minutes=2)
 
         leads = (
             Appointment.objects
@@ -150,24 +123,19 @@ class Command(BaseCommand):
             .exclude(last_customer_response__gte=response_window)
             # Don't interfere with plan-upload flows
             .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
-#            .exclude(plan_status='pending_upload')
         )
 
-        if not force:
-            today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-            cold_warm_sent_today = Q(
-                last_followup_sent__gte=today_start,
-                lead_status__in=[LeadStatus.COLD, LeadStatus.WARM]
-            )
-            leads = leads.exclude(cold_warm_sent_today)
+        # ── KEY FIX: Remove the daily cap that was limiting cold/warm to 1 per day ──
+        # We now rely entirely on the per-lead timing logic in _is_ready_for_followup
+        # to control cadence, not a blanket daily cap per status tier.
 
         return leads.order_by('last_customer_response', 'created_at')
 
     def _print_eligibility_breakdown(self, now_local, force):
         from django.db.models import Q
 
-        response_window = now_local - timedelta(hours=2/60)
-        plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book']) | Q(plan_status='pending_upload')
+        response_window = now_local - timedelta(minutes=2)
+        plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
 
         q0 = Appointment.objects.filter(is_lead_active=True, status='pending')
         c0 = q0.count()
@@ -181,28 +149,12 @@ class Command(BaseCommand):
         q3 = q2.exclude(plan_block_q)
         c3 = q3.count()
 
-        removed_daily_cap = 0
-        c4 = c3
-        if not force:
-            today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-            cold_warm_sent_today = Q(
-                last_followup_sent__gte=today_start,
-                lead_status__in=[LeadStatus.COLD, LeadStatus.WARM]
-            )
-            q4 = q3.exclude(cold_warm_sent_today)
-            c4 = q4.count()
-            removed_daily_cap = c3 - c4
-
         self.stdout.write(self.style.WARNING('🔎 Eligibility breakdown'))
         self.stdout.write(f'  active_pending: {c0}')
         self.stdout.write(f'  excluded_completed_stage: {c0 - c1}')
-        self.stdout.write(f'  excluded_recent_response_24h: {c1 - c2}')
+        self.stdout.write(f'  excluded_recent_response_2min: {c1 - c2}')
         self.stdout.write(f'  excluded_plan_flow: {c2 - c3}')
-        if force:
-            self.stdout.write('  excluded_cold_warm_sent_today: 0 (force mode)')
-        else:
-            self.stdout.write(f'  excluded_cold_warm_sent_today: {removed_daily_cap}')
-        self.stdout.write(f'  eligible_after_filters: {c4}')
+        self.stdout.write(f'  eligible_after_filters: {c3}')
 
     # ─── Per-lead processing ──────────────────────────────────────────────────
 
@@ -212,7 +164,7 @@ class Command(BaseCommand):
             logger.debug(f'Lead {lead.id} skipped: {reason}')
             return {'status': 'skipped'}
 
-        max_followups = MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 3)
+        max_followups = MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 4)
         if lead.followup_count >= max_followups:
             if not dry_run:
                 lead.followup_stage = 'completed'
@@ -265,36 +217,39 @@ class Command(BaseCommand):
     # ─── Timing ───────────────────────────────────────────────────────────────
 
     def _is_ready_for_followup(self, lead, now_local, force):
-        attempt_index = min(lead.followup_count, 3)   # 0-3, maps to tuple index
-        intervals     = TIER_INTERVALS.get(lead.lead_status, TIER_INTERVALS[LeadStatus.COLD])
-        base_hours    = intervals[attempt_index]
+        """
+        Determine whether this lead is due for its next follow-up.
 
-        # Temporary test mode: keep follow-up cadence fixed at 2 minutes.
-        backoff_factor = 1
-        wait_hours     = min(base_hours * backoff_factor, base_hours * 4)
+        Wait times (hours since last activity):
+          Attempt 1: TIER_INTERVALS[status][0]
+          Attempt 2: TIER_INTERVALS[status][1]  (measured from attempt 1 sent time)
+          Attempt 3: TIER_INTERVALS[status][2]  (measured from attempt 2 sent time)
+          Attempt 4: TIER_INTERVALS[status][3]  (measured from attempt 3 sent time)
 
-        reference = (
-            lead.last_customer_response
-            or lead.last_followup_sent
-            or lead.created_at
-        )
+        The reference point shifts after each follow-up:
+          - Before any follow-up was sent: reference = last_customer_response or created_at
+          - After a follow-up was sent:    reference = last_followup_sent
+        """
+        attempt_index = min(lead.followup_count, 3)
+        intervals = TIER_INTERVALS.get(lead.lead_status, TIER_INTERVALS[LeadStatus.COLD])
+        wait_hours = intervals[attempt_index]
+
+        # After the first follow-up, measure from when the LAST follow-up was sent.
+        # Before any follow-up, measure from when the customer last responded (or created_at).
+        if lead.followup_count > 0 and lead.last_followup_sent:
+            reference = lead.last_followup_sent
+        else:
+            reference = (
+                lead.last_customer_response
+                or lead.last_followup_sent
+                or lead.created_at
+            )
+
         elapsed = (timezone.now() - reference).total_seconds() / 3600
 
         if elapsed < wait_hours:
-            return False, f'{elapsed:.1f}h elapsed, need {wait_hours:.1f}h'
+            return False, f'{elapsed:.1f}h elapsed, need {wait_hours:.1f}h (attempt #{attempt_index + 1})'
         return True, ''
-
-    def _backoff_factor(self, lead):
-        """
-        How many follow-ups have been sent since the customer last replied?
-        Each one doubles the wait. Cap at 4× so we don't disappear entirely.
-        """
-        if (lead.last_customer_response and lead.last_followup_sent
-                and lead.last_customer_response > lead.last_followup_sent):
-            return 1   # They replied after last message — no backoff
-
-        ignored = lead.followup_count
-        return min(2 ** ignored, 4)
 
     def _stage_label(self, lead):
         labels = ['day_1', 'day_3', 'week_1', 'week_2', 'month_1', 'completed']
@@ -385,7 +340,6 @@ class Command(BaseCommand):
         time_ref = self._elapsed_description(lead)
         area     = lead.customer_area or ''
 
-        # Pull the template for this question/attempt as the required base
         template_result = self._template_message(lead, next_question, attempt)
         template_text   = template_result['message']
 
@@ -411,33 +365,33 @@ class Command(BaseCommand):
 
         prompt = f"""You are writing a WhatsApp follow-up message for Homebase Plumbers — a professional plumbing company in Zimbabwe/South Africa.
 
-    LEAD CONTEXT:
-    - Interest: {service}
-    - Area: {area or 'not yet shared'}
-    - Last heard from them: {time_ref}
-    - This is follow-up attempt #{attempt}
+LEAD CONTEXT:
+- Interest: {service}
+- Area: {area or 'not yet shared'}
+- Last heard from them: {time_ref}
+- This is follow-up attempt #{attempt} of 4 (all within 24 hours)
 
-    BASE TEMPLATE (your starting point — do not stray far from this):
-    \"\"\"
-    {template_text}
-    \"\"\"
+BASE TEMPLATE (your starting point — do not stray far from this):
+\"\"\"
+{template_text}
+\"\"\"
 
-    {"QUESTION TO EMBED (rephrase naturally into the message):" + chr(10) + question_block if question_block else "Use the base template's question as-is or rephrase it very lightly."}
+{"QUESTION TO EMBED (rephrase naturally into the message):" + chr(10) + question_block if question_block else "Use the base template's question as-is or rephrase it very lightly."}
 
-    RULES — every single one must be followed:
-    1. Stay close to the base template — same intent, same question, same tone
-    2. You may lightly rephrase for naturalness but do not invent new angles or content
-    3. Open with "Hi there," — we do not have their name, never use one
-    4. NEVER ask for the customer's name
-    5. One question maximum
-    6. {length_instruction}
-    7. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
-    8. Zero markdown, zero bold, zero bullet points
-    9. At most one emoji — only if it fits naturally. Attempt 4+ = no emoji
-    10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
-    11. Sound like a real person texting, not a marketing email
+RULES — every single one must be followed:
+1. Stay close to the base template — same intent, same question, same tone
+2. You may lightly rephrase for naturalness but do not invent new angles or content
+3. Open with "Hi there," — we do not have their name, never use one
+4. NEVER ask for the customer's name
+5. One question maximum
+6. {length_instruction}
+7. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
+8. Zero markdown, zero bold, zero bullet points
+9. At most one emoji — only if it fits naturally. Attempt 4 = no emoji
+10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
+11. Sound like a real person texting, not a marketing email
 
-    Output ONLY the message text. No labels, no quotes around it, no explanation."""
+Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
         response = deepseek_client.chat.completions.create(
             model='deepseek-chat',
@@ -465,116 +419,112 @@ class Command(BaseCommand):
             f'rephrase={"yes" if last_question and attempt <= 3 else "no"}'
         )
         return {'message': message, 'ai_generated': True, 'template_fallback': False}
-    # ─── Template fallback (no AI) ────────────────────────────────────────────
+
+    # ─── Template fallback ────────────────────────────────────────────────────
 
     def _template_message(self, lead, next_question, attempt):
         """
-        Hand-crafted fallback templates. Each attempt uses a different angle
-        so the customer doesn't receive the same message twice.
+        4 attempts, all within 24 hours.
+        Attempt 1 — value-led, warm
+        Attempt 2 — social proof + casual
+        Attempt 3 — soft urgency (we're booking up)
+        Attempt 4 — ultra-short 9-word style
         """
         service = self._service_label(lead)
         area    = f' in {lead.customer_area}' if lead.customer_area else ''
 
-        # Attempt 1 — value-led
-        # Attempt 2 — social proof + casual
-        # Attempt 3 — soft urgency
-        # Attempt 4+ — nine-word style
-    
         templates = {
             'service_type': [
                 (
-                    f"Hi there, what made you reach out? Most people don't message unless something's actually bothering them about their space.\n\n"
-                    f"Help me understand — is it a price thing, or is it that you're still figuring out exactly what needs to be done?"
+                    f"Hi there, what made you reach out? Most people don't message unless something's "
+                    f"actually bothering them about their space.\n\n"
+                    f"Is it a bathroom, kitchen, or new installation you're after?"
                 ),
                 (
-                    f"Hey! Just so I point you in the right direction — are you looking at a bathroom renovation, kitchen reno, or a new installation?\n\n"
-                    f"Whatever it is, we price the job upfront so you know exactly what you're paying before anything starts."
+                    f"Hey! Just so I can point you in the right direction — are you looking at a "
+                    f"bathroom renovation, kitchen reno, or a new installation?\n\n"
+                    f"We price the job upfront so you know exactly what you're paying before anything starts."
                 ),
                 (
-                    f"I might be off, but when people hesitate here it's usually because they're still figuring out exactly what they want done.\n\n"
-                    f"If you had to choose today, which direction are you leaning — bathroom, kitchen, or installation?"
+                    f"We're getting booked up this week — if you're still keen, which service "
+                    f"were you after? Bathroom, kitchen, or new plumbing installation?"
                 ),
                 (
-                    f"If now's not the right time to explore it, that's completely fine.\n\n"
-                    f"Just let me know, should we park this for now, or are you still looking to get something sorted?"
+                    f"Still looking for a plumber?"
                 ),
             ],
             'plan_or_visit': [
                 (
-                    f"Hi there, is it that you're not sure if the visit is worth it, or is it more of a timing thing?\n\n"
-                    f"Either way — the visit is free, takes about an hour, and locks your price in before anything starts."
+                    f"Hi there, the visit is free and takes about an hour — it locks your price in "
+                    f"before anything starts.\n\n"
+                    f"Do you have a plan already, or would a site visit work better for you?"
                 ),
                 (
-                    f"Hi there, we knocked out a {service} last week where the client had a plan ready, "
-                    f"saved them two days on site. Do you have plans already, or should we come take a look first?\n\n"
-                    f"Most people who hesitate here are just unsure which option saves them more money — the visit usually wins."
+                    f"Hi there, we finished a {service} last week where the client had a plan ready — "
+                    f"saved them two days on site.\n\n"
+                    f"Do you have plans already, or should we come take a look first?"
                 ),
                 (
-                    f"I could be wrong, but sometimes people delay the visit because they're worried it'll come with a big quote.\n\n"
-                    f"The visit itself is free, and it actually locks in your price so there are no surprises mid-job. Would there be any reason not to book it?"
+                    f"Slots are filling up this week — do you have a plan for the {service}, "
+                    f"or would you prefer we come out for a free assessment?"
                 ),
                 (
-                    f"No pressure at all.\n\n"
-                    f"Should we organise the visit for your {service}, or would you prefer to pause this for now?"
+                    f"Plans ready or shall we visit?"
                 ),
             ],
             'area': [
                 (
-                    f"Hi there, is it that you're still comparing options, or is it more of a budget concern at this stage?\n\n"
-                    f"Either is fine — I just want to make sure I'm pointing you in the right direction. Which area are you based in?"
+                    f"Hi there, I just need your area to finish the booking — "
+                    f"which suburb are you based in?"
                 ),
                 (
-                    f"Hi there, sometimes people hesitate sharing their area because they're worried distance will push the price up.\n\n"
-                    f"We price the job, not the distance — which suburb would we be working in?"
+                    f"Hi there, we've done a number of renovations{area or ' around Harare'} recently — "
+                    f"just need your suburb to match you with the right team."
                 ),
                 (
-                    f"I might be off, but sometimes people hesitate sharing their area because they're still comparing options.\n\n"
-                    f"If we're the right fit, which suburb would we be working in?"
+                    f"Almost done — we're booking up this week. "
+                    f"Which suburb are you in so we can lock in your slot?"
                 ),
                 (
-                    f"If you'd rather not continue right now, no stress.\n\n"
-                    f"Should we close this off, or are you still wanting help with your {service}?"
+                    f"Which area are you in?"
                 ),
             ],
             'availability': [
                 (
-                    f"Hi there, is it a timing thing, or is the price still feeling uncertain?\n\n"
-                    f"Once we lock in the visit, you get a fixed quote — no hourly rates, no bill shock. What day works for you?"
+                    f"Hi there, what day works best for the free site visit — "
+                    f"we have slots this week and next."
                 ),
                 (
-                    f"Hi there, most people who go quiet at this stage are either waiting on budget or comparing other quotes.\n\n"
-                    f"Either way — booking a slot costs nothing and you can always reschedule. Would that work?"
+                    f"Hi there, locking in a slot costs nothing and you can always reschedule. "
+                    f"Would tomorrow or later this week work for the visit?"
                 ),
                 (
-                    f"Most people who hesitate here are either comparing quotes or waiting to see if the budget clears.\n\n"
-                    f"Either way, locking in a slot costs nothing and you can always reschedule. Would that work for you?"
+                    f"We're getting tight on slots this week — "
+                    f"which day works for the site visit?"
                 ),
                 (
-                    f"Totally fine if now's not the time.\n\n"
-                    f"Just let me know — should I close this out, or lock in your slot?"
+                    f"Want to lock in a time?"
                 ),
             ],
             'complete': [
                 (
-                    f"Hi there, is it a price thing, or is something else making you hesitate?\n\n"
-                    f"Your fixed quote is already set — there's nothing extra coming. Just say the word and I'll lock in your {service}."
+                    f"Hi there, everything's set on our end for your {service}. "
+                    f"Just say the word and I'll confirm your slot."
                 ),
                 (
-                    f"Hi there, all set on our end for your {service}. "
-                    f"The price is fixed once we confirm — what's the best time to lock it in?"
+                    f"Hi there, your {service} slot is ready — the price is fixed once we confirm. "
+                    f"What's the best time to lock it in?"
                 ),
                 (
-                    f"Hi there, your {service} slot is ready to book whenever you are. "
-                    f"Shall I lock it in?"
+                    f"We're booking up — shall I lock in your {service} slot?"
                 ),
                 (
-                    f"Hi there, still want to get the {service} sorted?"
+                    f"Still want to get the {service} sorted?"
                 ),
             ],
         }
 
         options = templates.get(next_question, templates['complete'])
-        # Pick by attempt number, cycling back to last option if past the list
         idx = min(attempt - 1, len(options) - 1)
         message = options[idx]
 
