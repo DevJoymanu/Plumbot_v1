@@ -455,7 +455,7 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             ],
             'plan_or_visit': [
                 (
-                    f"Hi there, the visit is free and takes about an hour — it locks your price in "
+                    f"Hi there, the visit is free and takes about 20 minutes — it locks your price in "
                     f"before anything starts.\n\n"
                     f"Do you have a plan already, or would a site visit work better for you?"
                 ),
