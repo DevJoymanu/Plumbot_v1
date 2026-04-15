@@ -7612,9 +7612,9 @@ I understand this is time-sensitive!"""
     CURRENT FLOW:
     1. service_type          ✅ or pending
     2. project_description   ✅ or pending
-    3. availability_date     ✅ or pending
-    4. availability_time     ✅ or pending
-    5. area                  ✅ or pending
+    3. area                  ✅ or pending
+    4. availability_date     ✅ or pending
+    5. availability_time     ✅ or pending
     
     CURRENT SITUATION:
     {appointment_context}
@@ -7624,6 +7624,12 @@ I understand this is time-sensitive!"""
     Relevant line to weave in if helpful: {retry_context_line or 'None'}
     Retry count: {retry_count}
     
+    IMPORTANT INTELLIGENCE RULE:
+    - The user may answer correctly even if their message does NOT exactly match the presented options.
+    - If the user input is a plausible variation (e.g. abbreviations like "Tues", "Thurs", times like "12"), treat it as VALID intent, NOT incorrect input.
+    - Never assume "no match" means the user is wrong — it may just be unnormalized input.
+    - If unsure, ask a clarifying confirmation instead of repeating the original question e.g User: "Tues" → "Got it — do you mean this coming Tuesday?".
+
     RETRY ESCALATION (retry_count > 0):
     Retry 1 → Simplify the question to bare minimum.
     Retry 2 → Offer two explicit choices instead of open question.
@@ -7632,9 +7638,9 @@ I understand this is time-sensitive!"""
     QUESTION MAPPINGS (rephrase these — do NOT use word-for-word):
     - service_type       → ask which of our three services they need
     - project_description → ask what they specifically want done, more detail = better quote
+    - area               → ask which suburb/area they are in    
     - availability_date  → ask which of two upcoming weekday dates works for the site assessment
     - availability_time  → ask which of two time slots (morning or afternoon) works for that date
-    - area               → ask which suburb/area they are in
     
     RULES:
     - ONE question at a time. No stacking.
