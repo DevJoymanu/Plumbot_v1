@@ -6464,11 +6464,11 @@ I understand this is time-sensitive!"""
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
-                max_tokens=25
+                max_tokens=100
             )
 
             ai_response = response.choices[0].message.content.strip()
-            print(f"🤖 DeepSeek alternative selection: '{message}' → {ai_response}")
+            print(f"🤖 DeepSeek alternative selection: '{message}' → {ai_response}") 
 
             if ai_response in ("SATURDAY_CLOSED", "NOT_FOUND"):
                 msg = (message or '').strip().lower()
@@ -6908,7 +6908,7 @@ I understand this is time-sensitive!"""
                     self.appointment.save(update_fields=['scheduled_datetime'])
                     print(f"✅ Day selection captured: {self._get_selected_local_date()}")
 
-            # ── Customer name ─────────────────────────────────────────────────────
+
             elif (
                 next_question == 'availability_time' and
                 self.appointment.scheduled_datetime and
@@ -6921,7 +6921,8 @@ I understand this is time-sensitive!"""
                     self._mark_time_confirmed()
                     updated_fields.append('availability')
                     print(f"âœ… Time selection captured: {old_dt} -> {self.appointment.scheduled_datetime}")
-
+            
+            # ── Customer name ─────────────────────────────────────────────────────
             if (extracted_data.get('customer_name') and
                     extracted_data.get('customer_name') != 'null' and
                     not self.appointment.customer_name):
