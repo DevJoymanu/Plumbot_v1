@@ -914,10 +914,6 @@ def process_message_change(value):
 
             print(f"📩 Processing message from {sender}, type: {message_type}")
 
-            try:
-                whatsapp_api.mark_message_as_read(message_id)
-            except Exception as e:
-                print(f"⚠️ Could not mark as read: {str(e)}")
 
             if message_type == 'text':
                 handle_text_message(sender, message.get('text', {}), message_id=message_id)
@@ -1079,7 +1075,7 @@ def handle_location_message(sender, location_data):
                 refresh_lead_score(appointment)
                 reply = plumbot.generate_response(f"My location is {address}")
                 delay = get_random_delay()
-                threading.Thread(target=delayed_response, args=(sender, reply, delay, message_id), daemon=True).start()
+                threading.Thread(target=delayed_response, args=(sender, reply, delay), daemon=True).start()
             else:
                 response_msg = (
                     "Thanks for the location pin! ??\n\n"
@@ -1131,11 +1127,11 @@ def handle_unsupported_media(sender, media_type):
             f"? Videos\n\n"
             f"Could you send that as a text message instead?\n\nThanks!"
         )
-        delay = get_random_delay()
         threading.Thread(
-           threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay, message_id), daemon=True).start()
+            target=delayed_response,
+            args=(sender, response_msg, delay),
+            daemon=True
         ).start()
-
     except Exception as e:
         print(f"? Error handling unsupported media: {str(e)}")
 
