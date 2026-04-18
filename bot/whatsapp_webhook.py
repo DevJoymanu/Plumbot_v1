@@ -358,9 +358,11 @@ def get_random_delay() -> int:
     return seconds
 
 
-def delayed_response(sender, reply, delay_seconds):
+def delayed_response(sender, reply, delay_seconds, message_id=None):
     try:
         time.sleep(delay_seconds)
+        # Mark as read just before sending — blue ticks appear when we "reply"
+        if message_id:
         whatsapp_api.send_text_message(sender, reply)
         preview = reply.replace('\n', ' ')[:120]
         print(f"🤖 Bot → +{sender}: {preview}{'…' if len(reply) > 120 else ''}")
@@ -1074,7 +1076,7 @@ def handle_location_message(sender, location_data):
                 refresh_lead_score(appointment)
                 reply = plumbot.generate_response(f"My location is {address}")
                 delay = get_random_delay()
-                threading.Thread(target=delayed_response, args=(sender, reply, delay), daemon=True).start()
+                threading.Thread(target=delayed_response, args=(sender, reply, delay, message_id), daemon=True).start()
             else:
                 response_msg = (
                     "Thanks for the location pin! ??\n\n"
@@ -1128,7 +1130,7 @@ def handle_unsupported_media(sender, media_type):
         )
         delay = get_random_delay()
         threading.Thread(
-            target=delayed_response, args=(sender, response_msg, delay), daemon=True
+           threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay, message_id), daemon=True).start()
         ).start()
 
     except Exception as e:
@@ -1300,7 +1302,7 @@ def handle_text_message(sender, text_data, message_id=None):
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
             delay = get_random_delay()
             threading.Thread(
-                target=delayed_response, args=(sender, oos_reply, delay), daemon=True
+                target=delayed_response, args=(sender, oos_reply, delay, message_id), daemon=True
             ).start()
             return  # do NOT continue into the booking flow
 
@@ -1460,7 +1462,7 @@ def handle_text_message(sender, text_data, message_id=None):
 
         delay = get_random_delay()
         print(f"Random delay: {delay // 60} minute(s)")
-        threading.Thread(target=delayed_response, args=(sender, reply, delay), daemon=True).start()
+        threading.Thread(target=delayed_response, args=(sender, reply, delay, message_id), daemon=True).start()
         print(f"Response scheduled for {delay // 60} minute(s) from now")
 
     except Exception as e:
