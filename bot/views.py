@@ -5518,7 +5518,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "tub_sales": {
                         "breakdown_lines": [
                             "Tub: Supply from US$80, Install from US$80",
-                            "Free-standing tub mixer: Supply from US$150, Install from US$120",
+                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120"
                             "Side chamber: Supply from US$130, Install from US$30",
                         ],
                         "total_line": "Roughly looking at about US$190 for a basic tub supply-and-fit, or US$480+ for a full freestanding setup.",
@@ -5534,7 +5534,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "standalone_tub": {
                         "breakdown_lines": [
                             "Tub: Supply from US$80, Install from US$80",
-                            "Free-standing tub mixer: Supply from US$150, Install from US$120",
+                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120"
                             "Side chamber: Supply from US$130, Install from US$30",
                         ],
                         "total_line": "Roughly looking at about US$480 for a full freestanding tub setup.",
@@ -5586,7 +5586,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "bathtub_installation": {
                         "breakdown_lines": [
                             "Tub: Supply from US$80, Install from US$80",
-                            "Free-standing tub mixer: Supply from US$150, Install from US$120",
+                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120"
                             "Side chamber: Supply from US$130, Install from US$30",
                         ],
                         "total_line": "Roughly looking at about US$160 for a basic tub install, or US$480+ for a full freestanding setup.",
@@ -5630,7 +5630,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Toilet seat: Supply from US$50, Install from US$20",
                             "Side chamber: Supply from US$130, Install from US$30",
                             "Tub: Supply from US$80, Install from US$80",
-                            "Free-standing tub mixer: Supply from US$150, Install from US$120",
+                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120"
                         ],
                         "total_line": "Roughly looking at about US$600+ for the full bathroom package, depending on the fixtures you choose.",
                         "cheapest_line": "The cheapest option is the basic package starting from US$600 before extra fixtures are added.",
@@ -5702,10 +5702,10 @@ When you're finished sending everything, just type "done" or "finished" and I'll
 
                     "standalone_tub": {
                         "en": (
-                            "Standalone / freestanding tubs run US$450–$800 supply, plus US$120–$200 "
+                            "Standalone / freestanding tubs run US$400–$800 supply, plus US$120–$200 "
                             "to fit and finish. 🛁\n\n"
                             "Full breakdown:\n"
-                            "• Free-standing tub supply: from US$450\n"
+                            "• Free-standing tub supply: from US$400\n"
                             "• Free-standing mixer: from US$150\n"
                             "• tub installation: US$120\n"
                             "• Side chamber: US$130 (installation US$30)\n\n"
@@ -5714,10 +5714,10 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "out and show you options on-site? (Free visit, no obligation)"
                         ),
                         "en_v": (
-                            "Standalone / freestanding tubs run US$450–$800 supply, plus US$120–$200 "
+                            "Standalone / freestanding tubs run US$400–$800 supply, plus US$120–$200 "
                             "to fit and finish. 🛁\n\n"
                             "Full breakdown:\n"
-                            "• Free-standing tub supply: from US$450\n"
+                            "• Free-standing tub supply: from US$400\n"
                             "• Free-standing mixer: from US$150\n"
                             "• Mixer + tub installation: US$120\n"
                             "• Side chamber: US$130 (installation US$30)\n\n"
@@ -5725,9 +5725,9 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Our plumber will go through the options with you on-site."
                         ),
                         "sn": (
-                            "Free-standing tubs dzinotangira kuUS$450 supply, neUS$120–$200 "
+                            "Free-standing tubs dzinotangira kuUS$400 supply, neUS$120–$200 "
                             "yeinstallation. 🛁\n\n"
-                            "• Free-standing tub: kubva US$450\n"
+                            "• Free-standing tub: kubva US$400\n"
                             "• Free-standing mixer: kubva US$150\n"
                             "• Kuisa mixer netub: US$120\n"
                             "• Side chamber: US$130 (installation US$30)\n\n"
@@ -5735,8 +5735,8 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Unoziva mhando yetub yaungada here, kana tiuye tikuratidze zvinosarudzwa pasite?"
                         ),
                         "sn_v": (
-                            "Free-standing tubs dzinotangira kuUS$450 supply, neUS$120–$200 yeinstallation. 🛁\n\n"
-                            "• Free-standing tub: kubva US$450\n"
+                            "Free-standing tubs dzinotangira kuUS$400 supply, neUS$120–$200 yeinstallation. 🛁\n\n"
+                            "• Free-standing tub: kubva US$400\n"
                             "• Free-standing mixer: kubva US$150\n"
                             "• Kuisa mixer netub: US$120\n"
                             "• Side chamber: US$130 (installation US$30)\n\n"
@@ -5802,7 +5802,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         "en": (
                             "Bathtub installation runs US$80–$200 depending on the type: 🛁\n\n"
                             "• Ordinary tub (with wall finishing): from US$80\n"
-                            "• Free-standing tub supply: from US$450\n"
+                            "• Free-standing tub supply: from US$400\n"
                             "• Free-standing mixer: from US$150\n"
                             "• Mixer installation: US$120\n"
                             "• Side chamber: US$130 (install US$30)\n\n"
@@ -5811,7 +5811,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         "sn": (
                             "Kuisa bathtub kunosvika US$80–$200 zvichienda nemhando: 🛁\n\n"
                             "• Tub yakajairwa (ine wall finishing): kubva US$80\n"
-                            "• Free-standing tub: kubva US$450\n"
+                            "• Free-standing tub: kubva US$400\n"
                             "• Free-standing mixer: kubva US$150\n"
                             "• Kuisa mixer: US$120\n"
                             "• Side chamber: US$130 (install US$30)\n\n"
@@ -9103,7 +9103,7 @@ I understand this is time-sensitive!"""
     - Vanity unit: supply from US$150, install from US$30
     - Geyser: supply from US$80, install from US$80
     - Bathtub (ordinary): supply from US$80, install from US$80
-    - Freestanding tub: supply from US$450, mixer from US$150, install US$120
+    - Freestanding tub: supply from US$400, mixer from US$150, install US$120
     - Side chamber: supply from US$130, install from US$30
     - Full bathroom package: from US$600+
     - Site assessment / visit: FREE
