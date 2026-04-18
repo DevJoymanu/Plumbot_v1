@@ -361,8 +361,11 @@ def get_random_delay() -> int:
 def delayed_response(sender, reply, delay_seconds, message_id=None):
     try:
         time.sleep(delay_seconds)
-        # Mark as read just before sending — blue ticks appear when we "reply"
         if message_id:
+            try:
+                whatsapp_api.mark_message_as_read(message_id)
+            except Exception as e:
+                print(f"⚠️ Could not mark as read before reply: {e}")
         whatsapp_api.send_text_message(sender, reply)
         preview = reply.replace('\n', ' ')[:120]
         print(f"🤖 Bot → +{sender}: {preview}{'…' if len(reply) > 120 else ''}")
