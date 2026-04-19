@@ -35,7 +35,6 @@
         margin-bottom: 20px;
     }
 
-    /* ── STATUS FILTER BAR ── */
     .status-filter-bar {
         background: white;
         border-radius: 12px;
@@ -48,7 +47,6 @@
         display: flex;
         gap: 8px;
         flex-wrap: wrap;
-        margin-bottom: 0;
     }
 
     .status-tab {
@@ -118,7 +116,6 @@
         --tab-bg: #eff6ff;
     }
 
-    /* ── DELAYED LEADS SECTION ── */
     .delayed-section {
         background: #eff6ff;
         border: 1.5px solid #bfdbfe;
@@ -303,18 +300,9 @@
         padding: 2px 8px;
         font-size: 0.72rem;
         font-weight: 600;
-        margin-top: 2px;
+        margin-left: 4px;
     }
 
-    .delayed-empty {
-        padding: 24px 20px;
-        text-align: center;
-        color: #3b82f6;
-        font-size: 0.9rem;
-        background: white;
-    }
-
-    /* ── REST OF PAGE (unchanged styles) ── */
     .appointment-header {
         display: flex;
         justify-content: space-between;
@@ -634,7 +622,7 @@
     <p>Manage and view all customer appointments</p>
 </div>
 
-<!-- ── STATUS FILTER BAR ── -->
+<!-- STATUS FILTER TABS -->
 <div class="status-filter-bar">
     <div class="status-tabs">
         <a href="?status_filter=all&response_age={{ selected_response_age }}"
@@ -670,7 +658,7 @@
     </div>
 </div>
 
-<!-- ── DELAYED LEADS COUNTDOWN PANEL (always visible) ── -->
+<!-- DELAYED LEADS COUNTDOWN PANEL -->
 {% if delayed_leads_with_countdown %}
 <div class="delayed-section">
     <div class="delayed-header">
@@ -687,66 +675,74 @@
         <span class="delayed-badge">{{ status_counts.delayed }} lead{{ status_counts.delayed|pluralize }}</span>
     </div>
 
-{% for item in delayed_leads_with_countdown %}
-{% with lead=item.lead %}
+    {% for item in delayed_leads_with_countdown %}
+    {% with lead=item.lead %}
+    <div class="delayed-lead-row">
 
-<div class="delayed-lead-row">
+        <div>
+            <p class="lead-info-name">
+                {{ lead.customer_name|default:"Unknown customer" }}
+                {% if item.overdue %}<span class="overdue-badge">Overdue</span>{% endif %}
+            </p>
+            <p class="lead-info-meta">
+                {{ lead.phone_number }}
+                {% if lead.customer_area %} &middot; {{ lead.customer_area }}{% endif %}
+                {% if lead.project_type %} &middot; {{ lead.get_project_type_display|default:lead.project_type }}{%
+                endif %}
+            </p>
+        </div>
 
-    <!-- Lead Info -->
-    <div>
-        <p class="lead-info-name">
-            {{ lead.customer_name|default:"Unknown customer" }}
+        <div class="countdown-cell">
             {% if item.overdue %}
-            <span class="overdue-badge">Overdue</span>
-            {% endif %}
-        </p>
-
-        <p class="lead-info-meta">
-            {{ lead.phone_number }}
-        </p>
+            <div class="countdown-days overdue">0</div>
+            <div class="countdown-label">days left</div>
+            <div class="progress-wrap">
+                <div class="progress-track">
+                    <div class="progress-fill fill-urgent" style="width:100%;"></div>
+                </div>
+            </div>
+            {% elif item.days_remaining <= 3 %} <div class="countdown-days urgent">{{ item.days_remaining }}
+        </div>
+        <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+        <div class="progress-wrap">
+            <div class="progress-track">
+                <div class="progress-fill fill-urgent" style="width:{{ item.pct_elapsed }}%;"></div>
+            </div>
+        </div>
+        {% elif item.days_remaining <= 7 %} <div class="countdown-days warning">{{ item.days_remaining }}
     </div>
-
-    <!-- Countdown -->
-    <div class="countdown-cell">
-
-        {% if item.overdue %}
-
-        <div class="countdown-days overdue">0</div>
-        <div class="countdown-label">days left</div>
-
-        {% elif item.days_remaining <= 3 %} <div class="countdown-days urgent">
-            {{ item.days_remaining }}
+    <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+    <div class="progress-wrap">
+        <div class="progress-track">
+            <div class="progress-fill fill-warning" style="width:{{ item.pct_elapsed }}%;"></div>
+        </div>
     </div>
-    <div class="countdown-label">days left</div>
-
-    {% elif item.days_remaining <= 7 %} <div class="countdown-days warning">
-        {{ item.days_remaining }}
-</div>
-<div class="countdown-label">days left</div>
-
-{% else %}
-
-<div class="countdown-days ok">
-    {{ item.days_remaining }}
-</div>
-<div class="countdown-label">days left</div>
-
-{% endif %}
-
+    {% else %}
+    <div class="countdown-days ok">{{ item.days_remaining }}</div>
+    <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+    <div class="progress-wrap">
+        <div class="progress-track">
+            <div class="progress-fill fill-ok" style="width:{{ item.pct_elapsed }}%;"></div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
-<!-- Action -->
-<div>
+<div style="text-align:right;">
     <a href="{% url 'appointment_detail' lead.pk %}" class="lead-action-btn">
-        View
+        <i class="fas fa-arrow-right" style="font-size:11px;"></i> View
     </a>
 </div>
 
 </div>
-
 {% endwith %}
 {% endfor %}
-<!-- ── MAIN LIST CARD ── -->
+
+</div>
+{% endif %}
+<!-- ↑ THIS endif was missing — that was the entire cause of the crash -->
+
+<!-- MAIN LIST CARD -->
 <div class="card">
     <div class="appointment-header">
         <div>
@@ -763,11 +759,11 @@
         <form method="get" class="filter-row">
             <input type="hidden" name="status_filter" value="{{ selected_status_filter }}">
             <select name="response_age" aria-label="Filter by response age">
-                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response
+                <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response
                     within 7 days</option>
-                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response
+                <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response
                     within 30 days</option>
-                <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
+                <option value="all" {% if selected_response_age=='all' %}selected{% endif %}>All-time</option>
             </select>
             <div class="filter-actions">
                 <button type="submit" class="btn">Apply</button>
@@ -856,6 +852,7 @@
                 {% endif %}
             </div>
         </div>
+        {% empty %}
         <div class="empty-state">
             <i class="fas fa-calendar-times"></i>
             <p>No appointments found{% if selected_status_filter != 'all' %} for this filter{% endif %}</p>
@@ -893,4 +890,5 @@
     </div>
     {% endif %}
 </div>
+
 {% endblock %}
