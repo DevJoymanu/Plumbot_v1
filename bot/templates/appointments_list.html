@@ -711,16 +711,48 @@
         </div>
 
         <!-- Countdown -->
-        <div class="countdown-cell">
-            {% if item.overdue %}
-            <div class="countdown-days overdue">0</div>
-            <div class="countdown-label">days left</div>
-            <div class="progress-wrap">
-                <div class="progress-track">
-                    <div class="progress-fill fill-urgent" style="width:100%;"></div>
-                </div>
+    <div class="countdown-cell">
+        {% if item.overdue %}
+        <div class="countdown-days overdue">0</div>
+        <div class="countdown-label">days left</div>
+        <div class="progress-wrap">
+            <div class="progress-track">
+                <div class="progress-fill fill-urgent" style="width:100%;"></div>
             </div>
-            {% elif item.days_remaining <= 3 %} <div class="countdown-days urgent">{{ item.days_remaining }}
+        </div>
+
+        {% elif item.days_remaining <= 3 %} <div class="countdown-days urgent">{{ item.days_remaining }}
+    </div>
+    <div class="countdown-label">
+        day{{ item.days_remaining|pluralize }} left
+    </div>
+    <div class="progress-wrap">
+        <div class="progress-track">
+            <div class="progress-fill fill-urgent" style="width:{{ item.pct_elapsed }}%;"></div>
+        </div>
+    </div>
+
+    {% elif item.days_remaining <= 7 %} <div class="countdown-days warning">{{ item.days_remaining }}</div>
+        <div class="countdown-label">
+            day{{ item.days_remaining|pluralize }} left
+        </div>
+        <div class="progress-wrap">
+            <div class="progress-track">
+                <div class="progress-fill fill-warning" style="width:{{ item.pct_elapsed }}%;"></div>
+            </div>
+        </div>
+
+        {% else %}
+        <div class="countdown-days ok">{{ item.days_remaining }}</div>
+        <div class="countdown-label">
+            day{{ item.days_remaining|pluralize }} left
+        </div>
+        <div class="progress-wrap">
+            <div class="progress-track">
+                <div class="progress-fill fill-ok" style="width:{{ item.pct_elapsed }}%;"></div>
+            </div>
+        </div>
+        {% endif %}
         </div>
         <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
         <div class="progress-wrap">
