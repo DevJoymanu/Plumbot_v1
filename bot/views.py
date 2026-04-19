@@ -24,7 +24,6 @@ from django.core.files.storage import default_storage
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import requests
-import datetime
 import pytz
 import os
 import json
