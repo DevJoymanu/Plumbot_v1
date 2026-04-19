@@ -108,24 +108,12 @@ def has_delay_signal(appointment) -> bool:
 
 
 def mark_delay_signal(appointment, source_message: str = "") -> bool:
-    """
-    Persist a delay marker so automated follow-ups pause until the customer
-    clearly re-engages. Returns True when a new tag was written.
-    """
-    notes = (appointment.internal_notes or "").strip()
-    if _DELAY_SIGNAL_TAG in notes:
-        return False
-
-    appointment.internal_notes = f"{notes}\n{_DELAY_SIGNAL_TAG}".strip()
-    appointment.save(update_fields=["internal_notes"])
-    logger.info(
-        "Delay signal written for appointment=%s from message='%s'",
-        getattr(appointment, "id", None),
-        (source_message or "")[:80],
-    )
-    return True
-
-
+    marked = appointment.mark_delayed(source_message=source_message, save=True)
+    if marked:
+        logger.info("Delay signal written for appointment=%s from message='%s'",
+                    getattr(appointment, 'id', None), (source_message or '')[:80])
+    return marked
+    
 def detect_delay_signal_message(message: str, appointment=None) -> dict:
     """
     Decide whether a customer message is a delay / defer-for-later signal.

@@ -67,16 +67,9 @@ _deepseek = (
 
 
 def _clear_delay_signal_if_present(appointment: Appointment) -> None:
-    notes = appointment.internal_notes or ''
-    if '[DELAY_SIGNAL]' not in notes:
-        return
-    cleaned = '\n'.join(
-        line for line in notes.splitlines()
-        if '[DELAY_SIGNAL]' not in line
-    ).strip()
-    appointment.internal_notes = cleaned
-    appointment.save(update_fields=['internal_notes'])
-    print(f"▶️ Delay signal cleared — customer re-engaged on appointment {appointment.id}")
+    if appointment.is_delayed or '[DELAY_SIGNAL]' in (appointment.internal_notes or ''):
+        appointment.clear_delayed(save=True)
+        print(f"▶️ Delay signal cleared — customer re-engaged on appointment {appointment.id}")
     
 def _translate_reply_for_customer(customer_message: str, reply: str) -> str:
     """

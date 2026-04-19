@@ -1626,31 +1626,18 @@ class AppointmentsListView(ListView):
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
 
         # Delayed = leads with a [DELAY_SIGNAL] in internal_notes that are still active
-        delayed_qs = base_qs.filter(
-            is_lead_active=True,
-            status='pending',
-            internal_notes__contains='[DELAY_SIGNAL]'
-        ).order_by('last_customer_response')
+        delayed_qs = base_qs.filter(is_lead_active=True, status='pending', is_delayed=True
+            ).order_by('delay_followup_due_at')
 
-        # Delayed leads should be followed up within 2 weeks of the delay signal.
-        follow_up_window_days = 14
-        delayed_leads_with_countdown = []
-        for lead in delayed_qs:
-            # Find when the delay signal was recorded (use last_customer_response as proxy)
-            reference = lead.last_customer_response or lead.updated_at or lead.created_at
-            days_elapsed = (timezone.now() - reference).days
-            follow_up_due_at = reference + timedelta(days=follow_up_window_days)
-            days_remaining = max(0, follow_up_window_days - days_elapsed)
-            pct_elapsed = min(100, int((days_elapsed / follow_up_window_days) * 100))
-            delayed_leads_with_countdown.append({
-                'lead': lead,
-                'days_remaining': days_remaining,
-                'days_elapsed': days_elapsed,
-                'pct_elapsed': pct_elapsed,
-                'follow_up_due_at': follow_up_due_at,
-                'follow_up_window_days': follow_up_window_days,
-                'overdue': days_remaining == 0,
-            })
+        delayed_leads_with_countdown = [{
+            'lead': lead,
+            'days_remaining': max(0, lead.delay_days_remaining) if lead.delay_days_remaining is not None else 0,
+            'days_elapsed': 14 - max(0, lead.delay_days_remaining) if lead.delay_days_remaining is not None else 14,
+            'pct_elapsed': lead.delay_pct_elapsed,
+            'follow_up_due_at': lead.delay_followup_due_at,
+            'follow_up_window_days': 14,
+            'overdue': lead.delay_is_overdue,
+        } for lead in delayed_qs]
 
         today = timezone.now().date()
         todays_confirmed_appointments = base_qs.filter(

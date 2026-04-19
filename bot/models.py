@@ -310,6 +310,7 @@ class Appointment(models.Model):
         related_name='assigned_appointments',
         help_text="Plumber assigned to this job appointment"
     )
+
     
     class Meta:
         ordering = ['-created_at']
@@ -943,6 +944,56 @@ class Appointment(models.Model):
         return self.uploaded_file_count
 # Keep your other models (ConversationMessage, AppointmentNote, AppointmentReminder, ServiceArea) unchanged
 
+    DELAY_FOLLOWUP_DAYS = 14
+
+    def mark_delayed(self, source_message='', save=True):
+        if self.is_delayed:
+            return False
+        from django.utils import timezone
+        from datetime import timedelta
+        now = timezone.now()
+        self.is_delayed = True
+        self.delay_signal_detected_at = now
+        self.delay_followup_due_at = now + timedelta(days=self.DELAY_FOLLOWUP_DAYS)
+        notes = (self.internal_notes or '').strip()
+        if '[DELAY_SIGNAL]' not in notes:
+            self.internal_notes = f"{notes}\n[DELAY_SIGNAL]".strip()
+        if save:
+            self.save(update_fields=['is_delayed','delay_signal_detected_at',
+                                    'delay_followup_due_at','internal_notes'])
+        return True
+
+    def clear_delayed(self, save=True):
+        self.is_delayed = False
+        notes = self.internal_notes or ''
+        if '[DELAY_SIGNAL]' in notes:
+            self.internal_notes = '\n'.join(
+                l for l in notes.splitlines() if '[DELAY_SIGNAL]' not in l).strip()
+        if save:
+            self.save(update_fields=['is_delayed','internal_notes'])
+
+    @property
+    def delay_days_remaining(self):
+        if not self.delay_followup_due_at:
+            return None
+        from django.utils import timezone
+        return (self.delay_followup_due_at - timezone.now()).days
+
+    @property
+    def delay_is_overdue(self):
+        r = self.delay_days_remaining
+        return r is not None and r < 0
+
+    @property
+    def delay_pct_elapsed(self):
+        if not self.delay_signal_detected_at or not self.delay_followup_due_at:
+            return 0
+        from django.utils import timezone
+        total = (self.delay_followup_due_at - self.delay_signal_detected_at).total_seconds()
+        elapsed = (timezone.now() - self.delay_signal_detected_at).total_seconds()
+        return min(100, int((elapsed / total) * 100)) if total > 0 else 100
+
+
     # New follow-up tracking fields (add these after running the migration)
     last_customer_response = models.DateTimeField(
         null=True, 
@@ -1017,7 +1068,13 @@ class Appointment(models.Model):
         help_text='When previous work photos were last sent to this customer'
     )
     
-    # ... existing methods ...
+    is_delayed = models.BooleanField(default=False, db_index=True,
+        help_text='True when customer signalled not ready yet.')
+    delay_signal_detected_at = models.DateTimeField(null=True, blank=True,
+        help_text='When the delay signal was first detected.')
+    delay_followup_due_at = models.DateTimeField(null=True, blank=True, db_index=True,
+        help_text='14 days after delay_signal_detected_at — plumber follow-up deadline.')    
+
     
     def mark_customer_response(self):
         """Mark that customer has responded - resets follow-up stage"""
