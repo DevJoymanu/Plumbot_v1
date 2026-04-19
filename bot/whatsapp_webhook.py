@@ -1242,8 +1242,14 @@ def handle_text_message(sender, text_data, message_id=None):
 
         appointment.mark_customer_response()
 
-        # Customer re-engaged — clear any delay signal pause
-        _clear_delay_signal_if_present(appointment)
+        from .out_of_scope_handler import detect_delay_signal_message, mark_delay_signal
+
+        delay_check = detect_delay_signal_message(message_body, appointment)
+        if delay_check.get('is_delay'):
+            mark_delay_signal(appointment, message_body)
+        else:
+            # Customer re-engaged with a substantive message — clear any prior pause.
+            _clear_delay_signal_if_present(appointment)
 
         # Auto-classify service type from the customer's message
         if not appointment.project_type:

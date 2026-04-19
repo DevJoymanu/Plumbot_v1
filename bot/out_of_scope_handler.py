@@ -55,6 +55,7 @@ PLUMBER_NUMBER_FALLBACK = "+263774819901"
 #   [OOS_PENDING] category=out_of_scope original=Do%20you%20do%20garages%3F
 
 _PENDING_TAG = "[OOS_PENDING]"
+_DELAY_SIGNAL_TAG = "[DELAY_SIGNAL]"
 
 
 def _write_pending(appointment, category: str, original_message: str) -> None:
@@ -101,6 +102,53 @@ def _clear_pending_from_text(text: str) -> str:
     lines = [l for l in text.splitlines() if not l.strip().startswith(_PENDING_TAG)]
     return "\n".join(lines).strip()
 
+
+def has_delay_signal(appointment) -> bool:
+    return _DELAY_SIGNAL_TAG in (appointment.internal_notes or "")
+
+
+def mark_delay_signal(appointment, source_message: str = "") -> bool:
+    """
+    Persist a delay marker so automated follow-ups pause until the customer
+    clearly re-engages. Returns True when a new tag was written.
+    """
+    notes = (appointment.internal_notes or "").strip()
+    if _DELAY_SIGNAL_TAG in notes:
+        return False
+
+    appointment.internal_notes = f"{notes}\n{_DELAY_SIGNAL_TAG}".strip()
+    appointment.save(update_fields=["internal_notes"])
+    logger.info(
+        "Delay signal written for appointment=%s from message='%s'",
+        getattr(appointment, "id", None),
+        (source_message or "")[:80],
+    )
+    return True
+
+
+def detect_delay_signal_message(message: str, appointment=None) -> dict:
+    """
+    Decide whether a customer message is a delay / defer-for-later signal.
+    Uses the fast phrase matcher first and can optionally fall back to the
+    existing classifier for ambiguous cases when appointment context is present.
+    """
+    text = (message or "").strip()
+    if not text:
+        return {"is_delay": False, "confidence": "LOW", "detail": "empty"}
+
+    if _fast_delay_check(text):
+        return {"is_delay": True, "confidence": "HIGH", "detail": "delay phrase matched"}
+
+    if appointment is not None:
+        result = classify_message(text, appointment)
+        return {
+            "is_delay": result.get("category") == "delay_signal",
+            "confidence": result.get("confidence", "LOW"),
+            "detail": result.get("detail", ""),
+        }
+
+    return {"is_delay": False, "confidence": "LOW", "detail": "no appointment context"}
+
 # ── Services we explicitly DO offer (used for context in the classifier) ──────
 OUR_SERVICES = (
     "bathroom renovation, kitchen renovation, new plumbing installation, "
@@ -114,6 +162,8 @@ _DELAY_PHRASES = (
     "will contact you", "i'll contact", "will reach out", "i'll reach out",
     "busy now", "busy at the moment", "not right now", "not ready",
     "come back to you", "i'll be in touch", "will be in touch",
+    "get back to you", "i'll get back to you", "i will get back to you",
+    "when i'm available", "when i am available", "when am available",
     "when i'm back", "when i am back", "when i get back", "back home",
     "in a few weeks", "in a few months", "10 days", "few days time",
     "needed to save your number", "save your number", "saved your number",
@@ -559,6 +609,7 @@ def _build_oos_reply(message: str, appointment) -> str:
 
 def _build_delay_reply(message: str, appointment) -> str:
     """Graceful acknowledgment when the customer is not ready."""
+    mark_delay_signal(appointment, message)
     # Check for a specific timeframe so we can acknowledge it
     import re
     msg_lower = (message or "").lower()
