@@ -3681,11 +3681,11 @@ class Plumbot:
         else:
             intro = (
                 "Hi! Just a quick note — these prices are rough prices for supply and install "
-                "(materials included). After the plumber sees the site, the final cost may go up or down. "
+                "(materials included). After the we see the site, the final cost may go up or down. "
                 "Bundling services can give you a discount. Here's a breakdown:"
             )
             depends_line = (
-                "Final price depends on setup and can still be adjusted once our plumber sees the space."
+                "Final price depends on setup and can still be adjusted once we see the space."
                 if visit_committed else
                 "Final price depends on setup and can be negotiated once we get to come out and see the space."
             )
@@ -3951,7 +3951,7 @@ Reply with ONLY a JSON object:
             formatted = dt.strftime('%A, %B %d at %I:%M %p')
             return (
                 f"Perfect — see you on {formatted}! "
-                "Our plumber will call you 30 minutes before arrival. "
+                "We will call you 30 minutes before arrival. "
                 "Feel free to message anytime if you have questions. 😊"
             )
 
@@ -5011,10 +5011,10 @@ system_prompt
     PHRASING OPTIONS (use different ones for different retries):
 
     Retry 1 (Direct):
-    "Just to clarify - do you already have plans/blueprints for your bathroom, or would you like our plumber to visit first and create a plan?"
+    "Just to clarify - do you already have plans/blueprints for your bathroom, or would you like us to visit first and create a plan?"
 
     Retry 2 (Explanation):
-    "I need to know if you have existing plans (blueprints/drawings) that our plumber should review, OR if you need us to come assess your space first. Which one?"
+    "I need to know if you have existing plans (blueprints/drawings) that we should review, OR if you need us to come assess your space first. Which one?"
 
     Retry 3 (Simple Yes/No):
     "Quick question: Do you have plans/blueprints ready? 
