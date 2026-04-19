@@ -9048,9 +9048,9 @@ I understand this is time-sensitive!"""
             context_block = "\n".join(recent_lines) if recent_lines else "No prior conversation."
 
             prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe, also serving South Africa.
-
+    
     - the initial response to greetings or generic opening messages should only be: 
-        {next_q == "service_type"}
+            {self.get_next_question_to_ask() == "service_type"}
 
     SERVICES WE OFFER:
     - Bathroom renovation: toilet, shower cubicle, bathtub, vanity unit, basin/sink, geyser, side chamber, tiling, pipe work
