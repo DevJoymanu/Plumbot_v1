@@ -86,15 +86,7 @@ class Command(BaseCommand):
             return
 
         self._print_eligibility_breakdown(now_local, force)
-        leads = (
-            Appointment.objects
-            .filter(is_lead_active=True, status='pending')
-            .exclude(followup_stage='completed')
-            .exclude(last_customer_response__gte=response_window)
-            .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
-            .exclude(manual_followup_paused=True,           # ← ADD THIS
-                    manual_followup_paused_until__gt=timezone.now())
-        )
+        leads = self._get_eligible_leads(now_local, force)
         self.stdout.write(f'📊 {leads.count()} leads eligible for follow-up')
 
         totals = dict(sent=0, skipped=0, errors=0, completed=0, ai=0, template=0)
@@ -122,23 +114,22 @@ class Command(BaseCommand):
         from django.db.models import Q
 
         # Don't interrupt a customer who engaged very recently (2 minutes)
-        response_window = now_local - timedelta(minutes=2)
+        response_window = now_local - timedelta(minutes=2)  # ← must be defined FIRST
 
         leads = (
             Appointment.objects
             .filter(is_lead_active=True, status='pending')
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
-            # Don't interfere with plan-upload flows
             .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
+            .exclude(
+                manual_followup_paused=True,
+                manual_followup_paused_until__gt=timezone.now()
+            )
         )
 
-        # ── KEY FIX: Remove the daily cap that was limiting cold/warm to 1 per day ──
-        # We now rely entirely on the per-lead timing logic in _is_ready_for_followup
-        # to control cadence, not a blanket daily cap per status tier.
-
         return leads.order_by('last_customer_response', 'created_at')
-
+        
     def _print_eligibility_breakdown(self, now_local, force):
         from django.db.models import Q
 
