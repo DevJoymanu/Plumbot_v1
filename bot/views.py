@@ -1632,19 +1632,23 @@ class AppointmentsListView(ListView):
             internal_notes__contains='[DELAY_SIGNAL]'
         ).order_by('last_customer_response')
 
-        # Build countdown data for each delayed lead (14-day window from signal)
+        # Delayed leads should be followed up within 2 weeks of the delay signal.
+        follow_up_window_days = 14
         delayed_leads_with_countdown = []
         for lead in delayed_qs:
             # Find when the delay signal was recorded (use last_customer_response as proxy)
             reference = lead.last_customer_response or lead.updated_at or lead.created_at
             days_elapsed = (timezone.now() - reference).days
-            days_remaining = max(0, 14 - days_elapsed)
-            pct_elapsed = min(100, int((days_elapsed / 14) * 100))
+            follow_up_due_at = reference + timedelta(days=follow_up_window_days)
+            days_remaining = max(0, follow_up_window_days - days_elapsed)
+            pct_elapsed = min(100, int((days_elapsed / follow_up_window_days) * 100))
             delayed_leads_with_countdown.append({
                 'lead': lead,
                 'days_remaining': days_remaining,
                 'days_elapsed': days_elapsed,
                 'pct_elapsed': pct_elapsed,
+                'follow_up_due_at': follow_up_due_at,
+                'follow_up_window_days': follow_up_window_days,
                 'overdue': days_remaining == 0,
             })
 

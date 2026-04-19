@@ -668,8 +668,7 @@
             </div>
             <div>
                 <p class="delayed-title">Delayed leads — 14-day follow-up window</p>
-                <p class="delayed-subtitle">These customers said they'll reach out later. Follow up before the window
-                    closes.</p>
+                <p class="delayed-subtitle">These customers said they'll reach out later. Follow up within 2 weeks before the 14-day window closes.</p>
             </div>
         </div>
         <span class="delayed-badge">{{ status_counts.delayed }} lead{{ status_counts.delayed|pluralize }}</span>
@@ -689,12 +688,15 @@
                 {% if lead.customer_area %} &middot; {{ lead.customer_area }}{% endif %}
                 {% if lead.project_type %} &middot; {{ lead.get_project_type_display|default:lead.project_type }}{% endif %}
             </p>
+            <p class="lead-info-meta">
+                Follow up by {{ item.follow_up_due_at|date:"M j, Y" }} after the 2-week window
+            </p>
         </div>
 
         <div class="countdown-cell">
             {% if item.overdue %}
                 <div class="countdown-days overdue">0</div>
-                <div class="countdown-label">days left</div>
+                <div class="countdown-label">follow up now</div>
                 <div class="progress-wrap">
                     <div class="progress-track">
                         <div class="progress-fill fill-urgent" style="width:100%;"></div>
@@ -702,7 +704,7 @@
                 </div>
             {% elif item.days_remaining <= 3 %}
                 <div class="countdown-days urgent">{{ item.days_remaining }}</div>
-                <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+                <div class="countdown-label">day{{ item.days_remaining|pluralize }} until 2-week follow-up</div>
                 <div class="progress-wrap">
                     <div class="progress-track">
                         <div class="progress-fill fill-urgent" style="width:{{ item.pct_elapsed }}%;"></div>
@@ -710,7 +712,7 @@
                 </div>
             {% elif item.days_remaining <= 7 %}
                 <div class="countdown-days warning">{{ item.days_remaining }}</div>
-                <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+                <div class="countdown-label">day{{ item.days_remaining|pluralize }} until 2-week follow-up</div>
                 <div class="progress-wrap">
                     <div class="progress-track">
                         <div class="progress-fill fill-warning" style="width:{{ item.pct_elapsed }}%;"></div>
@@ -718,7 +720,7 @@
                 </div>
             {% else %}
                 <div class="countdown-days ok">{{ item.days_remaining }}</div>
-                <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+                <div class="countdown-label">day{{ item.days_remaining|pluralize }} until 2-week follow-up</div>
                 <div class="progress-wrap">
                     <div class="progress-track">
                         <div class="progress-fill fill-ok" style="width:{{ item.pct_elapsed }}%;"></div>
