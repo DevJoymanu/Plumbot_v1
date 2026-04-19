@@ -67,10 +67,6 @@ _deepseek = (
 
 
 def _clear_delay_signal_if_present(appointment: Appointment) -> None:
-    """
-    When a customer messages again after giving a delay signal,
-    lift the follow-up pause and remove the flag.
-    """
     notes = appointment.internal_notes or ''
     if '[DELAY_SIGNAL]' not in notes:
         return
@@ -79,13 +75,9 @@ def _clear_delay_signal_if_present(appointment: Appointment) -> None:
         if '[DELAY_SIGNAL]' not in line
     ).strip()
     appointment.internal_notes = cleaned
-    appointment.manual_followup_paused = False
-    appointment.manual_followup_paused_until = None
-    appointment.save(update_fields=[
-        'internal_notes', 'manual_followup_paused', 'manual_followup_paused_until'
-    ])
+    appointment.save(update_fields=['internal_notes'])
     print(f"▶️ Delay signal cleared — customer re-engaged on appointment {appointment.id}")
-
+    
 def _translate_reply_for_customer(customer_message: str, reply: str) -> str:
     """
     Translate the bot reply based on the customer's language.

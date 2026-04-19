@@ -3346,20 +3346,14 @@ class Plumbot:
         if 'NAME_DECLINED' not in notes:
             self.appointment.internal_notes = (notes + '\n[NAME_DECLINED]').strip()
             self.appointment.save(update_fields=['internal_notes'])
-
+    #
     def _mark_delay_signal(self):
         """Pause automated follow-ups until customer re-engages."""
         notes = self.appointment.internal_notes or ''
         if '[DELAY_SIGNAL]' not in notes:
             self.appointment.internal_notes = (notes + '\n[DELAY_SIGNAL]').strip()
-        # Pause for 7 days — customer said they'll reach out when ready
-        from datetime import timedelta
-        self.appointment.manual_followup_paused = True
-        self.appointment.manual_followup_paused_until = timezone.now() + timedelta(days=7)
-        self.appointment.save(update_fields=[
-            'internal_notes', 'manual_followup_paused', 'manual_followup_paused_until'
-        ])
-        print(f"⏸️ Follow-ups paused 7 days for {self.appointment.id} — delay signal")    
+            self.appointment.save(update_fields=['internal_notes'])
+        print(f"⏸️ Follow-ups paused for {self.appointment.id} — delay signal written")
 
     def _clear_customer_name_declined(self):
         notes = self.appointment.internal_notes or ''

@@ -115,19 +115,15 @@ class Command(BaseCommand):
 
         # Don't interrupt a customer who engaged very recently (2 minutes)
         response_window = now_local - timedelta(minutes=2)  # ← must be defined FIRST
-
+        #
         leads = (
             Appointment.objects
             .filter(is_lead_active=True, status='pending')
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
             .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
-            .exclude(
-                manual_followup_paused=True,
-                manual_followup_paused_until__gt=timezone.now()
-            )
+            .exclude(internal_notes__contains='[DELAY_SIGNAL]')
         )
-
         return leads.order_by('last_customer_response', 'created_at')
         
     def _print_eligibility_breakdown(self, now_local, force):
