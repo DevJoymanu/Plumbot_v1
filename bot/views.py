@@ -1590,7 +1590,23 @@ class AppointmentsListView(ListView):
             cutoff = timezone.now() - age_map_minus[response_age]
             queryset = queryset.filter(last_customer_response__gte=cutoff)
 
-        return queryset
+        status_filter = self.request.GET.get('status_filter', 'all')
+        if status_filter == 'booked':
+            queryset = queryset.filter(status='confirmed')
+        elif status_filter == 'pending':
+            queryset = queryset.filter(status='pending').exclude(
+                internal_notes__contains='[DELAY_SIGNAL]'
+            )
+        elif status_filter == 'cancelled':
+            queryset = queryset.filter(status='cancelled')
+        elif status_filter == 'delayed':
+            queryset = queryset.filter(
+                status='pending',
+                internal_notes__contains='[DELAY_SIGNAL]'
+            )
+
+        return queryset        
+        
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1609,24 +1625,47 @@ class AppointmentsListView(ListView):
             cutoff = timezone.now() - age_map_minus[response_age]
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
 
+        # Delayed = leads with a [DELAY_SIGNAL] in internal_notes that are still active
+        delayed_qs = base_qs.filter(
+            is_lead_active=True,
+            status='pending',
+            internal_notes__contains='[DELAY_SIGNAL]'
+        ).order_by('last_customer_response')
+
+        # Build countdown data for each delayed lead (14-day window from signal)
+        delayed_leads_with_countdown = []
+        for lead in delayed_qs:
+            # Find when the delay signal was recorded (use last_customer_response as proxy)
+            reference = lead.last_customer_response or lead.updated_at or lead.created_at
+            days_elapsed = (timezone.now() - reference).days
+            days_remaining = max(0, 14 - days_elapsed)
+            pct_elapsed = min(100, int((days_elapsed / 14) * 100))
+            delayed_leads_with_countdown.append({
+                'lead': lead,
+                'days_remaining': days_remaining,
+                'days_elapsed': days_elapsed,
+                'pct_elapsed': pct_elapsed,
+                'overdue': days_remaining == 0,
+            })
+
         today = timezone.now().date()
         todays_confirmed_appointments = base_qs.filter(
             status='confirmed',
             scheduled_datetime__date=today
         ).order_by('scheduled_datetime')
 
-
         context['status_counts'] = {
             'total': base_qs.count(),
             'pending': base_qs.filter(status='pending').count(),
             'confirmed': base_qs.filter(status='confirmed').count(),
             'cancelled': base_qs.filter(status='cancelled').count(),
+            'delayed': delayed_qs.count(),
             'todays_confirmed_appointments': todays_confirmed_appointments,
-
         }
+        context['delayed_leads_with_countdown'] = delayed_leads_with_countdown
         context['selected_response_age'] = response_age
+        context['selected_status_filter'] = self.request.GET.get('status_filter', 'all')
         return context
-
 
 @method_decorator(staff_required, name='dispatch')
 class PriorityLeadsView(TemplateView):

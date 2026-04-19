@@ -2,7 +2,6 @@
 
 {% block content %}
 <style>
-    /* Mobile-first responsive styles */
     .header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -36,6 +35,286 @@
         margin-bottom: 20px;
     }
 
+    /* ── STATUS FILTER BAR ── */
+    .status-filter-bar {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        margin-bottom: 20px;
+    }
+
+    .status-tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 0;
+    }
+
+    .status-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 18px;
+        border-radius: 8px;
+        border: 1.5px solid #e5e7eb;
+        background: white;
+        color: #6b7280;
+        font-size: 0.9rem;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.18s;
+        white-space: nowrap;
+    }
+
+    .status-tab:hover {
+        background: #f9fafb;
+        border-color: #d1d5db;
+        color: #374151;
+        text-decoration: none;
+    }
+
+    .status-tab.active {
+        border-color: currentColor;
+        color: var(--tab-color);
+        background: var(--tab-bg);
+    }
+
+    .status-tab .tab-count {
+        background: rgba(0, 0, 0, 0.07);
+        border-radius: 20px;
+        padding: 1px 8px;
+        font-size: 0.78rem;
+        font-weight: 600;
+    }
+
+    .status-tab.active .tab-count {
+        background: rgba(0, 0, 0, 0.12);
+    }
+
+    .tab-all {
+        --tab-color: #667eea;
+        --tab-bg: #f0f0ff;
+    }
+
+    .tab-booked {
+        --tab-color: #059669;
+        --tab-bg: #ecfdf5;
+    }
+
+    .tab-pending {
+        --tab-color: #d97706;
+        --tab-bg: #fffbeb;
+    }
+
+    .tab-cancelled {
+        --tab-color: #dc2626;
+        --tab-bg: #fef2f2;
+    }
+
+    .tab-delayed {
+        --tab-color: #2563eb;
+        --tab-bg: #eff6ff;
+    }
+
+    /* ── DELAYED LEADS SECTION ── */
+    .delayed-section {
+        background: #eff6ff;
+        border: 1.5px solid #bfdbfe;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+
+    .delayed-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        border-bottom: 1px solid #bfdbfe;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .delayed-header-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .delayed-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: #2563eb;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        flex-shrink: 0;
+    }
+
+    .delayed-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #1e40af;
+        margin: 0;
+    }
+
+    .delayed-subtitle {
+        font-size: 0.8rem;
+        color: #3b82f6;
+        margin: 0;
+    }
+
+    .delayed-badge {
+        background: #2563eb;
+        color: white;
+        border-radius: 20px;
+        padding: 3px 12px;
+        font-size: 0.78rem;
+        font-weight: 600;
+    }
+
+    .delayed-lead-row {
+        display: grid;
+        grid-template-columns: 1fr 160px 90px;
+        align-items: center;
+        padding: 12px 20px;
+        border-bottom: 1px solid #dbeafe;
+        gap: 16px;
+        background: white;
+        transition: background 0.15s;
+    }
+
+    .delayed-lead-row:last-child {
+        border-bottom: none;
+    }
+
+    .delayed-lead-row:hover {
+        background: #f8faff;
+    }
+
+    .lead-info-name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin: 0 0 2px;
+    }
+
+    .lead-info-meta {
+        font-size: 0.78rem;
+        color: #6b7280;
+        margin: 0;
+    }
+
+    .countdown-cell {
+        text-align: center;
+    }
+
+    .countdown-days {
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1;
+        margin-bottom: 2px;
+    }
+
+    .countdown-days.urgent {
+        color: #dc2626;
+    }
+
+    .countdown-days.warning {
+        color: #d97706;
+    }
+
+    .countdown-days.ok {
+        color: #059669;
+    }
+
+    .countdown-days.overdue {
+        color: #dc2626;
+    }
+
+    .countdown-label {
+        font-size: 0.7rem;
+        color: #6b7280;
+    }
+
+    .progress-wrap {
+        margin-top: 4px;
+    }
+
+    .progress-track {
+        height: 4px;
+        border-radius: 2px;
+        background: #e5e7eb;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.3s;
+    }
+
+    .fill-ok {
+        background: #059669;
+    }
+
+    .fill-warning {
+        background: #d97706;
+    }
+
+    .fill-urgent {
+        background: #dc2626;
+    }
+
+    .lead-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px 14px;
+        border-radius: 7px;
+        background: #2563eb;
+        color: white;
+        font-size: 0.8rem;
+        font-weight: 500;
+        text-decoration: none;
+        border: none;
+        cursor: pointer;
+        transition: background 0.15s;
+        white-space: nowrap;
+    }
+
+    .lead-action-btn:hover {
+        background: #1d4ed8;
+        color: white;
+        text-decoration: none;
+    }
+
+    .overdue-badge {
+        display: inline-block;
+        background: #fef2f2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+        border-radius: 5px;
+        padding: 2px 8px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+
+    .delayed-empty {
+        padding: 24px 20px;
+        text-align: center;
+        color: #3b82f6;
+        font-size: 0.9rem;
+        background: white;
+    }
+
+    /* ── REST OF PAGE (unchanged styles) ── */
     .appointment-header {
         display: flex;
         justify-content: space-between;
@@ -51,14 +330,7 @@
         padding: 20px;
         margin-bottom: 20px;
         box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
         border: 1px solid rgba(255, 255, 255, 0.2);
-        overflow: hidden;
-    }
-
-    .filter-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
     }
 
     .filter-row {
@@ -82,13 +354,6 @@
         background-repeat: no-repeat;
         background-position: right 16px center;
         background-size: 1.2em;
-        transition: all 0.2s ease;
-    }
-
-    .filter-row select:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
     .filter-actions {
@@ -154,7 +419,6 @@
         min-height: 36px;
     }
 
-    /* Stats Grid */
     .dashboard-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -180,7 +444,6 @@
         opacity: 0.9;
     }
 
-    /* Appointment List */
     .appointment-list {
         display: flex;
         flex-direction: column;
@@ -272,7 +535,6 @@
         margin: 0;
     }
 
-    /* Pagination */
     .pagination {
         margin-top: 20px;
         display: flex;
@@ -311,7 +573,6 @@
         min-width: 44px;
         min-height: 44px;
         font-size: clamp(0.9rem, 3.5vw, 1rem);
-        transition: all 0.2s ease;
     }
 
     .page-item.active .page-link {
@@ -324,24 +585,22 @@
         background: #f3f4f6;
     }
 
-    /* Mobile-specific adjustments */
     @media (max-width: 768px) {
-        .card {
-            padding: 15px;
+        .delayed-lead-row {
+            grid-template-columns: 1fr 80px;
         }
 
-        .appointment-header {
-            flex-direction: column;
-            align-items: stretch;
-            text-align: center;
+        .delayed-lead-row .lead-action-btn {
+            display: none;
         }
 
-        .appointment-header h2 {
-            justify-content: center;
+        .status-tabs {
+            gap: 6px;
         }
 
-        .actions {
-            justify-content: center;
+        .status-tab {
+            padding: 7px 12px;
+            font-size: 0.82rem;
         }
 
         .dashboard-grid {
@@ -349,68 +608,24 @@
             gap: 10px;
         }
 
-        .stat-card {
-            padding: 15px 10px;
-        }
-
         .appointment-details {
             grid-template-columns: 1fr;
             gap: 8px;
         }
-
-        .appointment-item .actions {
-            justify-content: stretch;
-        }
-
-        .appointment-item .btn {
-            flex: 1;
-            min-width: 0;
-        }
     }
 
     @media (max-width: 480px) {
-        .header {
-            padding: 15px 10px;
+        .delayed-lead-row {
+            grid-template-columns: 1fr 70px;
         }
 
-        .card {
-            padding: 12px;
+        .status-tab .tab-count {
+            display: none;
         }
 
         .dashboard-grid {
             grid-template-columns: 1fr;
         }
-
-        .appointment-item {
-            padding: 12px;
-        }
-
-        .appointment-item .actions {
-            flex-direction: column;
-        }
-
-        .pagination ul {
-            gap: 3px;
-        }
-
-        .page-link {
-            padding: 6px 10px;
-            min-width: 40px;
-            min-height: 40px;
-        }
-    }
-
-    /* Touch improvements */
-    .btn:active,
-    .page-link:active {
-        transform: scale(0.96);
-    }
-
-    /* Focus styles for accessibility */
-    .btn:focus-visible,
-    .page-link:focus-visible {
-        outline: 2px solid #667eea;
-        outline-offset: 2px;
     }
 </style>
 
@@ -419,6 +634,133 @@
     <p>Manage and view all customer appointments</p>
 </div>
 
+<!-- ── STATUS FILTER BAR ── -->
+<div class="status-filter-bar">
+    <div class="status-tabs">
+        <a href="?status_filter=all&response_age={{ selected_response_age }}"
+            class="status-tab tab-all {% if selected_status_filter == 'all' %}active{% endif %}">
+            <i class="fas fa-list" style="font-size:13px;"></i>
+            All
+            <span class="tab-count">{{ status_counts.total }}</span>
+        </a>
+        <a href="?status_filter=booked&response_age={{ selected_response_age }}"
+            class="status-tab tab-booked {% if selected_status_filter == 'booked' %}active{% endif %}">
+            <i class="fas fa-check-circle" style="font-size:13px;"></i>
+            Booked
+            <span class="tab-count">{{ status_counts.confirmed }}</span>
+        </a>
+        <a href="?status_filter=pending&response_age={{ selected_response_age }}"
+            class="status-tab tab-pending {% if selected_status_filter == 'pending' %}active{% endif %}">
+            <i class="fas fa-clock" style="font-size:13px;"></i>
+            Pending
+            <span class="tab-count">{{ status_counts.pending }}</span>
+        </a>
+        <a href="?status_filter=cancelled&response_age={{ selected_response_age }}"
+            class="status-tab tab-cancelled {% if selected_status_filter == 'cancelled' %}active{% endif %}">
+            <i class="fas fa-times-circle" style="font-size:13px;"></i>
+            Cancelled
+            <span class="tab-count">{{ status_counts.cancelled }}</span>
+        </a>
+        <a href="?status_filter=delayed&response_age={{ selected_response_age }}"
+            class="status-tab tab-delayed {% if selected_status_filter == 'delayed' %}active{% endif %}">
+            <i class="fas fa-hourglass-half" style="font-size:13px;"></i>
+            Delayed
+            <span class="tab-count">{{ status_counts.delayed }}</span>
+        </a>
+    </div>
+</div>
+
+<!-- ── DELAYED LEADS COUNTDOWN PANEL (always visible) ── -->
+{% if delayed_leads_with_countdown %}
+<div class="delayed-section">
+    <div class="delayed-header">
+        <div class="delayed-header-left">
+            <div class="delayed-icon">
+                <i class="fas fa-hourglass-half" style="font-size:14px;"></i>
+            </div>
+            <div>
+                <p class="delayed-title">Delayed leads — 14-day follow-up window</p>
+                <p class="delayed-subtitle">These customers said they'll reach out later. Follow up before the window
+                    closes.</p>
+            </div>
+        </div>
+        <span class="delayed-badge">{{ status_counts.delayed }} lead{{ status_counts.delayed|pluralize }}</span>
+    </div>
+
+    {% for item in delayed_leads_with_countdown %}
+    {% with lead=item.lead %}
+    <div class="delayed-lead-row">
+        <!-- Lead info -->
+        <div>
+            <p class="lead-info-name">
+                {{ lead.customer_name|default:"Unknown customer" }}
+                {% if item.overdue %}
+                <span class="overdue-badge">Overdue</span>
+                {% endif %}
+            </p>
+            <p class="lead-info-meta">
+                <i class="fas fa-phone" style="font-size:11px; margin-right:3px;"></i>{{ lead.phone_number }}
+                {% if lead.customer_area %}
+                &nbsp;&middot;&nbsp;<i class="fas fa-map-marker-alt" style="font-size:11px; margin-right:3px;"></i>{{
+                lead.customer_area }}
+                {% endif %}
+                {% if lead.project_type %}
+                &nbsp;&middot;&nbsp;{{ lead.get_project_type_display|default:lead.project_type }}
+                {% endif %}
+            </p>
+        </div>
+
+        <!-- Countdown -->
+        <div class="countdown-cell">
+            {% if item.overdue %}
+            <div class="countdown-days overdue">0</div>
+            <div class="countdown-label">days left</div>
+            <div class="progress-wrap">
+                <div class="progress-track">
+                    <div class="progress-fill fill-urgent" style="width:100%;"></div>
+                </div>
+            </div>
+            {% elif item.days_remaining <= 3 %} <div class="countdown-days urgent">{{ item.days_remaining }}
+        </div>
+        <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+        <div class="progress-wrap">
+            <div class="progress-track">
+                <div class="progress-fill fill-urgent" style="width:{{ item.pct_elapsed }}%;"></div>
+            </div>
+        </div>
+        {% elif item.days_remaining <= 7 %} <div class="countdown-days warning">{{ item.days_remaining }}
+    </div>
+    <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+    <div class="progress-wrap">
+        <div class="progress-track">
+            <div class="progress-fill fill-warning" style="width:{{ item.pct_elapsed }}%;"></div>
+        </div>
+    </div>
+    {% else %}
+    <div class="countdown-days ok">{{ item.days_remaining }}</div>
+    <div class="countdown-label">day{{ item.days_remaining|pluralize }} left</div>
+    <div class="progress-wrap">
+        <div class="progress-track">
+            <div class="progress-fill fill-ok" style="width:{{ item.pct_elapsed }}%;"></div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Action -->
+<div style="text-align:right;">
+    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-action-btn">
+        <i class="fas fa-arrow-right" style="font-size:11px;"></i>
+        View
+    </a>
+</div>
+</div>
+{% endwith %}
+{% endfor %}
+</div>
+{% endif %}
+
+<!-- ── MAIN LIST CARD ── -->
 <div class="card">
     <div class="appointment-header">
         <div>
@@ -433,10 +775,13 @@
 
     <div class="filter-card">
         <form method="get" class="filter-row">
+            <input type="hidden" name="status_filter" value="{{ selected_status_filter }}">
             <select name="response_age" aria-label="Filter by response age">
-                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
-                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
-                <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
+                <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response
+                    within 7 days</option>
+                <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response
+                    within 30 days</option>
+                <option value="all" {% if selected_response_age=='all' %}selected{% endif %}>All-time</option>
             </select>
             <div class="filter-actions">
                 <button type="submit" class="btn">Apply</button>
@@ -462,20 +807,26 @@
             <div class="stat-number">{{ status_counts.cancelled }}</div>
             <div class="stat-label">Cancelled</div>
         </div>
+        <div class="card stat-card">
+            <div class="stat-number">{{ status_counts.delayed }}</div>
+            <div class="stat-label">Delayed</div>
+        </div>
     </div>
 
     <div class="appointment-list">
         {% for appointment in appointments %}
         <div class="appointment-item">
-                <div class="appointment-header">
-                    <div class="appointment-name">
-                        {{ appointment.computed_status_label|default:appointment.get_lead_status_display }} ({{ appointment.computed_score|default:appointment.lead_score }}/100)
-                    </div>
-                    <div class="appointment-status status-{{ appointment.status }}">
-                        {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
-                    </div>
+            <div class="appointment-header">
+                <div class="appointment-name">
+                    {{ appointment.computed_status_label|default:appointment.get_lead_status_display }}
+                    ({{ appointment.computed_score|default:appointment.lead_score }}/100)
                 </div>
-                <div class="appointment-details">
+                <div class="appointment-status status-{{ appointment.status }}">
+                    {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{%
+                    endif %}
+                </div>
+            </div>
+            <div class="appointment-details">
                 <div class="detail-item">
                     <i class="fas fa-phone"></i>
                     {{ appointment.phone_number }}
@@ -484,18 +835,24 @@
                     <i class="fas fa-map-marker-alt"></i>
                     {{ appointment.customer_area|default:"No area" }}
                 </div>
-                    <div class="detail-item">
-                        <i class="fas fa-tools"></i>
-                        {{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-align-left"></i>
-                        {{ appointment.project_description|default:"No project description yet"|truncatewords:8 }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-calendar"></i>
-                        {{ appointment.scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}
+                <div class="detail-item">
+                    <i class="fas fa-tools"></i>
+                    {{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }}
                 </div>
+                <div class="detail-item">
+                    <i class="fas fa-align-left"></i>
+                    {{ appointment.project_description|default:"No project description yet"|truncatewords:8 }}
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-calendar"></i>
+                    {{ appointment.scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}
+                </div>
+                {% if appointment.internal_notes and '[DELAY_SIGNAL]' in appointment.internal_notes %}
+                <div class="detail-item" style="color:#2563eb;">
+                    <i class="fas fa-hourglass-half"></i>
+                    Customer will reach out later
+                </div>
+                {% endif %}
             </div>
             <div class="actions">
                 <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-sm">
@@ -516,7 +873,7 @@
         {% empty %}
         <div class="empty-state">
             <i class="fas fa-calendar-times"></i>
-            <p>No appointments found</p>
+            <p>No appointments found{% if selected_status_filter != 'all' %} for this filter{% endif %}</p>
         </div>
         {% endfor %}
     </div>
@@ -527,25 +884,23 @@
             <ul class="pagination">
                 {% if page_obj.has_previous %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}&response_age={{ selected_response_age }}" aria-label="Previous">
-                        <span aria-hidden="true">&laquo;</span>
-                    </a>
+                    <a class="page-link"
+                        href="?page={{ page_obj.previous_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">&laquo;</a>
                 </li>
                 {% endif %}
-
                 {% for num in page_obj.paginator.page_range %}
                 {% if page_obj.number == num %}
                 <li class="page-item active"><a class="page-link" href="#">{{ num }}</a></li>
                 {% else %}
-                <li class="page-item"><a class="page-link" href="?page={{ num }}&response_age={{ selected_response_age }}">{{ num }}</a></li>
+                <li class="page-item"><a class="page-link"
+                        href="?page={{ num }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">{{
+                        num }}</a></li>
                 {% endif %}
                 {% endfor %}
-
                 {% if page_obj.has_next %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}&response_age={{ selected_response_age }}" aria-label="Next">
-                        <span aria-hidden="true">&raquo;</span>
-                    </a>
+                    <a class="page-link"
+                        href="?page={{ page_obj.next_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">&raquo;</a>
                 </li>
                 {% endif %}
             </ul>
@@ -553,30 +908,4 @@
     </div>
     {% endif %}
 </div>
-
-<script>
-    // Mobile-specific enhancements
-    document.addEventListener('DOMContentLoaded', function () {
-        // Add touch feedback for buttons
-        document.querySelectorAll('.btn, .page-link').forEach(element => {
-            element.addEventListener('touchstart', function () {
-                this.style.transform = 'scale(0.96)';
-            });
-
-            element.addEventListener('touchend', function () {
-                this.style.transform = 'scale(1)';
-            });
-        });
-
-        // Improve touch targets for small screens
-        if (window.innerWidth < 768) {
-            document.querySelectorAll('.btn').forEach(btn => {
-                btn.style.minHeight = '44px';
-                btn.style.display = 'flex';
-                btn.style.alignItems = 'center';
-                btn.style.justifyContent = 'center';
-            });
-        }
-    });
-</script>
 {% endblock %}
