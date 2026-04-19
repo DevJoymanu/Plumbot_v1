@@ -4616,7 +4616,7 @@ Return ONLY valid JSON (no markdown):
         else:
             escalation = "Natural rephrasing."
 
-        prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe/South Africa.
+        prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe.
 
 CUSTOMER'S LAST MESSAGE: "{incoming_message}"
 
@@ -4630,7 +4630,7 @@ TONE RULES:
 - Mirror the customer's vocabulary and sentence length exactly
 - If they wrote 3 words, your question should be short too
 - If they wrote in full sentences, match that
-- South African / Zimbabwean English ("sorted", "keen", "sharp")
+- Zimbabwean English ("sorted", "keen", "sharp")
 - {language_note}
 - No markdown, no bold, no bullet points in the question itself
 - One question only — never stack two questions
@@ -6373,7 +6373,7 @@ I understand this is time-sensitive!"""
             current_time     = timezone.now().strftime('%Y-%m-%d %H:%M')
     
             extraction_prompt = f"""
-    You are a data extraction assistant for a plumbing appointment system in Zimbabwe/South Africa.
+    You are a data extraction assistant for a plumbing appointment system in Zimbabwe/.
     Customers may write in English, Shona, or a mix.
     
     CRITICAL: Return ONLY a valid JSON object — no markdown, no code blocks, no extra text.
@@ -7187,7 +7187,7 @@ I understand this is time-sensitive!"""
             return []
 
     def format_datetime_for_display(self, dt):
-        """Format datetime ensuring it shows in South Africa timezone"""
+        """Format datetime ensuring it shows in  timezone"""
         try:
             import pytz
             
@@ -7717,7 +7717,7 @@ I understand this is time-sensitive!"""
     - If new info was provided, start by thanking them for it.
     - If new info was provided, add one short relevant line tied to that info before the question.
     - Rephrase the question to match the customer's tone and wording style.
-    - South African / Zimbabwean English tone.
+    - Zimbabwean English tone.
     - No markdown headers. Short sentences.
     - NEVER ask for info already collected.
     
@@ -8544,7 +8544,7 @@ I understand this is time-sensitive!"""
     5. "today" → {today_date_str}
     6. Time formats: "2pm"=14:00, "10am"=10:00, "2:30pm"=14:30, "14:00"=14:00
     7. Default minutes to 00 if not specified.
-    8. Do NOT adjust timezone — return local South Africa time.
+    8. Do NOT adjust timezone — return local Zimbabwe time.
 
     RESPONSE FORMAT (return ONLY one of these, no other text):
     - Complete datetime: YYYY-MM-DDTHH:MM
@@ -9052,7 +9052,7 @@ I understand this is time-sensitive!"""
                 recent_lines.append(f"{role}: {content[:200]}")
             context_block = "\n".join(recent_lines) if recent_lines else "No prior conversation."
 
-            prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe, also serving South Africa.
+            prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe.
     
     - the initial response to greetings or generic opening messages should only be: 
             {self.get_next_question_to_ask() == "service_type"}
@@ -9098,7 +9098,7 @@ I understand this is time-sensitive!"""
     - If we can do it: confirm clearly, briefly explain what's involved.
     - If we cannot (electrical, roofing, painting): say so and redirect to what we can help with.
     - If it's a pricing question: give the relevant range from the guide above.
-    - South African / Zimbabwean English. No bold, no bullets. Do NOT end with a question."""
+    - Zimbabwean English. No bold, no bullets. Do NOT end with a question."""
 
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",

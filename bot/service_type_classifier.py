@@ -217,7 +217,7 @@ def _deepseek_classify(message: str) -> str | None:
         logger.debug('DeepSeek client not available — skipping AI classification')
         return None
 
-    prompt = f"""You are a classification assistant for a plumbing company in Zimbabwe/South Africa called Homebase Plumbers.
+    prompt = f"""You are a classification assistant for a plumbing company in Zimbabwe called Homebase Plumbers.
 
 A customer sent this message:
 \"\"\"

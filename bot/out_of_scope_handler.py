@@ -198,7 +198,7 @@ def classify_message(message: str, appointment) -> dict:
     project_type = appointment.project_type or "not yet specified"
     area = appointment.customer_area or "not yet specified"
 
-    prompt = f"""You are a message classifier for Plumbot, the WhatsApp chatbot for Homebase Plumbers in Zimbabwe/South Africa.
+    prompt = f"""You are a message classifier for Plumbot, the WhatsApp chatbot for Homebase Plumbers in Zimbabwe.
 
 Our services: {OUR_SERVICES}
 

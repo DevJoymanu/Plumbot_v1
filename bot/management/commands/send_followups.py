@@ -359,7 +359,7 @@ class Command(BaseCommand):
             else '1 to 2 sentences only — keep it short and human.'
         )
 
-        prompt = f"""You are writing a WhatsApp follow-up message for Homebase Plumbers — a professional plumbing company in Zimbabwe/South Africa.
+        prompt = f"""You are writing a WhatsApp follow-up message for Homebase Plumbers — a professional plumbing company in Zimbabwe.
 
 LEAD CONTEXT:
 - Interest: {service}
@@ -381,7 +381,7 @@ RULES — every single one must be followed:
 4. NEVER ask for the customer's name
 5. One question maximum
 6. {length_instruction}
-7. South African / Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
+7. Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
 8. Zero markdown, zero bold, zero bullet points
 9. At most one emoji — only if it fits naturally. Attempt 4 = no emoji
 10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
