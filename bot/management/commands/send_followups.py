@@ -123,7 +123,8 @@ class Command(BaseCommand):
             .exclude(last_customer_response__gte=response_window)
             .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
             .exclude(internal_notes__contains='[DELAY_SIGNAL]')
-        )
+            .exclude(chatbot_paused=True)  # ← ADD THIS
+        )        
         return leads.order_by('last_customer_response', 'created_at')
         
     def _print_eligibility_breakdown(self, now_local, force):

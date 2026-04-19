@@ -3057,20 +3057,32 @@ def manual_followup_check(request):
 def pause_chatbot(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
     appointment.pause_chatbot()
-    _append_admin_note(appointment, f"{request.user.username}: chatbot paused.")
-    messages.success(request, 'Chatbot paused for this lead.')
+    # Also write delay signal so automated follow-ups stop immediately
+    notes = appointment.internal_notes or ''
+    if '[DELAY_SIGNAL]' not in notes:
+        appointment.internal_notes = (notes + '\n[DELAY_SIGNAL]').strip()
+        appointment.save(update_fields=['internal_notes'])
+    _append_admin_note(appointment, f"{request.user.username}: chatbot paused — follow-ups also paused.")
+    messages.success(request, 'Chatbot paused. Automated follow-ups also stopped.')
     return redirect('appointment_detail', pk=pk)
-
 
 @staff_required
 @require_POST
 def resume_chatbot(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
     appointment.resume_chatbot()
-    _append_admin_note(appointment, f"{request.user.username}: chatbot resumed.")
-    messages.success(request, 'Chatbot resumed for this lead.')
+    # Clear delay signal so automated follow-ups can resume
+    notes = appointment.internal_notes or ''
+    if '[DELAY_SIGNAL]' in notes:
+        cleaned = '\n'.join(
+            line for line in notes.splitlines()
+            if '[DELAY_SIGNAL]' not in line
+        ).strip()
+        appointment.internal_notes = cleaned
+        appointment.save(update_fields=['internal_notes'])
+    _append_admin_note(appointment, f"{request.user.username}: chatbot resumed — follow-ups also resumed.")
+    messages.success(request, 'Chatbot resumed. Automated follow-ups also restarted.')
     return redirect('appointment_detail', pk=pk)
-
 
 @staff_required
 @require_POST
@@ -3346,7 +3358,7 @@ class Plumbot:
         if 'NAME_DECLINED' not in notes:
             self.appointment.internal_notes = (notes + '\n[NAME_DECLINED]').strip()
             self.appointment.save(update_fields=['internal_notes'])
-    #
+
     def _mark_delay_signal(self):
         """Pause automated follow-ups until customer re-engages."""
         notes = self.appointment.internal_notes or ''
