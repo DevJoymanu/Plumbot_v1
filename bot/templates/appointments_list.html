@@ -687,8 +687,7 @@
             <p class="lead-info-meta">
                 {{ lead.phone_number }}
                 {% if lead.customer_area %} &middot; {{ lead.customer_area }}{% endif %}
-                {% if lead.project_type %} &middot; {{ lead.get_project_type_display|default:lead.project_type }}{%
-                endif %}
+                {% if lead.project_type %} &middot; {{ lead.get_project_type_display|default:lead.project_type }}{% endif %}
             </p>
         </div>
 
@@ -804,8 +803,7 @@
                     ({{ appointment.computed_score|default:appointment.lead_score }}/100)
                 </div>
                 <div class="appointment-status status-{{ appointment.status }}">
-                    {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{%
-                    endif %}
+                    {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
                 </div>
             </div>
             <div class="appointment-details">
