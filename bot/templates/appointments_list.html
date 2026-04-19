@@ -759,11 +759,11 @@
         <form method="get" class="filter-row">
             <input type="hidden" name="status_filter" value="{{ selected_status_filter }}">
             <select name="response_age" aria-label="Filter by response age">
-                <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response
+                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response
                     within 7 days</option>
-                <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response
+                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response
                     within 30 days</option>
-                <option value="all" {% if selected_response_age=='all' %}selected{% endif %}>All-time</option>
+                <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
             </select>
             <div class="filter-actions">
                 <button type="submit" class="btn">Apply</button>
