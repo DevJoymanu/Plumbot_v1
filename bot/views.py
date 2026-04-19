@@ -3347,6 +3347,20 @@ class Plumbot:
             self.appointment.internal_notes = (notes + '\n[NAME_DECLINED]').strip()
             self.appointment.save(update_fields=['internal_notes'])
 
+    def _mark_delay_signal(self):
+        """Pause automated follow-ups until customer re-engages."""
+        notes = self.appointment.internal_notes or ''
+        if '[DELAY_SIGNAL]' not in notes:
+            self.appointment.internal_notes = (notes + '\n[DELAY_SIGNAL]').strip()
+        # Pause for 7 days — customer said they'll reach out when ready
+        from datetime import timedelta
+        self.appointment.manual_followup_paused = True
+        self.appointment.manual_followup_paused_until = timezone.now() + timedelta(days=7)
+        self.appointment.save(update_fields=[
+            'internal_notes', 'manual_followup_paused', 'manual_followup_paused_until'
+        ])
+        print(f"⏸️ Follow-ups paused 7 days for {self.appointment.id} — delay signal")    
+
     def _clear_customer_name_declined(self):
         notes = self.appointment.internal_notes or ''
         if 'NAME_DECLINED' in notes:
@@ -4050,39 +4064,41 @@ Reply with ONLY a JSON object:
         return any(f.name == field_name for f in self.appointment._meta.concrete_fields)
 
 
+    def _delay_signal_active(self) -> bool:
+        """Return True if customer previously gave a delay signal."""
+        return '[DELAY_SIGNAL]' in (self.appointment.internal_notes or '')
+
     def generate_response(self, incoming_message, precomputed_service_inquiry=None):
-        """Check service inquiries ONLY when not mid-conversation."""
         try:
+            # ── DELAY SIGNAL ACTIVE ───────────────────────────────────────────────
+            # Customer previously said they'll reach out later.
+            # Acks ("ok", "sharp", 👍) → save silently, no reply.
+            # Substantive message → clear flag, fall through to normal processing.
+            if self._delay_signal_active():
+                if self._is_delay_or_exit_signal(incoming_message):
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    print(f"🔇 Delay signal active — ack suppressed: '{incoming_message[:60]}'")
+                    return None
+                else:
+                    from .whatsapp_webhook import _clear_delay_signal_if_present
+                    _clear_delay_signal_if_present(self.appointment)
+                    print(f"▶️ Delay signal cleared — customer re-engaged: '{incoming_message[:60]}'")
+                    # Fall through to normal processing
+
+            # ── FIRST-TIME DELAY / EXIT SIGNAL ───────────────────────────────────
+            # Send one warm acknowledgment, then pause follow-ups.
             if self._is_delay_or_exit_signal(incoming_message):
-                print(f"⏸️ Exit/delay signal accepted — acknowledging and stopping")
+                print(f"⏸️ Delay/exit signal — acknowledging and pausing follow-ups")
                 reply = self._get_delay_acknowledgment()
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", reply)
+                self._mark_delay_signal()
                 return reply
-            # ── EXIT / DELAY SIGNAL — checked FIRST, before anything else ────
-            # Catches: "ok thanks", "noted", "oh ok", "no worries", 👍, etc.
-            # Only suppress auto-reply when:
-            #   (a) no service type collected yet — truly early / pre-conversation, OR
-            #   (b) appointment is already confirmed — customer is just acknowledging
-            _no_project_yet = not self.appointment.project_type
-            _already_confirmed = self.appointment.status == 'confirmed'
-            if False and self._is_delay_or_exit_signal(incoming_message) and (
-                _no_project_yet or _already_confirmed
-            ):
-                print(
-                    f"⏸️ Exit/delay signal at conversation start or post-confirm "
-                    f"— acknowledging and stopping"
-                )
-                reply = self._get_delay_acknowledgment()
-                self.appointment.add_conversation_message("user", incoming_message)
-                self.appointment.add_conversation_message("assistant", reply)
-                return reply
- 
+
             current_question = self.get_next_question_to_ask()
-            #
 
+            # ── OUT-OF-SCOPE / DELAY / COMPLAINT HANDLER ─────────────────────────
             from .out_of_scope_handler import handle_out_of_scope
-
             has_prior_convo = len(self.appointment.conversation_history or []) > 2
             oos_reply = handle_out_of_scope(incoming_message, self.appointment) if has_prior_convo else None
             if oos_reply is not None:
@@ -4090,15 +4106,11 @@ Reply with ONLY a JSON object:
                 self.appointment.add_conversation_message("assistant", oos_reply)
                 return oos_reply
 
-
+            # ── SERVICE / PRODUCT PRICING INQUIRIES (pre-booking only) ───────────
             any_pricing_sent = (
                 getattr(self.appointment, 'pricing_overview_sent', False) or
                 bool(getattr(self.appointment, 'sent_pricing_intents', None))
             )
-            #
-            # Only consider mid-conversation once we've moved past the first question.
-            # Having project_type alone (e.g. auto-classified) is not enough —
-            # the customer must have also answered the plan question or provided area.
             mid_conversation = (
                 any_pricing_sent or
                 (
@@ -4142,7 +4154,7 @@ Reply with ONLY a JSON object:
                         self.appointment.add_conversation_message("assistant", reply)
                         return reply
 
-            # ✅ THIS BLOCK must be at the same indent level as the if above (8 spaces)
+            # ── PLAN UPLOAD FLOW ──────────────────────────────────────────────────
             if (self.appointment.has_plan is True and
                     self.appointment.plan_status == 'pending_upload'):
                 return self.handle_plan_upload_flow(incoming_message)
@@ -4151,101 +4163,67 @@ Reply with ONLY a JSON object:
                     self.appointment.plan_status == 'plan_uploaded'):
                 return self.handle_post_upload_messages(incoming_message)
 
-            # Check if user is awaiting plumber contact after plan upload
-            if (self.appointment.has_plan is True and 
-                self.appointment.plan_status == 'plan_uploaded'):
-                return self.handle_post_upload_messages(incoming_message)
+            # ── CONFIRMED + COMPLETE — no more questions ──────────────────────────
+            if (self.appointment.status == 'confirmed' and
+                    self.get_next_question_to_ask() == 'complete'):
+                self.appointment.add_conversation_message("user", incoming_message)
+                return None
 
-            # STEP 1: Check if this is an alternative time selection
-            if (self.appointment.status == 'pending' and 
-                self.appointment.project_type and 
-                self.appointment.customer_area and 
-                self.appointment.timeline and 
-                self.appointment.property_type and 
-                not self.appointment.customer_name):
-                
+            # ── ALTERNATIVE TIME SELECTION ────────────────────────────────────────
+            if (self.appointment.status == 'pending' and
+                    self.appointment.project_type and
+                    self.appointment.customer_area and
+                    self.appointment.timeline and
+                    self.appointment.property_type and
+                    not self.appointment.customer_name):
                 selected_time = self.process_alternative_time_selection(incoming_message)
-                
                 if selected_time:
                     print(f"🎯 Customer selecting alternative time: {selected_time}")
-                    
                     booking_result = self.book_appointment_with_selected_time(selected_time)
-                    
                     if booking_result['success']:
-                        reply = f"Perfect! I've booked your appointment for {booking_result['datetime']}. To complete your booking, may I have your full name?"
+                        reply = (
+                            "One last thing — what name should we put on the booking? "
+                            "If you'd rather not share it, just say no."
+                        )
                     else:
                         alternatives = booking_result.get('alternatives', [])
                         if alternatives:
                             alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
-                            reply = f"That time isn't available either. Here are some other options:\n{alt_text}\n\nWhich works better for you?"
+                            reply = (
+                                f"That time isn't available either. Here are some other options:\n"
+                                f"{alt_text}\n\nWhich works better for you?"
+                            )
                         else:
-                            reply = "I'm having trouble finding available times. Could you suggest a completely different day? Our hours are 8 AM - 6 PM, Monday to Friday."
-                    
+                            reply = (
+                                "I'm having trouble finding available times. Could you suggest a "
+                                "completely different day? Our hours are 8 AM - 6 PM, Monday to Friday."
+                            )
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
                     return reply
-            
-            if self._is_delay_or_exit_signal(incoming_message):
-                print(f"⏸️ Exit/delay signal accepted mid-conversation — acknowledging and stopping")
-                reply = self._get_delay_acknowledgment()
-                self.appointment.add_conversation_message("user", incoming_message)
-                self.appointment.add_conversation_message("assistant", reply)
-                return reply
 
-            if False and self._is_delay_or_exit_signal(incoming_message):
-                print(f"⏸️ FIX 3: Delay/exit signal detected — not pushing further")
-                reply = self._get_delay_acknowledgment()
-                self.appointment.add_conversation_message("user", incoming_message)
-                self.appointment.add_conversation_message("assistant", reply)
-                return reply
-
-                # ── CONFIRMED + COMPLETE — no more questions ──────────────────────────────
-            if (self.appointment.status == 'confirmed' and
-                    self.get_next_question_to_ask() == 'complete'):
-                # Appointment is fully booked and name collected (or declined).
-                # Silently acknowledge any further messages and stop.
-                if self._is_delay_or_exit_signal(incoming_message):
-                    reply = self._get_delay_acknowledgment()
-                    self.appointment.add_conversation_message("user", incoming_message)
-                    self.appointment.add_conversation_message("assistant", reply)
-                    return reply
-                # Any other message (e.g. "Complete renovation") → silent, no reply
-                self.appointment.add_conversation_message("user", incoming_message)
-                return None
-
-            # STEP 2: Extract ALL available information from the message
+            # ── STEP 2: EXTRACT ALL AVAILABLE INFO ───────────────────────────────
             extracted_data = self.extract_all_available_info_with_ai(incoming_message)
-            
-            # ✅ NEW: Check for "I'll send it later" responses BEFORE updating
+
+            # ── PLAN LATER RESPONSE ───────────────────────────────────────────────
             if self.handle_plan_later_response(incoming_message):
-                # Customer will send plan later - acknowledge and continue
                 next_question = self.get_next_question_to_ask()
-                
                 if next_question != "complete":
-                    acknowledgment = "Perfect! You can send your plan whenever you're ready. "
-                    
-                    # Generate next question
                     reply = self.generate_contextual_response(
-                        incoming_message, 
-                        next_question, 
-                        ['plan_status']  # Indicate that plan status was handled
+                        incoming_message,
+                        next_question,
+                        ['plan_status'],
                     )
-                    
-                    # Prepend acknowledgment
-                    reply = acknowledgment + reply
-                    
-                    # Update conversation history
-                    #self.appointment.add_conversation_message("user", incoming_message)
-                    #self.appointment.add_conversation_message("assistant", reply)
-                    
+                    reply = "Perfect! You can send your plan whenever you're ready. " + reply
                     return reply
-            
-            # STEP 3: Update appointment with extracted data
+
+            # ── STEP 3: UPDATE APPOINTMENT ────────────────────────────────────────
             updated_fields = self.update_appointment_with_extracted_data(
                 extracted_data,
                 incoming_message=incoming_message,
             )
 
+            # If name was just captured on a confirmed appointment → final confirmation
             if (
                 'customer_name' in updated_fields and
                 self.appointment.status == 'confirmed' and
@@ -4255,37 +4233,28 @@ Reply with ONLY a JSON object:
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", reply)
                 return reply
-            
-            # STEP 4: Check for reschedule requests (for confirmed appointments)
-            if (self.appointment.status == 'confirmed' and 
-                self.appointment.scheduled_datetime and 
-                self.detect_reschedule_request_with_ai(incoming_message)):
-                
+
+            # ── STEP 4: RESCHEDULE CHECK (confirmed appointments only) ────────────
+            if (self.appointment.status == 'confirmed' and
+                    self.appointment.scheduled_datetime and
+                    self.detect_reschedule_request_with_ai(incoming_message)):
                 print("🤖 AI detected reschedule request, handling...")
                 reschedule_response = self.handle_reschedule_request_with_ai(incoming_message)
-                
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", reschedule_response)
-                
                 return reschedule_response
-            
-            # ── STEP 5 & 6: Book if ready, otherwise ask next question ───────
-# ── STEP 5 & 6: Book if ready, otherwise ask next question ───────
+
+            # ── STEPS 5 & 6: BOOK IF READY, OTHERWISE ASK NEXT QUESTION ─────────
             next_question  = self.get_next_question_to_ask()
             booking_status = self.smart_booking_check()
 
             if booking_status['ready_to_book'] and self.appointment.status != 'confirmed':
-
                 booking_result = self.book_appointment(incoming_message)
-
-                #
                 if booking_result['success']:
-                        # send_confirmation_message already fired inside book_appointment().
-                        # The bot reply to the customer is ONLY the name question — one message total.
-                        reply = (
-                            "One last thing — what name should we put on the booking? "
-                            "If you'd rather not share it, just say no."
-                        )                
+                    reply = (
+                        "One last thing — what name should we put on the booking? "
+                        "If you'd rather not share it, just say no."
+                    )
                 else:
                     error        = booking_result.get('error', '')
                     alternatives = booking_result.get('alternatives', [])
@@ -4296,8 +4265,7 @@ Reply with ONLY a JSON object:
                         )
                         reply = (
                             "We unfortunately don't operate on Saturdays. 😊\n\n"
-                            "Our working hours are Sunday to Friday, "
-                            "8:00 AM – 6:00 PM.\n\n"
+                            "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
                         )
                         if alt_text:
                             reply += (
@@ -4307,25 +4275,21 @@ Reply with ONLY a JSON object:
                         else:
                             reply += "Could you suggest a different day and time?"
                     else:
-                        alt_text = "\n".join(
-                            [f"• {alt['display']}" for alt in alternatives]
-                        )
+                        alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
                         reply = (
-                            f"That slot just got taken — here are the next "
-                            f"available times:\n{alt_text}\n\n"
-                            f"Which works better for you?"
+                            f"That slot just got taken — here are the next available times:\n"
+                            f"{alt_text}\n\nWhich works better for you?"
                         )
-            #
             else:
                 if self._is_standalone_question(incoming_message):
-                    _inquiry   = self.detect_service_inquiry(incoming_message)
-                    _intent    = _inquiry.get('intent', 'none')
                     PRODUCT_INTENTS = {
                         'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
                         'vanity', 'bathtub_installation', 'toilet', 'chamber',
                         'facebook_package', 'location_ask', 'location_visit',
                         'previous_quotation', 'pictures', 'combined_pricing',
                     }
+                    _inquiry      = self.detect_service_inquiry(incoming_message)
+                    _intent       = _inquiry.get('intent', 'none')
                     direct_answer = None
                     if _intent in PRODUCT_INTENTS and _inquiry.get('confidence') == 'HIGH':
                         direct_answer = self.handle_service_inquiry(_intent, incoming_message)
@@ -4342,15 +4306,14 @@ Reply with ONLY a JSON object:
                     reply = self.generate_contextual_response(
                         incoming_message, next_question, updated_fields
                     )
+
             self.appointment.add_conversation_message("user", incoming_message)
             self.appointment.add_conversation_message("assistant", reply)
-            
             return reply
 
         except Exception as e:
             print(f"❌ API Error: {str(e)}")
             return " "
-
 
 
     def generate_contextual_response(self, incoming_message, next_question, updated_fields):
@@ -5518,7 +5481,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "tub_sales": {
                         "breakdown_lines": [
                             "Tub: Supply from US$80, Install from US$80",
-                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120"
+                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
                             "Side chamber: Supply from US$130, Install from US$30",
                         ],
                         "total_line": "Roughly looking at about US$190 for a basic tub supply-and-fit, or US$480+ for a full freestanding setup.",
@@ -5534,7 +5497,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "standalone_tub": {
                         "breakdown_lines": [
                             "Tub: Supply from US$80, Install from US$80",
-                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120"
+                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
                             "Side chamber: Supply from US$130, Install from US$30",
                         ],
                         "total_line": "Roughly looking at about US$480 for a full freestanding tub setup.",
@@ -5586,7 +5549,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "bathtub_installation": {
                         "breakdown_lines": [
                             "Tub: Supply from US$80, Install from US$80",
-                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120"
+                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
                             "Side chamber: Supply from US$130, Install from US$30",
                         ],
                         "total_line": "Roughly looking at about US$160 for a basic tub install, or US$480+ for a full freestanding setup.",
@@ -5630,7 +5593,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Toilet seat: Supply from US$50, Install from US$20",
                             "Side chamber: Supply from US$130, Install from US$30",
                             "Tub: Supply from US$80, Install from US$80",
-                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120"
+                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
                         ],
                         "total_line": "Roughly looking at about US$600+ for the full bathroom package, depending on the fixtures you choose.",
                         "cheapest_line": "The cheapest option is the basic package starting from US$600 before extra fixtures are added.",

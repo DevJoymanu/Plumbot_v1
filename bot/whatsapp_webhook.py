@@ -66,6 +66,26 @@ _deepseek = (
 )
 
 
+def _clear_delay_signal_if_present(appointment: Appointment) -> None:
+    """
+    When a customer messages again after giving a delay signal,
+    lift the follow-up pause and remove the flag.
+    """
+    notes = appointment.internal_notes or ''
+    if '[DELAY_SIGNAL]' not in notes:
+        return
+    cleaned = '\n'.join(
+        line for line in notes.splitlines()
+        if '[DELAY_SIGNAL]' not in line
+    ).strip()
+    appointment.internal_notes = cleaned
+    appointment.manual_followup_paused = False
+    appointment.manual_followup_paused_until = None
+    appointment.save(update_fields=[
+        'internal_notes', 'manual_followup_paused', 'manual_followup_paused_until'
+    ])
+    print(f"▶️ Delay signal cleared — customer re-engaged on appointment {appointment.id}")
+
 def _translate_reply_for_customer(customer_message: str, reply: str) -> str:
     """
     Translate the bot reply based on the customer's language.
@@ -1229,6 +1249,9 @@ def handle_text_message(sender, text_data, message_id=None):
         print("User message saved to conversation history")
 
         appointment.mark_customer_response()
+
+        # Customer re-engaged — clear any delay signal pause
+        _clear_delay_signal_if_present(appointment)
 
         # Auto-classify service type from the customer's message
         if not appointment.project_type:

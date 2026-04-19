@@ -86,7 +86,15 @@ class Command(BaseCommand):
             return
 
         self._print_eligibility_breakdown(now_local, force)
-        leads = self._get_eligible_leads(now_local, force)
+        leads = (
+            Appointment.objects
+            .filter(is_lead_active=True, status='pending')
+            .exclude(followup_stage='completed')
+            .exclude(last_customer_response__gte=response_window)
+            .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
+            .exclude(manual_followup_paused=True,           # ← ADD THIS
+                    manual_followup_paused_until__gt=timezone.now())
+        )
         self.stdout.write(f'📊 {leads.count()} leads eligible for follow-up')
 
         totals = dict(sent=0, skipped=0, errors=0, completed=0, ai=0, template=0)
