@@ -915,7 +915,7 @@
 
             {# Current Range #}
             {% for num in appointments.paginator.page_range %}
-            {% if num >= appointments.number|add:'-2' and num <= appointments.number|add:'2' %} {% if appointments.number==num %} <li class="page-item active">
+            {% if num >= appointments.number|add:'-2' and num <= appointments.number|add:'2' %} {% if appointments.number == num %} <li class="page-item active">
                 <span class="page-link">{{ num }}</span>
                 </li>
                 {% else %}
