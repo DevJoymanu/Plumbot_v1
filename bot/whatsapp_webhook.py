@@ -328,9 +328,6 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
             f"?? APPOINTMENT DETAILS:\n"
             f"  Service: {fresh.project_type or 'Not specified'}\n"
             f"  Area: {fresh.customer_area or 'Not specified'}\n"
-            f"  Property: {fresh.property_type or 'Not specified'}\n"
-            f"  Timeline: {fresh.timeline or 'Not specified'}\n"
-            f"  Has plan: {'Yes' if fresh.has_plan is True else 'No' if fresh.has_plan is False else 'Not answered'}\n\n"
             f"?? AI SUMMARY:\n{ai_summary}\n\n"
             f"?? View appointment:\n"
             f"https://plumbotv1-production.up.railway.app/appointments/{fresh.id}/"
@@ -1676,7 +1673,7 @@ def generate_conversation_summary(appointment) -> str:
                 }
             ],
             temperature=0.3,
-            max_tokens=300
+            max_tokens=150
         )
 
         summary = response.choices[0].message.content.strip()
