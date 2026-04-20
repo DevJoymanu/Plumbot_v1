@@ -688,13 +688,11 @@
             <p class="lead-info-meta">
                 {{ lead.phone_number }}
                 {% if lead.customer_area %} &middot; {{ lead.customer_area }}{% endif %}
-                {% if lead.project_type %} &middot; {{ lead.get_project_type_display|default:lead.project_type }}{%
-                endif %}
+                {% if lead.project_type %} &middot; {{ lead.get_project_type_display|default:lead.project_type }}{%endif %}
             </p>
             <p class="lead-info-meta">
                 {% if item.overdue %}
-                <strong style="color:#dc2626;">OVERDUE - Follow up was due by {{ item.follow_up_due_at|date:"M j, Y"
-                    }}</strong>
+                <strong style="color:#dc2626;">OVERDUE - Follow up was due by {{ item.follow_up_due_at|date:"M j, Y"}}</strong>
                 {% else %}
                 Follow up by {{ item.follow_up_due_at|date:"M j, Y" }}
                 {% endif %}
