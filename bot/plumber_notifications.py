@@ -1,5 +1,6 @@
 import logging
 
+import requests
 from django.conf import settings
 from django.core.mail import send_mail
 
@@ -34,6 +35,10 @@ def send_plumber_notification_email(subject, message, *, dry_run=False):
         )
         return True
 
+    sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
+    if sendgrid_api_key:
+        return _send_via_sendgrid(sendgrid_api_key, recipients, subject, message)
+
     try:
         send_mail(
             subject=subject,
@@ -46,6 +51,56 @@ def send_plumber_notification_email(subject, message, *, dry_run=False):
     except Exception:
         logger.exception(
             "Failed to send plumber notification email '%s' to %s",
+            subject,
+            ", ".join(recipients),
+        )
+        return False
+
+
+def _send_via_sendgrid(api_key, recipients, subject, message):
+    payload = {
+        "personalizations": [
+            {
+                "to": [{"email": email} for email in recipients],
+            }
+        ],
+        "from": {
+            "email": getattr(settings, "SENDGRID_FROM_EMAIL", None)
+            or getattr(settings, "DEFAULT_FROM_EMAIL", None),
+        },
+        "subject": subject,
+        "content": [
+            {
+                "type": "text/plain",
+                "value": message,
+            }
+        ],
+    }
+
+    try:
+        response = requests.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=getattr(settings, "EMAIL_TIMEOUT", 20),
+        )
+        if 200 <= response.status_code < 300:
+            return True
+
+        logger.error(
+            "SendGrid email send failed for '%s' to %s: %s %s",
+            subject,
+            ", ".join(recipients),
+            response.status_code,
+            response.text,
+        )
+        return False
+    except Exception:
+        logger.exception(
+            "Failed to send SendGrid email '%s' to %s",
             subject,
             ", ".join(recipients),
         )
