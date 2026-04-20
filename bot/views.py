@@ -2248,6 +2248,7 @@ def confirm_appointment(request, pk):
             plumbot = Plumbot(appointment.phone_number)
             appointment_details = plumbot.extract_appointment_details()
             plumbot.send_confirmation_message(appointment_details, appointment.scheduled_datetime)
+            plumbot.notify_team(appointment_details, appointment.scheduled_datetime)
     except Exception as exc:
         print(f"Failed to send confirmation message for appointment {appointment.pk}: {exc}")
     messages.success(request, 'Appointment confirmed successfully')
@@ -7345,6 +7346,7 @@ I understand this is time-sensitive!"""
                 # Format datetime for display
                 display_datetime = self.format_datetime_for_display(appointment_datetime)
 
+                customer_name = appointment_info.get('name') or self.appointment.customer_name or 'Unknown'
                 service_name = appointment_info.get('project_type', 'Plumbing service')
                 if service_name:
                     service_map = {
