@@ -1626,18 +1626,34 @@ class AppointmentsListView(ListView):
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
 
         # Delayed = leads with a [DELAY_SIGNAL] in internal_notes that are still active
-        delayed_qs = base_qs.filter(is_lead_active=True, status='pending', is_delayed=True
-            ).order_by('delay_followup_due_at')
+        delayed_qs = base_qs.filter(
+            status='pending',
+            internal_notes__contains='[DELAY_SIGNAL]',
+        ).order_by('updated_at')
 
-        delayed_leads_with_countdown = [{
-            'lead': lead,
-            'days_remaining': max(0, lead.delay_days_remaining) if lead.delay_days_remaining is not None else 0,
-            'days_elapsed': 14 - max(0, lead.delay_days_remaining) if lead.delay_days_remaining is not None else 14,
-            'pct_elapsed': lead.delay_pct_elapsed,
-            'follow_up_due_at': lead.delay_followup_due_at,
-            'follow_up_window_days': 14,
-            'overdue': lead.delay_is_overdue,
-        } for lead in delayed_qs]
+        from django.utils import timezone as _tz
+        _now = _tz.now()
+        DELAY_WINDOW = 14  # days
+
+        delayed_leads_with_countdown = []
+        for lead in delayed_qs:
+            # Use updated_at as the signal start time (when the delay was set)
+            signal_start = lead.updated_at
+            follow_up_due = signal_start + timedelta(days=DELAY_WINDOW)
+            days_remaining = max(0, (follow_up_due.date() - _now.date()).days)
+            days_elapsed = DELAY_WINDOW - days_remaining
+            pct_elapsed = min(100, int((days_elapsed / DELAY_WINDOW) * 100))
+            overdue = _now > follow_up_due
+
+            delayed_leads_with_countdown.append({
+                'lead': lead,
+                'days_remaining': days_remaining,
+                'days_elapsed': days_elapsed,
+                'pct_elapsed': pct_elapsed,
+                'follow_up_due_at': follow_up_due,
+                'follow_up_window_days': DELAY_WINDOW,
+                'overdue': overdue,
+            })
 
         today = timezone.now().date()
         todays_confirmed_appointments = base_qs.filter(
@@ -1647,10 +1663,12 @@ class AppointmentsListView(ListView):
 
         context['status_counts'] = {
             'total': base_qs.count(),
-            'pending': base_qs.filter(status='pending').count(),
+            'pending': base_qs.filter(status='pending').exclude(
+                internal_notes__contains='[DELAY_SIGNAL]'
+            ).count(),
             'confirmed': base_qs.filter(status='confirmed').count(),
             'cancelled': base_qs.filter(status='cancelled').count(),
-            'delayed': delayed_qs.count(),
+            'delayed': delayed_qs.count(),   # ← now uses the same qs as the panel
             'todays_confirmed_appointments': todays_confirmed_appointments,
         }
         context['delayed_leads_with_countdown'] = delayed_leads_with_countdown
