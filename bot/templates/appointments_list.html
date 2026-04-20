@@ -885,12 +885,13 @@
         </div>
         {% endfor %}
     </div>
+
 {% if appointments.has_other_pages %}
 <div class="pagination">
     <nav aria-label="Page navigation">
         <ul class="pagination">
 
-            {# Previous Button #}
+            {# Previous #}
             {% if appointments.has_previous %}
             <li class="page-item">
                 <a class="page-link"
@@ -900,7 +901,7 @@
             </li>
             {% endif %}
 
-            {# First Page #}
+            {# First page #}
             {% if appointments.number > 3 %}
             <li class="page-item">
                 <a class="page-link"
@@ -908,14 +909,18 @@
                     1
                 </a>
             </li>
-            {% if appointments.number > 4 %}
-            <li class="page-item disabled"><span class="page-link">...</span></li>
-            {% endif %}
             {% endif %}
 
-            {# Current Range #}
+            {# Dots before middle #}
+            {% if appointments.number > 4 %}
+            <li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>
+            {% endif %}
+
+            {# Middle pages #}
             {% for num in appointments.paginator.page_range %}
-            {% if num >= appointments.number|add:'-2' and num <= appointments.number|add:'2' %} {% if appointments.number == num %} <li class="page-item active">
+            {% if num >= appointments.number|add:'-2' and num <= appointments.number|add:'2' %} {% if appointments.number==num %} <li class="page-item active">
                 <span class="page-link">{{ num }}</span>
                 </li>
                 {% else %}
@@ -929,27 +934,30 @@
                 {% endif %}
                 {% endfor %}
 
-                {# Last Page #}
-                {% if appointments.number < appointments.paginator.num_pages|add:'-2' %} {% if appointments.number <appointments.paginator.num_pages|add:'-3' %} <li class="page-item disabled"><span
-                        class="page-link">...</span></li>
+                {# Dots after middle #}
+                {% if appointments.number < appointments.paginator.num_pages|add:'-3' %} <li class="page-item disabled">
+                    <span class="page-link">...</span>
+                    </li>
                     {% endif %}
-                    <li class="page-item">
+
+                    {# Last page #}
+                    {% if appointments.number < appointments.paginator.num_pages|add:'-2' %} <li class="page-item">
                         <a class="page-link"
                             href="?page={{ appointments.paginator.num_pages }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
                             {{ appointments.paginator.num_pages }}
                         </a>
-                    </li>
-                    {% endif %}
+                        </li>
+                        {% endif %}
 
-                    {# Next Button #}
-                    {% if appointments.has_next %}
-                    <li class="page-item">
-                        <a class="page-link"
-                            href="?page={{ appointments.next_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
-                            &raquo;
-                        </a>
-                    </li>
-                    {% endif %}
+                        {# Next #}
+                        {% if appointments.has_next %}
+                        <li class="page-item">
+                            <a class="page-link"
+                                href="?page={{ appointments.next_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
+                                &raquo;
+                            </a>
+                        </li>
+                        {% endif %}
 
         </ul>
     </nav>
