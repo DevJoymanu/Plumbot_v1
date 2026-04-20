@@ -672,8 +672,7 @@
                     before the 21-day window closes.</p>
             </div>
         </div>
-        <span class="delayed-badge">{{ delayed_leads_with_countdown|length }} lead{{
-            delayed_leads_with_countdown|length|pluralize }}</span>
+        <span class="delayed-badge">{{ delayed_leads_with_countdown|length }} lead{{delayed_leads_with_countdown|length|pluralize }}</span>
     </div>
 
     {% for item in delayed_leads_with_countdown %}
@@ -683,8 +682,7 @@
             <p class="lead-info-name">
                 {{ lead.customer_name|default:"Unknown customer" }}
                 {% if item.overdue %}
-                <span class="overdue-badge">Overdue by {{ item.days_remaining }} day{{ item.days_remaining|pluralize
-                    }}</span>
+                <span class="overdue-badge">Overdue by {{ item.days_remaining }} day{{ item.days_remaining|pluralize}}</span>
                 {% endif %}
             </p>
             <p class="lead-info-meta">
