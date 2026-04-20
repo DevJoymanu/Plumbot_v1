@@ -649,7 +649,7 @@
             Cancelled
             <span class="tab-count">{{ status_counts.cancelled }}</span>
         </a>
-        <a href="?status_filter=delayed&response_age={{ selected_response_age }}"
+        <a href="?status_filter=delayed&response_age=3w_minus"
             class="status-tab tab-delayed {% if selected_status_filter == 'delayed' %}active{% endif %}">
             <i class="fas fa-hourglass-half" style="font-size:13px;"></i>
             Delayed
@@ -773,24 +773,25 @@
     <div class="filter-card">
         <form method="get" class="filter-row">
             <input type="hidden" name="status_filter" value="{{ selected_status_filter }}">
-            <select name="response_age" aria-label="Filter by response age" {% if selected_status_filter == 'delayed'%}disabled style="opacity:0.6; cursor:not-allowed;" {% endif %}>
+            <select name="response_age" aria-label="Filter by response age">
                 <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response
                     within 7 days</option>
+                <option value="3w_minus" {% if selected_response_age == '3w_minus' or selected_status_filter == 'delayed'
+                    and not selected_response_age %}selected{% endif %}>Last response within 21 days</option>
                 <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response
                     within 30 days</option>
                 <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
             </select>
             <div class="filter-actions">
-                <button type="submit" class="btn" {% if selected_status_filter == 'delayed' %}disabled
-                    style="opacity:0.6; cursor:not-allowed;" {% endif %}>Apply</button>
+                <button type="submit" class="btn">Apply</button>
                 <a href="{% url 'appointments_list' %}" class="btn btn-secondary" role="button">Reset</a>
             </div>
         </form>
         {% if selected_status_filter == 'delayed' %}
         <div
             style="margin-top: 12px; padding: 8px 12px; background: #eff6ff; border-radius: 8px; font-size: 0.85rem; color: #1e40af;">
-            <i class="fas fa-info-circle"></i> Note: The response age filter is disabled when viewing delayed leads.
-            Showing all delayed appointments (21-day follow-up window).
+            <i class="fas fa-info-circle"></i> Note: The delayed tab defaults to showing appointments with last response
+            within 21 days.
         </div>
         {% endif %}
     </div>
