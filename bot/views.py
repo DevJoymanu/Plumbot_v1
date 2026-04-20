@@ -1607,7 +1607,7 @@ class AppointmentsListView(ListView):
 
         return queryset        
         
-
+    #
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
@@ -1615,12 +1615,24 @@ class AppointmentsListView(ListView):
         if not response_age:
             response_age = '1w_minus'
 
+        # Add 3w_minus option for 21 days
         age_map_minus = {
             '1w_minus': timedelta(weeks=1),
+            '3w_minus': timedelta(weeks=3),  # ← ADD THIS for 21 days
             '4w_minus': timedelta(weeks=4),
         }
 
         base_qs = Appointment.objects.all()
+        
+        # Handle the delayed tab's default filter
+        status_filter = self.request.GET.get('status_filter', 'all')
+        
+        # If Delayed tab is selected and response_age is not explicitly set, default to 21 days
+        if status_filter == 'delayed' and response_age == '1w_minus':
+            # Check if the user explicitly chose a different filter
+            if 'response_age' not in self.request.GET:
+                response_age = '3w_minus'  # Default to 21 days for delayed tab
+        
         if response_age != 'all' and response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
@@ -1633,21 +1645,27 @@ class AppointmentsListView(ListView):
 
         from django.utils import timezone as _tz
         _now = _tz.now()
-        DELAY_WINDOW = 14  # days
+        DELAY_WINDOW = 21  # ← CHANGE THIS FROM 14 TO 21 DAYS
 
         delayed_leads_with_countdown = []
         for lead in delayed_qs:
             # Use updated_at as the signal start time (when the delay was set)
             signal_start = lead.updated_at
             follow_up_due = signal_start + timedelta(days=DELAY_WINDOW)
-            days_remaining = max(0, (follow_up_due.date() - _now.date()).days)
-            days_elapsed = DELAY_WINDOW - days_remaining
-            pct_elapsed = min(100, int((days_elapsed / DELAY_WINDOW) * 100))
+            
+            # Calculate days remaining (can be negative for overdue)
+            days_remaining = (follow_up_due.date() - _now.date()).days
+            
+            # Calculate days elapsed
+            days_elapsed = DELAY_WINDOW - max(0, days_remaining)
+            pct_elapsed = min(100, int((days_elapsed / DELAY_WINDOW) * 100)) if days_remaining > 0 else 100
+            
+            # Check if overdue
             overdue = _now > follow_up_due
 
             delayed_leads_with_countdown.append({
                 'lead': lead,
-                'days_remaining': days_remaining,
+                'days_remaining': abs(days_remaining) if overdue else max(0, days_remaining),
                 'days_elapsed': days_elapsed,
                 'pct_elapsed': pct_elapsed,
                 'follow_up_due_at': follow_up_due,
@@ -1668,13 +1686,14 @@ class AppointmentsListView(ListView):
             ).count(),
             'confirmed': base_qs.filter(status='confirmed').count(),
             'cancelled': base_qs.filter(status='cancelled').count(),
-            'delayed': delayed_qs.count(),   # ← now uses the same qs as the panel
+            'delayed': delayed_qs.count(),
             'todays_confirmed_appointments': todays_confirmed_appointments,
         }
         context['delayed_leads_with_countdown'] = delayed_leads_with_countdown
         context['selected_response_age'] = response_age
-        context['selected_status_filter'] = self.request.GET.get('status_filter', 'all')
+        context['selected_status_filter'] = status_filter
         return context
+
 
 @method_decorator(staff_required, name='dispatch')
 class PriorityLeadsView(TemplateView):
