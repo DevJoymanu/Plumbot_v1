@@ -780,8 +780,7 @@
             <select name="response_age" aria-label="Filter by response age">
                 <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response
                     within 7 days</option>
-                <option value="3w_minus" {% if selected_response_age == '3w_minus' or selected_status_filter == 'delayed'
-                    and not selected_response_age %}selected{% endif %}>Last response within 21 days</option>
+                <option value="3w_minus" {% if selected_response_age == '3w_minus' or selected_status_filter == 'delayed' and not selected_response_age %}selected{% endif %}>Last response within 21 days</option>
                 <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response
                     within 30 days</option>
                 <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
