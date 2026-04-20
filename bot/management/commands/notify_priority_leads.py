@@ -1,5 +1,6 @@
 import logging
 import os
+import logging
 from datetime import timedelta
 
 import pytz
@@ -10,6 +11,7 @@ from django.utils import timezone
 from openai import OpenAI
 
 from bot.models import Appointment
+from bot.plumber_notifications import send_plumber_notification_email
 from bot.whatsapp_cloud_api import whatsapp_api
 from bot.whatsapp_window import is_window_open, filter_queryset_by_window, hours_remaining
 
@@ -113,13 +115,36 @@ class Command(BaseCommand):
                             f"[DRY RUN] Would notify {plumber_number} for lead {lead.id}"
                         )
                     )
+                    email_ok = send_plumber_notification_email(
+                        subject=f"Priority stale lead alert for {lead.customer_name or 'customer'}",
+                        message=message,
+                        dry_run=True,
+                    )
+                    send_ok = email_ok
                 else:
-                    whatsapp_api.send_text_message(plumber_number, message)
+                    wa_ok = True
+                    try:
+                        whatsapp_api.send_text_message(plumber_number, message)
+                    except Exception:
+                        wa_ok = False
+                        logger.exception(
+                            "Failed WhatsApp stale-priority alert for appointment %s",
+                            lead.id,
+                        )
 
-                lead.last_priority_alert_summary = message
-                lead.last_priority_alert_sent_at = timezone.now()
-                lead.save(update_fields=["last_priority_alert_summary", "last_priority_alert_sent_at"])
-                sent += 1
+                    email_ok = send_plumber_notification_email(
+                        subject=f"Priority stale lead alert for {lead.customer_name or 'customer'}",
+                        message=message,
+                    )
+                    send_ok = wa_ok or email_ok
+
+                if send_ok:
+                    lead.last_priority_alert_summary = message
+                    lead.last_priority_alert_sent_at = timezone.now()
+                    lead.save(update_fields=["last_priority_alert_summary", "last_priority_alert_sent_at"])
+                    sent += 1
+                else:
+                    errors += 1
             except Exception as exc:
                 errors += 1
                 logger.exception(

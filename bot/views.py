@@ -58,6 +58,7 @@ from .forms import (
 )
 
 from .decorators import staff_required, anonymous_required, StaffRequiredMixin
+from .plumber_notifications import send_plumber_notification_email
 from .whatsapp_cloud_api import whatsapp_api
 from .services.lead_scoring import refresh_lead_score, calculate_lead_score
 from .whatsapp_webhook import send_previous_work_photos
@@ -2651,6 +2652,11 @@ View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
                 whatsapp_api.send_text_message(number, team_message)
             except Exception as e:
                 print(f"Failed to send team notification: {str(e)}")
+
+        send_plumber_notification_email(
+            subject=f"New job scheduled for {job_appointment.customer_name or 'customer'}",
+            message=team_message,
+        )
         
     except Exception as e:
         print(f"Error sending job appointment notifications: {str(e)}")
@@ -6176,6 +6182,11 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 whatsapp_api.send_text_message(number, plumber_message)
                 print(f"✅ Plan notification sent to plumber {number}")
 
+            send_plumber_notification_email(
+                subject=f"New plan received from {customer_name}",
+                message=plumber_message,
+            )
+
         except Exception as e:
             print(f"❌ Error notifying plumber: {str(e)}")
             
@@ -7406,6 +7417,11 @@ I understand this is time-sensitive!"""
 
                 if sent_count == 0:
                     print("❌ No booking notifications sent — check TEAM_NUMBERS env var and WhatsApp API config")
+
+                send_plumber_notification_email(
+                    subject=f"New booking notification for {customer_name}",
+                    message=team_message,
+                )
 
             except Exception as e:
                 print(f"❌ Team notification error: {str(e)}")

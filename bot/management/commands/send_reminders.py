@@ -36,6 +36,8 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db.models import Q
 
+from bot.plumber_notifications import send_plumber_notification_email
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -477,8 +479,13 @@ class Command(BaseCommand):
                         self.stdout.write(f"    SKIP  Tomorrow's Jobs ({len(tomorrow_apts)} apts) [already sent]")
                     else:
                         msg = _msg_plumber_next_day(tomorrow_apts, PLUMBER_NAME)
-                        ok  = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
-                        if ok:
+                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        email_ok = send_plumber_notification_email(
+                            subject=f"Tomorrow's plumber appointments for {tomorrow.isoformat()}",
+                            message=msg,
+                            dry_run=dry_run,
+                        )
+                        if ok or email_ok:
                             if not dry_run:
                                 _mark_sent_plumber(marker, rtype)
                             plumber_sent += 1
@@ -502,8 +509,13 @@ class Command(BaseCommand):
                         self.stdout.write(f"    SKIP  Morning Briefing ({len(today_apts)} apts) [already sent]")
                     else:
                         msg = _msg_plumber_morning(today_apts, PLUMBER_NAME)
-                        ok  = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
-                        if ok:
+                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        email_ok = send_plumber_notification_email(
+                            subject=f"Today's plumber schedule for {today.isoformat()}",
+                            message=msg,
+                            dry_run=dry_run,
+                        )
+                        if ok or email_ok:
                             if not dry_run:
                                 _mark_sent_plumber(marker, rtype)
                             plumber_sent += 1
@@ -529,8 +541,13 @@ class Command(BaseCommand):
                         self.stdout.write(f"    SKIP  2-Hour Alert → {name} [already sent]")
                     else:
                         msg = _msg_plumber_2hours(apt, PLUMBER_NAME)
-                        ok  = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
-                        if ok:
+                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        email_ok = send_plumber_notification_email(
+                            subject=f"2-hour plumber alert for {name}",
+                            message=msg,
+                            dry_run=dry_run,
+                        )
+                        if ok or email_ok:
                             if not dry_run:
                                 _mark_sent_plumber(apt, rtype)
                             plumber_sent += 1

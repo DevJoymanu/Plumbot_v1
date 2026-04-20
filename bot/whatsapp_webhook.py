@@ -19,6 +19,7 @@ import json
 import os
 from .whatsapp_cloud_api import whatsapp_api, get_extension_for_mime, MEDIA_SIZE_LIMITS
 from .models import Appointment, WhatsAppInboundEvent, LeadStatus
+from .plumber_notifications import send_plumber_notification_email
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -236,6 +237,10 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
         whatsapp_api.send_text_message(plumber_number, message)
     except Exception as exc:
         print(f"Failed to notify admin for appointment {appointment.id}: {exc}")
+    send_plumber_notification_email(
+        subject=f"Priority lead update for {customer_name}",
+        message=message,
+    )
 
 
 def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str):
@@ -336,6 +341,11 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
             print(f"? Consolidated plumber alert sent ({len(urls)} file(s)) for {sender}")
         except Exception as e:
             print(f"? Failed to send plumber alert: {e}")
+
+        send_plumber_notification_email(
+            subject=f"Customer media received from {customer_name}",
+            message=alert_message,
+        )
 
     with _plumber_alert_lock:
         # Accumulate the URL

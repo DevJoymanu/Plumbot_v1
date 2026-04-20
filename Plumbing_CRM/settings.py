@@ -112,6 +112,10 @@ GOOGLE_CALENDAR_ID = os.environ.get('GOOGLE_CALENDAR_ID', 'joymanu49@gmail.com')
 
 # Plumber WhatsApp
 PLUMBER_WHATSAPP_NUMBER = os.environ.get('PLUMBER_WHATSAPP_NUMBER', 'whatsapp:+27610318200')
+PLUMBER_NOTIFICATION_EMAILS = [
+    'jones86xi@gmail.com',
+    'info@homebaseplumbers.co.zw',
+]
 
 # DeepSeek API (replacing OpenAI)
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
