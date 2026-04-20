@@ -121,7 +121,7 @@ class Command(BaseCommand):
             .filter(is_lead_active=True, status='pending')
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
-            .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
+#            .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
             .exclude(internal_notes__contains='[DELAY_SIGNAL]')
             .exclude(chatbot_paused=True)  # ← ADD THIS
         )        
@@ -261,8 +261,6 @@ class Command(BaseCommand):
     def _get_next_question(self, lead):
         if not lead.project_type:
             return 'service_type'
-        if lead.has_plan is None:
-            return 'plan_or_visit'
         if not lead.customer_area:
             return 'area'
         if not lead.timeline:
@@ -447,25 +445,6 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                 ),
                 (
                     f"Still looking for a plumber?"
-                ),
-            ],
-            'plan_or_visit': [
-                (
-                    f"Hi there, the visit is free and takes about 20 minutes — it locks your price in "
-                    f"before anything starts.\n\n"
-                    f"Do you have a plan already, or would a site visit work better for you?"
-                ),
-                (
-                    f"Hi there, we finished a {service} last week where the client had a plan ready — "
-                    f"saved them two days on site.\n\n"
-                    f"Do you have plans already, or should we come take a look first?"
-                ),
-                (
-                    f"Slots are filling up this week — do you have a plan for the {service}, "
-                    f"or would you prefer we come out for a free assessment?"
-                ),
-                (
-                    f"Plans ready or shall we visit?"
                 ),
             ],
             'area': [
