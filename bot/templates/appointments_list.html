@@ -886,23 +886,23 @@
         {% endfor %}
     </div>
 
-{% if appointments.has_other_pages %}
+{% if is_paginated %}
 <div class="pagination">
     <nav aria-label="Page navigation">
         <ul class="pagination">
 
             {# Previous #}
-            {% if appointments.has_previous %}
+            {% if page_obj.has_previous %}
             <li class="page-item">
                 <a class="page-link"
-                    href="?page={{ appointments.previous_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
+                    href="?page={{ page_obj.previous_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
                     &laquo;
                 </a>
             </li>
             {% endif %}
 
             {# First page #}
-            {% if appointments.number > 3 %}
+            {% if page_obj.number > 3 %}
             <li class="page-item">
                 <a class="page-link"
                     href="?page=1&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
@@ -912,52 +912,56 @@
             {% endif %}
 
             {# Dots before middle #}
-            {% if appointments.number > 4 %}
+            {% if page_obj.number > 4 %}
             <li class="page-item disabled">
                 <span class="page-link">...</span>
             </li>
             {% endif %}
 
             {# Middle pages #}
-            {% for num in appointments.paginator.page_range %}
-            {% if num >= appointments.number|add:'-2' and num <= appointments.number|add:'2' %} {% if appointments.number == num %} <li class="page-item active">
+            {% for num in paginator.page_range %}
+            {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
+            {% if page_obj.number == num %}
+            <li class="page-item active">
                 <span class="page-link">{{ num }}</span>
-                </li>
-                {% else %}
-                <li class="page-item">
-                    <a class="page-link"
-                        href="?page={{ num }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
-                        {{ num }}
-                    </a>
-                </li>
-                {% endif %}
-                {% endif %}
-                {% endfor %}
+            </li>
+            {% else %}
+            <li class="page-item">
+                <a class="page-link"
+                    href="?page={{ num }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
+                    {{ num }}
+                </a>
+            </li>
+            {% endif %}
+            {% endif %}
+            {% endfor %}
 
-                {# Dots after middle #}
-                {% if appointments.number < appointments.paginator.num_pages|add:'-3' %} <li class="page-item disabled">
-                    <span class="page-link">...</span>
-                    </li>
-                    {% endif %}
+            {# Dots after middle #}
+            {% if page_obj.number < paginator.num_pages|add:'-3' %}
+            <li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>
+            {% endif %}
 
-                    {# Last page #}
-                    {% if appointments.number < appointments.paginator.num_pages|add:'-2' %} <li class="page-item">
-                        <a class="page-link"
-                            href="?page={{ appointments.paginator.num_pages }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
-                            {{ appointments.paginator.num_pages }}
-                        </a>
-                        </li>
-                        {% endif %}
+            {# Last page #}
+            {% if page_obj.number < paginator.num_pages|add:'-2' %}
+            <li class="page-item">
+                <a class="page-link"
+                    href="?page={{ paginator.num_pages }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
+                    {{ paginator.num_pages }}
+                </a>
+            </li>
+            {% endif %}
 
-                        {# Next #}
-                        {% if appointments.has_next %}
-                        <li class="page-item">
-                            <a class="page-link"
-                                href="?page={{ appointments.next_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
-                                &raquo;
-                            </a>
-                        </li>
-                        {% endif %}
+            {# Next #}
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link"
+                    href="?page={{ page_obj.next_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">
+                    &raquo;
+                </a>
+            </li>
+            {% endif %}
 
         </ul>
     </nav>
