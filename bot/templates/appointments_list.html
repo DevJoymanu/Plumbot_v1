@@ -658,6 +658,7 @@
     </div>
 </div>
 
+
 <!-- DELAYED LEADS COUNTDOWN PANEL - Only show when Delayed tab is active -->
 {% if selected_status_filter == 'delayed' and delayed_leads_with_countdown %}
 <div class="delayed-section">
@@ -688,7 +689,8 @@
             <p class="lead-info-meta">
                 {{ lead.phone_number }}
                 {% if lead.customer_area %} &middot; {{ lead.customer_area }}{% endif %}
-                {% if lead.project_type %} &middot; {{ lead.get_project_type_display|default:lead.project_type }}{%endif %}
+                {% if lead.project_type %} &middot; {{ lead.get_project_type_display|default:lead.project_type }}{%
+                endif %}
             </p>
             <p class="lead-info-meta">
                 {% if item.overdue %}
@@ -734,6 +736,32 @@
     </div>
     {% endif %}
 </div>
+
+<div style="text-align:right;">
+    <a href="{% url 'appointment_detail' lead.pk %}" class="lead-action-btn">
+        <i class="fas fa-arrow-right" style="font-size:11px;"></i> View
+    </a>
+</div>
+</div>
+{% endwith %}
+{% endfor %}
+</div>
+{% elif selected_status_filter == 'delayed' and not delayed_leads_with_countdown %}
+<div class="delayed-section">
+    <div class="delayed-header">
+        <div class="delayed-header-left">
+            <div class="delayed-icon">
+                <i class="fas fa-hourglass-half" style="font-size:14px;"></i>
+            </div>
+            <div>
+                <p class="delayed-title">No delayed leads</p>
+                <p class="delayed-subtitle">There are no customers currently in the delayed follow-up window.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 
 <div style="text-align:right;">
     <a href="{% url 'appointment_detail' lead.pk %}" class="lead-action-btn">
