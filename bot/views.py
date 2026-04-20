@@ -1645,7 +1645,7 @@ class AppointmentsListView(ListView):
 
         from django.utils import timezone as _tz
         _now = _tz.now()
-        DELAY_WINDOW = 21  # ← CHANGE THIS FROM 14 TO 21 DAYS
+        DELAY_WINDOW = 14  # ← CHANGE THIS FROM 14 TO 21 DAYS
 
         delayed_leads_with_countdown = []
         for lead in delayed_qs:
