@@ -3741,7 +3741,7 @@ class Plumbot:
         breakdown_text = "\n".join(breakdown_lines)
         if language == "shona":
             intro = (
-                "Mhoro! Pfupi pfupi — mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
+                "Mhoro! mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
                 "Plumber aonawo nzvimbo, mutengo wekupedzisira unogona kukwira kana kuderera. "
                 "Kubatanidza masevhisi kunogona kukupai discount. Apa breakdown:"
             )
@@ -5963,7 +5963,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             f"{self._get_pricing_followup_prompt('english')}"
                         ),
                         "sn": (
-                            "Mhoro! Pfupi pfupi — mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
+                            "Mhoro! mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
                             "Plumber aonawo nzvimbo, mutengo wekupedzisira unogona kukwira kana kuderera. "
                             "Kubatanidza masevhisi kunogona kukupai discount. Apa breakdown:\n\n"
                             "• Geyser: Supply kubva US$80, Install kubva US$80\n"
@@ -6103,7 +6103,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
         if language == 'shona':
             reply = (
                 f"{project_context}"
-                "Mhoro! Pfupi pfupi — mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
+                "Mhoro! mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
                 "Plumber aonawo nzvimbo, mutengo wekupedzisira unogona kukwira kana kuderera. "
                 "Kubatanidza masevhisi kunogona kukupai discount. Apa breakdown:\n\n"
                 "• Geyser: Supply kubva US$80, Install kubva US$80\n"
@@ -9136,9 +9136,17 @@ I understand this is time-sensitive!"""
             context_block = "\n".join(recent_lines) if recent_lines else "No prior conversation."
 
             prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe.
-    
-    The initial response to greetings or generic opening messages should only be: 
-    - Hello,\nHow may we assist you on plumbing services
+
+    CRITICAL RULE — GENERIC OPENERS:
+    If the customer's message is a generic greeting, a vague request for more information, or an opening message with no specific question, you MUST reply with ONLY this exact text and nothing else:
+    Hello,
+    How may we assist you on plumbing services
+
+    This applies to ALL of the following (and any equivalent):
+    - Greetings: hi, hello, hey, hie, good morning, good afternoon, good evening, sawubona, mhoro, makadii, masikati, mangwanani, howzit, sharp, eita
+    - Vague info requests: "more information", "more info", "tell me more", "how can you help", "what do you do", "I need help", "can you help me", "I saw your ad", "I'm interested"
+    - Any combo of the above: "hello, I need more info", "hi, can I get more information on this", "good morning, tell me about your services"
+    - Any language variant (Shona, Ndebele, informal Zim English) that is a greeting or vague opener with no specific question
 
     SERVICES WE OFFER:
     - Bathroom renovation: toilet, shower cubicle, bathtub, vanity unit, basin/sink, geyser, side chamber, tiling, pipe work
@@ -9177,7 +9185,7 @@ I understand this is time-sensitive!"""
 
     CUSTOMER'S QUESTION: "{message}"
 
-    Answer directly and honestly.
+    If this is NOT a generic opener, answer directly and honestly.
     - If we can do it: confirm clearly, briefly explain what's involved.
     - If we cannot (electrical, roofing, painting): say so and redirect to what we can help with.
     - If it's a pricing question: give the relevant range from the guide above.
@@ -9186,7 +9194,17 @@ I understand this is time-sensitive!"""
             response = deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": "Answer customer questions for a plumbing company. Direct, helpful, human. No bullet points. No markdown. Do not end with a question."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a WhatsApp assistant for a plumbing company. "
+                            "IMPORTANT: If the customer message is a generic greeting or vague opener "
+                            "with no specific question, reply with ONLY this exact text: "
+                            "'Hello,\\nHow may we assist you on plumbing services' — nothing else. "
+                            "For real questions: direct, helpful, human. "
+                            "No bullet points. No markdown. Do not end with a question."
+                        ),
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
@@ -9199,7 +9217,6 @@ I understand this is time-sensitive!"""
         except Exception as exc:
             print(f"⚠️ Dynamic answer generation failed: {exc}")
             return None
-
 
     def _get_soft_booking_nudge(self) -> str:
         """
