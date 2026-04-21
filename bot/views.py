@@ -4373,14 +4373,9 @@ Reply with ONLY a JSON object:
                         direct_answer = self.handle_service_inquiry(_intent, incoming_message)
                     if not direct_answer:
                         direct_answer = self._answer_standalone_question(incoming_message)
-                    #
                     if direct_answer:
-                        GREETING_RESPONSE = "Hello,\nHow may we assist you on plumbing services"
-                        if direct_answer.strip() == GREETING_RESPONSE.strip():
-                            reply = direct_answer
-                        else:
-                            nudge = self._get_soft_booking_nudge()
-                            reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer
+                        nudge = self._get_soft_booking_nudge()
+                        reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer
                     else:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields
@@ -9142,10 +9137,6 @@ I understand this is time-sensitive!"""
 
             prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe.
 
-    CRITICAL RULE — GENERIC OPENERS:
-    If the customer's message is a generic greeting, a vague request for more information, or an opening message with no specific question, you MUST reply with ONLY this exact text and nothing else:
-    Hello,\n
-    How may we assist you on plumbing services
 
     This applies to ALL of the following (and any equivalent):
     - Greetings: hi, hello, hey, hie, good morning, good afternoon, good evening, sawubona, mhoro, makadii, masikati, mangwanani, howzit, sharp, eita
