@@ -4376,7 +4376,9 @@ Reply with ONLY a JSON object:
                     if direct_answer:
                         GREETING_RESPONSE = "Hello,\nHow may we assist you on plumbing services"
                         if direct_answer.strip() == GREETING_RESPONSE.strip():
-                            reply = direct_answer
+                            self.appointment.add_conversation_message("user", incoming_message)
+                            self.appointment.add_conversation_message("assistant", direct_answer)
+                            return direct_answer
                         else:
                             nudge = self._get_soft_booking_nudge()
                             reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer

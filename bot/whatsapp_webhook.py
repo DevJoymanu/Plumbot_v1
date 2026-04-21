@@ -1474,7 +1474,9 @@ def handle_text_message(sender, text_data, message_id=None):
             print("?? Conversation complete — no reply sent")
             return
 
-        appointment.add_conversation_message("assistant", reply)
+        GREETING_RESPONSE = "Hello,\nHow may we assist you on plumbing services"
+        if reply.strip() != GREETING_RESPONSE.strip():
+            appointment.add_conversation_message("assistant", reply)
         appointment.last_outbound_at = timezone.now()
         appointment.last_contacted_at = appointment.last_outbound_at
         appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
