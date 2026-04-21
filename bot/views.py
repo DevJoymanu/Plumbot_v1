@@ -4374,14 +4374,8 @@ Reply with ONLY a JSON object:
                     if not direct_answer:
                         direct_answer = self._answer_standalone_question(incoming_message)
                     if direct_answer:
-                        GREETING_RESPONSE = "Hello,\nHow may we assist you on plumbing services"
-                        if direct_answer.strip() == GREETING_RESPONSE.strip():
-                            self.appointment.add_conversation_message("user", incoming_message)
-                            self.appointment.add_conversation_message("assistant", direct_answer)
-                            return direct_answer
-                        else:
-                            nudge = self._get_soft_booking_nudge()
-                            reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer
+                        nudge = self._get_soft_booking_nudge()
+                        reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer
                     else:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields
@@ -9125,6 +9119,12 @@ I understand this is time-sensitive!"""
     def _answer_standalone_question(self, message: str) -> str:
         if not deepseek_client:
             return None
+
+        # ── GREETING / GENERIC OPENER — short-circuit before any DeepSeek call
+        if self.get_next_question_to_ask() == "service_type":
+            return "Hello,\nHow may we assist you on plumbing services"
+
+
         try:
             service     = (self.appointment.project_type or "").replace("_", " ").lower()
             area        = self.appointment.customer_area or ""
