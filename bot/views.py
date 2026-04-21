@@ -2248,7 +2248,6 @@ def confirm_appointment(request, pk):
             plumbot = Plumbot(appointment.phone_number)
             appointment_details = plumbot.extract_appointment_details()
             plumbot.send_confirmation_message(appointment_details, appointment.scheduled_datetime)
-            plumbot.notify_team(appointment_details, appointment.scheduled_datetime)
     except Exception as exc:
         print(f"Failed to send confirmation message for appointment {appointment.pk}: {exc}")
     messages.success(request, 'Appointment confirmed successfully')
@@ -2615,7 +2614,7 @@ Your plumbing job has been scheduled:
 📍 Location: {job_appointment.customer_area}
 🔨 Work: {job_appointment.job_description or job_appointment.project_type}
 
-Our plumber will contact you before arrival.
+We will contact you before arrival.
 
 {f"Materials needed: {job_appointment.job_materials_needed}" if job_appointment.job_materials_needed else ""}
 
@@ -7323,7 +7322,7 @@ I understand this is time-sensitive!"""
                 f"🕐 Time: {display_datetime.strftime('%I:%M %p')}\n"
                 f"📍 Area: {appointment_info.get('area', 'Your area')}\n"
                 f"🔧 Service: {service_name}\n\n"
-                f"Our plumber will contact you before arrival.\n\n"
+                f"We will contact you before arrival.\n\n"
                 f"Questions? Just reply here.\n"
                 f"— Homebase Plumbers"
             )
@@ -7346,7 +7345,6 @@ I understand this is time-sensitive!"""
                 # Format datetime for display
                 display_datetime = self.format_datetime_for_display(appointment_datetime)
 
-                customer_name = appointment_info.get('name') or self.appointment.customer_name or 'Unknown'
                 service_name = appointment_info.get('project_type', 'Plumbing service')
                 if service_name:
                     service_map = {
@@ -9139,8 +9137,8 @@ I understand this is time-sensitive!"""
 
             prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe.
     
-    - the initial response to greetings or generic opening messages should only be: 
-            {self.get_next_question_to_ask() == "service_type"}
+    The initial response to greetings or generic opening messages should only be: 
+    - Hello,\nHow may we assist you on plumbing services
 
     SERVICES WE OFFER:
     - Bathroom renovation: toilet, shower cubicle, bathtub, vanity unit, basin/sink, geyser, side chamber, tiling, pipe work
