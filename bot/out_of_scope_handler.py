@@ -116,18 +116,21 @@ def mark_delay_signal(appointment, source_message: str = "") -> bool:
     
 def detect_delay_signal_message(message: str, appointment=None) -> dict:
     """
-    Decide whether a customer message is a delay / defer-for-later signal.
-    Uses the fast phrase matcher first and can optionally fall back to the
-    existing classifier for ambiguous cases when appointment context is present.
+    Detect whether a customer message signals they are deferring for later.
+
+    Uses DeepSeek via classify_message for reliable natural-language intent
+    detection — phrases like "am a bit tied up" or "still building" are caught
+    without needing to enumerate every possible wording.
+
+    Falls back to keyword matching only when DeepSeek is unavailable or no
+    appointment context is provided.
     """
     text = (message or "").strip()
     if not text:
         return {"is_delay": False, "confidence": "LOW", "detail": "empty"}
 
-    if _fast_delay_check(text):
-        return {"is_delay": True, "confidence": "HIGH", "detail": "delay phrase matched"}
-
     if appointment is not None:
+        # Always use DeepSeek for substantive intent detection
         result = classify_message(text, appointment)
         return {
             "is_delay": result.get("category") == "delay_signal",
@@ -135,7 +138,13 @@ def detect_delay_signal_message(message: str, appointment=None) -> dict:
             "detail": result.get("detail", ""),
         }
 
-    return {"is_delay": False, "confidence": "LOW", "detail": "no appointment context"}
+    # No appointment context — keyword fallback only
+    keyword_result = _keyword_classify(text)
+    return {
+        "is_delay": keyword_result.get("category") == "delay_signal",
+        "confidence": keyword_result.get("confidence", "LOW"),
+        "detail": keyword_result.get("detail", ""),
+    }
 
 # ── Services we explicitly DO offer (used for context in the classifier) ──────
 OUR_SERVICES = (
@@ -144,7 +153,11 @@ OUR_SERVICES = (
     "bathtub installation, pipe repair, drain unblocking"
 )
 
-# ── Keywords that are a near-certain delay signal (fast pre-filter) ───────────
+# ── Keyword lists — used ONLY as fallback when DeepSeek is unavailable ────────
+# These are NOT used in the primary detection path. DeepSeek handles all live
+# traffic. Keywords serve as a safety net when the API key is missing or the
+# call fails.
+
 _DELAY_PHRASES = (
     "call me later", "call you later", "i'll call you", "i will call",
     "will contact you", "i'll contact", "will reach out", "i'll reach out",
@@ -158,9 +171,14 @@ _DELAY_PHRASES = (
     "i'm abroad", "i am abroad", "i'm away", "i am away", "out of town",
     "travelling", "traveling", "not in harare", "not in zimbabwe",
     "ndichatumira", "ndichauya", "mangwana", "ndichaenda",
+    "tied up", "a bit tied up", "bit tied up", "quite busy",
+    "will notify you when", "will let you know when", "let you know when",
+    "contact you when", "contact when", "when i'm done", "when am done",
+    "not yet ready", "not ready yet", "still building", "still busy",
+    "will come back", "come back later", "get back later",
+    "when i finish", "when i am done", "when i'm finished",
 )
 
-# ── Keywords that suggest a completely out-of-scope service ───────────────────
 _OOS_KEYWORDS = (
     "garage", "garages", "car port", "carport",
     "painting", "paint", "painter",
@@ -174,13 +192,24 @@ _OOS_KEYWORDS = (
     "borehole",
 )
 
+_TRIVIAL_ACKS = {
+    "ok", "okay", "k", "kk", "yes", "no", "sure", "thanks",
+    "thank you", "noted", "cool", "sharp", "👍", "🙏",
+    "hongu", "kwete", "zvakanaka",
+}
 
-# ── Fast pre-filters (no API call needed) ────────────────────────────────────
 
-def _fast_delay_check(message: str) -> bool:
+def _keyword_classify(message: str) -> dict:
+    """
+    Keyword-based classification used ONLY when DeepSeek is unavailable.
+    Not called in the primary detection path.
+    """
     msg = (message or "").lower()
-    return any(phrase in msg for phrase in _DELAY_PHRASES)
-
+    if any(phrase in msg for phrase in _DELAY_PHRASES):
+        return {"category": "delay_signal", "confidence": "HIGH", "detail": "delay keyword matched"}
+    if any(k in msg for k in _OOS_KEYWORDS):
+        return {"category": "out_of_scope", "confidence": "LOW", "detail": "oos keyword matched"}
+    return {"category": "in_scope", "confidence": "LOW", "detail": "keyword fallback default"}
 
 
 # ── DeepSeek classifier ───────────────────────────────────────────────────────
@@ -193,6 +222,9 @@ def classify_message(message: str, appointment) -> dict:
       delay_signal    — customer is not ready yet
       complaint       — frustration, price objection, skepticism
 
+    Uses DeepSeek for natural-language intent detection.
+    Falls back to keyword matching only when the API is unavailable.
+
     Returns:
         {
             "category":   "in_scope" | "out_of_scope" | "delay_signal" | "complaint",
@@ -200,28 +232,14 @@ def classify_message(message: str, appointment) -> dict:
             "detail":     short string explaining the classification
         }
     """
-
-    # -- Fast-path checks (no API call) --------------------------------------
-    if _fast_delay_check(message):
-        logger.info("Fast delay signal detected: '%s'", message[:60])
-        return {"category": "delay_signal", "confidence": "HIGH", "detail": "delay phrase matched"}
-
-    def _fast_oos_check(message: str) -> bool:
-        msg = (message or "").lower()
-        return any(k in msg for k in _OOS_KEYWORDS)
-        
-    # -- Skip DeepSeek for very short neutral messages -----------------------
+    # Trivial acks are always in_scope — skip the API call entirely
     msg_lower = (message or "").strip().lower()
-    trivial_acks = {
-        "ok", "okay", "k", "kk", "yes", "no", "sure", "thanks",
-        "thank you", "noted", "cool", "sharp", "👍", "🙏",
-        "hongu", "kwete", "zvakanaka",
-    }
-    if msg_lower in trivial_acks or len(msg_lower.split()) <= 2:
+    if msg_lower in _TRIVIAL_ACKS or len(msg_lower.split()) <= 2:
         return {"category": "in_scope", "confidence": "HIGH", "detail": "trivial ack"}
 
+    # No DeepSeek available — use keyword fallback
     if not _deepseek:
-        return {"category": "in_scope", "confidence": "LOW", "detail": "no DeepSeek key"}
+        return _keyword_classify(message)
 
     # -- Conversation context for the classifier ------------------------------
     history = appointment.conversation_history or []
@@ -327,8 +345,8 @@ JSON FORMAT:
         return {"category": category, "confidence": confidence, "detail": detail}
 
     except Exception as exc:
-        logger.warning("OOS classifier failed: %s", exc)
-        return {"category": "in_scope", "confidence": "LOW", "detail": "classifier error"}
+        logger.warning("OOS classifier failed: %s — falling back to keyword check", exc)
+        return _keyword_classify(message)
 
 
 # ── Clarifying question generator ────────────────────────────────────────────

@@ -1559,12 +1559,21 @@ def handle_media_message(sender, media_data, media_type):
                     file_note = f"\n[FILE UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
 
                     # Atomic append to internal_notes — safe under concurrent writes
-                    update_kwargs = dict(
+                    Appointment.objects.filter(pk=appointment.pk).update(
                         internal_notes=Concat('internal_notes', Value(file_note)),
+                    )
+
+                    # Only advance plan_status when the customer was explicitly asked to
+                    # upload a plan (pending_upload). Any other image (e.g. a product photo
+                    # sent mid-conversation) must NOT flip the state to plan_uploaded,
+                    # because that routes all future text messages to handle_post_upload_messages
+                    # and produces the wrong canned "Your plan has been sent" reply.
+                    Appointment.objects.filter(
+                        pk=appointment.pk, plan_status='pending_upload'
+                    ).update(
                         plan_status='plan_uploaded',
                         plan_uploaded_at=timezone.now(),
                     )
-                    Appointment.objects.filter(pk=appointment.pk).update(**update_kwargs)
 
                     # Only set plan_file if still empty (first image wins)
                     Appointment.objects.filter(pk=appointment.pk, plan_file='').update(plan_file=saved_path)

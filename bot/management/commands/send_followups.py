@@ -118,12 +118,12 @@ class Command(BaseCommand):
         #
         leads = (
             Appointment.objects
-            .filter(is_lead_active=True, status='pending')
+            .filter(is_lead_active=True, status='pending', is_delayed=False)
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
 #            .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
             .exclude(internal_notes__contains='[DELAY_SIGNAL]')
-            .exclude(chatbot_paused=True)  # ← ADD THIS
+            .exclude(chatbot_paused=True)
         )        
         return leads.order_by('last_customer_response', 'created_at')
         
@@ -261,12 +261,10 @@ class Command(BaseCommand):
     def _get_next_question(self, lead):
         if not lead.project_type:
             return 'service_type'
+        if not lead.project_description:
+            return 'project_description'
         if not lead.customer_area:
             return 'area'
-        if not lead.timeline:
-            return 'timeline'
-        if not lead.property_type:
-            return 'property_type'
         if not lead.scheduled_datetime:
             return 'availability'
         return 'complete'
@@ -329,6 +327,41 @@ class Command(BaseCommand):
 
     # ─── AI message ──────────────────────────────────────────────────────────
 
+    def _already_collected_summary(self, lead) -> str:
+        """Return a bullet list of fields already saved so the AI doesn't re-ask them."""
+        lines = []
+        if lead.project_type:
+            lines.append(f"- Service type: {self._service_label(lead)}")
+        if lead.project_description:
+            lines.append(f"- Project description: {lead.project_description[:120]}")
+        if lead.customer_area:
+            lines.append(f"- Area: {lead.customer_area}")
+        if lead.scheduled_datetime:
+            lines.append(f"- Appointment date/time: already set")
+        return "\n".join(lines) if lines else "Nothing collected yet"
+
+    def _recent_conversation_snippet(self, lead, max_turns: int = 4) -> str:
+        """Return the last N non-system conversation turns as a readable string."""
+        history = lead.conversation_history or []
+        skip_prefixes = (
+            '[AUTO FOLLOW-UP]', '[AUTOMATIC FOLLOW-UP]',
+            '[MANUAL FOLLOW-UP]', '[BULK MANUAL FOLLOW-UP]',
+            '[FILE UPLOADED]', '[VIDEO UPLOADED]', '[Sent ',
+            'APPOINTMENT CONFIRMED', 'NEW APPOINTMENT BOOKED',
+        )
+        turns = []
+        for msg in reversed(history):
+            content = (msg.get('content') or '').strip()
+            if any(content.startswith(p) for p in skip_prefixes):
+                continue
+            role = 'Customer' if msg.get('role') == 'user' else 'Bot'
+            turns.append(f"{role}: {content[:200]}")
+            if len(turns) >= max_turns * 2:
+                break
+        if not turns:
+            return 'No prior conversation'
+        return '\n'.join(reversed(turns))
+
     def _ai_message(self, lead, next_question, attempt, last_question):
         service  = self._service_label(lead)
         time_ref = self._elapsed_description(lead)
@@ -336,6 +369,9 @@ class Command(BaseCommand):
 
         template_result = self._template_message(lead, next_question, attempt)
         template_text   = template_result['message']
+
+        already_collected = self._already_collected_summary(lead)
+        recent_convo      = self._recent_conversation_snippet(lead)
 
         if next_question == 'complete':
             question_block = (
@@ -365,6 +401,12 @@ LEAD CONTEXT:
 - Last heard from them: {time_ref}
 - This is follow-up attempt #{attempt} of 4 (all within 24 hours)
 
+ALREADY COLLECTED (do NOT ask for any of these again):
+{already_collected}
+
+RECENT CONVERSATION (last few turns — use this to avoid repeating questions already answered):
+{recent_convo}
+
 BASE TEMPLATE (your starting point — do not stray far from this):
 \"\"\"
 {template_text}
@@ -377,7 +419,7 @@ RULES — every single one must be followed:
 2. You may lightly rephrase for naturalness but do not invent new angles or content
 3. Open with "Hi there," — we do not have their name, never use one
 4. NEVER ask for the customer's name
-5. One question maximum
+5. One question maximum — and NEVER ask for something already listed under ALREADY COLLECTED
 6. {length_instruction}
 7. Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
 8. Zero markdown, zero bold, zero bullet points
@@ -445,6 +487,23 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                 ),
                 (
                     f"Still looking for a plumber?"
+                ),
+            ],
+            'project_description': [
+                (
+                    f"Hi there, to give you the most accurate quote for your {service}, "
+                    f"could you tell me a bit more about the specific work you need done?"
+                ),
+                (
+                    f"Hi there, the more detail you can share about the {service} job, "
+                    f"the more accurate we can be with the price — what exactly needs doing?"
+                ),
+                (
+                    f"Hi there, we're booking up this week. "
+                    f"What's the main thing you need sorted for the {service}?"
+                ),
+                (
+                    f"What exactly needs doing?"
                 ),
             ],
             'area': [

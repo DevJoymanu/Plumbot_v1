@@ -4369,13 +4369,23 @@ Reply with ONLY a JSON object:
                     _inquiry      = self.detect_service_inquiry(incoming_message)
                     _intent       = _inquiry.get('intent', 'none')
                     direct_answer = None
-                    if _intent in PRODUCT_INTENTS and _inquiry.get('confidence') == 'HIGH':
+                    _from_service_inquiry = False
+                    _already_sent = _intent in (getattr(self.appointment, 'sent_pricing_intents', None) or [])
+                    if _intent in PRODUCT_INTENTS and _inquiry.get('confidence') == 'HIGH' and not _already_sent:
                         direct_answer = self.handle_service_inquiry(_intent, incoming_message)
+                        _from_service_inquiry = bool(direct_answer)
                     if not direct_answer:
                         direct_answer = self._answer_standalone_question(incoming_message)
+                        _from_service_inquiry = False
                     if direct_answer:
-                        nudge = self._get_soft_booking_nudge()
-                        reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer
+                        # handle_service_inquiry already ends with a followup question
+                        # (via _build_pricing_response → _get_pricing_followup_prompt).
+                        # Appending the nudge would stack a second question on top of it.
+                        if _from_service_inquiry:
+                            reply = direct_answer
+                        else:
+                            nudge = self._get_soft_booking_nudge()
+                            reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer
                     else:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields
@@ -9249,9 +9259,8 @@ I understand this is time-sensitive!"""
             return "Could you tell me a bit more about what you need done?"
  
         if next_q == "service_type":
-            return"Hello,\nHow may we assist you on plumbing services"
+            return ""
 
- 
         return ""
 
 
