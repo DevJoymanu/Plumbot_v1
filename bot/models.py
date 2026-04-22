@@ -93,8 +93,9 @@ class Appointment(models.Model):
     # Project type choices (updated to match service list)
     PROJECT_TYPE_CHOICES = [
         ('bathroom_renovation', 'Bathroom Renovation'),
-        ('new_plumbing_installation', 'New Plumbing Installation'),
         ('kitchen_renovation', 'Kitchen Renovation'),
+        ('bathroom_and_kitchen_renovation', 'Bathroom & Kitchen Renovation'),
+        ('new_plumbing_installation', 'New Plumbing Installation'),
         ('other', 'Other'),
     ]
     

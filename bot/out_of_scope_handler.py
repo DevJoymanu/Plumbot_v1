@@ -33,8 +33,11 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import quote, unquote
+
+import pytz
 
 from openai import OpenAI
 
@@ -613,37 +616,187 @@ def _build_oos_reply(message: str, appointment) -> str:
     )
 
 
-def _build_delay_reply(message: str, appointment) -> str:
-    """Graceful acknowledgment when the customer is not ready."""
-    mark_delay_signal(appointment, message)
-    # Check for a specific timeframe so we can acknowledge it
-    import re
+_WEEKDAY_MAP = {
+    'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+    'friday': 4, 'saturday': 5, 'sunday': 6,
+}
+
+
+def _extract_future_weekday(message: str):
+    """
+    Return (day_name, target_date, next_date) if a specific weekday is mentioned,
+    otherwise None.  Always returns the *next* occurrence of that weekday.
+    """
     msg_lower = (message or "").lower()
+    tz = pytz.timezone('Africa/Johannesburg')
+    today = datetime.now(tz).date()
+    for day_name, day_num in _WEEKDAY_MAP.items():
+        if day_name in msg_lower:
+            days_ahead = day_num - today.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            target = today + timedelta(days=days_ahead)
+            next_day = target + timedelta(days=1)
+            return (day_name.capitalize(), target, next_day)
+    return None
 
-    timeframe = None
-    patterns = [
-        r"(\d+)\s*day",
-        r"(\d+)\s*week",
-        r"(\d+)\s*month",
-    ]
-    for pat in patterns:
-        m = re.search(pat, msg_lower)
-        if m:
-            num = m.group(1)
-            unit = "day" if "day" in pat else "week" if "week" in pat else "month"
-            timeframe = f"in {num} {unit}{'s' if int(num) != 1 else ''}"
-            break
 
-    if timeframe:
+def _compute_followup_date(timeframe_message: str):
+    """
+    Parse a customer's timeframe text and return (iso_date, friendly_str) for a
+    suitable follow-up day within that window.
+    Falls back to DeepSeek for unusual phrasings, then defaults to 2 weeks.
+    """
+    tz = pytz.timezone('Africa/Johannesburg')
+    today = datetime.now(tz).date()
+    msg = (timeframe_message or '').lower()
+
+    # Specific weekday mentioned → use that day
+    weekday_info = _extract_future_weekday(timeframe_message)
+    if weekday_info:
+        _, target, _ = weekday_info
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # "end of the month" / "end of month" / "this month"
+    if re.search(r'end of.{0,5}month|this month', msg):
+        next_m = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+        target = next_m - timedelta(days=3)
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # "next week"
+    if 'next week' in msg:
+        this_monday = today - timedelta(days=today.weekday())
+        target = this_monday + timedelta(days=9)  # Wednesday of next week
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # "in X days"
+    m = re.search(r'(\d+)\s*day', msg)
+    if m:
+        target = today + timedelta(days=int(m.group(1)))
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # "in X weeks"
+    m = re.search(r'(\d+)\s*week', msg)
+    if m:
+        target = today + timedelta(weeks=int(m.group(1)))
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # "a week" / "in a week" / "one week"
+    if re.search(r'\ba week\b|in a week|one week', msg):
+        target = today + timedelta(weeks=1)
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # "next month" / "in a month"
+    if re.search(r'next month|in a month|one month', msg):
+        next_m = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+        target = next_m + timedelta(days=7)
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # "in X months"
+    m = re.search(r'(\d+)\s*month', msg)
+    if m:
+        target = today + timedelta(days=30 * int(m.group(1)))
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # DeepSeek fallback for anything else ("after the holidays", "when I'm done building" …)
+    if _deepseek:
+        try:
+            response = _deepseek.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return ONLY a date in YYYY-MM-DD format. No explanation, no other text.",
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Today is {today.isoformat()}. "
+                            f"A customer said: '{timeframe_message}'. "
+                            f"Return one specific follow-up date within their stated timeframe."
+                        ),
+                    },
+                ],
+                temperature=0.1,
+                max_tokens=15,
+            )
+            raw = response.choices[0].message.content.strip()[:10]
+            from datetime import date as _date_cls
+            parsed = _date_cls.fromisoformat(raw)
+            return parsed.isoformat(), parsed.strftime('%A %d %B')
+        except Exception as exc:
+            logger.warning("_compute_followup_date DeepSeek failed: %s", exc)
+
+    # Default: 2 weeks from now
+    target = today + timedelta(weeks=2)
+    return target.isoformat(), target.strftime('%A %d %B')
+
+
+def _build_delay_reply(message: str, appointment) -> str:
+    """
+    Step 1 of the delay follow-up flow.
+    Ask the customer roughly when they'll be back so we can suggest a check-in date.
+    Does NOT mark the lead as delayed yet — that happens at the end of the flow.
+    """
+    _write_pending(appointment, 'delay_timeframe', message)
+    return "Oh no problem at all! 😊 Roughly when do you think you'll be back in town?"
+
+
+def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> str:
+    """
+    Step 2: customer gave their timeframe ("next week", "end of the month", etc.).
+    Compute a specific date within that window and ask permission to follow up.
+    """
+    _clear_pending(appointment)
+    iso_date, friendly_date = _compute_followup_date(message)
+    # Encode the follow-up date alongside the timeframe so step 3 can read it
+    _write_pending(appointment, 'delay_confirm', f"{message}|{iso_date}")
+    logger.info("Delay timeframe parsed: '%s' → follow-up %s", message[:60], iso_date)
+    return (
+        f"Got it, no problem! 😊\n\n"
+        f"Would it be okay if we reached out to you on *{friendly_date}* "
+        f"just to check you've got all the assistance you need?"
+    )
+
+
+def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> str:
+    """
+    Step 3: customer replied yes/no to the follow-up permission question.
+    Mark as delayed and, if they agreed, store the follow-up date in internal_notes.
+    """
+    _clear_pending(appointment)
+
+    # Pull the follow-up date stored in the pending original field
+    original_info = pending.get('original', '')
+    parts = original_info.split('|')
+    iso_date = parts[-1].strip() if len(parts) > 1 else None
+
+    msg_lower = (message or '').strip().lower()
+    no_signals = ('no', 'nope', "don't", 'not necessary', 'no need', 'kwete', 'please don')
+    is_no = any(s in msg_lower for s in no_signals)
+
+    mark_delay_signal(appointment, message)
+
+    if is_no:
         return (
-            f"No problem at all — we'll be here {timeframe}. 😊\n\n"
-            f"Whenever you're ready, just send us a message and we'll pick up right where we left off."
+            "No worries at all! Whenever you're ready, just send us a message and "
+            "we'll be happy to help. 😊"
         )
 
-    # Generic delay ack
+    # Confirmed yes (or ambiguous — default to yes)
+    if iso_date:
+        notes = appointment.internal_notes or ''
+        tag = f"[FOLLOW_UP_DATE] {iso_date}"
+        if tag not in notes:
+            appointment.internal_notes = f"{notes}\n{tag}".strip()
+            appointment.save(update_fields=['internal_notes'])
+        logger.info("Follow-up date stored: %s for appointment=%s",
+                    iso_date, getattr(appointment, 'id', None))
+
     return (
-        "No problem at all! Whenever you're ready, just send us a message and "
-        "we'll pick up right where we left off. 😊"
+        "Perfect, we'll do that! 😊 "
+        "In the meantime, if anything changes just send us a message anytime — "
+        "we'll be right here."
     )
 
 
@@ -725,12 +878,24 @@ def handle_out_of_scope(message: str, appointment) -> Optional[str]:
     Never asks more than one clarifying question per ambiguous message —
     if the answer is still LOW confidence, the module passes through to avoid loops.
     """
-    # ── Step 1: resolve a pending clarification from the previous turn ────────
+    # ── Step 1: check for active pending states ───────────────────────────────
     pending = _read_pending(appointment)
     if pending:
+        pending_cat = pending.get("category", "")
+
+        # Two-step delay follow-up flow
+        if pending_cat == "delay_timeframe":
+            logger.info("Delay flow step 2 — timeframe answer: '%s'", message[:60])
+            return _handle_delay_timeframe_answer(message, pending, appointment)
+
+        if pending_cat == "delay_confirm":
+            logger.info("Delay flow step 3 — confirm answer: '%s'", message[:60])
+            return _handle_delay_confirm_answer(message, pending, appointment)
+
+        # Normal OOS pending clarification
         logger.info(
             "Resolving pending clarification: category=%s original='%s' answer='%s'",
-            pending.get("category"), pending.get("original", "")[:60], message[:60],
+            pending_cat, pending.get("original", "")[:60], message[:60],
         )
         return _resolve_pending_clarification(message, pending, appointment)
 
@@ -744,41 +909,36 @@ def handle_out_of_scope(message: str, appointment) -> Optional[str]:
     if category == "in_scope":
         return None
 
-    # ── Step 4: HIGH confidence — act immediately ─────────────────────────────
-    # ── Step 4: HIGH confidence — act immediately ─────────────────────────────
+    # ── Step 4: delay signal at any confidence → start two-step follow-up flow ─
+    if category == "delay_signal":
+        logger.info("Delay signal (%s confidence): '%s'", confidence, message[:80])
+        return _build_delay_reply(message, appointment)
+
+    # ── Step 5: HIGH confidence — act immediately ─────────────────────────────
     if confidence == "HIGH":
 
         if category == "out_of_scope":
             logger.info("OOS detected — forcing plumbing clarification step first")
-
             clarifying_q = _generate_plumbing_reframe_question(message)
             _write_pending(appointment, "out_of_scope", message)
-
             return clarifying_q
-
-        if category == "delay_signal":
-            logger.info("HIGH delay: '%s'", message[:80])
-            return _build_delay_reply(message, appointment)
 
         if category == "complaint":
             logger.info("HIGH complaint: '%s'", message[:80])
             return _build_complaint_reply(message, appointment)
 
-    # ── Step 5: LOW confidence — ask a targeted clarifying question ───────────
-    # Exception: if the classifier is unsure about an in_scope vs delay/complaint
-    # reading we prefer to keep the booking flow alive rather than interrupting it
-    # with a clarifying question.  We only clarify when the ambiguity is between
-    # in_scope and out_of_scope, or when the message is genuinely confusing.
+    # ── Step 6: LOW confidence — ask a targeted clarifying question ───────────
+    # delay_signal is handled above at any confidence level.
+    # For out_of_scope: ask a clarifying question.
+    # For complaint: pass through (plumber sees it in logs).
 
-    # Do NOT clarify low-confidence complaints — pass through to the booking flow
-    # so the bot can continue collecting details; the plumber sees it in the logs.
     if category == "complaint":
         logger.info(
             "LOW complaint suppressed — passing to booking flow: '%s'", message[:80]
         )
         return None
 
-    # For low-confidence out_of_scope or delay_signal: ask one clarifying question
+    # For low-confidence out_of_scope: ask one clarifying question
     logger.info(
         "LOW confidence %s — generating clarifying question for: '%s'",
         category, message[:80],

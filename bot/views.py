@@ -5535,6 +5535,18 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             return {"intent": "none", "confidence": "LOW"}
 
 
+    @staticmethod
+    def _is_asking_for_price(message: str) -> bool:
+        """Return True only when the customer explicitly asks about cost/price."""
+        msg = (message or "").lower()
+        price_keywords = (
+            'price', 'cost', 'how much', 'charge', 'fee', 'rate',
+            'mutengo', 'mbozha', 'dollar', ' usd', '$', 'cheap', 'afford',
+            'estimate', 'quote', 'pricing', 'what does', 'what do you charge',
+            'expensive', 'budget',
+        )
+        return any(kw in msg for kw in price_keywords)
+
     def handle_service_inquiry(self, intent, message):
             """Generate response for product/service/pricing inquiries in English or Shona."""
             try:
@@ -5701,6 +5713,27 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 # for the full contextual Facebook-anchored response
                 if intent == 'combined_pricing':
                     return self.generate_pricing_overview(message)
+
+                # Tub inquiries: show sizes first, prices only if customer asks
+                _TUB_INTENTS = {'tub_sales', 'standalone_tub', 'bathtub_installation'}
+                if intent in _TUB_INTENTS and not self._is_asking_for_price(message):
+                    if language == 'shona':
+                        return (
+                            "Tubs dzinouya mumhando mbiri: 🛁\n\n"
+                            "• *Standard built-in tub* (1500×700mm) — inoiswa mumadziro, "
+                            "ine side chamber\n"
+                            "• *Free-standing tub* (1500–1800mm) — inomira yega, "
+                            "inooneka zvakanaka\n\n"
+                            "Unofunga mhando ipi — yakavakirwa mumadziro kana inomira yega?"
+                        )
+                    return (
+                        "Bathtubs come in two main types: 🛁\n\n"
+                        "• *Standard built-in* (1500×700mm) — set into the wall surround, "
+                        "with a side chamber\n"
+                        "• *Freestanding* (1500–1800mm) — standalone statement piece, "
+                        "available in various lengths\n\n"
+                        "Which type are you thinking — built-in or freestanding?"
+                    )
 
                 if intent in structured_pricing:
                     pricing_payload = structured_pricing[intent]
@@ -6475,7 +6508,11 @@ I understand this is time-sensitive!"""
     EXTRACTION TARGETS:
     
     SERVICE TYPE — Look for any mention of the type of plumbing work needed.
-    Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
+    Return: "bathroom_renovation", "kitchen_renovation",
+            "bathroom_and_kitchen_renovation", or "new_plumbing_installation"
+    - Return "bathroom_and_kitchen_renovation" when the customer indicates they want
+      BOTH bathroom AND kitchen (e.g. "both", "both renovations", "kitchen and bathroom",
+      "bathroom and kitchen", "both rooms").
     
     PROJECT DESCRIPTION — Look for specific details of what the customer wants done,
     including renovation state clues like "already tiled", "new build", "existing bathroom",
@@ -6485,7 +6522,18 @@ I understand this is time-sensitive!"""
     
     AREA/LOCATION — Any suburb, neighbourhood, or city mentioned as the work location.
     Return: the area name as stated, or null.
-    
+    Examples of Zimbabwe suburbs: Hatfield, Avondale, Borrowdale, Mabvuku, Budiriro,
+    Kuwadzana, Ziko, Dzivarasekwa, Highfields, Glen Norah, Waterfalls, Mbare, Greendale,
+    Msasa, Tynwald, Eastlea, Highlands, Marlborough, Mount Pleasant, Ruwa, Chitungwiza.
+    IMPORTANT: When next_question is "area", treat ANY short word or unfamiliar phrase as
+    an area name, NOT as a customer name. Zimbabwe has many unique suburb names.
+
+    CUSTOMER NAME — Only if the customer explicitly gives their name using patterns like
+    "I'm [name]", "my name is [name]", "call me [name]".
+    Do NOT extract a name when next_question is "area" — short words in that context
+    are suburb names, not person names.
+    Return: full name title-case, or null.
+
     AVAILABILITY / DATETIME — Look for any date + time combination.
     Return: YYYY-MM-DDTHH:MM or null.
     - "available all day" / "whole day" / "anytime" → return null (caller handles separately)
@@ -6493,10 +6541,7 @@ I understand this is time-sensitive!"""
     - If only time given (no date) → null
     - You must be able to extract the date/time within other text, e.g. Wednesday is ok, lets do wednesday or anything else along those lines
     TODAY = {current_time[:10]}
-    
-    CUSTOMER NAME — Only if the customer explicitly gives their name.
-    Return: full name title-case, or null.
-    
+
     RESPONSE FORMAT (CRITICAL — return EXACTLY this, nothing else):
     {{
         "service_type": "extracted_value_or_null",
@@ -6761,7 +6806,10 @@ I understand this is time-sensitive!"""
             - English keywords: bathroom, kitchen, plumbing, installation, renovation, repair, toilet, shower, sink
             - Shona/mixed keywords: chimbuzi (toilet), shawa (shower), bhavhu/bhavu (bathtub),
               bheseni (basin/sink), kicheni (kitchen), mapombi (pipes), imba itsva (new house)
-            - Return: "bathroom_renovation", "kitchen_renovation", or "new_plumbing_installation"
+            - Return: "bathroom_renovation", "kitchen_renovation",
+              "bathroom_and_kitchen_renovation", or "new_plumbing_installation"
+            - Return "bathroom_and_kitchen_renovation" when customer indicates BOTH bathroom AND
+              kitchen (e.g. "both", "both renovations", "kitchen and bathroom", "both rooms")
             
             PROJECT DESCRIPTION - Look for specific details of what the customer wants done,
             including renovation state clues like "already tiled", "new build", "existing bathroom",
@@ -6801,7 +6849,13 @@ I understand this is time-sensitive!"""
             AREA/LOCATION - Look for:
             - Any location names, suburbs, areas mentioned
             - Return: the area name as stated
-            
+            - Examples of Zimbabwe suburbs: Hatfield, Avondale, Borrowdale, Mabvuku,
+              Budiriro, Kuwadzana, Ziko, Dzivarasekwa, Highfields, Glen Norah,
+              Waterfalls, Mbare, Greendale, Msasa, Tynwald, Eastlea, Highlands,
+              Marlborough, Mount Pleasant, Ruwa, Chitungwiza
+            - IMPORTANT: When next_question is "area", treat ANY short word or
+              unfamiliar phrase as an area name, NOT as a customer name.
+
             TIMELINE - Look for:
             - When they want work done: ASAP, next week, next month, tomorrow, etc.
             - Return: timeline as stated
@@ -6817,8 +6871,10 @@ I understand this is time-sensitive!"""
             - Return: YYYY-MM-DDTHH:MM format
             
             CUSTOMER NAME - Look for:
-            - Patterns: "I'm John", "my name is Sarah", "call me Mike", just a name by itself
+            - Patterns: "I'm John", "my name is Sarah", "call me Mike"
             - Return: full name in title case
+            - IMPORTANT: When next_question is "area", do NOT extract customer_name —
+              any short word in that context is a suburb name, not a person's name
             
             RESPONSE FORMAT (CRITICAL):
             Return EXACTLY this JSON structure with no additional text:
@@ -6985,10 +7041,20 @@ I understand this is time-sensitive!"""
             print(f"📦 Extracted data: {extracted_data}")
     
             # ── Service type ──────────────────────────────────────────────────────
+            _VALID_SERVICE_TYPES = {
+                'bathroom_renovation', 'kitchen_renovation',
+                'bathroom_and_kitchen_renovation', 'new_plumbing_installation', 'other',
+            }
             if (extracted_data.get('service_type') and
                     extracted_data.get('service_type') != 'null' and
                     not self.appointment.project_type):
-                self.appointment.project_type = extracted_data['service_type']
+                _raw_svc = extracted_data['service_type']
+                # Normalise space-separated variant if AI returns it
+                _norm_svc = _raw_svc.replace(' ', '_')
+                if _norm_svc in _VALID_SERVICE_TYPES:
+                    self.appointment.project_type = _norm_svc
+                else:
+                    self.appointment.project_type = _raw_svc
                 updated_fields.append('service_type')
                 print(f"✅ Updated service_type: {self.appointment.project_type}")
     
@@ -6996,8 +7062,10 @@ I understand this is time-sensitive!"""
             _SERVICE_TYPE_LABELS = {
                 'bathroom renovation', 'bathroom',
                 'kitchen renovation', 'kitchen',
+                'both renovations', 'bathroom and kitchen renovation',
                 'new plumbing installation', 'plumbing installation',
-                'bathroom_renovation', 'kitchen_renovation', 'new_plumbing_installation',
+                'bathroom_renovation', 'kitchen_renovation',
+                'bathroom_and_kitchen_renovation', 'new_plumbing_installation',
             }
             _extracted_desc = (extracted_data.get('project_description') or '').strip()
             if (
@@ -8064,7 +8132,10 @@ I understand this is time-sensitive!"""
             
             If current question is "service_type":
             - Look for: bathroom, kitchen, plumbing, installation, renovation, repair
-            - Return one of: "bathroom renovation", "kitchen renovation", "new plumbing installation"
+            - Return one of: "bathroom renovation", "kitchen renovation",
+              "bathroom and kitchen renovation", or "new plumbing installation"
+            - Return "bathroom and kitchen renovation" when both rooms are mentioned
+              (e.g. "both", "both renovations", "kitchen and bathroom")
             
             If current question is "plan_or_visit":
             - Look for: existing plan, site visit, yes/no responses
@@ -8072,7 +8143,9 @@ I understand this is time-sensitive!"""
             
             If current question is "area":
             - Extract location/area information
-            - Return the area name (e.g., "Hatfield", "Avondale")
+            - Return the area name (e.g., "Hatfield", "Avondale", "Ziko", "Budiriro")
+            - ANY short word or phrase is an area name in this context — do NOT treat
+              it as a customer name. Zimbabwe has many unique suburb names.
             
             If current question is "timeline":
             - Extract when they want work done
@@ -8133,8 +8206,14 @@ I understand this is time-sensitive!"""
             
             # Only update if we don't already have this information
             if question_type == "service_type" and not self.appointment.project_type:
-                if extracted_value in ['bathroom renovation', 'kitchen renovation', 'new plumbing installation']:
-                    self.appointment.project_type = extracted_value.replace(' ', '_')
+                _valid = {
+                    'bathroom renovation': 'bathroom_renovation',
+                    'kitchen renovation': 'kitchen_renovation',
+                    'bathroom and kitchen renovation': 'bathroom_and_kitchen_renovation',
+                    'new plumbing installation': 'new_plumbing_installation',
+                }
+                if extracted_value in _valid:
+                    self.appointment.project_type = _valid[extracted_value]
                     
             elif question_type == "plan_or_visit" and self.appointment.has_plan is None:
                 if extracted_value == "has_plan":
