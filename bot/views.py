@@ -4239,7 +4239,11 @@ Reply with ONLY a JSON object:
 
             if (self.appointment.has_plan is True and
                     self.appointment.plan_status == 'plan_uploaded'):
-                return self.handle_post_upload_messages(incoming_message)
+                result = self.handle_post_upload_messages(incoming_message)
+                if result is not None:
+                    return result
+                # None means description was just captured — fall through to
+                # the normal booking flow so it asks the next question
 
             # ── CONFIRMED + COMPLETE — no more questions ──────────────────────────
             if (self.appointment.status == 'confirmed' and
@@ -6234,35 +6238,39 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             print(f"❌ Error notifying plumber: {str(e)}")
             
     def handle_post_upload_messages(self, message):
-        """Handle messages after plan has been uploaded"""
+        """
+        Called when has_plan=True and plan_status='plan_uploaded'.
+
+        The customer has just sent us their image/plan and the media ack asked them
+        to describe what they want done.  This method treats their reply as the
+        project description, stores it, and marks the plan as reviewed so the
+        normal booking flow can continue (area → datetime → confirmation).
+
+        Returns None to signal the caller to fall through to the booking flow.
+        Returns a string only when we genuinely need to handle an edge case.
+        """
         try:
-            message_lower = message.lower()
-            
-            # Check for status inquiries
-            if any(word in message_lower for word in ['status', 'update', 'heard', 'contact', 'call']):
-                return self.provide_plan_status_update()
-            
-            # Check for plan changes
-            if any(word in message_lower for word in ['change', 'update', 'modify', 'different', 'new plan']):
-                return self.handle_plan_change_request()
-            
-            # Check for urgent requests
-            if any(word in message_lower for word in ['urgent', 'asap', 'emergency', 'rush']):
-                return self.handle_urgent_plan_request()
-            
-            # Default response for post-upload phase
-            return """Your plan has been sent to our plumber and they'll contact you within 24 hours.
+            msg = (message or '').strip()
 
-If you need immediate assistance:
-📞 Call directly: 0774819901
+            # If description not yet stored, this message IS the description
+            if not self.appointment.project_description and msg:
+                self.appointment.project_description = msg
+                self.appointment.plan_status = 'plan_reviewed'
+                self.appointment.save(update_fields=['project_description', 'plan_status'])
+                print(f"✅ Project description captured from post-upload reply: {msg[:60]}")
+                # Return None → caller falls through to normal booking question
+                return None
 
-Otherwise, please wait for their review and call. They're very reliable!
+            # Description already stored — just exit the plan_uploaded gate
+            if self.appointment.plan_status == 'plan_uploaded':
+                self.appointment.plan_status = 'plan_reviewed'
+                self.appointment.save(update_fields=['plan_status'])
 
-Need to change something about your plan? Let me know."""
+            return None
 
         except Exception as e:
-            print(f"❌ Error handling post-upload message: {str(e)}")
-            return "Your plan is with our plumber for review. They'll contact you within 24 hours."
+            print(f"❌ Error in handle_post_upload_messages: {str(e)}")
+            return None
 
     def provide_plan_status_update(self):
         """Provide status update on plan review"""

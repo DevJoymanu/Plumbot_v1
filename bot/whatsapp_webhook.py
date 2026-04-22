@@ -255,16 +255,15 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
 
         if media_type == 'video':
             customer_reply = (
-                "Thank you for sending that video! ?? Our plumber has been notified and will "
-                "review it and contact you directly. If it's urgent, you can also call them on "
-                f"{fresh.plumber_contact_number or '+263774819901'}."
+                "Got that, thanks for sharing! 🎥\n\n"
+                "Could you describe what you're looking to get done? "
+                "The more detail the better — even a rough idea helps us plan the visit."
             )
         else:
             customer_reply = (
-                "Thank you for sending your plan! ?? Our plumber has been notified and will "
-                "be in touch with you directly to discuss your project.\n\n"
-                "If it's urgent, you can also call them on "
-                f"{fresh.plumber_contact_number or '+263774819901'}."
+                "Got it, thanks for sharing that! 📋\n\n"
+                "Could you describe what you'd like done, or is there something specific "
+                "you'd like to change? Just a few words is fine."
             )
 
         fresh.add_conversation_message("assistant", customer_reply)
@@ -1610,10 +1609,6 @@ def handle_media_message(sender, media_data, media_type):
                 traceback.print_exc()
 
         appointment.add_conversation_message("user", f"[Sent {media_type}]")
-
-        # Debounced plumber alert — waits for burst to finish, then sends ONE message
-        # with all file URLs listed.
-        _schedule_plumber_alert(sender, appointment, file_url, media_type)
 
         if not appointment.chatbot_paused:
             _schedule_media_ack(sender, appointment, media_type)

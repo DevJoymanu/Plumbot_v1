@@ -263,7 +263,13 @@ if USE_S3:
                 "secret_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
                 "bucket_name": os.getenv("AWS_STORAGE_BUCKET_NAME"),
                 "endpoint_url": os.getenv("AWS_S3_ENDPOINT_URL"),
-                "custom_domain": os.getenv("AWS_S3_CUSTOM_DOMAIN"),
+                "custom_domain": os.getenv("AWS_S3_CUSTOM_DOMAIN") or None,
+                # R2 doesn't use AWS regions — this suppresses boto3 warnings
+                "region_name": "auto",
+                # Don't overwrite files with the same name
+                "file_overwrite": False,
+                # Generate presigned URLs when no custom_domain is set
+                "querystring_auth": not bool(os.getenv("AWS_S3_CUSTOM_DOMAIN")),
             },
         },
         "staticfiles": {
