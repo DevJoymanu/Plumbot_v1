@@ -1,272 +1,551 @@
 {% extends "base.html" %}
 
+{% block title %}Dashboard — Plumbot{% endblock %}
+
 {% block extra_css %}
 <style>
-    .filter-card {
-        background: rgba(255, 255, 255, 0.98);
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+    /* ── TopBar ── */
+    .pb-topbar {
+        background: var(--color-header);
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    .pb-topbar__slot { width: 32px; flex-shrink: 0; }
+    .pb-topbar__center { flex: 1; text-align: center; }
+    .pb-topbar__title { color: #fff; font-size: 17px; font-weight: 600; line-height: 1.2; }
+    .pb-topbar__sub { color: rgba(255,255,255,0.7); font-size: 12px; }
+
+    /* ── Alert banner ── */
+    .pb-alert-banner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        background: var(--color-surface);
+        border-bottom: 3px solid var(--color-red);
+        color: #991b1b;
+        font-size: 14px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: background 0.15s;
+    }
+    .pb-alert-banner:hover { background: #fff5f5; }
+
+    /* ── Stats strip ── */
+    .pb-stats {
+        display: flex;
+        gap: 8px;
+        padding: 12px 16px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .pb-stats::-webkit-scrollbar { display: none; }
+
+    .pb-stat-tile {
+        flex: 0 0 auto;
+        min-width: 88px;
+        border-radius: var(--radius-md);
+        padding: 10px 12px;
+        text-align: center;
+    }
+    .pb-stat-tile--green  { background: #d1fae5; }
+    .pb-stat-tile--red    { background: #fee2e2; }
+    .pb-stat-tile--amber  { background: #fef3c7; }
+    .pb-stat-tile--blue   { background: #dbeafe; }
+    .pb-stat-tile--purple { background: #ede9fe; }
+
+    .pb-stat-tile__num {
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+    .pb-stat-tile--green  .pb-stat-tile__num { color: #059669; }
+    .pb-stat-tile--red    .pb-stat-tile__num { color: #ef4444; }
+    .pb-stat-tile--amber  .pb-stat-tile__num { color: #d97706; }
+    .pb-stat-tile--blue   .pb-stat-tile__num { color: #3b82f6; }
+    .pb-stat-tile--purple .pb-stat-tile__num { color: #8b5cf6; }
+
+    .pb-stat-tile__label {
+        font-size: 10px;
+        color: var(--color-muted);
+        margin-top: 2px;
+        white-space: nowrap;
+    }
+
+    /* ── Schedule section card ── */
+    .pb-schedule {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        margin: 0 16px 8px;
         overflow: hidden;
     }
 
-    .filter-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
+    .pb-schedule__header {
+        width: 100%;
+        background: none;
+        border: none;
+        border-left: 3px solid var(--section-accent, var(--color-teal));
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        text-align: left;
+        font-family: var(--font-base);
+    }
+    .pb-schedule__header:hover { background: #fafafa; }
+
+    /* Per-section accent colours (applied via style attr — no Django tags) */
+    .pb-schedule--teal   .pb-schedule__header { border-left-color: #128C7E; }
+    .pb-schedule--purple .pb-schedule__header { border-left-color: #8b5cf6; }
+    .pb-schedule--amber  .pb-schedule__header { border-left-color: #f59e0b; }
+    .pb-schedule--red    .pb-schedule__header { border-left-color: #ef4444; }
+
+    .pb-schedule__title {
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--color-text);
+        flex: 1;
+    }
+    .pb-schedule__count {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: var(--radius-pill);
+    }
+    .pb-schedule--teal   .pb-schedule__count { background: rgba(18,140,126,0.13);  color: #128C7E; }
+    .pb-schedule--purple .pb-schedule__count { background: rgba(139,92,246,0.13);  color: #8b5cf6; }
+    .pb-schedule--amber  .pb-schedule__count { background: rgba(245,158,11,0.13);  color: #f59e0b; }
+    .pb-schedule--red    .pb-schedule__count { background: rgba(239,68,68,0.13);   color: #ef4444; }
+
+    .pb-chevron {
+        font-size: 12px;
+        color: var(--color-muted);
+        transition: transform 0.2s;
+        flex-shrink: 0;
     }
 
-    .filter-row {
+    .pb-schedule__body.collapsed { display: none; }
+
+    /* ── Schedule row ── */
+    .pb-sched-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-top: 1px solid #f0f0f0;
+        text-decoration: none;
+        color: inherit;
+        transition: background 0.15s;
+    }
+    .pb-sched-row:hover { background: #f9fafb; }
+
+    /* Time block */
+    .pb-time-block {
+        flex-shrink: 0;
+        width: 46px;
+        height: 46px;
+        border-radius: var(--radius-md);
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+    .pb-time-block small { font-size: 10px; font-weight: 400; color: var(--color-muted); }
+
+    /* Time block colour variants */
+    .pb-tb--confirmed { background: #d1fae5; color: #059669; }
+    .pb-tb--pending   { background: #fef3c7; color: #d97706; }
+    .pb-tb--job       { background: #fee2e2; color: #ef4444; }
+
+    .pb-sched-center { flex: 1; min-width: 0; }
+    .pb-sched-name {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--color-text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .pb-sched-sub {
+        font-size: 12px;
+        color: var(--color-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
     }
 
-    .filter-row select {
-        width: 100%;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 12px 14px;
-        font-size: clamp(0.9rem, 3.5vw, 1rem);
-        background: white;
-        min-height: 48px;
-        font-family: inherit;
-        -webkit-appearance: none;
-        appearance: none;
-        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-        background-repeat: no-repeat;
-        background-position: right 16px center;
-        background-size: 1.2em;
-        transition: all 0.2s ease;
-    }
-
-    .filter-row select:focus {
-        outline: none;
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    .filter-actions {
+    .pb-sched-right {
         display: flex;
-        gap: 10px;
-        width: 100%;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 5px;
+        flex-shrink: 0;
     }
 
-    .filter-actions .btn {
-        flex: 1;
-        min-height: 48px;
+    /* Heat dot colour variants */
+    .pb-heat-dot { width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; }
+    .pb-heat--very_hot  { background: #ef4444; }
+    .pb-heat--hot       { background: #f59e0b; }
+    .pb-heat--warm      { background: #25D366; }
+    .pb-heat--luke_warm { background: #3b82f6; }
+    .pb-heat--cold      { background: #d1d5db; }
+
+    /* Status pill colour variants */
+    .pb-status-pill {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: var(--radius-pill);
+        white-space: nowrap;
     }
+    .pb-pill--confirmed { background: #d1fae5; color: #059669; }
+    .pb-pill--pending   { background: #fef3c7; color: #d97706; }
+    .pb-pill--cancelled { background: #fee2e2; color: #ef4444; }
+    .pb-pill--delayed   { background: #dbeafe; color: #3b82f6; }
+    .pb-pill--job       { background: #fee2e2; color: #ef4444; }
+
+    /* Empty row inside section */
+    .pb-empty-inline {
+        padding: 16px;
+        text-align: center;
+        color: var(--color-muted);
+        font-size: 13px;
+        border-top: 1px solid #f0f0f0;
+    }
+    .pb-empty-inline i { margin-right: 6px; opacity: .4; }
+
+    /* ── Follow-ups card ── */
+    .pb-section-card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        margin: 0 16px 8px;
+        overflow: hidden;
+    }
+    .pb-section-card__header {
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--color-border);
+    }
+    .pb-section-card__title {
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--color-text);
+    }
+    .pb-section-card__link {
+        font-size: 12px;
+        color: var(--color-teal);
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .pb-followup-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        text-decoration: none;
+        color: inherit;
+        transition: background 0.15s;
+    }
+    .pb-followup-row:last-child { border-bottom: none; }
+    .pb-followup-row:hover { background: #f9fafb; }
+
+    /* Avatar */
+    .pb-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: var(--color-teal);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: 700;
+        color: #fff;
+        flex-shrink: 0;
+        text-transform: uppercase;
+    }
+
+    .pb-followup-note {
+        font-size: 12px;
+        color: var(--color-muted);
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .pb-time-ago { font-size: 11px; color: var(--color-muted); white-space: nowrap; }
+
+    /* ── Quick actions ── */
+    .pb-section-label {
+        padding: 12px 16px 4px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--color-muted);
+    }
+    .pb-quickactions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin: 0 16px 16px;
+    }
+    .pb-qa-btn {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 14px 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        text-decoration: none;
+        color: var(--color-text);
+        font-size: 12px;
+        font-weight: 600;
+        transition: background 0.15s;
+        text-align: center;
+    }
+    .pb-qa-btn:hover { background: #f9fafb; }
+    .pb-qa-btn i { font-size: 20px; color: var(--color-teal); }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="header">
-    <h1><i class="fas fa-wrench"></i> Plumbing Appointment System</h1>
-    <p>Manage WhatsApp appointments and customer communications</p>
+
+{# ── TopBar ── #}
+<div class="pb-topbar">
+    <div class="pb-topbar__slot"></div>
+    <div class="pb-topbar__center">
+        <div class="pb-topbar__title">Plumbot</div>
+        <div class="pb-topbar__sub">{{ today|date:"l, j F Y" }}</div>
+    </div>
+    <div class="pb-topbar__slot"></div>
 </div>
 
-<div class="filter-card">
-    <form method="get" class="filter-row">
-        <select name="response_age" aria-label="Filter by response age">
-            <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
-            <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
-            <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
-        </select>
-        <div class="filter-actions">
-            <button type="submit" class="btn">Apply</button>
-            <a href="{% url 'dashboard' %}" class="btn btn-secondary" role="button">Reset</a>
-        </div>
-    </form>
+{# ── Alert banner ── #}
+{% if hot_lead_count %}
+<a href="{% url 'priority_leads' %}" class="pb-alert-banner">
+    🔥 {{ hot_lead_count }} priority lead{{ hot_lead_count|pluralize }} need{{ hot_lead_count|pluralize:",s," }} attention
+</a>
+{% endif %}
+
+{# ── Stats strip ── #}
+<div class="pb-stats">
+    <div class="pb-stat-tile pb-stat-tile--green">
+        <div class="pb-stat-tile__num">{{ todays_confirmed_appointments|length }}</div>
+        <div class="pb-stat-tile__label">Today's Appts</div>
+    </div>
+    <div class="pb-stat-tile pb-stat-tile--red">
+        <div class="pb-stat-tile__num">{{ week_jobs|length }}</div>
+        <div class="pb-stat-tile__label">Jobs This Week</div>
+    </div>
+    <div class="pb-stat-tile pb-stat-tile--amber">
+        <div class="pb-stat-tile__num">{{ hot_lead_count|default:0 }}</div>
+        <div class="pb-stat-tile__label">Hot Leads</div>
+    </div>
+    <div class="pb-stat-tile pb-stat-tile--blue">
+        <div class="pb-stat-tile__num">{{ followups|length }}</div>
+        <div class="pb-stat-tile__label">Follow-ups</div>
+    </div>
+    <div class="pb-stat-tile pb-stat-tile--purple">
+        <div class="pb-stat-tile__num">{{ this_week_appointments|length }}</div>
+        <div class="pb-stat-tile__label">This Week</div>
+    </div>
 </div>
 
-<div class="dashboard-grid">
-    <!-- Statistics Cards -->
-    <div class="card stat-card">
-        <div class="stat-number">{{ total_appointments }}</div>
-        <div class="stat-label">Total Appointments</div>
-    </div>
-
-    <div class="card stat-card">
-        <div class="stat-number">{{ pending_appointments }}</div>
-        <div class="stat-label">Pending Appointments</div>
-    </div>
-
-    <div class="card stat-card">
-        <div class="stat-number">{{ confirmed_appointments }}</div>
-        <div class="stat-label">Booked Appointments</div>
-    </div>
-
-    <!-- Today's Confirmed Appointments -->
-    <div class="card">
-        <h2><i class="fas fa-calendar-day"></i> Today's Booked Appointments</h2>
-        <div class="appointment-list">
-            {% for appointment in todays_confirmed_appointments %}
-            <div class="appointment-item">
-                <div class="appointment-header">
-                    <div class="appointment-name">
-                        {{ appointment.customer_name|default:"Unknown Customer" }}
-                    </div>
-                    <div class="appointment-status status-{{ appointment.status }}">
-                        {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item">
-                        <i class="fas fa-phone"></i>
-                        {{ appointment.phone_number }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-map-marker-alt"></i>
-                        {{ appointment.customer_area|default:"No area" }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-tools"></i>
-                        {{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-align-left"></i>
-                        {{ appointment.project_description|default:"No project description yet"|truncatewords:8 }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-fire"></i>
-                        {{ appointment.get_lead_status_display }} ({{ appointment.lead_score }}/100)
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-clock"></i>
-                        {{ appointment.scheduled_datetime|date:"H:i"|default:"Not scheduled" }}
-                    </div>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: {{ appointment.get_customer_info_completeness }}%"></div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-sm">
-                        <i class="fas fa-eye"></i> View
-                    </a>
-                </div>
+{# ── Schedule: Today ── #}
+<div class="pb-schedule pb-schedule--teal">
+    <button class="pb-schedule__header" data-collapse-toggle="sched-today">
+        <span class="pb-schedule__title">Today's Appointments</span>
+        <span class="pb-schedule__count">{{ todays_confirmed_appointments|length }}</span>
+        <i class="fas fa-chevron-down pb-chevron" style="transform:rotate(90deg)"></i>
+    </button>
+    <div id="sched-today" class="pb-schedule__body">
+        {% for appt in todays_confirmed_appointments %}
+        <a href="{% url 'appointment_detail' appt.pk %}" class="pb-sched-row">
+            <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
+                {{ appt.scheduled_datetime|date:"H:i"|default:"--" }}
             </div>
-            {% empty %}
-            <div class="empty-state">
-                <i class="fas fa-calendar-times"></i>
-                <p>No booked appointments for today</p>
+            <div class="pb-sched-center">
+                <div class="pb-sched-name">{{ appt.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pb-sched-sub">{{ appt.get_project_type_display|default:appt.project_type|default:"No service" }} · {{ appt.customer_area|default:"No area" }}</div>
             </div>
-            {% endfor %}
-        </div>
+            <div class="pb-sched-right">
+                <div class="pb-heat-dot pb-heat--{{ appt.lead_status|default:'cold' }}"></div>
+                <span class="pb-status-pill {% if appt.status == 'confirmed' %}pb-pill--confirmed{% elif appt.status == 'pending' %}pb-pill--pending{% elif appt.status == 'cancelled' %}pb-pill--cancelled{% else %}pb-pill--delayed{% endif %}">
+                    {% if appt.status == 'confirmed' %}Booked{% elif appt.status == 'pending' %}Pending{% elif appt.status == 'cancelled' %}Cancelled{% else %}Delayed{% endif %}
+                </span>
+            </div>
+        </a>
+        {% empty %}
+        <div class="pb-empty-inline"><i class="fas fa-calendar-times"></i>No appointments today</div>
+        {% endfor %}
     </div>
-
-    <!-- Tomorrow's Confirmed Appointments -->
-    <div class="card">
-        <h2><i class="fas fa-calendar-plus"></i> Tomorrow's Booked Appointments</h2>
-        <div class="appointment-list">
-            {% for appointment in tomorrows_confirmed_appointments %}
-            <div class="appointment-item">
-                <div class="appointment-header">
-                    <div class="appointment-name">
-                        {{ appointment.customer_name|default:"Unknown Customer" }}
-                    </div>
-                    <div class="appointment-status status-{{ appointment.status }}">
-                        {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item">
-                        <i class="fas fa-phone"></i>
-                        {{ appointment.phone_number }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-map-marker-alt"></i>
-                        {{ appointment.customer_area|default:"No area" }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-tools"></i>
-                        {{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-align-left"></i>
-                        {{ appointment.project_description|default:"No project description yet"|truncatewords:8 }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-fire"></i>
-                        {{ appointment.get_lead_status_display }} ({{ appointment.lead_score }}/100)
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-clock"></i>
-                        {{ appointment.scheduled_datetime|date:"H:i"|default:"Not scheduled" }}
-                    </div>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: {{ appointment.get_customer_info_completeness }}%"></div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-sm">
-                        <i class="fas fa-eye"></i> View
-                    </a>
-                </div>
-            </div>
-            {% empty %}
-            <div class="empty-state">
-                <i class="fas fa-calendar-times"></i>
-                <p>No booked appointments for tomorrow</p>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- Recent Appointments -->
-    <div class="card">
-        <h2><i class="fas fa-clock"></i> Recent Appointments</h2>
-        <div class="appointment-list">
-            {% for appointment in recent_appointments %}
-            <div class="appointment-item">
-                <div class="appointment-header">
-                    <div class="appointment-name">
-                        {{ appointment.customer_name|default:"Unknown Customer" }}
-                    </div>
-                    <div class="appointment-status status-{{ appointment.status }}">
-                        {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
-                    </div>
-                </div>
-                <div class="appointment-details">
-                    <div class="detail-item">
-                        <i class="fas fa-phone"></i>
-                        {{ appointment.phone_number }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-map-marker-alt"></i>
-                        {{ appointment.customer_area|default:"No area" }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-tools"></i>
-                        {{ appointment.project_type|default:"No service" }}
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-fire"></i>
-                        {{ appointment.get_lead_status_display }} ({{ appointment.lead_score }}/100)
-                    </div>
-                    <div class="detail-item">
-                        <i class="fas fa-calendar"></i>
-                        {{ appointment.scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}
-                    </div>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: {{ appointment.get_customer_info_completeness }}%"></div>
-                </div>
-                <div class="actions">
-                    <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-sm">
-                        <i class="fas fa-eye"></i> View
-                    </a>
-                </div>
-            </div>
-            {% empty %}
-            <div class="empty-state">
-                <i class="fas fa-calendar-times"></i>
-                <p>No recent appointments</p>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
 </div>
+
+{# ── Schedule: Tomorrow ── #}
+<div class="pb-schedule pb-schedule--purple">
+    <button class="pb-schedule__header" data-collapse-toggle="sched-tomorrow">
+        <span class="pb-schedule__title">Tomorrow</span>
+        <span class="pb-schedule__count">{{ tomorrows_confirmed_appointments|length }}</span>
+        <i class="fas fa-chevron-down pb-chevron"></i>
+    </button>
+    <div id="sched-tomorrow" class="pb-schedule__body collapsed">
+        {% for appt in tomorrows_confirmed_appointments %}
+        <a href="{% url 'appointment_detail' appt.pk %}" class="pb-sched-row">
+            <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
+                {{ appt.scheduled_datetime|date:"H:i"|default:"--" }}
+            </div>
+            <div class="pb-sched-center">
+                <div class="pb-sched-name">{{ appt.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pb-sched-sub">{{ appt.get_project_type_display|default:appt.project_type|default:"No service" }} · {{ appt.customer_area|default:"No area" }}</div>
+            </div>
+            <div class="pb-sched-right">
+                <div class="pb-heat-dot pb-heat--{{ appt.lead_status|default:'cold' }}"></div>
+                <span class="pb-status-pill {% if appt.status == 'confirmed' %}pb-pill--confirmed{% elif appt.status == 'pending' %}pb-pill--pending{% elif appt.status == 'cancelled' %}pb-pill--cancelled{% else %}pb-pill--delayed{% endif %}">
+                    {% if appt.status == 'confirmed' %}Booked{% elif appt.status == 'pending' %}Pending{% elif appt.status == 'cancelled' %}Cancelled{% else %}Delayed{% endif %}
+                </span>
+            </div>
+        </a>
+        {% empty %}
+        <div class="pb-empty-inline"><i class="fas fa-calendar-times"></i>No appointments tomorrow</div>
+        {% endfor %}
+    </div>
+</div>
+
+{# ── Schedule: Later This Week ── #}
+<div class="pb-schedule pb-schedule--amber">
+    <button class="pb-schedule__header" data-collapse-toggle="sched-week">
+        <span class="pb-schedule__title">Later This Week</span>
+        <span class="pb-schedule__count">{{ this_week_appointments|length }}</span>
+        <i class="fas fa-chevron-down pb-chevron"></i>
+    </button>
+    <div id="sched-week" class="pb-schedule__body collapsed">
+        {% for appt in this_week_appointments %}
+        <a href="{% url 'appointment_detail' appt.pk %}" class="pb-sched-row">
+            <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
+                {{ appt.scheduled_datetime|date:"D"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
+            </div>
+            <div class="pb-sched-center">
+                <div class="pb-sched-name">{{ appt.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pb-sched-sub">{{ appt.get_project_type_display|default:appt.project_type|default:"No service" }} · {{ appt.customer_area|default:"No area" }}</div>
+            </div>
+            <div class="pb-sched-right">
+                <div class="pb-heat-dot pb-heat--{{ appt.lead_status|default:'cold' }}"></div>
+                <span class="pb-status-pill {% if appt.status == 'confirmed' %}pb-pill--confirmed{% elif appt.status == 'pending' %}pb-pill--pending{% elif appt.status == 'cancelled' %}pb-pill--cancelled{% else %}pb-pill--delayed{% endif %}">
+                    {% if appt.status == 'confirmed' %}Booked{% elif appt.status == 'pending' %}Pending{% elif appt.status == 'cancelled' %}Cancelled{% else %}Delayed{% endif %}
+                </span>
+            </div>
+        </a>
+        {% empty %}
+        <div class="pb-empty-inline"><i class="fas fa-calendar-times"></i>No more appointments this week</div>
+        {% endfor %}
+    </div>
+</div>
+
+{# ── Schedule: Jobs This Week ── #}
+<div class="pb-schedule pb-schedule--red">
+    <button class="pb-schedule__header" data-collapse-toggle="sched-jobs">
+        <span class="pb-schedule__title">Jobs This Week</span>
+        <span class="pb-schedule__count">{{ week_jobs|length }}</span>
+        <i class="fas fa-chevron-down pb-chevron"></i>
+    </button>
+    <div id="sched-jobs" class="pb-schedule__body collapsed">
+        {% for job in week_jobs %}
+        <a href="{% url 'appointment_detail' job.site_visit.pk %}" class="pb-sched-row">
+            <div class="pb-time-block pb-tb--job">
+                {{ job.scheduled_datetime|date:"D"|default:"--" }}<small>{{ job.scheduled_datetime|date:"H:i" }}</small>
+            </div>
+            <div class="pb-sched-center">
+                <div class="pb-sched-name">{{ job.site_visit.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pb-sched-sub">{{ job.site_visit.get_project_type_display|default:job.site_visit.project_type|default:"Job" }} · {{ job.site_visit.customer_area|default:"No area" }}</div>
+            </div>
+            <div class="pb-sched-right">
+                <div class="pb-heat-dot pb-heat--very_hot"></div>
+                <span class="pb-status-pill pb-pill--job">Job</span>
+            </div>
+        </a>
+        {% empty %}
+        <div class="pb-empty-inline"><i class="fas fa-hard-hat"></i>No jobs scheduled this week</div>
+        {% endfor %}
+    </div>
+</div>
+
+{# ── Pending Follow-ups ── #}
+<div class="pb-section-card">
+    <div class="pb-section-card__header">
+        <span class="pb-section-card__title">Pending Follow-ups</span>
+        <a href="{% url 'followup_dashboard' %}" class="pb-section-card__link">See all</a>
+    </div>
+    {% for appt in followups %}
+    <a href="{% url 'appointment_detail' appt.pk %}" class="pb-followup-row">
+        <div class="pb-avatar" data-name="{{ appt.customer_name|default:'?' }}">
+            {{ appt.customer_name|default:"?"|slice:":2"|upper }}
+        </div>
+        <div style="flex:1;min-width:0">
+            <div class="pb-sched-name">{{ appt.customer_name|default:"Unknown Customer" }}</div>
+            <div class="pb-followup-note">{{ appt.admin_notes|default:"No notes"|truncatewords:8 }}</div>
+        </div>
+        <div class="pb-time-ago">{{ appt.updated_at|timesince }} ago</div>
+    </a>
+    {% empty %}
+    <div class="pb-empty-inline">No pending follow-ups 🎉</div>
+    {% endfor %}
+</div>
+
+{# ── Quick Actions ── #}
+<div class="pb-section-label">Quick Actions</div>
+<div class="pb-quickactions">
+    <a href="{% url 'appointments_list' %}" class="pb-qa-btn">
+        <i class="fas fa-calendar-alt"></i>
+        All Appointments
+    </a>
+    <a href="{% url 'priority_leads' %}" class="pb-qa-btn">
+        <i class="fas fa-bolt"></i>
+        Priority Leads
+    </a>
+    <a href="{% url 'standalone_quotation' %}" class="pb-qa-btn">
+        <i class="fas fa-file-invoice-dollar"></i>
+        New Quotation
+    </a>
+    <a href="{% url 'quotation_templates_list' %}" class="pb-qa-btn">
+        <i class="fas fa-file-invoice"></i>
+        Templates
+    </a>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        var COLORS = ['#128C7E','#075E54','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
+        document.querySelectorAll('.pb-avatar[data-name]').forEach(function (el) {
+            var name = el.getAttribute('data-name') || '';
+            el.style.background = COLORS[name.charCodeAt(0) % COLORS.length];
+        });
+    })();
+</script>
 {% endblock %}

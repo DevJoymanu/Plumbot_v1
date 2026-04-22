@@ -1475,9 +1475,12 @@ class DashboardView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        from bot.models import Job
 
         today = timezone.now().date()
         tomorrow = today + timedelta(days=1)
+        day_after_tomorrow = today + timedelta(days=2)
+        week_end = today + timedelta(days=(6 - today.weekday()))
         now = timezone.now()
         response_age = self.request.GET.get('response_age', '').strip()
         if not response_age:
@@ -1488,27 +1491,44 @@ class DashboardView(TemplateView):
             '4w_minus': timedelta(weeks=4),
         }
 
-        # Add stats to context
         appointments = Appointment.objects.all()
         if response_age != 'all' and response_age in age_map_minus:
             cutoff = now - age_map_minus[response_age]
             appointments = appointments.filter(last_customer_response__gte=cutoff)
 
+        hot_lead_count = Appointment.objects.filter(lead_status__in=['very_hot', 'hot']).count()
+        pending_followup_count = Appointment.objects.filter(follow_up_status='pending').count()
+        followups = list(Appointment.objects.filter(follow_up_status='pending').order_by('-updated_at')[:3])
+        this_week_appointments = appointments.filter(
+            status__in=['confirmed', 'pending'],
+            scheduled_datetime__date__range=(day_after_tomorrow, week_end),
+        ).order_by('scheduled_datetime')
+        week_jobs = Job.objects.filter(
+            scheduled_datetime__date__range=(today, week_end),
+        ).select_related('site_visit').order_by('scheduled_datetime')
+
         context.update({
+            'active_nav': 'dashboard',
             'selected_response_age': response_age,
+            'today': today,
             'total_appointments': appointments.count(),
             'pending_appointments': appointments.filter(status='pending').count(),
             'confirmed_appointments': appointments.filter(status='confirmed').count(),
             'recent_appointments': appointments.order_by('-created_at')[:5],
             'todays_confirmed_appointments': appointments.filter(
                 status='confirmed',
-                scheduled_datetime__date=today
+                scheduled_datetime__date=today,
             ).order_by('scheduled_datetime'),
             'tomorrows_confirmed_appointments': appointments.filter(
                 status='confirmed',
-                scheduled_datetime__date=tomorrow
+                scheduled_datetime__date=tomorrow,
             ).order_by('scheduled_datetime'),
-            'calendar_status': 'Connected' if hasattr(settings, 'GOOGLE_CALENDAR_CREDENTIALS') else 'Not configured'
+            'this_week_appointments': this_week_appointments,
+            'week_jobs': week_jobs,
+            'hot_lead_count': hot_lead_count,
+            'pending_followup_count': pending_followup_count,
+            'followups': followups,
+            'calendar_status': 'Connected' if hasattr(settings, 'GOOGLE_CALENDAR_CREDENTIALS') else 'Not configured',
         })
 
         return context

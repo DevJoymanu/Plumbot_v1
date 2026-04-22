@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Plumbot Admin — Redesign</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body, #root { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #F0F2F5; }
+  textarea { font-family: inherit; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="plumbot-data.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="plumbot-shared.jsx"></script>
+<script type="text/babel" src="plumbot-screens.jsx"></script>
+<script type="text/babel">
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#128C7E",
+  "headerColor": "#075E54",
+  "showRevenue": true,
+  "compactList": false
+}/*EDITMODE-END*/;
+
+function useIsMobile() {
+  const [mobile, setMobile] = React.useState(window.innerWidth < 768);
+  React.useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < 768);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+  return mobile;
+}
+
+function App() {
+  const isMobile = useIsMobile();
+  const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULTS);
+  const [tweakOpen, setTweakOpen] = React.useState(false);
+
+  // Restore nav from localStorage
+  const [screen, setScreen] = React.useState(() => localStorage.getItem('pb_screen') || 'dashboard');
+  const [selectedAppt, setSelectedAppt] = React.useState(null);
+  const [detailOpen, setDetailOpen] = React.useState(false); // mobile: overlay
+
+  React.useEffect(() => { localStorage.setItem('pb_screen', screen); }, [screen]);
+
+  // Tweaks panel bridge
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setTweakOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweakOpen(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  function handleSelectAppt(appt) {
+    setSelectedAppt(appt);
+    setDetailOpen(true);
+    if (!isMobile) setScreen('appointments');
+  }
+
+  function handleNavigate(s) {
+    setScreen(s);
+    setDetailOpen(false);
+  }
+
+  const badges = {
+    leads: MOCK_DATA.appointments.filter(a => ['very_hot','hot'].includes(a.lead_status) && a.status !== 'cancelled').length,
+    followups: MOCK_DATA.followups.filter(f => f.urgent).length,
+  };
+
+  function renderScreen() {
+    if (isMobile && detailOpen && selectedAppt) {
+      return (
+        <AppointmentDetailScreen
+          appt={selectedAppt}
+          onBack={() => setDetailOpen(false)}
+          isDesktop={false}
+        />
+      );
+    }
+    switch (screen) {
+      case 'dashboard':    return <DashboardScreen onNavigate={handleNavigate} onSelectAppt={handleSelectAppt} />;
+      case 'appointments': return <AppointmentsScreen onSelectAppt={handleSelectAppt} />;
+      case 'leads':        return <PriorityLeadsScreen onSelectAppt={handleSelectAppt} />;
+      case 'followups':    return <FollowUpsScreen onSelectAppt={handleSelectAppt} />;
+      case 'more':         return <MoreScreen />;
+      default:             return <DashboardScreen onNavigate={handleNavigate} onSelectAppt={handleSelectAppt} />;
+    }
+  }
+
+  // ── Mobile layout ──────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden' }}>
+        <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+          {renderScreen()}
+        </div>
+        {(!detailOpen || !selectedAppt) && (
+          <BottomNav active={screen} onChange={handleNavigate} badges={badges} />
+        )}
+        {tweakOpen && <TweaksPanel tweaks={tweaks} setTweaks={setTweaks} />}
+      </div>
+    );
+  }
+
+  // ── Desktop layout ─────────────────────────────────────────────────
+  return (
+    <div style={{ display:'flex', height:'100vh', overflow:'hidden' }}>
+      <SideNav active={screen} onChange={handleNavigate} badges={badges} />
+
+      {/* Main content */}
+      <div style={{ flex:1, overflow:'hidden', display:'flex' }}>
+        {/* List/page panel */}
+        <div style={{
+          flex: detailOpen && selectedAppt ? '0 0 420px' : 1,
+          overflow:'hidden', display:'flex', flexDirection:'column',
+          borderRight: detailOpen && selectedAppt ? '1px solid #e5e7eb' : 'none',
+          transition: 'flex .2s ease',
+        }}>
+          {renderScreen()}
+        </div>
+
+        {/* Detail panel */}
+        {detailOpen && selectedAppt && (
+          <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+            <AppointmentDetailScreen
+              appt={selectedAppt}
+              onBack={() => { setDetailOpen(false); setSelectedAppt(null); }}
+              isDesktop={true}
+            />
+          </div>
+        )}
+
+        {/* Empty detail state */}
+        {!detailOpen && (
+          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'#f9fafb', flexDirection:'column', gap:12, color:'#9ca3af' }}>
+            <div style={{ fontSize:48, opacity:.3 }}>💬</div>
+            <div style={{ fontSize:15, fontWeight:600 }}>Select an appointment</div>
+            <div style={{ fontSize:13 }}>to view details and conversation</div>
+          </div>
+        )}
+      </div>
+
+      {tweakOpen && <TweaksPanel tweaks={tweaks} setTweaks={setTweaks} />}
+    </div>
+  );
+}
+
+// ── Tweaks Panel ───────────────────────────────────────────────────────
+function TweaksPanel({ tweaks, setTweaks }) {
+  function update(key, val) {
+    const next = { ...tweaks, [key]: val };
+    setTweaks(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [key]: val } }, '*');
+  }
+  return (
+    <div style={{
+      position:'fixed', bottom:80, right:16, background:'#fff', borderRadius:14,
+      boxShadow:'0 8px 32px rgba(0,0,0,0.18)', padding:'16px', width:240, zIndex:9999,
+      border:'1px solid #e5e7eb',
+    }}>
+      <div style={{ fontSize:13, fontWeight:700, color:'#1a1a2e', marginBottom:12 }}>Tweaks</div>
+
+      <div style={{ marginBottom:10 }}>
+        <div style={{ fontSize:11, color:'#6b7280', marginBottom:4 }}>Accent / Header Color</div>
+        <div style={{ display:'flex', gap:6 }}>
+          {['#128C7E','#075E54','#1d4ed8','#7c3aed','#b45309','#be185d'].map(c=>(
+            <div key={c} onClick={() => { update('accentColor',c); update('headerColor',c==='#128C7E'?'#075E54':c); }}
+              style={{ width:24,height:24,borderRadius:'50%',background:c,cursor:'pointer',border:`2px solid ${tweaks.accentColor===c?'#111':'transparent'}` }} />
+          ))}
+        </div>
+      </div>
+
+      <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:'#374151', marginBottom:8, cursor:'pointer' }}>
+        <input type="checkbox" checked={tweaks.showRevenue} onChange={e=>update('showRevenue',e.target.checked)} />
+        Show revenue stats
+      </label>
+
+      <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:'#374151', cursor:'pointer' }}>
+        <input type="checkbox" checked={tweaks.compactList} onChange={e=>update('compactList',e.target.checked)} />
+        Compact list rows
+      </label>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
