@@ -2106,6 +2106,9 @@ class AppointmentDetailView(DetailView):
         if detail_source not in valid_sources:
             detail_source = 'appointments'
 
+        is_frame = self.request.GET.get('frame') == '1'
+        base_template = 'base_panel.html' if is_frame else 'base.html'
+
         sidebar_appointments = Appointment.objects.order_by('-updated_at')[:20]
         source_workspace = {}
         active_nav = 'appointments'
@@ -2129,6 +2132,8 @@ class AppointmentDetailView(DetailView):
 
         context.update({
             'active_nav': active_nav,
+            'is_frame': is_frame,
+            'base_template': base_template,
             'conversation_history': conversation_history,
             'completeness': appointment.get_customer_info_completeness(),
             'documents': uploaded_files,

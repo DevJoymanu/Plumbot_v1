@@ -1,0 +1,44 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>{% block title %}Plumbot{% endblock %}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        {% include "includes/plumbot_variables_css.html" %}
+
+        html, body { height: 100%; margin: 0; overflow: hidden; }
+
+        .pb-panel-root {
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background: var(--color-bg);
+        }
+
+        /* Flash messages inside panel */
+        .pb-alert-wrap { padding: 8px 12px 0; }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+<div class="pb-panel-root">
+    {% if messages %}
+    <div class="pb-alert-wrap">
+        {% for message in messages %}
+        <div class="pb-alert pb-alert--{% if message.tags == 'error' %}error{% elif message.tags == 'success' %}success{% elif message.tags == 'warning' %}warning{% else %}info{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+</div>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

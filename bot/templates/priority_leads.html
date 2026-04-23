@@ -199,15 +199,34 @@
     border-top: 1px solid #f0f0f0;
   }
 
-  /* ── Right panel (empty state) ── */
+  /* ── Right panel ── */
   .pl-right {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #f9fafb;
+  }
+  .pl-right-empty {
     display: flex; align-items: center; justify-content: center;
     flex-direction: column; gap: 10px;
-    background: #f9fafb; color: #9ca3af;
+    height: 100%; color: #9ca3af;
   }
-  .pl-right-icon { font-size: 42px; opacity: .3; }
+  .pl-right-icon { font-size: 38px; color: #d1d5db; }
   .pl-right-title { font-size: 15px; font-weight: 600; color: #374151; }
   .pl-right-sub   { font-size: 13px; }
+
+  #plDetailFrame {
+    display: none;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+
+  /* Selected row highlight */
+  .pl-row.is-selected { background: #f0f9ff; }
+  .pl-row.is-selected .pl-row-name { color: var(--color-teal); }
 
   @media (max-width: 980px) {
     .pl-shell { grid-template-columns: 1fr; }
@@ -457,11 +476,14 @@
     </div>{# /pl-scroll #}
   </div>{# /pl-left #}
 
-  {# ── Right panel: empty state ── #}
-  <div class="pl-right">
-    <div class="pl-right-icon">💬</div>
-    <div class="pl-right-title">Select an appointment</div>
-    <div class="pl-right-sub">to view details and conversation</div>
+  {# ── Right panel: empty state → iframe detail ── #}
+  <div class="pl-right" id="plRight">
+    <div class="pl-right-empty" id="plEmpty">
+      <i class="fas fa-comments pl-right-icon"></i>
+      <div class="pl-right-title">Select an appointment</div>
+      <div class="pl-right-sub">to view details and conversation</div>
+    </div>
+    <iframe id="plDetailFrame" src="about:blank"></iframe>
   </div>
 
 </div>{# /pl-shell #}
@@ -513,6 +535,42 @@
       });
     });
   }
+
+  // ── Inline detail panel ──
+  var frame   = document.getElementById('plDetailFrame');
+  var empty   = document.getElementById('plEmpty');
+
+  function openDetail(url, rowEl) {
+    // Build frame URL: add frame=1
+    var frameUrl = url + (url.indexOf('?') > -1 ? '&' : '?') + 'frame=1';
+    frame.style.display = 'block';
+    empty.style.display = 'none';
+    frame.src = frameUrl;
+    // Highlight selected row
+    document.querySelectorAll('.pl-row').forEach(function (r) { r.classList.remove('is-selected'); });
+    if (rowEl) rowEl.classList.add('is-selected');
+    // Update address bar without full navigation
+    history.pushState({ frameUrl: url }, '', url);
+  }
+
+  document.querySelectorAll('.pl-row').forEach(function (row) {
+    row.addEventListener('click', function (e) {
+      // Let Call / WA buttons pass through normally
+      if (e.target.closest('.pl-btn-call, .pl-btn-wa')) return;
+      e.preventDefault();
+      openDetail(this.href, this);
+    });
+  });
+
+  // Back / forward: close frame if returning to list state
+  window.addEventListener('popstate', function () {
+    if (!history.state || !history.state.frameUrl) {
+      frame.style.display = 'none';
+      empty.style.display = 'flex';
+      frame.src = 'about:blank';
+      document.querySelectorAll('.pl-row').forEach(function (r) { r.classList.remove('is-selected'); });
+    }
+  });
 })();
 </script>
 {% endblock %}
