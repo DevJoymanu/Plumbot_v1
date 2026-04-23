@@ -525,6 +525,7 @@
     font-size: 11px;
     color: #6b7280;
   }
+  .appt-list-time.overdue { color: #ef4444; font-weight: 600; }
 
   .appt-dot {
     width: 10px;
@@ -788,6 +789,24 @@
     margin-top: 4px;
     color: #94a3b8;
     font-size: 10px;
+  }
+
+  .chat-date-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 0 10px;
+    color: #78716c;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .3px;
+  }
+  .chat-date-divider::before,
+  .chat-date-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(0, 0, 0, .15);
   }
 
   .appt-chat-compose {
@@ -1235,14 +1254,15 @@
         <div class="appt-chat-pane">
           <div class="appt-chat-scroll" id="chatScroll">
             {% for message in conversation_history %}
-            <div class="chat-bubble-row {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
+            <div class="chat-bubble-row {% if message.role == 'user' %}user{% else %}assistant{% endif %}"
+                 data-ts="{{ message.timestamp|date:'c' }}">
               <div class="chat-bubble {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
                 <div class="chat-bubble-sender">
                   {% if message.role == 'user' %}Customer{% else %}Plumbot{% endif %}
                 </div>
                 <div class="chat-bubble-text">{{ message.content|default:"(no message content)" }}</div>
                 {% if message.timestamp %}
-                <div class="chat-bubble-time">{{ message.timestamp|date:"j M Y, H:i" }}</div>
+                <div class="chat-bubble-time" data-ts="{{ message.timestamp|date:'c' }}">{{ message.timestamp|date:"j M Y, H:i" }}</div>
                 {% endif %}
               </div>
             </div>
@@ -1821,6 +1841,8 @@
   }());
 
   document.addEventListener('DOMContentLoaded', function () {
+    PlumbotDates.initAppointmentDates();
+    PlumbotDates.initChatTimestamps();
     updateCharCount();
     scrollChatBottom();
 

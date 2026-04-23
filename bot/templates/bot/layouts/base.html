@@ -48,6 +48,134 @@
         });
     });
 </script>
+<script>
+var PlumbotDates = (function () {
+  var TZ = 'Africa/Johannesburg';
+
+  function _parts(date) {
+    var result = {};
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(date).forEach(function (part) {
+      result[part.type] = part.value;
+    });
+    return result;
+  }
+
+  function sameDay(a, b) {
+    var pa = _parts(a), pb = _parts(b);
+    return pa.year === pb.year && pa.month === pb.month && pa.day === pb.day;
+  }
+
+  function _calDay(date) {
+    var p = _parts(date);
+    return new Date(parseInt(p.year, 10), parseInt(p.month, 10) - 1, parseInt(p.day, 10));
+  }
+
+  function daysDiff(a, b) {
+    return Math.round((_calDay(b) - _calDay(a)) / 86400000);
+  }
+
+  function hhmm(date) {
+    var p = _parts(date);
+    return p.hour + ':' + p.minute;
+  }
+
+  function _wd(date)    { return date.toLocaleString('en-GB', { timeZone: TZ, weekday: 'short' }); }
+  function _day(date)   { return date.toLocaleString('en-GB', { timeZone: TZ, day: 'numeric' }); }
+  function _monS(date)  { return date.toLocaleString('en-GB', { timeZone: TZ, month: 'short' }); }
+  function _monL(date)  { return date.toLocaleString('en-GB', { timeZone: TZ, month: 'long' }); }
+
+  function formatAppointmentDate(iso) {
+    if (!iso) return '';
+    var dt = new Date(iso);
+    if (isNaN(dt.getTime())) return '';
+    var now = new Date();
+    var t = hhmm(dt);
+    if (sameDay(dt, now)) return 'Today · ' + t;
+    if (daysDiff(now, dt) === 1) return 'Tomorrow · ' + t;
+    return _wd(dt) + ', ' + _day(dt) + ' ' + _monS(dt) + ' · ' + t;
+  }
+
+  function isOverdue(iso, status) {
+    if (!iso) return false;
+    if (status === 'cancelled' || status === 'completed') return false;
+    return new Date(iso).getTime() < Date.now();
+  }
+
+  function formatMessageTime(iso) {
+    if (!iso) return '';
+    var dt = new Date(iso);
+    if (isNaN(dt.getTime())) return '';
+    var now = new Date();
+    var t = hhmm(dt);
+    if (sameDay(dt, now)) return t;
+    var diff = daysDiff(dt, now);
+    if (diff === 1) return 'Yesterday · ' + t;
+    if (diff <= 7)  return _wd(dt) + ' · ' + t;
+    var p = _parts(dt), pn = _parts(now);
+    var dm = _day(dt) + ' ' + _monS(dt);
+    if (p.year === pn.year) return dm + ' · ' + t;
+    return dm + ' ' + p.year + ' · ' + t;
+  }
+
+  function dividerLabel(iso) {
+    var dt = new Date(iso);
+    var now = new Date();
+    if (sameDay(dt, now)) return 'Today';
+    if (daysDiff(dt, now) === 1) return 'Yesterday';
+    var p = _parts(dt), pn = _parts(now);
+    var label = _wd(dt) + ', ' + _day(dt) + ' ' + _monL(dt);
+    if (p.year !== pn.year) label += ' ' + p.year;
+    return label;
+  }
+
+  function initAppointmentDates() {
+    document.querySelectorAll('[data-appt-date]').forEach(function (el) {
+      var iso = el.dataset.apptDate;
+      if (!iso) return;
+      var formatted = formatAppointmentDate(iso);
+      if (formatted) el.textContent = formatted;
+      if (isOverdue(iso, el.dataset.status || '')) el.classList.add('overdue');
+    });
+  }
+
+  function initChatTimestamps() {
+    var scroll = document.getElementById('chatScroll');
+    if (!scroll) return;
+    scroll.querySelectorAll('.chat-bubble-time[data-ts]').forEach(function (el) {
+      var f = formatMessageTime(el.dataset.ts);
+      if (f) el.textContent = f;
+    });
+    var rows = Array.from(scroll.querySelectorAll('.chat-bubble-row[data-ts]'));
+    var lastDay = null;
+    rows.forEach(function (row) {
+      var iso = row.dataset.ts;
+      if (!iso) return;
+      var dt = new Date(iso);
+      if (isNaN(dt.getTime())) return;
+      if (!lastDay || !sameDay(dt, lastDay)) {
+        var divider = document.createElement('div');
+        divider.className = 'chat-date-divider';
+        divider.innerHTML = '<span>' + dividerLabel(iso) + '</span>';
+        row.parentNode.insertBefore(divider, row);
+        lastDay = dt;
+      }
+    });
+  }
+
+  return {
+    formatAppointmentDate: formatAppointmentDate,
+    formatMessageTime: formatMessageTime,
+    dividerLabel: dividerLabel,
+    isOverdue: isOverdue,
+    sameDay: sameDay,
+    initAppointmentDates: initAppointmentDates,
+    initChatTimestamps: initChatTimestamps
+  };
+}());
+</script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

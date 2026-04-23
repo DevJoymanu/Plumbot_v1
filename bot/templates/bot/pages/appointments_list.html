@@ -236,6 +236,7 @@
     font-size: 11px;
     color: #64748b;
   }
+  .inbox-time.overdue { color: #ef4444; font-weight: 600; }
 
   .inbox-dot {
     width: 10px;
@@ -610,7 +611,9 @@
             <div class="inbox-preview">{{ appointment.project_description|default:"No notes yet"|truncatewords:10 }}</div>
           </div>
           <div class="inbox-side">
-            <div class="inbox-time">{{ appointment.scheduled_datetime|date:"j M, H:i"|default:appointment.updated_at|date:"j M, H:i" }}</div>
+            <div class="inbox-time"
+                 data-appt-date="{{ appointment.scheduled_datetime|date:'c' }}"
+                 data-status="{{ appointment.status }}">{{ appointment.scheduled_datetime|date:"j M, H:i"|default:appointment.updated_at|date:"j M, H:i" }}</div>
             <div class="inbox-dot" style="background:
               {% if appointment.lead_status == 'very_hot' %}#ef4444
               {% elif appointment.lead_status == 'hot' %}#f59e0b
@@ -721,6 +724,7 @@
         try { sessionStorage.setItem('plumbot_sidebar_tab', sidebarFilter); } catch (e) {}
       });
     });
+    PlumbotDates.initAppointmentDates();
   });
 </script>
 <script>

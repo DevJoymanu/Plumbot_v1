@@ -34,7 +34,9 @@
       <div class="appt-list-preview">{{ item.project_description|default:"No recent note available"|truncatewords:10 }}</div>
     </div>
     <div class="appt-list-side">
-      <div class="appt-list-time">{{ item.scheduled_datetime|date:"j M, H:i"|default:item.updated_at|date:"j M, H:i" }}</div>
+      <div class="appt-list-time"
+           data-appt-date="{{ item.scheduled_datetime|date:'c' }}"
+           data-status="{{ item.status }}">{{ item.scheduled_datetime|date:"j M, H:i"|default:item.updated_at|date:"j M, H:i" }}</div>
       <div class="appt-dot appt-dot--{{ item.lead_status|default:'cold' }}"></div>
       <div class="appt-pill {% if item.status == 'confirmed' %}booked{% elif item.status == 'pending' %}pending{% elif item.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">
         {% if item.status == 'confirmed' %}Booked{% elif item.status == 'pending' %}Pending{% elif item.status == 'cancelled' %}Cancelled{% else %}{{ item.get_status_display }}{% endif %}
