@@ -2,15 +2,24 @@
 
 {% block extra_css %}
 <style>
+  /* Independent scrollbars: lock pb-content, let each pane scroll itself */
+  html, body { height: 100%; }
+  .pb-content { overflow: hidden !important; }
+  .pb-content__inner { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+
   .appt-workspace {
-    min-height: 100vh;
+    height: 100%;
     padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .appt-split {
     display: grid;
     grid-template-columns: 420px minmax(0, 1fr);
-    min-height: 100vh;
+    flex: 1;
+    overflow: hidden;
   }
 
   .appt-list-pane {
@@ -19,6 +28,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    overflow: hidden;
   }
 
   .appt-list-header {
@@ -120,12 +130,14 @@
   }
 
   .appt-list-scroll {
+    flex: 1;
     overflow-y: auto;
     min-height: 0;
     background: #f5f6f8;
   }
 
   .workspace-scroll {
+    flex: 1;
     overflow-y: auto;
     min-height: 0;
     background: #f5f6f8;
@@ -535,6 +547,7 @@
     display: flex;
     flex-direction: column;
     background: #e8ddd6;
+    overflow: hidden;
   }
 
   .appt-detail-header {
