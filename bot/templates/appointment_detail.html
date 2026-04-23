@@ -693,17 +693,31 @@
     display: none;
   }
 
+  /* Active tab pane must be flex so it participates in the height chain */
   .appt-tab-pane.is-active {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Details / quotes pane: scroll its own content */
+  #tab-details.is-active,
+  #tab-quotes.is-active {
+    overflow-y: auto;
   }
 
   .appt-chat-pane {
-    display: grid;
-    grid-template-rows: 1fr auto;
-    min-height: calc(100vh - 157px);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;        /* critical — without this flex won't shrink below content */
   }
 
   .appt-chat-scroll {
+    flex: 1;
+    min-height: 0;        /* allow the flex item to shrink and scroll */
     padding: 18px 16px 22px;
     overflow-y: auto;
     background: #e8ddd6;
@@ -1076,10 +1090,6 @@
 
     .appt-tabbar {
       grid-template-columns: 1fr 1fr 1fr;
-    }
-
-    .appt-chat-pane {
-      min-height: auto;
     }
 
     .detail-form-grid {
