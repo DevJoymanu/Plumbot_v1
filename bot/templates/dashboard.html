@@ -36,46 +36,39 @@
     }
     .pb-alert-banner:hover { background: #fff5f5; }
 
-    /* ── Stats strip ── */
-    .pb-stats {
-        display: flex;
-        gap: 8px;
-        padding: 12px 16px;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
+    /* ── Stats grid ── */
+    .pb-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        background: #fff;
+        margin-bottom: 8px;
     }
-    .pb-stats::-webkit-scrollbar { display: none; }
-
-    .pb-stat-tile {
-        flex: 0 0 auto;
-        min-width: 88px;
-        border-radius: var(--radius-md);
-        padding: 10px 12px;
+    .pb-stat-cell {
+        padding: 14px 8px;
         text-align: center;
+        border-right: 1px solid #f0f0f0;
     }
-    .pb-stat-tile--green  { background: #d1fae5; }
-    .pb-stat-tile--red    { background: #fee2e2; }
-    .pb-stat-tile--amber  { background: #fef3c7; }
-    .pb-stat-tile--blue   { background: #dbeafe; }
-    .pb-stat-tile--purple { background: #ede9fe; }
-
-    .pb-stat-tile__num {
+    .pb-stat-cell:last-child { border-right: none; }
+    .pb-stat-cell--teal  { background: #e0f7fa; }
+    .pb-stat-cell--blue  { background: #dbeafe; }
+    .pb-stat-cell--red   { background: #fff0f0; }
+    .pb-stat-cell--amber { background: #fffbeb; }
+    .pb-stat-cell--sky   { background: #e0f2fe; }
+    .pb-stat-cell__num {
         font-size: 22px;
         font-weight: 800;
-        line-height: 1.2;
+        line-height: 1;
     }
-    .pb-stat-tile--green  .pb-stat-tile__num { color: #059669; }
-    .pb-stat-tile--red    .pb-stat-tile__num { color: #ef4444; }
-    .pb-stat-tile--amber  .pb-stat-tile__num { color: #d97706; }
-    .pb-stat-tile--blue   .pb-stat-tile__num { color: #3b82f6; }
-    .pb-stat-tile--purple .pb-stat-tile__num { color: #8b5cf6; }
-
-    .pb-stat-tile__label {
+    .pb-stat-cell--teal  .pb-stat-cell__num { color: #0e7490; }
+    .pb-stat-cell--blue  .pb-stat-cell__num { color: #2563eb; }
+    .pb-stat-cell--red   .pb-stat-cell__num { color: #ef4444; }
+    .pb-stat-cell--amber .pb-stat-cell__num { color: #d97706; }
+    .pb-stat-cell--sky   .pb-stat-cell__num { color: #0ea5e9; }
+    .pb-stat-cell__label {
         font-size: 10px;
         color: var(--color-muted);
-        margin-top: 2px;
-        white-space: nowrap;
+        margin-top: 3px;
+        line-height: 1.2;
     }
 
     /* ── Schedule section card ── */
@@ -103,7 +96,7 @@
     .pb-schedule__header:hover { background: #fafafa; }
 
     /* Per-section accent colours (applied via style attr — no Django tags) */
-    .pb-schedule--teal   .pb-schedule__header { border-left-color: #128C7E; }
+    .pb-schedule--teal   .pb-schedule__header { border-left-color: #0e7490; }
     .pb-schedule--purple .pb-schedule__header { border-left-color: #8b5cf6; }
     .pb-schedule--amber  .pb-schedule__header { border-left-color: #f59e0b; }
     .pb-schedule--red    .pb-schedule__header { border-left-color: #ef4444; }
@@ -122,7 +115,7 @@
         padding: 2px 8px;
         border-radius: var(--radius-pill);
     }
-    .pb-schedule--teal   .pb-schedule__count { background: rgba(18,140,126,0.13);  color: #128C7E; }
+    .pb-schedule--teal   .pb-schedule__count { background: rgba(14,116,144,0.13);  color: #0e7490; }
     .pb-schedule--purple .pb-schedule__count { background: rgba(139,92,246,0.13);  color: #8b5cf6; }
     .pb-schedule--amber  .pb-schedule__count { background: rgba(245,158,11,0.13);  color: #f59e0b; }
     .pb-schedule--red    .pb-schedule__count { background: rgba(239,68,68,0.13);   color: #ef4444; }
@@ -351,27 +344,27 @@
 </a>
 {% endif %}
 
-{# ── Stats strip ── #}
-<div class="pb-stats">
-    <div class="pb-stat-tile pb-stat-tile--green">
-        <div class="pb-stat-tile__num">{{ todays_confirmed_appointments|length }}</div>
-        <div class="pb-stat-tile__label">Today's Appts</div>
+{# ── Stats grid ── #}
+<div class="pb-stats-grid">
+    <div class="pb-stat-cell pb-stat-cell--teal">
+        <div class="pb-stat-cell__num">{{ todays_confirmed_appointments|length }}</div>
+        <div class="pb-stat-cell__label">Today's Appts</div>
     </div>
-    <div class="pb-stat-tile pb-stat-tile--red">
-        <div class="pb-stat-tile__num">{{ week_jobs|length }}</div>
-        <div class="pb-stat-tile__label">Jobs This Week</div>
+    <div class="pb-stat-cell pb-stat-cell--blue">
+        <div class="pb-stat-cell__num">{{ week_jobs|length }}</div>
+        <div class="pb-stat-cell__label">Jobs This Week</div>
     </div>
-    <div class="pb-stat-tile pb-stat-tile--amber">
-        <div class="pb-stat-tile__num">{{ hot_lead_count|default:0 }}</div>
-        <div class="pb-stat-tile__label">Hot Leads</div>
+    <div class="pb-stat-cell pb-stat-cell--red">
+        <div class="pb-stat-cell__num">{{ hot_lead_count|default:0 }}</div>
+        <div class="pb-stat-cell__label">Hot Leads</div>
     </div>
-    <div class="pb-stat-tile pb-stat-tile--blue">
-        <div class="pb-stat-tile__num">{{ followups|length }}</div>
-        <div class="pb-stat-tile__label">Follow-ups</div>
+    <div class="pb-stat-cell pb-stat-cell--amber">
+        <div class="pb-stat-cell__num">{{ followups|length }}</div>
+        <div class="pb-stat-cell__label">Follow-ups</div>
     </div>
-    <div class="pb-stat-tile pb-stat-tile--purple">
-        <div class="pb-stat-tile__num">{{ this_week_appointments|length }}</div>
-        <div class="pb-stat-tile__label">This Week</div>
+    <div class="pb-stat-cell pb-stat-cell--sky">
+        <div class="pb-stat-cell__num">{{ this_week_appointments|length }}</div>
+        <div class="pb-stat-cell__label">This Week</div>
     </div>
 </div>
 
@@ -542,7 +535,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // Avatar color by first char
-        var COLORS = ['#128C7E','#075E54','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
+        var COLORS = ['#0e7490','#0a3d5c','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
         document.querySelectorAll('.pb-avatar[data-name]').forEach(function (el) {
             var name = el.getAttribute('data-name') || '';
             el.style.background = COLORS[name.charCodeAt(0) % COLORS.length];
