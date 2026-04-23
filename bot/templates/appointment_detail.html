@@ -15,9 +15,12 @@
     overflow: hidden;
   }
 
-  /* Frame mode: hide the list pane, single-column layout */
-  .appt-workspace.is-frame .appt-list-pane { display: none; }
-  .appt-workspace.is-frame .appt-split { grid-template-columns: 1fr; }
+  /* Frame mode OR appointments source: hide the list pane, full-width detail */
+  .appt-workspace.is-frame .appt-list-pane,
+  .appt-workspace.is-fullwidth .appt-list-pane { display: none; }
+
+  .appt-workspace.is-frame .appt-split,
+  .appt-workspace.is-fullwidth .appt-split { grid-template-columns: 1fr; }
 
   /* Panel root also needs full-height treatment */
   .pb-panel-root .appt-workspace { height: calc(100vh - 0px); }
@@ -527,7 +530,13 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
+    background: #94a3b8;
   }
+  .appt-dot--very_hot  { background: #ef4444; }
+  .appt-dot--hot       { background: #f59e0b; }
+  .appt-dot--warm      { background: #22c55e; }
+  .appt-dot--luke_warm { background: #3b82f6; }
+  .appt-dot--cold      { background: #94a3b8; }
 
   .appt-pill {
     display: inline-flex;
@@ -1151,8 +1160,7 @@
            class="appt-list-row {% if item.pk == appointment.pk %}is-current{% endif %}"
            data-status="{% if item.is_delayed %}delayed{% else %}{{ item.status }}{% endif %}"
            data-search="{{ item.customer_name|default:''|lower }} {{ item.phone_number|default:''|lower }} {{ item.project_type|default:''|lower }} {{ item.customer_area|default:''|lower }}">
-          <div class="appt-list-avatar" style="background:
-            {% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' '#f97316' '#8b5cf6' '#14b8a6' %};">
+          <div class="appt-list-avatar" data-name="{{ item.customer_name|default:'?' }}">
             {{ item.customer_name|default:"?"|slice:":2"|upper }}
           </div>
           <div class="appt-list-main">
@@ -1162,12 +1170,7 @@
           </div>
           <div class="appt-list-side">
             <div class="appt-list-time">{{ item.scheduled_datetime|date:"H:i"|default:item.updated_at|date:"H:i" }}</div>
-            <div class="appt-dot" style="background:
-              {% if item.lead_status == 'very_hot' %}#ef4444
-              {% elif item.lead_status == 'hot' %}#f59e0b
-              {% elif item.lead_status == 'warm' %}#22c55e
-              {% elif item.lead_status == 'luke_warm' %}#3b82f6
-              {% else %}#94a3b8{% endif %};"></div>
+            <div class="appt-dot appt-dot--{{ item.lead_status|default:'cold' }}"></div>
             <div class="appt-pill {% if item.status == 'confirmed' %}booked{% elif item.status == 'pending' %}pending{% elif item.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">
               {% if item.status == 'confirmed' %}Booked{% elif item.status == 'pending' %}Pending{% elif item.status == 'cancelled' %}Cancelled{% else %}{{ item.get_status_display }}{% endif %}
             </div>
@@ -1433,10 +1436,10 @@
                     </div>
                     <div class="detail-actions">
                       {% if appointment.job_status == 'scheduled' %}
-                      <button type="button" onclick="updateJobStatus({{ appointment.pk }}, 'in_progress')" class="action-btn warning"><i class="fas fa-play"></i> Start Job</button>
+                      <button type="button" class="action-btn warning js-job-status" data-pk="{{ appointment.pk }}" data-status="in_progress"><i class="fas fa-play"></i> Start Job</button>
                       <a href="{% url 'reschedule_job' appointment.pk %}" class="action-btn ghost"><i class="fas fa-calendar-alt"></i> Reschedule</a>
                       {% elif appointment.job_status == 'in_progress' %}
-                      <button type="button" onclick="updateJobStatus({{ appointment.pk }}, 'completed')" class="action-btn success"><i class="fas fa-check"></i> Complete Job</button>
+                      <button type="button" class="action-btn success js-job-status" data-pk="{{ appointment.pk }}" data-status="completed"><i class="fas fa-check"></i> Complete Job</button>
                       {% endif %}
                     </div>
                   {% endif %}
@@ -1810,6 +1813,20 @@
     if (msgField) {
       msgField.addEventListener('input', updateCharCount);
     }
+
+    // Avatar colour by first char of name
+    var AVATAR_COLORS = ['#22c55e','#ef4444','#f59e0b','#0f766e','#f97316','#8b5cf6','#14b8a6'];
+    document.querySelectorAll('.appt-list-avatar[data-name]').forEach(function (el) {
+      var n = el.getAttribute('data-name') || '';
+      el.style.background = AVATAR_COLORS[n.charCodeAt(0) % AVATAR_COLORS.length];
+    });
+
+    // Job status buttons (data-pk + data-status instead of inline onclick)
+    document.querySelectorAll('.js-job-status').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        updateJobStatus(btn.getAttribute('data-pk'), btn.getAttribute('data-status'));
+      });
+    });
   });
 </script>
 {% endblock %}
