@@ -1700,6 +1700,7 @@ class AppointmentsListView(ListView):
             scheduled_datetime__date=today
         ).order_by('scheduled_datetime')
 
+        context['active_nav'] = 'appointments'
         context['status_counts'] = {
             'total': base_qs.count(),
             'pending': base_qs.filter(status='pending').exclude(
@@ -2037,6 +2038,7 @@ class AppointmentDetailView(DetailView):
         uploaded_files = appointment.get_all_uploaded_files()   # ← NEW
 
         context.update({
+            'active_nav': 'appointments',
             'conversation_history': conversation_history,
             'completeness': appointment.get_customer_info_completeness(),
             'documents': uploaded_files,

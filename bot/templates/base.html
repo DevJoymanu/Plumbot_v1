@@ -6,21 +6,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>{% block title %}Plumbot Admin{% endblock %}</title>
 
+    {# Font Awesome — already used in existing templates #}
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
+    {# Design system tokens + component styles #}
+    {# In production: <link rel="stylesheet" href="{% static 'css/plumbot-variables.css' %}"> #}
+    {# For now, inline the variables so this file is self-contained: #}
     <style>
+        /* ── Paste contents of plumbot-variables.css here, OR use {% static %} link above ── */
+
         :root {
-            --color-header:       #075E54;
-            --color-header-dark:  #054d44;
-            --color-teal:         #128C7E;
+            --color-header:       #0a3d5c;
+            --color-header-dark:  #082f47;
+            --color-teal:         #0e7490;
             --color-green:        #25D366;
             --color-green-bg:     #DCF8C6;
             --color-green-soft:   #d1fae5;
+            --color-blue-mid:     #0ea5e9;
             --color-amber:        #f59e0b;
             --color-amber-bg:     #fef3c7;
             --color-red:          #ef4444;
             --color-red-bg:       #fee2e2;
-            --color-blue:         #3b82f6;
+            --color-blue:         #2563eb;
             --color-blue-bg:      #dbeafe;
             --color-bg:           #F0F2F5;
             --color-surface:      #ffffff;
@@ -184,7 +191,7 @@
         .pb-bottomnav__item .nav-icon { font-size: 18px; line-height: 1; }
 
         .pb-bottomnav__item.active {
-            color: var(--color-teal);
+            color: var(--color-blue-mid);
             font-weight: 700;
         }
 
@@ -195,7 +202,7 @@
             transform: translateX(-50%);
             width: 28px; height: 3px;
             border-radius: 0 0 3px 3px;
-            background: var(--color-teal);
+            background: var(--color-blue-mid);
         }
 
         /* ── Alerts ── */
@@ -350,6 +357,7 @@
 </nav>
 
 <script>
+    // Collapse section toggle (used by dashboard schedule sections)
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('[data-collapse-toggle]').forEach(function (btn) {
             btn.addEventListener('click', function () {
@@ -357,19 +365,17 @@
                 var section = document.getElementById(targetId);
                 if (section) {
                     section.classList.toggle('collapsed');
-                    var chevron = this.querySelector('.pb-chevron');
-                    if (chevron) {
-                        chevron.style.transform = section.classList.contains('collapsed') ? 'rotate(0deg)' : 'rotate(90deg)';
-                    }
                 }
             });
         });
 
+        // Better touch feedback on buttons
         document.querySelectorAll('a, button').forEach(function (el) {
             el.addEventListener('touchstart', function () { this.style.opacity = '0.8'; }, { passive: true });
             el.addEventListener('touchend',   function () { this.style.opacity = '';    }, { passive: true });
         });
 
+        // Prevent zoom on form inputs on iOS
         document.querySelectorAll('input, select, textarea').forEach(function (input) {
             if (window.innerWidth <= 768) {
                 input.style.fontSize = '16px';

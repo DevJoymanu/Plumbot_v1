@@ -1,252 +1,500 @@
-<!-- Save as: templates/followup_dashboard.html -->
-
 {% extends "base.html" %}
 {% load static %}
 
 {% block title %}Follow-up Dashboard{% endblock %}
 
 {% block content %}
-<div class="container-fluid px-4 py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3 mb-0">📊 Follow-up Dashboard</h1>
-        <div>
-            <form method="post" action="{% url 'manual_followup_check' %}" class="d-inline">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-send"></i> Run Follow-up Check Now
-                </button>
-            </form>
-        </div>
-    </div>
-
-    <div class="filter-card">
-        <form method="get" class="filter-row">
-            <select name="response_age" aria-label="Filter by response age">
-                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
-                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
-                <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
-            </select>
-            <div class="filter-actions">
-                <button type="submit" class="btn">Apply</button>
-                <a href="{% url 'followup_dashboard' %}" class="btn btn-secondary" role="button">Reset</a>
-            </div>
-        </form>
-    </div>
-
-    <!-- Statistics Cards -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card border-primary">
-                <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Active Leads</h6>
-                    <h2 class="card-title mb-0">{{ total_active_leads }}</h2>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card border-warning">
-                <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Ready for Follow-up</h6>
-                    <h2 class="card-title mb-0">{{ ready_count }}</h2>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Follow-up Stages</h6>
-                    <div class="row">
-                        {% for stage, count in stage_counts.items %}
-                        <div class="col-6">
-                            <small>{{ stage }}: <strong>{{ count }}</strong></small>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Leads Ready for Follow-up -->
-    {% if ready_leads %}
-    <div class="card mb-4">
-        <div class="card-header bg-warning">
-            <h5 class="mb-0">⚡ Leads Ready for Follow-up Today</h5>
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>Customer</th>
-                            <th>Phone</th>
-                            <th>Service</th>
-                            <th>Current Stage</th>
-                            <th>Days Since Contact</th>
-                            <th>Follow-ups Sent</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for lead in ready_leads %}
-                        <tr>
-                            <td>
-                                <a href="{% url 'appointment_detail' lead.pk %}">
-                                    {{ lead.customer_name|default:"Unknown" }}
-                                </a>
-                            </td>
-                            <td>{{ lead.phone_number }}</td>
-                            <td>{{ lead.get_project_type_display|default:"Not specified" }}</td>
-                            <td>
-                                <span class="badge bg-info">
-                                    {{ lead.get_followup_stage_display }}
-                                </span>
-                            </td>
-                            <td>{{ lead.get_days_since_last_contact }} days</td>
-                            <td>{{ lead.followup_count }}</td>
-                            <td>
-                                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm btn-outline-primary">
-                                    View
-                                </a>
-                                <a href="{% url 'test_followup_message' lead.pk %}"
-                                    class="btn btn-sm btn-outline-secondary">
-                                    Test Message
-                                </a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Recent Responses -->
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header bg-success text-white">
-                    <h5 class="mb-0">✅ Recent Responses ({{ response_age_label }})</h5>
-                </div>
-                <div class="card-body">
-                    {% if recent_responses %}
-                    <div class="list-group">
-                        {% for lead in recent_responses %}
-                        <a href="{% url 'appointment_detail' lead.pk %}" class="list-group-item list-group-item-action">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">{{ lead.customer_name|default:"Unknown" }}</h6>
-                                <small>{{ lead.last_customer_response|timesince }} ago</small>
-                            </div>
-                            <small class="text-muted">{{ lead.phone_number }}</small>
-                        </a>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <p class="text-muted">No recent responses</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0">🚫 Recently Inactive Leads</h5>
-                </div>
-                <div class="card-body">
-                    {% if recent_inactive %}
-                    <div class="list-group">
-                        {% for lead in recent_inactive %}
-                        <a href="{% url 'appointment_detail' lead.pk %}" class="list-group-item list-group-item-action">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">{{ lead.customer_name|default:"Unknown" }}</h6>
-                                <small>{{ lead.lead_marked_inactive_at|timesince }} ago</small>
-                            </div>
-                            <small class="text-muted">{{ lead.phone_number }}</small>
-                        </a>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <p class="text-muted">No recently inactive leads</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <style>
-    .card {
-        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-        border-radius: 0.5rem;
+    *, *::before, *::after {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
     }
 
-    .card-header {
-        border-radius: 0.5rem 0.5rem 0 0;
+    body {
+        background: #F0F2F5;
+        font-family: 'DM Sans', sans-serif;
+        -webkit-font-smoothing: antialiased;
     }
 
-    .badge {
-        padding: 0.35em 0.65em;
-        font-size: 0.85em;
-    }
-
-    .filter-card {
-        background: rgba(255, 255, 255, 0.98);
+    /* ── White card ── */
+    .fd-card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
         border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        border: 1px solid rgba(255, 255, 255, 0.2);
         overflow: hidden;
     }
 
-    .filter-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
-    }
-
-    .filter-row {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
-
-    .filter-row select {
-        width: 100%;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 12px 14px;
-        font-size: clamp(0.9rem, 3.5vw, 1rem);
-        background: white;
-        min-height: 48px;
-        font-family: inherit;
-        -webkit-appearance: none;
-        appearance: none;
-        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-        background-repeat: no-repeat;
-        background-position: right 16px center;
-        background-size: 1.2em;
-        transition: all 0.2s ease;
-    }
-
-    .filter-row select:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    .filter-actions {
+    /* ── Stats strip ── */
+    .stats-scroll {
         display: flex;
         gap: 10px;
-        width: 100%;
+        overflow-x: auto;
+        padding: 12px 16px;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    .stats-scroll::-webkit-scrollbar { display: none; }
+
+    .stat-tile {
+        flex-shrink: 0;
+        border-radius: 12px;
+        padding: 14px 18px;
+        min-width: 130px;
+        border: 1px solid #e5e7eb;
     }
 
-    .filter-actions .btn {
+    .stat-tile .stat-label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 6px;
+        opacity: 0.8;
+    }
+
+    .stat-tile .stat-value {
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .stat-tile.teal  { background: #0e7490; color: #fff; border-color: #0e7490; }
+    .stat-tile.amber { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+    .stat-tile.slate { background: #fff;    color: #374151; }
+    .stat-tile.green { background: #d1fae5; color: #064e3b; border-color: #6ee7b7; }
+
+    /* ── Filter bar ── */
+    .fd-filter-bar {
+        margin: 0 16px 12px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px 16px;
+    }
+
+    .fd-filter-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .fd-filter-row select {
         flex: 1;
-        min-height: 48px;
+        min-width: 180px;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 10px 42px 10px 14px;
+        font-size: 15px;
+        background: #F0F2F5;
+        font-family: 'DM Sans', sans-serif;
+        color: #111827;
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+        outline: none;
+        transition: border-color 0.15s;
+        cursor: pointer;
+        min-height: 44px;
+    }
+
+    .fd-filter-row select:focus { border-color: #0e7490; }
+
+    .fd-btn-primary {
+        background: #0e7490;
+        color: #fff;
+        border-radius: 20px;
+        padding: 10px 20px;
+        border: none;
+        font-family: 'DM Sans', sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        white-space: nowrap;
+        text-decoration: none;
+        transition: background 0.15s, transform 0.1s;
+        min-height: 44px;
+    }
+    .fd-btn-primary:active { background: #0c6278; transform: scale(0.97); }
+
+    .fd-btn-secondary {
+        background: #F0F2F5;
+        color: #374151;
+        border-radius: 20px;
+        padding: 10px 20px;
+        border: 1px solid #e5e7eb;
+        font-family: 'DM Sans', sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        white-space: nowrap;
+        text-decoration: none;
+        transition: background 0.15s, transform 0.1s;
+        min-height: 44px;
+    }
+    .fd-btn-secondary:active { transform: scale(0.97); }
+
+    /* ── Section header ── */
+    .fd-section-head {
+        padding: 12px 16px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .fd-section-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* ── Ready leads table ── */
+    .fd-table-wrap { overflow-x: auto; }
+
+    .fd-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .fd-table th {
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6b7280;
+        background: #fafafa;
+        border-bottom: 1px solid #e5e7eb;
+        white-space: nowrap;
+    }
+
+    .fd-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid #f0f0f0;
+        color: #374151;
+        vertical-align: middle;
+    }
+
+    .fd-table tr:last-child td { border-bottom: none; }
+    .fd-table tr:hover td { background: #f9fafb; }
+
+    .fd-table a { color: #0e7490; text-decoration: none; font-weight: 600; }
+    .fd-table a:hover { text-decoration: underline; }
+
+    .badge-stage {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #e0f2fe;
+        color: #0c4a6e;
+    }
+
+    .badge-urgent {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    /* ── List rows (recent responses / inactive) ── */
+    .fd-list-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        text-decoration: none;
+        color: inherit;
+        transition: background 0.15s;
+        cursor: pointer;
+        position: relative;
+    }
+    .fd-list-row:last-child { border-bottom: none; }
+    .fd-list-row:hover, .fd-list-row:active { background: #f9fafb; }
+
+    .fd-avatar {
+        width: 42px; height: 42px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: 700;
+        color: #fff;
+        flex-shrink: 0;
+        text-transform: uppercase;
+    }
+
+    .fd-avatar.teal  { background: #0e7490; }
+    .fd-avatar.slate { background: #6b7280; }
+
+    .fd-list-info { flex: 1; min-width: 0; }
+
+    .fd-list-name {
+        font-size: 15px;
+        font-weight: 600;
+        color: #111827;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .fd-list-meta {
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .fd-list-time {
+        font-size: 11px;
+        color: #9ca3af;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* ── Empty state ── */
+    .fd-empty {
+        padding: 28px 16px;
+        text-align: center;
+        color: #9ca3af;
+        font-size: 14px;
+    }
+
+    /* ── Stage counts card ── */
+    .stage-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+    }
+
+    .stage-item {
+        padding: 10px 14px;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 13px;
+        color: #374151;
+    }
+
+    .stage-item:nth-child(odd)  { border-right: 1px solid #f0f0f0; }
+    .stage-item strong { color: #111827; font-weight: 700; }
+
+    /* ── Action row at top ── */
+    .fd-action-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 16px;
+        flex-wrap: wrap;
+    }
+
+    /* Tablet / Desktop */
+    @media (min-width: 640px) {
+        .stats-scroll { flex-wrap: wrap; overflow: visible; }
+        .stat-tile { min-width: 160px; flex: 1; }
+
+        .fd-filter-bar { margin: 0 24px 12px; }
+        .fd-action-row { padding: 12px 24px; }
+
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 0 24px; }
+        .two-col .fd-card { margin: 0; }
+
+        .fd-main-card { margin: 0 24px 14px; }
+    }
+
+    @media (max-width: 639px) {
+        .two-col { display: flex; flex-direction: column; gap: 12px; margin: 0 16px; }
+        .two-col .fd-card { margin: 0; }
+        .fd-main-card { margin: 0 16px 12px; }
+        .fd-table th:nth-child(5),
+        .fd-table td:nth-child(5),
+        .fd-table th:nth-child(6),
+        .fd-table td:nth-child(6) { display: none; }
+    }
+
+    @media (min-width: 1024px) {
+        .fd-filter-bar, .fd-main-card, .two-col, .stats-scroll, .fd-action-row {
+            max-width: 960px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .fd-action-row { padding: 12px 0; }
+        .fd-filter-bar { margin: 0 auto 12px; }
+        .fd-main-card  { margin: 0 auto 14px; }
+        .two-col       { margin: 0 auto; }
     }
 </style>
-{% endblock %}
 
+<!-- Sticky TopBar -->
+<div style="background:#0a3d5c; padding:12px 16px; position:sticky; top:0; z-index:10;">
+    <div style="color:#fff; font-size:17px; font-weight:600;">Follow-up Dashboard</div>
+</div>
+
+<!-- Action row: Run Follow-up button -->
+<div class="fd-action-row">
+    <form method="post" action="{% url 'manual_followup_check' %}" style="display:inline;">
+        {% csrf_token %}
+        <button type="submit" class="fd-btn-primary">
+            <i class="fas fa-paper-plane"></i> Run Follow-up Check Now
+        </button>
+    </form>
+</div>
+
+<!-- Stats strip -->
+<div class="stats-scroll">
+    <div class="stat-tile teal">
+        <div class="stat-label">Active Leads</div>
+        <div class="stat-value">{{ total_active_leads }}</div>
+    </div>
+    <div class="stat-tile amber">
+        <div class="stat-label">Ready for Follow-up</div>
+        <div class="stat-value">{{ ready_count }}</div>
+    </div>
+    {% for stage, count in stage_counts.items %}
+    <div class="stat-tile slate">
+        <div class="stat-label">{{ stage }}</div>
+        <div class="stat-value">{{ count }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Filter bar -->
+<div class="fd-filter-bar">
+    <form method="get" class="fd-filter-row">
+        <select name="response_age" aria-label="Filter by response age">
+            <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
+            <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
+            <option value="all"      {% if selected_response_age == 'all'      %}selected{% endif %}>All-time</option>
+        </select>
+        <button type="submit" class="fd-btn-primary"><i class="fas fa-check"></i> Apply</button>
+        <a href="{% url 'followup_dashboard' %}" class="fd-btn-secondary" role="button"><i class="fas fa-undo"></i> Reset</a>
+    </form>
+</div>
+
+<!-- Leads Ready for Follow-up -->
+{% if ready_leads %}
+<div class="fd-card fd-main-card">
+    <div class="fd-section-head">
+        <h5 class="fd-section-title">
+            <span style="background:#fef3c7; color:#78350f; padding:3px 9px; border-radius:10px; font-size:12px;">⚡ Ready Today</span>
+            Leads Ready for Follow-up
+        </h5>
+        <span style="background:#fef3c7; color:#78350f; font-size:12px; font-weight:700; padding:2px 10px; border-radius:10px;">{{ ready_leads|length }}</span>
+    </div>
+    <div class="fd-table-wrap">
+        <table class="fd-table">
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Phone</th>
+                    <th>Service</th>
+                    <th>Stage</th>
+                    <th>Days Since Contact</th>
+                    <th>Follow-ups Sent</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lead in ready_leads %}
+                <tr>
+                    <td>
+                        <a href="{% url 'appointment_detail' lead.pk %}">{{ lead.customer_name|default:"Unknown" }}</a>
+                    </td>
+                    <td style="color:#6b7280;">{{ lead.phone_number }}</td>
+                    <td>{{ lead.get_project_type_display|default:"Not specified" }}</td>
+                    <td><span class="badge-stage">{{ lead.get_followup_stage_display }}</span></td>
+                    <td>{{ lead.get_days_since_last_contact }} days</td>
+                    <td>{{ lead.followup_count }}</td>
+                    <td>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <a href="{% url 'appointment_detail' lead.pk %}" class="fd-btn-primary" style="padding:6px 14px; font-size:12px; min-height:32px; border-radius:20px;">View</a>
+                            <a href="{% url 'test_followup_message' lead.pk %}" class="fd-btn-secondary" style="padding:6px 14px; font-size:12px; min-height:32px; border-radius:20px;">Test Msg</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Two-column: Recent Responses + Recently Inactive -->
+<div class="two-col" style="padding-bottom:24px;">
+
+    <!-- Recent Responses -->
+    <div class="fd-card">
+        <div class="fd-section-head">
+            <h5 class="fd-section-title">
+                <span style="background:#d1fae5; color:#064e3b; padding:3px 9px; border-radius:10px; font-size:12px;">✅</span>
+                Recent Responses
+                <span style="font-size:12px; color:#6b7280; font-weight:400;">({{ response_age_label }})</span>
+            </h5>
+        </div>
+        {% if recent_responses %}
+            {% for lead in recent_responses %}
+            <a href="{% url 'appointment_detail' lead.pk %}" class="fd-list-row">
+                <div class="fd-avatar teal">{{ lead.customer_name|slice:":1"|upper|default:"?" }}</div>
+                <div class="fd-list-info">
+                    <div class="fd-list-name">{{ lead.customer_name|default:"Unknown" }}</div>
+                    <div class="fd-list-meta">{{ lead.phone_number }}</div>
+                </div>
+                <div class="fd-list-time">{{ lead.last_customer_response|timesince }} ago</div>
+            </a>
+            {% endfor %}
+        {% else %}
+            <div class="fd-empty">No recent responses</div>
+        {% endif %}
+    </div>
+
+    <!-- Recently Inactive -->
+    <div class="fd-card">
+        <div class="fd-section-head">
+            <h5 class="fd-section-title">
+                <span style="background:#f3f4f6; color:#374151; padding:3px 9px; border-radius:10px; font-size:12px;">🚫</span>
+                Recently Inactive Leads
+            </h5>
+        </div>
+        {% if recent_inactive %}
+            {% for lead in recent_inactive %}
+            <a href="{% url 'appointment_detail' lead.pk %}" class="fd-list-row">
+                <div class="fd-avatar slate">{{ lead.customer_name|slice:":1"|upper|default:"?" }}</div>
+                <div class="fd-list-info">
+                    <div class="fd-list-name">{{ lead.customer_name|default:"Unknown" }}</div>
+                    <div class="fd-list-meta">{{ lead.phone_number }}</div>
+                </div>
+                <div class="fd-list-time">{{ lead.lead_marked_inactive_at|timesince }} ago</div>
+            </a>
+            {% endfor %}
+        {% else %}
+            <div class="fd-empty">No recently inactive leads</div>
+        {% endif %}
+    </div>
+
+</div>
+
+{% endblock %}

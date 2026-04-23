@@ -540,12 +540,25 @@
 
 {% block extra_js %}
 <script>
-    (function () {
+    document.addEventListener('DOMContentLoaded', function () {
+        // Avatar color by first char
         var COLORS = ['#128C7E','#075E54','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
         document.querySelectorAll('.pb-avatar[data-name]').forEach(function (el) {
             var name = el.getAttribute('data-name') || '';
             el.style.background = COLORS[name.charCodeAt(0) % COLORS.length];
         });
-    })();
+
+        // Chevron rotation in sync with collapse toggle
+        document.querySelectorAll('[data-collapse-toggle]').forEach(function (btn) {
+            var chevron = btn.querySelector('.pb-chevron');
+            if (!chevron) return;
+            btn.addEventListener('click', function () {
+                var section = document.getElementById(btn.getAttribute('data-collapse-toggle'));
+                if (section) {
+                    chevron.style.transform = section.classList.contains('collapsed') ? 'rotate(0deg)' : 'rotate(90deg)';
+                }
+            });
+        });
+    });
 </script>
 {% endblock %}
