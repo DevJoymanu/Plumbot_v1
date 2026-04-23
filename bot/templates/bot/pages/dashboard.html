@@ -382,7 +382,7 @@
                 {{ appt.scheduled_datetime|date:"H:i"|default:"--" }}
             </div>
             <div class="pb-sched-center">
-                <div class="pb-sched-name">{{ appt.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pb-sched-name">{{ appt.customer_name|default:appt.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pb-sched-sub">{{ appt.get_project_type_display|default:appt.project_type|default:"No service" }} · {{ appt.customer_area|default:"No area" }}</div>
             </div>
             <div class="pb-sched-right">
@@ -412,7 +412,7 @@
                 {{ appt.scheduled_datetime|date:"H:i"|default:"--" }}
             </div>
             <div class="pb-sched-center">
-                <div class="pb-sched-name">{{ appt.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pb-sched-name">{{ appt.customer_name|default:appt.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pb-sched-sub">{{ appt.get_project_type_display|default:appt.project_type|default:"No service" }} · {{ appt.customer_area|default:"No area" }}</div>
             </div>
             <div class="pb-sched-right">
@@ -442,7 +442,7 @@
                 {{ appt.scheduled_datetime|date:"D"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
             </div>
             <div class="pb-sched-center">
-                <div class="pb-sched-name">{{ appt.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pb-sched-name">{{ appt.customer_name|default:appt.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pb-sched-sub">{{ appt.get_project_type_display|default:appt.project_type|default:"No service" }} · {{ appt.customer_area|default:"No area" }}</div>
             </div>
             <div class="pb-sched-right">
@@ -472,7 +472,7 @@
                 {{ job.scheduled_datetime|date:"D"|default:"--" }}<small>{{ job.scheduled_datetime|date:"H:i" }}</small>
             </div>
             <div class="pb-sched-center">
-                <div class="pb-sched-name">{{ job.site_visit.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pb-sched-name">{{ job.site_visit.customer_name|default:job.site_visit.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pb-sched-sub">{{ job.site_visit.get_project_type_display|default:job.site_visit.project_type|default:"Job" }} · {{ job.site_visit.customer_area|default:"No area" }}</div>
             </div>
             <div class="pb-sched-right">
@@ -498,7 +498,7 @@
             {{ appt.customer_name|default:"?"|slice:":2"|upper }}
         </div>
         <div style="flex:1;min-width:0">
-            <div class="pb-sched-name">{{ appt.customer_name|default:"Unknown Customer" }}</div>
+            <div class="pb-sched-name">{{ appt.customer_name|default:appt.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
             <div class="pb-followup-note">{{ appt.admin_notes|default:"No notes"|truncatewords:8 }}</div>
         </div>
         <div class="pb-time-ago">{{ appt.updated_at|timesince }} ago</div>

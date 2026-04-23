@@ -1166,7 +1166,7 @@
             {{ item.customer_name|default:"?"|slice:":2"|upper }}
           </div>
           <div class="appt-list-main">
-            <div class="appt-list-name">{{ item.customer_name|default:"Unknown Customer" }}</div>
+            <div class="appt-list-name">{{ item.customer_name|default:item.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
             <div class="appt-list-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
             <div class="appt-list-preview">{{ item.project_description|default:"No recent note available"|truncatewords:10 }}</div>
           </div>
@@ -1193,7 +1193,7 @@
           <div class="appt-detail-avatar">{{ appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
           <div style="min-width:0;">
             <div class="appt-detail-name">
-              {{ appointment.customer_name|default:"Unknown Customer" }}
+              {{ appointment.customer_name|default:appointment.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}
             </div>
             <div class="appt-detail-meta">
               {{ appointment.phone_number }}{% if appointment.customer_area %} · {{ appointment.customer_area }}{% endif %}
@@ -1201,7 +1201,7 @@
           </div>
         </div>
         <div class="appt-detail-actions">
-          <a href="tel:{{ appointment.phone_number }}" class="appt-detail-action call">
+          <a href="tel:{{ appointment.phone_number|cut:'whatsapp:' }}" class="appt-detail-action call">
             <i class="fas fa-phone"></i> Call
           </a>
           <a href="https://wa.me/{{ appointment.phone_number|cut:'whatsapp:'|cut:'+'|cut:'-'|cut:' '|cut:'('|cut:')' }}"

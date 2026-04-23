@@ -729,7 +729,7 @@ class Appointment(models.Model):
     # ===== EXISTING MODEL METHODS =====
     
     def __str__(self):
-        name = self.customer_name or 'Unknown Customer'
+        name = self.customer_name or (self.phone_number or '').replace('whatsapp:', '').strip() or 'Unknown Customer'
         if self.scheduled_datetime:
             return f"{name} - {self.scheduled_datetime.strftime('%Y-%m-%d %H:%M')}"
         return f"{name} - {self.get_status_display()}"

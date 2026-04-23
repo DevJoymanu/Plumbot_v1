@@ -229,7 +229,7 @@
             <div class="job-item status-{{ job.job_status }}">
                 <div class="job-header">
                     <div class="job-title">
-                        <h4>{{ job.customer_name|default:"Unknown Customer" }}</h4>
+                        <h4>{{ job.customer_name|default:job.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</h4>
                         <span class="job-type">{{ job.project_type }}</span>
                     </div>
                     <span class="pill pill-{{ job.job_status }}">{{ job.get_job_status_display }}</span>

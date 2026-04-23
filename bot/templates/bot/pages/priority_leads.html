@@ -284,7 +284,7 @@
                 {{ lead.customer_name|default:"?"|slice:":2"|upper }}
               </div>
               <div class="pl-row-main">
-                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
@@ -326,7 +326,7 @@
                 {{ lead.customer_name|default:"?"|slice:":2"|upper }}
               </div>
               <div class="pl-row-main">
-                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
@@ -368,7 +368,7 @@
                 {{ lead.customer_name|default:"?"|slice:":2"|upper }}
               </div>
               <div class="pl-row-main">
-                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
@@ -410,7 +410,7 @@
                 {{ lead.customer_name|default:"?"|slice:":2"|upper }}
               </div>
               <div class="pl-row-main">
-                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
@@ -452,7 +452,7 @@
                 {{ lead.customer_name|default:"?"|slice:":2"|upper }}
               </div>
               <div class="pl-row-main">
-                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
                 <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
