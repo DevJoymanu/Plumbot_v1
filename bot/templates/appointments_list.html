@@ -115,6 +115,50 @@
     font-size: 11px;
   }
 
+  /* ── Time window bar ── */
+  .inbox-age-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    background: #fff;
+    border-bottom: 1px solid #f0f0f0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+  .inbox-age-bar::-webkit-scrollbar { display: none; }
+
+  .inbox-age-label {
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .inbox-age-pill {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+    color: #6b7280;
+    background: #f3f4f6;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .inbox-age-pill.active {
+    background: var(--color-teal);
+    color: #fff;
+  }
+
+  .inbox-age-pill:hover:not(.active) {
+    background: #e5e7eb;
+  }
+
   .inbox-scroll {
     min-height: 0;
     overflow-y: auto;
@@ -435,11 +479,20 @@
       </div>
 
       <div class="inbox-filter-tabs">
-        <a href="?status_filter=all&response_age={{ selected_response_age }}" class="inbox-filter-link {% if selected_status_filter == 'all' %}active{% endif %}">All <span>{{ status_counts.total }}</span></a>
-        <a href="?status_filter=booked&response_age={{ selected_response_age }}" class="inbox-filter-link {% if selected_status_filter == 'booked' %}active{% endif %}">Booked <span>{{ status_counts.confirmed }}</span></a>
-        <a href="?status_filter=pending&response_age={{ selected_response_age }}" class="inbox-filter-link {% if selected_status_filter == 'pending' %}active{% endif %}">Pending <span>{{ status_counts.pending }}</span></a>
-        <a href="?status_filter=cancelled&response_age={{ selected_response_age }}" class="inbox-filter-link {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled <span>{{ status_counts.cancelled }}</span></a>
-        <a href="?status_filter=delayed&response_age=3w_minus" class="inbox-filter-link {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed <span>{{ status_counts.delayed }}</span></a>
+        <a href="?status_filter=all" class="inbox-filter-link {% if selected_status_filter == 'all' %}active{% endif %}">All <span>{{ status_counts.total }}</span></a>
+        <a href="?status_filter=booked" class="inbox-filter-link {% if selected_status_filter == 'booked' %}active{% endif %}">Booked <span>{{ status_counts.confirmed }}</span></a>
+        <a href="?status_filter=pending" class="inbox-filter-link {% if selected_status_filter == 'pending' %}active{% endif %}">Pending <span>{{ status_counts.pending }}</span></a>
+        <a href="?status_filter=cancelled" class="inbox-filter-link {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled <span>{{ status_counts.cancelled }}</span></a>
+        <a href="?status_filter=delayed" class="inbox-filter-link {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed <span>{{ status_counts.delayed }}</span></a>
+      </div>
+
+      {# ── Per-tab time window selector ── #}
+      <div class="inbox-age-bar">
+        <span class="inbox-age-label">Window:</span>
+        <a href="?status_filter={{ selected_status_filter }}&response_age=1w_minus" class="inbox-age-pill {% if selected_response_age == '1w_minus' %}active{% endif %}">7 days</a>
+        <a href="?status_filter={{ selected_status_filter }}&response_age=3w_minus" class="inbox-age-pill {% if selected_response_age == '3w_minus' %}active{% endif %}">21 days</a>
+        <a href="?status_filter={{ selected_status_filter }}&response_age=4w_minus" class="inbox-age-pill {% if selected_response_age == '4w_minus' %}active{% endif %}">30 days</a>
+        <a href="?status_filter={{ selected_status_filter }}&response_age=all"      class="inbox-age-pill {% if selected_response_age == 'all' %}active{% endif %}">All time</a>
       </div>
 
       {% if selected_status_filter == 'delayed' and delayed_leads_with_countdown %}

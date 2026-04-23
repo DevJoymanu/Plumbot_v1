@@ -1137,18 +1137,19 @@
         </div>
       </div>
 
-      <div class="appt-filter-tabs">
+      <div class="appt-filter-tabs" data-initial-filter="{{ sidebar_filter }}">
         <button type="button" class="appt-filter-tab is-active" data-filter="all">All <span>{{ appointment_status_counts.total }}</span></button>
         <button type="button" class="appt-filter-tab" data-filter="confirmed">Booked <span>{{ appointment_status_counts.booked }}</span></button>
         <button type="button" class="appt-filter-tab" data-filter="pending">Pending <span>{{ appointment_status_counts.pending }}</span></button>
         <button type="button" class="appt-filter-tab" data-filter="cancelled">Cancelled <span>{{ appointment_status_counts.cancelled }}</span></button>
+        <button type="button" class="appt-filter-tab" data-filter="delayed">Delayed <span>{{ appointment_status_counts.delayed }}</span></button>
       </div>
 
       <div class="appt-list-scroll" id="appointmentList">
         {% for item in sidebar_appointments %}
         <a href="{% url 'appointment_detail' item.pk %}"
            class="appt-list-row {% if item.pk == appointment.pk %}is-current{% endif %}"
-           data-status="{{ item.status }}"
+           data-status="{% if item.is_delayed %}delayed{% else %}{{ item.status }}{% endif %}"
            data-search="{{ item.customer_name|default:''|lower }} {{ item.phone_number|default:''|lower }} {{ item.project_type|default:''|lower }} {{ item.customer_area|default:''|lower }}">
           <div class="appt-list-avatar" style="background:
             {% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' '#f97316' '#8b5cf6' '#14b8a6' %};">
@@ -1743,20 +1744,45 @@
       });
     });
 
+    // ── Sidebar filter tabs ──
+    function applyTabFilter(filter) {
+      document.querySelectorAll('.appt-filter-tab').forEach(function (tab) {
+        tab.classList.toggle('is-active', tab.getAttribute('data-filter') === filter);
+      });
+      var searchTerm = appointmentSearch ? appointmentSearch.value.trim().toLowerCase() : '';
+      document.querySelectorAll('.appt-list-row').forEach(function (row) {
+        var matchesFilter = filter === 'all' || row.getAttribute('data-status') === filter;
+        var haystack = row.getAttribute('data-search') || '';
+        var matchesSearch = !searchTerm || haystack.indexOf(searchTerm) > -1;
+        row.style.display = matchesFilter && matchesSearch ? '' : 'none';
+      });
+    }
+
     document.querySelectorAll('.appt-filter-tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        document.querySelectorAll('.appt-filter-tab').forEach(function (tab) {
-          tab.classList.remove('is-active');
-        });
-        btn.classList.add('is-active');
-        var filter = btn.getAttribute('data-filter');
-        document.querySelectorAll('.appt-list-row').forEach(function (row) {
-          var matchesFilter = filter === 'all' || row.getAttribute('data-status') === filter;
-          var searchTerm = appointmentSearch.value.trim().toLowerCase();
-          var haystack = row.getAttribute('data-search') || '';
-          var matchesSearch = haystack.indexOf(searchTerm) > -1;
-          row.style.display = matchesFilter && matchesSearch ? '' : 'none';
-        });
+        applyTabFilter(btn.getAttribute('data-filter'));
+      });
+    });
+
+    // Restore the active tab from server-set data attribute
+    var tabsEl = document.querySelector('.appt-filter-tabs[data-initial-filter]');
+    if (tabsEl) {
+      var initialFilter = tabsEl.getAttribute('data-initial-filter') || 'all';
+      if (initialFilter !== 'all') {
+        applyTabFilter(initialFilter);
+      }
+    }
+
+    // Carry the active filter when navigating to a different appointment in the sidebar
+    document.querySelectorAll('.appt-list-row').forEach(function (row) {
+      row.addEventListener('click', function (e) {
+        var activeTab = document.querySelector('.appt-filter-tab.is-active');
+        var filter = activeTab ? activeTab.getAttribute('data-filter') : 'all';
+        if (filter !== 'all') {
+          e.preventDefault();
+          var sep = this.href.indexOf('?') > -1 ? '&' : '?';
+          window.location.href = this.href + sep + 'sidebar_filter=' + encodeURIComponent(filter);
+        }
       });
     });
   }

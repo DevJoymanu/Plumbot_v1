@@ -1696,17 +1696,40 @@ class AppointmentsListView(ListView):
     paginate_by = 20
     ordering = ['-updated_at']
 
+    # Per-tab default time windows
+    TAB_AGE_DEFAULTS = {
+        'all':       '1w_minus',
+        'booked':    '3w_minus',
+        'pending':   '1w_minus',
+        'cancelled': '1w_minus',
+        'delayed':   '3w_minus',
+    }
+    TAB_AGE_MAP = {
+        '1w_minus': timedelta(weeks=1),
+        '3w_minus': timedelta(weeks=3),
+        '4w_minus': timedelta(weeks=4),
+    }
+
+    def _resolve_age(self):
+        """Return (status_filter, response_age) honouring per-tab defaults."""
+        status_filter = self.request.GET.get('status_filter', 'all')
+        if 'response_age' in self.request.GET:
+            age = self.request.GET['response_age'].strip()
+            if age not in self.TAB_AGE_MAP and age != 'all':
+                age = self.TAB_AGE_DEFAULTS.get(status_filter, '1w_minus')
+        else:
+            age = self.TAB_AGE_DEFAULTS.get(status_filter, '1w_minus')
+        return status_filter, age
+
     def get_queryset(self):
         from django.db.models import Case, IntegerField, Q, Value, When
 
-        response_age = self.request.GET.get('response_age', '').strip()
-        if not response_age:
-            response_age = '1w_minus'
+        status_filter, response_age = self._resolve_age()
+        # Cache for get_context_data
+        self._status_filter = status_filter
+        self._response_age  = response_age
 
-        age_map_minus = {
-            '1w_minus': timedelta(weeks=1),
-            '4w_minus': timedelta(weeks=4),
-        }
+        age_map_minus = self.TAB_AGE_MAP
 
         has_project_type = Case(
             When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
@@ -1764,7 +1787,6 @@ class AppointmentsListView(ListView):
             cutoff = timezone.now() - age_map_minus[response_age]
             queryset = queryset.filter(last_customer_response__gte=cutoff)
 
-        status_filter = self.request.GET.get('status_filter', 'all')
         if status_filter == 'booked':
             queryset = queryset.filter(status='confirmed')
         elif status_filter == 'pending':
@@ -1785,28 +1807,12 @@ class AppointmentsListView(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        response_age = self.request.GET.get('response_age', '').strip()
-        if not response_age:
-            response_age = '1w_minus'
-
-        # Add 3w_minus option for 21 days
-        age_map_minus = {
-            '1w_minus': timedelta(weeks=1),
-            '3w_minus': timedelta(weeks=3),  # ← ADD THIS for 21 days
-            '4w_minus': timedelta(weeks=4),
-        }
+        # Reuse values computed in get_queryset (called first by ListView)
+        status_filter = getattr(self, '_status_filter', 'all')
+        response_age  = getattr(self, '_response_age',  '1w_minus')
+        age_map_minus = self.TAB_AGE_MAP
 
         base_qs = Appointment.objects.all()
-        
-        # Handle the delayed tab's default filter
-        status_filter = self.request.GET.get('status_filter', 'all')
-        
-        # If Delayed tab is selected and response_age is not explicitly set, default to 21 days
-        if status_filter == 'delayed' and response_age == '1w_minus':
-            # Check if the user explicitly chose a different filter
-            if 'response_age' not in self.request.GET:
-                response_age = '3w_minus'  # Default to 21 days for delayed tab
-        
         if response_age != 'all' and response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
@@ -2130,10 +2136,13 @@ class AppointmentDetailView(DetailView):
             source_back_url = reverse('followup_dashboard')
             source_title = 'Follow-ups'
 
+        sidebar_filter = self.request.GET.get('sidebar_filter', 'all')
+
         context.update({
             'active_nav': active_nav,
             'is_frame': is_frame,
             'base_template': base_template,
+            'sidebar_filter': sidebar_filter,
             'conversation_history': conversation_history,
             'completeness': appointment.get_customer_info_completeness(),
             'documents': uploaded_files,
@@ -2155,6 +2164,10 @@ class AppointmentDetailView(DetailView):
                     internal_notes__contains='[DELAY_SIGNAL]'
                 ).count(),
                 'cancelled': Appointment.objects.filter(status='cancelled').count(),
+                'delayed': Appointment.objects.filter(
+                    status='pending',
+                    internal_notes__contains='[DELAY_SIGNAL]',
+                ).count(),
             },
         })
         return context
