@@ -1763,6 +1763,14 @@
       return btn ? btn.getAttribute('data-filter') : 'all';
     }
 
+    function syncRowLinks(filter) {
+      document.querySelectorAll('.appt-list-row').forEach(function (row) {
+        var baseHref = row.getAttribute('data-base-href');
+        if (!baseHref) return;
+        row.setAttribute('href', baseHref + '&sidebar_filter=' + encodeURIComponent(filter || 'all'));
+      });
+    }
+
     function applyTabFilter(filter) {
       // Update tab button styles
       document.querySelectorAll('.appt-filter-tab').forEach(function (tab) {
@@ -1775,6 +1783,7 @@
         var matchesSearch = !term || (row.getAttribute('data-search') || '').indexOf(term) > -1;
         row.style.display = matchesFilter && matchesSearch ? '' : 'none';
       });
+      syncRowLinks(filter);
     }
 
     // 1. Determine initial filter:
@@ -1798,11 +1807,15 @@
       applyTabFilter(activeFilter());
     });
 
-    // 4. Row clicks — persist active tab BEFORE navigating (no URL rewriting needed)
+    // 4. Row clicks — persist active tab and ensure navigation carries it through
     document.querySelectorAll('.appt-list-row').forEach(function (row) {
       row.addEventListener('click', function () {
-        saveTab(activeFilter());
-        // Navigation proceeds normally
+        var filter = activeFilter();
+        saveTab(filter);
+        var baseHref = row.getAttribute('data-base-href');
+        if (baseHref) {
+          row.setAttribute('href', baseHref + '&sidebar_filter=' + encodeURIComponent(filter || 'all'));
+        }
       });
     });
   }());

@@ -21,6 +21,7 @@
 <div class="appt-list-scroll" id="appointmentList">
   {% for item in sidebar_appointments %}
   <a href="{% url 'appointment_detail' item.pk %}?source=appointments&sidebar_filter={{ sidebar_filter }}"
+     data-base-href="{% url 'appointment_detail' item.pk %}?source=appointments"
      class="appt-list-row {% if item.pk == appointment.pk %}is-current{% endif %}"
      data-status="{% if item.is_delayed %}delayed{% else %}{{ item.status }}{% endif %}"
      data-search="{{ item.customer_name|default:''|lower }} {{ item.phone_number|default:''|lower }} {{ item.project_type|default:''|lower }} {{ item.customer_area|default:''|lower }}">
