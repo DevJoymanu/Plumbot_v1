@@ -14,7 +14,7 @@
       <div class="source-avatar" style="background:{% cycle '#f59e0b' '#ef4444' '#0f766e' '#14b8a6' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-        <div class="source-meta">{{ lead.project_description|default:"Follow-up needed"|truncatewords:6 }}</div>
+        <div class="source-meta">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.project_description|default:"Follow-up needed"|truncatewords:6 }}</div>
         <div class="source-subnote"><span class="appt-pill cancelled">Needs attention</span></div>
       </div>
       <div class="source-side">
@@ -36,7 +36,7 @@
       <div class="source-avatar" style="background:{% cycle '#0f766e' '#0891b2' '#2563eb' '#7c3aed' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-        <div class="source-meta">{{ lead.phone_number }}</div>
+        <div class="source-meta">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.phone_number }}</div>
       </div>
       <div class="source-side">
         <span class="source-stamp">{{ lead.last_customer_response|timesince }} ago</span>
@@ -57,7 +57,7 @@
       <div class="source-avatar" style="background:{% cycle '#64748b' '#94a3b8' '#475569' '#334155' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-        <div class="source-meta">{{ lead.project_type|default:"Lead inactive" }} · {{ lead.customer_area|default:"No area" }}</div>
+        <div class="source-meta">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.project_type|default:"Lead inactive" }} · {{ lead.customer_area|default:"No area" }}</div>
       </div>
       <div class="source-side">
         <span class="source-stamp">{{ lead.lead_marked_inactive_at|timesince }} ago</span>

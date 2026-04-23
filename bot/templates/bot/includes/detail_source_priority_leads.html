@@ -29,7 +29,7 @@
       <div class="source-avatar" style="background:{% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-        <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+        <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
         <div class="source-mini-actions">
           <span class="source-mini-btn call"><i class="fas fa-phone"></i> Call</span>
           <span class="source-mini-btn wa"><i class="fab fa-whatsapp"></i> WA</span>
@@ -55,7 +55,7 @@
       <div class="source-avatar" style="background:{% cycle '#ef4444' '#f59e0b' '#0ea5e9' '#8b5cf6' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-        <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+        <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
         <div class="source-mini-actions">
           <span class="source-mini-btn call"><i class="fas fa-phone"></i> Call</span>
           <span class="source-mini-btn wa"><i class="fab fa-whatsapp"></i> WA</span>
@@ -81,7 +81,7 @@
       <div class="source-avatar" style="background:{% cycle '#22c55e' '#14b8a6' '#0ea5e9' '#8b5cf6' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-        <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+        <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
       </div>
       <div class="source-side">
         <span class="source-score">{{ lead.computed_score }}</span>

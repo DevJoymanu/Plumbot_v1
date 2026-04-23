@@ -379,7 +379,7 @@
         {% for appt in todays_confirmed_appointments %}
         <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
-                {{ appt.scheduled_datetime|date:"H:i"|default:"--" }}
+                {{ appt.scheduled_datetime|date:"j M"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
             </div>
             <div class="pb-sched-center">
                 <div class="pb-sched-name">{{ appt.customer_name|default:appt.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
@@ -409,7 +409,7 @@
         {% for appt in tomorrows_confirmed_appointments %}
         <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
-                {{ appt.scheduled_datetime|date:"H:i"|default:"--" }}
+                {{ appt.scheduled_datetime|date:"j M"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
             </div>
             <div class="pb-sched-center">
                 <div class="pb-sched-name">{{ appt.customer_name|default:appt.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
@@ -439,7 +439,7 @@
         {% for appt in this_week_appointments %}
         <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
-                {{ appt.scheduled_datetime|date:"D"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
+                {{ appt.scheduled_datetime|date:"D j M"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
             </div>
             <div class="pb-sched-center">
                 <div class="pb-sched-name">{{ appt.customer_name|default:appt.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
@@ -469,7 +469,7 @@
         {% for job in week_jobs %}
         <a href="{% url 'appointment_detail' job.site_visit.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
             <div class="pb-time-block pb-tb--job">
-                {{ job.scheduled_datetime|date:"D"|default:"--" }}<small>{{ job.scheduled_datetime|date:"H:i" }}</small>
+                {{ job.scheduled_datetime|date:"D j M"|default:"--" }}<small>{{ job.scheduled_datetime|date:"H:i" }}</small>
             </div>
             <div class="pb-sched-center">
                 <div class="pb-sched-name">{{ job.site_visit.customer_name|default:job.site_visit.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
@@ -501,7 +501,7 @@
             <div class="pb-sched-name">{{ appt.customer_name|default:appt.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
             <div class="pb-followup-note">{{ appt.admin_notes|default:"No notes"|truncatewords:8 }}</div>
         </div>
-        <div class="pb-time-ago">{{ appt.updated_at|timesince }} ago</div>
+        <div class="pb-time-ago">{{ appt.scheduled_datetime|date:"j M"|default:appt.updated_at|date:"j M" }}</div>
     </a>
     {% empty %}
     <div class="pb-empty-inline">No pending follow-ups 🎉</div>

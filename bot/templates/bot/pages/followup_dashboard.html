@@ -187,7 +187,7 @@
         </div>
         <div class="fd-row-main">
           <div class="fd-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-          <div class="fd-row-note">{{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
+          <div class="fd-row-note">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
           <span class="fd-row-badge">Needs attention</span>
         </div>
         <div class="fd-row-time urgent">
@@ -210,7 +210,7 @@
         </div>
         <div class="fd-row-main">
           <div class="fd-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-          <div class="fd-row-note">{{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
+          <div class="fd-row-note">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
         </div>
         <div class="fd-row-time normal">{{ lead.last_customer_response|timesince|truncatewords:2 }} ago</div>
       </a>
@@ -228,7 +228,7 @@
         </div>
         <div class="fd-row-main">
           <div class="fd-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-          <div class="fd-row-note">{{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
+          <div class="fd-row-note">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
         </div>
         <div class="fd-row-time normal">{{ lead.lead_marked_inactive_at|timesince|truncatewords:2 }} ago</div>
       </a>

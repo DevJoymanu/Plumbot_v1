@@ -285,7 +285,7 @@
               </div>
               <div class="pl-row-main">
                 <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
                   <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
@@ -327,7 +327,7 @@
               </div>
               <div class="pl-row-main">
                 <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
                   <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
@@ -369,7 +369,7 @@
               </div>
               <div class="pl-row-main">
                 <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
                   <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
@@ -411,7 +411,7 @@
               </div>
               <div class="pl-row-main">
                 <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
                   <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
@@ -453,7 +453,7 @@
               </div>
               <div class="pl-row-main">
                 <div class="pl-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
                 <div class="pl-row-btns">
                   {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
                   <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>

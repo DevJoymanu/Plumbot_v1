@@ -44,7 +44,7 @@
     </div>
     {% for item in source_workspace.todays_confirmed_appointments %}
     <a href="{% url 'appointment_detail' item.pk %}?source=dashboard&response_age={{ source_workspace.selected_response_age }}" class="source-list-row {% if item.pk == appointment.pk %}is-current{% endif %}">
-      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"H:i" }}</div>
+      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"j M" }}<small>{{ item.scheduled_datetime|date:"H:i" }}</small></div>
       <div class="source-avatar" style="background:{% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' '#f97316' '#8b5cf6' %};">{{ item.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ item.customer_name|default:item.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
@@ -67,7 +67,7 @@
     </div>
     {% for item in source_workspace.tomorrows_confirmed_appointments %}
     <a href="{% url 'appointment_detail' item.pk %}?source=dashboard&response_age={{ source_workspace.selected_response_age }}" class="source-list-row {% if item.pk == appointment.pk %}is-current{% endif %}">
-      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"H:i" }}</div>
+      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"j M" }}<small>{{ item.scheduled_datetime|date:"H:i" }}</small></div>
       <div class="source-avatar" style="background:{% cycle '#0f766e' '#0ea5e9' '#8b5cf6' '#22c55e' '#f59e0b' %};">{{ item.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ item.customer_name|default:item.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
@@ -90,7 +90,7 @@
     </div>
     {% for item in source_workspace.this_week_appointments %}
     <a href="{% url 'appointment_detail' item.pk %}?source=dashboard&response_age={{ source_workspace.selected_response_age }}" class="source-list-row {% if item.pk == appointment.pk %}is-current{% endif %}">
-      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"D" }}</div>
+      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"D j M" }}</div>
       <div class="source-avatar" style="background:{% cycle '#14b8a6' '#f97316' '#8b5cf6' '#22c55e' '#ef4444' %};">{{ item.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ item.customer_name|default:item.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
