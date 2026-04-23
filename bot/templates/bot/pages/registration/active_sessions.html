@@ -1,0 +1,30 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}Active Sessions{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 900px;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h4 mb-1">Active Sessions</h1>
+            <p class="text-muted mb-0">Basic session visibility for the current account.</p>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-4">
+            <p><strong>Current session key:</strong> <code>{{ current_session|default:"Unavailable" }}</code></p>
+
+            {% if sessions %}
+            <ul class="list-group list-group-flush">
+                {% for session in sessions %}
+                <li class="list-group-item">{{ session }}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted mb-0">No additional tracked sessions are available.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

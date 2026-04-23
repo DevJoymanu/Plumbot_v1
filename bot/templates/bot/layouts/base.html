@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>{% block title %}Plumbot Admin{% endblock %}</title>
+    {% include "bot/includes/head_assets.html" %}
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+<div class="pb-shell">
+    {% include "bot/includes/main_nav.html" %}
+
+    <div class="pb-main">
+        <div class="pb-content" id="pb-content">
+            <div class="pb-content__inner">
+                {% include "bot/includes/messages.html" %}
+
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include "bot/includes/mobile_nav.html" %}
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('[data-collapse-toggle]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var targetId = this.getAttribute('data-collapse-toggle');
+                var section = document.getElementById(targetId);
+                if (section) {
+                    section.classList.toggle('collapsed');
+                }
+            });
+        });
+
+        document.querySelectorAll('a, button').forEach(function (el) {
+            el.addEventListener('touchstart', function () { this.style.opacity = '0.8'; }, { passive: true });
+            el.addEventListener('touchend', function () { this.style.opacity = ''; }, { passive: true });
+        });
+
+        document.querySelectorAll('input, select, textarea').forEach(function (input) {
+            if (window.innerWidth <= 768) {
+                input.style.fontSize = '16px';
+            }
+        });
+    });
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

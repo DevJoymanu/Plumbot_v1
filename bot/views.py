@@ -192,7 +192,7 @@ def login_view(request):
     else:
         form = AuthenticationForm()
     
-    return render(request, 'registration/login.html', {
+    return render(request, 'bot/pages/registration/login.html', {
         'form': form,
         'title': 'Staff Login'
     })
@@ -214,7 +214,7 @@ def profile_view(request):
         'user': request.user,
         'title': 'My Profile'
     }
-    return render(request, 'registration/profile.html', context)
+    return render(request, 'bot/pages/registration/profile.html', context)
 
 
 @staff_required
@@ -235,7 +235,7 @@ def change_password_view(request):
     else:
         form = PasswordChangeForm(request.user)
     
-    return render(request, 'registration/change_password.html', {
+    return render(request, 'bot/pages/registration/change_password.html', {
         'form': form,
         'title': 'Change Password'
     })
@@ -362,7 +362,7 @@ def _to_dec(value, default='0.00'):
 @method_decorator(staff_required, name='dispatch')
 class StandaloneQuotationView(View):
     """Render the standalone quotation creation form."""
-    template_name = 'standalone_quotation.html'
+    template_name = 'bot/pages/standalone_quotation.html'
  
     def get(self, request, *args, **kwargs):
         return render(request, self.template_name, {
@@ -553,7 +553,7 @@ def appointment_search_api(request):
 class QuotationTemplatesListView(ListView):
     """List all quotation templates"""
     model = QuotationTemplate
-    template_name = 'quotation_templates_list.html'
+    template_name = 'bot/pages/quotation_templates_list.html'
     context_object_name = 'templates'
     paginate_by = 20
     
@@ -594,7 +594,7 @@ class CreateQuotationTemplateView(CreateView):
     """Create a new quotation template"""
     model = QuotationTemplate
     form_class = QuotationTemplateForm
-    template_name = 'create_quotation_template.html'
+    template_name = 'bot/pages/create_quotation_template.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -629,7 +629,7 @@ class EditQuotationTemplateView(UpdateView):
     """Edit an existing quotation template"""
     model = QuotationTemplate
     form_class = QuotationTemplateForm
-    template_name = 'edit_quotation_template.html'
+    template_name = 'bot/pages/edit_quotation_template.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -661,7 +661,7 @@ class EditQuotationTemplateView(UpdateView):
 class QuotationTemplateDetailView(DetailView):
     """View template details"""
     model = QuotationTemplate
-    template_name = 'quotation_template_detail.html'
+    template_name = 'bot/pages/quotation_template_detail.html'
     context_object_name = 'template'
     
     def get_context_data(self, **kwargs):
@@ -683,7 +683,7 @@ def duplicate_template(request, pk):
         messages.success(request, f'Template duplicated as "{new_template.name}"')
         return redirect('edit_quotation_template', pk=new_template.pk)
     
-    return render(request, 'duplicate_template.html', {
+    return render(request, 'bot/pages/duplicate_template.html', {
         'template': template
     })
 
@@ -699,7 +699,7 @@ def delete_template(request, pk):
         messages.success(request, f'Template "{template_name}" deleted successfully')
         return redirect('quotation_templates_list')
     
-    return render(request, 'delete_template.html', {
+    return render(request, 'bot/pages/delete_template.html', {
         'template': template
     })
 
@@ -865,7 +865,7 @@ def template_items_api(request, template_id):
 class CreateQuotationView(CreateView):
     model = Quotation
     form_class = QuotationForm
-    template_name = 'create_quotation.html'
+    template_name = 'bot/pages/create_quotation.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1036,7 +1036,7 @@ def create_quotation_api(request):
 @method_decorator(staff_required, name='dispatch')
 class ViewQuotationView(DetailView):
     model = Quotation
-    template_name = 'view_quotation.html'
+    template_name = 'bot/pages/view_quotation.html'
     context_object_name = 'quotation'
 
     def get_context_data(self, **kwargs):
@@ -1049,7 +1049,7 @@ class ViewQuotationView(DetailView):
 @method_decorator(staff_required, name='dispatch')
 class QuotationsListView(ListView):
     model = Quotation
-    template_name = 'quotations_list.html'
+    template_name = 'bot/pages/quotations_list.html'
     context_object_name = 'quotations'
     paginate_by = 25
     ordering = ['-created_at']
@@ -1102,7 +1102,7 @@ def quotation_detail_api(request, pk):
 class EditQuotationView(UpdateView):
     model = Quotation
     form_class = QuotationForm
-    template_name = 'edit_quotation.html'
+    template_name = 'bot/pages/edit_quotation.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1668,7 +1668,7 @@ def _followups_workspace_data(response_age='1w_minus'):
 
 @method_decorator(staff_required, name='dispatch')
 class DashboardView(TemplateView):
-    template_name = 'dashboard.html'
+    template_name = 'bot/pages/dashboard.html'
 
 
     def get_context_data(self, **kwargs):
@@ -1690,7 +1690,7 @@ class DashboardView(TemplateView):
 
 @method_decorator(staff_required, name='dispatch')
 class AppointmentsListView(ListView):
-    template_name = 'appointments_list.html'
+    template_name = 'bot/pages/appointments_list.html'
     model = Appointment
     context_object_name = 'appointments'
     paginate_by = 20
@@ -1878,7 +1878,7 @@ class AppointmentsListView(ListView):
 
 @method_decorator(staff_required, name='dispatch')
 class PriorityLeadsView(TemplateView):
-    template_name = 'priority_leads_dashboard.html'
+    template_name = 'bot/pages/priority_leads_dashboard.html'
 
     def _group_leads_by_date(self, leads_qs):
         from collections import OrderedDict
@@ -2097,7 +2097,7 @@ def update_priority_lead_card(request, pk):
 
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDetailView(DetailView):
-    template_name = 'appointment_detail.html'
+    template_name = 'bot/pages/appointment_detail.html'
     model = Appointment
     context_object_name = 'appointment'
     #
@@ -2113,7 +2113,7 @@ class AppointmentDetailView(DetailView):
             detail_source = 'appointments'
 
         is_frame = self.request.GET.get('frame') == '1'
-        base_template = 'base_panel.html' if is_frame else 'base.html'
+        base_template = 'bot/layouts/panel.html' if is_frame else 'bot/layouts/base.html'
 
         sidebar_appointments = Appointment.objects.order_by('-updated_at')[:20]
         source_workspace = {}
@@ -2225,7 +2225,7 @@ class AppointmentDetailView(DetailView):
 
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDocumentsView(DetailView):
-    template_name = 'appointment_documents.html'
+    template_name = 'bot/pages/appointment_documents.html'
     model = Appointment
     context_object_name = 'appointment'
 
@@ -2275,7 +2275,7 @@ def settings_view(request):
         }
         form = SettingsForm(initial=initial_data)
     
-    return render(request, 'settings.html', {
+    return render(request, 'bot/pages/settings.html', {
         'form': form,
         'active_tab': 'general'
     })
@@ -2298,7 +2298,7 @@ def calendar_settings_view(request):
         }
         form = CalendarSettingsForm(initial=initial_data)
     
-    return render(request, 'settings.html', {
+    return render(request, 'bot/pages/settings.html', {
         'form': form,
         'active_tab': 'calendar'
     })
@@ -2318,7 +2318,7 @@ def ai_settings_view(request):
         }
         form = AISettingsForm(initial=initial_data)
     
-    return render(request, 'settings.html', {
+    return render(request, 'bot/pages/settings.html', {
         'form': form,
         'active_tab': 'ai'
     })
@@ -2343,7 +2343,7 @@ def update_appointment(request, pk):
     else:
         form = AppointmentForm(instance=appointment)
 
-    return render(request, 'appointment_detail.html', {
+    return render(request, 'bot/pages/appointment_detail.html', {
         'appointment': appointment,
         'form': form,
         'has_documents': has_documents,
@@ -2482,7 +2482,7 @@ If you receive this, notifications are working! ✅"""
                 'error': str(e)
             }
     
-    return render(request, 'test_whatsapp.html', {
+    return render(request, 'bot/pages/test_whatsapp.html', {
         'results': results
     })
 
@@ -2537,7 +2537,7 @@ def complete_site_visit(request, pk):
         messages.success(request, 'Site visit marked as completed. You can now schedule the job appointment.')
         return redirect('schedule_job', pk=appointment.pk)
     
-    return render(request, 'complete_site_visit.html', {
+    return render(request, 'bot/pages/complete_site_visit.html', {
         'appointment': appointment
     })
 
@@ -2564,7 +2564,7 @@ def schedule_job(request, pk):
             # Validate required fields
             if not job_date or not job_time:
                 messages.error(request, 'Please provide both date and time')
-                return render(request, 'schedule_job.html', {
+                return render(request, 'bot/pages/schedule_job.html', {
                     'site_visit': site_visit,
                 })
             
@@ -2579,20 +2579,20 @@ def schedule_job(request, pk):
             # Check if time is in the future
             if job_datetime <= timezone.now():
                 messages.error(request, 'Job time must be in the future')
-                return render(request, 'schedule_job.html', {
+                return render(request, 'bot/pages/schedule_job.html', {
                     'site_visit': site_visit,
                 })
             
             # Check business hours (8 AM - 6 PM, Monday-Friday)
             if job_datetime.weekday() == 5:  # Saturday only
                 messages.error(request, 'Jobs can only be scheduled Sunday-Friday (closed Saturdays)')
-                return render(request, 'schedule_job.html', {
+                return render(request, 'bot/pages/schedule_job.html', {
                     'site_visit': site_visit,
                 })
             
             if job_datetime.hour < 8 or job_datetime.hour >= 18:
                 messages.error(request, 'Jobs must be scheduled between 8 AM and 6 PM')
-                return render(request, 'schedule_job.html', {
+                return render(request, 'bot/pages/schedule_job.html', {
                     'site_visit': site_visit,
                 })
             
@@ -2638,7 +2638,7 @@ def schedule_job(request, pk):
             messages.error(request, f'Error scheduling job: {str(e)}')
             print(f"❌ Schedule job error: {str(e)}")
     
-    return render(request, 'schedule_job.html', {
+    return render(request, 'bot/pages/schedule_job.html', {
         'site_visit': site_visit,
     })
 
@@ -2667,7 +2667,7 @@ def job_appointments_list(request):
         'selected_plumber': plumber_filter,
     }
     
-    return render(request, 'job_appointments_list.html', context)
+    return render(request, 'bot/pages/job_appointments_list.html', context)
 
 @require_POST
 @staff_required
@@ -2856,7 +2856,7 @@ def reschedule_job(request, pk):
             
             if not is_available:
                 messages.error(request, 'Selected time slot is not available')
-                return render(request, 'reschedule_job.html', {'job_appointment': job_appointment})
+                return render(request, 'bot/pages/reschedule_job.html', {'job_appointment': job_appointment})
             
             # Update appointment
             old_datetime = job_appointment.job_scheduled_datetime
@@ -2872,7 +2872,7 @@ def reschedule_job(request, pk):
         except Exception as e:
             messages.error(request, f'Error rescheduling job: {str(e)}')
     
-    return render(request, 'reschedule_job.html', {
+    return render(request, 'bot/pages/reschedule_job.html', {
         'job_appointment': job_appointment
     })
 
@@ -2952,11 +2952,11 @@ def job_appointments_list(request):
         'completed_jobs': completed_jobs,
     }
     
-    return render(request, 'job_appointments_list.html', context)
+    return render(request, 'bot/pages/job_appointments_list.html', context)
 
 
 class CalendarView(View):
-    template_name = 'calendar.html'  # Update to your actual template path
+    template_name = 'bot/pages/calendar.html'
 
     def get(self, request):
         return render(request, self.template_name)
@@ -3097,7 +3097,7 @@ def followup_dashboard(request):
     context = _followups_workspace_data(response_age)
     context['active_nav'] = 'followups'
     
-    return render(request, 'followup_dashboard.html', context)
+    return render(request, 'bot/pages/followup_dashboard.html', context)
 
 
 @staff_required
@@ -3112,7 +3112,7 @@ def mark_lead_inactive(request, pk):
         messages.success(request, f'Lead for {appointment.customer_name or appointment.phone_number} marked as inactive')
         return redirect('appointments_list')
     
-    return render(request, 'confirm_mark_inactive.html', {
+    return render(request, 'bot/pages/confirm_mark_inactive.html', {
         'appointment': appointment
     })
 
@@ -3131,7 +3131,7 @@ def reactivate_lead(request, pk):
         messages.success(request, f'Lead reactivated for {appointment.customer_name or appointment.phone_number}')
         return redirect('appointment_detail', pk=appointment.pk)
     
-    return render(request, 'confirm_reactivate.html', {
+    return render(request, 'bot/pages/confirm_reactivate.html', {
         'appointment': appointment
     })
 
@@ -3160,7 +3160,7 @@ def test_followup_message(request, pk):
         messages.success(request, f'Test {stage} follow-up sent to {appointment.phone_number}')
         return redirect('appointment_detail', pk=appointment.pk)
     
-    return render(request, 'test_followup.html', {
+    return render(request, 'bot/pages/test_followup.html', {
         'appointment': appointment,
         'stages': ['day_1', 'day_3', 'week_1', 'week_2', 'month_1']
     })
@@ -3438,7 +3438,7 @@ def send_bulk_followup(request):
         status='pending'
     ).order_by('-last_customer_response')
     
-    return render(request, 'bulk_followup.html', {
+    return render(request, 'bot/pages/bulk_followup.html', {
         'leads': active_leads
     })
 

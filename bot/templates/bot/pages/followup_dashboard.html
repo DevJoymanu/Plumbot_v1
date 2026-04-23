@@ -1,0 +1,265 @@
+{% extends "bot/layouts/base.html" %}
+{% load static %}
+
+{% block title %}Follow-ups — Plumbot{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Full-height split layout ── */
+  html, body { height: 100%; }
+  .pb-content { overflow: hidden !important; }
+  .pb-content__inner { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+
+  .fd-shell {
+    display: grid;
+    grid-template-columns: 530px minmax(0, 1fr);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ── Left panel ── */
+  .fd-left {
+    display: flex; flex-direction: column;
+    height: 100%; overflow: hidden;
+    border-right: 1px solid #dbe2e8;
+    background: #f3f5f8;
+  }
+
+  .fd-top {
+    background: var(--color-header);
+    color: #fff;
+    padding: 14px 16px 12px;
+    flex-shrink: 0;
+  }
+  .fd-top-title { font-size: 17px; font-weight: 700; margin: 0; }
+  .fd-top-sub   { font-size: 12px; color: rgba(255,255,255,0.72); margin-top: 2px; }
+
+  /* ── Scrollable list ── */
+  .fd-scroll {
+    flex: 1;
+    overflow-y: auto;
+    background: #fff;
+  }
+
+  /* ── Row ── */
+  .fd-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 13px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    text-decoration: none; color: inherit;
+    cursor: pointer; transition: background .15s;
+  }
+  .fd-row:last-child { border-bottom: none; }
+  .fd-row:hover { background: #f9fafb; }
+
+  .fd-avatar {
+    width: 46px; height: 46px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; color: #fff;
+    flex-shrink: 0; text-transform: uppercase;
+  }
+
+  .fd-row-main { flex: 1; min-width: 0; }
+  .fd-row-name {
+    font-size: 15px; font-weight: 600; color: #111827;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .fd-row-note {
+    font-size: 12px; color: #6b7280; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .fd-row-badge {
+    display: inline-block; margin-top: 5px;
+    background: #fee2e2; color: #991b1b;
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 20px;
+  }
+
+  .fd-row-time {
+    font-size: 11px; white-space: nowrap; flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .fd-row-time.urgent { color: #ef4444; font-weight: 700; }
+  .fd-row-time.normal { color: #9ca3af; }
+
+  .fd-empty {
+    padding: 32px 16px; text-align: center;
+    color: #9ca3af; font-size: 14px;
+  }
+
+  /* ── Toolbar (Run check button + filter) ── */
+  .fd-toolbar {
+    background: #fff;
+    border-bottom: 1px solid #f0f0f0;
+    padding: 10px 16px;
+    display: flex; gap: 8px; align-items: center; flex-shrink: 0;
+  }
+
+  .fd-toolbar-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    text-decoration: none; border: none; transition: opacity .15s;
+  }
+  .fd-toolbar-btn:hover { opacity: .85; }
+  .fd-toolbar-btn.primary { background: var(--color-teal); color: #fff; }
+  .fd-toolbar-btn.ghost   { background: #f3f5f8; color: #374151; border: 1px solid #e5e7eb; }
+
+  .fd-toolbar select {
+    border: 1px solid #e5e7eb; border-radius: 20px;
+    padding: 7px 12px; font-size: 12px; background: #f3f5f8;
+    outline: none; cursor: pointer; color: #374151;
+    font-family: inherit;
+  }
+  .fd-toolbar select:focus { border-color: var(--color-teal); }
+
+  /* ── Section label inside list ── */
+  .fd-section-label {
+    padding: 10px 16px 6px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .6px; color: #6b7280;
+    background: #fafafa; border-bottom: 1px solid #f0f0f0;
+    position: sticky; top: 0; z-index: 1;
+  }
+
+  /* ── Right panel (empty state) ── */
+  .fd-right {
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px;
+    background: #f9fafb; color: #9ca3af;
+  }
+  .fd-right-icon  { font-size: 42px; opacity: .3; }
+  .fd-right-title { font-size: 15px; font-weight: 600; color: #374151; }
+  .fd-right-sub   { font-size: 13px; }
+
+  @media (max-width: 980px) {
+    .fd-shell { grid-template-columns: 1fr; }
+    .fd-right { display: none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fd-shell">
+
+  {# ── Left panel ── #}
+  <div class="fd-left">
+
+    <div class="fd-top">
+      <div class="fd-top-title">Follow-ups</div>
+      <div class="fd-top-sub">
+        {% with total=ready_leads|length|add:recent_responses|length|add:recent_inactive|length %}
+        {{ total }} pending
+        {% endwith %}
+      </div>
+    </div>
+
+    {# ── Toolbar: filter + run button ── #}
+    <div class="fd-toolbar">
+      <form method="get" style="display:contents;">
+        <select name="response_age" onchange="this.form.submit()" aria-label="Filter">
+          <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last 7 days</option>
+          <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last 30 days</option>
+          <option value="all"      {% if selected_response_age == 'all'      %}selected{% endif %}>All-time</option>
+        </select>
+      </form>
+      <form method="post" action="{% url 'manual_followup_check' %}" style="display:contents;">
+        {% csrf_token %}
+        <button type="submit" class="fd-toolbar-btn primary">
+          <i class="fas fa-paper-plane"></i> Run Check
+        </button>
+      </form>
+      <a href="{% url 'followup_dashboard' %}" class="fd-toolbar-btn ghost">
+        <i class="fas fa-undo"></i> Reset
+      </a>
+    </div>
+
+    <div class="fd-scroll">
+
+      {# ── Needs attention (ready_leads) ── #}
+      {% if ready_leads %}
+      <div class="fd-section-label">⚡ Needs Attention — {{ ready_leads|length }}</div>
+      {% for lead in ready_leads %}
+      <a href="{% url 'appointment_detail' lead.pk %}?source=followups&response_age={{ selected_response_age }}"
+         class="fd-row">
+        <div class="fd-avatar" data-name="{{ lead.customer_name|default:'?' }}">
+          {{ lead.customer_name|default:"?"|slice:":2"|upper }}
+        </div>
+        <div class="fd-row-main">
+          <div class="fd-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+          <div class="fd-row-note">{{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
+          <span class="fd-row-badge">Needs attention</span>
+        </div>
+        <div class="fd-row-time urgent">
+          {% if lead.get_days_since_last_contact == 0 %}Today
+          {% elif lead.get_days_since_last_contact == 1 %}1d ago
+          {% else %}{{ lead.get_days_since_last_contact }}d ago{% endif %}
+        </div>
+      </a>
+      {% endfor %}
+      {% endif %}
+
+      {# ── Recent responses ── #}
+      {% if recent_responses %}
+      <div class="fd-section-label">✅ Recent Responses — {{ recent_responses|length }}</div>
+      {% for lead in recent_responses %}
+      <a href="{% url 'appointment_detail' lead.pk %}?source=followups&response_age={{ selected_response_age }}"
+         class="fd-row">
+        <div class="fd-avatar" data-name="{{ lead.customer_name|default:'?' }}">
+          {{ lead.customer_name|default:"?"|slice:":2"|upper }}
+        </div>
+        <div class="fd-row-main">
+          <div class="fd-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+          <div class="fd-row-note">{{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
+        </div>
+        <div class="fd-row-time normal">{{ lead.last_customer_response|timesince|truncatewords:2 }} ago</div>
+      </a>
+      {% endfor %}
+      {% endif %}
+
+      {# ── Recently inactive ── #}
+      {% if recent_inactive %}
+      <div class="fd-section-label">🚫 Inactive — {{ recent_inactive|length }}</div>
+      {% for lead in recent_inactive %}
+      <a href="{% url 'appointment_detail' lead.pk %}?source=followups&response_age={{ selected_response_age }}"
+         class="fd-row">
+        <div class="fd-avatar" data-name="{{ lead.customer_name|default:'?' }}">
+          {{ lead.customer_name|default:"?"|slice:":2"|upper }}
+        </div>
+        <div class="fd-row-main">
+          <div class="fd-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+          <div class="fd-row-note">{{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
+        </div>
+        <div class="fd-row-time normal">{{ lead.lead_marked_inactive_at|timesince|truncatewords:2 }} ago</div>
+      </a>
+      {% endfor %}
+      {% endif %}
+
+      {% if not ready_leads and not recent_responses and not recent_inactive %}
+      <div class="fd-empty">🎉 No pending follow-ups</div>
+      {% endif %}
+
+    </div>{# /fd-scroll #}
+  </div>{# /fd-left #}
+
+  {# ── Right panel: empty state ── #}
+  <div class="fd-right">
+    <div class="fd-right-icon">💬</div>
+    <div class="fd-right-title">Select an appointment</div>
+    <div class="fd-right-sub">to view details and conversation</div>
+  </div>
+
+</div>{# /fd-shell #}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var COLORS = ['#0e7490','#0a3d5c','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
+  document.querySelectorAll('.fd-avatar[data-name]').forEach(function (el) {
+    var n = el.getAttribute('data-name') || '';
+    el.style.background = COLORS[n.charCodeAt(0) % COLORS.length];
+  });
+})();
+</script>
+{% endblock %}

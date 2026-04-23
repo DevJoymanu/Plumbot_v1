@@ -1,0 +1,101 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}Bulk Follow-up{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h4 mb-1">Bulk Follow-up</h1>
+            <p class="text-muted mb-0">Send one manual message to multiple active leads.</p>
+        </div>
+        <a href="{% url 'followup_dashboard' %}" class="btn btn-outline-secondary">Back</a>
+    </div>
+
+    <form method="post" class="d-grid gap-4">
+        {% csrf_token %}
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <label for="message_template" class="form-label">Message template</label>
+                <textarea id="message_template" name="message_template" rows="5" class="form-control" placeholder="Hi {name}, just checking in on your plumbing request..."></textarea>
+                <div class="form-text">Use <code>{name}</code> to personalize the message.</div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label for="pause_duration" class="form-label">Pause auto follow-ups for</label>
+                        <select id="pause_duration" name="pause_duration" class="form-select">
+                            <option value="24">24 hours</option>
+                            <option value="48" selected>48 hours</option>
+                            <option value="72">72 hours</option>
+                            <option value="168">7 days</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 56px;">
+                                    <input type="checkbox" class="form-check-input" id="select-all">
+                                </th>
+                                <th>Lead</th>
+                                <th>Phone</th>
+                                <th>Service</th>
+                                <th>Last Response</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for lead in leads %}
+                            <tr>
+                                <td>
+                                    <input type="checkbox" class="form-check-input lead-check" name="lead_ids" value="{{ lead.id }}">
+                                </td>
+                                <td>{{ lead.customer_name|default:"Unnamed lead" }}</td>
+                                <td>{{ lead.phone_number }}</td>
+                                <td>{{ lead.service_type|default:"-" }}</td>
+                                <td>{{ lead.last_customer_response|default:lead.updated_at }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">No active leads are available.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Send Bulk Follow-up</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var selectAll = document.getElementById('select-all');
+        var boxes = Array.from(document.querySelectorAll('.lead-check'));
+
+        if (selectAll) {
+            selectAll.addEventListener('change', function () {
+                boxes.forEach(function (box) {
+                    box.checked = selectAll.checked;
+                });
+            });
+        }
+    });
+</script>
+{% endblock %}

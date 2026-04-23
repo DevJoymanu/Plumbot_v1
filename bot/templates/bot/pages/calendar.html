@@ -1,0 +1,699 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block extra_css %}
+<style>
+  .page-topbar {
+    background: #0a3d5c;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .page-topbar h1 {
+    color: #fff;
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0;
+  }
+  .page-topbar i {
+    color: rgba(255,255,255,0.7);
+    font-size: 16px;
+  }
+
+  .calendar-body {
+    padding: 16px;
+  }
+
+  /* ── Stats row ── */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 600px) {
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .stat-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+
+  .stat-number {
+    font-size: 22px;
+    font-weight: 700;
+    color: #0a3d5c;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: #6b7280;
+    font-weight: 500;
+  }
+
+  /* ── Controls ── */
+  .calendar-controls-bar {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .calendar-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .month-year {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111827;
+    min-width: 160px;
+    text-align: center;
+  }
+
+  .nav-btn {
+    background: #0e7490;
+    color: #fff;
+    border: none;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover { background: #0c6a82; }
+
+  .cal-action-btns {
+    display: flex;
+    gap: 8px;
+  }
+
+  .view-toggle {
+    background: #F0F2F5;
+    color: #374151;
+    border: none;
+    border-radius: 20px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .view-toggle:hover { background: #e5e7eb; }
+
+  /* ── Filters ── */
+  .filters-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .filter-btn {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 20px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    color: #374151;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .filter-btn.active,
+  .filter-btn:hover {
+    background: #0e7490;
+    color: #fff;
+    border-color: #0e7490;
+  }
+
+  /* ── Calendar wrapper card ── */
+  .calendar-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    overflow: hidden;
+  }
+
+  /* ── Calendar grid ── */
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    margin-bottom: 16px;
+  }
+
+  .calendar-day-header {
+    background: #0a3d5c;
+    color: #fff;
+    padding: 10px 4px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+  }
+
+  .calendar-day {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    min-height: 100px;
+    padding: 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .calendar-day:hover {
+    border-color: #0e7490;
+  }
+
+  .calendar-day.other-month {
+    background: #F0F2F5;
+    color: #9ca3af;
+  }
+
+  .calendar-day.today {
+    border-color: #0e7490;
+    background: #f0f9ff;
+  }
+
+  .calendar-day.has-appointments {
+    border-color: #25D366;
+    background: #f0fdf4;
+  }
+
+  .day-number {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 4px;
+  }
+
+  .calendar-day.today .day-number {
+    color: #0e7490;
+    font-weight: 700;
+  }
+
+  .appointment-indicator {
+    background: #0e7490;
+    color: #fff;
+    padding: 2px 5px;
+    border-radius: 10px;
+    font-size: 10px;
+    margin: 1px 0;
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+
+  .appointment-indicator.bathroom  { background: #25D366; }
+  .appointment-indicator.kitchen   { background: #ef4444; }
+  .appointment-indicator.installation { background: #0e7490; }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #374151;
+  }
+
+  .legend-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .legend-color.bathroom    { background: #25D366; }
+  .legend-color.kitchen     { background: #ef4444; }
+  .legend-color.installation { background: #0e7490; }
+
+  /* ── Modal ── */
+  .appointment-modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.4);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .appointment-modal.open {
+    display: flex;
+  }
+
+  .modal-content {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    width: 90%;
+    max-width: 560px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .modal-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .close-btn {
+    background: #F0F2F5;
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+    cursor: pointer;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .close-btn:hover { background: #fee2e2; color: #ef4444; }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 10px 0;
+    border-bottom: 1px solid #e5e7eb;
+    gap: 12px;
+  }
+
+  .detail-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    flex-shrink: 0;
+  }
+
+  .detail-value {
+    font-size: 13px;
+    color: #6b7280;
+    text-align: right;
+  }
+
+  .status-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .status-confirmed { background: #d1fae5; color: #065f46; }
+  .status-pending   { background: #fef3c7; color: #92400e; }
+
+  @media (max-width: 600px) {
+    .calendar-controls-bar { flex-direction: column; align-items: stretch; }
+    .calendar-nav { justify-content: space-between; }
+    .calendar-day { min-height: 60px; padding: 4px; }
+    .calendar-day-header { padding: 6px 2px; font-size: 10px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-topbar">
+  <i class="fas fa-calendar-alt"></i>
+  <h1>Calendar</h1>
+</div>
+
+<div class="calendar-body">
+
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-number" id="totalAppointments">—</div>
+      <div class="stat-label">Total This Month</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="todayAppointments">—</div>
+      <div class="stat-label">Today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="pendingAppointments">—</div>
+      <div class="stat-label">Pending</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="confirmedAppointments">—</div>
+      <div class="stat-label">Confirmed</div>
+    </div>
+  </div>
+
+  <div class="calendar-controls-bar">
+    <div class="calendar-nav">
+      <button class="nav-btn" onclick="changeMonth(-1)">&#8592; Prev</button>
+      <div class="month-year" id="monthYear">Loading…</div>
+      <button class="nav-btn" onclick="changeMonth(1)">Next &#8594;</button>
+    </div>
+    <div class="cal-action-btns">
+      <button class="view-toggle" onclick="toggleView()">Today</button>
+      <button class="view-toggle" onclick="refreshCalendar()">Refresh</button>
+    </div>
+  </div>
+
+  <div class="filters-bar">
+    <button class="filter-btn active" onclick="filterAppointments('all')">All Services</button>
+    <button class="filter-btn" onclick="filterAppointments('bathroom')">Bathroom</button>
+    <button class="filter-btn" onclick="filterAppointments('kitchen')">Kitchen</button>
+    <button class="filter-btn" onclick="filterAppointments('installation')">Installation</button>
+  </div>
+
+  <div class="calendar-card">
+    <div class="calendar-grid" id="calendarGrid">
+      <!-- Calendar will be generated here -->
+    </div>
+
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-color bathroom"></div>
+        <span>Bathroom Renovation</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color kitchen"></div>
+        <span>Kitchen Renovation</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color installation"></div>
+        <span>New Installation</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Appointment Modal -->
+<div class="appointment-modal" id="appointmentModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Appointment Details</h2>
+      <button class="close-btn" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="appointment-details" id="appointmentDetails">
+      <!-- Appointment details will be populated here -->
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Sample appointment data - replace with your Django data
+    let appointments = [];
+
+    async function fetchAppointments() {
+        try {
+            const res = await fetch('/api/appointments/');
+            appointments = await res.json();
+            generateCalendar();  // re-render after loading data
+        } catch (err) {
+            console.error('Failed to load appointments:', err);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchAppointments();
+    });
+
+    let currentDate = new Date();
+    let currentFilter = 'all';
+
+    function generateCalendar() {
+        const grid = document.getElementById('calendarGrid');
+        const monthYear = document.getElementById('monthYear');
+
+        // Clear previous calendar
+        grid.innerHTML = '';
+
+        // Update month/year display
+        const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+        monthYear.textContent = `${months[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+
+        // Add day headers
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        days.forEach(day => {
+            const dayHeader = document.createElement('div');
+            dayHeader.className = 'calendar-day-header';
+            dayHeader.textContent = day;
+            grid.appendChild(dayHeader);
+        });
+
+        // Get first day of month and days in month
+        const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        const startDate = new Date(firstDay);
+        startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+        // Generate calendar days
+        const today = new Date();
+        for (let i = 0; i < 42; i++) {
+            const cellDate = new Date(startDate);
+            cellDate.setDate(startDate.getDate() + i);
+
+            const dayCell = document.createElement('div');
+            dayCell.className = 'calendar-day';
+
+            // Check if day is in current month
+            if (cellDate.getMonth() !== currentDate.getMonth()) {
+                dayCell.classList.add('other-month');
+            }
+
+            // Check if today
+            if (cellDate.toDateString() === today.toDateString()) {
+                dayCell.classList.add('today');
+            }
+
+            // Add day number
+            const dayNumber = document.createElement('div');
+            dayNumber.className = 'day-number';
+            dayNumber.textContent = cellDate.getDate();
+            dayCell.appendChild(dayNumber);
+
+            // Add appointments for this day
+            const dayAppointments = getAppointmentsForDay(cellDate);
+            if (dayAppointments.length > 0) {
+                dayCell.classList.add('has-appointments');
+                dayAppointments.forEach(appointment => {
+                    if (currentFilter === 'all' || currentFilter === appointment.service) {
+                        const indicator = document.createElement('div');
+                        indicator.className = `appointment-indicator ${appointment.service}`;
+                        indicator.textContent = `${appointment.time} - ${appointment.customerName}`;
+                        indicator.onclick = (e) => {
+                            e.stopPropagation();
+                            showAppointmentDetails(appointment);
+                        };
+                        dayCell.appendChild(indicator);
+                    }
+                });
+            }
+
+            // Add click handler for day
+            dayCell.onclick = () => {
+                if (dayAppointments.length > 0) {
+                    showDayAppointments(cellDate, dayAppointments);
+                }
+            };
+
+            grid.appendChild(dayCell);
+        }
+
+        updateStats();
+    }
+
+    function getAppointmentsForDay(date) {
+        const dateStr = date.toISOString().split('T')[0];
+        return appointments.filter(app => app.date === dateStr);
+    }
+
+    function showAppointmentDetails(appointment) {
+        const modal = document.getElementById('appointmentModal');
+        const details = document.getElementById('appointmentDetails');
+
+        const serviceNames = {
+            bathroom: 'Bathroom Renovation',
+            kitchen: 'Kitchen Renovation',
+            installation: 'New Plumbing Installation'
+        };
+
+        const statusClass = appointment.status === 'confirmed' ? 'status-confirmed' : 'status-pending';
+
+        details.innerHTML = `
+            <div class="detail-row">
+                <span class="detail-label">Customer:</span>
+                <span class="detail-value">${appointment.customerName}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Phone:</span>
+                <span class="detail-value">${appointment.phone}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Date & Time:</span>
+                <span class="detail-value">${appointment.date} at ${appointment.time}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Service:</span>
+                <span class="detail-value">${appointment.serviceLabel || serviceNames[appointment.service] || 'No service'}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Area:</span>
+                <span class="detail-value">${appointment.area}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Project Description:</span>
+                <span class="detail-value">${appointment.projectDescription}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Booking Status:</span>
+                <span class="detail-value">${appointment.statusLabel}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Status:</span>
+                <span class="detail-value"><span class="status-badge ${statusClass}">${appointment.statusLabel}</span></span>
+            </div>
+        `;
+
+        modal.style.display = 'flex';
+    }
+
+    function showDayAppointments(date, dayAppointments) {
+        if (dayAppointments.length === 1) {
+            showAppointmentDetails(dayAppointments[0]);
+        } else {
+            // Show multiple appointments for the day
+            const modal = document.getElementById('appointmentModal');
+            const details = document.getElementById('appointmentDetails');
+
+            let html = `<h3 style="font-size:14px;font-weight:700;color:#111827;margin-bottom:12px;">Appointments for ${date.toLocaleDateString()}</h3>`;
+            dayAppointments.forEach(appointment => {
+                html += `
+                    <div class="detail-row" style="cursor: pointer; border-radius: 8px; margin: 5px 0; padding: 10px; background: #F0F2F5;" onclick="showAppointmentDetails(${JSON.stringify(appointment).replace(/"/g, '&quot;')})">
+                        <span class="detail-label">${appointment.time} - ${appointment.customerName}</span>
+                        <span class="detail-value">${appointment.service}</span>
+                    </div>
+                `;
+            });
+
+            details.innerHTML = html;
+            modal.style.display = 'flex';
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('appointmentModal').style.display = 'none';
+    }
+
+    function changeMonth(direction) {
+        currentDate.setMonth(currentDate.getMonth() + direction);
+        generateCalendar();
+    }
+
+    function toggleView() {
+        currentDate = new Date();
+        generateCalendar();
+    }
+
+    function refreshCalendar() {
+        generateCalendar();
+    }
+
+    function filterAppointments(filter) {
+        currentFilter = filter;
+
+        // Update active filter button
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+
+        generateCalendar();
+    }
+
+    function updateStats() {
+        const currentMonth = currentDate.getMonth();
+        const currentYear = currentDate.getFullYear();
+        const today = new Date().toISOString().split('T')[0];
+
+        // Filter appointments for current month
+        const monthlyAppointments = appointments.filter(app => {
+            const appDate = new Date(app.date);
+            return appDate.getMonth() === currentMonth && appDate.getFullYear() === currentYear;
+        });
+
+        // Calculate stats
+        const totalAppointments = monthlyAppointments.length;
+        const todayAppointments = appointments.filter(app => app.date === today).length;
+        const pendingAppointments = monthlyAppointments.filter(app => app.status === 'pending').length;
+        const confirmedAppointments = monthlyAppointments.filter(app => app.status === 'confirmed').length;
+
+        // Update display
+        document.getElementById('totalAppointments').textContent = totalAppointments;
+        document.getElementById('todayAppointments').textContent = todayAppointments;
+        document.getElementById('pendingAppointments').textContent = pendingAppointments;
+        document.getElementById('confirmedAppointments').textContent = confirmedAppointments;
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+        const modal = document.getElementById('appointmentModal');
+        if (event.target === modal) {
+            closeModal();
+        }
+    }
+
+    // Initialize calendar on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        generateCalendar();
+    });
+</script>
+{% endblock %}

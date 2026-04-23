@@ -1,0 +1,576 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block extra_css %}
+<style>
+  /* ── Full-height split layout ── */
+  html, body { height: 100%; }
+  .pb-content { overflow: hidden !important; }
+  .pb-content__inner { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+
+  .pl-shell {
+    display: grid;
+    grid-template-columns: 530px minmax(0, 1fr);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ── Left panel ── */
+  .pl-left {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    border-right: 1px solid #dbe2e8;
+    background: #f3f5f8;
+  }
+
+  .pl-top {
+    background: var(--color-header);
+    color: #fff;
+    padding: 14px 16px 12px;
+    flex-shrink: 0;
+  }
+  .pl-top-title { font-size: 17px; font-weight: 700; margin: 0; }
+  .pl-top-sub   { font-size: 12px; color: rgba(255,255,255,0.72); margin-top: 2px; }
+
+  .pl-search {
+    background: var(--color-header);
+    padding: 8px 16px 12px;
+    flex-shrink: 0;
+  }
+  .pl-search-wrap { position: relative; }
+  .pl-search-wrap i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #6b7280; font-size: 14px; }
+  .pl-search input {
+    width: 100%; min-height: 40px;
+    padding: 0 16px 0 40px;
+    border-radius: 999px; border: none;
+    background: #fff; font-size: 14px;
+    outline: none;
+  }
+
+  /* ── Chips row ── */
+  .pl-chips {
+    background: #fff;
+    padding: 8px 12px;
+    display: flex; gap: 6px;
+    overflow-x: auto; scrollbar-width: none;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+  }
+  .pl-chips::-webkit-scrollbar { display: none; }
+
+  .pl-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px; border-radius: 20px;
+    font-size: 12px; font-weight: 700;
+    white-space: nowrap; cursor: pointer; flex-shrink: 0;
+    border: 1px solid transparent;
+  }
+  .pl-chip-count {
+    font-size: 11px; font-weight: 800;
+    border-radius: 10px; padding: 0 5px;
+  }
+  .pl-chip.vh  { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+  .pl-chip.hot { background:#fef3c7; color:#92400e; border-color:#fcd34d; }
+  .pl-chip.warm{ background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+  .pl-chip.luke{ background:#dbeafe; color:#1e3a8a; border-color:#93c5fd; }
+  .pl-chip.cold{ background:#f3f4f6; color:#374151; border-color:#d1d5db; }
+  .pl-chip.vh   .pl-chip-count { background:#dc262622; color:#991b1b; }
+  .pl-chip.hot  .pl-chip-count { background:#f59e0b22; color:#92400e; }
+  .pl-chip.warm .pl-chip-count { background:#10b98122; color:#065f46; }
+  .pl-chip.luke .pl-chip-count { background:#0ea5e922; color:#1e3a8a; }
+  .pl-chip.cold .pl-chip-count { background:#6b728022; color:#374151; }
+
+  /* ── Scrollable sections area ── */
+  .pl-scroll {
+    flex: 1;
+    overflow-y: auto;
+    background: #f3f5f8;
+  }
+
+  /* ── Section block ── */
+  .pl-section { margin-bottom: 8px; }
+
+  .pl-sec-header {
+    width: 100%; background: #fff;
+    border: none; border-left: 4px solid #ccc;
+    padding: 13px 16px;
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer; text-align: left;
+    font-family: inherit;
+  }
+  .pl-sec-header:hover { background: #fafafa; }
+
+  .pl-sec-icon {
+    width: 34px; height: 34px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .pl-sec-info { flex: 1; }
+  .pl-sec-title { font-size: 14px; font-weight: 700; line-height: 1.2; }
+  .pl-sec-sub   { font-size: 12px; color: #6b7280; margin-top: 1px; }
+  .pl-sec-chev  { font-size: 14px; color: #6b7280; transition: transform .2s; flex-shrink: 0; }
+  .pl-section.collapsed .pl-sec-chev { transform: rotate(-90deg); }
+
+  .pl-sec-body { background: #fff; border-left: 4px solid #ccc; }
+  .pl-section.collapsed .pl-sec-body { display: none; }
+
+  /* Heat colour sets */
+  .pl-section.vh  .pl-sec-header, .pl-section.vh  .pl-sec-body { border-left-color: #dc2626; }
+  .pl-section.hot .pl-sec-header, .pl-section.hot .pl-sec-body { border-left-color: #f59e0b; }
+  .pl-section.warm.pl-sec-header, .pl-section.warm .pl-sec-body { border-left-color: #10b981; }
+  .pl-section.luke.pl-sec-header, .pl-section.luke .pl-sec-body { border-left-color: #0ea5e9; }
+  .pl-section.cold.pl-sec-header, .pl-section.cold .pl-sec-body { border-left-color: #6b7280; }
+
+  .pl-section.vh   .pl-sec-icon { background: #fee2e2; }
+  .pl-section.hot  .pl-sec-icon { background: #fef3c7; }
+  .pl-section.warm .pl-sec-icon { background: #d1fae5; }
+  .pl-section.luke .pl-sec-icon { background: #dbeafe; }
+  .pl-section.cold .pl-sec-icon { background: #f3f4f6; }
+
+  .pl-section.vh   .pl-sec-title { color: #7f1d1d; }
+  .pl-section.hot  .pl-sec-title { color: #78350f; }
+  .pl-section.warm .pl-sec-title { color: #064e3b; }
+  .pl-section.luke .pl-sec-title { color: #1e3a8a; }
+  .pl-section.cold .pl-sec-title { color: #374151; }
+
+  /* ── Lead row ── */
+  .pl-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 16px;
+    border-top: 1px solid #f0f0f0;
+    text-decoration: none; color: inherit;
+    cursor: pointer; transition: background .15s;
+    position: relative;
+  }
+  .pl-row:hover { background: #f9fafb; }
+
+  .pl-avatar {
+    width: 46px; height: 46px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; color: #fff;
+    flex-shrink: 0; text-transform: uppercase;
+  }
+
+  .pl-row-main { flex: 1; min-width: 0; }
+  .pl-row-name {
+    font-size: 14px; font-weight: 600; color: #111827;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .pl-row-meta {
+    font-size: 12px; color: #6b7280; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .pl-row-btns { display: flex; gap: 5px; margin-top: 6px; position: relative; z-index: 2; }
+
+  .pl-btn-call, .pl-btn-wa {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 8px;
+    font-size: 11px; font-weight: 700; text-decoration: none;
+    transition: opacity .15s;
+  }
+  .pl-btn-call:hover, .pl-btn-wa:hover { opacity: .82; }
+  .pl-btn-call { background: #dcfce7; color: #166534; }
+  .pl-btn-wa   { background: #dcfce7; color: #166534; }
+
+  /* Score ring */
+  .pl-score {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 2px; flex-shrink: 0;
+  }
+  .pl-score-ring {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    /* conic-gradient set by JS */
+    background: conic-gradient(#9ca3af 0deg, #e5e7eb 0);
+  }
+  .pl-score-inner {
+    width: 29px; height: 29px; border-radius: 50%;
+    background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; color: #9ca3af;
+  }
+  .pl-score-label { font-size: 9px; color: #9ca3af; }
+
+  /* Empty state */
+  .pl-empty {
+    padding: 20px 16px; text-align: center;
+    color: #9ca3af; font-size: 13px;
+    border-top: 1px solid #f0f0f0;
+  }
+
+  /* ── Right panel ── */
+  .pl-right {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #f9fafb;
+  }
+  .pl-right-empty {
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px;
+    height: 100%; color: #9ca3af;
+  }
+  .pl-right-icon { font-size: 38px; color: #d1d5db; }
+  .pl-right-title { font-size: 15px; font-weight: 600; color: #374151; }
+  .pl-right-sub   { font-size: 13px; }
+
+  #plDetailFrame {
+    display: none;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+
+  /* Selected row highlight */
+  .pl-row.is-selected { background: #f0f9ff; }
+  .pl-row.is-selected .pl-row-name { color: var(--color-teal); }
+
+  @media (max-width: 980px) {
+    .pl-shell { grid-template-columns: 1fr; }
+    .pl-right { display: none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pl-shell">
+
+  {# ── Left panel ── #}
+  <div class="pl-left">
+
+    <div class="pl-top">
+      <div class="pl-top-title">Priority Leads</div>
+      <div class="pl-top-sub">{{ total_leads }} active lead{{ total_leads|pluralize }}</div>
+    </div>
+
+    <div class="pl-search">
+      <div class="pl-search-wrap">
+        <i class="fas fa-search"></i>
+        <input id="leadsSearch" type="text" placeholder="Search leads…" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="pl-chips">
+      <div class="pl-chip vh"   onclick="scrollToSec('pl-vh')">  🔥 Very Hot  <span class="pl-chip-count">{{ very_hot_leads|length }}</span></div>
+      <div class="pl-chip hot"  onclick="scrollToSec('pl-hot')"> ⚡ Hot       <span class="pl-chip-count">{{ hot_leads|length }}</span></div>
+      <div class="pl-chip warm" onclick="scrollToSec('pl-warm')">☀️ Warm      <span class="pl-chip-count">{{ warm_leads|length }}</span></div>
+      <div class="pl-chip luke" onclick="scrollToSec('pl-luke')">🌤 Lukewarm  <span class="pl-chip-count">{{ luke_warm_leads|length }}</span></div>
+      <div class="pl-chip cold" onclick="scrollToSec('pl-cold')">❄️ Cold      <span class="pl-chip-count">{{ cold_leads|length }}</span></div>
+    </div>
+
+    <div class="pl-scroll" id="plScroll">
+
+      {# ── Very Hot ── #}
+      <div class="pl-section vh" id="pl-vh">
+        <button class="pl-sec-header" onclick="togglePlSec('pl-vh')">
+          <div class="pl-sec-icon">🔥</div>
+          <div class="pl-sec-info">
+            <div class="pl-sec-title">Very Hot Leads</div>
+            <div class="pl-sec-sub">{{ very_hot_leads|length }} lead{{ very_hot_leads|length|pluralize }}</div>
+          </div>
+          <i class="fas fa-chevron-right pl-sec-chev"></i>
+        </button>
+        <div class="pl-sec-body" id="pl-vh-body">
+          {% for group in very_hot_by_date %}
+            {% for lead in group.leads %}
+            <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ selected_response_age }}"
+               class="pl-row"
+               data-search="{{ lead.customer_name|lower }} {{ lead.phone_number|lower }} {{ lead.customer_area|lower }} {{ lead.project_type|lower }}"
+               data-score="{{ lead.computed_score|default:0 }}">
+              <div class="pl-avatar" data-name="{{ lead.customer_name|default:'?' }}">
+                {{ lead.customer_name|default:"?"|slice:":2"|upper }}
+              </div>
+              <div class="pl-row-main">
+                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-btns">
+                  {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                  <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
+                  <a href="https://wa.me/{{ clean_phone|cut:'+' |cut:' ' }}" target="_blank" onclick="event.stopPropagation()" class="pl-btn-wa"><i class="fab fa-whatsapp"></i> WA</a>
+                  {% endwith %}
+                </div>
+              </div>
+              <div class="pl-score">
+                <div class="pl-score-ring"><div class="pl-score-inner">{{ lead.computed_score|default:"—" }}</div></div>
+                <div class="pl-score-label">score</div>
+              </div>
+            </a>
+            {% endfor %}
+          {% empty %}
+          <div class="pl-empty">No very hot leads</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ── Hot ── #}
+      <div class="pl-section hot" id="pl-hot">
+        <button class="pl-sec-header" onclick="togglePlSec('pl-hot')">
+          <div class="pl-sec-icon">⚡</div>
+          <div class="pl-sec-info">
+            <div class="pl-sec-title">Hot Leads</div>
+            <div class="pl-sec-sub">{{ hot_leads|length }} lead{{ hot_leads|length|pluralize }}</div>
+          </div>
+          <i class="fas fa-chevron-right pl-sec-chev"></i>
+        </button>
+        <div class="pl-sec-body" id="pl-hot-body">
+          {% for group in hot_by_date %}
+            {% for lead in group.leads %}
+            <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ selected_response_age }}"
+               class="pl-row"
+               data-search="{{ lead.customer_name|lower }} {{ lead.phone_number|lower }} {{ lead.customer_area|lower }} {{ lead.project_type|lower }}"
+               data-score="{{ lead.computed_score|default:0 }}">
+              <div class="pl-avatar" data-name="{{ lead.customer_name|default:'?' }}">
+                {{ lead.customer_name|default:"?"|slice:":2"|upper }}
+              </div>
+              <div class="pl-row-main">
+                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-btns">
+                  {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                  <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
+                  <a href="https://wa.me/{{ clean_phone|cut:'+' |cut:' ' }}" target="_blank" onclick="event.stopPropagation()" class="pl-btn-wa"><i class="fab fa-whatsapp"></i> WA</a>
+                  {% endwith %}
+                </div>
+              </div>
+              <div class="pl-score">
+                <div class="pl-score-ring"><div class="pl-score-inner">{{ lead.computed_score|default:"—" }}</div></div>
+                <div class="pl-score-label">score</div>
+              </div>
+            </a>
+            {% endfor %}
+          {% empty %}
+          <div class="pl-empty">No hot leads</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ── Warm ── #}
+      <div class="pl-section warm collapsed" id="pl-warm">
+        <button class="pl-sec-header" onclick="togglePlSec('pl-warm')">
+          <div class="pl-sec-icon">☀️</div>
+          <div class="pl-sec-info">
+            <div class="pl-sec-title">Warm Leads</div>
+            <div class="pl-sec-sub">{{ warm_leads|length }} lead{{ warm_leads|length|pluralize }}</div>
+          </div>
+          <i class="fas fa-chevron-right pl-sec-chev"></i>
+        </button>
+        <div class="pl-sec-body" id="pl-warm-body">
+          {% for group in warm_by_date %}
+            {% for lead in group.leads %}
+            <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ selected_response_age }}"
+               class="pl-row"
+               data-search="{{ lead.customer_name|lower }} {{ lead.phone_number|lower }} {{ lead.customer_area|lower }} {{ lead.project_type|lower }}"
+               data-score="{{ lead.computed_score|default:0 }}">
+              <div class="pl-avatar" data-name="{{ lead.customer_name|default:'?' }}">
+                {{ lead.customer_name|default:"?"|slice:":2"|upper }}
+              </div>
+              <div class="pl-row-main">
+                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-btns">
+                  {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                  <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
+                  <a href="https://wa.me/{{ clean_phone|cut:'+' |cut:' ' }}" target="_blank" onclick="event.stopPropagation()" class="pl-btn-wa"><i class="fab fa-whatsapp"></i> WA</a>
+                  {% endwith %}
+                </div>
+              </div>
+              <div class="pl-score">
+                <div class="pl-score-ring"><div class="pl-score-inner">{{ lead.computed_score|default:"—" }}</div></div>
+                <div class="pl-score-label">score</div>
+              </div>
+            </a>
+            {% endfor %}
+          {% empty %}
+          <div class="pl-empty">No warm leads</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ── Lukewarm ── #}
+      <div class="pl-section luke collapsed" id="pl-luke">
+        <button class="pl-sec-header" onclick="togglePlSec('pl-luke')">
+          <div class="pl-sec-icon">🌤</div>
+          <div class="pl-sec-info">
+            <div class="pl-sec-title">Lukewarm Leads</div>
+            <div class="pl-sec-sub">{{ luke_warm_leads|length }} lead{{ luke_warm_leads|length|pluralize }}</div>
+          </div>
+          <i class="fas fa-chevron-right pl-sec-chev"></i>
+        </button>
+        <div class="pl-sec-body" id="pl-luke-body">
+          {% for group in luke_warm_by_date %}
+            {% for lead in group.leads %}
+            <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ selected_response_age }}"
+               class="pl-row"
+               data-search="{{ lead.customer_name|lower }} {{ lead.phone_number|lower }} {{ lead.customer_area|lower }} {{ lead.project_type|lower }}"
+               data-score="{{ lead.computed_score|default:0 }}">
+              <div class="pl-avatar" data-name="{{ lead.customer_name|default:'?' }}">
+                {{ lead.customer_name|default:"?"|slice:":2"|upper }}
+              </div>
+              <div class="pl-row-main">
+                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-btns">
+                  {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                  <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
+                  <a href="https://wa.me/{{ clean_phone|cut:'+' |cut:' ' }}" target="_blank" onclick="event.stopPropagation()" class="pl-btn-wa"><i class="fab fa-whatsapp"></i> WA</a>
+                  {% endwith %}
+                </div>
+              </div>
+              <div class="pl-score">
+                <div class="pl-score-ring"><div class="pl-score-inner">{{ lead.computed_score|default:"—" }}</div></div>
+                <div class="pl-score-label">score</div>
+              </div>
+            </a>
+            {% endfor %}
+          {% empty %}
+          <div class="pl-empty">No lukewarm leads</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ── Cold ── #}
+      <div class="pl-section cold collapsed" id="pl-cold">
+        <button class="pl-sec-header" onclick="togglePlSec('pl-cold')">
+          <div class="pl-sec-icon">❄️</div>
+          <div class="pl-sec-info">
+            <div class="pl-sec-title">Cold Leads</div>
+            <div class="pl-sec-sub">{{ cold_leads|length }} lead{{ cold_leads|length|pluralize }}</div>
+          </div>
+          <i class="fas fa-chevron-right pl-sec-chev"></i>
+        </button>
+        <div class="pl-sec-body" id="pl-cold-body">
+          {% for group in cold_by_date %}
+            {% for lead in group.leads %}
+            <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ selected_response_age }}"
+               class="pl-row"
+               data-search="{{ lead.customer_name|lower }} {{ lead.phone_number|lower }} {{ lead.customer_area|lower }} {{ lead.project_type|lower }}"
+               data-score="{{ lead.computed_score|default:0 }}">
+              <div class="pl-avatar" data-name="{{ lead.customer_name|default:'?' }}">
+                {{ lead.customer_name|default:"?"|slice:":2"|upper }}
+              </div>
+              <div class="pl-row-main">
+                <div class="pl-row-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+                <div class="pl-row-meta">{{ lead.get_project_type_display|default:lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }}</div>
+                <div class="pl-row-btns">
+                  {% with clean_phone=lead.phone_number|cut:"whatsapp:" %}
+                  <a href="tel:{{ clean_phone }}" onclick="event.stopPropagation()" class="pl-btn-call"><i class="fas fa-phone"></i> Call</a>
+                  <a href="https://wa.me/{{ clean_phone|cut:'+' |cut:' ' }}" target="_blank" onclick="event.stopPropagation()" class="pl-btn-wa"><i class="fab fa-whatsapp"></i> WA</a>
+                  {% endwith %}
+                </div>
+              </div>
+              <div class="pl-score">
+                <div class="pl-score-ring"><div class="pl-score-inner">{{ lead.computed_score|default:"—" }}</div></div>
+                <div class="pl-score-label">score</div>
+              </div>
+            </a>
+            {% endfor %}
+          {% empty %}
+          <div class="pl-empty">No cold leads</div>
+          {% endfor %}
+        </div>
+      </div>
+
+    </div>{# /pl-scroll #}
+  </div>{# /pl-left #}
+
+  {# ── Right panel: empty state → iframe detail ── #}
+  <div class="pl-right" id="plRight">
+    <div class="pl-right-empty" id="plEmpty">
+      <i class="fas fa-comments pl-right-icon"></i>
+      <div class="pl-right-title">Select an appointment</div>
+      <div class="pl-right-sub">to view details and conversation</div>
+    </div>
+    <iframe id="plDetailFrame" src="about:blank"></iframe>
+  </div>
+
+</div>{# /pl-shell #}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // Avatar colours
+  var COLORS = ['#0e7490','#0a3d5c','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
+  document.querySelectorAll('.pl-avatar[data-name]').forEach(function (el) {
+    var n = el.getAttribute('data-name') || '';
+    el.style.background = COLORS[n.charCodeAt(0) % COLORS.length];
+  });
+
+  // Score rings
+  document.querySelectorAll('.pl-row[data-score]').forEach(function (row) {
+    var score = parseInt(row.getAttribute('data-score')) || 0;
+    var color = score >= 80 ? '#ef4444' : score >= 60 ? '#f59e0b' : score >= 40 ? '#22c55e' : '#9ca3af';
+    var ring = row.querySelector('.pl-score-ring');
+    var inner = row.querySelector('.pl-score-inner');
+    if (ring) ring.style.background = 'conic-gradient(' + color + ' ' + (score * 3.6) + 'deg, #e5e7eb 0)';
+    if (inner) inner.style.color = color;
+  });
+
+  // Section toggle
+  window.togglePlSec = function (id) {
+    var sec = document.getElementById(id);
+    if (sec) sec.classList.toggle('collapsed');
+  };
+
+  // Chip scroll-to
+  window.scrollToSec = function (id) {
+    var el = document.getElementById(id);
+    var scroll = document.getElementById('plScroll');
+    if (!el || !scroll) return;
+    if (el.classList.contains('collapsed')) togglePlSec(id);
+    scroll.scrollTo({ top: el.offsetTop - 8, behavior: 'smooth' });
+  };
+
+  // Search filter
+  var searchInput = document.getElementById('leadsSearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      var term = this.value.trim().toLowerCase();
+      document.querySelectorAll('.pl-row').forEach(function (row) {
+        var hay = row.getAttribute('data-search') || '';
+        row.style.display = !term || hay.indexOf(term) > -1 ? '' : 'none';
+      });
+    });
+  }
+
+  // ── Inline detail panel ──
+  var frame   = document.getElementById('plDetailFrame');
+  var empty   = document.getElementById('plEmpty');
+
+  function openDetail(url, rowEl) {
+    // Build frame URL: add frame=1
+    var frameUrl = url + (url.indexOf('?') > -1 ? '&' : '?') + 'frame=1';
+    frame.style.display = 'block';
+    empty.style.display = 'none';
+    frame.src = frameUrl;
+    // Highlight selected row
+    document.querySelectorAll('.pl-row').forEach(function (r) { r.classList.remove('is-selected'); });
+    if (rowEl) rowEl.classList.add('is-selected');
+    // Update address bar without full navigation
+    history.pushState({ frameUrl: url }, '', url);
+  }
+
+  document.querySelectorAll('.pl-row').forEach(function (row) {
+    row.addEventListener('click', function (e) {
+      // Let Call / WA buttons pass through normally
+      if (e.target.closest('.pl-btn-call, .pl-btn-wa')) return;
+      e.preventDefault();
+      openDetail(this.href, this);
+    });
+  });
+
+  // Back / forward: close frame if returning to list state
+  window.addEventListener('popstate', function () {
+    if (!history.state || !history.state.frameUrl) {
+      frame.style.display = 'none';
+      empty.style.display = 'flex';
+      frame.src = 'about:blank';
+      document.querySelectorAll('.pl-row').forEach(function (r) { r.classList.remove('is-selected'); });
+    }
+  });
+})();
+</script>
+{% endblock %}

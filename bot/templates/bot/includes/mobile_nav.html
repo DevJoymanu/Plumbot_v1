@@ -1,0 +1,24 @@
+<nav class="pb-bottomnav" aria-label="Mobile navigation">
+    <div class="pb-bottomnav__items">
+        <a href="{% url 'dashboard' %}" class="pb-bottomnav__item {% if active_nav == 'dashboard' %}active{% endif %}">
+            <i class="fas fa-th-large nav-icon"></i>
+            Home
+        </a>
+        <a href="{% url 'appointments_list' %}" class="pb-bottomnav__item {% if active_nav == 'appointments' %}active{% endif %}">
+            <i class="fas fa-calendar-alt nav-icon"></i>
+            Appointments
+        </a>
+        <a href="{% url 'priority_leads' %}" class="pb-bottomnav__item {% if active_nav == 'leads' %}active{% endif %}">
+            <i class="fas fa-bolt nav-icon"></i>
+            Leads
+        </a>
+        <a href="{% url 'followup_dashboard' %}" class="pb-bottomnav__item {% if active_nav == 'followups' %}active{% endif %}">
+            <i class="fas fa-bell nav-icon"></i>
+            Follow-ups
+        </a>
+        <a href="{% url 'settings' %}" class="pb-bottomnav__item {% if active_nav == 'settings' or active_nav == 'profile' %}active{% endif %}">
+            <i class="fas fa-ellipsis-h nav-icon"></i>
+            More
+        </a>
+    </div>
+</nav>

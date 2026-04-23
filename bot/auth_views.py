@@ -43,7 +43,7 @@ def login_view(request):
                         'Access denied. Staff privileges required.'
                     )
                     logger.warning(f"Non-staff user {username} attempted login")
-                    return render(request, 'registration/login.html', {'form': form})
+                    return render(request, 'bot/pages/registration/login.html', {'form': form})
                 
                 login(request, user)
                 messages.success(request, f'Welcome back, {user.get_full_name() or user.username}!')
@@ -62,7 +62,7 @@ def login_view(request):
     else:
         form = AuthenticationForm()
     
-    return render(request, 'registration/login.html', {
+    return render(request, 'bot/pages/registration/login.html', {
         'form': form,
         'title': 'Login - Plumbing Management System'
     })
@@ -102,7 +102,7 @@ class CreateUserView(CreateView):
     View for creating new staff users - only accessible to superusers
     """
     form_class = StaffUserCreationForm
-    template_name = 'registration/create_user.html'
+    template_name = 'bot/pages/registration/create_user.html'
     success_url = reverse_lazy('user_management')
     
     def form_valid(self, form):
@@ -129,7 +129,7 @@ def user_management_view(request):
         'title': 'User Management'
     }
     
-    return render(request, 'registration/user_management.html', context)
+    return render(request, 'bot/pages/registration/user_management.html', context)
 
 
 @superuser_required
@@ -201,7 +201,7 @@ def change_password_view(request):
     else:
         form = PasswordChangeForm(request.user)
     
-    return render(request, 'registration/change_password.html', {
+    return render(request, 'bot/pages/registration/change_password.html', {
         'form': form,
         'title': 'Change Password'
     })
@@ -230,14 +230,14 @@ def profile_view(request):
         'title': 'My Profile'
     }
     
-    return render(request, 'registration/profile.html', context)
+    return render(request, 'bot/pages/registration/profile.html', context)
 
 
 def access_denied_view(request, exception=None):
     """
     Custom 403 access denied view
     """
-    return render(request, 'registration/access_denied.html', {
+    return render(request, 'bot/pages/registration/access_denied.html', {
         'title': 'Access Denied',
         'message': 'You do not have permission to access this page.'
     }, status=403)
@@ -274,7 +274,7 @@ def initial_setup_view(request):
     else:
         form = StaffUserCreationForm()
     
-    return render(request, 'registration/initial_setup.html', {
+    return render(request, 'bot/pages/registration/initial_setup.html', {
         'form': form,
         'title': 'Initial Setup - Create Superuser'
     })
@@ -304,7 +304,7 @@ def active_sessions_view(request):
         'title': 'Active Sessions'
     }
     
-    return render(request, 'registration/active_sessions.html', context)
+    return render(request, 'bot/pages/registration/active_sessions.html', context)
 
 
 @login_required
@@ -319,4 +319,4 @@ def security_log_view(request):
         'logs': []  # Would be populated from your log files/database
     }
     
-    return render(request, 'registration/security_log.html', context)
+    return render(request, 'bot/pages/registration/security_log.html', context)

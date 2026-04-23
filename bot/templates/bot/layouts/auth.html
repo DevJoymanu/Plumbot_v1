@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>{% block title %}{{ title }}{% endblock %}</title>
+    {% include "bot/includes/head_assets.html" %}
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="pb-auth-shell">
+        <div class="pb-auth-card">
+            <div class="pb-auth-brand">
+                <div class="pb-auth-brand__mark">
+                    <i class="fas fa-wrench"></i>
+                </div>
+                <h3>Plumbot</h3>
+                <p>{{ title|default:"Secure staff access" }}</p>
+            </div>
+
+            {% include "bot/includes/messages.html" with auth_messages=True %}
+
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

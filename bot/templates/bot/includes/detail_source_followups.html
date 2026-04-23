@@ -1,0 +1,70 @@
+<div class="appt-list-header">
+  <div class="appt-list-title">Follow-ups</div>
+  <div class="appt-list-subtitle">{{ source_workspace.ready_count }} pending</div>
+</div>
+
+<div class="workspace-scroll">
+  <div class="source-section" style="margin-top:0;">
+    <div class="source-section-header">
+      <span class="accent">Ready Today</span>
+      <span class="source-section-count">{{ source_workspace.ready_leads|length }}</span>
+    </div>
+    {% for lead in source_workspace.ready_leads %}
+    <a href="{% url 'appointment_detail' lead.pk %}?source=followups&response_age={{ source_workspace.selected_response_age }}" class="source-list-row source-list-row--compact {% if lead.pk == appointment.pk %}is-current{% endif %}">
+      <div class="source-avatar" style="background:{% cycle '#f59e0b' '#ef4444' '#0f766e' '#14b8a6' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-main">
+        <div class="source-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+        <div class="source-meta">{{ lead.project_description|default:"Follow-up needed"|truncatewords:6 }}</div>
+        <div class="source-subnote"><span class="appt-pill cancelled">Needs attention</span></div>
+      </div>
+      <div class="source-side">
+        <span class="source-stamp">{{ lead.get_days_since_last_contact }}d ago</span>
+      </div>
+    </a>
+    {% empty %}
+    <div class="source-empty">No follow-ups ready right now.</div>
+    {% endfor %}
+  </div>
+
+  <div class="source-section">
+    <div class="source-section-header">
+      <span class="accent">Recent Responses</span>
+      <span class="source-section-count">{{ source_workspace.recent_responses|length }}</span>
+    </div>
+    {% for lead in source_workspace.recent_responses %}
+    <a href="{% url 'appointment_detail' lead.pk %}?source=followups&response_age={{ source_workspace.selected_response_age }}" class="source-list-row source-list-row--compact {% if lead.pk == appointment.pk %}is-current{% endif %}">
+      <div class="source-avatar" style="background:{% cycle '#0f766e' '#0891b2' '#2563eb' '#7c3aed' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-main">
+        <div class="source-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+        <div class="source-meta">{{ lead.phone_number }}</div>
+      </div>
+      <div class="source-side">
+        <span class="source-stamp">{{ lead.last_customer_response|timesince }} ago</span>
+      </div>
+    </a>
+    {% empty %}
+    <div class="source-empty">No recent responses.</div>
+    {% endfor %}
+  </div>
+
+  <div class="source-section">
+    <div class="source-section-header">
+      <span class="accent">Recently Inactive</span>
+      <span class="source-section-count">{{ source_workspace.recent_inactive|length }}</span>
+    </div>
+    {% for lead in source_workspace.recent_inactive %}
+    <a href="{% url 'appointment_detail' lead.pk %}?source=followups&response_age={{ source_workspace.selected_response_age }}" class="source-list-row source-list-row--compact {% if lead.pk == appointment.pk %}is-current{% endif %}">
+      <div class="source-avatar" style="background:{% cycle '#64748b' '#94a3b8' '#475569' '#334155' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-main">
+        <div class="source-name">{{ lead.customer_name|default:"Unknown Customer" }}</div>
+        <div class="source-meta">{{ lead.project_type|default:"Lead inactive" }} · {{ lead.customer_area|default:"No area" }}</div>
+      </div>
+      <div class="source-side">
+        <span class="source-stamp">{{ lead.lead_marked_inactive_at|timesince }} ago</span>
+      </div>
+    </a>
+    {% empty %}
+    <div class="source-empty">No recently inactive leads.</div>
+    {% endfor %}
+  </div>
+</div>

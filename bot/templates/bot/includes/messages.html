@@ -1,0 +1,16 @@
+{% if messages %}
+<div class="{% if auth_messages %}pb-auth-messages{% else %}pb-alert-wrap{% endif %}">
+    {% for message in messages %}
+    {% if auth_messages %}
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% else %}
+    <div class="pb-alert pb-alert--{% if message.tags == 'error' %}error{% elif message.tags == 'success' %}success{% elif message.tags == 'warning' %}warning{% else %}info{% endif %}">
+        {{ message }}
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+{% endif %}

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Reschedule Job</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <i class="fas fa-calendar-alt"></i>
+                Reschedule Job Appointment
+            </h1>
+            <p>Change the scheduled time for this job</p>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- Left Column - Current Job Info -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>Current Job Details</h3>
+                </div>
+                <div class="card-body">
+                    <div class="current-job-info">
+                        <p><strong>Customer:</strong> {{ job_appointment.customer_name }}</p>
+                        <p><strong>Service:</strong> {{ job_appointment.project_type }}</p>
+                        <p><strong>Area:</strong> {{ job_appointment.customer_area }}</p>
+                        <p><strong>Current Schedule:</strong> {{ job_appointment.job_scheduled_datetime|date:"M d, Y
+                            H:i" }}</p>
+                        <p><strong>Duration:</strong> {{ job_appointment.job_duration_hours }} hours</p>
+                        <p><strong>Assigned Plumber:</strong> {{
+                            job_appointment.assigned_plumber.get_full_name|default:"Unassigned" }}</p>
+
+                        {% if job_appointment.job_description %}
+                        <div class="job-description">
+                            <h4>Job Description:</h4>
+                            <p>{{ job_appointment.job_description|linebreaks }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column - Reschedule Form -->
+            <div class="card">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="card-header">
+                        <h3>New Schedule</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="job_date">New Date</label>
+                            <input type="date" id="job_date" name="job_date" class="form-control"
+                                min="{{ today|date:'Y-m-d' }}"
+                                value="{{ job_appointment.job_scheduled_datetime|date:'Y-m-d' }}" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="job_time">New Time</label>
+                            <select id="job_time" name="job_time" class="form-control" required>
+                                <option value="">Select time</option>
+                                {% for hour, display in time_options %}
+                                <option value="{{ hour }}" {% if job_appointment.job_scheduled_datetime|date:'H:i'==hour
+                                    %}selected{% endif %}>
+                                    {{ display }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Note:</strong> Customer will be automatically notified about the schedule change via
+                            WhatsApp.
+                        </div>
+
+                        <div class="actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-calendar-check"></i> Reschedule Job
+                            </button>
+                            <a href="{% url 'appointment_detail' job_appointment.pk %}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Cancel
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Disable past dates and weekends
+        document.addEventListener('DOMContentLoaded', function () {
+            const dateInput = document.getElementById('job_date');
+
+            dateInput.addEventListener('change', function () {
+                const selectedDate = new Date(this.value);
+                const dayOfWeek = selectedDate.getDay();
+
+                // Check if weekend
+                if (dayOfWeek === 0 || dayOfWeek === 6) {
+                    alert('Please select a weekday (Monday-Friday)');
+                    this.value = '';
+                }
+            });
+        });
+    </script>
+
+    <style>
+        .current-job-info p {
+            margin: 8px 0;
+            padding: 5px 0;
+        }
+
+        .job-description {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .job-description h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .alert {
+            padding: 12px 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+
+        .alert-info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+    </style>
+</body>
+
+</html>

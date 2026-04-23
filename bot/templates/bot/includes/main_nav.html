@@ -1,0 +1,60 @@
+<nav class="pb-sidenav" aria-label="Main navigation">
+    <div class="pb-sidenav__brand">
+        <a href="{% url 'dashboard' %}" class="pb-sidenav__brand-name">
+            <i class="fas fa-wrench"></i> Plumbot
+        </a>
+        <div class="pb-sidenav__brand-sub">Admin Panel</div>
+    </div>
+
+    <div class="pb-sidenav__items">
+        <a href="{% url 'dashboard' %}" class="pb-sidenav__item {% if active_nav == 'dashboard' %}active{% endif %}">
+            <i class="fas fa-th-large nav-icon"></i>
+            Dashboard
+        </a>
+        <a href="{% url 'appointments_list' %}" class="pb-sidenav__item {% if active_nav == 'appointments' %}active{% endif %}">
+            <i class="fas fa-calendar-alt nav-icon"></i>
+            Appointments
+        </a>
+        <a href="{% url 'priority_leads' %}" class="pb-sidenav__item {% if active_nav == 'leads' %}active{% endif %}">
+            <i class="fas fa-bolt nav-icon"></i>
+            Priority Leads
+            {% if hot_lead_count %}
+            <span class="pb-badge">{{ hot_lead_count }}</span>
+            {% endif %}
+        </a>
+        <a href="{% url 'followup_dashboard' %}" class="pb-sidenav__item {% if active_nav == 'followups' %}active{% endif %}">
+            <i class="fas fa-bell nav-icon"></i>
+            Follow-ups
+            {% if pending_followup_count %}
+            <span class="pb-badge">{{ pending_followup_count }}</span>
+            {% endif %}
+        </a>
+        <a href="{% url 'job_appointments_list' %}" class="pb-sidenav__item {% if active_nav == 'jobs' %}active{% endif %}">
+            <i class="fas fa-hard-hat nav-icon"></i>
+            Job Appointments
+        </a>
+        <a href="{% url 'quotation_templates_list' %}" class="pb-sidenav__item {% if active_nav == 'templates' %}active{% endif %}">
+            <i class="fas fa-file-invoice nav-icon"></i>
+            Templates
+        </a>
+        <a href="{% url 'standalone_quotation' %}" class="pb-sidenav__item {% if active_nav == 'new_quote' %}active{% endif %}">
+            <i class="fas fa-file-invoice-dollar nav-icon"></i>
+            New Quotation
+        </a>
+    </div>
+
+    <div class="pb-sidenav__secondary">
+        <a href="{% url 'settings' %}" class="pb-sidenav__item {% if active_nav == 'settings' %}active{% endif %}">
+            <i class="fas fa-cog nav-icon"></i>
+            Settings
+        </a>
+        <a href="{% url 'profile' %}" class="pb-sidenav__item {% if active_nav == 'profile' %}active{% endif %}">
+            <i class="fas fa-user-circle nav-icon"></i>
+            Profile
+        </a>
+        <a href="{% url 'logout' %}" class="pb-sidenav__item">
+            <i class="fas fa-sign-out-alt nav-icon"></i>
+            Logout
+        </a>
+    </div>
+</nav>
