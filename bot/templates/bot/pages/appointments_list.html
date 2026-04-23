@@ -576,7 +576,7 @@
         {% with lead=item.lead %}
         <div class="delayed-row">
           <div>
-            <div class="delayed-name">{{ lead.customer_name|default:"Unknown customer" }}</div>
+            <div class="delayed-name">{% firstof lead.customer_name lead.phone_number "Appointment" %}</div>
             <div class="delayed-meta">Follow up by {{ item.follow_up_due_at|date:"M j, Y" }}</div>
           </div>
           <div class="delayed-days">{{ item.days_remaining }}</div>
@@ -602,10 +602,10 @@
            data-detail-url="{% url 'appointment_detail' appointment.pk %}?source=appointments&frame=1"
            data-search="{{ appointment.customer_name|default:''|lower }} {{ appointment.phone_number|default:''|lower }} {{ appointment.project_type|default:''|lower }} {{ appointment.customer_area|default:''|lower }}">
           <div class="inbox-avatar" style="background:{% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' '#f97316' '#8b5cf6' '#14b8a6' %};">
-            {{ appointment.customer_name|default:"?"|slice:":2"|upper }}
+            {{ appointment.customer_name|default:appointment.phone_number|default:"AP"|slice:":2"|upper }}
           </div>
           <div class="inbox-main">
-            <div class="inbox-name">{{ appointment.customer_name|default:"Unknown Customer" }}</div>
+            <div class="inbox-name">{% firstof appointment.customer_name appointment.phone_number "Appointment" %}</div>
             <div class="inbox-meta">{{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }} · {{ appointment.customer_area|default:"No area" }}</div>
             <div class="inbox-preview">{{ appointment.project_description|default:"No notes yet"|truncatewords:10 }}</div>
           </div>

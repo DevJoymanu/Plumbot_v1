@@ -25,11 +25,11 @@
      class="appt-list-row {% if item.pk == appointment.pk %}is-current{% endif %}"
      data-status="{% if item.is_delayed %}delayed{% else %}{{ item.status }}{% endif %}"
      data-search="{{ item.customer_name|default:''|lower }} {{ item.phone_number|default:''|lower }} {{ item.project_type|default:''|lower }} {{ item.customer_area|default:''|lower }}">
-    <div class="appt-list-avatar" data-name="{{ item.customer_name|default:'?' }}">
-      {{ item.customer_name|default:"?"|slice:":2"|upper }}
+    <div class="appt-list-avatar" data-name="{% firstof item.customer_name item.phone_number 'Appointment' %}">
+      {{ item.customer_name|default:item.phone_number|default:"AP"|slice:":2"|upper }}
     </div>
     <div class="appt-list-main">
-      <div class="appt-list-name">{{ item.customer_name|default:"Unknown Customer" }}</div>
+      <div class="appt-list-name">{% firstof item.customer_name item.phone_number "Appointment" %}</div>
       <div class="appt-list-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
       <div class="appt-list-preview">{{ item.project_description|default:"No recent note available"|truncatewords:10 }}</div>
     </div>
