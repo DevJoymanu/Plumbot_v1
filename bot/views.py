@@ -1666,6 +1666,25 @@ def _followups_workspace_data(response_age='1w_minus'):
         ),
     }
 
+
+def _appointments_sidebar_context(sidebar_filter='all'):
+    return {
+        'sidebar_filter': sidebar_filter,
+        'sidebar_appointments': Appointment.objects.order_by('-updated_at')[:20],
+        'appointment_status_counts': {
+            'total': Appointment.objects.count(),
+            'booked': Appointment.objects.filter(status='confirmed').count(),
+            'pending': Appointment.objects.filter(status='pending').exclude(
+                internal_notes__contains='[DELAY_SIGNAL]'
+            ).count(),
+            'cancelled': Appointment.objects.filter(status='cancelled').count(),
+            'delayed': Appointment.objects.filter(
+                status='pending',
+                internal_notes__contains='[DELAY_SIGNAL]',
+            ).count(),
+        },
+    }
+
 @method_decorator(staff_required, name='dispatch')
 class DashboardView(TemplateView):
     template_name = 'bot/pages/dashboard.html'
@@ -2115,7 +2134,6 @@ class AppointmentDetailView(DetailView):
         is_frame = self.request.GET.get('frame') == '1'
         base_template = 'bot/layouts/panel.html' if is_frame else 'bot/layouts/base.html'
 
-        sidebar_appointments = Appointment.objects.order_by('-updated_at')[:20]
         source_workspace = {}
         active_nav = 'appointments'
         source_back_url = reverse('appointments_list')
@@ -2137,6 +2155,7 @@ class AppointmentDetailView(DetailView):
             source_title = 'Follow-ups'
 
         sidebar_filter = self.request.GET.get('sidebar_filter', 'all')
+        sidebar_context = _appointments_sidebar_context(sidebar_filter)
 
         context.update({
             'active_nav': active_nav,
@@ -2152,23 +2171,11 @@ class AppointmentDetailView(DetailView):
             'computed_lead_score': computed_score,
             'computed_lead_status': computed_status,
             'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
-            'sidebar_appointments': sidebar_appointments,
             'detail_source': detail_source,
             'source_workspace': source_workspace,
             'source_back_url': source_back_url,
             'source_title': source_title,
-            'appointment_status_counts': {
-                'total': Appointment.objects.count(),
-                'booked': Appointment.objects.filter(status='confirmed').count(),
-                'pending': Appointment.objects.filter(status='pending').exclude(
-                    internal_notes__contains='[DELAY_SIGNAL]'
-                ).count(),
-                'cancelled': Appointment.objects.filter(status='cancelled').count(),
-                'delayed': Appointment.objects.filter(
-                    status='pending',
-                    internal_notes__contains='[DELAY_SIGNAL]',
-                ).count(),
-            },
+            **sidebar_context,
         })
         return context
     def post(self, request, *args, **kwargs):

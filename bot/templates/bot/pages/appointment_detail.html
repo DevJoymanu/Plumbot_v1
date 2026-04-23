@@ -1134,6 +1134,8 @@
       {% elif detail_source == 'followups' %}
         {% include "bot/includes/detail_source_followups.html" %}
       {% else %}
+      {% include "bot/includes/appointment_sidebar.html" %}
+      {% comment %}
       <div class="appt-list-header">
         <div class="appt-list-title">Appointments</div>
         <div class="appt-list-subtitle">{{ appointment_status_counts.total }} total</div>
@@ -1178,6 +1180,7 @@
         </a>
         {% endfor %}
       </div>
+      {% endcomment %}
       {% endif %}
     </aside>
 

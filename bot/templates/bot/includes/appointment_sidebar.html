@@ -1,0 +1,44 @@
+<div class="appt-list-header">
+  <div class="appt-list-title">Appointments</div>
+  <div class="appt-list-subtitle">{{ appointment_status_counts.total }} total</div>
+</div>
+
+<div class="appt-search">
+  <div class="appt-search-wrap">
+    <i class="fas fa-search"></i>
+    <input type="text" id="appointmentSearch" placeholder="Search name, phone, service...">
+  </div>
+</div>
+
+<div class="appt-filter-tabs" data-initial-filter="{{ sidebar_filter }}">
+  <button type="button" class="appt-filter-tab is-active" data-filter="all">All <span>{{ appointment_status_counts.total }}</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="confirmed">Booked <span>{{ appointment_status_counts.booked }}</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="pending">Pending <span>{{ appointment_status_counts.pending }}</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="cancelled">Cancelled <span>{{ appointment_status_counts.cancelled }}</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="delayed">Delayed <span>{{ appointment_status_counts.delayed }}</span></button>
+</div>
+
+<div class="appt-list-scroll" id="appointmentList">
+  {% for item in sidebar_appointments %}
+  <a href="{% url 'appointment_detail' item.pk %}?source=appointments&sidebar_filter={{ sidebar_filter }}"
+     class="appt-list-row {% if item.pk == appointment.pk %}is-current{% endif %}"
+     data-status="{% if item.is_delayed %}delayed{% else %}{{ item.status }}{% endif %}"
+     data-search="{{ item.customer_name|default:''|lower }} {{ item.phone_number|default:''|lower }} {{ item.project_type|default:''|lower }} {{ item.customer_area|default:''|lower }}">
+    <div class="appt-list-avatar" data-name="{{ item.customer_name|default:'?' }}">
+      {{ item.customer_name|default:"?"|slice:":2"|upper }}
+    </div>
+    <div class="appt-list-main">
+      <div class="appt-list-name">{{ item.customer_name|default:"Unknown Customer" }}</div>
+      <div class="appt-list-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
+      <div class="appt-list-preview">{{ item.project_description|default:"No recent note available"|truncatewords:10 }}</div>
+    </div>
+    <div class="appt-list-side">
+      <div class="appt-list-time">{{ item.scheduled_datetime|date:"H:i"|default:item.updated_at|date:"H:i" }}</div>
+      <div class="appt-dot appt-dot--{{ item.lead_status|default:'cold' }}"></div>
+      <div class="appt-pill {% if item.status == 'confirmed' %}booked{% elif item.status == 'pending' %}pending{% elif item.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">
+        {% if item.status == 'confirmed' %}Booked{% elif item.status == 'pending' %}Pending{% elif item.status == 'cancelled' %}Cancelled{% else %}{{ item.get_status_display }}{% endif %}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
