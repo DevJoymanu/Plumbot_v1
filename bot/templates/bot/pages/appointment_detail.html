@@ -1242,7 +1242,7 @@
                 </div>
                 <div class="chat-bubble-text">{{ message.content|default:"(no message content)" }}</div>
                 {% if message.timestamp %}
-                <div class="chat-bubble-time">{{ message.timestamp|date:"H:i" }}</div>
+                <div class="chat-bubble-time">{{ message.timestamp|date:"j M Y, H:i" }}</div>
                 {% endif %}
               </div>
             </div>
