@@ -265,30 +265,104 @@
     background: #e8ddd6;
   }
 
-  .inbox-preview-header {
+  .inbox-tabs-bar {
     background: var(--color-header);
     color: #fff;
-    padding: 14px 18px;
+    padding: 0 12px;
+    min-height: 64px;
+    display: none;
+    align-items: flex-end;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
-  .inbox-preview-header h2 {
-    margin: 0;
-    font-size: 17px;
+  .inbox-tabs-bar::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .inbox-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    max-width: 260px;
+    padding: 12px 14px 11px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.82);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .inbox-tab.is-active {
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  .inbox-tab-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
     font-weight: 700;
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 0;
   }
 
-  .inbox-preview-header p {
-    margin: 4px 0 0;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.74);
+  .inbox-tab-close {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .inbox-tab-close:hover {
+    background: rgba(15, 23, 42, 0.08);
   }
 
   .inbox-preview-body {
     flex: 1;
+    min-height: 0;
+    padding: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
+    position: relative;
+  }
+
+  .inbox-workspace {
+    position: absolute;
+    inset: 0;
+  }
+
+  .inbox-workspace iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: none;
+    background: #f8fafc;
+  }
+
+  .inbox-workspace iframe.is-active {
+    display: block;
+  }
+
+  .inbox-empty-wrap {
+    position: absolute;
+    inset: 0;
     display: grid;
     place-items: center;
     padding: 24px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
   }
 
   .inbox-empty {
@@ -506,7 +580,12 @@
             <div class="delayed-meta">Follow up by {{ item.follow_up_due_at|date:"M j, Y" }}</div>
           </div>
           <div class="delayed-days">{{ item.days_remaining }}</div>
-          <a href="{% url 'appointment_detail' lead.pk %}" class="delayed-link">Open</a>
+          <a href="{% url 'appointment_detail' lead.pk %}?source=appointments&frame=1"
+             class="delayed-link"
+             data-open-appointment
+             data-appointment-id="{{ lead.pk }}"
+             data-tab-label="{{ lead.customer_name|default:lead.phone_number|default:'Appointment' }}"
+             data-detail-url="{% url 'appointment_detail' lead.pk %}?source=appointments&frame=1">Open</a>
         </div>
         {% endwith %}
         {% endfor %}
@@ -515,8 +594,12 @@
 
       <div class="inbox-scroll" id="appointmentsInbox">
         {% for appointment in appointments %}
-        <a href="{% url 'appointment_detail' appointment.pk %}"
+        <a href="{% url 'appointment_detail' appointment.pk %}?source=appointments&sidebar_filter={{ selected_status_filter }}"
            class="inbox-row"
+           data-open-appointment
+           data-appointment-id="{{ appointment.pk }}"
+           data-tab-label="{{ appointment.customer_name|default:appointment.phone_number|default:'Appointment' }}"
+           data-detail-url="{% url 'appointment_detail' appointment.pk %}?source=appointments&frame=1"
            data-search="{{ appointment.customer_name|default:''|lower }} {{ appointment.phone_number|default:''|lower }} {{ appointment.project_type|default:''|lower }} {{ appointment.customer_area|default:''|lower }}">
           <div class="inbox-avatar" style="background:{% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' '#f97316' '#8b5cf6' '#14b8a6' %};">
             {{ appointment.customer_name|default:"?"|slice:":2"|upper }}
@@ -581,22 +664,27 @@
     </section>
 
     <section class="inbox-right">
-      <div class="inbox-preview-header">
-        <h2>Conversation Workspace</h2>
-        <p>Open any appointment from the left to manage chat, details, and quotations in one place.</p>
-      </div>
+      <div class="inbox-tabs-bar" id="appointmentTabs" aria-label="Open appointment tabs"></div>
       <div class="inbox-preview-body">
-        <div class="inbox-empty">
-          <div class="inbox-empty-icon">
-            <i class="fas fa-comments"></i>
-          </div>
-          <h3>Open an appointment</h3>
-          <p>The selected lead will load into a WhatsApp-style conversation view with customer details and quotation actions, matching your reference layout.</p>
-          <div class="inbox-empty-actions">
-            {% if appointments %}
-            <a href="{% url 'appointment_detail' appointments.0.pk %}" class="inbox-btn primary"><i class="fas fa-arrow-right"></i> Open first appointment</a>
-            {% endif %}
-            <a href="{% url 'export_appointments' %}" class="inbox-btn ghost"><i class="fas fa-download"></i> Export</a>
+        <div class="inbox-workspace" id="appointmentWorkspace"></div>
+        <div class="inbox-empty-wrap" id="appointmentEmptyState">
+          <div class="inbox-empty">
+            <div class="inbox-empty-icon">
+              <i class="fas fa-folder-open"></i>
+            </div>
+            <h3>Open an appointment</h3>
+            <p>Appointments open here as tabs so the sidebar stays in place while you move between leads.</p>
+            <div class="inbox-empty-actions">
+              {% if appointments %}
+              <a href="{% url 'appointment_detail' appointments.0.pk %}?source=appointments&frame=1"
+                 class="inbox-btn primary"
+                 data-open-appointment
+                 data-appointment-id="{{ appointments.0.pk }}"
+                 data-tab-label="{{ appointments.0.customer_name|default:appointments.0.phone_number|default:'Appointment' }}"
+                 data-detail-url="{% url 'appointment_detail' appointments.0.pk %}?source=appointments&frame=1"><i class="fas fa-arrow-right"></i> Open first appointment</a>
+              {% endif %}
+              <a href="{% url 'export_appointments' %}" class="inbox-btn ghost"><i class="fas fa-download"></i> Export</a>
+            </div>
           </div>
         </div>
       </div>
@@ -633,6 +721,134 @@
         try { sessionStorage.setItem('plumbot_sidebar_tab', sidebarFilter); } catch (e) {}
       });
     });
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var desktopBreakpoint = window.matchMedia('(min-width: 981px)');
+    var tabsRoot = document.getElementById('appointmentTabs');
+    var workspace = document.getElementById('appointmentWorkspace');
+    var emptyState = document.getElementById('appointmentEmptyState');
+    var openers = Array.from(document.querySelectorAll('[data-open-appointment]'));
+    var TAB_MAP = { all: 'all', booked: 'confirmed', pending: 'pending', cancelled: 'cancelled', delayed: 'delayed' };
+    var currentFilter = '{{ selected_status_filter|default:"all" }}';
+    var sidebarFilter = TAB_MAP[currentFilter] || 'all';
+    var state = {
+      openTabs: [],
+      activeTabId: null
+    };
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>\"']/g, function (char) {
+        switch (char) {
+          case '&': return '&amp;';
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '"': return '&quot;';
+          case "'": return '&#39;';
+          default: return char;
+        }
+      });
+    }
+
+    function tabLabel(el) {
+      var label = (el.getAttribute('data-tab-label') || '').trim();
+      return label || 'Appointment';
+    }
+
+    function detailUrl(el) {
+      var base = el.getAttribute('data-detail-url') || el.getAttribute('href') || '';
+      if (!base) return '';
+      if (base.indexOf('sidebar_filter=') > -1) {
+        return base.replace(/sidebar_filter=[^&]*/g, 'sidebar_filter=' + encodeURIComponent(sidebarFilter));
+      }
+      return base + (base.indexOf('?') > -1 ? '&' : '?') + 'sidebar_filter=' + encodeURIComponent(sidebarFilter);
+    }
+
+    function renderTabs() {
+      if (!tabsRoot || !workspace || !emptyState) return;
+
+      tabsRoot.innerHTML = state.openTabs.map(function (tab) {
+        var activeClass = tab.id === state.activeTabId ? ' is-active' : '';
+        return '<div class="inbox-tab' + activeClass + '" data-tab-id="' + tab.id + '">' +
+          '<button type="button" class="inbox-tab-label" data-action="activate" data-tab-id="' + tab.id + '">' + escapeHtml(tab.label) + '</button>' +
+          '<button type="button" class="inbox-tab-close" aria-label="Close tab" data-action="close" data-tab-id="' + tab.id + '"><i class="fas fa-times"></i></button>' +
+        '</div>';
+      }).join('');
+
+      Array.from(workspace.querySelectorAll('iframe')).forEach(function (frame) {
+        frame.classList.toggle('is-active', frame.getAttribute('data-tab-id') === state.activeTabId);
+      });
+
+      tabsRoot.style.display = state.openTabs.length ? 'flex' : 'none';
+      emptyState.style.display = state.openTabs.length ? 'none' : '';
+    }
+
+    function setActiveTab(tabId) {
+      state.activeTabId = tabId;
+      renderTabs();
+    }
+
+    function openTabFromElement(el) {
+      if (!tabsRoot || !workspace) return;
+      var appointmentId = String(el.getAttribute('data-appointment-id'));
+      var existing = state.openTabs.find(function (tab) { return tab.id === appointmentId; });
+      if (existing) {
+        existing.label = tabLabel(el);
+        setActiveTab(appointmentId);
+        return;
+      }
+
+      var frame = document.createElement('iframe');
+      frame.setAttribute('data-tab-id', appointmentId);
+      frame.setAttribute('title', tabLabel(el));
+      frame.setAttribute('loading', 'lazy');
+      frame.src = detailUrl(el);
+      workspace.appendChild(frame);
+
+      state.openTabs.push({
+        id: appointmentId,
+        label: tabLabel(el)
+      });
+      setActiveTab(appointmentId);
+    }
+
+    function closeTab(tabId) {
+      var index = state.openTabs.findIndex(function (tab) { return tab.id === tabId; });
+      if (index === -1) return;
+
+      state.openTabs.splice(index, 1);
+      var frame = workspace.querySelector('iframe[data-tab-id="' + tabId + '"]');
+      if (frame) frame.remove();
+
+      if (state.activeTabId === tabId) {
+        var next = state.openTabs[index - 1] || state.openTabs[index] || null;
+        state.activeTabId = next ? next.id : null;
+      }
+      renderTabs();
+    }
+
+    openers.forEach(function (el) {
+      el.addEventListener('click', function (event) {
+        try { sessionStorage.setItem('plumbot_sidebar_tab', sidebarFilter); } catch (e) {}
+        if (!desktopBreakpoint.matches) return;
+        event.preventDefault();
+        openTabFromElement(el);
+      });
+    });
+
+    if (tabsRoot) {
+      tabsRoot.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-action]');
+        if (!button) return;
+        var action = button.getAttribute('data-action');
+        var tabId = button.getAttribute('data-tab-id');
+        if (action === 'activate') setActiveTab(tabId);
+        if (action === 'close') closeTab(tabId);
+      });
+    }
+
+    renderTabs();
   });
 </script>
 {% endblock %}
