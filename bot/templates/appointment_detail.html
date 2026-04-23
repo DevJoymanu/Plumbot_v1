@@ -2,1012 +2,1423 @@
 
 {% block extra_css %}
 <style>
-  * { box-sizing: border-box; }
-  body { background: #F0F2F5; }
-
-  /* ── Pill buttons ── */
-  .pill-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    gap: 5px; border: none; cursor: pointer; text-decoration: none;
-    white-space: nowrap; font-size: 13px; font-weight: 600;
-    padding: 8px 16px; border-radius: 20px; transition: opacity .15s;
-  }
-  .pill-btn:hover { opacity: .85; text-decoration: none; }
-  .pill-btn:active { opacity: .7; }
-  .pill-btn-sm { padding: 6px 12px; font-size: 12px; }
-  .pill-primary  { background: #0e7490; color: #fff; }
-  .pill-success  { background: #25D366; color: #fff; }
-  .pill-danger   { background: #fee2e2; color: #ef4444; }
-  .pill-warn     { background: #fef3c7; color: #d97706; }
-  .pill-ghost    { background: #F0F2F5; color: #374151; border: 1px solid #e5e7eb; }
-  .pill-teal-out { background: transparent; color: #0e7490; border: 1px solid #0e7490; }
-
-  /* ── Cards ── */
-  .card2 {
-    background: #fff; border: 1px solid #e5e7eb;
-    border-radius: 12px; margin: 12px 16px; overflow: visible;
-  }
-  .card2-header {
-    background: #0a3d5c; color: #fff;
-    padding: 12px 16px; border-radius: 12px 12px 0 0;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px; flex-wrap: wrap;
-  }
-  .card2-header h3 {
-    margin: 0; font-size: 15px; font-weight: 700;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .card2-body { padding: 16px; }
-
-  /* ── Form fields ── */
-  .field-label {
-    font-size: 11px; color: #6b7280; display: block; margin-bottom: 3px;
-  }
-  .field-input {
-    width: 100%; padding: 8px 12px; border: none;
-    background: #F0F2F5; border-radius: 6px;
-    font-size: 14px; color: #111827; outline: none;
-  }
-  .field-input:focus { box-shadow: 0 0 0 2px #0e7490; }
-  textarea.field-input { resize: vertical; min-height: 80px; }
-  select.field-input { cursor: pointer; }
-
-  .form-group2 { margin-bottom: 14px; }
-
-  /* ── Status badge ── */
-  .sbadge {
-    font-size: 11px; font-weight: 700; padding: 3px 10px;
-    border-radius: 20px; display: inline-block;
+  .appt-workspace {
+    min-height: 100vh;
+    padding: 0;
   }
 
-  /* ── Alert ── */
-  .alert { padding: 10px 14px; border-radius: 8px; margin-bottom: 10px; font-size: 14px; }
-  .alert-success { background: #d1fae5; color: #059669; }
-  .alert-error   { background: #fee2e2; color: #ef4444; }
+  .appt-split {
+    display: grid;
+    grid-template-columns: 420px minmax(0, 1fr);
+    min-height: 100vh;
+  }
 
-  /* ── Job scheduling panels ── */
-  .sched-status {
-    display: flex; gap: 12px; padding: 14px; border-radius: 8px; margin-bottom: 12px;
+  .appt-list-pane {
+    background: #f3f5f8;
+    border-right: 1px solid #dbe2e8;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .appt-list-header {
+    background: #0f4565;
+    color: #fff;
+    padding: 14px 16px 12px;
+  }
+
+  .appt-list-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .appt-list-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+    margin-top: 2px;
+  }
+
+  .appt-search {
+    padding: 10px 16px;
+    background: #0f4565;
+  }
+
+  .appt-search input {
+    width: 100%;
+    min-height: 40px;
+    border-radius: 999px;
+    border: none;
+    padding: 0 16px 0 40px;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  }
+
+  .appt-search-wrap {
+    position: relative;
+  }
+
+  .appt-search-wrap i {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    font-size: 14px;
+  }
+
+  .appt-filter-tabs {
+    display: flex;
+    gap: 18px;
+    padding: 0 16px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    overflow-x: auto;
+  }
+
+  .appt-filter-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    color: #6b7280;
+    padding: 12px 0 11px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .appt-filter-tab.is-active {
+    color: #128C7E;
+    font-weight: 700;
+  }
+
+  .appt-filter-tab.is-active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: #128C7E;
+    border-radius: 999px;
+  }
+
+  .appt-filter-tab span {
+    display: inline-flex;
+    min-width: 18px;
+    height: 18px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #eef2f3;
+    font-size: 11px;
+  }
+
+  .appt-list-scroll {
+    overflow-y: auto;
+    min-height: 0;
+    background: #f5f6f8;
+  }
+
+  .appt-list-row {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid #eceff3;
+    text-decoration: none;
+    color: inherit;
+    background: #fff;
+    transition: background 0.15s ease;
+  }
+
+  .appt-list-row:hover {
+    background: #f8fafb;
+    text-decoration: none;
+  }
+
+  .appt-list-row.is-current {
+    background: #eef7f5;
+  }
+
+  .appt-list-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 18px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .appt-list-main {
+    min-width: 0;
+  }
+
+  .appt-list-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-list-meta,
+  .appt-list-preview {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-list-preview {
+    color: #9ca3af;
+    margin-top: 2px;
+  }
+
+  .appt-list-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .appt-list-time {
+    font-size: 11px;
+    color: #6b7280;
+  }
+
+  .appt-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .appt-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .appt-pill.booked { background: #d1fae5; color: #059669; }
+  .appt-pill.pending { background: #fef3c7; color: #d97706; }
+  .appt-pill.cancelled { background: #fee2e2; color: #ef4444; }
+  .appt-pill.delayed { background: #dbeafe; color: #2563eb; }
+  .appt-pill.very_hot { background: #fee2e2; color: #ef4444; }
+  .appt-pill.hot { background: #fef3c7; color: #d97706; }
+  .appt-pill.warm { background: #d1fae5; color: #059669; }
+  .appt-pill.cold,
+  .appt-pill.luke_warm { background: #eef2f7; color: #64748b; }
+
+  .appt-detail-pane {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: #e8ddd6;
+  }
+
+  .appt-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 18px;
+    background: #0f4565;
+    color: #fff;
+  }
+
+  .appt-detail-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .appt-detail-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    font-weight: 800;
+    font-size: 17px;
+    flex-shrink: 0;
+  }
+
+  .appt-detail-name {
+    font-size: 18px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-detail-meta {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.74);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-detail-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .appt-detail-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .appt-detail-action.call {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+  }
+
+  .appt-detail-action.wa {
+    background: #25D366;
+    color: #fff;
+  }
+
+  .appt-detail-statusbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 18px;
+    background: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .appt-score-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 3px solid #ef4444;
+    color: #ef4444;
+    font-size: 11px;
+    font-weight: 800;
+    background: #fff;
+  }
+
+  .appt-tabbar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    background: rgba(255, 255, 255, 0.95);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .appt-tab-btn {
+    border: none;
+    background: transparent;
+    padding: 12px 14px;
+    color: #6b7280;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .appt-tab-btn.is-active {
+    color: #128C7E;
+    font-weight: 700;
+  }
+
+  .appt-tab-btn.is-active::after {
+    content: "";
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 0;
+    height: 2px;
+    background: #128C7E;
+  }
+
+  .appt-tab-pane {
+    display: none;
+  }
+
+  .appt-tab-pane.is-active {
+    display: block;
+  }
+
+  .appt-chat-pane {
+    display: grid;
+    grid-template-rows: 1fr auto;
+    min-height: calc(100vh - 157px);
+  }
+
+  .appt-chat-scroll {
+    padding: 18px 16px 22px;
+    overflow-y: auto;
+    background: #e8ddd6;
+  }
+
+  .chat-bubble-row {
+    display: flex;
+    margin-bottom: 14px;
+  }
+
+  .chat-bubble-row.user {
+    justify-content: flex-start;
+  }
+
+  .chat-bubble-row.assistant {
+    justify-content: flex-end;
+  }
+
+  .chat-bubble {
+    max-width: min(72%, 680px);
+    padding: 10px 12px 8px;
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .chat-bubble.user {
+    background: #fff;
+    border-top-left-radius: 4px;
+  }
+
+  .chat-bubble.assistant {
+    background: #d8f8c7;
+    border-top-right-radius: 4px;
+  }
+
+  .chat-bubble-sender {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 3px;
+  }
+
+  .chat-bubble.user .chat-bubble-sender {
+    color: #0f4565;
+  }
+
+  .chat-bubble.assistant .chat-bubble-sender {
+    color: #455a64;
+  }
+
+  .chat-bubble-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #111827;
+    font-size: 14px;
+  }
+
+  .chat-bubble-time {
+    text-align: right;
+    margin-top: 4px;
+    color: #94a3b8;
+    font-size: 10px;
+  }
+
+  .appt-chat-compose {
+    padding: 12px 16px 16px;
+    background: rgba(248, 250, 252, 0.94);
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .appt-quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .appt-quick-actions button,
+  .appt-quick-actions a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #dbe2e8;
+    background: #fff;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 7px 12px;
+    border-radius: 999px;
+    text-decoration: none;
+  }
+
+  .appt-compose-row {
+    display: grid;
+    grid-template-columns: 1fr 44px;
+    gap: 10px;
+    align-items: end;
+  }
+
+  .appt-compose-row textarea {
+    min-height: 54px;
+    max-height: 130px;
+    border-radius: 18px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: #fff;
+    padding: 14px 16px;
+    resize: vertical;
+  }
+
+  .appt-send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: #0f4565;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .appt-send-btn:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+  }
+
+  .appt-char-count {
+    text-align: right;
+    color: #94a3b8;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+
+  .appt-detail-content {
+    padding: 18px;
+  }
+
+  .appt-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(300px, .9fr);
+    gap: 18px;
+  }
+
+  .detail-card {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .detail-card-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+    font-size: 14px;
+    font-weight: 800;
+    color: #0f4565;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .detail-card-body {
+    padding: 16px;
+  }
+
+  .detail-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .detail-form-grid .full {
+    grid-column: 1 / -1;
+  }
+
+  .detail-field label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+
+  .detail-field input,
+  .detail-field textarea,
+  .detail-field select {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid #dbe2e8;
+    background: #f8fafc;
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    border: none;
+  }
+
+  .action-btn.primary { background: #0f4565; color: #fff; }
+  .action-btn.success { background: #25D366; color: #fff; }
+  .action-btn.warning { background: #fef3c7; color: #b45309; }
+  .action-btn.danger { background: #fee2e2; color: #dc2626; }
+  .action-btn.ghost { background: #fff; color: #475569; border: 1px solid #dbe2e8; }
+
+  .mini-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mini-stat {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .mini-stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 5px;
+    font-weight: 700;
+  }
+
+  .mini-stat-value {
+    font-size: 14px;
+    color: #0f172a;
+    font-weight: 700;
+  }
+
+  .job-link-list,
+  .quote-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .job-link,
+  .quote-card {
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  .quote-header {
+    display: flex;
     align-items: flex-start;
-  }
-  .sched-status i { font-size: 1.3em; flex-shrink: 0; margin-top: 2px; }
-  .sched-status-content { flex: 1; }
-  .sched-status-content p { margin: 0 0 8px; font-weight: 500; font-size: 14px; }
-  .sched-pending  { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-  .sched-ready    { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
-  .sched-scheduled{ background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
-
-  .job-actions-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-
-  /* ── Quotation item ── */
-  .quot-item {
-    border: 1px solid #e5e7eb; border-radius: 10px;
-    padding: 14px; margin-bottom: 10px; background: #fff;
-  }
-  .quot-item-header {
-    display: flex; justify-content: space-between; align-items: center;
-    flex-wrap: wrap; gap: 8px; margin-bottom: 8px;
-  }
-  .quot-item-header h4 { margin: 0; font-size: 14px; font-weight: 700; color: #111827; }
-  .quot-details { font-size: 13px; color: #374151; margin-bottom: 10px; }
-  .quot-details p { margin: 3px 0; }
-  .quot-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-
-  /* ── Conversation bubbles ── */
-  #chat-area {
-    background-color: #E5DDD5;
-    background-image: radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px);
-    background-size: 20px 20px;
-    padding: 14px 16px; min-height: 300px;
-  }
-  .bubble-row { display: flex; margin-bottom: 8px; }
-  .bubble-row.left  { justify-content: flex-start; }
-  .bubble-row.right { justify-content: flex-end; }
-  .bubble {
-    max-width: 75%; padding: 8px 12px;
-    box-shadow: 0 1px 2px rgba(0,0,0,.12);
-  }
-  .bubble.customer { background: #ffffff; border-radius: 0 10px 10px 10px; }
-  .bubble.bot      { background: #DCF8C6; border-radius: 10px 0 10px 10px; }
-  .bubble-sender { font-size: 11px; font-weight: 700; margin-bottom: 3px; }
-  .bubble-text   { font-size: 14px; color: #111827; word-wrap: break-word; white-space: pre-wrap; }
-  .bubble-time   { font-size: 10px; color: #9ca3af; text-align: right; margin-top: 4px; }
-
-  /* ── Template dropdown ── */
-  #templateDropdown {
-    position: absolute; top: 100%; right: 0;
-    background: white; border: 1px solid #e5e7eb;
-    border-radius: 10px; min-width: 250px;
-    max-height: 380px; overflow-y: auto;
-    margin-top: 6px; z-index: 1000;
-    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
   }
 
-  /* ── Char counter ── */
-  .char-counter { text-align: right; font-size: 11px; color: #9ca3af; margin-top: 4px; }
-
-  /* ── Tab pane ── */
-  .tab-pane { display: none; }
-  .tab-pane.active { display: block; }
-
-  /* ── Images grid ── */
-  .img-grid { display: flex; flex-wrap: wrap; gap: 10px; }
-  .img-grid a img {
-    width: 110px; height: 110px; object-fit: cover;
-    border-radius: 8px; border: 1px solid #e5e7eb;
+  .quote-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
   }
 
-  /* ── misc ── */
-  .text-muted  { color: #6b7280; }
-  .text-small  { font-size: 12px; }
-  .mt-2 { margin-top: 8px; }
-
-  @media (max-width: 480px) {
-    .card2 { margin: 8px 10px; }
-    .card2-body { padding: 12px; }
-    .quot-actions { flex-direction: column; }
-    .quot-actions .pill-btn { width: 100%; }
-    .job-actions-row { flex-direction: column; }
-    .job-actions-row .pill-btn { width: 100%; }
+  .quote-meta {
+    color: #64748b;
+    font-size: 12px;
+    display: grid;
+    gap: 4px;
   }
 
-  @media print {
-    .pill-btn, .form-actions2, #pane-chat { display: none !important; }
-    .card2 { break-inside: avoid; }
+  .quote-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .image-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .image-grid img {
+    width: 100px;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid #dbe2e8;
+  }
+
+  .empty-block {
+    padding: 28px 16px;
+    text-align: center;
+    color: #6b7280;
+  }
+
+  .mobile-back {
+    display: none;
+  }
+
+  @media (max-width: 1200px) {
+    .appt-split {
+      grid-template-columns: 360px minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 980px) {
+    .appt-split {
+      grid-template-columns: 1fr;
+    }
+
+    .appt-list-pane {
+      display: none;
+    }
+
+    .appt-detail-content {
+      padding: 12px;
+    }
+
+    .appt-detail-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .mobile-back {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      color: #fff;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.12);
+      flex-shrink: 0;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .appt-detail-header {
+      padding: 12px;
+      align-items: flex-start;
+    }
+
+    .appt-detail-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    .appt-detail-action {
+      padding: 7px 11px;
+      font-size: 12px;
+    }
+
+    .appt-tabbar {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .appt-chat-pane {
+      min-height: auto;
+    }
+
+    .detail-form-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .detail-actions,
+    .quote-actions {
+      flex-direction: column;
+    }
+
+    .action-btn,
+    .quote-actions .action-btn,
+    .quote-actions form {
+      width: 100%;
+    }
+
+    .chat-bubble {
+      max-width: 88%;
+    }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div style="background:#F0F2F5; min-height:100vh; padding-bottom:40px;">
-
-  <!-- ── Django messages ── -->
-  {% if messages %}
-  <div style="padding:10px 16px 0;">
-    {% for message in messages %}
-    <div class="alert alert-{{ message.tags }}">{{ message }}</div>
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  <!-- ══════════════════════════════════════
-       1. HEADER BAR
-  ══════════════════════════════════════ -->
-  <div style="background:#0a3d5c; padding:12px 16px; position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px;">
-    <a href="{% url 'appointments_list' %}" style="color:rgba(255,255,255,0.8); font-size:22px; text-decoration:none; line-height:1;">‹</a>
-    <div style="flex:1; min-width:0;">
-      <div style="color:#fff; font-size:17px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-        {% if appointment.customer_name %}{{ appointment.customer_name }}{% else %}Appointment #{{ appointment.pk }}{% endif %}
-        {% if appointment.appointment_type == 'job_appointment' %}
-        <span style="font-size:11px; background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px; margin-left:6px; font-weight:700;">Job</span>
-        {% else %}
-        <span style="font-size:11px; background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:10px; margin-left:6px; font-weight:700;">Site Visit</span>
-        {% endif %}
+<div class="appt-workspace">
+  <div class="appt-split">
+    <aside class="appt-list-pane">
+      <div class="appt-list-header">
+        <div class="appt-list-title">Appointments</div>
+        <div class="appt-list-subtitle">{{ appointment_status_counts.total }} total</div>
       </div>
-      <div style="color:rgba(255,255,255,0.7); font-size:12px; margin-top:1px;">
-        {{ appointment.phone_number }}{% if appointment.customer_area %} · {{ appointment.customer_area }}{% endif %}
-      </div>
-    </div>
-    <a href="tel:{{ appointment.phone_number }}" class="pill-btn pill-success pill-btn-sm">📞 Call</a>
-    <a href="https://wa.me/{{ appointment.phone_number|cut:'whatsapp:'|cut:'+'|cut:'-'|cut:' ' }}" target="_blank" class="pill-btn pill-success pill-btn-sm">💬 WA</a>
-  </div>
 
-  <!-- ══════════════════════════════════════
-       2. STATUS BAR
-  ══════════════════════════════════════ -->
-  <div style="background:#fff; padding:8px 16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; border-bottom:1px solid #e5e7eb;">
-    <!-- Appointment status -->
-    <span class="sbadge
-      {% if appointment.status == 'confirmed' %}" style="background:#d1fae5;color:#059669;"
-      {% elif appointment.status == 'pending' %}" style="background:#fef3c7;color:#d97706;"
-      {% elif appointment.status == 'cancelled' %}" style="background:#fee2e2;color:#ef4444;"
-      {% else %}" style="background:#dbeafe;color:#2563eb;"{% endif %}>
-      {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
-    </span>
-    <!-- Lead status -->
-    <span class="sbadge
-      {% if appointment.lead_status == 'very_hot' %}" style="background:#fee2e2;color:#ef4444;"
-      {% elif appointment.lead_status == 'hot' %}" style="background:#fef3c7;color:#d97706;"
-      {% elif appointment.lead_status == 'warm' %}" style="background:#d1fae5;color:#059669;"
-      {% else %}" style="background:#dbeafe;color:#2563eb;"{% endif %}>
-      {{ appointment.get_lead_status_display }}
-    </span>
-    <!-- Score -->
-    <span style="font-size:11px; color:#6b7280;">Score: {{ computed_lead_score|default:appointment.lead_score }}/100</span>
-    {% if appointment.chatbot_paused %}
-    <span class="sbadge" style="background:#fef3c7;color:#d97706;">⏸ Bot Paused</span>
-    {% endif %}
-  </div>
-
-  <!-- ══════════════════════════════════════
-       3. TAB NAVIGATION
-  ══════════════════════════════════════ -->
-  <div style="background:#fff; border-bottom:1px solid #e5e7eb; display:flex;">
-    <button onclick="showTab('chat')" id="tab-chat"
-      style="flex:1; padding:12px; border:none; background:none; font-size:14px; font-weight:600; color:#0e7490; border-bottom:2px solid #0e7490; cursor:pointer;">
-      Chat
-    </button>
-    <button onclick="showTab('details')" id="tab-details"
-      style="flex:1; padding:12px; border:none; background:none; font-size:14px; font-weight:400; color:#6b7280; border-bottom:2px solid transparent; cursor:pointer;">
-      Details
-    </button>
-    <button onclick="showTab('quotations')" id="tab-quotations"
-      style="flex:1; padding:12px; border:none; background:none; font-size:14px; font-weight:400; color:#6b7280; border-bottom:2px solid transparent; cursor:pointer;">
-      Quotations
-    </button>
-  </div>
-
-  <!-- ══════════════════════════════════════
-       4. CHAT TAB PANE
-  ══════════════════════════════════════ -->
-  <div id="pane-chat" class="tab-pane" style="padding-bottom:20px;">
-
-    <!-- Follow-up status info bar -->
-    <div style="background:#fff; padding:10px 16px; font-size:12px; color:#6b7280; border-bottom:1px solid #e5e7eb; display:flex; flex-wrap:wrap; gap:14px; align-items:center;">
-      <span>
-        <strong style="color:#374151;">Last contacted:</strong>
-        {% if appointment.last_contacted_at %}
-          {{ appointment.last_contacted_at|date:"M d, H:i" }}
-        {% elif appointment.last_customer_response %}
-          {{ appointment.last_customer_response|date:"M d, H:i" }}
-        {% elif appointment.last_inbound_at %}
-          {{ appointment.last_inbound_at|date:"M d, H:i" }}
-        {% else %}
-          Never
-        {% endif %}
-      </span>
-      <span><strong style="color:#374151;">Auto follow-up:</strong> {{ appointment.get_followup_status_display_verbose }}</span>
-      <span><strong style="color:#374151;">Stage:</strong> {{ appointment.get_followup_stage_display }}</span>
-      <span><strong style="color:#374151;">Follow-up:</strong> {{ appointment.get_follow_up_status_display }}</span>
-    </div>
-
-    <!-- Chat bubbles area -->
-    <div id="chat-area">
-      {% for message in conversation_history %}
-      <div class="bubble-row {% if message.role == 'user' %}left{% else %}right{% endif %}">
-        <div class="bubble {% if message.role == 'user' %}customer{% else %}bot{% endif %}">
-          <div class="bubble-sender" style="color:{% if message.role == 'user' %}#0e7490{% else %}#555{% endif %};">
-            {% if message.role == 'user' %}Customer{% else %}Plumbot{% endif %}
-          </div>
-          <div class="bubble-text">{{ message.content|default:"(no content)" }}</div>
-          {% if message.timestamp %}
-          <div class="bubble-time">{{ message.timestamp|date:"H:i" }}</div>
-          {% endif %}
+      <div class="appt-search">
+        <div class="appt-search-wrap">
+          <i class="fas fa-search"></i>
+          <input type="text" id="appointmentSearch" placeholder="Search name, phone, service...">
         </div>
       </div>
-      {% empty %}
-      <div style="text-align:center; padding:48px 16px; color:#6b7280; font-size:14px;">
-        <i class="fas fa-comment-slash" style="font-size:34px; opacity:.25; display:block; margin-bottom:12px;"></i>
-        No conversation history
+
+      <div class="appt-filter-tabs">
+        <button type="button" class="appt-filter-tab is-active" data-filter="all">All <span>{{ appointment_status_counts.total }}</span></button>
+        <button type="button" class="appt-filter-tab" data-filter="confirmed">Booked <span>{{ appointment_status_counts.booked }}</span></button>
+        <button type="button" class="appt-filter-tab" data-filter="pending">Pending <span>{{ appointment_status_counts.pending }}</span></button>
+        <button type="button" class="appt-filter-tab" data-filter="cancelled">Cancelled <span>{{ appointment_status_counts.cancelled }}</span></button>
       </div>
-      {% endfor %}
-    </div>
 
-    <!-- Controls section -->
-    <div style="background:#fff; border-top:1px solid #e5e7eb; padding:14px 16px;">
+      <div class="appt-list-scroll" id="appointmentList">
+        {% for item in sidebar_appointments %}
+        <a href="{% url 'appointment_detail' item.pk %}"
+           class="appt-list-row {% if item.pk == appointment.pk %}is-current{% endif %}"
+           data-status="{{ item.status }}"
+           data-search="{{ item.customer_name|default:''|lower }} {{ item.phone_number|default:''|lower }} {{ item.project_type|default:''|lower }} {{ item.customer_area|default:''|lower }}">
+          <div class="appt-list-avatar" style="background:
+            {% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' '#f97316' '#8b5cf6' '#14b8a6' %};">
+            {{ item.customer_name|default:"?"|slice:":2"|upper }}
+          </div>
+          <div class="appt-list-main">
+            <div class="appt-list-name">{{ item.customer_name|default:"Unknown Customer" }}</div>
+            <div class="appt-list-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
+            <div class="appt-list-preview">{{ item.project_description|default:"No recent note available"|truncatewords:10 }}</div>
+          </div>
+          <div class="appt-list-side">
+            <div class="appt-list-time">{{ item.scheduled_datetime|date:"H:i"|default:item.updated_at|date:"H:i" }}</div>
+            <div class="appt-dot" style="background:
+              {% if item.lead_status == 'very_hot' %}#ef4444
+              {% elif item.lead_status == 'hot' %}#f59e0b
+              {% elif item.lead_status == 'warm' %}#22c55e
+              {% elif item.lead_status == 'luke_warm' %}#3b82f6
+              {% else %}#94a3b8{% endif %};"></div>
+            <div class="appt-pill {% if item.status == 'confirmed' %}booked{% elif item.status == 'pending' %}pending{% elif item.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">
+              {% if item.status == 'confirmed' %}Booked{% elif item.status == 'pending' %}Pending{% elif item.status == 'cancelled' %}Cancelled{% else %}{{ item.get_status_display }}{% endif %}
+            </div>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </aside>
 
-      <!-- Pause / Resume chatbot -->
-      <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+    <section class="appt-detail-pane">
+      <div class="appt-detail-header">
+        <div class="appt-detail-user">
+          <a href="{% url 'appointments_list' %}" class="mobile-back" aria-label="Back to appointments">
+            <i class="fas fa-arrow-left"></i>
+          </a>
+          <div class="appt-detail-avatar">{{ appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
+          <div style="min-width:0;">
+            <div class="appt-detail-name">
+              {{ appointment.customer_name|default:"Unknown Customer" }}
+            </div>
+            <div class="appt-detail-meta">
+              {{ appointment.phone_number }}{% if appointment.customer_area %} · {{ appointment.customer_area }}{% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="appt-detail-actions">
+          <a href="tel:{{ appointment.phone_number }}" class="appt-detail-action call">
+            <i class="fas fa-phone"></i> Call
+          </a>
+          <a href="https://wa.me/{{ appointment.phone_number|cut:'whatsapp:'|cut:'+'|cut:'-'|cut:' ' }}" target="_blank" class="appt-detail-action wa">
+            <i class="fab fa-whatsapp"></i> WhatsApp
+          </a>
+        </div>
+      </div>
+
+      <div class="appt-detail-statusbar">
+        <span class="appt-pill {% if appointment.status == 'confirmed' %}booked{% elif appointment.status == 'pending' %}pending{% elif appointment.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">
+          {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
+        </span>
+        <span class="appt-pill {{ appointment.lead_status|default:computed_lead_status }}">
+          {{ computed_lead_status_label|default:appointment.get_lead_status_display }}
+        </span>
+        <span class="appt-score-chip">{{ computed_lead_score|default:appointment.lead_score }}</span>
+        <span style="font-size:13px; color:#475569;">Score {{ computed_lead_score|default:appointment.lead_score }}/100</span>
         {% if appointment.chatbot_paused %}
-        <form method="post" action="{% url 'resume_chatbot' appointment.pk %}" style="display:inline;">
-          {% csrf_token %}
-          <button type="submit" class="pill-btn pill-success pill-btn-sm">
-            <i class="fas fa-play"></i> Resume Chatbot
-          </button>
-        </form>
-        {% else %}
-        <form method="post" action="{% url 'pause_chatbot' appointment.pk %}" style="display:inline;">
-          {% csrf_token %}
-          <button type="submit" class="pill-btn pill-warn pill-btn-sm">
-            <i class="fas fa-pause"></i> Pause Chatbot
-          </button>
-        </form>
-        {% endif %}
-
-        <!-- Quick message templates -->
-        <button onclick="insertTemplate('greeting')" class="pill-btn pill-ghost pill-btn-sm">
-          <i class="fas fa-smile"></i> Greeting
-        </button>
-        <button onclick="insertTemplate('check_in')" class="pill-btn pill-ghost pill-btn-sm">
-          <i class="fas fa-check"></i> Check-in
-        </button>
-        <button onclick="insertTemplate('offer')" class="pill-btn pill-ghost pill-btn-sm">
-          <i class="fas fa-gift"></i> Special Offer
-        </button>
-        <button onclick="insertTemplate('reminder')" class="pill-btn pill-ghost pill-btn-sm">
-          <i class="fas fa-bell"></i> Reminder
-        </button>
-
-        <!-- Send Portfolio -->
-        <form method="post" action="{% url 'send_portfolio_to_lead' appointment.pk %}" style="display:inline;">
-          {% csrf_token %}
-          <button type="submit" class="pill-btn pill-primary pill-btn-sm">
-            <i class="fas fa-images"></i> Send Portfolio
-          </button>
-        </form>
-      </div>
-
-      <!-- Manual Follow-up Form -->
-      <form method="post" action="{% url 'send_followup' appointment.pk %}" class="followup-form" id="followupForm">
-        {% csrf_token %}
-        <div class="form-group2">
-          <label class="field-label" for="followup_message">
-            <i class="fas fa-paper-plane"></i> Send Manual Follow-up
-            <span style="font-style:italic; color:#9ca3af; margin-left:4px;">(Use when handling lead manually)</span>
-          </label>
-          <textarea id="followup_message" name="message" class="field-input" rows="3"
-            placeholder="Type your message here... Use {name} to personalise with customer name"
-            required></textarea>
-          <div class="char-counter"><span id="charCount">0</span> / 1000 characters</div>
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;" class="form-actions2">
-          <button type="submit" class="pill-btn pill-primary" id="sendMessageBtn">
-            <i class="fas fa-paper-plane"></i> Send Manual Follow-up
-          </button>
-          <button type="button" class="pill-btn pill-ghost" onclick="clearMessage()">
-            <i class="fas fa-times"></i> Clear
-          </button>
-        </div>
-        <div id="messageStatus" style="margin-top:10px; display:none;"></div>
-      </form>
-    </div>
-  </div><!-- /#pane-chat -->
-
-
-  <!-- ══════════════════════════════════════
-       5. DETAILS TAB PANE
-  ══════════════════════════════════════ -->
-  <div id="pane-details" class="tab-pane">
-
-    <!-- Job Scheduling Panel (site_visit) -->
-    {% if appointment.appointment_type == 'site_visit' %}
-    <div class="card2">
-      <div class="card2-header">
-        <h3><i class="fas fa-calendar-plus"></i> Job Scheduling</h3>
-      </div>
-      <div class="card2-body">
-        {% if not appointment.site_visit_completed %}
-        <div class="sched-status sched-pending">
-          <i class="fas fa-clock"></i>
-          <div class="sched-status-content">
-            <p>Site visit must be completed before scheduling job appointment</p>
-            <a href="{% url 'complete_site_visit' appointment.pk %}" class="pill-btn pill-primary">
-              <i class="fas fa-clipboard-check"></i> Complete Site Visit
-            </a>
-          </div>
-        </div>
-        {% elif appointment.can_schedule_job %}
-        <div class="sched-status sched-ready">
-          <i class="fas fa-check-circle"></i>
-          <div class="sched-status-content">
-            <p>Site visit completed. Ready to schedule job appointment.</p>
-            <div style="font-size:13px; margin:6px 0 10px; color:inherit; opacity:.85;">
-              <p style="margin:2px 0;"><strong>Completed:</strong> {{ appointment.site_visit_completed_at|date:"M d, Y H:i" }}</p>
-              {% if appointment.site_visit_notes %}
-              <p style="margin:2px 0;"><strong>Notes:</strong> {{ appointment.site_visit_notes|truncatewords:15 }}</p>
-              {% endif %}
-            </div>
-            <a href="{% url 'schedule_job' appointment.pk %}" class="pill-btn pill-success">
-              <i class="fas fa-calendar-plus"></i> Schedule Job
-            </a>
-          </div>
-        </div>
-        {% elif appointment.job_status == 'scheduled' %}
-        <div class="sched-status sched-scheduled">
-          <i class="fas fa-calendar-check"></i>
-          <div class="sched-status-content">
-            <p>Job appointment has been scheduled</p>
-            <div class="job-actions-row">
-              {% for job in appointment.get_job_appointments %}
-              <a href="{% url 'appointment_detail' job.pk %}" class="pill-btn pill-primary">
-                <i class="fas fa-eye"></i> View Job
-              </a>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
+        <span class="appt-pill pending">Bot paused</span>
         {% endif %}
       </div>
-    </div>
 
-    <!-- Related Job Appointments -->
-    {% elif appointment.get_job_appointments.exists %}
-    <div class="card2">
-      <div class="card2-header">
-        <h3><i class="fas fa-hard-hat"></i> Related Jobs</h3>
+      <div class="appt-tabbar">
+        <button class="appt-tab-btn is-active" type="button" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
+        <button class="appt-tab-btn" type="button" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
+        <button class="appt-tab-btn" type="button" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
       </div>
-      <div class="card2-body">
-        {% for job in appointment.get_job_appointments %}
-        <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px; margin-bottom:10px; background:#F0F2F5;">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
-            <div>
-              <div style="font-weight:700; font-size:14px; color:#111827; margin-bottom:4px;">Job #{{ job.id }}</div>
-              <div style="font-size:13px; color:#6b7280;">
-                <i class="fas fa-calendar" style="margin-right:4px;"></i>{{ job.job_scheduled_datetime|date:"M d, Y H:i" }}
+
+      <div class="appt-tab-pane is-active" id="tab-chat">
+        <div class="appt-chat-pane">
+          <div class="appt-chat-scroll" id="chatScroll">
+            {% for message in conversation_history %}
+            <div class="chat-bubble-row {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
+              <div class="chat-bubble {% if message.role == 'user' %}user{% else %}assistant{% endif %}">
+                <div class="chat-bubble-sender">
+                  {% if message.role == 'user' %}Customer{% else %}Plumbot{% endif %}
+                </div>
+                <div class="chat-bubble-text">{{ message.content|default:"(no message content)" }}</div>
+                {% if message.timestamp %}
+                <div class="chat-bubble-time">{{ message.timestamp|date:"H:i" }}</div>
+                {% endif %}
               </div>
-              <div style="font-size:13px; color:#6b7280;">
-                <i class="fas fa-clock" style="margin-right:4px;"></i>{{ job.job_duration_hours }} hours
-              </div>
-              <span class="sbadge mt-2" style="background:#dbeafe;color:#1e40af;">{{ job.get_job_status_display }}</span>
             </div>
-            <a href="{% url 'appointment_detail' job.pk %}" class="pill-btn pill-primary pill-btn-sm">
-              <i class="fas fa-eye"></i> View
-            </a>
+            {% empty %}
+            <div class="empty-block">
+              <i class="fas fa-comment-slash" style="font-size:30px; opacity:.3; display:block; margin-bottom:10px;"></i>
+              No conversation history yet.
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="appt-chat-compose">
+            <div class="appt-quick-actions">
+              {% if appointment.chatbot_paused %}
+              <form method="post" action="{% url 'resume_chatbot' appointment.pk %}">
+                {% csrf_token %}
+                <button type="submit"><i class="fas fa-play"></i> Resume chatbot</button>
+              </form>
+              {% else %}
+              <form method="post" action="{% url 'pause_chatbot' appointment.pk %}">
+                {% csrf_token %}
+                <button type="submit"><i class="fas fa-pause"></i> Pause chatbot</button>
+              </form>
+              {% endif %}
+              <button type="button" onclick="insertTemplate('greeting')"><i class="fas fa-hand-sparkles"></i> Greeting</button>
+              <button type="button" onclick="insertTemplate('check_in')"><i class="fas fa-bell"></i> Check-in</button>
+              <button type="button" onclick="insertTemplate('reminder')"><i class="fas fa-clock"></i> Reminder</button>
+              <form method="post" action="{% url 'send_portfolio_to_lead' appointment.pk %}">
+                {% csrf_token %}
+                <button type="submit"><i class="fas fa-images"></i> Send portfolio</button>
+              </form>
+            </div>
+
+            <form method="post" action="{% url 'send_followup' appointment.pk %}" id="followupForm">
+              {% csrf_token %}
+              <div class="appt-compose-row">
+                <textarea id="followup_message" name="message" placeholder="Type a message..." required></textarea>
+                <button type="submit" class="appt-send-btn" id="sendMessageBtn" aria-label="Send message">
+                  <i class="fas fa-paper-plane"></i>
+                </button>
+              </div>
+              <div class="appt-char-count"><span id="charCount">0</span> / 1000</div>
+              <div id="messageStatus" style="display:none; margin-top:10px;"></div>
+            </form>
           </div>
         </div>
-        {% endfor %}
       </div>
-    </div>
-    {% endif %}
 
-    <!-- Job Details Panel (job_appointment) -->
-    {% if appointment.appointment_type == 'job_appointment' %}
-    <div class="card2">
-      <div class="card2-header">
-        <h3><i class="fas fa-wrench"></i> Job Details</h3>
-      </div>
-      <div class="card2-body">
-        <div style="display:grid; gap:12px; margin-bottom:16px;">
-          <!-- Schedule info -->
-          <div style="background:#F0F2F5; border-radius:8px; padding:14px; border-left:3px solid #0e7490;">
-            <div style="font-size:13px; font-weight:700; color:#374151; margin-bottom:10px;">Schedule Information</div>
-            <div style="font-size:13px; color:#374151; display:flex; flex-direction:column; gap:5px;">
-              <div><strong>Scheduled:</strong> {{ appointment.job_scheduled_datetime|date:"M d, Y H:i" }}</div>
-              <div><strong>Duration:</strong> {{ appointment.job_duration_hours }} hours</div>
-              <div><strong>Status:</strong>
-                <span class="sbadge" style="background:#dbeafe;color:#1e40af;">{{ appointment.get_job_status_display }}</span>
+      <div class="appt-tab-pane" id="tab-details">
+        <div class="appt-detail-content">
+          <div class="appt-detail-grid">
+            <div class="detail-card">
+              <div class="detail-card-header">Customer Details</div>
+              <div class="detail-card-body">
+                <form method="post">
+                  {% csrf_token %}
+                  <div class="detail-form-grid">
+                    <div class="detail-field">
+                      <label for="customer_name">Customer Name</label>
+                      <input type="text" id="customer_name" name="customer_name" value="{{ appointment.customer_name|default:'' }}">
+                    </div>
+                    <div class="detail-field">
+                      <label for="phone_number">Phone Number</label>
+                      <input type="text" id="phone_number" value="{{ appointment.phone_number|default:'' }}" readonly>
+                    </div>
+                    <div class="detail-field">
+                      <label for="project_type">Service</label>
+                      <input type="text" id="project_type" name="project_type" value="{{ appointment.project_type|default:'' }}">
+                    </div>
+                    <div class="detail-field">
+                      <label for="customer_area">Area</label>
+                      <input type="text" id="customer_area" name="customer_area" value="{{ appointment.customer_area|default:'' }}">
+                    </div>
+                    <div class="detail-field">
+                      <label for="scheduled_datetime">Scheduled</label>
+                      <input type="datetime-local" id="scheduled_datetime" name="scheduled_datetime" value="{{ appointment.scheduled_datetime|date:'Y-m-d\\TH:i' }}">
+                    </div>
+                    <div class="detail-field">
+                      <label for="property_type">Property Type</label>
+                      <select id="property_type" name="property_type">
+                        {% for value, display in appointment.PROPERTY_TYPE_CHOICES %}
+                        <option value="{{ value }}" {% if appointment.property_type == value %}selected{% endif %}>{{ display }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="detail-field full">
+                      <label for="project_description">Project Description</label>
+                      <textarea id="project_description" name="project_description" rows="4">{{ appointment.project_description|default:'' }}</textarea>
+                    </div>
+                    <div class="detail-field">
+                      <label for="follow_up_status">Follow-up Status</label>
+                      <select id="follow_up_status" name="follow_up_status">
+                        <option value="pending" {% if appointment.follow_up_status == 'pending' %}selected{% endif %}>Pending</option>
+                        <option value="in_progress" {% if appointment.follow_up_status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                        <option value="waiting_customer" {% if appointment.follow_up_status == 'waiting_customer' %}selected{% endif %}>Waiting Customer</option>
+                        <option value="completed" {% if appointment.follow_up_status == 'completed' %}selected{% endif %}>Completed</option>
+                        <option value="closed_lost" {% if appointment.follow_up_status == 'closed_lost' %}selected{% endif %}>Closed Lost</option>
+                      </select>
+                    </div>
+                    <div class="detail-field">
+                      <label for="next_follow_up_at">Next Follow-up</label>
+                      <input type="datetime-local" id="next_follow_up_at" name="next_follow_up_at" value="{{ appointment.next_follow_up_at|date:'Y-m-d\\TH:i' }}">
+                    </div>
+                    <div class="detail-field full">
+                      <label for="admin_notes">Admin Notes</label>
+                      <textarea id="admin_notes" name="admin_notes" rows="4">{{ appointment.admin_notes|default:'' }}</textarea>
+                    </div>
+                  </div>
+
+                  <div class="detail-actions">
+                    <button type="submit" class="action-btn primary"><i class="fas fa-save"></i> Save Changes</button>
+                    {% if appointment.status == 'pending' %}
+                    <a href="{% url 'confirm_appointment' appointment.pk %}" class="action-btn success"><i class="fas fa-check"></i> Confirm</a>
+                    {% endif %}
+                    {% if appointment.status != 'completed' %}
+                    <button type="submit"
+                            formaction="{% url 'complete_lead_appointment' appointment.pk %}"
+                            formmethod="post"
+                            onclick="return confirm('Mark this lead as completed and remove it from Priority Leads?');"
+                            class="action-btn primary">
+                      <i class="fas fa-flag-checkered"></i> Complete
+                    </button>
+                    {% endif %}
+                    {% if appointment.status != 'cancelled' %}
+                    <a href="{% url 'cancel_appointment' appointment.pk %}" class="action-btn danger"><i class="fas fa-times"></i> Cancel</a>
+                    {% endif %}
+                  </div>
+                </form>
               </div>
-              <div><strong>Plumber:</strong> {{ appointment.assigned_plumber.get_full_name|default:"Unassigned" }}</div>
-              {% if appointment.job_completed_at %}
-              <div><strong>Completed:</strong> {{ appointment.job_completed_at|date:"M d, Y H:i" }}</div>
+            </div>
+
+            <div style="display:grid; gap:18px;">
+              <div class="detail-card">
+                <div class="detail-card-header">Lead Summary</div>
+                <div class="detail-card-body">
+                  <div class="mini-stat-grid">
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Lead Score</div>
+                      <div class="mini-stat-value">{{ computed_lead_score|default:appointment.lead_score }}/100</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Lead Status</div>
+                      <div class="mini-stat-value">{{ computed_lead_status_label|default:appointment.get_lead_status_display }}</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Completeness</div>
+                      <div class="mini-stat-value">{{ completeness }}%</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Appointment Type</div>
+                      <div class="mini-stat-value">{{ appointment.get_appointment_type_display }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-card">
+                <div class="detail-card-header">Scheduling</div>
+                <div class="detail-card-body">
+                  {% if appointment.appointment_type == 'site_visit' %}
+                    {% if not appointment.site_visit_completed %}
+                    <div class="empty-block" style="padding:0; text-align:left;">
+                      Site visit must be completed before scheduling the job appointment.
+                    </div>
+                    <div class="detail-actions">
+                      <a href="{% url 'complete_site_visit' appointment.pk %}" class="action-btn primary"><i class="fas fa-clipboard-check"></i> Complete Site Visit</a>
+                    </div>
+                    {% elif appointment.can_schedule_job %}
+                    <div class="mini-stat" style="margin-bottom:12px;">
+                      <div class="mini-stat-label">Site Visit Completed</div>
+                      <div class="mini-stat-value">{{ appointment.site_visit_completed_at|date:"M d, Y H:i" }}</div>
+                    </div>
+                    <a href="{% url 'schedule_job' appointment.pk %}" class="action-btn success"><i class="fas fa-calendar-plus"></i> Schedule Job</a>
+                    {% elif appointment.get_job_appointments %}
+                    <div class="job-link-list">
+                      {% for job in appointment.get_job_appointments %}
+                      <a href="{% url 'appointment_detail' job.pk %}" class="job-link">
+                        <strong>Job #{{ job.pk }}</strong><br>
+                        <span class="text-muted">{{ job.job_scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}</span>
+                      </a>
+                      {% endfor %}
+                    </div>
+                    {% endif %}
+                  {% else %}
+                    <div class="mini-stat-grid">
+                      <div class="mini-stat">
+                        <div class="mini-stat-label">Scheduled</div>
+                        <div class="mini-stat-value">{{ appointment.job_scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}</div>
+                      </div>
+                      <div class="mini-stat">
+                        <div class="mini-stat-label">Duration</div>
+                        <div class="mini-stat-value">{{ appointment.job_duration_hours|default:"-" }} hours</div>
+                      </div>
+                    </div>
+                    <div class="detail-actions">
+                      {% if appointment.job_status == 'scheduled' %}
+                      <button type="button" onclick="updateJobStatus({{ appointment.pk }}, 'in_progress')" class="action-btn warning"><i class="fas fa-play"></i> Start Job</button>
+                      <a href="{% url 'reschedule_job' appointment.pk %}" class="action-btn ghost"><i class="fas fa-calendar-alt"></i> Reschedule</a>
+                      {% elif appointment.job_status == 'in_progress' %}
+                      <button type="button" onclick="updateJobStatus({{ appointment.pk }}, 'completed')" class="action-btn success"><i class="fas fa-check"></i> Complete Job</button>
+                      {% endif %}
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+
+              {% if has_documents or uploaded_images %}
+              <div class="detail-card">
+                <div class="detail-card-header">Documents & Images</div>
+                <div class="detail-card-body">
+                  {% if has_documents %}
+                  <div class="mini-stat" style="margin-bottom:12px;">
+                    <div class="mini-stat-label">Uploaded Documents</div>
+                    <div class="mini-stat-value">{{ document_count }}</div>
+                  </div>
+                  <a href="{% url 'appointment_documents' appointment.pk %}" class="action-btn ghost"><i class="fas fa-folder-open"></i> View Documents</a>
+                  {% endif %}
+
+                  {% if uploaded_images %}
+                  <div class="image-grid" style="margin-top:14px;">
+                    {% for img in uploaded_images %}
+                    <a href="{{ img.url }}" target="_blank">
+                      <img src="{{ img.url }}" alt="Customer upload">
+                    </a>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
               {% endif %}
             </div>
           </div>
-
-          {% if appointment.job_description or appointment.job_materials_needed %}
-          <div style="background:#F0F2F5; border-radius:8px; padding:14px; border-left:3px solid #25D366;">
-            {% if appointment.job_description %}
-            <div style="font-size:13px; font-weight:700; color:#374151; margin-bottom:6px;">Work Description</div>
-            <div style="font-size:13px; color:#374151; margin-bottom:12px;">{{ appointment.job_description|linebreaks }}</div>
-            {% endif %}
-            {% if appointment.job_materials_needed %}
-            <div style="font-size:13px; font-weight:700; color:#374151; margin-bottom:6px;">Materials Needed</div>
-            <div style="font-size:13px; color:#374151;">{{ appointment.job_materials_needed|linebreaks }}</div>
-            {% endif %}
-          </div>
-          {% endif %}
-        </div>
-
-        <!-- Job action buttons -->
-        <div class="job-actions-row">
-          {% if appointment.job_status == 'scheduled' %}
-          <button onclick="updateJobStatus({{ appointment.pk }}, 'in_progress')" class="pill-btn pill-warn">
-            <i class="fas fa-play"></i> Start Job
-          </button>
-          <a href="{% url 'reschedule_job' appointment.pk %}" class="pill-btn pill-ghost">
-            <i class="fas fa-calendar-alt"></i> Reschedule
-          </a>
-          {% elif appointment.job_status == 'in_progress' %}
-          <button onclick="updateJobStatus({{ appointment.pk }}, 'completed')" class="pill-btn pill-success">
-            <i class="fas fa-check"></i> Complete
-          </button>
-          {% endif %}
-
-          {% if appointment.job_status in 'scheduled,in_progress' %}
-          <button onclick="updateJobStatus({{ appointment.pk }}, 'cancelled')" class="pill-btn pill-danger">
-            <i class="fas fa-times"></i> Cancel
-          </button>
-          {% endif %}
-
-          {% if appointment.parent_site_visit %}
-          <a href="{% url 'appointment_detail' appointment.parent_site_visit.pk %}" class="pill-btn pill-teal-out">
-            <i class="fas fa-eye"></i> View Site Visit
-          </a>
-          {% endif %}
         </div>
       </div>
-    </div>
-    {% endif %}
 
-    <!-- Documents card -->
-    {% if has_documents %}
-    <div class="card2">
-      <div class="card2-header">
-        <h3><i class="fas fa-file-alt"></i> Documents</h3>
-      </div>
-      <div class="card2-body">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; background:#F0F2F5; padding:12px; border-radius:8px;">
-          <div style="display:flex; align-items:center; gap:8px; font-size:14px; color:#374151;">
-            <i class="fas fa-file-pdf" style="color:#ef4444;"></i>
-            <span>{{ document_count }} document(s)</span>
-          </div>
-          <a href="{% url 'appointment_documents' appointment.pk %}" class="pill-btn pill-primary pill-btn-sm">
-            <i class="fas fa-eye"></i> View
-          </a>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- Customer Images card -->
-    {% if uploaded_images %}
-    <div class="card2">
-      <div class="card2-header">
-        <h3><i class="fas fa-images"></i> Customer Images ({{ uploaded_images|length }})</h3>
-      </div>
-      <div class="card2-body">
-        <div class="img-grid">
-          {% for img in uploaded_images %}
-          <a href="{{ img.url }}" target="_blank">
-            <img src="{{ img.url }}" onerror="this.style.display='none'">
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- Card 1: Customer Details form -->
-    <div class="card2">
-      <div class="card2-header">
-        <h3><i class="fas fa-user"></i> Customer Details</h3>
-      </div>
-      <div class="card2-body">
-
-        <!-- Document status info row -->
-        <div style="margin-bottom:14px; padding:10px 12px; background:#F0F2F5; border-radius:8px; font-size:13px; color:#374151;">
-          <strong>Document status:</strong>
-          {% if has_documents %}
-          <span class="sbadge" style="background:#d1fae5;color:#059669; margin-left:6px;">
-            <i class="fas fa-check-circle"></i> {{ document_count }} document(s)
-          </span>
-          {% else %}
-          <span class="sbadge" style="background:#fee2e2;color:#ef4444; margin-left:6px;">
-            <i class="fas fa-times-circle"></i> No documents
-          </span>
-          {% endif %}
-        </div>
-
-        <form method="post">
-          {% csrf_token %}
-
-          <!-- Appointment status (read-only display) -->
-          <div class="form-group2">
-            <label class="field-label">Status</label>
-            <div style="font-size:13px; font-weight:600; color:#374151; padding:6px 0;">
-              {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
+      <div class="appt-tab-pane" id="tab-quotes">
+        <div class="appt-detail-content">
+          <div class="detail-card">
+            <div class="detail-card-header">
+              <span>Quotations</span>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <a href="{% url 'create_quotation' appointment.pk %}" class="action-btn primary"><i class="fas fa-plus"></i> New Quote</a>
+                <div style="position:relative;">
+                  <button class="action-btn success" type="button" onclick="toggleTemplateDropdown()" id="templateDropdownBtn">
+                    <i class="fas fa-file-invoice"></i> From Template
+                  </button>
+                  <div id="templateDropdown" style="display:none; position:absolute; top:100%; right:0; min-width:260px; margin-top:8px; background:#fff; border:1px solid #dbe2e8; border-radius:14px; box-shadow:0 14px 34px rgba(15, 23, 42, 0.14); z-index:20;">
+                    <div style="padding:12px; border-bottom:1px solid #eef2f7;">
+                      <input type="text" id="quickTemplateSearch" placeholder="Search templates..." style="width:100%; border:1px solid #dbe2e8; border-radius:10px; padding:10px 12px;" oninput="quickSearchTemplates()">
+                    </div>
+                    <div id="quickTemplateList" style="max-height:320px; overflow:auto;"></div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div class="form-group2">
-            <label class="field-label" for="customer_name">Customer Name</label>
-            <input type="text" id="customer_name" name="customer_name"
-              value="{{ appointment.customer_name|default:'' }}" class="field-input">
-          </div>
-
-          <div class="form-group2">
-            <label class="field-label" for="phone_number">Phone Number</label>
-            <input type="text" id="phone_number" name="phone_number"
-              value="{{ appointment.phone_number|default:'' }}" class="field-input" readonly
-              style="opacity:.7; cursor:not-allowed;">
-          </div>
-
-          <div class="form-group2">
-            <label class="field-label" for="project_type">Service Type</label>
-            <input type="text" id="project_type" name="project_type"
-              value="{{ appointment.project_type|default:'' }}" class="field-input">
-          </div>
-
-          <div class="form-group2">
-            <label class="field-label" for="customer_area">Area</label>
-            <input type="text" id="customer_area" name="customer_area"
-              value="{{ appointment.customer_area|default:'' }}" class="field-input">
-          </div>
-
-          <div class="form-group2">
-            <label class="field-label" for="scheduled_datetime">Visit Date / Time</label>
-            <input type="datetime-local" id="scheduled_datetime" name="scheduled_datetime"
-              value="{{ appointment.scheduled_datetime|date:'Y-m-d\TH:i' }}" class="field-input">
-          </div>
-
-          <div class="form-group2">
-            <label class="field-label" for="project_description">Project Description</label>
-            <textarea id="project_description" name="project_description" class="field-input" rows="4"
-              placeholder="What exactly does the customer want done?">{{ appointment.project_description|default:'' }}</textarea>
-          </div>
-
-          {% if appointment.appointment_type == 'job_appointment' %}
-          <div class="form-group2">
-            <label class="field-label" for="job_scheduled_datetime">Job Date / Time</label>
-            <input type="datetime-local" id="job_scheduled_datetime" name="job_scheduled_datetime"
-              value="{{ appointment.job_scheduled_datetime|date:'Y-m-d\TH:i' }}" class="field-input">
-          </div>
-          {% endif %}
-
-          <!-- Lead score display -->
-          <div class="form-group2">
-            <label class="field-label">Lead Score</label>
-            <div style="font-size:13px; color:#374151; padding:6px 0;">
-              {{ computed_lead_score|default:appointment.lead_score }}/100 — {{ computed_lead_status_label|default:appointment.get_lead_status_display }}
-            </div>
-          </div>
-
-          <!-- Card 2: Lead Management (embedded in same form) -->
-          <div style="border-top:1px solid #e5e7eb; padding-top:16px; margin-top:4px;">
-            <div style="font-size:13px; font-weight:700; color:#0a3d5c; margin-bottom:14px; display:flex; align-items:center; gap:6px;">
-              <i class="fas fa-chart-line"></i> Lead Management
-            </div>
-
-            <div class="form-group2">
-              <label class="field-label" for="follow_up_status">Follow-up Status</label>
-              <select id="follow_up_status" name="follow_up_status" class="field-input">
-                <option value="pending" {% if appointment.follow_up_status == 'pending' %}selected{% endif %}>Pending</option>
-                <option value="in_progress" {% if appointment.follow_up_status == 'in_progress' %}selected{% endif %}>In Progress</option>
-                <option value="waiting_customer" {% if appointment.follow_up_status == 'waiting_customer' %}selected{% endif %}>Waiting Customer</option>
-                <option value="completed" {% if appointment.follow_up_status == 'completed' %}selected{% endif %}>Completed</option>
-                <option value="closed_lost" {% if appointment.follow_up_status == 'closed_lost' %}selected{% endif %}>Closed Lost</option>
-              </select>
-            </div>
-
-            <div class="form-group2">
-              <label class="field-label" for="next_follow_up_at">Next Follow-up Date / Time</label>
-              <input type="datetime-local" id="next_follow_up_at" name="next_follow_up_at"
-                value="{{ appointment.next_follow_up_at|date:'Y-m-d\\TH:i' }}" class="field-input">
-            </div>
-
-            <div class="form-group2">
-              <label class="field-label" for="property_type">Property Type</label>
-              <select id="property_type" name="property_type" class="field-input">
-                {% for value, display in appointment.PROPERTY_TYPE_CHOICES %}
-                <option value="{{ value }}" {% if appointment.property_type == value %}selected{% endif %}>{{ display }}</option>
+            <div class="detail-card-body">
+              {% if appointment.quotations.exists %}
+              <div class="quote-list">
+                {% for quote in appointment.quotations.all %}
+                <div class="quote-card">
+                  <div class="quote-header">
+                    <div>
+                      <div class="quote-title">{{ quote.get_display_name }}</div>
+                      <div class="quote-meta">
+                        <div>Total: US${{ quote.total_amount|default:"0.00" }}</div>
+                        <div>Created: {{ quote.created_at|date:"M d, Y H:i" }}</div>
+                        {% if quote.sent_via_whatsapp and quote.sent_at %}
+                        <div>Sent: {{ quote.sent_at|date:"M d, Y H:i" }}</div>
+                        {% endif %}
+                      </div>
+                    </div>
+                    <div class="appt-pill {% if quote.status == 'accepted' %}booked{% elif quote.status == 'sent' %}delayed{% else %}cold{% endif %}">
+                      {{ quote.get_status_display }}
+                    </div>
+                  </div>
+                  <div class="quote-actions">
+                    <a href="{% url 'view_quotation' quote.id %}" class="action-btn ghost"><i class="fas fa-eye"></i> View</a>
+                    <a href="{% url 'edit_quotation' quote.id %}" class="action-btn ghost"><i class="fas fa-edit"></i> Edit</a>
+                    <form method="post" action="{% url 'duplicate_quotation' quote.id %}">
+                      {% csrf_token %}
+                      <button type="submit" class="action-btn warning" onclick="return confirm('Duplicate this quotation?');"><i class="fas fa-copy"></i> Duplicate</button>
+                    </form>
+                    <form method="post" action="{% url 'delete_quotation' quote.id %}">
+                      {% csrf_token %}
+                      <button type="submit" class="action-btn danger" onclick="return confirm('Delete this quotation permanently?');"><i class="fas fa-trash"></i> Delete</button>
+                    </form>
+                    {% if quote.status == 'draft' or quote.status == 'sent' %}
+                    <a href="{% url 'send_quotation' quote.id %}" class="action-btn success"><i class="fab fa-whatsapp"></i> {% if quote.status == 'draft' %}Send{% else %}Resend{% endif %}</a>
+                    {% endif %}
+                  </div>
+                </div>
                 {% endfor %}
-              </select>
-            </div>
-
-            <div class="form-group2">
-              <label class="field-label" for="timeline">Legacy Timeline / Notes</label>
-              <input type="text" id="timeline" name="timeline"
-                value="{{ appointment.timeline|default:'' }}" class="field-input"
-                placeholder="Optional older-field value">
-            </div>
-
-            <div class="form-group2">
-              <label class="field-label" for="admin_notes">Admin Notes</label>
-              <textarea id="admin_notes" name="admin_notes" class="field-input" rows="4"
-                placeholder="Internal notes for lead handling">{{ appointment.admin_notes|default:'' }}</textarea>
-            </div>
-          </div>
-
-          <!-- Action buttons -->
-          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:20px;">
-            <button type="submit" class="pill-btn pill-primary">
-              <i class="fas fa-save"></i> Save Changes
-            </button>
-            {% if appointment.status == 'pending' %}
-            <a href="{% url 'confirm_appointment' appointment.pk %}" class="pill-btn pill-success">
-              <i class="fas fa-check"></i> Confirm
-            </a>
-            {% endif %}
-            {% if appointment.status != 'completed' %}
-            <button type="submit"
-              formaction="{% url 'complete_lead_appointment' appointment.pk %}"
-              formmethod="post"
-              onclick="return confirm('Mark this lead as completed and remove it from Priority Leads?');"
-              class="pill-btn pill-primary">
-              <i class="fas fa-flag-checkered"></i> Complete
-            </button>
-            {% endif %}
-            {% if appointment.status != 'cancelled' %}
-            <a href="{% url 'cancel_appointment' appointment.pk %}" class="pill-btn pill-danger">
-              <i class="fas fa-times"></i> Cancel
-            </a>
-            {% endif %}
-          </div>
-
-        </form>
-      </div>
-    </div>
-
-  </div><!-- /#pane-details -->
-
-
-  <!-- ══════════════════════════════════════
-       6. QUOTATIONS TAB PANE
-  ══════════════════════════════════════ -->
-  <div id="pane-quotations" class="tab-pane">
-    <div class="card2">
-      <div class="card2-header">
-        <h3><i class="fas fa-file-invoice-dollar"></i> Quotations</h3>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <a href="{% url 'create_quotation' appointment.pk %}" class="pill-btn pill-primary pill-btn-sm">
-            <i class="fas fa-plus"></i> New Quotation
-          </a>
-
-          <!-- Template dropdown -->
-          <div style="position:relative;">
-            <button class="pill-btn pill-success pill-btn-sm" onclick="toggleTemplateDropdown()" id="templateDropdownBtn">
-              <i class="fas fa-file-invoice"></i> From Template
-              <i class="fas fa-chevron-down" style="font-size:10px; margin-left:3px;"></i>
-            </button>
-            <div id="templateDropdown" style="display:none;">
-              <div style="padding:10px; border-bottom:1px solid #e5e7eb;">
-                <input type="text" id="quickTemplateSearch" placeholder="Search templates..."
-                  class="field-input" style="font-size:13px;"
-                  oninput="quickSearchTemplates()">
               </div>
-              <div id="quickTemplateList" style="padding:4px;">
-                <!-- Templates loaded dynamically -->
+              {% else %}
+              <div class="empty-block">
+                <i class="fas fa-file-invoice-dollar" style="font-size:34px; opacity:.25; display:block; margin-bottom:10px;"></i>
+                No quotations yet.
               </div>
+              {% endif %}
             </div>
           </div>
         </div>
       </div>
-
-      <div class="card2-body">
-        {% if appointment.quotations.exists %}
-        {% for quote in appointment.quotations.all %}
-        <div class="quot-item">
-          <div class="quot-item-header">
-            <h4>{{ quote.get_display_name }}</h4>
-            <span class="sbadge
-              {% if quote.status == 'accepted' %}" style="background:#d1fae5;color:#059669;"
-              {% elif quote.status == 'sent' %}" style="background:#dbeafe;color:#2563eb;"
-              {% elif quote.status == 'draft' %}" style="background:#F0F2F5;color:#6b7280;"
-              {% else %}" style="background:#F0F2F5;color:#6b7280;"{% endif %}>
-              {{ quote.get_status_display }}
-            </span>
-          </div>
-          <div class="quot-details">
-            <p><strong>Total:</strong> US${{ quote.total_amount|default:"0.00" }}</p>
-            <p><strong>Created:</strong> {{ quote.created_at|date:"M d, Y H:i" }}</p>
-            {% if quote.sent_via_whatsapp and quote.sent_at %}
-            <p><strong>Sent:</strong> {{ quote.sent_at|date:"M d, Y H:i" }}</p>
-            {% endif %}
-          </div>
-          <div class="quot-actions">
-            <a href="{% url 'view_quotation' quote.id %}" class="pill-btn pill-teal-out pill-btn-sm">
-              <i class="fas fa-eye"></i> View
-            </a>
-            <a href="{% url 'edit_quotation' quote.id %}" class="pill-btn pill-ghost pill-btn-sm">
-              <i class="fas fa-edit"></i> Edit
-            </a>
-            <form method="post" action="{% url 'duplicate_quotation' quote.id %}" style="display:inline;">
-              {% csrf_token %}
-              <button type="submit" class="pill-btn pill-warn pill-btn-sm"
-                onclick="return confirm('Duplicate this quotation?');">
-                <i class="fas fa-copy"></i> Duplicate
-              </button>
-            </form>
-            <form method="post" action="{% url 'delete_quotation' quote.id %}" style="display:inline;">
-              {% csrf_token %}
-              <button type="submit" class="pill-btn pill-danger pill-btn-sm"
-                onclick="return confirm('Delete this quotation permanently?');">
-                <i class="fas fa-trash"></i> Delete
-              </button>
-            </form>
-            {% if quote.status == 'draft' %}
-            <a href="{% url 'send_quotation' quote.id %}" class="pill-btn pill-success pill-btn-sm">
-              <i class="fab fa-whatsapp"></i> Send
-            </a>
-            {% elif quote.status == 'sent' %}
-            <a href="{% url 'send_quotation' quote.id %}" class="pill-btn pill-success pill-btn-sm">
-              <i class="fab fa-whatsapp"></i> Resend
-            </a>
-            {% endif %}
-          </div>
-        </div>
-        {% endfor %}
-
-        {% else %}
-        <div style="text-align:center; padding:48px 16px; color:#6b7280; font-size:14px;">
-          <i class="fas fa-file-invoice-dollar" style="font-size:36px; opacity:.2; display:block; margin-bottom:14px;"></i>
-          <p style="margin:0 0 16px;">No quotations yet</p>
-          <a href="{% url 'create_quotation' appointment.pk %}" class="pill-btn pill-primary">
-            <i class="fas fa-plus"></i> Create Quotation
-          </a>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-  </div><!-- /#pane-quotations -->
-
-</div><!-- /.outer wrapper -->
+    </section>
+  </div>
+</div>
 {% endblock %}
-
 
 {% block extra_js %}
 <script>
-  // ── Tab switching ──────────────────────────────────────────────
-  function showTab(tab) {
-    ['chat', 'details', 'quotations'].forEach(function(t) {
-      var pane = document.getElementById('pane-' + t);
-      var btn  = document.getElementById('tab-' + t);
-      if (pane) pane.style.display = t === tab ? 'block' : 'none';
-      if (btn) {
-        btn.style.color       = t === tab ? '#0e7490' : '#6b7280';
-        btn.style.fontWeight  = t === tab ? '600' : '400';
-        btn.style.borderBottom = t === tab ? '2px solid #0e7490' : '2px solid transparent';
-      }
+  function showAppointmentTab(tabName) {
+    document.querySelectorAll('.appt-tab-btn').forEach(function (btn) {
+      btn.classList.toggle('is-active', btn.getAttribute('data-tab') === tabName);
     });
-    if (tab === 'chat') scrollChatBottom();
+    document.querySelectorAll('.appt-tab-pane').forEach(function (pane) {
+      pane.classList.toggle('is-active', pane.id === 'tab-' + tabName);
+    });
+    if (tabName === 'chat') {
+      scrollChatBottom();
+    }
   }
 
-  function scrollChatBottom() {
-    var area = document.getElementById('chat-area');
-    if (area) area.scrollTop = area.scrollHeight;
-  }
-
-  document.addEventListener('DOMContentLoaded', function() {
-    showTab('chat');
+  document.querySelectorAll('.appt-tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      showAppointmentTab(btn.getAttribute('data-tab'));
+    });
   });
 
-  // ── Message templates ──────────────────────────────────────────
+  function scrollChatBottom() {
+    var chat = document.getElementById('chatScroll');
+    if (chat) {
+      chat.scrollTop = chat.scrollHeight;
+    }
+  }
+
   const messageTemplates = {
-    greeting: `Hi {name},\n\nI hope this message finds you well! I wanted to personally follow up on your plumbing project.\n\nIs there anything I can help clarify or any questions you have?\n\nBest regards,\n{your_name}\nHomebase Plumbers`,
-    check_in: `Hi {name},\n\nJust checking in to see if you're still interested in moving forward with your plumbing project.\n\nWe have availability this week and would love to help!\n\nLet me know if you'd like to schedule a consultation.\n\nBest,\n{your_name}`,
-    offer: `Hi {name},\n\nI wanted to reach out with a special offer for you!\n\nThis month, we're offering 10% off all bathroom renovations. Your project would be perfect for this.\n\nWould you like to discuss this further?\n\nBest regards,\n{your_name}\nHomebase Plumbers`,
-    reminder: `Hi {name},\n\nI noticed we haven't heard back from you regarding your plumbing project.\n\nNo pressure at all - just wanted to remind you that we're here whenever you're ready!\n\nFeel free to reach out anytime.\n\nBest,\n{your_name}`
+    greeting: `Hi {name},\n\nThanks for reaching out. I wanted to personally follow up on your plumbing request.\n\nHow can I help move this forward today?\n\nBest,\n{your_name}`,
+    check_in: `Hi {name},\n\nJust checking in to see if you're still interested in moving ahead with your plumbing project.\n\nWe'd be happy to help whenever you're ready.\n\nBest,\n{your_name}`,
+    reminder: `Hi {name},\n\nQuick reminder that we're still available to help with your plumbing project.\n\nLet me know if you'd like to book a visit or ask any questions.\n\nBest,\n{your_name}`
   };
 
   function insertTemplate(templateName) {
-    const template = messageTemplates[templateName];
-    if (template) {
-      const customerName = '{{ appointment.customer_name|default:"there" }}';
-      const yourName = '{{ request.user.get_full_name|default:request.user.username }}';
-      const personalizedMessage = template
-        .replace(/{name}/g, customerName)
-        .replace(/{your_name}/g, yourName);
-      document.getElementById('followup_message').value = personalizedMessage;
-      updateCharCount();
-    }
-  }
-
-  function clearMessage() {
-    document.getElementById('followup_message').value = '';
+    var template = messageTemplates[templateName];
+    if (!template) return;
+    var customerName = '{{ appointment.customer_name|default:"there" }}';
+    var yourName = '{{ request.user.get_full_name|default:request.user.username }}';
+    var message = template.replace(/{name}/g, customerName).replace(/{your_name}/g, yourName);
+    var field = document.getElementById('followup_message');
+    field.value = message;
     updateCharCount();
+    field.focus();
   }
 
   function updateCharCount() {
-    const message = document.getElementById('followup_message').value;
-    document.getElementById('charCount').textContent = message.length;
+    var field = document.getElementById('followup_message');
+    var counter = document.getElementById('charCount');
+    if (field && counter) {
+      counter.textContent = field.value.length;
+    }
+    var sendBtn = document.getElementById('sendMessageBtn');
+    if (sendBtn) {
+      sendBtn.disabled = !(field && field.value.trim());
+    }
   }
 
-  document.getElementById('followup_message').addEventListener('input', updateCharCount);
-
-  // ── Manual follow-up form submit ──────────────────────────────
-  document.getElementById('followupForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-
-    const form = this;
-    const messageText = document.getElementById('followup_message').value.trim();
-    const sendBtn = document.getElementById('sendMessageBtn');
-    const statusDiv = document.getElementById('messageStatus');
-
-    if (!messageText) {
-      alert('Please enter a message');
+  function updateJobStatus(jobId, newStatus) {
+    if (!confirm('Change job status to ' + newStatus.replace('_', ' ') + '?')) {
       return;
     }
 
-    if (!confirm('Sending a manual follow-up will pause automatic follow-ups for 48 hours. Continue?')) {
+    fetch('/jobs/' + jobId + '/update-status/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+      },
+      body: 'status=' + encodeURIComponent(newStatus)
+    })
+    .then(function (response) { return response.json(); })
+    .then(function (data) {
+      if (data.success) {
+        window.location.reload();
+      } else {
+        alert(data.error || 'Unable to update job status.');
+      }
+    })
+    .catch(function () {
+      alert('Unable to update job status right now.');
+    });
+  }
+
+  document.getElementById('followupForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = this;
+    var messageField = document.getElementById('followup_message');
+    var messageText = messageField.value.trim();
+    var sendBtn = document.getElementById('sendMessageBtn');
+    var statusDiv = document.getElementById('messageStatus');
+
+    if (!messageText) {
       return;
     }
 
     sendBtn.disabled = true;
-    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending Manual Follow-up...';
-    statusDiv.style.display = 'none';
 
-    fetch('{% url "send_followup" appointment.pk %}', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-        },
-        body: new URLSearchParams({ 'message': messageText })
-      })
-      .then(response => {
-        if (response.ok) return response.text();
-        throw new Error('Network response was not ok');
-      })
-      .then(data => {
-        statusDiv.innerHTML = '<div class="alert alert-success">✅ Manual follow-up sent! Automatic follow-ups paused for 48 hours.</div>';
-        statusDiv.style.display = 'block';
-        document.getElementById('followup_message').value = '';
-        updateCharCount();
-        setTimeout(() => { window.location.reload(); }, 1500);
-      })
-      .catch(error => {
-        console.error('Error:', error);
-        statusDiv.innerHTML = '<div class="alert alert-error">❌ Failed to send message. Please try again.</div>';
-        statusDiv.style.display = 'block';
-      })
-      .finally(() => {
-        sendBtn.disabled = false;
-        sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Manual Follow-up';
-      });
+    fetch(form.action, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value
+      },
+      body: new URLSearchParams({ message: messageText })
+    })
+    .then(function (response) {
+      if (!response.ok) {
+        throw new Error('Send failed');
+      }
+      return response.text();
+    })
+    .then(function () {
+      statusDiv.style.display = 'block';
+      statusDiv.innerHTML = '<div class="pb-alert pb-alert--success">Message sent successfully.</div>';
+      messageField.value = '';
+      updateCharCount();
+      setTimeout(function () { window.location.reload(); }, 800);
+    })
+    .catch(function () {
+      statusDiv.style.display = 'block';
+      statusDiv.innerHTML = '<div class="pb-alert pb-alert--error">Could not send the message. Please try again.</div>';
+    })
+    .finally(function () {
+      sendBtn.disabled = false;
+      updateCharCount();
+    });
   });
 
-  // ── Job status update ─────────────────────────────────────────
-  function updateJobStatus(jobId, newStatus) {
-    if (confirm(`Change job status to ${newStatus.replace('_', ' ')}?`)) {
-      fetch(`/jobs/${jobId}/update-status/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-          },
-          body: `status=${newStatus}`
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) { location.reload(); }
-          else { alert('Error: ' + data.error); }
-        })
-        .catch(error => { alert('Error: ' + error); });
-    }
-  }
+  var quickTemplates = [];
 
-  // ── Quotation template dropdown ───────────────────────────────
-  let quickTemplates = [];
-
-  async function toggleTemplateDropdown() {
-    const dropdown = document.getElementById('templateDropdown');
-    if (dropdown.style.display === 'none') {
-      dropdown.style.display = 'block';
-      await loadQuickTemplates();
-    } else {
+  function toggleTemplateDropdown() {
+    var dropdown = document.getElementById('templateDropdown');
+    if (dropdown.style.display === 'block') {
       dropdown.style.display = 'none';
+      return;
     }
+    dropdown.style.display = 'block';
+    loadQuickTemplates();
   }
 
-  async function loadQuickTemplates() {
-    const listEl = document.getElementById('quickTemplateList');
-    listEl.innerHTML = '<div style="padding:20px; text-align:center; color:#9ca3af;"><i class="fas fa-spinner fa-spin"></i></div>';
-    try {
-      const response = await fetch('/api/quotation-templates/?active_only=true');
-      const data = await response.json();
-      if (data.success && data.templates) {
-        quickTemplates = data.templates;
-        displayQuickTemplates(quickTemplates);
-      }
-    } catch (error) {
-      console.error('Error loading templates:', error);
-      listEl.innerHTML = '<div style="padding:20px; text-align:center; color:#9ca3af;">Failed to load</div>';
-    }
+  function loadQuickTemplates() {
+    var listEl = document.getElementById('quickTemplateList');
+    listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;"><i class="fas fa-spinner fa-spin"></i></div>';
+
+    fetch('/api/quotation-templates/?active_only=true')
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (data.success && data.templates) {
+          quickTemplates = data.templates;
+          displayQuickTemplates(quickTemplates);
+        } else {
+          listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">No templates found.</div>';
+        }
+      })
+      .catch(function () {
+        listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">Could not load templates.</div>';
+      });
   }
 
   function displayQuickTemplates(templates) {
-    const listEl = document.getElementById('quickTemplateList');
-    if (templates.length === 0) {
-      listEl.innerHTML = '<div style="padding:20px; text-align:center; color:#9ca3af;">No templates found</div>';
+    var listEl = document.getElementById('quickTemplateList');
+    if (!templates.length) {
+      listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">No templates found.</div>';
       return;
     }
-    listEl.innerHTML = templates.map(t => `
-      <a href="/templates/${t.id}/use/{{ appointment.pk }}/"
-        style="display:block; padding:12px; text-decoration:none; color:#111827; border-bottom:1px solid #f3f4f6;"
-        onmouseover="this.style.background='#F0F2F5'"
-        onmouseout="this.style.background='white'">
-        <div style="font-weight:600; font-size:13px; margin-bottom:3px;">${t.name}</div>
-        <div style="font-size:12px; color:#6b7280;">${t.items_count} items &bull; US$${t.estimated_cost.toFixed(2)}</div>
-      </a>
-    `).join('');
+    listEl.innerHTML = templates.map(function (t) {
+      return '<a href="/templates/' + t.id + '/use/{{ appointment.pk }}/" style="display:block; padding:12px 14px; text-decoration:none; color:#0f172a; border-bottom:1px solid #eef2f7;">'
+        + '<div style="font-weight:700; font-size:13px;">' + t.name + '</div>'
+        + '<div style="font-size:12px; color:#64748b; margin-top:2px;">' + t.items_count + ' items · US$' + t.estimated_cost.toFixed(2) + '</div>'
+        + '</a>';
+    }).join('');
   }
 
   function quickSearchTemplates() {
-    const search = document.getElementById('quickTemplateSearch').value.toLowerCase();
-    const filtered = quickTemplates.filter(t =>
-      t.name.toLowerCase().includes(search) ||
-      (t.description && t.description.toLowerCase().includes(search))
-    );
+    var search = document.getElementById('quickTemplateSearch').value.toLowerCase();
+    var filtered = quickTemplates.filter(function (t) {
+      return t.name.toLowerCase().includes(search) ||
+        (t.description && t.description.toLowerCase().includes(search));
+    });
     displayQuickTemplates(filtered);
   }
 
-  // Close dropdown on outside click
-  document.addEventListener('click', function(e) {
-    const dropdown = document.getElementById('templateDropdown');
-    const btn = document.getElementById('templateDropdownBtn');
+  document.addEventListener('click', function (e) {
+    var dropdown = document.getElementById('templateDropdown');
+    var btn = document.getElementById('templateDropdownBtn');
     if (dropdown && btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
       dropdown.style.display = 'none';
     }
+  });
+
+  document.getElementById('appointmentSearch').addEventListener('input', function (e) {
+    var term = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('.appt-list-row').forEach(function (row) {
+      var haystack = row.getAttribute('data-search') || '';
+      row.style.display = haystack.indexOf(term) > -1 ? '' : 'none';
+    });
+  });
+
+  document.querySelectorAll('.appt-filter-tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.appt-filter-tab').forEach(function (tab) {
+        tab.classList.remove('is-active');
+      });
+      btn.classList.add('is-active');
+      var filter = btn.getAttribute('data-filter');
+      document.querySelectorAll('.appt-list-row').forEach(function (row) {
+        var matchesFilter = filter === 'all' || row.getAttribute('data-status') === filter;
+        var searchTerm = document.getElementById('appointmentSearch').value.trim().toLowerCase();
+        var haystack = row.getAttribute('data-search') || '';
+        var matchesSearch = haystack.indexOf(searchTerm) > -1;
+        row.style.display = matchesFilter && matchesSearch ? '' : 'none';
+      });
+    });
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    updateCharCount();
+    scrollChatBottom();
   });
 </script>
 {% endblock %}

@@ -2036,6 +2036,7 @@ class AppointmentDetailView(DetailView):
         computed_score, computed_status = calculate_lead_score(appointment)
         conversation_history = appointment.conversation_history
         uploaded_files = appointment.get_all_uploaded_files()   # ← NEW
+        sidebar_appointments = Appointment.objects.order_by('-updated_at')[:20]
 
         context.update({
             'active_nav': 'appointments',
@@ -2048,6 +2049,15 @@ class AppointmentDetailView(DetailView):
             'computed_lead_score': computed_score,
             'computed_lead_status': computed_status,
             'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
+            'sidebar_appointments': sidebar_appointments,
+            'appointment_status_counts': {
+                'total': Appointment.objects.count(),
+                'booked': Appointment.objects.filter(status='confirmed').count(),
+                'pending': Appointment.objects.filter(status='pending').exclude(
+                    internal_notes__contains='[DELAY_SIGNAL]'
+                ).count(),
+                'cancelled': Appointment.objects.filter(status='cancelled').count(),
+            },
         })
         return context
     def post(self, request, *args, **kwargs):
