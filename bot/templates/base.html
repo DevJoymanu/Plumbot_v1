@@ -10,11 +10,11 @@
     {# Font Awesome — already used in existing templates #}
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
-    {# Design system tokens + component styles #}
-    {# In production: <link rel="stylesheet" href="{% static 'css/plumbot-variables.css' %}"> #}
-    {# For now, inline the variables so this file is self-contained: #}
+    {# Design system tokens + component styles. #}
+    {# In production, these variables can move to a dedicated CSS file. #}
+    {# For now, keep them inline so this template stays self-contained. #}
     <style>
-        /* ── Paste contents of plumbot-variables.css here, OR use {% static %} link above ── */
+        /* Inline design tokens used across dashboard pages. */
 
         :root {
             --color-header:       #0a3d5c;
