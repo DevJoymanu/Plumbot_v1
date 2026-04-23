@@ -1641,33 +1641,37 @@
     }
 
     sendBtn.disabled = true;
+    statusDiv.style.display = 'none';
 
     fetch(form.action, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value
+        'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value,
+        'X-Requested-With': 'XMLHttpRequest'
       },
       body: new URLSearchParams({ message: messageText })
     })
     .then(function (response) {
-      if (!response.ok) {
-        throw new Error('Send failed');
-      }
-      return response.text();
+      return response.json().then(function (data) {
+        return { ok: response.ok, data: data };
+      });
     })
-    .then(function () {
+    .then(function (result) {
       statusDiv.style.display = 'block';
-      statusDiv.innerHTML = '<div class="pb-alert pb-alert--success">Message sent successfully.</div>';
-      messageField.value = '';
-      updateCharCount();
-      setTimeout(function () { window.location.reload(); }, 800);
+      if (result.ok && result.data.ok) {
+        statusDiv.innerHTML = '<div class="pb-alert pb-alert--success">✅ ' + (result.data.message || 'Message sent successfully.') + '</div>';
+        messageField.value = '';
+        updateCharCount();
+        setTimeout(function () { window.location.reload(); }, 1200);
+      } else {
+        statusDiv.innerHTML = '<div class="pb-alert pb-alert--error">❌ ' + (result.data.error || 'Could not send the message.') + '</div>';
+        sendBtn.disabled = false;
+      }
     })
     .catch(function () {
       statusDiv.style.display = 'block';
-      statusDiv.innerHTML = '<div class="pb-alert pb-alert--error">Could not send the message. Please try again.</div>';
-    })
-    .finally(function () {
+      statusDiv.innerHTML = '<div class="pb-alert pb-alert--error">❌ Could not reach the server. Check your connection.</div>';
       sendBtn.disabled = false;
       updateCharCount();
     });

@@ -51,7 +51,6 @@ urlpatterns = [
     path('leads/priority/<int:pk>/update/', views.update_priority_lead_card, name='update_priority_lead_card'),
     path('appointments/<int:pk>/', AppointmentDetailView.as_view(), name='appointment_detail'),
     path('appointments/<int:pk>/update/', update_appointment, name='update_appointment'),
-    path('appointments/<int:pk>/followup/', send_followup, name='send_followup'),
     path('appointments/<int:pk>/confirm/', confirm_appointment, name='confirm_appointment'),
     path('appointments/<int:pk>/complete-lead/', complete_lead_appointment, name='complete_lead_appointment'),
     path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),

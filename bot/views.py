@@ -2214,11 +2214,14 @@ class AppointmentDetailView(DetailView):
             appointment.save()
             refresh_lead_score(appointment)
             messages.success(request, 'Appointment updated successfully!')
-            
+
         except Exception as e:
             messages.error(request, f'Error updating appointment: {str(e)}')
-        
-        return redirect('appointment_detail', pk=appointment.pk)
+
+        # Preserve source/frame/sidebar_filter so the split panel stays intact
+        base_url = reverse('appointment_detail', kwargs={'pk': appointment.pk})
+        qs = request.GET.urlencode()
+        return redirect(f"{base_url}?{qs}" if qs else base_url)
 
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDocumentsView(DetailView):
@@ -3280,55 +3283,48 @@ def resume_auto_followup(request, pk):
 
 @staff_required
 def send_followup(request, pk):
-    """Send MANUAL follow-up message via WhatsApp"""
+    """Send MANUAL follow-up message via WhatsApp."""
+    from django.http import JsonResponse as _JsonResponse
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     appointment = get_object_or_404(Appointment, pk=pk)
-    
-    if request.method == 'POST':
-        message = request.POST.get('message', '').strip()
-        
-        if not message:
-            messages.error(request, 'Message cannot be empty')
-            return redirect('appointment_detail', pk=appointment.pk)
-        
-        try:
-            # Personalize message with customer name
-            customer_name = appointment.customer_name or "there"
-            personalized_message = message.replace('{name}', customer_name)
-            
-            # Clean phone number for WhatsApp Cloud API
-            clean_phone = clean_phone_number(appointment.phone_number)
-            
-            # Send message using WhatsApp Cloud API
-            result = whatsapp_api.send_text_message(clean_phone, personalized_message)
-            
-            # Save to conversation history with MANUAL tag
-            appointment.add_conversation_message('assistant', f"[MANUAL FOLLOW-UP] {personalized_message}")
-            
-            # Update follow-up tracking - mark as MANUAL follow-up
-            appointment.last_followup_sent = timezone.now()
-            appointment.last_manual_followup_sent = timezone.now()
-            appointment.followup_count = (appointment.followup_count or 0) + 1
-            appointment.manual_followup_count = (appointment.manual_followup_count or 0) + 1
-            appointment.is_automatic_followup = False
-            
-            # Reset followup stage to 'responded' since admin is manually engaging
-            appointment.followup_stage = 'responded'
-            
-            # AUTOMATICALLY pause automatic follow-ups for 48 hours when manual message sent
-            pause_until = timezone.now() + timedelta(hours=48)
-            appointment.manual_followup_paused = True
-            appointment.manual_followup_paused_until = pause_until
-            
-            appointment.save()
-            
-            messages.success(request, f'✅ Manual follow-up sent to {clean_phone}! Auto follow-ups paused for 48 hours.')
-            logger.info(f"✅ MANUAL follow-up sent by {request.user.username} to {clean_phone}")
-            
-        except Exception as e:
-            error_msg = f'Failed to send message: {str(e)}'
-            messages.error(request, error_msg)
-            logger.error(f"❌ MANUAL follow-up error: {error_msg}")
-    
+
+    if request.method != 'POST':
+        return redirect('appointment_detail', pk=appointment.pk)
+
+    message = request.POST.get('message', '').strip()
+    if not message:
+        if is_ajax:
+            return _JsonResponse({'ok': False, 'error': 'Message cannot be empty.'}, status=400)
+        messages.error(request, 'Message cannot be empty')
+        return redirect('appointment_detail', pk=appointment.pk)
+
+    try:
+        customer_name = appointment.customer_name or "there"
+        personalized_message = message.replace('{name}', customer_name)
+        clean_phone = clean_phone_number(appointment.phone_number)
+
+        whatsapp_api.send_text_message(clean_phone, personalized_message)
+
+        appointment.add_conversation_message('assistant', f"[MANUAL FOLLOW-UP] {personalized_message}")
+        appointment.last_followup_sent = timezone.now()
+        appointment.followup_count = (appointment.followup_count or 0) + 1
+        appointment.followup_stage = 'responded'
+        appointment.save(update_fields=['last_followup_sent', 'followup_count', 'followup_stage'])
+
+        logger.info(f"✅ MANUAL follow-up sent by {request.user.username} to {clean_phone}")
+
+        if is_ajax:
+            return _JsonResponse({'ok': True, 'message': f'Message sent to {clean_phone}.'})
+        messages.success(request, f'✅ Manual follow-up sent to {clean_phone}!')
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"❌ MANUAL follow-up error: {error_msg}")
+        if is_ajax:
+            return _JsonResponse({'ok': False, 'error': f'Failed to send: {error_msg}'}, status=500)
+        messages.error(request, f'Failed to send message: {error_msg}')
+
     return redirect('appointment_detail', pk=appointment.pk)
 
 
