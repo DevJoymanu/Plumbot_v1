@@ -1,0 +1,108 @@
+<div class="appt-list-header">
+  <div class="appt-list-title">Plumbot</div>
+  <div class="appt-list-subtitle">{{ source_workspace.today|date:"l, j F" }}</div>
+</div>
+
+{% if source_workspace.hot_lead_count %}
+<a href="{% url 'priority_leads' %}" class="workspace-banner">
+  <div>
+    <div class="workspace-banner-title"><i class="fas fa-fire"></i> {{ source_workspace.hot_lead_count }} priority lead{{ source_workspace.hot_lead_count|pluralize }} need{{ source_workspace.hot_lead_count|pluralize:",s" }} attention</div>
+    <div class="workspace-banner-sub">Tap to view priority leads</div>
+  </div>
+  <i class="fas fa-chevron-right"></i>
+</a>
+{% endif %}
+
+<div class="workspace-stats">
+  <div class="workspace-stat">
+    <div class="workspace-stat-value">{{ source_workspace.todays_confirmed_appointments|length }}</div>
+    <div class="workspace-stat-label">Today's Appts</div>
+  </div>
+  <div class="workspace-stat">
+    <div class="workspace-stat-value">{{ source_workspace.week_jobs|length }}</div>
+    <div class="workspace-stat-label">Today's Jobs</div>
+  </div>
+  <div class="workspace-stat">
+    <div class="workspace-stat-value">{{ source_workspace.hot_lead_count|default:0 }}</div>
+    <div class="workspace-stat-label">Hot Leads</div>
+  </div>
+  <div class="workspace-stat">
+    <div class="workspace-stat-value">{{ source_workspace.followups|length }}</div>
+    <div class="workspace-stat-label">Follow-ups</div>
+  </div>
+  <div class="workspace-stat">
+    <div class="workspace-stat-value">{{ source_workspace.this_week_appointments|length }}</div>
+    <div class="workspace-stat-label">This Week</div>
+  </div>
+</div>
+
+<div class="workspace-scroll">
+  <div class="source-section">
+    <div class="source-section-header">
+      <span class="accent">Today's Appointments</span>
+      <span class="source-section-count">{{ source_workspace.todays_confirmed_appointments|length }}</span>
+    </div>
+    {% for item in source_workspace.todays_confirmed_appointments %}
+    <a href="{% url 'appointment_detail' item.pk %}?source=dashboard&response_age={{ source_workspace.selected_response_age }}" class="source-list-row {% if item.pk == appointment.pk %}is-current{% endif %}">
+      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"H:i" }}</div>
+      <div class="source-avatar" style="background:{% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' '#f97316' '#8b5cf6' %};">{{ item.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-main">
+        <div class="source-name">{{ item.customer_name|default:"Unknown Customer" }}</div>
+        <div class="source-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
+      </div>
+      <div class="source-side">
+        <span class="appt-pill {% if item.status == 'confirmed' %}booked{% else %}pending{% endif %}">{% if item.status == 'confirmed' %}Booked{% else %}Pending{% endif %}</span>
+        <span class="source-score">{{ item.lead_score|default:0 }}</span>
+      </div>
+    </a>
+    {% empty %}
+    <div class="source-empty">No appointments today.</div>
+    {% endfor %}
+  </div>
+
+  <div class="source-section">
+    <div class="source-section-header">
+      <span class="accent">Tomorrow</span>
+      <span class="source-section-count">{{ source_workspace.tomorrows_confirmed_appointments|length }}</span>
+    </div>
+    {% for item in source_workspace.tomorrows_confirmed_appointments %}
+    <a href="{% url 'appointment_detail' item.pk %}?source=dashboard&response_age={{ source_workspace.selected_response_age }}" class="source-list-row {% if item.pk == appointment.pk %}is-current{% endif %}">
+      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"H:i" }}</div>
+      <div class="source-avatar" style="background:{% cycle '#0f766e' '#0ea5e9' '#8b5cf6' '#22c55e' '#f59e0b' %};">{{ item.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-main">
+        <div class="source-name">{{ item.customer_name|default:"Unknown Customer" }}</div>
+        <div class="source-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
+      </div>
+      <div class="source-side">
+        <span class="appt-pill {% if item.status == 'confirmed' %}booked{% else %}pending{% endif %}">{% if item.status == 'confirmed' %}Booked{% else %}Pending{% endif %}</span>
+        <span class="source-score">{{ item.lead_score|default:0 }}</span>
+      </div>
+    </a>
+    {% empty %}
+    <div class="source-empty">No appointments tomorrow.</div>
+    {% endfor %}
+  </div>
+
+  <div class="source-section">
+    <div class="source-section-header">
+      <span class="accent">Later This Week</span>
+      <span class="source-section-count">{{ source_workspace.this_week_appointments|length }}</span>
+    </div>
+    {% for item in source_workspace.this_week_appointments %}
+    <a href="{% url 'appointment_detail' item.pk %}?source=dashboard&response_age={{ source_workspace.selected_response_age }}" class="source-list-row {% if item.pk == appointment.pk %}is-current{% endif %}">
+      <div class="source-time {% if item.status == 'pending' %}pending{% endif %}">{{ item.scheduled_datetime|date:"D" }}</div>
+      <div class="source-avatar" style="background:{% cycle '#14b8a6' '#f97316' '#8b5cf6' '#22c55e' '#ef4444' %};">{{ item.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-main">
+        <div class="source-name">{{ item.customer_name|default:"Unknown Customer" }}</div>
+        <div class="source-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
+      </div>
+      <div class="source-side">
+        <span class="appt-pill {% if item.status == 'confirmed' %}booked{% else %}pending{% endif %}">{% if item.status == 'confirmed' %}Booked{% else %}Pending{% endif %}</span>
+        <span class="source-score">{{ item.lead_score|default:0 }}</span>
+      </div>
+    </a>
+    {% empty %}
+    <div class="source-empty">No more appointments this week.</div>
+    {% endfor %}
+  </div>
+</div>

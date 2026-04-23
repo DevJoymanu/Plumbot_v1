@@ -1468,6 +1468,204 @@ def build_quotation_pdf_file(quotation):
     return pdf_path
 
 
+def _dashboard_workspace_data(response_age='1w_minus'):
+    from bot.models import Job
+
+    today = timezone.now().date()
+    tomorrow = today + timedelta(days=1)
+    day_after_tomorrow = today + timedelta(days=2)
+    week_end = today + timedelta(days=(6 - today.weekday()))
+    now = timezone.now()
+
+    age_map_minus = {
+        '1w_minus': timedelta(weeks=1),
+        '4w_minus': timedelta(weeks=4),
+    }
+
+    appointments = Appointment.objects.all()
+    if response_age != 'all' and response_age in age_map_minus:
+        cutoff = now - age_map_minus[response_age]
+        appointments = appointments.filter(last_customer_response__gte=cutoff)
+
+    followups = list(Appointment.objects.filter(follow_up_status='pending').order_by('-updated_at')[:3])
+    this_week_appointments = appointments.filter(
+        status__in=['confirmed', 'pending'],
+        scheduled_datetime__date__range=(day_after_tomorrow, week_end),
+    ).order_by('scheduled_datetime')
+    week_jobs = Job.objects.filter(
+        scheduled_datetime__date__range=(today, week_end),
+    ).select_related('site_visit').order_by('scheduled_datetime')
+    hot_lead_count = Appointment.objects.filter(
+        is_lead_active=True,
+        lead_status__in=['very_hot', 'hot'],
+    ).exclude(status__in=['completed', 'cancelled']).count()
+
+    return {
+        'selected_response_age': response_age,
+        'today': today,
+        'hot_lead_count': hot_lead_count,
+        'todays_confirmed_appointments': appointments.filter(
+            status='confirmed',
+            scheduled_datetime__date=today,
+        ).order_by('scheduled_datetime'),
+        'tomorrows_confirmed_appointments': appointments.filter(
+            status='confirmed',
+            scheduled_datetime__date=tomorrow,
+        ).order_by('scheduled_datetime'),
+        'this_week_appointments': this_week_appointments,
+        'week_jobs': week_jobs,
+        'followups': followups,
+    }
+
+
+def _priority_leads_workspace_data(response_age='1w_minus'):
+    from django.db.models import Case, F, IntegerField, Q, Value, When
+    from django.db.models.functions import Coalesce
+
+    has_project_type = Case(
+        When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    has_property_type = Case(
+        When(Q(property_type__isnull=False) & ~Q(property_type=''), then=Value(1)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    has_area = Case(
+        When(Q(customer_area__isnull=False) & ~Q(customer_area=''), then=Value(1)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    has_timeline = Case(
+        When(Q(timeline__isnull=False) & ~Q(timeline=''), then=Value(1)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    has_site_visit = Case(
+        When(scheduled_datetime__isnull=False, then=Value(1)),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+    age_map_minus = {
+        '1w_minus': timedelta(weeks=1),
+        '2w_minus': timedelta(weeks=2),
+        '3w_minus': timedelta(weeks=3),
+        '4w_minus': timedelta(weeks=4),
+    }
+
+    leads = (
+        Appointment.objects.annotate(
+            completed_fields=has_project_type + has_property_type + has_area + has_timeline + has_site_visit,
+            computed_score=Case(
+                When(scheduled_datetime__isnull=False, then=Value(100)),
+                default=(has_project_type + has_property_type + has_area + has_timeline + has_site_visit) * Value(20),
+                output_field=IntegerField(),
+            ),
+        ).annotate(
+            computed_status=Case(
+                When(scheduled_datetime__isnull=False, then=Value('very_hot')),
+                When(completed_fields__lte=1, then=Value('cold')),
+                When(completed_fields__lte=3, then=Value('warm')),
+                When(completed_fields=4, then=Value('hot')),
+                default=Value('very_hot'),
+            ),
+            recent_activity=Coalesce('last_inbound_at', 'updated_at'),
+            last_response_at=Coalesce('last_customer_response', 'created_at'),
+        )
+        .filter(is_lead_active=True)
+        .exclude(status__in=['completed', 'cancelled'])
+        .order_by(F('computed_score').desc(), F('recent_activity').desc(nulls_last=True))
+    )
+
+    if response_age != 'all' and response_age in age_map_minus:
+        cutoff = timezone.now() - age_map_minus[response_age]
+        leads = leads.filter(last_response_at__gte=cutoff)
+
+    very_hot = list(leads.filter(computed_status='very_hot'))
+    hot = list(leads.filter(computed_status='hot'))
+    warm = list(leads.filter(computed_status='warm'))
+    luke = list(leads.filter(computed_status='cold', computed_score=20))
+    cold = list(leads.filter(computed_status='cold', computed_score=0))
+
+    return {
+        'selected_response_age': response_age,
+        'total_leads': leads.count(),
+        'very_hot_leads': very_hot,
+        'hot_leads': hot,
+        'warm_leads': warm,
+        'luke_warm_leads': luke,
+        'cold_leads': cold,
+    }
+
+
+def _followups_workspace_data(response_age='1w_minus'):
+    now = timezone.now()
+    age_map_minus = {
+        '1w_minus': timedelta(weeks=1),
+        '4w_minus': timedelta(weeks=4),
+    }
+    cutoff = None
+    if response_age != 'all' and response_age in age_map_minus:
+        cutoff = now - age_map_minus[response_age]
+
+    base_active = Appointment.objects.filter(
+        is_lead_active=True,
+        status='pending'
+    )
+    if cutoff:
+        base_active = base_active.filter(last_customer_response__gte=cutoff)
+
+    stage_counts = {}
+    for stage_code, stage_name in Appointment._meta.get_field('followup_stage').choices:
+        stage_qs = Appointment.objects.filter(
+            is_lead_active=True,
+            followup_stage=stage_code
+        )
+        if cutoff:
+            stage_qs = stage_qs.filter(last_customer_response__gte=cutoff)
+        count = stage_qs.count()
+        if count > 0:
+            stage_counts[stage_name] = count
+
+    leads_needing_followup = Appointment.objects.filter(
+        is_lead_active=True,
+        status='pending'
+    ).exclude(
+        followup_stage='completed'
+    ).exclude(
+        followup_stage='responded'
+    )
+    if cutoff:
+        leads_needing_followup = leads_needing_followup.filter(last_customer_response__gte=cutoff)
+
+    ready_for_followup = [lead for lead in leads_needing_followup if lead.should_send_followup_now()]
+    recent_responses = Appointment.objects.filter(
+        last_customer_response__isnull=False,
+        is_lead_active=True
+    )
+    if cutoff:
+        recent_responses = recent_responses.filter(last_customer_response__gte=cutoff)
+    recent_responses = recent_responses.order_by('-last_customer_response')[:10]
+
+    recent_inactive = Appointment.objects.filter(
+        is_lead_active=False,
+        lead_marked_inactive_at__gte=now - timedelta(days=30)
+    ).order_by('-lead_marked_inactive_at')[:10]
+
+    return {
+        'selected_response_age': response_age,
+        'total_active_leads': base_active.count(),
+        'stage_counts': stage_counts,
+        'ready_count': len(ready_for_followup),
+        'ready_leads': ready_for_followup[:20],
+        'recent_responses': recent_responses,
+        'recent_inactive': recent_inactive,
+        'response_age_label': 'All-time' if response_age == 'all' else (
+            'Last 30 Days' if response_age == '4w_minus' else 'Last 7 Days'
+        ),
+    }
+
 @method_decorator(staff_required, name='dispatch')
 class DashboardView(TemplateView):
     template_name = 'dashboard.html'
@@ -1475,59 +1673,14 @@ class DashboardView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        from bot.models import Job
-
-        today = timezone.now().date()
-        tomorrow = today + timedelta(days=1)
-        day_after_tomorrow = today + timedelta(days=2)
-        week_end = today + timedelta(days=(6 - today.weekday()))
-        now = timezone.now()
         response_age = self.request.GET.get('response_age', '').strip()
         if not response_age:
             response_age = '1w_minus'
-
-        age_map_minus = {
-            '1w_minus': timedelta(weeks=1),
-            '4w_minus': timedelta(weeks=4),
-        }
-
-        appointments = Appointment.objects.all()
-        if response_age != 'all' and response_age in age_map_minus:
-            cutoff = now - age_map_minus[response_age]
-            appointments = appointments.filter(last_customer_response__gte=cutoff)
-
-        hot_lead_count = Appointment.objects.filter(lead_status__in=['very_hot', 'hot']).count()
-        pending_followup_count = Appointment.objects.filter(follow_up_status='pending').count()
-        followups = list(Appointment.objects.filter(follow_up_status='pending').order_by('-updated_at')[:3])
-        this_week_appointments = appointments.filter(
-            status__in=['confirmed', 'pending'],
-            scheduled_datetime__date__range=(day_after_tomorrow, week_end),
-        ).order_by('scheduled_datetime')
-        week_jobs = Job.objects.filter(
-            scheduled_datetime__date__range=(today, week_end),
-        ).select_related('site_visit').order_by('scheduled_datetime')
+        workspace = _dashboard_workspace_data(response_age)
 
         context.update({
             'active_nav': 'dashboard',
-            'selected_response_age': response_age,
-            'today': today,
-            'total_appointments': appointments.count(),
-            'pending_appointments': appointments.filter(status='pending').count(),
-            'confirmed_appointments': appointments.filter(status='confirmed').count(),
-            'recent_appointments': appointments.order_by('-created_at')[:5],
-            'todays_confirmed_appointments': appointments.filter(
-                status='confirmed',
-                scheduled_datetime__date=today,
-            ).order_by('scheduled_datetime'),
-            'tomorrows_confirmed_appointments': appointments.filter(
-                status='confirmed',
-                scheduled_datetime__date=tomorrow,
-            ).order_by('scheduled_datetime'),
-            'this_week_appointments': this_week_appointments,
-            'week_jobs': week_jobs,
-            'hot_lead_count': hot_lead_count,
-            'pending_followup_count': pending_followup_count,
-            'followups': followups,
+            **workspace,
             'calendar_status': 'Connected' if hasattr(settings, 'GOOGLE_CALENDAR_CREDENTIALS') else 'Not configured',
         })
 
@@ -1771,104 +1924,16 @@ class PriorityLeadsView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        from django.db.models import Case, F, IntegerField, Q, Value, When
-        from django.db.models.functions import Coalesce
-
-        has_project_type = Case(
-            When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
-            default=Value(0),
-            output_field=IntegerField(),
-        )
-        has_property_type = Case(
-            When(Q(property_type__isnull=False) & ~Q(property_type=''), then=Value(1)),
-            default=Value(0),
-            output_field=IntegerField(),
-        )
-        has_area = Case(
-            When(Q(customer_area__isnull=False) & ~Q(customer_area=''), then=Value(1)),
-            default=Value(0),
-            output_field=IntegerField(),
-        )
-        has_timeline = Case(
-            When(Q(timeline__isnull=False) & ~Q(timeline=''), then=Value(1)),
-            default=Value(0),
-            output_field=IntegerField(),
-        )
-        has_site_visit = Case(
-            When(scheduled_datetime__isnull=False, then=Value(1)),
-            default=Value(0),
-            output_field=IntegerField(),
-        )
-
         response_age = self.request.GET.get('response_age', '').strip()
         if not response_age:
             response_age = '1w_minus'
-        age_map_plus = {
-            '1w': timedelta(weeks=1),
-            '2w': timedelta(weeks=2),
-            '3w': timedelta(weeks=3),
-            '1m': timedelta(days=30),
-        }
-        age_map_minus = {
-            '1w_minus': timedelta(weeks=1),
-            '2w_minus': timedelta(weeks=2),
-            '3w_minus': timedelta(weeks=3),
-            '4w_minus': timedelta(weeks=4),
-        }
-
-        leads = (
-            Appointment.objects.annotate(
-                completed_fields=has_project_type + has_property_type + has_area + has_timeline + has_site_visit,
-                computed_score=Case(
-                    When(scheduled_datetime__isnull=False, then=Value(100)),
-                    default=(has_project_type + has_property_type + has_area + has_timeline + has_site_visit) * Value(20),
-                    output_field=IntegerField(),
-                ),
-            ).annotate(
-                computed_status=Case(
-                    When(scheduled_datetime__isnull=False, then=Value('very_hot')),
-                    When(completed_fields__lte=1, then=Value('cold')),
-                    When(completed_fields__lte=3, then=Value('warm')),
-                    When(completed_fields=4, then=Value('hot')),
-                    default=Value('very_hot'),
-                ),
-                computed_status_label=Case(
-                    When(scheduled_datetime__isnull=False, then=Value('Very Hot')),
-                    When(completed_fields__lte=1, then=Value('Cold')),
-                    When(completed_fields__lte=3, then=Value('Warm')),
-                    When(completed_fields=4, then=Value('Hot')),
-                    default=Value('Very Hot'),
-                ),
-            ).annotate(
-                status_rank=Case(
-                    When(computed_status='very_hot', then=Value(0)),
-                    When(computed_status='hot', then=Value(1)),
-                    When(computed_status='warm', then=Value(2)),
-                    default=Value(3),
-                    output_field=IntegerField(),
-                ),
-                recent_activity=Coalesce('last_inbound_at', 'updated_at'),
-                last_response_at=Coalesce('last_customer_response', 'created_at'),
-            )
-            .filter(is_lead_active=True)
-            .exclude(status__in=['completed', 'cancelled'])
-            .order_by('status_rank', F('recent_activity').desc(nulls_last=True), '-computed_score')
-        )
-
-        if response_age == 'all':
-            pass
-        elif response_age in age_map_minus:
-            cutoff = timezone.now() - age_map_minus[response_age]
-            leads = leads.filter(last_response_at__gte=cutoff)
-        elif response_age in age_map_plus:
-            cutoff = timezone.now() - age_map_plus[response_age]
-            leads = leads.filter(last_response_at__lte=cutoff)
-
-        very_hot_leads = leads.filter(computed_status='very_hot')
-        hot_leads = leads.filter(computed_status='hot')
-        warm_leads = leads.filter(computed_status='warm')
-        luke_warm_leads = leads.filter(computed_status='cold', computed_score=20)
-        cold_leads = leads.filter(computed_status='cold', computed_score=0)
+        workspace = _priority_leads_workspace_data(response_age)
+        very_hot_leads = workspace['very_hot_leads']
+        hot_leads = workspace['hot_leads']
+        warm_leads = workspace['warm_leads']
+        luke_warm_leads = workspace['luke_warm_leads']
+        cold_leads = workspace['cold_leads']
+        total_leads = workspace['total_leads']
 
         sections = [
             {
@@ -1881,11 +1946,11 @@ class PriorityLeadsView(TemplateView):
                 'border': '#dc2626',
                 'empty_label': 'No very hot leads.',
                 'recommended_action': 'Call now and lock in the site visit time.',
-                'count': very_hot_leads.count(),
-                'pending_count': very_hot_leads.filter(manual_followup_done=False).count(),
-                'done_count': very_hot_leads.filter(manual_followup_done=True).count(),
-                'pending_by_date': self._group_leads_by_date(self._enrich_leads(very_hot_leads.filter(manual_followup_done=False))),
-                'done_by_date': self._group_leads_by_date(self._enrich_leads(very_hot_leads.filter(manual_followup_done=True))),
+                'count': len(very_hot_leads),
+                'pending_count': len([lead for lead in very_hot_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in very_hot_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in very_hot_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in very_hot_leads if lead.manual_followup_done])),
             },
             {
                 'id': 'sec-hot',
@@ -1897,11 +1962,11 @@ class PriorityLeadsView(TemplateView):
                 'border': '#f59e0b',
                 'empty_label': 'No hot leads.',
                 'recommended_action': 'Call within 30 minutes to complete missing details.',
-                'count': hot_leads.count(),
-                'pending_count': hot_leads.filter(manual_followup_done=False).count(),
-                'done_count': hot_leads.filter(manual_followup_done=True).count(),
-                'pending_by_date': self._group_leads_by_date(self._enrich_leads(hot_leads.filter(manual_followup_done=False))),
-                'done_by_date': self._group_leads_by_date(self._enrich_leads(hot_leads.filter(manual_followup_done=True))),
+                'count': len(hot_leads),
+                'pending_count': len([lead for lead in hot_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in hot_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in hot_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in hot_leads if lead.manual_followup_done])),
             },
             {
                 'id': 'sec-warm',
@@ -1913,11 +1978,11 @@ class PriorityLeadsView(TemplateView):
                 'border': '#10b981',
                 'empty_label': 'No warm leads.',
                 'recommended_action': 'Send a WhatsApp check-in for missing project info.',
-                'count': warm_leads.count(),
-                'pending_count': warm_leads.filter(manual_followup_done=False).count(),
-                'done_count': warm_leads.filter(manual_followup_done=True).count(),
-                'pending_by_date': self._group_leads_by_date(self._enrich_leads(warm_leads.filter(manual_followup_done=False))),
-                'done_by_date': self._group_leads_by_date(self._enrich_leads(warm_leads.filter(manual_followup_done=True))),
+                'count': len(warm_leads),
+                'pending_count': len([lead for lead in warm_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in warm_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in warm_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in warm_leads if lead.manual_followup_done])),
             },
             {
                 'id': 'sec-luke',
@@ -1929,11 +1994,11 @@ class PriorityLeadsView(TemplateView):
                 'border': '#0ea5e9',
                 'empty_label': 'No luke-warm leads.',
                 'recommended_action': 'Send a quick nudge to re-engage this lead.',
-                'count': luke_warm_leads.count(),
-                'pending_count': luke_warm_leads.filter(manual_followup_done=False).count(),
-                'done_count': luke_warm_leads.filter(manual_followup_done=True).count(),
-                'pending_by_date': self._group_leads_by_date(self._enrich_leads(luke_warm_leads.filter(manual_followup_done=False))),
-                'done_by_date': self._group_leads_by_date(self._enrich_leads(luke_warm_leads.filter(manual_followup_done=True))),
+                'count': len(luke_warm_leads),
+                'pending_count': len([lead for lead in luke_warm_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in luke_warm_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in luke_warm_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in luke_warm_leads if lead.manual_followup_done])),
             },
             {
                 'id': 'sec-cold',
@@ -1945,11 +2010,11 @@ class PriorityLeadsView(TemplateView):
                 'border': '#6b7280',
                 'empty_label': 'No cold leads.',
                 'recommended_action': 'Move to nurture sequence or close as cold lead.',
-                'count': cold_leads.count(),
-                'pending_count': cold_leads.filter(manual_followup_done=False).count(),
-                'done_count': cold_leads.filter(manual_followup_done=True).count(),
-                'pending_by_date': self._group_leads_by_date(self._enrich_leads(cold_leads.filter(manual_followup_done=False))),
-                'done_by_date': self._group_leads_by_date(self._enrich_leads(cold_leads.filter(manual_followup_done=True))),
+                'count': len(cold_leads),
+                'pending_count': len([lead for lead in cold_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in cold_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in cold_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in cold_leads if lead.manual_followup_done])),
             },
         ]
 
@@ -1965,10 +2030,10 @@ class PriorityLeadsView(TemplateView):
                 'warm_by_date': self._group_leads_by_date(warm_leads),
                 'luke_warm_by_date': self._group_leads_by_date(luke_warm_leads),
                 'cold_by_date': self._group_leads_by_date(cold_leads),
-                'total_leads': leads.count(),
+                'total_leads': total_leads,
                 'selected_response_age': response_age,
-                'manual_followup_pending_count': leads.filter(manual_followup_done=False).count(),
-                'manual_followup_done_count': leads.filter(manual_followup_done=True).count(),
+                'manual_followup_pending_count': len([lead for lead in very_hot_leads + hot_leads + warm_leads + luke_warm_leads + cold_leads if not lead.manual_followup_done]),
+                'manual_followup_done_count': len([lead for lead in very_hot_leads + hot_leads + warm_leads + luke_warm_leads + cold_leads if lead.manual_followup_done]),
                 'sections': sections,
                 'follow_up_status_choices': Appointment._meta.get_field('follow_up_status').choices,
             }
@@ -2036,10 +2101,34 @@ class AppointmentDetailView(DetailView):
         computed_score, computed_status = calculate_lead_score(appointment)
         conversation_history = appointment.conversation_history
         uploaded_files = appointment.get_all_uploaded_files()   # ← NEW
+        detail_source = self.request.GET.get('source', 'appointments')
+        valid_sources = {'appointments', 'dashboard', 'priority_leads', 'followups'}
+        if detail_source not in valid_sources:
+            detail_source = 'appointments'
+
         sidebar_appointments = Appointment.objects.order_by('-updated_at')[:20]
+        source_workspace = {}
+        active_nav = 'appointments'
+        source_back_url = reverse('appointments_list')
+        source_title = 'Appointments'
+        if detail_source == 'dashboard':
+            source_workspace = _dashboard_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            active_nav = 'dashboard'
+            source_back_url = reverse('dashboard')
+            source_title = 'Dashboard'
+        elif detail_source == 'priority_leads':
+            source_workspace = _priority_leads_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            active_nav = 'leads'
+            source_back_url = reverse('priority_leads')
+            source_title = 'Priority Leads'
+        elif detail_source == 'followups':
+            source_workspace = _followups_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            active_nav = 'followups'
+            source_back_url = reverse('followup_dashboard')
+            source_title = 'Follow-ups'
 
         context.update({
-            'active_nav': 'appointments',
+            'active_nav': active_nav,
             'conversation_history': conversation_history,
             'completeness': appointment.get_customer_info_completeness(),
             'documents': uploaded_files,
@@ -2050,6 +2139,10 @@ class AppointmentDetailView(DetailView):
             'computed_lead_status': computed_status,
             'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
             'sidebar_appointments': sidebar_appointments,
+            'detail_source': detail_source,
+            'source_workspace': source_workspace,
+            'source_back_url': source_back_url,
+            'source_title': source_title,
             'appointment_status_counts': {
                 'total': Appointment.objects.count(),
                 'booked': Appointment.objects.filter(status='confirmed').count(),
@@ -2977,88 +3070,11 @@ Thanks,
 @staff_required
 def followup_dashboard(request):
     """Dashboard showing follow-up statistics and leads"""
-    from datetime import timedelta
-    
-    now = timezone.now()
     response_age = request.GET.get('response_age', '').strip()
     if not response_age:
         response_age = '1w_minus'
-
-    age_map_minus = {
-        '1w_minus': timedelta(weeks=1),
-        '4w_minus': timedelta(weeks=4),
-    }
-    cutoff = None
-    if response_age != 'all' and response_age in age_map_minus:
-        cutoff = now - age_map_minus[response_age]
-    
-    # Get statistics
-    base_active = Appointment.objects.filter(
-        is_lead_active=True,
-        status='pending'
-    )
-    if cutoff:
-        base_active = base_active.filter(last_customer_response__gte=cutoff)
-    total_active_leads = base_active.count()
-    
-    # Leads by follow-up stage
-    stage_counts = {}
-    for stage_code, stage_name in Appointment._meta.get_field('followup_stage').choices:
-        stage_qs = Appointment.objects.filter(
-            is_lead_active=True,
-            followup_stage=stage_code
-        )
-        if cutoff:
-            stage_qs = stage_qs.filter(last_customer_response__gte=cutoff)
-        count = stage_qs.count()
-        if count > 0:
-            stage_counts[stage_name] = count
-    
-    # Leads needing follow-up today
-    leads_needing_followup = Appointment.objects.filter(
-        is_lead_active=True,
-        status='pending'
-    ).exclude(
-        followup_stage='completed'
-    ).exclude(
-        followup_stage='responded'
-    )
-    if cutoff:
-        leads_needing_followup = leads_needing_followup.filter(last_customer_response__gte=cutoff)
-    
-    # Filter to those actually ready for follow-up
-    ready_for_followup = [
-        lead for lead in leads_needing_followup 
-        if lead.should_send_followup_now()
-    ]
-    
-    # Recent responses (based on filter)
-    recent_responses = Appointment.objects.filter(
-        last_customer_response__isnull=False,
-        is_lead_active=True
-    )
-    if cutoff:
-        recent_responses = recent_responses.filter(last_customer_response__gte=cutoff)
-    recent_responses = recent_responses.order_by('-last_customer_response')[:10]
-    
-    # Inactive leads (last 30 days)
-    recent_inactive = Appointment.objects.filter(
-        is_lead_active=False,
-        lead_marked_inactive_at__gte=now - timedelta(days=30)
-    ).order_by('-lead_marked_inactive_at')[:10]
-    
-    context = {
-        'total_active_leads': total_active_leads,
-        'stage_counts': stage_counts,
-        'ready_count': len(ready_for_followup),
-        'ready_leads': ready_for_followup[:20],  # First 20
-        'recent_responses': recent_responses,
-        'recent_inactive': recent_inactive,
-        'selected_response_age': response_age,
-        'response_age_label': 'All-time' if response_age == 'all' else (
-            'Last 30 Days' if response_age == '4w_minus' else 'Last 7 Days'
-        ),
-    }
+    context = _followups_workspace_data(response_age)
+    context['active_nav'] = 'followups'
     
     return render(request, 'followup_dashboard.html', context)
 

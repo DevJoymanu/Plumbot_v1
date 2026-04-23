@@ -384,7 +384,7 @@
     </button>
     <div id="sched-today" class="pb-schedule__body">
         {% for appt in todays_confirmed_appointments %}
-        <a href="{% url 'appointment_detail' appt.pk %}" class="pb-sched-row">
+        <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
                 {{ appt.scheduled_datetime|date:"H:i"|default:"--" }}
             </div>
@@ -414,7 +414,7 @@
     </button>
     <div id="sched-tomorrow" class="pb-schedule__body collapsed">
         {% for appt in tomorrows_confirmed_appointments %}
-        <a href="{% url 'appointment_detail' appt.pk %}" class="pb-sched-row">
+        <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
                 {{ appt.scheduled_datetime|date:"H:i"|default:"--" }}
             </div>
@@ -444,7 +444,7 @@
     </button>
     <div id="sched-week" class="pb-schedule__body collapsed">
         {% for appt in this_week_appointments %}
-        <a href="{% url 'appointment_detail' appt.pk %}" class="pb-sched-row">
+        <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
                 {{ appt.scheduled_datetime|date:"D"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
             </div>
@@ -474,7 +474,7 @@
     </button>
     <div id="sched-jobs" class="pb-schedule__body collapsed">
         {% for job in week_jobs %}
-        <a href="{% url 'appointment_detail' job.site_visit.pk %}" class="pb-sched-row">
+        <a href="{% url 'appointment_detail' job.site_visit.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
             <div class="pb-time-block pb-tb--job">
                 {{ job.scheduled_datetime|date:"D"|default:"--" }}<small>{{ job.scheduled_datetime|date:"H:i" }}</small>
             </div>
@@ -500,7 +500,7 @@
         <a href="{% url 'followup_dashboard' %}" class="pb-section-card__link">See all</a>
     </div>
     {% for appt in followups %}
-    <a href="{% url 'appointment_detail' appt.pk %}" class="pb-followup-row">
+    <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-followup-row">
         <div class="pb-avatar" data-name="{{ appt.customer_name|default:'?' }}">
             {{ appt.customer_name|default:"?"|slice:":2"|upper }}
         </div>
