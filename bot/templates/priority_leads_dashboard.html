@@ -674,9 +674,11 @@
     <div class="filter-card">
         <form method="get" class="filter-row">
             <select name="response_age" aria-label="Filter by response age">
-                <option value="1w_minus" {% if selected_response_age == '1w_minus' %}selected{% endif %}>Last response within 7 days</option>
-                <option value="4w_minus" {% if selected_response_age == '4w_minus' %}selected{% endif %}>Last response within 30 days</option>
-                <option value="all" {% if selected_response_age == 'all' %}selected{% endif %}>All-time</option>
+                <option value="1w_minus" {% if selected_response_age=='1w_minus' %}selected{% endif %}>Last response
+                    within 7 days</option>
+                <option value="4w_minus" {% if selected_response_age=='4w_minus' %}selected{% endif %}>Last response
+                    within 30 days</option>
+                <option value="all" {% if selected_response_age=='all' %}selected{% endif %}>All-time</option>
             </select>
             <div class="filter-actions">
                 <button type="submit" class="btn">Apply</button>
@@ -732,9 +734,12 @@
             </div>
             <div class="lead-meta">
                 <div><i class="fas fa-phone"></i> <strong>Phone:</strong> {{ lead.phone_number|cut:"whatsapp:" }}</div>
-                <div><i class="fas fa-wrench"></i> <strong>Service:</strong> {{ lead.project_type|default:"No service"}}</div>
-                <div><i class="fas fa-map-marker-alt"></i> <strong>Area:</strong> {{ lead.customer_area|default:"No area" }}</div>
-                <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div><i class="fas fa-wrench"></i> <strong>Service:</strong> {{ lead.project_type|default:"No service"}}
+                </div>
+                <div><i class="fas fa-map-marker-alt"></i> <strong>Area:</strong> {{ lead.customer_area|default:"No
+                    area" }}</div>
+                <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y
+                    H:i"|default:"No activity" }}</div>
             </div>
             {% if lead.last_priority_alert_summary %}
             <div class="alert">
@@ -743,7 +748,7 @@
             </div>
             {% endif %}
             <div class="card-actions">
-                <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ selected_response_age }}" class="btn btn-sm">Open</a>
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open</a>
                 <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-sm btn-call" target="_blank"
                     rel="noopener noreferrer">
                     <i class="fas fa-phone"></i> Call
@@ -769,7 +774,7 @@
                     <select name="follow_up_status" aria-label="Lead follow-up status">
                         <option value="">Lead follow-up status</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
+                        <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>{{ label }}
                         </option>
                         {% endfor %}
                     </select>
@@ -798,7 +803,8 @@
                     }}</div>
                 <div><i class="fas fa-map-marker-alt"></i> <strong>Area:</strong> {{ lead.customer_area|default:"No
                     area" }}</div>
-                <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
+                <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y
+                    H:i"|default:"No activity" }}</div>
             </div>
             {% if lead.last_priority_alert_summary %}
             <div class="alert">
@@ -807,7 +813,7 @@
             </div>
             {% endif %}
             <div class="card-actions">
-                <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ selected_response_age }}" class="btn btn-sm">Open</a>
+                <a href="{% url 'appointment_detail' lead.pk %}" class="btn btn-sm">Open</a>
                 <a href="tel:{{ lead.phone_number|cut:'whatsapp:' }}" class="btn btn-sm btn-call" target="_blank"
                     rel="noopener noreferrer">
                     <i class="fas fa-phone"></i> Call
@@ -833,7 +839,7 @@
                     <select name="follow_up_status" aria-label="Lead follow-up status">
                         <option value="">Lead follow-up status</option>
                         {% for value, label in follow_up_status_choices %}
-                        <option value="{{ value }}" {% if lead.follow_up_status == value %}selected{% endif %}>{{ label }}
+                        <option value="{{ value }}" {% if lead.follow_up_status==value %}selected{% endif %}>{{ label }}
                         </option>
                         {% endfor %}
                     </select>
