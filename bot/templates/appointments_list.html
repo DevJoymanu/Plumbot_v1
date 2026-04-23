@@ -611,13 +611,26 @@
     var search = document.getElementById('appointmentsSearch');
     var rows = Array.from(document.querySelectorAll('.inbox-row'));
 
-    if (!search) return;
+    // ── Search ──
+    if (search) {
+      search.addEventListener('input', function () {
+        var term = search.value.trim().toLowerCase();
+        rows.forEach(function (row) {
+          var haystack = row.getAttribute('data-search') || '';
+          row.style.display = haystack.indexOf(term) > -1 ? '' : 'none';
+        });
+      });
+    }
 
-    search.addEventListener('input', function () {
-      var term = search.value.trim().toLowerCase();
-      rows.forEach(function (row) {
-        var haystack = row.getAttribute('data-search') || '';
-        row.style.display = haystack.indexOf(term) > -1 ? '' : 'none';
+    // ── Persist active tab into sessionStorage so appointment_detail sidebar restores it ──
+    // Map appointments_list status_filter values → appointment_detail data-filter values
+    var TAB_MAP = { all: 'all', booked: 'confirmed', pending: 'pending', cancelled: 'cancelled', delayed: 'delayed' };
+    var currentFilter = '{{ selected_status_filter|default:"all" }}';
+    var sidebarFilter = TAB_MAP[currentFilter] || 'all';
+
+    rows.forEach(function (row) {
+      row.addEventListener('click', function () {
+        try { sessionStorage.setItem('plumbot_sidebar_tab', sidebarFilter); } catch (e) {}
       });
     });
   });

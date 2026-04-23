@@ -1739,58 +1739,67 @@
     }
   });
 
-  var appointmentSearch = document.getElementById('appointmentSearch');
-  if (appointmentSearch) {
-    appointmentSearch.addEventListener('input', function (e) {
-      var term = e.target.value.trim().toLowerCase();
-      document.querySelectorAll('.appt-list-row').forEach(function (row) {
-        var haystack = row.getAttribute('data-search') || '';
-        row.style.display = haystack.indexOf(term) > -1 ? '' : 'none';
-      });
-    });
+  // ── Appointments sidebar: persistent tab state ──
+  (function () {
+    var appointmentSearch = document.getElementById('appointmentSearch');
+    if (!appointmentSearch) return;   // only runs when source === 'appointments'
 
-    // ── Sidebar filter tabs ──
+    var TAB_KEY = 'plumbot_sidebar_tab';
+
+    function storedTab() {
+      try { return sessionStorage.getItem(TAB_KEY) || 'all'; } catch (e) { return 'all'; }
+    }
+    function saveTab(f) {
+      try { sessionStorage.setItem(TAB_KEY, f); } catch (e) {}
+    }
+    function activeFilter() {
+      var btn = document.querySelector('.appt-filter-tab.is-active');
+      return btn ? btn.getAttribute('data-filter') : 'all';
+    }
+
     function applyTabFilter(filter) {
+      // Update tab button styles
       document.querySelectorAll('.appt-filter-tab').forEach(function (tab) {
         tab.classList.toggle('is-active', tab.getAttribute('data-filter') === filter);
       });
-      var searchTerm = appointmentSearch ? appointmentSearch.value.trim().toLowerCase() : '';
+      // Filter rows (combined with current search term)
+      var term = appointmentSearch.value.trim().toLowerCase();
       document.querySelectorAll('.appt-list-row').forEach(function (row) {
         var matchesFilter = filter === 'all' || row.getAttribute('data-status') === filter;
-        var haystack = row.getAttribute('data-search') || '';
-        var matchesSearch = !searchTerm || haystack.indexOf(searchTerm) > -1;
+        var matchesSearch = !term || (row.getAttribute('data-search') || '').indexOf(term) > -1;
         row.style.display = matchesFilter && matchesSearch ? '' : 'none';
       });
     }
 
+    // 1. Determine initial filter:
+    //    URL param (server-set) → sessionStorage → default 'all'
+    var tabsEl = document.querySelector('.appt-filter-tabs[data-initial-filter]');
+    var urlFilter = tabsEl ? tabsEl.getAttribute('data-initial-filter') : 'all';
+    var initial = (urlFilter && urlFilter !== 'all') ? urlFilter : storedTab();
+    applyTabFilter(initial);
+
+    // 2. Tab button clicks — apply + persist
     document.querySelectorAll('.appt-filter-tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        applyTabFilter(btn.getAttribute('data-filter'));
+        var f = btn.getAttribute('data-filter');
+        applyTabFilter(f);
+        saveTab(f);
       });
     });
 
-    // Restore the active tab from server-set data attribute
-    var tabsEl = document.querySelector('.appt-filter-tabs[data-initial-filter]');
-    if (tabsEl) {
-      var initialFilter = tabsEl.getAttribute('data-initial-filter') || 'all';
-      if (initialFilter !== 'all') {
-        applyTabFilter(initialFilter);
-      }
-    }
+    // 3. Search — re-apply current tab so hidden rows stay hidden
+    appointmentSearch.addEventListener('input', function () {
+      applyTabFilter(activeFilter());
+    });
 
-    // Carry the active filter when navigating to a different appointment in the sidebar
+    // 4. Row clicks — persist active tab BEFORE navigating (no URL rewriting needed)
     document.querySelectorAll('.appt-list-row').forEach(function (row) {
-      row.addEventListener('click', function (e) {
-        var activeTab = document.querySelector('.appt-filter-tab.is-active');
-        var filter = activeTab ? activeTab.getAttribute('data-filter') : 'all';
-        if (filter !== 'all') {
-          e.preventDefault();
-          var sep = this.href.indexOf('?') > -1 ? '&' : '?';
-          window.location.href = this.href + sep + 'sidebar_filter=' + encodeURIComponent(filter);
-        }
+      row.addEventListener('click', function () {
+        saveTab(activeFilter());
+        // Navigation proceeds normally
       });
     });
-  }
+  }());
 
   document.addEventListener('DOMContentLoaded', function () {
     updateCharCount();
