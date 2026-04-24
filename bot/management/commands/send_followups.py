@@ -10,6 +10,7 @@
 #
 # Total spread: 18 hours, all 4 messages land within a single day.
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
@@ -430,7 +431,7 @@ RULES — every single one must be followed:
 Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
         response = deepseek_client.chat.completions.create(
-            model='deepseek-chat',
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     'role': 'system',

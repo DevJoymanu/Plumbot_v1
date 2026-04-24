@@ -29,7 +29,6 @@ KEY FIXES vs the previous version
 import os
 import logging
 from datetime import timedelta, date, time as dt_time
-from collections import defaultdict
 
 import pytz
 from django.core.management.base import BaseCommand
@@ -330,14 +329,15 @@ def _msg_plumber_2hours(apt, plumber_name: str) -> str:
 # EMAIL HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_SAST       = pytz.timezone("Africa/Johannesburg")
-_SEP        = "────────────────────────"
-_SITE_URL   = getattr(settings, "SITE_URL", "").rstrip("/")
-_WIN_EMAIL  = 8   # ±8 min tolerance for email scheduled-send windows
+_SAST      = pytz.timezone("Africa/Johannesburg")
+_SITE_URL  = getattr(settings, "SITE_URL", "").rstrip("/")
+_WIN_EMAIL = 8   # ±8 min tolerance — command runs every 15 min
 
 _DAYS_LONG   = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 _DAYS_SHORT  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
 _MONTHS      = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+_MONTHS_LONG = ["January","February","March","April","May","June",
+                 "July","August","September","October","November","December"]
 
 
 def _to_sast(dt):
@@ -379,11 +379,11 @@ def _email_fmt_date(apt):
     if not dt:
         return "?"
     d = dt.date()
-    return f"{_DAYS_LONG[d.weekday()]}, {d.day} {_MONTHS[d.month - 1]} {d.year}"
+    return f"{_DAYS_LONG[d.weekday()]}, {d.day} {_MONTHS_LONG[d.month - 1]} {d.year}"
 
 
 def _email_fmt_date_short(d):
-    return f"{_DAYS_SHORT[d.weekday()]}, {d.day} {_MONTHS[d.month - 1]} {d.year}"
+    return f"{_DAYS_SHORT[d.weekday()]} {d.day} {_MONTHS[d.month - 1]} {d.year}"
 
 
 def _clean_phone(apt):
@@ -398,25 +398,6 @@ def _apt_deep_link(apt):
         return f"/appointments/{apt.pk}/"
 
 
-def _email_recipients(apt):
-    plumber = getattr(apt, "assigned_plumber", None)
-    if plumber and getattr(plumber, "email", ""):
-        return [plumber.email]
-    return get_plumber_notification_emails()
-
-
-def _email_plumber_key(apt):
-    plumber = getattr(apt, "assigned_plumber", None)
-    return str(plumber.pk) if plumber else "global"
-
-
-def _email_group_by_plumber(apts):
-    groups = defaultdict(list)
-    for a in apts:
-        groups[_email_plumber_key(a)].append(a)
-    return dict(groups)
-
-
 def _eflag_set(apt, key):
     return f"[{key}]" in (apt.internal_notes or "")
 
@@ -429,33 +410,72 @@ def _eflag_mark(apt, key):
         apt.save(update_fields=["internal_notes"])
 
 
-def _email_apt_block(apt):
+def _apt_html_block(apt):
+    """HTML appointment card with clickable call, WhatsApp, and view buttons."""
     clean = _clean_phone(apt)
+    name  = getattr(apt, "customer_name", "?") or "?"
+    link  = _apt_deep_link(apt)
     return (
-        f"{_SEP}\n"
-        f"📅 {_email_fmt_date(apt)} at {_email_fmt_time(apt)}\n"
-        f"🔧 Service:   {_service(apt)}\n"
-        f"📍 Area:      {_area(apt)}\n"
-        f"📞 Call:      tel:+{clean}\n"
-        f"💬 WhatsApp:  https://wa.me/{clean}\n"
-        f"🔗 View:      {_apt_deep_link(apt)}\n"
-        f"{_SEP}"
+        '<div style="border:1px solid #e0e0e0;border-radius:8px;padding:16px 20px;'
+        'margin:16px 0;background:#ffffff;font-family:Arial,sans-serif;">'
+        f'<p style="margin:0 0 10px;font-size:16px;font-weight:bold;color:#1a1a1a;">'
+        f'📅 {_email_fmt_date(apt)} at {_email_fmt_time(apt)}</p>'
+        f'<p style="margin:4px 0;color:#333;font-size:14px;">🔧 <strong>Service:</strong> {_service(apt)}</p>'
+        f'<p style="margin:4px 0;color:#333;font-size:14px;">📍 <strong>Area:</strong> {_area(apt)}</p>'
+        f'<p style="margin:4px 0;color:#333;font-size:14px;">👤 <strong>Customer:</strong> {name}</p>'
+        '<div style="margin-top:14px;">'
+        f'<a href="tel:+{clean}" style="display:inline-block;background:#25D366;color:#fff;'
+        'text-decoration:none;padding:9px 16px;border-radius:5px;font-size:13px;'
+        f'margin-right:8px;margin-bottom:8px;">📞 Call Customer</a>'
+        f'<a href="https://wa.me/{clean}" style="display:inline-block;background:#25D366;color:#fff;'
+        'text-decoration:none;padding:9px 16px;border-radius:5px;font-size:13px;'
+        'margin-bottom:8px;">💬 WhatsApp</a>'
+        '</div>'
+        f'<a href="{link}" style="display:inline-block;background:#1a73e8;color:#fff;'
+        'text-decoration:none;padding:9px 16px;border-radius:5px;font-size:13px;">'
+        '🔗 View Appointment</a>'
+        '</div>'
     )
 
 
-def _email_blocks(apts):
-    return "\n\n".join(_email_apt_block(a) for a in apts)
+def _apt_html_blocks(apts):
+    return "\n".join(_apt_html_block(a) for a in apts)
 
 
-def _n_bookings(n):
-    return f"{n} Booking{'s' if n != 1 else ''}"
+def _html_email(header_color, header_title, body_html):
+    """Wrap body_html in a clean, mobile-friendly HTML email shell."""
+    return (
+        '<!DOCTYPE html><html lang="en"><head>'
+        '<meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '</head>'
+        '<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif;">'
+        '<div style="max-width:600px;margin:24px auto;background:#fff;border-radius:10px;'
+        'overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">'
+        f'<div style="background:{header_color};padding:22px 28px;">'
+        f'<h1 style="margin:0;color:#fff;font-size:20px;line-height:1.3;">{header_title}</h1>'
+        '</div>'
+        '<div style="padding:24px 28px;font-size:15px;color:#333;line-height:1.6;">'
+        f'{body_html}'
+        '</div>'
+        '<div style="background:#f8f8f8;padding:14px 28px;border-top:1px solid #e8e8e8;'
+        'text-align:center;">'
+        '<p style="margin:0;color:#aaa;font-size:12px;">HomeBase Plumbers · Automated Reminder</p>'
+        '</div>'
+        '</div></body></html>'
+    )
 
 
-def _send_email(recipients, subject, body, dry_run):
+def _hr():
+    return '<hr style="border:none;border-top:1px solid #e0e0e0;margin:16px 0;">'
+
+
+def _send_email(recipients, subject, html, dry_run):
     if dry_run:
         logger.info("DRY RUN email '%s' → %s", subject, recipients)
         return True
-    return send_email_to_recipients(recipients, subject, body)
+    plain = f"Please view this email in an HTML-compatible client.\n\nSubject: {subject}"
+    return send_email_to_recipients(recipients, subject, plain, html_message=html)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -682,177 +702,229 @@ class Command(BaseCommand):
                             self.stdout.write(self.style.ERROR(f"    FAIL  2-Hour Alert → {name}"))
 
         # ─────────────────────────────────────────────────────────────────────
-        # PLUMBER EMAIL REMINDERS  (all 5 email types)
+        # PLUMBER EMAIL REMINDERS  (5 email types — all sent to both recipients)
         # ─────────────────────────────────────────────────────────────────────
         self.stdout.write(f"\n  {'─' * 56}")
         self.stdout.write("  PLUMBER EMAIL REMINDERS\n")
 
         email_sent = email_skipped = email_failed = 0
+        email_recipients = get_plumber_notification_emails()
 
-        # Appointments from today onward, non-cancelled, with scheduled time
-        email_apts = list(
+        # Active upcoming appointments — used by emails 2, 3, 4, 5
+        active_apts = list(
             Appointment.objects.filter(
                 scheduled_datetime__isnull=False,
                 scheduled_datetime__date__gte=today,
             ).exclude(
-                status__in=["cancelled", "completed", "no_show"]
-            ).select_related("assigned_plumber")
-            .order_by("scheduled_datetime")
+                status__in=["cancelled", "no_show"]
+            ).order_by("scheduled_datetime")
         )
 
-        week_start = today - timedelta(days=today.weekday())   # Monday
-        week_end   = week_start + timedelta(days=6)
-
-        # ── Email 1: Weekly Summary — Monday 07:00 SAST ──────────────────────
-        if now_local.weekday() == 0 and _email_in_window(now_local, 7, 0):
-            week_apts = [
-                a for a in email_apts
-                if week_start <= (_to_sast(a.scheduled_datetime) or now_local).date() <= week_end
-            ]
-            if not week_apts:
-                self.stdout.write("    INFO  Email 1 (Weekly): no appointments this week")
+        # ── Email 1: Weekly Summary — Every Sunday at 20:00 SAST ─────────────
+        # Always sends; shows "No appointments" when week is empty.
+        if now_local.weekday() == 6 and _email_in_window(now_local, 20, 0):
+            week_sun = today                          # Sunday (today)
+            week_mon = today - timedelta(days=6)      # Monday of same week
+            week_apts = list(
+                Appointment.objects.filter(
+                    scheduled_datetime__isnull=False,
+                    scheduled_datetime__date__gte=week_mon,
+                    scheduled_datetime__date__lte=week_sun,
+                ).exclude(status="cancelled")
+                .order_by("scheduled_datetime")
+            )
+            flag           = f"email_weekly_{week_sun.isoformat()}"
+            already_sent   = bool(week_apts) and any(_eflag_set(a, flag) for a in week_apts)
+            if already_sent:
+                email_skipped += 1
+                self.stdout.write(f"    SKIP  Email 1 Weekly already sent for week of {week_mon}")
             else:
-                for pkey, grp in _email_group_by_plumber(week_apts).items():
-                    marker = grp[0]
-                    flag   = f"email_weekly_{week_start.isoformat()}_{pkey}"
-                    if _eflag_set(marker, flag):
-                        email_skipped += 1
-                        self.stdout.write(f"    SKIP  Email 1 Weekly [{pkey}] already sent")
-                        continue
-                    week_label = _email_fmt_date_short(week_start)
-                    subject = (
-                        f"Your Appointments for the Week of {week_label}"
-                        f" — {_n_bookings(len(grp))}"
+                n       = len(week_apts)
+                mon_lbl = _email_fmt_date_short(week_mon)
+                sun_lbl = _email_fmt_date_short(week_sun)
+                subject = (
+                    f"📅 Weekly Summary — {n} Appointment{'s' if n != 1 else ''}"
+                    f" for the Week of {mon_lbl}"
+                )
+                if n == 0:
+                    apts_html = (
+                        '<p style="color:#888;text-align:center;padding:20px 0;">'
+                        'No appointments were scheduled this week.</p>'
                     )
-                    body = (
-                        f"You have {len(grp)} appointment{'s' if len(grp) != 1 else ''} this week.\n\n"
-                        f"{_email_blocks(grp)}"
-                    )
-                    ok = _send_email(_email_recipients(grp[0]), subject, body, dry_run)
-                    if ok:
-                        if not dry_run:
-                            _eflag_mark(marker, flag)
-                        email_sent += 1
-                        self.stdout.write(
-                            self.style.SUCCESS(
-                                f"    SENT  Email 1 Weekly [{pkey}] {len(grp)} apt(s)"
-                            )
+                else:
+                    apts_html = _apt_html_blocks(week_apts)
+                body_html = (
+                    '<p>Hi Team,</p>'
+                    f'<p>Here is your appointment summary for the week of '
+                    f'<strong>{mon_lbl} – {sun_lbl}</strong>.</p>'
+                    f'{_hr()}'
+                    f'<p style="font-size:16px;font-weight:bold;">TOTAL BOOKED APPOINTMENTS: {n}</p>'
+                    f'{_hr()}'
+                    f'{apts_html}'
+                    '<p>Have a great week!</p>'
+                )
+                html = _html_email(
+                    "#1a73e8",
+                    f"📅 Weekly Summary — {n} Appointment{'s' if n != 1 else ''}",
+                    body_html,
+                )
+                ok = _send_email(email_recipients, subject, html, dry_run)
+                if ok:
+                    if not dry_run and week_apts:
+                        _eflag_mark(week_apts[0], flag)
+                    email_sent += 1
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"    SENT  Email 1 Weekly — {n} apt(s), {mon_lbl} to {sun_lbl}"
                         )
-                    else:
-                        email_failed += 1
-                        self.stdout.write(self.style.ERROR(f"    FAIL  Email 1 Weekly [{pkey}]"))
+                    )
+                else:
+                    email_failed += 1
+                    self.stdout.write(self.style.ERROR("    FAIL  Email 1 Weekly"))
 
-        # ── Email 2: Next-Day Preview — Daily 20:00 SAST ─────────────────────
+        # ── Email 2: Next-Day Preview — Every day at 20:00 SAST ──────────────
+        # Only sends if there is ≥1 appointment tomorrow.
         if _email_in_window(now_local, 20, 0):
             nextday_apts = [
-                a for a in email_apts
+                a for a in active_apts
                 if (_to_sast(a.scheduled_datetime) or now_local).date() == tomorrow
             ]
             if not nextday_apts:
-                self.stdout.write("    INFO  Email 2 (Next-Day): no appointments tomorrow")
+                self.stdout.write("    INFO  Email 2 (Next-Day): no appointments tomorrow — skipped")
             else:
-                for pkey, grp in _email_group_by_plumber(nextday_apts).items():
-                    marker = grp[0]
-                    flag   = f"email_nextday_{tomorrow.isoformat()}_{pkey}"
-                    if _eflag_set(marker, flag):
-                        email_skipped += 1
-                        self.stdout.write(f"    SKIP  Email 2 Next-Day [{pkey}] already sent")
-                        continue
-                    day_label = _email_fmt_date_short(tomorrow)
-                    subject = f"Tomorrow's Appointments — {_n_bookings(len(grp))} on {day_label}"
-                    body = (
-                        f"You have {len(grp)} appointment{'s' if len(grp) != 1 else ''} tomorrow.\n\n"
-                        f"{_email_blocks(grp)}"
+                flag   = f"email_nextday_{tomorrow.isoformat()}"
+                marker = nextday_apts[0]
+                if _eflag_set(marker, flag):
+                    email_skipped += 1
+                    self.stdout.write(f"    SKIP  Email 2 Next-Day already sent for {tomorrow}")
+                else:
+                    n       = len(nextday_apts)
+                    day_lbl = _email_fmt_date_short(tomorrow)
+                    subject = (
+                        f"🗓️ Tomorrow's Jobs — {n} Appointment{'s' if n != 1 else ''}"
+                        f" on {day_lbl}"
                     )
-                    ok = _send_email(_email_recipients(grp[0]), subject, body, dry_run)
+                    body_html = (
+                        '<p>Hi Team,</p>'
+                        f'<p>You have <strong>{n} job{"s" if n != 1 else ""}</strong> scheduled'
+                        f' for tomorrow, <strong>{day_lbl}</strong>.</p>'
+                        f'{_hr()}'
+                        f'<p style="font-size:16px;font-weight:bold;">TOTAL JOBS TOMORROW: {n}</p>'
+                        f'{_hr()}'
+                        f'{_apt_html_blocks(nextday_apts)}'
+                        "<p>Get a good night's rest — see you tomorrow!</p>"
+                    )
+                    html = _html_email(
+                        "#e65c00",
+                        f"🗓️ Tomorrow's Jobs — {n} Appointment{'s' if n != 1 else ''}",
+                        body_html,
+                    )
+                    ok = _send_email(email_recipients, subject, html, dry_run)
                     if ok:
                         if not dry_run:
                             _eflag_mark(marker, flag)
                         email_sent += 1
                         self.stdout.write(
                             self.style.SUCCESS(
-                                f"    SENT  Email 2 Next-Day [{pkey}] {len(grp)} apt(s)"
+                                f"    SENT  Email 2 Next-Day — {n} apt(s) for {day_lbl}"
                             )
                         )
                     else:
                         email_failed += 1
-                        self.stdout.write(self.style.ERROR(f"    FAIL  Email 2 Next-Day [{pkey}]"))
+                        self.stdout.write(self.style.ERROR("    FAIL  Email 2 Next-Day"))
 
-        # ── Email 3: Morning Of — Daily 06:30 SAST ───────────────────────────
+        # ── Email 3: Morning of Appointments — Every day at 06:30 SAST ───────
+        # Only sends if there is ≥1 appointment today.
         if _email_in_window(now_local, 6, 30):
             today_apts = [
-                a for a in email_apts
+                a for a in active_apts
                 if (_to_sast(a.scheduled_datetime) or now_local).date() == today
             ]
             if not today_apts:
-                self.stdout.write("    INFO  Email 3 (Morning): no appointments today")
+                self.stdout.write("    INFO  Email 3 (Morning): no appointments today — skipped")
             else:
-                for pkey, grp in _email_group_by_plumber(today_apts).items():
-                    marker = grp[0]
-                    flag   = f"email_morning_{today.isoformat()}_{pkey}"
-                    if _eflag_set(marker, flag):
-                        email_skipped += 1
-                        self.stdout.write(f"    SKIP  Email 3 Morning [{pkey}] already sent")
-                        continue
-                    day_label = _email_fmt_date_short(today)
+                flag   = f"email_morning_{today.isoformat()}"
+                marker = today_apts[0]
+                if _eflag_set(marker, flag):
+                    email_skipped += 1
+                    self.stdout.write(f"    SKIP  Email 3 Morning already sent for {today}")
+                else:
+                    n       = len(today_apts)
+                    day_lbl = _email_fmt_date_short(today)
                     subject = (
-                        f"Today's Appointments — {_n_bookings(len(grp))} for Today, {day_label}"
+                        f"☀️ Today's Jobs — {n} Appointment{'s' if n != 1 else ''}"
+                        f" for Today, {day_lbl}"
                     )
-                    body = (
-                        f"Good morning! Here are your {len(grp)} appointment"
-                        f"{'s' if len(grp) != 1 else ''} for today.\n\n"
-                        f"{_email_blocks(grp)}"
+                    body_html = (
+                        '<p>Good morning Team,</p>'
+                        f'<p>Here are your jobs for today, <strong>{day_lbl}</strong>.</p>'
+                        f'{_hr()}'
+                        f'<p style="font-size:16px;font-weight:bold;">TOTAL JOBS TODAY: {n}</p>'
+                        f'{_hr()}'
+                        f'{_apt_html_blocks(today_apts)}'
+                        '<p>Have a productive day!</p>'
                     )
-                    ok = _send_email(_email_recipients(grp[0]), subject, body, dry_run)
+                    html = _html_email(
+                        "#e65c00",
+                        f"☀️ Today's Jobs — {n} Appointment{'s' if n != 1 else ''}",
+                        body_html,
+                    )
+                    ok = _send_email(email_recipients, subject, html, dry_run)
                     if ok:
                         if not dry_run:
                             _eflag_mark(marker, flag)
                         email_sent += 1
                         self.stdout.write(
                             self.style.SUCCESS(
-                                f"    SENT  Email 3 Morning [{pkey}] {len(grp)} apt(s)"
+                                f"    SENT  Email 3 Morning — {n} apt(s) for {day_lbl}"
                             )
                         )
                     else:
                         email_failed += 1
-                        self.stdout.write(self.style.ERROR(f"    FAIL  Email 3 Morning [{pkey}]"))
+                        self.stdout.write(self.style.ERROR("    FAIL  Email 3 Morning"))
 
         # ── Emails 4 & 5: Per-appointment rolling reminders ──────────────────
-        for apt in email_apts:
-            dt_sast = _to_sast(apt.scheduled_datetime)
-            if not dt_sast:
+        for apt in active_apts:
+            if not _to_sast(apt.scheduled_datetime):
                 continue
-            apt_label = f"apt#{apt.pk} {_service(apt)} @ {_email_fmt_date(apt)} {_email_fmt_time(apt)}"
+            apt_label = (
+                f"apt#{apt.pk} {_service(apt)} @ {_email_fmt_date(apt)} {_email_fmt_time(apt)}"
+            )
 
-            # Email 4 — 2-hour reminder
+            # Email 4 — 2 hours before appointment
             if _is_2hr_email_window(apt, now_utc):
-                mins_away = (dt_sast - now_utc).total_seconds() / 60
-                if mins_away < 30:
-                    self.stdout.write(f"    SKIP  Email 4 (2hr) {apt_label}: <30 min away")
+                flag = f"email_2hr_{apt.pk}"
+                if _eflag_set(apt, flag):
+                    email_skipped += 1
+                    self.stdout.write(f"    SKIP  Email 4 (2hr) {apt_label}: already sent")
                 else:
-                    flag = f"email_2hr_{apt.pk}"
-                    if _eflag_set(apt, flag):
-                        email_skipped += 1
-                        self.stdout.write(f"    SKIP  Email 4 (2hr) {apt_label}: already sent")
+                    subject = (
+                        f"⏰ Reminder: {_service(apt)} in {_area(apt)}"
+                        f" — Starting in 2 Hours at {_email_fmt_time(apt)}"
+                    )
+                    body_html = (
+                        '<p>Hi Team,</p>'
+                        '<p>This is a reminder that your next job starts in'
+                        ' <strong>2 hours</strong>.</p>'
+                        f'{_apt_html_block(apt)}'
+                        '<p>Make sure you have everything you need — head out soon!</p>'
+                    )
+                    html = _html_email(
+                        "#e53935",
+                        f"⏰ Job in 2 Hours — {_service(apt)} in {_area(apt)}",
+                        body_html,
+                    )
+                    ok = _send_email(email_recipients, subject, html, dry_run)
+                    if ok:
+                        if not dry_run:
+                            _eflag_mark(apt, flag)
+                        email_sent += 1
+                        self.stdout.write(self.style.SUCCESS(f"    SENT  Email 4 (2hr)  {apt_label}"))
                     else:
-                        subject = (
-                            f"Reminder: {_service(apt)} in {_area(apt)}"
-                            f" at {_email_fmt_time(apt)} — in 2 hours"
-                        )
-                        body = f"Your next appointment is in 2 hours.\n\n{_email_apt_block(apt)}"
-                        ok = _send_email(_email_recipients(apt), subject, body, dry_run)
-                        if ok:
-                            if not dry_run:
-                                _eflag_mark(apt, flag)
-                            email_sent += 1
-                            self.stdout.write(
-                                self.style.SUCCESS(f"    SENT  Email 4 (2hr)  {apt_label}")
-                            )
-                        else:
-                            email_failed += 1
-                            self.stdout.write(self.style.ERROR(f"    FAIL  Email 4 (2hr)  {apt_label}"))
+                        email_failed += 1
+                        self.stdout.write(self.style.ERROR(f"    FAIL  Email 4 (2hr)  {apt_label}"))
 
-            # Email 5 — 30-minute reminder
+            # Email 5 — 30 minutes before appointment
             if _is_30min_window(apt, now_utc):
                 flag = f"email_30min_{apt.pk}"
                 if _eflag_set(apt, flag):
@@ -860,21 +932,27 @@ class Command(BaseCommand):
                     self.stdout.write(f"    SKIP  Email 5 (30m) {apt_label}: already sent")
                 else:
                     subject = (
-                        f"Reminder: {_service(apt)} in {_area(apt)}"
-                        f" at {_email_fmt_time(apt)} — in 30 minutes"
+                        f"🚨 Starting Soon: {_service(apt)} in {_area(apt)}"
+                        f" at {_email_fmt_time(apt)} — 30 Minutes Away"
                     )
-                    body = (
-                        f"Your appointment is in 30 minutes — time to head out!\n\n"
-                        f"{_email_apt_block(apt)}"
+                    body_html = (
+                        '<p>Hi Team,</p>'
+                        '<p>Your next job starts in <strong>30 minutes</strong>'
+                        ' — time to head out!</p>'
+                        f'{_apt_html_block(apt)}'
+                        "<p>You've got this!</p>"
                     )
-                    ok = _send_email(_email_recipients(apt), subject, body, dry_run)
+                    html = _html_email(
+                        "#b71c1c",
+                        f"🚨 30 Minutes Away — {_service(apt)} in {_area(apt)}",
+                        body_html,
+                    )
+                    ok = _send_email(email_recipients, subject, html, dry_run)
                     if ok:
                         if not dry_run:
                             _eflag_mark(apt, flag)
                         email_sent += 1
-                        self.stdout.write(
-                            self.style.SUCCESS(f"    SENT  Email 5 (30m)  {apt_label}")
-                        )
+                        self.stdout.write(self.style.SUCCESS(f"    SENT  Email 5 (30m)  {apt_label}"))
                     else:
                         email_failed += 1
                         self.stdout.write(self.style.ERROR(f"    FAIL  Email 5 (30m)  {apt_label}"))

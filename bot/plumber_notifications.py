@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PLUMBER_NOTIFICATION_EMAILS = [
     "jones86xi@gmail.com",
-    "info@homebaseplumbers.co.zw",
+    "homebsconstruction@gmail.com",
 ]
 
 
@@ -21,7 +21,7 @@ def get_plumber_notification_emails():
     return [email for email in recipients if email]
 
 
-def send_email_to_recipients(recipients, subject, message, *, dry_run=False):
+def send_email_to_recipients(recipients, subject, message, *, dry_run=False, html_message=None):
     """Send email to an explicit list of recipients (used for per-plumber routing)."""
     if not recipients:
         logger.warning("send_email_to_recipients: no recipients for '%s'.", subject)
@@ -35,7 +35,7 @@ def send_email_to_recipients(recipients, subject, message, *, dry_run=False):
 
     sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
     if sendgrid_api_key:
-        return _send_via_sendgrid(sendgrid_api_key, recipients, subject, message)
+        return _send_via_sendgrid(sendgrid_api_key, recipients, subject, message, html_message=html_message)
 
     try:
         send_mail(
@@ -44,6 +44,7 @@ def send_email_to_recipients(recipients, subject, message, *, dry_run=False):
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
             recipient_list=recipients,
             fail_silently=False,
+            html_message=html_message,
         )
         return True
     except Exception:
@@ -53,7 +54,7 @@ def send_email_to_recipients(recipients, subject, message, *, dry_run=False):
         return False
 
 
-def send_plumber_notification_email(subject, message, *, dry_run=False):
+def send_plumber_notification_email(subject, message, *, dry_run=False, html_message=None):
     recipients = get_plumber_notification_emails()
     if not recipients:
         logger.warning("No plumber notification email recipients configured.")
@@ -69,7 +70,7 @@ def send_plumber_notification_email(subject, message, *, dry_run=False):
 
     sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
     if sendgrid_api_key:
-        return _send_via_sendgrid(sendgrid_api_key, recipients, subject, message)
+        return _send_via_sendgrid(sendgrid_api_key, recipients, subject, message, html_message=html_message)
 
     try:
         send_mail(
@@ -78,6 +79,7 @@ def send_plumber_notification_email(subject, message, *, dry_run=False):
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
             recipient_list=recipients,
             fail_silently=False,
+            html_message=html_message,
         )
         return True
     except Exception:
@@ -89,7 +91,15 @@ def send_plumber_notification_email(subject, message, *, dry_run=False):
         return False
 
 
-def _send_via_sendgrid(api_key, recipients, subject, message):
+def _send_via_sendgrid(api_key, recipients, subject, message, html_message=None):
+    content = []
+    if message:
+        content.append({"type": "text/plain", "value": message})
+    if html_message:
+        content.append({"type": "text/html", "value": html_message})
+    if not content:
+        content = [{"type": "text/plain", "value": "(no content)"}]
+
     payload = {
         "personalizations": [
             {
@@ -101,12 +111,7 @@ def _send_via_sendgrid(api_key, recipients, subject, message):
             or getattr(settings, "DEFAULT_FROM_EMAIL", None),
         },
         "subject": subject,
-        "content": [
-            {
-                "type": "text/plain",
-                "value": message,
-            }
-        ],
+        "content": content,
     }
 
     try:

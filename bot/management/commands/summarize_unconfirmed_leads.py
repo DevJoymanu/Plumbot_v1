@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from openai import OpenAI
@@ -115,7 +116,7 @@ class Command(BaseCommand):
         try:
             client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
             response = client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",

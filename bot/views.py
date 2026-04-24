@@ -4050,7 +4050,7 @@ Reply with ONLY a JSON object:
 {{"intent": "exit" or "continue", "confidence": "HIGH" or "LOW"}}"""
 
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -4610,7 +4610,7 @@ Return ONLY valid JSON (no markdown):
 
         try:
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "Return ONLY valid JSON. No markdown."},
                     {"role": "user", "content": prompt},
@@ -4802,7 +4802,7 @@ Write ONLY the message text. No labels, no quotes around it."""
 
         try:
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -5075,7 +5075,7 @@ system_prompt
     YOUR ANALYSIS:"""
 
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system", 
@@ -5196,7 +5196,7 @@ system_prompt
     Generate the clarifying question:"""
 
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -5265,7 +5265,7 @@ system_prompt
                 return False
 
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -5481,7 +5481,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
         """Use DeepSeek to detect if customer is asking about products/services/pricing."""
         try:
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -5625,7 +5625,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
             try:
                 # Detect language
                 lang_response = deepseek_client.chat.completions.create(
-                    model="deepseek-chat",
+                    model=settings.DEEPSEEK_MODEL,
                     messages=[
                         {
                             "role": "system",
@@ -6130,7 +6130,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
 
         try:
             lang_response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -6178,7 +6178,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
         # Detect language
         try:
             lang_response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -6634,7 +6634,7 @@ I understand this is time-sensitive!"""
     """
     
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -6733,7 +6733,7 @@ I understand this is time-sensitive!"""
     No other text."""
 
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -6972,7 +6972,7 @@ I understand this is time-sensitive!"""
             """
             
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON with no formatting or explanations. NEVER extract plan_status unless actively asking about it RIGHT NOW."},
                     {"role": "user", "content": extraction_prompt}
@@ -7778,7 +7778,7 @@ I understand this is time-sensitive!"""
             """
             
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a precise detection assistant. Follow instructions exactly and respond with only YES, NO, or MAYBE."},
                     {"role": "user", "content": detection_prompt}
@@ -7962,7 +7962,7 @@ I understand this is time-sensitive!"""
     Generate the response now:"""
     
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": f"Customer message: '{incoming_message}'"}
@@ -8250,7 +8250,7 @@ I understand this is time-sensitive!"""
             
             # Call AI to extract the data
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a precise data extraction assistant."},
                     {"role": "user", "content": extraction_prompt}
@@ -8694,7 +8694,7 @@ I understand this is time-sensitive!"""
             """
             
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a precise detection assistant. Follow instructions exactly and respond with only YES, NO, or MAYBE."},
                     {"role": "user", "content": detection_prompt}
@@ -8805,7 +8805,7 @@ I understand this is time-sensitive!"""
     EXTRACTED DATETIME:"""
 
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",
@@ -8873,7 +8873,7 @@ I understand this is time-sensitive!"""
             Generate the response:"""
             
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a professional appointment assistant. Be helpful and concise."},
                     {"role": "user", "content": unavailable_response_prompt}
@@ -8924,7 +8924,7 @@ I understand this is time-sensitive!"""
             Generate the response:"""
             
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a professional appointment assistant. Be clear and helpful."},
                     {"role": "user", "content": clarification_prompt}
@@ -8990,7 +8990,7 @@ I understand this is time-sensitive!"""
             Generate the confirmation:"""
             
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a professional appointment assistant. Be reassuring and clear."},
                     {"role": "user", "content": confirmation_prompt}
@@ -9262,7 +9262,7 @@ I understand this is time-sensitive!"""
     {{"classification": "GENUINE_QUESTION" or "BOOKING_ANSWER", "confidence": "HIGH" or "LOW"}}"""
 
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {"role": "system", "content": "Return ONLY valid JSON. No markdown."},
                     {"role": "user", "content": prompt},
@@ -9364,7 +9364,7 @@ I understand this is time-sensitive!"""
     - Zimbabwean English. No bold, no bullets. Do NOT end with a question."""
 
             response = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",

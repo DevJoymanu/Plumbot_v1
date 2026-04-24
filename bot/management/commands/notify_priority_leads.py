@@ -7,6 +7,7 @@ import pytz
 from django.core.management.base import BaseCommand
 from django.db.models import Case, IntegerField, Q, Value, When
 from django.db.models.functions import Coalesce
+from django.conf import settings
 from django.utils import timezone
 from openai import OpenAI
 
@@ -245,7 +246,7 @@ class Command(BaseCommand):
         try:
             client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
             response = client.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",

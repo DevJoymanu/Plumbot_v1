@@ -20,6 +20,7 @@ import os
 import json
 import logging
 from typing import Optional
+from django.conf import settings
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -129,7 +130,7 @@ Intent:"""
 
     try:
         response = _deepseek.chat.completions.create(
-            model='deepseek-chat',
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     'role': 'system',
@@ -309,7 +310,7 @@ Return ONLY valid JSON:
 
     try:
         response = _deepseek.chat.completions.create(
-            model='deepseek-chat',
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     'role': 'system',
@@ -424,7 +425,7 @@ Write the message now:"""
 
     try:
         response = _deepseek.chat.completions.create(
-            model='deepseek-chat',
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     'role': 'system',

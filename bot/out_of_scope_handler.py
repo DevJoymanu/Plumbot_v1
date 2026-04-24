@@ -39,6 +39,7 @@ from urllib.parse import quote, unquote
 
 import pytz
 
+from django.conf import settings
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -315,7 +316,7 @@ JSON FORMAT:
 
     try:
         response = _deepseek.chat.completions.create(
-            model="deepseek-chat",
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     "role": "system",
@@ -483,7 +484,7 @@ Only the question text. No quotes, no labels."""
 
     try:
         response = _deepseek.chat.completions.create(
-            model="deepseek-chat",
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     "role": "system",
@@ -702,7 +703,7 @@ def _compute_followup_date(timeframe_message: str):
     if _deepseek:
         try:
             response = _deepseek.chat.completions.create(
-                model="deepseek-chat",
+                model=settings.DEEPSEEK_MODEL,
                 messages=[
                     {
                         "role": "system",

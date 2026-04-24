@@ -23,6 +23,7 @@ from .plumber_notifications import send_plumber_notification_email
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.conf import settings
 from django.db import IntegrityError
 import threading
 import time
@@ -109,7 +110,7 @@ RESPONSE JSON FORMAT:
 """
 
         response = _deepseek.chat.completions.create(
-            model="deepseek-chat",
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     "role": "system",
@@ -512,7 +513,7 @@ def is_previous_work_photo_request(message: str) -> bool:
         )
 
         response = deepseek_client.chat.completions.create(
-            model="deepseek-chat",
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     "role": "system",
@@ -1654,7 +1655,7 @@ def generate_conversation_summary(appointment) -> str:
         )
 
         response = deepseek_client.chat.completions.create(
-            model="deepseek-chat",
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     "role": "system",

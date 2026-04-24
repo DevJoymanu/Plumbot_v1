@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import logging
 import re
+from django.conf import settings
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -245,7 +246,7 @@ INSTRUCTIONS:
 
     try:
         response = _deepseek.chat.completions.create(
-            model='deepseek-chat',
+            model=settings.DEEPSEEK_MODEL,
             messages=[
                 {
                     'role': 'system',

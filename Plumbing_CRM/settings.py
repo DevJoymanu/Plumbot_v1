@@ -115,13 +115,14 @@ GOOGLE_CALENDAR_ID = os.environ.get('GOOGLE_CALENDAR_ID', 'joymanu49@gmail.com')
 PLUMBER_WHATSAPP_NUMBER = os.environ.get('PLUMBER_WHATSAPP_NUMBER', 'whatsapp:+27610318200')
 PLUMBER_NOTIFICATION_EMAILS = [
     'jones86xi@gmail.com',
-    'info@homebaseplumbers.co.zw',
+    'homebsconstruction@gmail.com',
 ]
 
 SITE_URL = os.environ.get('SITE_URL', '').rstrip('/')
 
 # DeepSeek API (replacing OpenAI)
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
+DEEPSEEK_MODEL = 'deepseek-v4-flash'
 
 # Twilio Configuration
 ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
