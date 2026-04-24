@@ -36,7 +36,14 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db.models import Q
 
-from bot.plumber_notifications import send_plumber_notification_email
+from django.conf import settings
+from django.urls import reverse
+
+from bot.plumber_notifications import (
+    get_plumber_notification_emails,
+    send_email_to_recipients,
+    send_plumber_notification_email,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -320,6 +327,138 @@ def _msg_plumber_2hours(apt, plumber_name: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# EMAIL HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SAST       = pytz.timezone("Africa/Johannesburg")
+_SEP        = "────────────────────────"
+_SITE_URL   = getattr(settings, "SITE_URL", "").rstrip("/")
+_WIN_EMAIL  = 8   # ±8 min tolerance for email scheduled-send windows
+
+_DAYS_LONG   = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+_DAYS_SHORT  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+_MONTHS      = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+
+def _to_sast(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return _SAST.localize(dt)
+    return dt.astimezone(_SAST)
+
+
+def _email_in_window(now_local, hour, minute=0):
+    target = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return abs((now_local - target).total_seconds()) <= _WIN_EMAIL * 60
+
+
+def _is_2hr_email_window(apt, now_utc):
+    dt = _to_sast(apt.scheduled_datetime)
+    if not dt:
+        return False
+    diff = (dt - now_utc).total_seconds()
+    return (1 * 3600 + 55 * 60) <= diff <= (2 * 3600 + 5 * 60)
+
+
+def _is_30min_window(apt, now_utc):
+    dt = _to_sast(apt.scheduled_datetime)
+    if not dt:
+        return False
+    diff = (dt - now_utc).total_seconds()
+    return 25 * 60 <= diff <= 35 * 60
+
+
+def _email_fmt_time(apt):
+    dt = _to_sast(apt.scheduled_datetime)
+    return dt.strftime("%H:%M") if dt else "?"
+
+
+def _email_fmt_date(apt):
+    dt = _to_sast(apt.scheduled_datetime)
+    if not dt:
+        return "?"
+    d = dt.date()
+    return f"{_DAYS_LONG[d.weekday()]}, {d.day} {_MONTHS[d.month - 1]} {d.year}"
+
+
+def _email_fmt_date_short(d):
+    return f"{_DAYS_SHORT[d.weekday()]}, {d.day} {_MONTHS[d.month - 1]} {d.year}"
+
+
+def _clean_phone(apt):
+    return "".join(c for c in (apt.phone_number or "") if c.isdigit())
+
+
+def _apt_deep_link(apt):
+    try:
+        path = reverse("appointment_detail", kwargs={"pk": apt.pk})
+        return f"{_SITE_URL}{path}" if _SITE_URL else f"/appointments/{apt.pk}/"
+    except Exception:
+        return f"/appointments/{apt.pk}/"
+
+
+def _email_recipients(apt):
+    plumber = getattr(apt, "assigned_plumber", None)
+    if plumber and getattr(plumber, "email", ""):
+        return [plumber.email]
+    return get_plumber_notification_emails()
+
+
+def _email_plumber_key(apt):
+    plumber = getattr(apt, "assigned_plumber", None)
+    return str(plumber.pk) if plumber else "global"
+
+
+def _email_group_by_plumber(apts):
+    groups = defaultdict(list)
+    for a in apts:
+        groups[_email_plumber_key(a)].append(a)
+    return dict(groups)
+
+
+def _eflag_set(apt, key):
+    return f"[{key}]" in (apt.internal_notes or "")
+
+
+def _eflag_mark(apt, key):
+    existing = apt.internal_notes or ""
+    token = f"[{key}]"
+    if token not in existing:
+        apt.internal_notes = f"{existing}\n{token}".strip()
+        apt.save(update_fields=["internal_notes"])
+
+
+def _email_apt_block(apt):
+    clean = _clean_phone(apt)
+    return (
+        f"{_SEP}\n"
+        f"📅 {_email_fmt_date(apt)} at {_email_fmt_time(apt)}\n"
+        f"🔧 Service:   {_service(apt)}\n"
+        f"📍 Area:      {_area(apt)}\n"
+        f"📞 Call:      tel:+{clean}\n"
+        f"💬 WhatsApp:  https://wa.me/{clean}\n"
+        f"🔗 View:      {_apt_deep_link(apt)}\n"
+        f"{_SEP}"
+    )
+
+
+def _email_blocks(apts):
+    return "\n\n".join(_email_apt_block(a) for a in apts)
+
+
+def _n_bookings(n):
+    return f"{n} Booking{'s' if n != 1 else ''}"
+
+
+def _send_email(recipients, subject, body, dry_run):
+    if dry_run:
+        logger.info("DRY RUN email '%s' → %s", subject, recipients)
+        return True
+    return send_email_to_recipients(recipients, subject, body)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MANAGEMENT COMMAND
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -480,12 +619,7 @@ class Command(BaseCommand):
                     else:
                         msg = _msg_plumber_next_day(tomorrow_apts, PLUMBER_NAME)
                         ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
-                        email_ok = send_plumber_notification_email(
-                            subject=f"Tomorrow's plumber appointments for {tomorrow.isoformat()}",
-                            message=msg,
-                            dry_run=dry_run,
-                        )
-                        if ok or email_ok:
+                        if ok:
                             if not dry_run:
                                 _mark_sent_plumber(marker, rtype)
                             plumber_sent += 1
@@ -510,12 +644,7 @@ class Command(BaseCommand):
                     else:
                         msg = _msg_plumber_morning(today_apts, PLUMBER_NAME)
                         ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
-                        email_ok = send_plumber_notification_email(
-                            subject=f"Today's plumber schedule for {today.isoformat()}",
-                            message=msg,
-                            dry_run=dry_run,
-                        )
-                        if ok or email_ok:
+                        if ok:
                             if not dry_run:
                                 _mark_sent_plumber(marker, rtype)
                             plumber_sent += 1
@@ -542,12 +671,7 @@ class Command(BaseCommand):
                     else:
                         msg = _msg_plumber_2hours(apt, PLUMBER_NAME)
                         ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
-                        email_ok = send_plumber_notification_email(
-                            subject=f"2-hour plumber alert for {name}",
-                            message=msg,
-                            dry_run=dry_run,
-                        )
-                        if ok or email_ok:
+                        if ok:
                             if not dry_run:
                                 _mark_sent_plumber(apt, rtype)
                             plumber_sent += 1
@@ -558,14 +682,218 @@ class Command(BaseCommand):
                             self.stdout.write(self.style.ERROR(f"    FAIL  2-Hour Alert → {name}"))
 
         # ─────────────────────────────────────────────────────────────────────
+        # PLUMBER EMAIL REMINDERS  (all 5 email types)
+        # ─────────────────────────────────────────────────────────────────────
+        self.stdout.write(f"\n  {'─' * 56}")
+        self.stdout.write("  PLUMBER EMAIL REMINDERS\n")
+
+        email_sent = email_skipped = email_failed = 0
+
+        # Appointments from today onward, non-cancelled, with scheduled time
+        email_apts = list(
+            Appointment.objects.filter(
+                scheduled_datetime__isnull=False,
+                scheduled_datetime__date__gte=today,
+            ).exclude(
+                status__in=["cancelled", "completed", "no_show"]
+            ).select_related("assigned_plumber")
+            .order_by("scheduled_datetime")
+        )
+
+        week_start = today - timedelta(days=today.weekday())   # Monday
+        week_end   = week_start + timedelta(days=6)
+
+        # ── Email 1: Weekly Summary — Monday 07:00 SAST ──────────────────────
+        if now_local.weekday() == 0 and _email_in_window(now_local, 7, 0):
+            week_apts = [
+                a for a in email_apts
+                if week_start <= (_to_sast(a.scheduled_datetime) or now_local).date() <= week_end
+            ]
+            if not week_apts:
+                self.stdout.write("    INFO  Email 1 (Weekly): no appointments this week")
+            else:
+                for pkey, grp in _email_group_by_plumber(week_apts).items():
+                    marker = grp[0]
+                    flag   = f"email_weekly_{week_start.isoformat()}_{pkey}"
+                    if _eflag_set(marker, flag):
+                        email_skipped += 1
+                        self.stdout.write(f"    SKIP  Email 1 Weekly [{pkey}] already sent")
+                        continue
+                    week_label = _email_fmt_date_short(week_start)
+                    subject = (
+                        f"Your Appointments for the Week of {week_label}"
+                        f" — {_n_bookings(len(grp))}"
+                    )
+                    body = (
+                        f"You have {len(grp)} appointment{'s' if len(grp) != 1 else ''} this week.\n\n"
+                        f"{_email_blocks(grp)}"
+                    )
+                    ok = _send_email(_email_recipients(grp[0]), subject, body, dry_run)
+                    if ok:
+                        if not dry_run:
+                            _eflag_mark(marker, flag)
+                        email_sent += 1
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f"    SENT  Email 1 Weekly [{pkey}] {len(grp)} apt(s)"
+                            )
+                        )
+                    else:
+                        email_failed += 1
+                        self.stdout.write(self.style.ERROR(f"    FAIL  Email 1 Weekly [{pkey}]"))
+
+        # ── Email 2: Next-Day Preview — Daily 20:00 SAST ─────────────────────
+        if _email_in_window(now_local, 20, 0):
+            nextday_apts = [
+                a for a in email_apts
+                if (_to_sast(a.scheduled_datetime) or now_local).date() == tomorrow
+            ]
+            if not nextday_apts:
+                self.stdout.write("    INFO  Email 2 (Next-Day): no appointments tomorrow")
+            else:
+                for pkey, grp in _email_group_by_plumber(nextday_apts).items():
+                    marker = grp[0]
+                    flag   = f"email_nextday_{tomorrow.isoformat()}_{pkey}"
+                    if _eflag_set(marker, flag):
+                        email_skipped += 1
+                        self.stdout.write(f"    SKIP  Email 2 Next-Day [{pkey}] already sent")
+                        continue
+                    day_label = _email_fmt_date_short(tomorrow)
+                    subject = f"Tomorrow's Appointments — {_n_bookings(len(grp))} on {day_label}"
+                    body = (
+                        f"You have {len(grp)} appointment{'s' if len(grp) != 1 else ''} tomorrow.\n\n"
+                        f"{_email_blocks(grp)}"
+                    )
+                    ok = _send_email(_email_recipients(grp[0]), subject, body, dry_run)
+                    if ok:
+                        if not dry_run:
+                            _eflag_mark(marker, flag)
+                        email_sent += 1
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f"    SENT  Email 2 Next-Day [{pkey}] {len(grp)} apt(s)"
+                            )
+                        )
+                    else:
+                        email_failed += 1
+                        self.stdout.write(self.style.ERROR(f"    FAIL  Email 2 Next-Day [{pkey}]"))
+
+        # ── Email 3: Morning Of — Daily 06:30 SAST ───────────────────────────
+        if _email_in_window(now_local, 6, 30):
+            today_apts = [
+                a for a in email_apts
+                if (_to_sast(a.scheduled_datetime) or now_local).date() == today
+            ]
+            if not today_apts:
+                self.stdout.write("    INFO  Email 3 (Morning): no appointments today")
+            else:
+                for pkey, grp in _email_group_by_plumber(today_apts).items():
+                    marker = grp[0]
+                    flag   = f"email_morning_{today.isoformat()}_{pkey}"
+                    if _eflag_set(marker, flag):
+                        email_skipped += 1
+                        self.stdout.write(f"    SKIP  Email 3 Morning [{pkey}] already sent")
+                        continue
+                    day_label = _email_fmt_date_short(today)
+                    subject = (
+                        f"Today's Appointments — {_n_bookings(len(grp))} for Today, {day_label}"
+                    )
+                    body = (
+                        f"Good morning! Here are your {len(grp)} appointment"
+                        f"{'s' if len(grp) != 1 else ''} for today.\n\n"
+                        f"{_email_blocks(grp)}"
+                    )
+                    ok = _send_email(_email_recipients(grp[0]), subject, body, dry_run)
+                    if ok:
+                        if not dry_run:
+                            _eflag_mark(marker, flag)
+                        email_sent += 1
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f"    SENT  Email 3 Morning [{pkey}] {len(grp)} apt(s)"
+                            )
+                        )
+                    else:
+                        email_failed += 1
+                        self.stdout.write(self.style.ERROR(f"    FAIL  Email 3 Morning [{pkey}]"))
+
+        # ── Emails 4 & 5: Per-appointment rolling reminders ──────────────────
+        for apt in email_apts:
+            dt_sast = _to_sast(apt.scheduled_datetime)
+            if not dt_sast:
+                continue
+            apt_label = f"apt#{apt.pk} {_service(apt)} @ {_email_fmt_date(apt)} {_email_fmt_time(apt)}"
+
+            # Email 4 — 2-hour reminder
+            if _is_2hr_email_window(apt, now_utc):
+                mins_away = (dt_sast - now_utc).total_seconds() / 60
+                if mins_away < 30:
+                    self.stdout.write(f"    SKIP  Email 4 (2hr) {apt_label}: <30 min away")
+                else:
+                    flag = f"email_2hr_{apt.pk}"
+                    if _eflag_set(apt, flag):
+                        email_skipped += 1
+                        self.stdout.write(f"    SKIP  Email 4 (2hr) {apt_label}: already sent")
+                    else:
+                        subject = (
+                            f"Reminder: {_service(apt)} in {_area(apt)}"
+                            f" at {_email_fmt_time(apt)} — in 2 hours"
+                        )
+                        body = f"Your next appointment is in 2 hours.\n\n{_email_apt_block(apt)}"
+                        ok = _send_email(_email_recipients(apt), subject, body, dry_run)
+                        if ok:
+                            if not dry_run:
+                                _eflag_mark(apt, flag)
+                            email_sent += 1
+                            self.stdout.write(
+                                self.style.SUCCESS(f"    SENT  Email 4 (2hr)  {apt_label}")
+                            )
+                        else:
+                            email_failed += 1
+                            self.stdout.write(self.style.ERROR(f"    FAIL  Email 4 (2hr)  {apt_label}"))
+
+            # Email 5 — 30-minute reminder
+            if _is_30min_window(apt, now_utc):
+                flag = f"email_30min_{apt.pk}"
+                if _eflag_set(apt, flag):
+                    email_skipped += 1
+                    self.stdout.write(f"    SKIP  Email 5 (30m) {apt_label}: already sent")
+                else:
+                    subject = (
+                        f"Reminder: {_service(apt)} in {_area(apt)}"
+                        f" at {_email_fmt_time(apt)} — in 30 minutes"
+                    )
+                    body = (
+                        f"Your appointment is in 30 minutes — time to head out!\n\n"
+                        f"{_email_apt_block(apt)}"
+                    )
+                    ok = _send_email(_email_recipients(apt), subject, body, dry_run)
+                    if ok:
+                        if not dry_run:
+                            _eflag_mark(apt, flag)
+                        email_sent += 1
+                        self.stdout.write(
+                            self.style.SUCCESS(f"    SENT  Email 5 (30m)  {apt_label}")
+                        )
+                    else:
+                        email_failed += 1
+                        self.stdout.write(self.style.ERROR(f"    FAIL  Email 5 (30m)  {apt_label}"))
+
+        self.stdout.write(
+            f"\n    Email summary → sent={email_sent}  "
+            f"skipped={email_skipped}  failed={email_failed}"
+        )
+
+        # ─────────────────────────────────────────────────────────────────────
         # FINAL SUMMARY
         # ─────────────────────────────────────────────────────────────────────
-        total_sent = customer_sent + plumber_sent
+        total_sent = customer_sent + plumber_sent + email_sent
         self.stdout.write(
             f"\n{'=' * 60}\n"
-            f"  DONE  |  customer_sent={customer_sent}  "
-            f"plumber_sent={plumber_sent}  "
+            f"  DONE  |  customer_wa={customer_sent}  "
+            f"plumber_wa={plumber_sent}  "
+            f"emails={email_sent}  "
             f"total={total_sent}\n"
-            f"  Next run in ~15 minutes\n"
+            f"  Next run in ~5 minutes\n"
             f"{'=' * 60}\n"
         )

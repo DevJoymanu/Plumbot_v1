@@ -118,6 +118,8 @@ PLUMBER_NOTIFICATION_EMAILS = [
     'info@homebaseplumbers.co.zw',
 ]
 
+SITE_URL = os.environ.get('SITE_URL', '').rstrip('/')
+
 # DeepSeek API (replacing OpenAI)
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 

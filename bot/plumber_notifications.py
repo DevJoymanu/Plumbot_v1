@@ -21,6 +21,38 @@ def get_plumber_notification_emails():
     return [email for email in recipients if email]
 
 
+def send_email_to_recipients(recipients, subject, message, *, dry_run=False):
+    """Send email to an explicit list of recipients (used for per-plumber routing)."""
+    if not recipients:
+        logger.warning("send_email_to_recipients: no recipients for '%s'.", subject)
+        return False
+
+    if dry_run:
+        logger.info(
+            "Dry run: would send '%s' to %s", subject, ", ".join(recipients)
+        )
+        return True
+
+    sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
+    if sendgrid_api_key:
+        return _send_via_sendgrid(sendgrid_api_key, recipients, subject, message)
+
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            recipient_list=recipients,
+            fail_silently=False,
+        )
+        return True
+    except Exception:
+        logger.exception(
+            "Failed to send email '%s' to %s", subject, ", ".join(recipients)
+        )
+        return False
+
+
 def send_plumber_notification_email(subject, message, *, dry_run=False):
     recipients = get_plumber_notification_emails()
     if not recipients:
