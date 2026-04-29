@@ -378,6 +378,9 @@ def delayed_response(sender, reply, delay_seconds, message_id=None):
                 whatsapp_api.mark_message_as_read(message_id)
             except Exception as e:
                 print(f"⚠️ Could not mark as read before reply: {e}")
+        if not reply or not reply.strip():
+            print(f"⚠️ Skipping empty reply to {sender} — no message to send")
+            return
         whatsapp_api.send_text_message(sender, reply)
         preview = reply.replace('\n', ' ')[:120]
         print(f"🤖 Bot → +{sender}: {preview}{'…' if len(reply) > 120 else ''}")

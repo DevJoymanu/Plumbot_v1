@@ -4597,13 +4597,22 @@ Reply with ONLY a JSON object:
                         incoming_message, next_question, updated_fields
                     )
 
+            # Guard: never return None or empty — send a safe fallback instead
+            if not reply or not str(reply).strip():
+                reply = (
+                    "Sorry, I didn't quite catch that. Could you tell me more about "
+                    "what plumbing work you need? 😊"
+                )
+
             self.appointment.add_conversation_message("user", incoming_message)
             self.appointment.add_conversation_message("assistant", reply)
             return reply
 
         except Exception as e:
             print(f"❌ API Error: {str(e)}")
-            return " "
+            return (
+                "Sorry, I'm having a moment — could you resend your message? 😊"
+            )
 
 
     def generate_contextual_response(self, incoming_message, next_question, updated_fields):
@@ -6862,7 +6871,7 @@ I understand this is time-sensitive!"""
                     {"role": "user", "content": extraction_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=200
+                max_tokens=500
             )
     
             ai_response = response.choices[0].message.content.strip()
@@ -7194,7 +7203,7 @@ I understand this is time-sensitive!"""
                     {"role": "user", "content": extraction_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=200
+                max_tokens=500
             )
             
             ai_response = response.choices[0].message.content.strip()
