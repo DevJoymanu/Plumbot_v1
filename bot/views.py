@@ -3547,6 +3547,38 @@ class Plumbot:
                  'prefer not', 'rather not', 'whatsapp', 'here', 'na'}
         return any(s in msg for s in skips) and '@' not in msg
 
+    @staticmethod
+    def _is_excluded_city(area_text: str):
+        """
+        Return the canonical city name if the area is outside our service zone,
+        or None if it's a valid Harare area.
+
+        Handles edge cases:
+        - "Bulawayo Road"  → None  (street in Harare — continue booking)
+        - "Bulawayo"       → "Bulawayo" (the city — dismiss)
+        - "Gweru"          → "Gweru"
+        - "Harare Mutare Road" → None (Harare mentioned — continue)
+        """
+        _EXCLUDED = {'gweru', 'bulawayo', 'mutare', 'masvingo'}
+        _STREET_WORDS = {
+            'road', 'rd', 'avenue', 'ave', 'crescent', 'drive', 'dr',
+            'street', 'st', 'close', 'lane', 'way', 'park', 'gardens',
+            'heights', 'view', 'court', 'ct', 'place', 'grove', 'row',
+            'terrace', 'boulevard', 'blvd', 'circle', 'extension', 'ext',
+        }
+        words = set(area_text.lower().split())
+        # Explicit Harare mention → always valid
+        if 'harare' in words:
+            return None
+        # Street/road suffix alongside city name → it's a Harare address
+        has_street = bool(words & _STREET_WORDS)
+        for city in _EXCLUDED:
+            if city in words:
+                if has_street:
+                    return None
+                return city.capitalize()
+        return None
+
     def _confirm_or_request_email(self):
         """
         Called when a customer name has just been captured on a confirmed booking.
@@ -4355,6 +4387,7 @@ Reply with ONLY a JSON object:
                     'vanity', 'bathtub_installation', 'toilet', 'chamber',
                     'facebook_package', 'location_ask', 'location_visit',
                     'previous_quotation', 'pictures', 'combined_pricing',
+                    'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
                 }
                 NON_PRICING_AUTO_REPLY_INTENTS = {
                     'location_ask', 'location_visit', 'previous_quotation', 'pictures',
@@ -4453,6 +4486,21 @@ Reply with ONLY a JSON object:
                 extracted_data,
                 incoming_message=incoming_message,
             )
+
+            # ── EXCLUDED AREA ─────────────────────────────────────────────────────
+            if 'excluded_area' in updated_fields:
+                import re as _re
+                _m    = _re.search(r'\[EXCLUDED_AREA:([^\]]+)\]',
+                                   self.appointment.internal_notes or '')
+                _city = _m.group(1) if _m else 'that area'
+                reply = (
+                    f"Thank you for reaching out! 😊 Unfortunately we currently only "
+                    f"service the *Harare* area and don't cover *{_city}* at the moment.\n\n"
+                    "If you ever have any plumbing work in Harare, we'd love to help! 🔧"
+                )
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
 
             # If name was just captured on a confirmed appointment → ask for email
             # (or send confirmation directly if email already on file)
@@ -5600,6 +5648,14 @@ When you're finished sending everything, just type "done" or "finished" and I'll
     - location_visit: customer wants to physically come IN PERSON to our office or showroom
     - previous_quotation: saying we sent them a quotation before
     - pictures: asking to see product pictures (not previous work photos)
+    - drain_unblocking: blocked drain, clogged drain, drain not flowing,
+      unblock drain, drainage problem, sewer blocked, sewage backup, blocked pipe
+    - pipe_repair: leaking pipe, burst pipe, pipe leak, broken pipe, water leak,
+      pipe burst, fix pipe, pipe replacement, leaking tap, dripping tap
+    - geyser_repair: geyser not working, geyser broken, fix geyser, geyser leaking,
+      no hot water, geyser problem, water heater broken, geyser tripping
+    - toilet_repair: toilet not flushing, toilet leaking, broken toilet, fix toilet,
+      cistern not filling, toilet running, toilet broken, toilet problem
     - combined_pricing: asking for total/combined cost, a full quotation, or general pricing,
       e.g. "how much for all", "how much zvese zvakadai", "zvese izvi zvinodhura marii",
       "total for everything", "all together how much", "what's the total",
@@ -5861,6 +5917,76 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ],
                         "sn_total_line": "Zvingangoita US$600+ pa full bathroom package, zvichienderana nezvinhu zvamunosarudza.",
                         "sn_cheapest_line": "Cheapest option i basic package inotangira paUS$600 zvinhu zvekuwedzera zvisati zvaiswa.",
+                    },
+                    "drain_unblocking": {
+                        "breakdown_lines": [
+                            "Simple blockage (sink, basin, shower): Labour from US$20",
+                            "Severe blockage (main drain, sewer line): Labour from US$50",
+                            "High-pressure jetting (stubborn blockages): from US$80",
+                        ],
+                        "total_line": "Most drain unblocking jobs start from US$20 for labour — the exact cost depends on how severe and where the blockage is.",
+                        "cheapest_line": "A basic sink or basin unblocking starts from US$20 labour.",
+                        "sn_breakdown_lines": [
+                            "Simple blockage (sink, basin, shower): Labour kubva US$20",
+                            "Severe blockage (main drain, sewer line): Labour kubva US$50",
+                            "High-pressure jetting: kubva US$80",
+                        ],
+                        "sn_total_line": "Zvingangoita US$20 kubva pa labour — zvichienderana nekubinya uye nzvimbo yekubikira.",
+                        "sn_cheapest_line": "Basic sink kana basin unblocking inotangira paUS$20 labour.",
+                    },
+                    "pipe_repair": {
+                        "breakdown_lines": [
+                            "Minor leak repair (joint, fitting): Labour from US$20",
+                            "Burst pipe repair: Labour from US$40",
+                            "Pipe section replacement: Labour from US$50",
+                            "Leaking tap washer/cartridge replacement: from US$15",
+                        ],
+                        "total_line": "Pipe repairs start from US$15–$20 for minor leaks — cost depends on the pipe size, location, and how accessible it is.",
+                        "cheapest_line": "A leaking tap repair starts from US$15 labour.",
+                        "sn_breakdown_lines": [
+                            "Minor leak repair (joint, fitting): Labour kubva US$20",
+                            "Burst pipe repair: Labour kubva US$40",
+                            "Pipe section replacement: Labour kubva US$50",
+                            "Leaking tap: kubva US$15",
+                        ],
+                        "sn_total_line": "Pipe repairs dzinotangira paUS$15–$20 pa minor leaks — zvichienderana ne pipe size, nzvimbo uye kuti inofashikira here.",
+                        "sn_cheapest_line": "Leaking tap repair inotangira paUS$15 labour.",
+                    },
+                    "geyser_repair": {
+                        "breakdown_lines": [
+                            "Thermostat replacement: from US$30 labour + parts",
+                            "Element replacement: from US$40 labour + parts",
+                            "Pressure valve replacement: from US$25 labour + parts",
+                            "Full geyser replacement: from US$350 (supply + install)",
+                        ],
+                        "total_line": "Geyser repairs start from US$25–$40 for labour + parts depending on what needs fixing. If the geyser needs replacing, full supply and install starts from US$350.",
+                        "cheapest_line": "Minor repairs like a valve or thermostat start from US$25–$30.",
+                        "sn_breakdown_lines": [
+                            "Thermostat replacement: kubva US$30 labour + zvikamu",
+                            "Element replacement: kubva US$40 labour + zvikamu",
+                            "Pressure valve replacement: kubva US$25 labour + zvikamu",
+                            "Full geyser replacement: kubva US$350 (supply + install)",
+                        ],
+                        "sn_total_line": "Geyser repairs dzinotangira paUS$25–$40 pa labour + zvikamu zvichienderana nezvinoda kugadzirwa.",
+                        "sn_cheapest_line": "Minor repairs dzinotangira paUS$25–$30.",
+                    },
+                    "toilet_repair": {
+                        "breakdown_lines": [
+                            "Cistern repair (filling valve, flush valve): from US$20 labour + parts",
+                            "Toilet seat replacement: Supply from US$20, fit from US$10",
+                            "Leaking toilet base: Labour from US$25",
+                            "Full toilet replacement: Supply from US$60, install from US$40",
+                        ],
+                        "total_line": "Toilet repairs start from US$20 for labour + parts. A full replacement (supply and fit) starts from US$100.",
+                        "cheapest_line": "A cistern repair starts from US$20 labour + parts.",
+                        "sn_breakdown_lines": [
+                            "Cistern repair: kubva US$20 labour + zvikamu",
+                            "Toilet seat replacement: Supply kubva US$20, fit kubva US$10",
+                            "Leaking toilet base: Labour kubva US$25",
+                            "Full toilet replacement: Supply kubva US$60, install kubva US$40",
+                        ],
+                        "sn_total_line": "Toilet repairs dzinotangira paUS$20 pa labour + zvikamu.",
+                        "sn_cheapest_line": "Cistern repair inotangira paUS$20 labour + zvikamu.",
                     },
                 }
                 # combined_pricing always delegates to generate_pricing_overview
@@ -6666,11 +6792,20 @@ I understand this is time-sensitive!"""
     EXTRACTION TARGETS:
     
     SERVICE TYPE — Look for any mention of the type of plumbing work needed.
-    Return: "bathroom_renovation", "kitchen_renovation",
-            "bathroom_and_kitchen_renovation", or "new_plumbing_installation"
+    Return ONE of: "bathroom_renovation", "kitchen_renovation",
+            "bathroom_and_kitchen_renovation", "new_plumbing_installation",
+            "drain_unblocking", "pipe_repair", "geyser_repair", "toilet_repair"
     - Return "bathroom_and_kitchen_renovation" when the customer indicates they want
       BOTH bathroom AND kitchen (e.g. "both", "both renovations", "kitchen and bathroom",
       "bathroom and kitchen", "both rooms").
+    - Return "drain_unblocking" for: blocked drain, blocked pipe, drain blocked,
+      unblock drain, clogged drain, drainage problem, sewer blocked, sewage blockage.
+    - Return "pipe_repair" for: leaking pipe, burst pipe, pipe leak, broken pipe,
+      water leak, pipe burst, fix pipe, pipe replacement, leaking tap.
+    - Return "geyser_repair" for: geyser not working, geyser broken, fix geyser,
+      geyser leaking, no hot water, geyser problem, water heater not working.
+    - Return "toilet_repair" for: toilet not flushing, toilet leaking, broken toilet,
+      toilet repair, fix toilet, cistern not filling, toilet running.
     
     PROJECT DESCRIPTION — Look for specific details of what the customer wants done,
     including renovation state clues like "already tiled", "new build", "existing bathroom",
@@ -7201,7 +7336,9 @@ I understand this is time-sensitive!"""
             # ── Service type ──────────────────────────────────────────────────────
             _VALID_SERVICE_TYPES = {
                 'bathroom_renovation', 'kitchen_renovation',
-                'bathroom_and_kitchen_renovation', 'new_plumbing_installation', 'other',
+                'bathroom_and_kitchen_renovation', 'new_plumbing_installation',
+                'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
+                'other',
             }
             if (extracted_data.get('service_type') and
                     extracted_data.get('service_type') != 'null' and
@@ -7224,6 +7361,10 @@ I understand this is time-sensitive!"""
                 'new plumbing installation', 'plumbing installation',
                 'bathroom_renovation', 'kitchen_renovation',
                 'bathroom_and_kitchen_renovation', 'new_plumbing_installation',
+                'drain unblocking', 'blocked drain', 'drain_unblocking',
+                'pipe repair', 'pipe_repair', 'leaking pipe', 'burst pipe',
+                'geyser repair', 'geyser_repair', 'fix geyser',
+                'toilet repair', 'toilet_repair', 'fix toilet',
             }
             _extracted_desc = (extracted_data.get('project_description') or '').strip()
             if (
@@ -7252,9 +7393,21 @@ I understand this is time-sensitive!"""
             if (extracted_data.get('area') and
                     extracted_data.get('area') != 'null' and
                     not self.appointment.customer_area):
-                self.appointment.customer_area = extracted_data['area']
-                updated_fields.append('area')
-                print(f"✅ Updated area: {self.appointment.customer_area}")
+                _raw_area = extracted_data['area']
+                _excl     = self._is_excluded_city(_raw_area)
+                if _excl:
+                    # Flag as excluded — do NOT save the area
+                    token = f'[EXCLUDED_AREA:{_excl}]'
+                    notes = self.appointment.internal_notes or ''
+                    if token not in notes:
+                        self.appointment.internal_notes = f'{notes}\n{token}'.strip()
+                        self.appointment.save(update_fields=['internal_notes'])
+                    updated_fields.append('excluded_area')
+                    print(f"🚫 Excluded area: {_raw_area} → {_excl}")
+                else:
+                    self.appointment.customer_area = _raw_area
+                    updated_fields.append('area')
+                    print(f"✅ Updated area: {self.appointment.customer_area}")
     
             # ── Availability / DateTime ───────────────────────────────────────────
             if (extracted_data.get('availability') and
@@ -8380,7 +8533,14 @@ I understand this is time-sensitive!"""
                     self.appointment.has_plan = False
                     
             elif question_type == "area" and not self.appointment.customer_area:
-                self.appointment.customer_area = extracted_value
+                _excl = self._is_excluded_city(extracted_value or '')
+                if _excl:
+                    token = f'[EXCLUDED_AREA:{_excl}]'
+                    notes = self.appointment.internal_notes or ''
+                    if token not in notes:
+                        self.appointment.internal_notes = f'{notes}\n{token}'.strip()
+                else:
+                    self.appointment.customer_area = extracted_value
                 
             elif question_type == "timeline" and not self.appointment.timeline:
                 self.appointment.timeline = extracted_value

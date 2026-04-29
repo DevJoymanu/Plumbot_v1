@@ -96,6 +96,10 @@ class Appointment(models.Model):
         ('kitchen_renovation', 'Kitchen Renovation'),
         ('bathroom_and_kitchen_renovation', 'Bathroom & Kitchen Renovation'),
         ('new_plumbing_installation', 'New Plumbing Installation'),
+        ('drain_unblocking', 'Drain Unblocking'),
+        ('pipe_repair', 'Pipe Repair'),
+        ('geyser_repair', 'Geyser Repair'),
+        ('toilet_repair', 'Toilet Repair'),
         ('other', 'Other'),
     ]
     
