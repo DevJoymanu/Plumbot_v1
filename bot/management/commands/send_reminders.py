@@ -43,6 +43,8 @@ from bot.plumber_notifications import (
     send_email_to_recipients,
     send_plumber_notification_email,
 )
+from bot.customer_emails import send_customer_reminder_email
+from bot.whatsapp_window import is_window_open
 
 logger = logging.getLogger(__name__)
 
@@ -541,11 +543,11 @@ class Command(BaseCommand):
 
         customer_sent = customer_skipped = customer_failed = 0
 
-        # (days_away, send_hour, reminder_type, builder, label)
+        # (days_away, send_hour, reminder_type, wa_builder, email_type, label)
         CUSTOMER_CHECKS = [
-            (2, 18, "lead_2days",   _msg_2days,   "2 Days Before  [6 PM]"),
-            (1, 18, "lead_1day",    _msg_1day,    "1 Day Before   [6 PM]"),
-            (0,  7, "lead_morning", _msg_morning, "Morning Of     [7 AM]"),
+            (2, 18, "lead_2days",   _msg_2days,   "two_days", "2 Days Before  [6 PM]"),
+            (1, 18, "lead_1day",    _msg_1day,    "one_day",  "1 Day Before   [6 PM]"),
+            (0,  7, "lead_morning", _msg_morning, "morning",  "Morning Of     [7 AM]"),
         ]
 
         for apt in all_apts:
@@ -553,19 +555,22 @@ class Command(BaseCommand):
             if not apt_u:
                 continue
 
-            apt_local  = apt_u.astimezone(cat)
-            days_away  = (apt_local.date() - today).days
-            phone      = _fmt_phone(apt.phone_number or "")
-            name       = apt.customer_name or "Customer"
-            apt_label  = f"{name} (+{phone})  |  {apt_local.strftime('%Y-%m-%d %H:%M')}"
+            apt_local = apt_u.astimezone(cat)
+            days_away = (apt_local.date() - today).days
+            phone     = _fmt_phone(apt.phone_number or "")
+            name      = apt.customer_name or "Customer"
+            apt_label = f"{name} (+{phone})  |  {apt_local.strftime('%Y-%m-%d %H:%M')}"
+
+            window_open = is_window_open(apt)
+            has_email   = bool(getattr(apt, "customer_email", None))
 
             # Fixed-time reminders
-            for days, hour, rtype, builder, label in CUSTOMER_CHECKS:
+            for days, hour, rtype, builder, email_type, label in CUSTOMER_CHECKS:
                 if days_away == days and _in_window(now_local, hour):
                     if _already_sent_customer(apt, rtype):
                         customer_skipped += 1
                         self.stdout.write(f"    SKIP  {label} → {apt_label}")
-                    else:
+                    elif window_open:
                         msg = builder(apt, plumber_contact.replace("+", ""))
                         ok  = _send_wa(phone, msg, dry_run=dry_run)
                         if ok:
@@ -573,13 +578,28 @@ class Command(BaseCommand):
                                 _mark_sent_customer(apt, rtype)
                             customer_sent += 1
                             self.stdout.write(
-                                self.style.SUCCESS(f"    SENT  {label} → {apt_label}")
+                                self.style.SUCCESS(f"    SENT  {label} [WA] → {apt_label}")
                             )
                         else:
                             customer_failed += 1
+                            self.stdout.write(self.style.ERROR(f"    FAIL  {label} [WA] → {apt_label}"))
+                    elif has_email:
+                        ok = send_customer_reminder_email(apt, email_type) if not dry_run else True
+                        if ok:
+                            if not dry_run:
+                                _mark_sent_customer(apt, rtype)
+                            customer_sent += 1
                             self.stdout.write(
-                                self.style.ERROR(f"    FAIL  {label} → {apt_label}")
+                                self.style.SUCCESS(f"    SENT  {label} [EMAIL] → {apt_label}")
                             )
+                        else:
+                            customer_failed += 1
+                            self.stdout.write(self.style.ERROR(f"    FAIL  {label} [EMAIL] → {apt_label}"))
+                    else:
+                        self.stdout.write(
+                            f"    SKIP  {label} → {apt_label} "
+                            f"[window closed, no email]"
+                        )
 
             # 2-hour reminder
             if _is_2h_window(apt_u, now_utc):
@@ -587,21 +607,29 @@ class Command(BaseCommand):
                 if _already_sent_customer(apt, rtype):
                     customer_skipped += 1
                     self.stdout.write(f"    SKIP  2 Hours Before → {apt_label}")
-                else:
+                elif window_open:
                     msg = _msg_2hours(apt, plumber_contact.replace("+", ""))
                     ok  = _send_wa(phone, msg, dry_run=dry_run)
                     if ok:
                         if not dry_run:
                             _mark_sent_customer(apt, rtype)
                         customer_sent += 1
-                        self.stdout.write(
-                            self.style.SUCCESS(f"    SENT  2 Hours Before → {apt_label}")
-                        )
+                        self.stdout.write(self.style.SUCCESS(f"    SENT  2 Hours Before [WA] → {apt_label}"))
                     else:
                         customer_failed += 1
-                        self.stdout.write(
-                            self.style.ERROR(f"    FAIL  2 Hours Before → {apt_label}")
-                        )
+                        self.stdout.write(self.style.ERROR(f"    FAIL  2 Hours Before [WA] → {apt_label}"))
+                elif has_email:
+                    ok = send_customer_reminder_email(apt, "two_hours") if not dry_run else True
+                    if ok:
+                        if not dry_run:
+                            _mark_sent_customer(apt, rtype)
+                        customer_sent += 1
+                        self.stdout.write(self.style.SUCCESS(f"    SENT  2 Hours Before [EMAIL] → {apt_label}"))
+                    else:
+                        customer_failed += 1
+                        self.stdout.write(self.style.ERROR(f"    FAIL  2 Hours Before [EMAIL] → {apt_label}"))
+                else:
+                    self.stdout.write(f"    SKIP  2 Hours Before → {apt_label} [window closed, no email]")
 
         if customer_sent == 0 and customer_skipped == 0 and customer_failed == 0:
             self.stdout.write("    No customer reminders due at this time.")

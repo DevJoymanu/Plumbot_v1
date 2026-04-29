@@ -763,18 +763,17 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
 def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> str:
     """
     Step 3: customer replied yes/no to the follow-up permission question.
-    Mark as delayed and, if they agreed, store the follow-up date in internal_notes.
+    Mark as delayed, store follow-up date, then ask for email (Step 4).
     """
     _clear_pending(appointment)
 
-    # Pull the follow-up date stored in the pending original field
     original_info = pending.get('original', '')
-    parts = original_info.split('|')
-    iso_date = parts[-1].strip() if len(parts) > 1 else None
+    parts         = original_info.split('|')
+    iso_date      = parts[-1].strip() if len(parts) > 1 else None
 
-    msg_lower = (message or '').strip().lower()
+    msg_lower  = (message or '').strip().lower()
     no_signals = ('no', 'nope', "don't", 'not necessary', 'no need', 'kwete', 'please don')
-    is_no = any(s in msg_lower for s in no_signals)
+    is_no      = any(s in msg_lower for s in no_signals)
 
     mark_delay_signal(appointment, message)
 
@@ -784,20 +783,97 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
             "we'll be happy to help. 😊"
         )
 
-    # Confirmed yes (or ambiguous — default to yes)
+    # Store follow-up date
     if iso_date:
         notes = appointment.internal_notes or ''
-        tag = f"[FOLLOW_UP_DATE] {iso_date}"
+        tag   = f"[FOLLOW_UP_DATE] {iso_date}"
         if tag not in notes:
             appointment.internal_notes = f"{notes}\n{tag}".strip()
             appointment.save(update_fields=['internal_notes'])
         logger.info("Follow-up date stored: %s for appointment=%s",
                     iso_date, getattr(appointment, 'id', None))
 
+    # If email already captured, skip Step 4
+    if getattr(appointment, 'customer_email', None):
+        from bot.customer_emails import send_delay_quote_email
+        friendly = None
+        if iso_date:
+            try:
+                from datetime import date as _d
+                friendly = _d.fromisoformat(iso_date).strftime('%A %d %B')
+            except Exception:
+                pass
+        send_delay_quote_email(appointment, follow_up_date_str=friendly)
+        return (
+            "Perfect, we'll do that! 😊 "
+            "We've also sent a quote to your email. "
+            "In the meantime, if anything changes just send us a message — "
+            "we'll be right here."
+        )
+
+    # Step 4 — ask for email with quote framing
+    _write_pending(appointment, 'delay_email', iso_date or '')
     return (
-        "Perfect, we'll do that! 😊 "
-        "In the meantime, if anything changes just send us a message anytime — "
-        "we'll be right here."
+        "Perfect! 😊\n\n"
+        "I'll also get our team to send you a proper written quote and portfolio "
+        "— easier to save and share with whoever else needs to see it. "
+        "What's the best email to reach you on?"
+    )
+
+
+def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
+    """
+    Step 4: customer provided (or declined) their email after the delay flow.
+    Save email, send quote email, return closing message.
+    """
+    _clear_pending(appointment)
+
+    iso_date  = pending.get('original', '') or None
+    msg       = (message or '').strip()
+    msg_lower = msg.lower()
+
+    # Detect skip / refusal
+    skip_signals = ('skip', 'no', 'nope', 'nah', 'dont have', "don't have",
+                    'prefer not', 'rather not', 'whatsapp', 'here', 'na')
+    is_skip = any(s in msg_lower for s in skip_signals) and '@' not in msg
+
+    if is_skip:
+        return (
+            "No problem at all! Whenever you're ready, just send us a message. 😊"
+        )
+
+    # Try to extract a valid email address
+    import re as _re
+    m = _re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', msg)
+    if not m:
+        _write_pending(appointment, 'delay_email', iso_date or '')
+        return (
+            "That doesn't look quite right — could you double-check the email? "
+            "Or just say 'skip' if you'd prefer not to share."
+        )
+
+    email = m.group(0).lower()
+    appointment.customer_email = email
+    appointment.save(update_fields=['customer_email'])
+    logger.info("Delay email captured: %s for appointment=%s", email,
+                getattr(appointment, 'id', None))
+
+    # Send quote email
+    friendly = None
+    if iso_date:
+        try:
+            from datetime import date as _d
+            friendly = _d.fromisoformat(iso_date).strftime('%A %d %B')
+        except Exception:
+            pass
+
+    from bot.customer_emails import send_delay_quote_email
+    send_delay_quote_email(appointment, follow_up_date_str=friendly)
+
+    return (
+        "Got it! 📧 I'll have that sent across to you shortly.\n\n"
+        "We'll also check back in with you on the agreed date. "
+        "Speak soon! 👋"
     )
 
 
@@ -892,6 +968,10 @@ def handle_out_of_scope(message: str, appointment) -> Optional[str]:
         if pending_cat == "delay_confirm":
             logger.info("Delay flow step 3 — confirm answer: '%s'", message[:60])
             return _handle_delay_confirm_answer(message, pending, appointment)
+
+        if pending_cat == "delay_email":
+            logger.info("Delay flow step 4 — email answer: '%s'", message[:60])
+            return _handle_delay_email_answer(message, pending, appointment)
 
         # Normal OOS pending clarification
         logger.info(

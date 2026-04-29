@@ -3515,6 +3515,80 @@ class Plumbot:
             self.appointment.internal_notes = cleaned.strip()
             self.appointment.save(update_fields=['internal_notes'])
 
+    # ── Email capture helpers ─────────────────────────────────────────────────
+
+    def _email_pending(self) -> bool:
+        return '[EMAIL_PENDING]' in (self.appointment.internal_notes or '')
+
+    def _mark_email_pending(self):
+        notes = self.appointment.internal_notes or ''
+        if '[EMAIL_PENDING]' not in notes:
+            self.appointment.internal_notes = (notes + '\n[EMAIL_PENDING]').strip()
+            self.appointment.save(update_fields=['internal_notes'])
+
+    def _clear_email_pending(self):
+        notes = self.appointment.internal_notes or ''
+        if '[EMAIL_PENDING]' in notes:
+            cleaned = (notes
+                       .replace('\n[EMAIL_PENDING]', '')
+                       .replace('[EMAIL_PENDING]\n', '')
+                       .replace('[EMAIL_PENDING]', ''))
+            self.appointment.internal_notes = cleaned.strip()
+            self.appointment.save(update_fields=['internal_notes'])
+
+    def _extract_email_from_text(self, text: str):
+        import re
+        m = re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', text or '')
+        return m.group(0).lower() if m else None
+
+    def _declines_sharing_email(self, text: str) -> bool:
+        msg  = (text or '').strip().lower()
+        skips = {'skip', 'no', 'nope', 'nah', 'dont have', "don't have",
+                 'prefer not', 'rather not', 'whatsapp', 'here', 'na'}
+        return any(s in msg for s in skips) and '@' not in msg
+
+    def _confirm_or_request_email(self):
+        """
+        Called when a customer name has just been captured on a confirmed booking.
+        If we already have their email → send confirmation + email.
+        If not → ask for email first (sets EMAIL_PENDING state).
+        """
+        if self.appointment.customer_email:
+            from bot.customer_emails import send_booking_confirmation_email
+            send_booking_confirmation_email(self.appointment)
+            return self._build_named_booking_confirmation()
+        self._mark_email_pending()
+        return (
+            "What email should I send your booking confirmation to? "
+            "Just say 'skip' if you'd prefer not to."
+        )
+
+    def _handle_email_capture(self, message: str):
+        """
+        Process the customer's email reply while EMAIL_PENDING is active.
+        Returns the final WhatsApp confirmation message.
+        """
+        if self._declines_sharing_email(message):
+            self._clear_email_pending()
+            reply = self._build_named_booking_confirmation()
+        else:
+            email = self._extract_email_from_text(message)
+            if email:
+                self.appointment.customer_email = email
+                self.appointment.save(update_fields=['customer_email'])
+                self._clear_email_pending()
+                from bot.customer_emails import send_booking_confirmation_email
+                send_booking_confirmation_email(self.appointment)
+                reply = self._build_named_booking_confirmation()
+            else:
+                reply = (
+                    "That doesn't look like an email address — could you "
+                    "double-check it? Or just say 'skip' if you'd prefer not to share."
+                )
+        self.appointment.add_conversation_message("user", message)
+        self.appointment.add_conversation_message("assistant", reply)
+        return reply
+
     def _get_question_retry_counts(self) -> dict:
         notes = self.appointment.internal_notes or ''
         pattern = r'\[QUESTION_RETRY_COUNTS\](\{.*?\})'
@@ -4217,6 +4291,12 @@ Reply with ONLY a JSON object:
 
     def generate_response(self, incoming_message, precomputed_service_inquiry=None):
         try:
+            # ── EMAIL CAPTURE (post-booking) ──────────────────────────────────────
+            # Must be checked first — the customer's email address should not be
+            # classified by DeepSeek or any other handler.
+            if self._email_pending():
+                return self._handle_email_capture(incoming_message)
+
             # ── DELAY SIGNAL ACTIVE ───────────────────────────────────────────────
             # Customer previously said they'll reach out later.
             # Acks ("ok", "sharp", 👍) → save silently, no reply.
@@ -4374,13 +4454,14 @@ Reply with ONLY a JSON object:
                 incoming_message=incoming_message,
             )
 
-            # If name was just captured on a confirmed appointment → final confirmation
+            # If name was just captured on a confirmed appointment → ask for email
+            # (or send confirmation directly if email already on file)
             if (
                 'customer_name' in updated_fields and
                 self.appointment.status == 'confirmed' and
                 self.appointment.scheduled_datetime
             ):
-                reply = self._build_named_booking_confirmation()
+                reply = self._confirm_or_request_email()
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", reply)
                 return reply
@@ -4527,7 +4608,7 @@ Reply with ONLY a JSON object:
 
             if next_question == "name":
                 if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
-                    return self._build_named_booking_confirmation()
+                    return self._confirm_or_request_email()
                 if self._declines_sharing_name(incoming_message):
                     self._mark_customer_name_declined()
                     return (
@@ -7841,17 +7922,17 @@ I understand this is time-sensitive!"""
                 return self._handle_all_day_response()
             #
             if next_question == "name":
-                # Name was just saved in this turn — send the final confirmation
+                # Name was just saved in this turn — ask for email (or confirm)
                 if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
-                    return self._build_named_booking_confirmation()
+                    return self._confirm_or_request_email()
                 # Name not yet provided — ask for it
                 return (
                     "One last thing — what name should we put on the booking? "
                     "If you'd rather not share it, just say no."
                 )
-            
+
             # ── First-pass: exact hardcoded questions (retry_count == 0) ─────────
-    
+
             if retry_count == 0:
 
                 if next_question == "service_type":
@@ -7895,9 +7976,9 @@ I understand this is time-sensitive!"""
 
                 #
                 if next_question == "name":
-                    # If name was just captured this turn, send final confirmation
+                    # If name was just captured this turn, ask for email (or confirm)
                     if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
-                        return self._build_named_booking_confirmation()
+                        return self._confirm_or_request_email()
                     # Name declined this turn
                     if self._declines_sharing_name(incoming_message):
                         self._mark_customer_name_declined()
