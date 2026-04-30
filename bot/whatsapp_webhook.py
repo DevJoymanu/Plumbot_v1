@@ -1280,23 +1280,38 @@ def handle_text_message(sender, text_data, message_id=None):
 
         reply = None
 
-        # -- STEP 1: Previous work photo request ------------------------------
-        # Evaluate service inquiry first — used both for photo guard and pricing below
-        _quick_service_check = plumbot.detect_service_inquiry(message_body)
+        # ── UNIFIED PRE-CLASSIFIER ────────────────────────────────────────────
+        # One DeepSeek call replaces: detect_service_inquiry, handle_out_of_scope,
+        # detect_repeated_question pre-classifier, photo request check, plan-later check.
+        from bot.unified_classifier import (
+            unified_classify,
+            uc_intent, uc_confidence, uc_product_intent,
+            uc_is_photo_request, uc_is_plan_later, uc_is_repeat,
+            uc_as_service_inquiry, uc_as_oos_classification,
+        )
+        from django.utils import timezone as _tz
+        _uclass = unified_classify(
+            message_body,
+            appointment=appointment,
+            conversation_history=appointment.conversation_history,
+            today_date=_tz.now().strftime('%Y-%m-%d'),
+        )
+        _quick_service_check = uc_as_service_inquiry(_uclass)
+        # ─────────────────────────────────────────────────────────────────────
+
         _is_clear_product_inquiry = (
             _quick_service_check.get('intent') not in ('none', 'pictures') and
             _quick_service_check.get('confidence') == 'HIGH'
         )
-
-        # Check for pricing signal — if present, skip photo check entirely
         _pricing_signals = (
             'how much', 'price', 'cost', 'quote', 'quotation',
             'marii', 'mari', 'mutengo', 'zvinodhura', 'zvese',
         )
         _has_pricing_signal = any(p in message_body.lower() for p in _pricing_signals)
 
+        # -- STEP 1: Previous work photo request (uses unified result) --------
         print(f"Checking photo request: '{message_body}'")
-        if not _is_clear_product_inquiry and not _has_pricing_signal and is_previous_work_photo_request(message_body):
+        if uc_is_photo_request(_uclass) and not _is_clear_product_inquiry and not _has_pricing_signal:
             print("Photo request detected")
             photos_queued = send_previous_work_photos(sender, appointment)
             if photos_queued:
@@ -1310,14 +1325,13 @@ def handle_text_message(sender, text_data, message_id=None):
             threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), daemon=True).start()
             return
 
-        #
-        # In handle_text_message(), after the photo check block (around line 460),
-        # add this block BEFORE the service inquiry check:
-
-        # -- STEP 1b: Out-of-scope / delay / complaint handler ---------------------
+        # -- STEP 1b: Out-of-scope / delay / complaint (uses unified result) --
         from .out_of_scope_handler import handle_out_of_scope
 
-        oos_reply = handle_out_of_scope(message_body, appointment)
+        oos_reply = handle_out_of_scope(
+            message_body, appointment,
+            precomputed=uc_as_oos_classification(_uclass),
+        )
         if oos_reply is not None:
             appointment.add_conversation_message("assistant", oos_reply)
             appointment.last_outbound_at = timezone.now()
@@ -1327,7 +1341,7 @@ def handle_text_message(sender, text_data, message_id=None):
             threading.Thread(
                 target=delayed_response, args=(sender, oos_reply, delay, message_id), daemon=True
             ).start()
-            return  # do NOT continue into the booking flow
+            return
 
         # -- STEP 2: Service-specific pricing inquiry -------------------------
         # Block service inquiry responses once:
@@ -1434,11 +1448,9 @@ def handle_text_message(sender, text_data, message_id=None):
                 )
 
         # -- STEP 3b: Repeated-question detection -----------------------------
-        # Fires when the customer re-asks something already answered — even with
-        # completely different wording.  Generates a reassuring, explanatory
-        # reply that acknowledges them, explains the original answer, asks if
-        # they need more clarity, and redirects technical queries to the plumber.
-        if reply is None:
+        # Only run the full detector when the unified classifier flagged a repeat.
+        # This eliminates the pre-classifier API call entirely.
+        if reply is None and uc_is_repeat(_uclass):
             repeat_info = detect_repeated_question(
                 message_body,
                 appointment.conversation_history or [],
@@ -1467,6 +1479,7 @@ def handle_text_message(sender, text_data, message_id=None):
             reply = plumbot.generate_response(
                 message_body,
                 precomputed_service_inquiry=inquiry,
+                precomputed_classification=_uclass,
             )
             
         # -- STEP 4: Normal Plumbot processing --------------------------------

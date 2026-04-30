@@ -4321,7 +4321,7 @@ Reply with ONLY a JSON object:
         """Return True if customer previously gave a delay signal."""
         return '[DELAY_SIGNAL]' in (self.appointment.internal_notes or '')
 
-    def generate_response(self, incoming_message, precomputed_service_inquiry=None):
+    def generate_response(self, incoming_message, precomputed_service_inquiry=None, precomputed_classification=None):
         try:
             # ── EMAIL CAPTURE (post-booking) ──────────────────────────────────────
             # Must be checked first — the customer's email address should not be
@@ -4357,9 +4357,23 @@ Reply with ONLY a JSON object:
             current_question = self.get_next_question_to_ask()
 
             # ── OUT-OF-SCOPE / DELAY / COMPLAINT HANDLER ─────────────────────────
+            # When precomputed_classification is supplied by the webhook, the OOS
+            # handler uses it and skips its own DeepSeek call. Pending-state
+            # resolution (delay flow steps 2-4) still runs normally.
             from .out_of_scope_handler import handle_out_of_scope
+            from bot.unified_classifier import uc_as_oos_classification
             has_prior_convo = len(self.appointment.conversation_history or []) > 2
-            oos_reply = handle_out_of_scope(incoming_message, self.appointment) if has_prior_convo else None
+            _oos_precomputed = (
+                uc_as_oos_classification(precomputed_classification)
+                if precomputed_classification else None
+            )
+            oos_reply = (
+                handle_out_of_scope(
+                    incoming_message, self.appointment,
+                    precomputed=_oos_precomputed,
+                )
+                if has_prior_convo else None
+            )
             if oos_reply is not None:
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", oos_reply)
@@ -4467,10 +4481,48 @@ Reply with ONLY a JSON object:
                     return reply
 
             # ── STEP 2: EXTRACT ALL AVAILABLE INFO ───────────────────────────────
-            extracted_data = self.extract_all_available_info_with_ai(incoming_message)
+            # Use precomputed data from the unified classifier when available,
+            # so we don't pay for a second DeepSeek call for the same message.
+            if precomputed_classification:
+                from bot.unified_classifier import uc_extracted, uc_service_type
+                _pre = uc_extracted(precomputed_classification)
+                # Seed extracted_data with the unified result.
+                # extract_all_available_info_with_ai still runs but only for
+                # fields the unified call doesn't cover (plan_status, timeline, etc.)
+                extracted_data = {
+                    "service_type":         uc_service_type(precomputed_classification),
+                    "project_description":  _pre.get("project_description"),
+                    "area":                 _pre.get("area"),
+                    "availability":         _pre.get("availability"),
+                    "customer_name":        _pre.get("customer_name"),
+                    # Fields not in unified call — let existing extractor fill these
+                    "plan_status":          None,
+                    "timeline":             None,
+                    "property_type":        None,
+                }
+                # For fields that need extra precision (plan_status, timeline, property_type),
+                # only call the full extractor when those specific questions are next.
+                _next_q = self.get_next_question_to_ask()
+                if _next_q in ("plan_or_visit", "timeline", "property_type"):
+                    _deep = self.extract_all_available_info_with_ai(incoming_message)
+                    extracted_data.update({
+                        k: v for k, v in _deep.items()
+                        if v and not extracted_data.get(k)
+                    })
+            else:
+                extracted_data = self.extract_all_available_info_with_ai(incoming_message)
 
             # ── PLAN LATER RESPONSE ───────────────────────────────────────────────
-            if self.handle_plan_later_response(incoming_message):
+            # Use the unified classifier flag when available — skips the API call.
+            from bot.unified_classifier import uc_is_plan_later as _uc_plan
+            if precomputed_classification is not None:
+                _plan_later = _uc_plan(precomputed_classification)
+                if _plan_later and not getattr(self.appointment, 'has_plan', None):
+                    self.appointment.has_plan = True
+                    self.appointment.save(update_fields=['has_plan'])
+            else:
+                _plan_later = self.handle_plan_later_response(incoming_message)
+            if _plan_later:
                 next_question = self.get_next_question_to_ask()
                 if next_question != "complete":
                     reply = self.generate_contextual_response(
@@ -5727,7 +5779,8 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     }
                 ],
                 temperature=0.1,
-                max_tokens=50
+                max_tokens=50,
+                response_format={"type": "json_object"},
             )
 
             ai_response = response.choices[0].message.content.strip()
@@ -6871,7 +6924,8 @@ I understand this is time-sensitive!"""
                     {"role": "user", "content": extraction_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=500
+                max_tokens=500,
+                response_format={"type": "json_object"},
             )
     
             ai_response = response.choices[0].message.content.strip()
@@ -7203,14 +7257,33 @@ I understand this is time-sensitive!"""
                     {"role": "user", "content": extraction_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=500
+                max_tokens=500,
+                response_format={"type": "json_object"},
             )
             
             ai_response = response.choices[0].message.content.strip()
-            
+
+            # If DeepSeek returned empty despite response_format, retry once
+            if not ai_response:
+                import time as _time
+                _time.sleep(0.5)
+                _retry = deepseek_client.chat.completions.create(
+                    model=settings.DEEPSEEK_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON with no formatting or explanations. NEVER extract plan_status unless actively asking about it RIGHT NOW."},
+                        {"role": "user", "content": extraction_prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=500,
+                    response_format={"type": "json_object"},
+                )
+                ai_response = _retry.choices[0].message.content.strip()
+                if ai_response:
+                    print("🔄 Extraction retry succeeded")
+
             # Clean up the response to handle markdown formatting
             ai_response = ai_response.replace('```json', '').replace('```', '').strip()
-            
+
             # Parse AI response as JSON
             try:
                 extracted_data = json.loads(ai_response)

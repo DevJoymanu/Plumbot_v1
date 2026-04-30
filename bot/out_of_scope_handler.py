@@ -326,6 +326,7 @@ JSON FORMAT:
             ],
             temperature=0.1,
             max_tokens=80,
+            response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content.strip()
         raw = raw.replace("```json", "").replace("```", "").strip()
@@ -1023,33 +1024,29 @@ def _build_complaint_reply(message: str, appointment) -> str:
 
 # ── Main public function ──────────────────────────────────────────────────────
 
-def handle_out_of_scope(message: str, appointment) -> Optional[str]:
+def handle_out_of_scope(
+    message: str,
+    appointment,
+    precomputed: dict | None = None,
+) -> Optional[str]:
     """
     Check whether this message falls outside the normal booking scope.
 
+    precomputed: optional dict from uc_as_oos_classification(). When provided,
+                 skips the internal classify_message() API call entirely.
+
     Decision tree:
-      1. If a clarifying question is pending from the previous turn,
-         resolve it first — re-classify the answer and act on the result.
-      2. Classify the incoming message (fast-path keywords → DeepSeek).
+      1. If a clarifying question is pending, resolve it first.
+      2. Classify (uses precomputed if available, otherwise calls DeepSeek).
       3. HIGH confidence + non-in_scope → act immediately.
-      4. LOW confidence + non-in_scope → generate a targeted clarifying
-         question, store pending state, return the question.
-         On the NEXT turn, step 1 picks it up.
-      5. in_scope → return None (caller continues its normal flow).
-
-    Returns:
-        str  — a reply to send to the customer (caller should send this and stop)
-        None — message is in scope; caller should continue its normal booking flow
-
-    Never asks more than one clarifying question per ambiguous message —
-    if the answer is still LOW confidence, the module passes through to avoid loops.
+      4. LOW confidence + non-in_scope → ask clarifying question.
+      5. in_scope → return None.
     """
-    # ── Step 1: check for active pending states ───────────────────────────────
+    # ── Step 1: pending states (no API call — reads from internal_notes) ─────
     pending = _read_pending(appointment)
     if pending:
         pending_cat = pending.get("category", "")
 
-        # Two-step delay follow-up flow
         if pending_cat == "delay_timeframe":
             logger.info("Delay flow step 2 — timeframe answer: '%s'", message[:60])
             return _handle_delay_timeframe_answer(message, pending, appointment)
@@ -1062,18 +1059,22 @@ def handle_out_of_scope(message: str, appointment) -> Optional[str]:
             logger.info("Delay flow step 4 — email answer: '%s'", message[:60])
             return _handle_delay_email_answer(message, pending, appointment)
 
-        # Normal OOS pending clarification
         logger.info(
             "Resolving pending clarification: category=%s original='%s' answer='%s'",
             pending_cat, pending.get("original", "")[:60], message[:60],
         )
         return _resolve_pending_clarification(message, pending, appointment)
 
-    # ── Step 2: classify the current message ──────────────────────────────────
-    classification = classify_message(message, appointment)
-    category = classification["category"]
+    # ── Step 2: classify (use precomputed to skip the API call) ───────────────
+    if precomputed:
+        classification = precomputed
+        logger.debug("OOS: using precomputed classification — %s", precomputed)
+    else:
+        classification = classify_message(message, appointment)
+
+    category   = classification["category"]
     confidence = classification["confidence"]
-    detail = classification.get("detail", "")
+    detail     = classification.get("detail", "")
 
     # ── Step 3: in scope — do nothing ─────────────────────────────────────────
     if category == "in_scope":
