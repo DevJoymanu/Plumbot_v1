@@ -4380,11 +4380,13 @@ Reply with ONLY a JSON object:
                 return oos_reply
 
             # ── CATALOGUE / PRODUCT LIST REQUEST ─────────────────────────────────
-            _catalogue_triggers = ('catalogue', 'catalog', 'price list', 'pricelist', 'product list')
+            _catalogue_triggers = ('catalogue', 'catalog', 'price list', 'pricelist', 'product list', 'portfolio')
             if any(w in incoming_message.lower() for w in _catalogue_triggers):
-                from bot.whatsapp_webhook import send_catalogue_images
+                from bot.whatsapp_webhook import send_catalogue_images, send_previous_work_photos
                 clean_phone = self.phone_number.replace('whatsapp:', '')
                 images_queued = send_catalogue_images(clean_phone, self.appointment)
+                if not images_queued:
+                    images_queued = send_previous_work_photos(clean_phone, self.appointment)
                 followup = self._get_pricing_followup_prompt('english')
                 _price_list = (
                     "• Toilet: Supply from US$50 | Install from US$20\n"
@@ -4445,6 +4447,11 @@ Reply with ONLY a JSON object:
                     'location_ask', 'location_visit', 'previous_quotation', 'pictures',
                     'combined_pricing', 'standalone_tub', 'tub_sales', 'bathtub_installation',
                 }
+                PRICING_AUTO_REPLY_INTENTS = {
+                    'geyser', 'shower_cubicle', 'vanity', 'toilet', 'chamber',
+                    'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
+                    'facebook_package',
+                }
                 if inquiry.get('intent') != 'none' and (
                     inquiry.get('confidence') == 'HIGH' or
                     inquiry.get('intent') in PRODUCT_INTENTS
@@ -4452,7 +4459,9 @@ Reply with ONLY a JSON object:
                     intent = inquiry['intent']
                     price_requested = self._explicitly_requests_price(incoming_message)
                     sent = list(getattr(self.appointment, 'sent_pricing_intents', None) or [])
-                    if intent not in NON_PRICING_AUTO_REPLY_INTENTS and not price_requested:
+                    if (intent not in NON_PRICING_AUTO_REPLY_INTENTS and
+                            intent not in PRICING_AUTO_REPLY_INTENTS and
+                            not price_requested):
                         print(f"Skipping priced service inquiry: {intent} - no explicit price request")
                     elif intent in sent:
                         print(f"⏭️ Skipping already-sent service inquiry: {intent}")

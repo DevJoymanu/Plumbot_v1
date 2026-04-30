@@ -1430,22 +1430,19 @@ def handle_text_message(sender, text_data, message_id=None):
             'location_ask', 'location_visit', 'previous_quotation', 'pictures',
             'combined_pricing',
         }
+        PRICING_AUTO_REPLY_INTENTS = {
+            'geyser', 'shower_cubicle', 'vanity', 'toilet', 'chamber',
+            'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
+            'facebook_package',
+        }
         intent = inquiry.get('intent')
         price_requested = _explicitly_requests_price(message_body)
 
-        # Product-specific intents bypass the mid-conversation gate when:
-        # (a) no booking details have been collected yet (no area, no datetime), AND
-        # (b) the customer is asking about a specific product (not just saying "how much")
-        # This allows "And vanitys if you have" to get a vanity pricing reply
-        # even after a combined pricing overview was already sent.
-        _no_booking_yet = (
-            not appointment.scheduled_datetime and
-            not appointment.customer_area
-        )
+        # Specific product intents bypass the mid-conversation gate entirely —
+        # the customer asked about a specific item so always give the price.
         _is_specific_product_inquiry = (
-            intent not in ('none', 'combined_pricing', 'pictures') and
-            inquiry.get('confidence') == 'HIGH' and
-            _no_booking_yet
+            intent in PRICING_AUTO_REPLY_INTENTS and
+            inquiry.get('confidence') == 'HIGH'
         )
 
         should_bypass_mid_conversation_gate = (
@@ -1459,7 +1456,9 @@ def handle_text_message(sender, text_data, message_id=None):
         elif intent != 'none' and (
             inquiry.get('confidence') == 'HIGH' or intent in PRODUCT_INTENTS
         ):
-            if intent not in NON_PRICING_AUTO_REPLY_INTENTS and not price_requested:
+            if (intent not in NON_PRICING_AUTO_REPLY_INTENTS and
+                    intent not in PRICING_AUTO_REPLY_INTENTS and
+                    not price_requested):
                 print(
                     f"Skipping priced service inquiry for intent: {intent} "
                     f"- no explicit price request"
