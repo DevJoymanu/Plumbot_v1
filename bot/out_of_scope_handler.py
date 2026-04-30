@@ -647,62 +647,117 @@ def _extract_future_weekday(message: str):
 
 def _compute_followup_date(timeframe_message: str):
     """
-    Parse a customer's timeframe text and return (iso_date, friendly_str) for a
-    suitable follow-up day within that window.
+    Parse a customer's timeframe text and return (iso_date, friendly_str).
     Falls back to DeepSeek for unusual phrasings, then defaults to 2 weeks.
-    """
-    tz = pytz.timezone('Africa/Johannesburg')
-    today = datetime.now(tz).date()
-    msg = (timeframe_message or '').lower()
 
-    # Specific weekday mentioned → use that day
+    Fixed bugs vs previous version:
+    - "in a month" now gives today+30 days (was first-of-next-month+7)
+    - "next month"  now gives 15th of next month
+    - "end of month" now handles being at the end of the month already
+    - "end of next month" now matched explicitly
+    - Ordinal day ("the 26th") now parsed before DeepSeek fallback
+    - "next week" always produces a future date
+    """
+    import calendar as _cal
+    from datetime import date as _date
+
+    tz    = pytz.timezone('Africa/Johannesburg')
+    today = datetime.now(tz).date()
+    msg   = (timeframe_message or '').lower()
+
+    def _nm(ref):
+        """Return (year, month) for the calendar month after ref."""
+        return (ref.year + 1, 1) if ref.month == 12 else (ref.year, ref.month + 1)
+
+    def _safe(year, month, day):
+        """Clamp day to the last valid day of the month and return a date."""
+        return _date(year, month, min(day, _cal.monthrange(year, month)[1]))
+
+    # ── 1. Specific weekday ("on a Tuesday", "next Friday") ──────────────────
     weekday_info = _extract_future_weekday(timeframe_message)
     if weekday_info:
         _, target, _ = weekday_info
         return target.isoformat(), target.strftime('%A %d %B')
 
-    # "end of the month" / "end of month" / "this month"
-    if re.search(r'end of.{0,5}month|this month', msg):
-        next_m = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
-        target = next_m - timedelta(days=3)
-        return target.isoformat(), target.strftime('%A %d %B')
+    # ── 2. Ordinal day of month: "the 26th", "around the 26th", "by the 25th"
+    m = re.search(r'\b(\d{1,2})\s*(?:st|nd|rd|th)\b', msg)
+    if m:
+        day = int(m.group(1))
+        if 1 <= day <= 31:
+            last_this = _cal.monthrange(today.year, today.month)[1]
+            if day <= last_this:
+                candidate = today.replace(day=day)
+                if candidate > today:
+                    return candidate.isoformat(), candidate.strftime('%A %d %B')
+            # Try next month
+            ny, nm = _nm(today)
+            last_next = _cal.monthrange(ny, nm)[1]
+            if day <= last_next:
+                target = _safe(ny, nm, day)
+                return target.isoformat(), target.strftime('%A %d %B')
 
-    # "next week"
-    if 'next week' in msg:
-        this_monday = today - timedelta(days=today.weekday())
-        target = this_monday + timedelta(days=9)  # Wednesday of next week
-        return target.isoformat(), target.strftime('%A %d %B')
-
-    # "in X days"
-    m = re.search(r'(\d+)\s*day', msg)
+    # ── 3. "in X days" ───────────────────────────────────────────────────────
+    m = re.search(r'in\s+(\d+)\s*day', msg)
     if m:
         target = today + timedelta(days=int(m.group(1)))
         return target.isoformat(), target.strftime('%A %d %B')
 
-    # "in X weeks"
+    # ── 4. "in X weeks" / "X weeks" ─────────────────────────────────────────
     m = re.search(r'(\d+)\s*week', msg)
     if m:
         target = today + timedelta(weeks=int(m.group(1)))
         return target.isoformat(), target.strftime('%A %d %B')
 
-    # "a week" / "in a week" / "one week"
+    # ── 5. "a week" / "in a week" / "one week" ──────────────────────────────
     if re.search(r'\ba week\b|in a week|one week', msg):
         target = today + timedelta(weeks=1)
         return target.isoformat(), target.strftime('%A %d %B')
 
-    # "next month" / "in a month"
-    if re.search(r'next month|in a month|one month', msg):
-        next_m = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
-        target = next_m + timedelta(days=7)
+    # ── 6. "next week" → Wednesday of next calendar week ────────────────────
+    if 'next week' in msg:
+        days_to_next_monday = (7 - today.weekday()) % 7 or 7
+        target = today + timedelta(days=days_to_next_monday + 2)
         return target.isoformat(), target.strftime('%A %d %B')
 
-    # "in X months"
-    m = re.search(r'(\d+)\s*month', msg)
+    # ── 7. "in X months" (digit) ─────────────────────────────────────────────
+    m = re.search(r'in\s+(\d+)\s*month', msg)
     if m:
         target = today + timedelta(days=30 * int(m.group(1)))
         return target.isoformat(), target.strftime('%A %d %B')
 
-    # DeepSeek fallback for anything else ("after the holidays", "when I'm done building" …)
+    # ── 8. "in a month" / "a month" / "one month" → today + 30 days ─────────
+    if re.search(r'\bin a month\b|\ba month\b|one month', msg):
+        target = today + timedelta(days=30)
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # ── 9. "end of next month" ───────────────────────────────────────────────
+    if re.search(r'end.{0,12}next.{0,8}month|next month.{0,8}end', msg):
+        ny, nm = _nm(today)
+        last = _cal.monthrange(ny, nm)[1]
+        target = _safe(ny, nm, last - 2)
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # ── 10. "next month" → 15th of next month ───────────────────────────────
+    if 'next month' in msg:
+        ny, nm = _nm(today)
+        target = _safe(ny, nm, 15)
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # ── 11. "end of the month" / "end of month" / "this month" ──────────────
+    if re.search(r'end of.{0,10}month|this month', msg):
+        last = _cal.monthrange(today.year, today.month)[1]
+        end_day = last - 2
+        end_candidate = today.replace(day=end_day) if end_day >= 1 else today
+        if end_candidate <= today:
+            # Already at or past end of current month — use end of next month
+            ny, nm = _nm(today)
+            last_nm = _cal.monthrange(ny, nm)[1]
+            target = _safe(ny, nm, last_nm - 2)
+        else:
+            target = end_candidate
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # ── 12. DeepSeek fallback ────────────────────────────────────────────────
     if _deepseek:
         try:
             response = _deepseek.chat.completions.create(
@@ -710,14 +765,17 @@ def _compute_followup_date(timeframe_message: str):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Return ONLY a date in YYYY-MM-DD format. No explanation, no other text.",
+                        "content": (
+                            "Return ONLY a date in YYYY-MM-DD format. "
+                            "No explanation, no other text."
+                        ),
                     },
                     {
                         "role": "user",
                         "content": (
                             f"Today is {today.isoformat()}. "
                             f"A customer said: '{timeframe_message}'. "
-                            f"Return one specific follow-up date within their stated timeframe."
+                            "Return one specific follow-up date within their stated timeframe."
                         ),
                     },
                 ],
@@ -725,13 +783,12 @@ def _compute_followup_date(timeframe_message: str):
                 max_tokens=15,
             )
             raw = response.choices[0].message.content.strip()[:10]
-            from datetime import date as _date_cls
-            parsed = _date_cls.fromisoformat(raw)
+            parsed = _date.fromisoformat(raw)
             return parsed.isoformat(), parsed.strftime('%A %d %B')
         except Exception as exc:
             logger.warning("_compute_followup_date DeepSeek failed: %s", exc)
 
-    # Default: 2 weeks from now
+    # ── 13. Default: 2 weeks from now ────────────────────────────────────────
     target = today + timedelta(weeks=2)
     return target.isoformat(), target.strftime('%A %d %B')
 
@@ -778,13 +835,34 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
     no_signals = ('no', 'nope', "don't", 'not necessary', 'no need', 'kwete', 'please don')
     is_no      = any(s in msg_lower for s in no_signals)
 
+    # Detect whether the customer is also providing a corrected timeframe.
+    # "No, I'll be back end of next month" → date correction, not a flat refusal.
+    _TIMEFRAME_WORDS = (
+        'week', 'month', 'day', 'next', 'around', 'end of', 'beginning',
+        'january', 'february', 'march', 'april', 'may', 'june', 'july',
+        'august', 'september', 'october', 'november', 'december',
+        'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+        'soon', 'later', 'after', 'back', 'return',
+    )
+    has_timeframe = any(word in msg_lower for word in _TIMEFRAME_WORDS)
+
     mark_delay_signal(appointment, message)
 
-    if is_no:
+    if is_no and not has_timeframe:
+        # Flat refusal — no alternative timeframe given
         return (
             "No worries at all! Whenever you're ready, just send us a message and "
             "we'll be happy to help. 😊"
         )
+
+    if is_no and has_timeframe:
+        # Customer rejected the suggested date but provided a new timeframe.
+        # Treat the whole message as a step-2 timeframe answer and re-ask.
+        logger.info(
+            "Delay confirm: 'no' + timeframe detected — restarting from step 2: '%s'",
+            message[:80],
+        )
+        return _handle_delay_timeframe_answer(message, {}, appointment)
 
     # Store follow-up date
     if iso_date:

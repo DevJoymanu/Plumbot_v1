@@ -476,7 +476,7 @@ def _send_email(recipients, subject, html, dry_run):
     if dry_run:
         logger.info("DRY RUN email '%s' → %s", subject, recipients)
         return True
-    plain = f"Please view this email in an HTML-compatible client.\n\nSubject: {subject}"
+    plain = f"{subject}\n\nHomeBase Plumbers\nWhatsApp: +263776255077"
     return send_email_to_recipients(recipients, subject, plain, html_message=html)
 
 
@@ -640,6 +640,122 @@ class Command(BaseCommand):
         )
 
         # ─────────────────────────────────────────────────────────────────────
+        # DELAYED LEAD FOLLOW-UPS
+        # Finds leads where today matches their agreed [FOLLOW_UP_DATE].
+        # Sends via WhatsApp if the window is open, email otherwise.
+        # ─────────────────────────────────────────────────────────────────────
+        self.stdout.write(f"\n  {'─' * 56}")
+        self.stdout.write("  DELAYED LEAD FOLLOW-UPS\n")
+
+        followup_sent = followup_skipped = followup_failed = 0
+
+        delayed_leads = list(
+            Appointment.objects.filter(
+                internal_notes__contains=f"[FOLLOW_UP_DATE] {today.isoformat()}",
+            ).exclude(
+                internal_notes__contains="[FOLLOW_UP_SENT]"
+            )
+        )
+        self.stdout.write(f"  Leads due for follow-up today: {len(delayed_leads)}\n")
+
+        _WA_FOLLOWUP_NAMED = (
+            "{name}, said I'd check in — here I am.\n\n"
+            "Most people who weren't ready when we first spoke end up getting the "
+            "free site visit done anyway. Takes 20 minutes, costs nothing, and gives "
+            "you a clear picture of exactly what you're working with and what it'll cost.\n\n"
+            "Even if you're still in the planning stage, it's worth knowing where you "
+            "stand. Just reply here on WhatsApp with a day that works and we'll come "
+            "to you."
+        )
+        _WA_FOLLOWUP_ANON = (
+            "Said I'd check in — here I am.\n\n"
+            "Most people who weren't ready when we first spoke end up getting the "
+            "free site visit done anyway. Takes 20 minutes, costs nothing, and gives "
+            "you a clear picture of exactly what you're working with and what it'll cost.\n\n"
+            "Even if you're still in the planning stage, it's worth knowing where you "
+            "stand. Just reply here on WhatsApp with a day that works and we'll come "
+            "to you."
+        )
+
+        for apt in delayed_leads:
+            raw_name = (apt.customer_name or "").strip()
+            has_name = bool(raw_name)
+            name     = raw_name if has_name else None
+            phone    = _fmt_phone(apt.phone_number or "")
+            email    = getattr(apt, "customer_email", None)
+            label    = f"{name or 'Unknown'} (+{phone})"
+            svc      = _service(apt)
+
+            def _mark_followup_sent(a):
+                notes = a.internal_notes or ""
+                if "[FOLLOW_UP_SENT]" not in notes:
+                    a.internal_notes = f"{notes}\n[FOLLOW_UP_SENT]".strip()
+                    a.save(update_fields=["internal_notes"])
+
+            wa_msg = (
+                _WA_FOLLOWUP_NAMED.format(name=name)
+                if has_name else _WA_FOLLOWUP_ANON
+            )
+            window = is_window_open(apt)
+
+            if window:
+                ok = _send_wa(phone, wa_msg, dry_run=dry_run)
+                if ok:
+                    if not dry_run:
+                        _mark_followup_sent(apt)
+                    followup_sent += 1
+                    self.stdout.write(
+                        self.style.SUCCESS(f"    SENT  Follow-up [WA] → {label}")
+                    )
+                else:
+                    followup_failed += 1
+                    self.stdout.write(self.style.ERROR(f"    FAIL  Follow-up [WA] → {label}"))
+
+            elif email:
+                from bot.customer_emails import _wrap, _send, _WA_NUMBER
+                subject   = f"Following Up — Your {svc} Assessment"
+                opener    = f"<p>{name},</p>" if has_name else ""
+                body_html = (
+                    f"{opener}"
+                    "<p>Said I'd check in — here I am.</p>"
+                    "<p>Most people who weren't ready when we first spoke end up "
+                    "getting the free site visit done anyway. Takes 20 minutes, costs "
+                    "nothing, and gives you a clear picture of exactly what you're "
+                    "working with and what it'll cost.</p>"
+                    "<p>Even if you're still in the planning stage, it's worth knowing "
+                    "where you stand. Drop us a WhatsApp with a day that works and "
+                    "we'll come to you.</p>"
+                    f'<p style="margin-top:16px;">'
+                    f'<a href="https://wa.me/{_WA_NUMBER}" '
+                    f'style="background:#25D366;color:#fff;text-decoration:none;'
+                    f'padding:10px 20px;border-radius:5px;font-size:14px;">'
+                    f"Reply on WhatsApp</a></p>"
+                )
+                html = _wrap(body_html)
+                ok   = _send(apt, subject, html) if not dry_run else True
+                if ok:
+                    if not dry_run:
+                        _mark_followup_sent(apt)
+                    followup_sent += 1
+                    self.stdout.write(
+                        self.style.SUCCESS(f"    SENT  Follow-up [EMAIL] → {label}")
+                    )
+                else:
+                    followup_failed += 1
+                    self.stdout.write(self.style.ERROR(f"    FAIL  Follow-up [EMAIL] → {label}"))
+
+            else:
+                self.stdout.write(
+                    f"    SKIP  Follow-up → {label} [window closed, no email on file]"
+                )
+                followup_skipped += 1
+
+        self.stdout.write(
+            f"\n    Follow-up summary → sent={followup_sent}  "
+            f"skipped={followup_skipped}  failed={followup_failed}"
+        )
+
+        # ─────────────────────────────────────────────────────────────────────
         # PLUMBER REMINDERS  (not gated by customer message window either)
         # ─────────────────────────────────────────────────────────────────────
         self.stdout.write(f"\n  {'─' * 56}")
@@ -749,10 +865,11 @@ class Command(BaseCommand):
         )
 
         # ── Email 1: Weekly Summary — Every Sunday at 20:00 SAST ─────────────
-        # Always sends; shows "No appointments" when week is empty.
+        # Shows NEXT week's appointments (Mon–Sun of the coming week).
+        # Sent Sunday evening so the team wakes up Monday knowing what's ahead.
         if now_local.weekday() == 6 and _email_in_window(now_local, 20, 0):
-            week_sun = today                          # Sunday (today)
-            week_mon = today - timedelta(days=6)      # Monday of same week
+            week_mon = today + timedelta(days=1)   # next Monday
+            week_sun = today + timedelta(days=7)   # next Sunday
             week_apts = list(
                 Appointment.objects.filter(
                     scheduled_datetime__isnull=False,
@@ -761,8 +878,8 @@ class Command(BaseCommand):
                 ).exclude(status="cancelled")
                 .order_by("scheduled_datetime")
             )
-            flag           = f"email_weekly_{week_sun.isoformat()}"
-            already_sent   = bool(week_apts) and any(_eflag_set(a, flag) for a in week_apts)
+            flag         = f"email_weekly_{week_mon.isoformat()}"
+            already_sent = bool(week_apts) and any(_eflag_set(a, flag) for a in week_apts)
             if already_sent:
                 email_skipped += 1
                 self.stdout.write(f"    SKIP  Email 1 Weekly already sent for week of {week_mon}")
@@ -771,29 +888,29 @@ class Command(BaseCommand):
                 mon_lbl = _email_fmt_date_short(week_mon)
                 sun_lbl = _email_fmt_date_short(week_sun)
                 subject = (
-                    f"📅 Weekly Summary — {n} Appointment{'s' if n != 1 else ''}"
-                    f" for the Week of {mon_lbl}"
+                    f"Next week's schedule — {n} appointment{'s' if n != 1 else ''}"
+                    f" ({mon_lbl})"
                 )
                 if n == 0:
                     apts_html = (
                         '<p style="color:#888;text-align:center;padding:20px 0;">'
-                        'No appointments were scheduled this week.</p>'
+                        'Nothing booked for next week yet.</p>'
                     )
                 else:
                     apts_html = _apt_html_blocks(week_apts)
                 body_html = (
                     '<p>Hi Team,</p>'
-                    f'<p>Here is your appointment summary for the week of '
+                    f'<p>Here is your schedule for next week, '
                     f'<strong>{mon_lbl} – {sun_lbl}</strong>.</p>'
                     f'{_hr()}'
-                    f'<p style="font-size:16px;font-weight:bold;">TOTAL BOOKED APPOINTMENTS: {n}</p>'
+                    f'<p style="font-size:16px;font-weight:bold;">TOTAL BOOKED: {n}</p>'
                     f'{_hr()}'
                     f'{apts_html}'
-                    '<p>Have a great week!</p>'
+                    '<p>Have a great week ahead.</p>'
                 )
                 html = _html_email(
                     "#1a73e8",
-                    f"📅 Weekly Summary — {n} Appointment{'s' if n != 1 else ''}",
+                    f"Next week — {n} appointment{'s' if n != 1 else ''} scheduled",
                     body_html,
                 )
                 ok = _send_email(email_recipients, subject, html, dry_run)
@@ -829,7 +946,7 @@ class Command(BaseCommand):
                     n       = len(nextday_apts)
                     day_lbl = _email_fmt_date_short(tomorrow)
                     subject = (
-                        f"🗓️ Tomorrow's Jobs — {n} Appointment{'s' if n != 1 else ''}"
+                        f"Tomorrow's schedule — {n} job{'s' if n != 1 else ''}"
                         f" on {day_lbl}"
                     )
                     body_html = (
@@ -880,8 +997,8 @@ class Command(BaseCommand):
                     n       = len(today_apts)
                     day_lbl = _email_fmt_date_short(today)
                     subject = (
-                        f"☀️ Today's Jobs — {n} Appointment{'s' if n != 1 else ''}"
-                        f" for Today, {day_lbl}"
+                        f"Today's schedule — {n} job{'s' if n != 1 else ''}"
+                        f" ({day_lbl})"
                     )
                     body_html = (
                         '<p>Good morning Team,</p>'
@@ -927,8 +1044,8 @@ class Command(BaseCommand):
                     self.stdout.write(f"    SKIP  Email 4 (2hr) {apt_label}: already sent")
                 else:
                     subject = (
-                        f"⏰ Reminder: {_service(apt)} in {_area(apt)}"
-                        f" — Starting in 2 Hours at {_email_fmt_time(apt)}"
+                        f"On the way — {_service(apt)} in {_area(apt)}"
+                        f" at {_email_fmt_time(apt)}"
                     )
                     body_html = (
                         '<p>Hi Team,</p>'
@@ -960,8 +1077,8 @@ class Command(BaseCommand):
                     self.stdout.write(f"    SKIP  Email 5 (30m) {apt_label}: already sent")
                 else:
                     subject = (
-                        f"🚨 Starting Soon: {_service(apt)} in {_area(apt)}"
-                        f" at {_email_fmt_time(apt)} — 30 Minutes Away"
+                        f"Arriving in 30 minutes — {_service(apt)}"
+                        f" in {_area(apt)} at {_email_fmt_time(apt)}"
                     )
                     body_html = (
                         '<p>Hi Team,</p>'

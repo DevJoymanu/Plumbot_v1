@@ -136,7 +136,14 @@ def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfol
         logger.warning("No customer_email on appointment %s — skipping", apt.pk)
         return False
     tagged = f"{subject} {_apt_tag(apt)}"
-    plain  = f"Please view this email in an HTML-compatible client.\n\n{subject}"
+    plain  = (
+        f"{tagged}\n\n"
+        f"Service: {_service(apt)}\n"
+        f"Area:    {_area(apt)}\n"
+        f"Date:    {_fmt_date(apt)} at {_fmt_time(apt)}\n\n"
+        f"WhatsApp: https://wa.me/{_WA_NUMBER}\n"
+        f"HomeBase Plumbers"
+    )
     return send_email_to_recipients(
         [email], tagged, plain,
         html_message=html,
@@ -147,28 +154,29 @@ def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfol
 
 # ── PDF portfolio generator ───────────────────────────────────────────────────
 
-_PRICING_ROWS = [
-    ("Bathroom Renovation",           "Supply & fit all fixtures",       "From US$800"),
-    ("Kitchen Renovation",            "Plumbing supply & fit",           "From US$600"),
-    ("Geyser Installation",           "Supply & install",                "From US$350"),
-    ("Toilet Supply & Fit",           "Supply, install & connect",       "From US$100"),
-    ("Shower Cubicle",                "Supply from US$130 + install",    "From US$170"),
-    ("Vanity Unit",                   "Supply from US$150 + install",    "From US$180"),
-    ("Freestanding Tub",              "Supply from US$400 + install",    "From US$520"),
-    ("Standard Bathtub",             "Supply from US$80 + install",     "From US$160"),
-    ("Drain Unblocking",              "Labour only",                     "From US$20"),
-    ("Pipe Repair / Leak",            "Labour only",                     "From US$15"),
-    ("Geyser Repair",                 "Labour + parts",                  "From US$25"),
-    ("Toilet Repair",                 "Labour + parts",                  "From US$20"),
+# Photo captions — rotate through these based on photo index.
+# Written to add emotion and context without knowing the exact photo content.
+_PHOTO_CAPTIONS = [
+    "A complete bathroom transformation — from bare walls to a space our client is proud to call theirs.",
+    "Every family deserves a bathroom that works. We built this one from scratch in three days.",
+    "The moment a tired, outdated bathroom becomes a clean, functional sanctuary.",
+    "Precision fitting on a full freestanding tub setup — the kind of detail that makes the difference.",
+    "New plumbing, new possibilities. This kitchen renovation gave a young family a fresh start.",
+    "Two days of work. Years of enjoyment. This is what we do.",
+    "Geyser installed and tested before the sun set — hot water restored, family relieved.",
+    "A shower cubicle sealed right, fitted right, built to last. No shortcuts, no leaks.",
+    "This bathroom was dark and damp. Now it's the first thing guests notice — for all the right reasons.",
+    "Our senior plumber takes personal responsibility for every job, from planning to handover.",
+    "A freestanding tub that turned a simple bathroom into a retreat. Supply, fit, and finished.",
+    "Side chamber installed flush and level — small details that protect the whole renovation.",
 ]
 
 
 def generate_portfolio_pdf():
     """
     Generate a PDF portfolio with previous project photos and full pricing.
-    Returns bytes of the PDF.
-    Photos are loaded from PREVIOUS_WORK_IMAGES_DIR (env var).
-    Falls back gracefully if the folder is empty or missing.
+    Returns bytes of the PDF, or None on failure.
+    Photos come from PREVIOUS_WORK_IMAGES_DIR; falls back gracefully if empty.
     """
     try:
         from reportlab.lib.pagesizes import A4
@@ -177,12 +185,12 @@ def generate_portfolio_pdf():
         from reportlab.lib.units import cm
         from reportlab.platypus import (
             SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-            Image as RLImage, HRFlowable,
+            Image as RLImage, HRFlowable, KeepTogether,
         )
 
-        buffer  = BytesIO()
-        W, H    = A4
-        margin  = 1.8 * cm
+        buffer = BytesIO()
+        W, _H  = A4
+        margin = 1.8 * cm
 
         doc = SimpleDocTemplate(
             buffer, pagesize=A4,
@@ -190,118 +198,259 @@ def generate_portfolio_pdf():
             topMargin=margin, bottomMargin=margin,
         )
 
-        styles  = getSampleStyleSheet()
-        green   = colors.HexColor("#25D366")
-        dark    = colors.HexColor("#1a1a1a")
-        mid     = colors.HexColor("#555555")
-        light   = colors.HexColor("#f4f4f4")
+        styles = getSampleStyleSheet()
+        green  = colors.HexColor("#25D366")
+        dark   = colors.HexColor("#1a1a1a")
+        mid    = colors.HexColor("#555555")
+        light  = colors.HexColor("#eeeeee")
+        white  = colors.white
 
         h1 = ParagraphStyle("h1", parent=styles["Heading1"],
-                            fontSize=22, textColor=dark, spaceAfter=4)
+                            fontSize=24, textColor=dark, spaceAfter=2, spaceBefore=0)
+        sub = ParagraphStyle("sub", parent=styles["Normal"],
+                             fontSize=11, textColor=mid, spaceAfter=0)
         h2 = ParagraphStyle("h2", parent=styles["Heading2"],
-                            fontSize=14, textColor=green, spaceAfter=6, spaceBefore=14)
+                            fontSize=13, textColor=green, spaceAfter=4, spaceBefore=14,
+                            fontName="Helvetica-Bold")
         body = ParagraphStyle("body", parent=styles["Normal"],
-                              fontSize=10, textColor=mid, leading=14)
-        small = ParagraphStyle("small", parent=styles["Normal"],
-                               fontSize=8, textColor=mid)
+                              fontSize=9, textColor=mid, leading=13)
+        caption = ParagraphStyle("cap", parent=styles["Normal"],
+                                 fontSize=8, textColor=mid, leading=12,
+                                 fontName="Helvetica-Oblique", spaceAfter=8)
+        th = ParagraphStyle("th", parent=styles["Normal"],
+                            fontSize=8, textColor=white, fontName="Helvetica-Bold")
+        td = ParagraphStyle("td", parent=styles["Normal"],
+                            fontSize=8, textColor=dark, leading=11)
+        td_mid = ParagraphStyle("tdm", parent=styles["Normal"],
+                                fontSize=8, textColor=mid, leading=11)
+        note = ParagraphStyle("note", parent=styles["Normal"],
+                              fontSize=7, textColor=mid, leading=10,
+                              fontName="Helvetica-Oblique")
+
+        def tbl(data, col_widths, header=True):
+            """Build a styled table. Row 0 is the header if header=True."""
+            t = Table(data, colWidths=col_widths, repeatRows=1 if header else 0)
+            ts = [
+                ("TOPPADDING",    (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#dddddd")),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -1),
+                 [white, colors.HexColor("#f7f7f7")]),
+            ]
+            if header:
+                ts += [
+                    ("BACKGROUND", (0, 0), (-1, 0), green),
+                    ("TEXTCOLOR",  (0, 0), (-1, 0), white),
+                ]
+            t.setStyle(TableStyle(ts))
+            return t
 
         elems = []
+        AW = W - 2 * margin   # available width
 
         # ── Header ────────────────────────────────────────────────────────────
         elems.append(Paragraph("HomeBase Plumbers", h1))
-        elems.append(Paragraph("Zimbabwe's trusted plumbing specialists", body))
+        elems.append(Paragraph("Zimbabwe's trusted plumbing specialists", sub))
         elems.append(HRFlowable(width="100%", thickness=2, color=green,
-                                spaceAfter=16, spaceBefore=8))
+                                spaceAfter=14, spaceBefore=6))
 
         # ── Previous Projects ─────────────────────────────────────────────────
         elems.append(Paragraph("Our Previous Work", h2))
-
-        photos = _get_photo_paths()
-        if photos:
-            # Lay out photos in a 2-column grid
-            available_w = W - 2 * margin
-            cell_w      = (available_w - 0.5 * cm) / 2
-            max_h       = 5.5 * cm
-            photo_pairs = [photos[i:i + 2] for i in range(0, len(photos), 2)]
-            for pair in photo_pairs:
-                row = []
-                for path in pair:
-                    try:
-                        img = RLImage(path, width=cell_w, height=max_h)
-                        img.hAlign = "CENTER"
-                        row.append(img)
-                    except Exception:
-                        row.append(Paragraph("(photo)", small))
-                while len(row) < 2:
-                    row.append("")
-                t = Table([row], colWidths=[cell_w, cell_w])
-                t.setStyle(TableStyle([
-                    ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
-                    ("ALIGN",       (0, 0), (-1, -1), "CENTER"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                    ("RIGHTPADDING",(0, 0), (-1, -1), 3),
-                    ("BOTTOMPADDING",(0,0), (-1,-1), 6),
-                ]))
-                elems.append(t)
-        else:
-            elems.append(Paragraph(
-                "Portfolio photos available on request — message us on WhatsApp "
-                f"(+{_WA_NUMBER}) to see examples of our completed projects.",
-                body,
-            ))
-
-        elems.append(Spacer(1, 0.4 * cm))
-        elems.append(HRFlowable(width="100%", thickness=1, color=light,
-                                spaceAfter=6, spaceBefore=6))
-
-        # ── Pricing Guide ─────────────────────────────────────────────────────
-        elems.append(Paragraph("Services & Pricing Guide", h2))
         elems.append(Paragraph(
-            "All prices are in USD. Labour and supply prices vary by job scope, "
-            "fixtures chosen, and site conditions. A free on-site assessment gives "
-            "you an exact quote with no obligation.",
+            "Every project below was completed by our senior plumber with a focus on "
+            "quality, cleanliness, and care for the client's home.",
             body,
         ))
         elems.append(Spacer(1, 0.3 * cm))
 
-        header_row = [
-            Paragraph("<b>Service</b>", small),
-            Paragraph("<b>Description</b>", small),
-            Paragraph("<b>Starting From</b>", small),
-        ]
-        col_w = [6 * cm, 6.5 * cm, 4 * cm]
-        table_data = [header_row] + [
-            [Paragraph(s, small), Paragraph(d, small), Paragraph(p, small)]
-            for s, d, p in _PRICING_ROWS
-        ]
-        price_table = Table(table_data, colWidths=col_w)
-        price_table.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, 0),  green),
-            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f8f8")]),
-            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dddddd")),
-            ("TOPPADDING",    (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        elems.append(price_table)
+        photos = _get_photo_paths()
+        if photos:
+            cell_w = (AW - 0.4 * cm) / 2
+            img_h  = 5.5 * cm
+            for i in range(0, len(photos), 2):
+                pair  = photos[i:i + 2]
+                imgs  = []
+                caps  = []
+                for j, path in enumerate(pair):
+                    idx = i + j
+                    try:
+                        img = RLImage(path, width=cell_w, height=img_h)
+                        imgs.append(img)
+                    except Exception:
+                        imgs.append(Paragraph("(photo)", td_mid))
+                    cap_text = _PHOTO_CAPTIONS[idx % len(_PHOTO_CAPTIONS)]
+                    caps.append(Paragraph(cap_text, caption))
+                while len(imgs) < 2:
+                    imgs.append("")
+                    caps.append("")
+                img_row = Table([imgs], colWidths=[cell_w, cell_w])
+                img_row.setStyle(TableStyle([
+                    ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+                    ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
+                    ("LEFTPADDING",  (0, 0), (-1, -1), 2),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
+                ]))
+                cap_row = Table([caps], colWidths=[cell_w, cell_w])
+                cap_row.setStyle(TableStyle([
+                    ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING",  (0, 0), (-1, -1), 2),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING",   (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
+                ]))
+                elems.append(KeepTogether([img_row, cap_row]))
+        else:
+            elems.append(Paragraph(
+                "Portfolio photos available on request. Message us on WhatsApp "
+                f"(+{_WA_NUMBER}) and we'll send examples of our completed work.",
+                body,
+            ))
 
-        elems.append(Spacer(1, 0.5 * cm))
+        elems.append(Spacer(1, 0.2 * cm))
         elems.append(HRFlowable(width="100%", thickness=1, color=light,
-                                spaceAfter=8, spaceBefore=8))
+                                spaceAfter=4, spaceBefore=4))
+
+        # ── Pricing Guide ─────────────────────────────────────────────────────
+        elems.append(Paragraph("Complete Services & Pricing Guide", h2))
+        elems.append(Paragraph(
+            "All prices are in USD. Supply and labour costs vary by fixture choice, "
+            "site conditions, and scope of work. A free on-site assessment gives you "
+            "an exact written quote with no obligation.",
+            body,
+        ))
+        elems.append(Spacer(1, 0.25 * cm))
+
+        # ── Section 1: Full Renovations ───────────────────────────────────────
+        elems.append(Paragraph("Full Renovations", h2))
+        c1, c2, c3, c4 = AW*0.35, AW*0.30, AW*0.18, AW*0.17
+        reno_data = [
+            [Paragraph(x, th) for x in ["Service", "What's Included", "Supply", "Labour"]],
+            [Paragraph("Bathroom Renovation", td),
+             Paragraph("All fixtures: tub/shower, vanity, toilet, chamber, all pipework", td_mid),
+             Paragraph("Included", td_mid), Paragraph("From US$600", td)],
+            [Paragraph("Kitchen Renovation", td),
+             Paragraph("All kitchen plumbing: sink, pipes, drainage, connections", td_mid),
+             Paragraph("Included", td_mid), Paragraph("From US$600", td)],
+            [Paragraph("Full Bathroom Package", td),
+             Paragraph("Shower cubicle + vanity + toilet + chamber + tub (fixtures of your choice)", td_mid),
+             Paragraph("Included", td_mid), Paragraph("From US$600", td)],
+        ]
+        elems.append(tbl(reno_data, [c1, c2, c3, c4]))
+        elems.append(Spacer(1, 0.2 * cm))
+
+        # ── Section 2: Individual Bathroom Fittings ───────────────────────────
+        elems.append(Paragraph("Individual Bathroom Fittings", h2))
+        c1, c2, c3, c4 = AW*0.30, AW*0.25, AW*0.22, AW*0.23
+        fit_data = [
+            [Paragraph(x, th) for x in ["Item", "Supply (from)", "Install (from)", "All-In (from)"]],
+            [Paragraph("Shower Cubicle", td),
+             Paragraph("US$130", td_mid), Paragraph("US$40", td_mid), Paragraph("US$170", td)],
+            [Paragraph("Vanity Unit", td),
+             Paragraph("US$150", td_mid), Paragraph("US$30", td_mid), Paragraph("US$180", td)],
+            [Paragraph("Toilet Seat & Cistern", td),
+             Paragraph("US$50", td_mid), Paragraph("US$20", td_mid), Paragraph("US$70", td)],
+            [Paragraph("Side Chamber", td),
+             Paragraph("US$130", td_mid), Paragraph("US$30", td_mid), Paragraph("US$160", td)],
+            [Paragraph("Standard Bathtub (1500×700)", td),
+             Paragraph("US$80", td_mid), Paragraph("US$80", td_mid), Paragraph("US$160", td)],
+            [Paragraph("Freestanding Tub", td),
+             Paragraph("US$400", td_mid),
+             Paragraph("Mixer US$150 + Install US$120", td_mid),
+             Paragraph("US$670+", td)],
+        ]
+        elems.append(tbl(fit_data, [c1, c2, c3, c4]))
+        elems.append(Spacer(1, 0.2 * cm))
+
+        # ── Section 3: Geyser Services ────────────────────────────────────────
+        elems.append(Paragraph("Geyser Services", h2))
+        c1, c2, c3 = AW*0.38, AW*0.38, AW*0.24
+        gey_data = [
+            [Paragraph(x, th) for x in ["Service", "Detail", "Cost (from)"]],
+            [Paragraph("Geyser Supply & Installation", td),
+             Paragraph("New geyser supplied and fitted", td_mid),
+             Paragraph("US$160 all-in\n(US$80 supply + US$80 labour)", td)],
+            [Paragraph("Full Geyser Replacement", td),
+             Paragraph("Remove old unit, supply & install new geyser", td_mid),
+             Paragraph("US$350 all-in", td)],
+            [Paragraph("Pressure Valve Replacement", td),
+             Paragraph("Faulty valve replaced, system tested", td_mid),
+             Paragraph("US$25 labour + parts", td)],
+            [Paragraph("Thermostat Replacement", td),
+             Paragraph("Replace failed thermostat, restore hot water", td_mid),
+             Paragraph("US$30 labour + parts", td)],
+            [Paragraph("Element Replacement", td),
+             Paragraph("Replace heating element, full test", td_mid),
+             Paragraph("US$40 labour + parts", td)],
+        ]
+        elems.append(tbl(gey_data, [c1, c2, c3]))
+        elems.append(Spacer(1, 0.2 * cm))
+
+        # ── Section 4: Repairs & Maintenance ─────────────────────────────────
+        elems.append(Paragraph("Repairs & Maintenance", h2))
+        c1, c2, c3 = AW*0.38, AW*0.38, AW*0.24
+        rep_data = [
+            [Paragraph(x, th) for x in ["Service", "Detail", "Cost (from)"]],
+            [Paragraph("Leaking Tap", td),
+             Paragraph("Washer or cartridge replacement", td_mid),
+             Paragraph("US$15 labour", td)],
+            [Paragraph("Toilet Seat Replacement", td),
+             Paragraph("Supply new seat, fit and test", td_mid),
+             Paragraph("US$20 supply + US$10 fit", td)],
+            [Paragraph("Cistern Repair", td),
+             Paragraph("Filling valve or flush valve replacement", td_mid),
+             Paragraph("US$20 labour + parts", td)],
+            [Paragraph("Leaking Toilet Base", td),
+             Paragraph("Reseal base, test for leaks", td_mid),
+             Paragraph("US$25 labour", td)],
+            [Paragraph("Full Toilet Replacement", td),
+             Paragraph("Remove old toilet, supply & install new unit", td_mid),
+             Paragraph("US$60 supply + US$40 install", td)],
+            [Paragraph("Drain Unblocking (simple)", td),
+             Paragraph("Sink, basin, or shower drain cleared", td_mid),
+             Paragraph("US$20 labour", td)],
+            [Paragraph("Drain Unblocking (severe)", td),
+             Paragraph("Main drain or sewer line blockage", td_mid),
+             Paragraph("US$50 labour", td)],
+            [Paragraph("High-Pressure Jetting", td),
+             Paragraph("Stubborn or recurring blockages", td_mid),
+             Paragraph("US$80", td)],
+            [Paragraph("Minor Pipe Leak Repair", td),
+             Paragraph("Joint or fitting leak, sealed and tested", td_mid),
+             Paragraph("US$20 labour", td)],
+            [Paragraph("Burst Pipe Repair", td),
+             Paragraph("Emergency burst pipe, section repaired", td_mid),
+             Paragraph("US$40 labour", td)],
+            [Paragraph("Pipe Section Replacement", td),
+             Paragraph("Corroded or damaged section replaced", td_mid),
+             Paragraph("US$50 labour", td)],
+        ]
+        elems.append(tbl(rep_data, [c1, c2, c3]))
+
+        elems.append(Spacer(1, 0.3 * cm))
+        elems.append(Paragraph(
+            "* Labour prices are for work only. Parts and fixtures are charged separately "
+            "unless stated as all-in. All prices are starting rates — complex jobs may vary. "
+            "We always confirm the final price before starting work.",
+            note,
+        ))
+        elems.append(Spacer(1, 0.3 * cm))
+        elems.append(HRFlowable(width="100%", thickness=1, color=light,
+                                spaceAfter=8, spaceBefore=4))
 
         # ── Footer ────────────────────────────────────────────────────────────
         elems.append(Paragraph(
-            f"Ready to book? WhatsApp us: +{_WA_NUMBER} | "
-            f"Call: +{_PLUMBER_PHONE}",
+            f"Ready to book a free on-site assessment?  "
+            f"WhatsApp: +{_WA_NUMBER}   |   Call: +{_PLUMBER_PHONE}",
             body,
         ))
         elems.append(Paragraph(
-            "All work is carried out by experienced, licensed plumbers. "
-            "We offer a satisfaction guarantee on all jobs.",
-            small,
+            "All work carried out by experienced, licensed plumbers. "
+            "Satisfaction guaranteed on every job.",
+            note,
         ))
 
         doc.build(elems)
@@ -336,7 +485,7 @@ def send_booking_confirmation_email(apt):
     """Send HTML booking confirmation to the customer immediately after booking."""
     try:
         name    = getattr(apt, "customer_name", "") or "there"
-        subject = f"Booking Confirmed — {_service(apt)} on {_fmt_date(apt)}"
+        subject = f"Confirmed — {_service(apt)} on {_fmt_date(apt)}"
         body    = (
             f'<p>Hi {name},</p>'
             f'<p>Your appointment is confirmed. Here are the details:</p>'
@@ -369,7 +518,7 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
             f'<strong>{follow_up_date_str}</strong>.</p>'
         ) if follow_up_date_str else ""
 
-        subject = f"Your Quote from HomeBase Plumbers{service_hint}"
+        subject = f"The info you asked for{service_hint} — HomeBase Plumbers"
         body    = (
             f'<p>Hi {name},</p>'
             '<p>As promised — attached is our portfolio with examples of previous '
@@ -402,27 +551,27 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
 
 _REMINDER_CONFIGS = {
     'two_days': {
-        'subject': "Appointment Reminder — {service} on {date}",
+        'subject': "See you on {date} — {service}",
         'intro':   'Your appointment is coming up in <strong>2 days</strong>.',
         'footer':  'Please ensure someone is home and the work area is accessible.',
     },
     'one_day': {
-        'subject': "Your Appointment is Tomorrow — {service} at {time}",
+        'subject': "Your appointment is tomorrow — {service} at {time}",
         'intro':   'Your appointment is <strong>tomorrow</strong>.',
         'footer':  'Please ensure someone is home and water can be shut off if needed.',
     },
     'morning': {
-        'subject': "Your Appointment is Today — {service} at {time}",
+        'subject': "Today at {time} — {service}",
         'intro':   'Good morning! Your plumber arrives <strong>today at {time}</strong>.',
         'footer':  'Our plumber will call you 30 minutes before arrival.',
     },
     'two_hours': {
-        'subject': "Your Plumber Arrives in 2 Hours — {time}",
+        'subject': "On the way — arriving at {time}",
         'intro':   'Your plumber is on the way — arriving in approximately <strong>2 hours</strong>.',
         'footer':  'Please ensure access is ready.',
     },
     'thirty_mins': {
-        'subject': "Your Plumber is 30 Minutes Away — {time}",
+        'subject': "Arriving in 30 minutes — {time}",
         'intro':   'Your plumber is <strong>30 minutes away</strong>.',
         'footer':  'Please make sure the entrance is accessible.',
     },

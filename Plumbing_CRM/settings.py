@@ -138,7 +138,9 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False') == 'True'
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '20'))
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'no-reply@homebaseplumbers.co.zw')
+_from_address = os.environ.get('EMAIL_FROM_ADDRESS', EMAIL_HOST_USER or 'team@homebaseplumbers.co.zw')
+_from_name    = os.environ.get('EMAIL_FROM_NAME', 'HomeBase Plumbers')
+DEFAULT_FROM_EMAIL = f"{_from_name} <{_from_address}>"
 SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
 SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
 SENDGRID_FROM_EMAIL = os.environ.get('SENDGRID_FROM_EMAIL', DEFAULT_FROM_EMAIL)
