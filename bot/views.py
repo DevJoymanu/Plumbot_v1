@@ -4398,14 +4398,8 @@ Reply with ONLY a JSON object:
                     "• Side chamber: Supply from US$130 | Install from US$30"
                 )
                 if images_queued:
-                    reply = (
-                        "Sending our product catalogue now 📸\n\n"
-                        "Here are the rough supply + install prices for reference:\n\n"
-                        f"{_price_list}\n\n"
-                        "Bundling items can get you a discount. "
-                        "The plumber gives a fixed quote on the spot after seeing the space.\n\n"
-                        f"{followup}"
-                    )
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    return None
                 else:
                     reply = (
                         "Here's our product catalogue — rough supply + install prices "
