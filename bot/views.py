@@ -4382,7 +4382,37 @@ Reply with ONLY a JSON object:
             # ── CATALOGUE / PRODUCT LIST REQUEST ─────────────────────────────────
             _catalogue_triggers = ('catalogue', 'catalog', 'price list', 'pricelist', 'product list')
             if any(w in incoming_message.lower() for w in _catalogue_triggers):
-                reply = self.generate_pricing_overview(incoming_message)
+                from bot.whatsapp_webhook import send_catalogue_images
+                clean_phone = self.phone_number.replace('whatsapp:', '')
+                images_queued = send_catalogue_images(clean_phone, self.appointment)
+                followup = self._get_pricing_followup_prompt('english')
+                _price_list = (
+                    "• Toilet: Supply from US$50 | Install from US$20\n"
+                    "• Tub (built-in): Supply from US$80 | Install from US$80\n"
+                    "• Free-standing tub: Supply from US$400 | Mixer from US$150 | Install from US$120\n"
+                    "• Shower cubicle: Supply from US$130 | Install from US$40\n"
+                    "• Vanity unit: Supply from US$150 | Install from US$30\n"
+                    "• Geyser: Supply from US$80 | Install from US$80\n"
+                    "• Side chamber: Supply from US$130 | Install from US$30"
+                )
+                if images_queued:
+                    reply = (
+                        "Sending our product catalogue now 📸\n\n"
+                        "Here are the rough supply + install prices for reference:\n\n"
+                        f"{_price_list}\n\n"
+                        "Bundling items can get you a discount. "
+                        "The plumber gives a fixed quote on the spot after seeing the space.\n\n"
+                        f"{followup}"
+                    )
+                else:
+                    reply = (
+                        "Here's our product catalogue — rough supply + install prices "
+                        "(final cost confirmed after a free site visit):\n\n"
+                        f"{_price_list}\n\n"
+                        "Bundling items can get you a discount. "
+                        "The plumber gives a fixed quote on the spot after seeing the space.\n\n"
+                        f"{followup}"
+                    )
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", reply)
                 return reply

@@ -444,7 +444,7 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                 {'role': 'user', 'content': prompt},
             ],
             temperature=0.4,
-            max_tokens=180,
+            max_tokens=300,
         )
 
         message = response.choices[0].message.content.strip()

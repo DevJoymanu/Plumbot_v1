@@ -719,7 +719,56 @@ PREVIOUS_WORK_IMAGES_DIR = os.environ.get(
     'PREVIOUS_WORK_IMAGES_DIR',
     os.path.join(os.path.dirname(__file__), 'previous_work_photos')
 )
+CATALOGUE_IMAGES_DIR = os.environ.get(
+    'CATALOGUE_IMAGES_DIR',
+    os.path.join(os.path.dirname(__file__), 'catalogue_photos')
+)
 SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+
+
+def get_catalogue_images() -> list:
+    images = []
+    if not os.path.exists(CATALOGUE_IMAGES_DIR):
+        print(f"Catalogue images folder not found: {CATALOGUE_IMAGES_DIR}")
+        return images
+    for filename in sorted(os.listdir(CATALOGUE_IMAGES_DIR)):
+        ext = Path(filename).suffix.lower()
+        if ext in SUPPORTED_IMAGE_EXTENSIONS:
+            images.append(os.path.join(CATALOGUE_IMAGES_DIR, filename))
+    print(f"Found {len(images)} catalogue images")
+    return images
+
+
+def send_catalogue_images(sender, appointment=None) -> bool:
+    """
+    Send product catalogue images to the customer.
+    Returns True if images were queued, False if no images configured
+    (caller should show the text-only price list as a fallback).
+    """
+    images = get_catalogue_images()
+    if not images:
+        print("No catalogue images found — text-only fallback will be used")
+        return False
+
+    def _send():
+        try:
+            time.sleep(1)  # let the text message arrive first
+            sent_count = 0
+            for index, image_path in enumerate(images):
+                caption = "HomeBase Plumbers — product catalogue" if index == 0 else None
+                whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                sent_count += 1
+                time.sleep(0.5)
+            if appointment:
+                appointment.add_conversation_message(
+                    "assistant", f"[MEDIA] Sent {sent_count} catalogue image(s)"
+                )
+            print(f"Sent {sent_count}/{len(images)} catalogue images to {sender}")
+        except Exception as exc:
+            print(f"Failed to send catalogue images: {exc}")
+
+    threading.Thread(target=_send, daemon=True).start()
+    return True
 
 
 def get_previous_work_images() -> list:
