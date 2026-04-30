@@ -230,10 +230,8 @@ def _fmt_dt(dt):
 
 def _send_reply(apt, subject, html_body):
     """Send HTML email to the customer and tag with APT id."""
-    from bot.customer_emails import _send, _wrap, _apt_tag
-    tagged  = f"{subject} [APT-{apt.pk}]"
-    plain   = f"Please view this in an HTML email client.\n\nSubject: {tagged}"
-    html    = _wrap("#1a73e8", subject, html_body)
+    from bot.customer_emails import _send, _wrap
+    html = _wrap(html_body)
     return _send(apt, subject, html)
 
 

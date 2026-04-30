@@ -1,8 +1,9 @@
+import base64
 import logging
 
 import requests
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,15 @@ def get_plumber_notification_emails():
     return [email for email in recipients if email]
 
 
-def send_email_to_recipients(recipients, subject, message, *, dry_run=False, html_message=None):
-    """Send email to an explicit list of recipients (used for per-plumber routing)."""
+def send_email_to_recipients(
+    recipients, subject, message, *, dry_run=False,
+    html_message=None, attachment=None, attachment_name="attachment.pdf",
+):
+    """
+    Send email to an explicit list of recipients.
+    attachment: bytes object (e.g. PDF) to attach, or None.
+    attachment_name: filename for the attachment.
+    """
     if not recipients:
         logger.warning("send_email_to_recipients: no recipients for '%s'.", subject)
         return False
@@ -35,17 +43,20 @@ def send_email_to_recipients(recipients, subject, message, *, dry_run=False, htm
 
     sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
     if sendgrid_api_key:
-        return _send_via_sendgrid(sendgrid_api_key, recipients, subject, message, html_message=html_message)
+        return _send_via_sendgrid(
+            sendgrid_api_key, recipients, subject, message,
+            html_message=html_message, attachment=attachment,
+            attachment_name=attachment_name,
+        )
 
     try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=recipients,
-            fail_silently=False,
-            html_message=html_message,
-        )
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
+        msg = EmailMultiAlternatives(subject, message, from_email, recipients)
+        if html_message:
+            msg.attach_alternative(html_message, "text/html")
+        if attachment:
+            msg.attach(attachment_name, attachment, "application/pdf")
+        msg.send(fail_silently=False)
         return True
     except Exception:
         logger.exception(
@@ -91,7 +102,10 @@ def send_plumber_notification_email(subject, message, *, dry_run=False, html_mes
         return False
 
 
-def _send_via_sendgrid(api_key, recipients, subject, message, html_message=None):
+def _send_via_sendgrid(
+    api_key, recipients, subject, message, html_message=None,
+    attachment=None, attachment_name="attachment.pdf",
+):
     content = []
     if message:
         content.append({"type": "text/plain", "value": message})
@@ -113,6 +127,13 @@ def _send_via_sendgrid(api_key, recipients, subject, message, html_message=None)
         "subject": subject,
         "content": content,
     }
+
+    if attachment:
+        payload["attachments"] = [{
+            "content":  base64.b64encode(attachment).decode(),
+            "type":     "application/pdf",
+            "filename": attachment_name,
+        }]
 
     try:
         response = requests.post(
