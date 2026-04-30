@@ -873,6 +873,14 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     from bot.customer_emails import send_delay_quote_email
     send_delay_quote_email(appointment, follow_up_date_str=friendly)
 
+    # Re-write delay signal — it gets cleared when the email address message
+    # passes through generate_response, so we restore it here so that
+    # subsequent acks ("sharp", "ok") are properly suppressed.
+    notes = appointment.internal_notes or ''
+    if _DELAY_SIGNAL_TAG not in notes:
+        appointment.internal_notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
+        appointment.save(update_fields=['internal_notes'])
+
     return (
         "Got it! 📧 I'll have that sent across to you shortly.\n\n"
         "We'll also check back in with you on the agreed date. "
