@@ -59,10 +59,13 @@ new_plumbing_installation, drain_unblocking, pipe_repair, geyser_repair,
 toilet_repair
 
 ─── PRODUCT INTENT (most specific, or "none") ────────────────────────────────
-tub_sales, standalone_tub, geyser, shower_cubicle, vanity,
-bathtub_installation, toilet, chamber, drain_unblocking, pipe_repair,
-geyser_repair, toilet_repair, location_ask, location_visit, pictures,
-combined_pricing, none
+tub_sales        Any message asking about tub price/cost — "how much tub",
+                 "tub price", "how much is a tub", "do you sell tubs".
+                 ⚠ Prefer tub_sales over combined_pricing whenever "tub" is mentioned.
+standalone_tub   Specifically freestanding/standalone tub.
+geyser, shower_cubicle, vanity, bathtub_installation, toilet, chamber,
+drain_unblocking, pipe_repair, geyser_repair, toilet_repair,
+location_ask, location_visit, pictures, combined_pricing, none
 
 ─── EXTRACT (null when not present in message) ───────────────────────────────
 area              Suburb, neighbourhood, or city name.

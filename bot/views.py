@@ -4379,6 +4379,14 @@ Reply with ONLY a JSON object:
                 self.appointment.add_conversation_message("assistant", oos_reply)
                 return oos_reply
 
+            # ── CATALOGUE / PRODUCT LIST REQUEST ─────────────────────────────────
+            _catalogue_triggers = ('catalogue', 'catalog', 'price list', 'pricelist', 'product list')
+            if any(w in incoming_message.lower() for w in _catalogue_triggers):
+                reply = self.generate_pricing_overview(incoming_message)
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
+
             # ── SERVICE / PRODUCT PRICING INQUIRIES (pre-booking only) ───────────
             any_pricing_sent = (
                 getattr(self.appointment, 'pricing_overview_sent', False) or
@@ -4405,7 +4413,7 @@ Reply with ONLY a JSON object:
                 }
                 NON_PRICING_AUTO_REPLY_INTENTS = {
                     'location_ask', 'location_visit', 'previous_quotation', 'pictures',
-                    'combined_pricing',
+                    'combined_pricing', 'standalone_tub', 'tub_sales', 'bathtub_installation',
                 }
                 if inquiry.get('intent') != 'none' and (
                     inquiry.get('confidence') == 'HIGH' or
@@ -4575,6 +4583,19 @@ Reply with ONLY a JSON object:
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", reschedule_response)
                 return reschedule_response
+
+            # ── GARAGE / OUTBUILDING SERVICE-SCOPE QUESTION ───────────────────────
+            _msg_lc = incoming_message.lower()
+            _scope_q = any(q in _msg_lc for q in ('do you do', 'do u do', 'do you also', 'do u also', 'can you do', 'can u do'))
+            if 'garage' in _msg_lc and (_scope_q or '?' in incoming_message):
+                reply = (
+                    "Yes! We handle all plumbing work in garages and outbuildings — "
+                    "sinks, water points, drainage, and pipework. 🔧\n\n"
+                    "Is this for a garage at the same property, or is it a separate job?"
+                )
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
 
             # ── STEPS 5 & 6: BOOK IF READY, OTHERWISE ASK NEXT QUESTION ─────────
             next_question  = self.get_next_question_to_ask()
@@ -5696,8 +5717,13 @@ When you're finished sending everything, just type "done" or "finished" and I'll
       product instead of defaulting to bathtub_installation.
 
     INTENTS:
-    - tub_sales: asking if we sell tubs or about small bathroom tubs
-    - standalone_tub: asking about standalone/freestanding tub price or availability
+    - tub_sales: asking about tub price, cost, or availability — ANY message with "tub"
+      and a price/cost signal. Examples: "how much tub", "tub price", "how much is a tub",
+      "do you sell tubs", "tub cost", "how much for a tub", "tub supply and install"
+    - standalone_tub: asking specifically about standalone or freestanding tub — price, size,
+      dimensions, length, or any information. Examples: "freestanding tub price", "standalone
+      tub how much", "free standing tub", "how big are your freestanding tubs", "how long is
+      the tub", "what sizes do freestanding tubs come in"
     - geyser: asking about geyser installation or pricing
     - shower_cubicle: asking about shower cubicles, pricing, installation
     - vanity: asking about vanity units, custom vanity
@@ -5852,35 +5878,35 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 structured_pricing = {
                     "tub_sales": {
                         "breakdown_lines": [
-                            "Tub: Supply from US$80, Install from US$80",
-                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
-                            "Side chamber: Supply from US$130, Install from US$30",
+                            "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → from US$670 all-in",
+                            "Standard built-in tub: Supply from US$80 | Install from US$80 → from US$160 all-in",
+                            "Side chamber (add-on): Supply from US$130 | Install from US$30 → from US$160",
                         ],
-                        "total_line": "Roughly looking at about US$190 for a basic tub supply-and-fit, or US$480+ for a full freestanding setup.",
-                        "cheapest_line": "The cheapest option is an ordinary tub starting from US$80 supply + US$80 install.",
+                        "total_line": "Full freestanding setup from US$670. Standard tub from US$160 all-in.",
+                        "cheapest_line": "Starting point is a standard tub at US$80 supply + US$80 install.",
                         "sn_breakdown_lines": [
-                            "Tub: Supply kubva US$80, Install kubva US$80",
-                            "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
-                            "Side chamber: Supply kubva US$130, Install kubva US$30",
+                            "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → kubva US$670 all-in",
+                            "Standard tub: Supply kubva US$80 | Install kubva US$80 → kubva US$160 all-in",
+                            "Side chamber (add-on): Supply kubva US$130 | Install kubva US$30 → kubva US$160",
                         ],
-                        "sn_total_line": "Zvingangoita US$190 pa basic tub supply-and-fit, kana US$480+ pa full freestanding setup.",
-                        "sn_cheapest_line": "Cheapest option i ordinary tub inotangira paUS$80 supply neUS$80 install.",
+                        "sn_total_line": "Full freestanding setup kubva US$670. Standard tub kubva US$160 all-in.",
+                        "sn_cheapest_line": "Starting point i standard tub paUS$80 supply + US$80 install.",
                     },
                     "standalone_tub": {
                         "breakdown_lines": [
-                            "Tub: Supply from US$80, Install from US$80",
-                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
-                            "Side chamber: Supply from US$130, Install from US$30",
+                            "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → from US$670 all-in",
+                            "Standard built-in tub: Supply from US$80 | Install from US$80 → from US$160 all-in",
+                            "Side chamber (add-on): Supply from US$130 | Install from US$30 → from US$160",
                         ],
-                        "total_line": "Roughly looking at about US$480 for a full freestanding tub setup.",
-                        "cheapest_line": "The cheapest option is an ordinary tub starting from US$80 supply + US$80 install.",
+                        "total_line": "Full freestanding setup from US$670 all-in.",
+                        "cheapest_line": "If budget is tight, the standard built-in tub starts from US$160 all-in.",
                         "sn_breakdown_lines": [
-                            "Tub: Supply kubva US$80, Install kubva US$80",
-                            "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
-                            "Side chamber: Supply kubva US$130, Install kubva US$30",
+                            "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → kubva US$670 all-in",
+                            "Standard tub: Supply kubva US$80 | Install kubva US$80 → kubva US$160 all-in",
+                            "Side chamber (add-on): Supply kubva US$130 | Install kubva US$30 → kubva US$160",
                         ],
-                        "sn_total_line": "Zvingangoita US$480 pa full freestanding tub setup.",
-                        "sn_cheapest_line": "Cheapest option i ordinary tub inotangira paUS$80 supply neUS$80 install.",
+                        "sn_total_line": "Full freestanding setup kubva US$670 all-in.",
+                        "sn_cheapest_line": "Budget option i standard built-in tub kubva US$160 all-in.",
                     },
                     "geyser": {
                         "breakdown_lines": [
@@ -5920,19 +5946,19 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     },
                     "bathtub_installation": {
                         "breakdown_lines": [
-                            "Tub: Supply from US$80, Install from US$80",
-                            "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
-                            "Side chamber: Supply from US$130, Install from US$30",
+                            "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → from US$670 all-in",
+                            "Standard built-in tub: Supply from US$80 | Install from US$80 → from US$160 all-in",
+                            "Side chamber (add-on): Supply from US$130 | Install from US$30 → from US$160",
                         ],
-                        "total_line": "Roughly looking at about US$160 for a basic tub install, or US$480+ for a full freestanding setup.",
-                        "cheapest_line": "The cheapest option is an ordinary tub starting from US$80 supply + US$80 install.",
+                        "total_line": "Full freestanding setup from US$670. Standard tub from US$160 all-in.",
+                        "cheapest_line": "Standard built-in tub is the entry point at US$160 all-in.",
                         "sn_breakdown_lines": [
-                            "Tub: Supply kubva US$80, Install kubva US$80",
-                            "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
-                            "Side chamber: Supply kubva US$130, Install kubva US$30",
+                            "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → kubva US$670 all-in",
+                            "Standard tub: Supply kubva US$80 | Install kubva US$80 → kubva US$160 all-in",
+                            "Side chamber (add-on): Supply kubva US$130 | Install kubva US$30 → kubva US$160",
                         ],
-                        "sn_total_line": "Zvingangoita US$160 pa basic tub install, kana US$480+ pa full freestanding setup.",
-                        "sn_cheapest_line": "Cheapest option i ordinary tub inotangira paUS$80 supply neUS$80 install.",
+                        "sn_total_line": "Full freestanding setup kubva US$670. Standard tub kubva US$160 all-in.",
+                        "sn_cheapest_line": "Standard built-in tub i entry point paUS$160 all-in.",
                     },
                     "toilet": {
                         "breakdown_lines": [
