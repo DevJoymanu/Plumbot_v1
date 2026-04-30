@@ -4304,6 +4304,10 @@ Reply with ONLY a JSON object:
             'geyser', 'geysers',
             'basin', 'basins', 'sink', 'sinks',
         )
+        size_question_patterns = ('how big', 'what size', 'what sizes', 'dimensions', 'how large', 'how wide', 'how long')
+        if any(p in msg for p in size_question_patterns) and any(w in msg for w in product_words):
+            return True
+
         clean = msg.removeprefix('and ').strip().rstrip('?').strip()
         word_count = len(msg.split())
 
@@ -4378,6 +4382,16 @@ Reply with ONLY a JSON object:
                 self.appointment.add_conversation_message("user", incoming_message)
                 self.appointment.add_conversation_message("assistant", oos_reply)
                 return oos_reply
+
+            # ── PRODUCT SIZE / SPEC QUESTION ─────────────────────────────────────
+            _spec_triggers = ('how big', 'what size', 'what sizes', 'dimensions', 'how large', 'how wide', 'how long')
+            _tub_words = ('tub', 'tubs', 'bathtub', 'bathtubs', 'free standing', 'freestanding', 'standalone')
+            _msg_lower = incoming_message.lower()
+            if any(t in _msg_lower for t in _spec_triggers) and any(w in _msg_lower for w in _tub_words):
+                reply = self.handle_service_inquiry('standalone_tub', incoming_message)
+                self.appointment.add_conversation_message("user", incoming_message)
+                self.appointment.add_conversation_message("assistant", reply)
+                return reply
 
             # ── CATALOGUE / PRODUCT LIST REQUEST ─────────────────────────────────
             _catalogue_triggers = ('catalogue', 'catalog', 'price list', 'pricelist', 'product list', 'portfolio')
