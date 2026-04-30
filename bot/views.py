@@ -6134,7 +6134,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                 if intent in _TUB_INTENTS and not self._is_asking_for_price(message):
                     if language == 'shona':
                         return (
-                            "Tubs dzinouya mumhando mbiri: 🛁\n\n"
+                            "Tubs dzinouya mumhando mbiri: \n\n"
                             "• *Standard built-in tub* (1500×700mm) — inoiswa mumadziro, "
                             "ine side chamber\n"
                             "• *Free-standing tub* (1500–1800mm) — inomira yega, "
@@ -6142,7 +6142,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Unofunga mhando ipi — yakavakirwa mumadziro kana inomira yega?"
                         )
                     return (
-                        "Bathtubs come in two main types: 🛁\n\n"
+                        "Bathtubs come in two main types: \n\n"
                         "• *Standard built-in* (1500×700mm) — set into the wall surround, "
                         "with a side chamber\n"
                         "• *Freestanding* (1500–1800mm) — standalone statement piece, "
@@ -6177,24 +6177,24 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "tub_sales": {
                         "en": (
                             "Tubs start from US$400 supply-only, or US$500–$800 supply + install — "
-                            "depends on the style and size. 🛁\n\n"
+                            "depends on the style and size. \n\n"
                             "Do you know what size space you're working with, or would it be easier "
                             "to have us come measure and give you a fixed price on the spot? "
                             "(Site assessment is free)"
                         ),
                         "en_v": (
                             "Tubs start from US$400 supply-only, or US$500–$800 supply + install — "
-                            "depends on the style and size. 🛁\n\n"
+                            "depends on the style and size. \n\n"
                             "Our plumber will go through the options with you when they come out."
                         ),
                         "sn": (
                             "Tubs dzinotangira kuUS$400 supply chete, kana US$500–$800 supply neinstallation — "
-                            "zvichienda nemhando neukuru. 🛁\n\n"
+                            "zvichienda nemhando neukuru. \n\n"
                             "Unoziva ukuru hwenzvimbo yako here, kana tiuye tiite free assessment "
                             "tikupe mutengo wakakwana pasite?"
                         ),
                         "sn_v": (
-                            "Tubs dzinotangira kuUS$400 supply chete, kana US$500–$800 supply neinstallation. 🛁\n\n"
+                            "Tubs dzinotangira kuUS$400 supply chete, kana US$500–$800 supply neinstallation. \n\n"
                             "Plumber wedu achakuratidza zvinosarudzwa paauya."
                         ),
                     },
@@ -6202,7 +6202,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                     "standalone_tub": {
                         "en": (
                             "Standalone / freestanding tubs run US$400–$800 supply, plus US$120–$200 "
-                            "to fit and finish. 🛁\n\n"
+                            "to fit and finish. \n\n"
                             "Full breakdown:\n"
                             "• Free-standing tub supply: from US$400\n"
                             "• Free-standing mixer: from US$150\n"
@@ -6214,7 +6214,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ),
                         "en_v": (
                             "Standalone / freestanding tubs run US$400–$800 supply, plus US$120–$200 "
-                            "to fit and finish. 🛁\n\n"
+                            "to fit and finish. \n\n"
                             "Full breakdown:\n"
                             "• Free-standing tub supply: from US$400\n"
                             "• Free-standing mixer: from US$150\n"
@@ -6225,7 +6225,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                         ),
                         "sn": (
                             "Free-standing tubs dzinotangira kuUS$400 supply, neUS$120–$200 "
-                            "yeinstallation. 🛁\n\n"
+                            "yeinstallation. \n\n"
                             "• Free-standing tub: kubva US$400\n"
                             "• Free-standing mixer: kubva US$150\n"
                             "• Kuisa mixer netub: US$120\n"
@@ -6234,7 +6234,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "Unoziva mhando yetub yaungada here, kana tiuye tikuratidze zvinosarudzwa pasite?"
                         ),
                         "sn_v": (
-                            "Free-standing tubs dzinotangira kuUS$400 supply, neUS$120–$200 yeinstallation. 🛁\n\n"
+                            "Free-standing tubs dzinotangira kuUS$400 supply, neUS$120–$200 yeinstallation. \n\n"
                             "• Free-standing tub: kubva US$400\n"
                             "• Free-standing mixer: kubva US$150\n"
                             "• Kuisa mixer netub: US$120\n"
@@ -6299,7 +6299,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
 
                     "bathtub_installation": {
                         "en": (
-                            "Bathtub installation runs US$80–$200 depending on the type: 🛁\n\n"
+                            "Bathtub installation runs US$80–$200 depending on the type: \n\n"
                             "• Ordinary tub (with wall finishing): from US$80\n"
                             "• Free-standing tub supply: from US$400\n"
                             "• Free-standing mixer: from US$150\n"
@@ -6308,7 +6308,7 @@ When you're finished sending everything, just type "done" or "finished" and I'll
                             "What type of tub are you going with — standard built-in or freestanding?"
                         ),
                         "sn": (
-                            "Kuisa bathtub kunosvika US$80–$200 zvichienda nemhando: 🛁\n\n"
+                            "Kuisa bathtub kunosvika US$80–$200 zvichienda nemhando: \n\n"
                             "• Tub yakajairwa (ine wall finishing): kubva US$80\n"
                             "• Free-standing tub: kubva US$400\n"
                             "• Free-standing mixer: kubva US$150\n"
