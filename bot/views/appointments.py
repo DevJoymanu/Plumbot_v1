@@ -3,6 +3,12 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods, require_GET
 from django.utils.decorators import method_decorator
+from .dashboard import (
+    _dashboard_workspace_data,
+    _priority_leads_workspace_data,
+    _followups_workspace_data,
+    _appointments_sidebar_context,
+)
 from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
 from django.urls import reverse, reverse_lazy
 from django.contrib import messages
