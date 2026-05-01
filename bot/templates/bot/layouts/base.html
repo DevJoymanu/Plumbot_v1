@@ -26,6 +26,7 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        // Collapse toggle — CSS handles the max-height animation
         document.querySelectorAll('[data-collapse-toggle]').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 var targetId = this.getAttribute('data-collapse-toggle');
@@ -36,15 +37,30 @@
             });
         });
 
-        document.querySelectorAll('a, button').forEach(function (el) {
-            el.addEventListener('touchstart', function () { this.style.opacity = '0.8'; }, { passive: true });
-            el.addEventListener('touchend', function () { this.style.opacity = ''; }, { passive: true });
+        // Mobile input font size (prevents iOS zoom)
+        if (window.innerWidth <= 768) {
+            document.querySelectorAll('input, select, textarea').forEach(function (input) {
+                input.style.fontSize = '16px';
+            });
+        }
+
+        // Press-scale feedback on interactive rows
+        var pressTargets = '.pb-sched-row, .pb-followup-row, .inbox-row, .delayed-row';
+        document.querySelectorAll(pressTargets).forEach(function (el) {
+            el.addEventListener('pointerdown', function () { this.style.transform = 'scale(0.993)'; }, { passive: true });
+            el.addEventListener('pointerup',   function () { this.style.transform = ''; }, { passive: true });
+            el.addEventListener('pointerleave',function () { this.style.transform = ''; }, { passive: true });
         });
 
-        document.querySelectorAll('input, select, textarea').forEach(function (input) {
-            if (window.innerWidth <= 768) {
-                input.style.fontSize = '16px';
-            }
+        // Auto-dismiss flash alerts after 4 s
+        document.querySelectorAll('.pb-alert').forEach(function (alert) {
+            setTimeout(function () {
+                alert.style.transition = 'opacity 0.4s ease, max-height 0.4s ease, padding 0.4s ease';
+                alert.style.opacity = '0';
+                alert.style.maxHeight = '0';
+                alert.style.padding = '0';
+                alert.style.marginBottom = '0';
+            }, 4000);
         });
     });
 </script>
