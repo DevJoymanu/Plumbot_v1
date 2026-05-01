@@ -12,7 +12,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
-from .decorators import admin_required, superuser_required
+from .decorators import superuser_required
 import logging
 
 logger = logging.getLogger(__name__)

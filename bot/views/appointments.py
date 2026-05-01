@@ -1,0 +1,901 @@
+from django.shortcuts import render, redirect, get_object_or_404
+from django.views import View
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST, require_http_methods, require_GET
+from django.utils.decorators import method_decorator
+from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
+from django.urls import reverse, reverse_lazy
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.views.generic import ListView, DetailView, TemplateView, CreateView, UpdateView, DeleteView
+from django.db.models import Count, Q
+from django.db import IntegrityError, connection, transaction
+from django.utils import timezone
+from django.forms import modelformset_factory
+from django.templatetags.static import static
+from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+import requests
+import pytz
+import os
+import json
+import re
+import tempfile
+import base64
+import logging
+
+from ..models import (
+    Appointment, Quotation, QuotationItem,
+    QuotationTemplate, QuotationTemplateItem, ConversationMessage,
+)
+from ..forms import (
+    AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm,
+    QuotationForm, QuotationItemFormSet,
+    QuotationTemplateForm, QuotationTemplateItemFormSet,
+)
+from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
+from ..whatsapp_cloud_api import whatsapp_api
+from ..services.clients import (
+    twilio_client, deepseek_client,
+    TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
+    DEEPSEEK_API_KEY,
+)
+from ..utils import (
+    _to_decimal, _to_float, _safe_logo_url, _safe_logo_data_uri,
+    _reset_pk_sequence, _append_admin_note,
+    clean_phone_number, format_phone_number_for_storage,
+)
+
+logger = logging.getLogger(__name__)
+from ..services.lead_scoring import refresh_lead_score, calculate_lead_score
+from ..plumber_notifications import send_plumber_notification_email
+
+
+@method_decorator(staff_required, name='dispatch')
+class AppointmentsListView(ListView):
+    template_name = 'bot/pages/appointments_list.html'
+    model = Appointment
+    context_object_name = 'appointments'
+    paginate_by = 20
+    ordering = ['-updated_at']
+
+    # Per-tab default time windows
+    TAB_AGE_DEFAULTS = {
+        'all':       '1w_minus',
+        'booked':    '3w_minus',
+        'pending':   '1w_minus',
+        'cancelled': '1w_minus',
+        'delayed':   '3w_minus',
+    }
+    TAB_AGE_MAP = {
+        '1w_minus': timedelta(weeks=1),
+        '3w_minus': timedelta(weeks=3),
+        '4w_minus': timedelta(weeks=4),
+    }
+
+    def _resolve_age(self):
+        """Return (status_filter, response_age) honouring per-tab defaults."""
+        status_filter = self.request.GET.get('status_filter', 'all')
+        if 'response_age' in self.request.GET:
+            age = self.request.GET['response_age'].strip()
+            if age not in self.TAB_AGE_MAP and age != 'all':
+                age = self.TAB_AGE_DEFAULTS.get(status_filter, '1w_minus')
+        else:
+            age = self.TAB_AGE_DEFAULTS.get(status_filter, '1w_minus')
+        return status_filter, age
+
+    def get_queryset(self):
+        from django.db.models import Case, IntegerField, Q, Value, When
+
+        status_filter, response_age = self._resolve_age()
+        # Cache for get_context_data
+        self._status_filter = status_filter
+        self._response_age  = response_age
+
+        age_map_minus = self.TAB_AGE_MAP
+
+        has_project_type = Case(
+            When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_property_type = Case(
+            When(Q(property_type__isnull=False) & ~Q(property_type=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_area = Case(
+            When(Q(customer_area__isnull=False) & ~Q(customer_area=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_timeline = Case(
+            When(Q(timeline__isnull=False) & ~Q(timeline=''), then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        has_site_visit = Case(
+            When(scheduled_datetime__isnull=False, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+
+        completed_fields = has_project_type + has_property_type + has_area + has_timeline + has_site_visit
+        queryset = (
+            Appointment.objects.annotate(
+                computed_score=Case(
+                    When(scheduled_datetime__isnull=False, then=Value(100)),
+                    default=completed_fields * Value(20),
+                    output_field=IntegerField(),
+                ),
+            ).annotate(
+                computed_status=Case(
+                    When(scheduled_datetime__isnull=False, then=Value('very_hot')),
+                    When(computed_score__lte=20, then=Value('cold')),
+                    When(computed_score__lte=60, then=Value('warm')),
+                    When(computed_score=80, then=Value('hot')),
+                    default=Value('very_hot'),
+                ),
+                computed_status_label=Case(
+                    When(scheduled_datetime__isnull=False, then=Value('Very Hot')),
+                    When(computed_score__lte=20, then=Value('Cold')),
+                    When(computed_score__lte=60, then=Value('Warm')),
+                    When(computed_score=80, then=Value('Hot')),
+                    default=Value('Very Hot'),
+                ),
+            ).order_by('-updated_at')
+        )
+
+        if response_age != 'all' and response_age in age_map_minus:
+            cutoff = timezone.now() - age_map_minus[response_age]
+            queryset = queryset.filter(last_customer_response__gte=cutoff)
+
+        if status_filter == 'booked':
+            queryset = queryset.filter(status='confirmed')
+        elif status_filter == 'pending':
+            queryset = queryset.filter(status='pending').exclude(
+                internal_notes__contains='[DELAY_SIGNAL]'
+            )
+        elif status_filter == 'cancelled':
+            queryset = queryset.filter(status='cancelled')
+        elif status_filter == 'delayed':
+            queryset = queryset.filter(
+                status='pending',
+                internal_notes__contains='[DELAY_SIGNAL]'
+            )
+
+        return queryset        
+        
+    #
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # Reuse values computed in get_queryset (called first by ListView)
+        status_filter = getattr(self, '_status_filter', 'all')
+        response_age  = getattr(self, '_response_age',  '1w_minus')
+        age_map_minus = self.TAB_AGE_MAP
+
+        base_qs = Appointment.objects.all()
+        if response_age != 'all' and response_age in age_map_minus:
+            cutoff = timezone.now() - age_map_minus[response_age]
+            base_qs = base_qs.filter(last_customer_response__gte=cutoff)
+
+        # Delayed = leads with a [DELAY_SIGNAL] in internal_notes that are still active
+        delayed_qs = base_qs.filter(
+            status='pending',
+            internal_notes__contains='[DELAY_SIGNAL]',
+        ).order_by('updated_at')
+
+        from django.utils import timezone as _tz
+        _now = _tz.now()
+        DELAY_WINDOW = 14  # ← CHANGE THIS FROM 14 TO 21 DAYS
+
+        delayed_leads_with_countdown = []
+        for lead in delayed_qs:
+            # Use updated_at as the signal start time (when the delay was set)
+            signal_start = lead.updated_at
+            follow_up_due = signal_start + timedelta(days=DELAY_WINDOW)
+            
+            # Calculate days remaining (can be negative for overdue)
+            days_remaining = (follow_up_due.date() - _now.date()).days
+            
+            # Calculate days elapsed
+            days_elapsed = DELAY_WINDOW - max(0, days_remaining)
+            pct_elapsed = min(100, int((days_elapsed / DELAY_WINDOW) * 100)) if days_remaining > 0 else 100
+            
+            # Check if overdue
+            overdue = _now > follow_up_due
+
+            delayed_leads_with_countdown.append({
+                'lead': lead,
+                'days_remaining': abs(days_remaining) if overdue else max(0, days_remaining),
+                'days_elapsed': days_elapsed,
+                'pct_elapsed': pct_elapsed,
+                'follow_up_due_at': follow_up_due,
+                'follow_up_window_days': DELAY_WINDOW,
+                'overdue': overdue,
+            })
+
+        today = timezone.now().date()
+        todays_confirmed_appointments = base_qs.filter(
+            status='confirmed',
+            scheduled_datetime__date=today
+        ).order_by('scheduled_datetime')
+
+        context['active_nav'] = 'appointments'
+        context['status_counts'] = {
+            'total': base_qs.count(),
+            'pending': base_qs.filter(status='pending').exclude(
+                internal_notes__contains='[DELAY_SIGNAL]'
+            ).count(),
+            'confirmed': base_qs.filter(status='confirmed').count(),
+            'cancelled': base_qs.filter(status='cancelled').count(),
+            'delayed': delayed_qs.count(),
+            'todays_confirmed_appointments': todays_confirmed_appointments,
+        }
+        context['delayed_leads_with_countdown'] = delayed_leads_with_countdown
+        context['selected_response_age'] = response_age
+        context['selected_status_filter'] = status_filter
+        return context
+
+
+@method_decorator(staff_required, name='dispatch')
+class PriorityLeadsView(TemplateView):
+    template_name = 'bot/pages/priority_leads_dashboard.html'
+
+    def _group_leads_by_date(self, leads_qs):
+        from collections import OrderedDict
+
+        grouped = OrderedDict()
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+
+        for lead in leads_qs:
+            activity = lead.recent_activity
+            if not activity:
+                label = "No Activity Date"
+            else:
+                local_activity = timezone.localtime(activity)
+                activity_date = local_activity.date()
+                if activity_date == today:
+                    label = "Today"
+                elif activity_date == yesterday:
+                    label = "Yesterday"
+                else:
+                    label = local_activity.strftime("%b %d, %Y")
+
+            grouped.setdefault(label, []).append(lead)
+
+        return [{"label": label, "leads": items} for label, items in grouped.items()]
+
+    def _recommended_action(self, lead):
+        if lead.computed_status == 'very_hot':
+            if lead.manual_followup_done:
+                return "Finalize booking time and send confirmation details."
+            return "Call now and lock in the site visit time."
+        if lead.computed_status == 'hot':
+            if lead.manual_followup_done:
+                return "Follow up on quote details and push to booking."
+            return "Call within 30 minutes to complete missing details."
+        if lead.computed_status == 'warm':
+            if lead.manual_followup_done:
+                return "Set a reminder and wait for customer response."
+            return "Send a WhatsApp check-in for missing project info."
+        if lead.computed_score == 20:
+            return "Send a quick nudge to re-engage this lead."
+        return "Move to nurture sequence or close as cold lead."
+
+    def _enrich_leads(self, leads_qs):
+        leads = list(leads_qs)
+        for lead in leads:
+            lead.recommended_action = self._recommended_action(lead)
+        return leads
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        response_age = self.request.GET.get('response_age', '').strip()
+        if not response_age:
+            response_age = '1w_minus'
+        workspace = _priority_leads_workspace_data(response_age)
+        very_hot_leads = workspace['very_hot_leads']
+        hot_leads = workspace['hot_leads']
+        warm_leads = workspace['warm_leads']
+        luke_warm_leads = workspace['luke_warm_leads']
+        cold_leads = workspace['cold_leads']
+        total_leads = workspace['total_leads']
+
+        sections = [
+            {
+                'id': 'sec-vh',
+                'title': 'Very Hot Leads',
+                'icon': 'fire',
+                'css': 'sec-vh',
+                'status_bg': '#fee2e2',
+                'status_fg': '#991b1b',
+                'border': '#dc2626',
+                'empty_label': 'No very hot leads.',
+                'recommended_action': 'Call now and lock in the site visit time.',
+                'count': len(very_hot_leads),
+                'pending_count': len([lead for lead in very_hot_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in very_hot_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in very_hot_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in very_hot_leads if lead.manual_followup_done])),
+            },
+            {
+                'id': 'sec-hot',
+                'title': 'Hot Leads',
+                'icon': 'exclamation-triangle',
+                'css': 'sec-hot',
+                'status_bg': '#fef3c7',
+                'status_fg': '#92400e',
+                'border': '#f59e0b',
+                'empty_label': 'No hot leads.',
+                'recommended_action': 'Call within 30 minutes to complete missing details.',
+                'count': len(hot_leads),
+                'pending_count': len([lead for lead in hot_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in hot_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in hot_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in hot_leads if lead.manual_followup_done])),
+            },
+            {
+                'id': 'sec-warm',
+                'title': 'Warm Leads',
+                'icon': 'sun',
+                'css': 'sec-warm',
+                'status_bg': '#d1fae5',
+                'status_fg': '#065f46',
+                'border': '#10b981',
+                'empty_label': 'No warm leads.',
+                'recommended_action': 'Send a WhatsApp check-in for missing project info.',
+                'count': len(warm_leads),
+                'pending_count': len([lead for lead in warm_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in warm_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in warm_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in warm_leads if lead.manual_followup_done])),
+            },
+            {
+                'id': 'sec-luke',
+                'title': 'Luke-warm Leads',
+                'icon': 'temperature-low',
+                'css': 'sec-luke',
+                'status_bg': '#dbeafe',
+                'status_fg': '#1e3a8a',
+                'border': '#0ea5e9',
+                'empty_label': 'No luke-warm leads.',
+                'recommended_action': 'Send a quick nudge to re-engage this lead.',
+                'count': len(luke_warm_leads),
+                'pending_count': len([lead for lead in luke_warm_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in luke_warm_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in luke_warm_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in luke_warm_leads if lead.manual_followup_done])),
+            },
+            {
+                'id': 'sec-cold',
+                'title': 'Cold Leads',
+                'icon': 'snowflake',
+                'css': 'sec-cold',
+                'status_bg': '#e5e7eb',
+                'status_fg': '#374151',
+                'border': '#6b7280',
+                'empty_label': 'No cold leads.',
+                'recommended_action': 'Move to nurture sequence or close as cold lead.',
+                'count': len(cold_leads),
+                'pending_count': len([lead for lead in cold_leads if not lead.manual_followup_done]),
+                'done_count': len([lead for lead in cold_leads if lead.manual_followup_done]),
+                'pending_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in cold_leads if not lead.manual_followup_done])),
+                'done_by_date': self._group_leads_by_date(self._enrich_leads([lead for lead in cold_leads if lead.manual_followup_done])),
+            },
+        ]
+
+        context.update(
+            {
+                'very_hot_leads': very_hot_leads,
+                'hot_leads': hot_leads,
+                'warm_leads': warm_leads,
+                'luke_warm_leads': luke_warm_leads,
+                'cold_leads': cold_leads,
+                'very_hot_by_date': self._group_leads_by_date(very_hot_leads),
+                'hot_by_date': self._group_leads_by_date(hot_leads),
+                'warm_by_date': self._group_leads_by_date(warm_leads),
+                'luke_warm_by_date': self._group_leads_by_date(luke_warm_leads),
+                'cold_by_date': self._group_leads_by_date(cold_leads),
+                'total_leads': total_leads,
+                'selected_response_age': response_age,
+                'manual_followup_pending_count': len([lead for lead in very_hot_leads + hot_leads + warm_leads + luke_warm_leads + cold_leads if not lead.manual_followup_done]),
+                'manual_followup_done_count': len([lead for lead in very_hot_leads + hot_leads + warm_leads + luke_warm_leads + cold_leads if lead.manual_followup_done]),
+                'sections': sections,
+                'follow_up_status_choices': Appointment._meta.get_field('follow_up_status').choices,
+            }
+        )
+        return context
+
+
+@staff_required
+@require_POST
+def update_priority_lead_card(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    now = timezone.now()
+    next_url = request.POST.get('next') or reverse('priority_leads')
+    if not next_url.startswith('/'):
+        next_url = reverse('priority_leads')
+
+    update_fields = []
+    manual_state = request.POST.get('manual_followup_state', '').strip()
+    follow_up_status = request.POST.get('follow_up_status', '').strip()
+    note = request.POST.get('note', '').strip()
+    notes_to_prepend = []
+
+    if manual_state in {'done', 'pending'}:
+        appointment.manual_followup_done = manual_state == 'done'
+        appointment.manual_followup_updated_at = now
+        update_fields.extend(['manual_followup_done', 'manual_followup_updated_at'])
+        notes_to_prepend.append(
+            f"[{timezone.localtime(now).strftime('%Y-%m-%d %H:%M')}] "
+            f"{request.user.username}: manual follow-up marked as "
+            f"{'done' if appointment.manual_followup_done else 'pending'} from priority dashboard."
+        )
+
+    valid_statuses = {choice[0] for choice in Appointment._meta.get_field('follow_up_status').choices}
+    if follow_up_status in valid_statuses:
+        appointment.follow_up_status = follow_up_status
+        update_fields.append('follow_up_status')
+
+    if note:
+        timestamp = timezone.localtime(now).strftime('%Y-%m-%d %H:%M')
+        notes_to_prepend.append(f"[Priority Dashboard {timestamp}] {note}")
+
+    if notes_to_prepend:
+        existing_notes = appointment.admin_notes or ''
+        appointment.admin_notes = "\n".join(notes_to_prepend + ([existing_notes] if existing_notes else []))
+        update_fields.append('admin_notes')
+
+    if update_fields:
+        appointment.save(update_fields=sorted(set(update_fields)))
+        messages.success(request, 'Priority lead updated.')
+    else:
+        messages.info(request, 'No changes were submitted.')
+
+    return redirect(next_url)
+
+
+@method_decorator(staff_required, name='dispatch')
+class AppointmentDetailView(DetailView):
+    template_name = 'bot/pages/appointment_detail.html'
+    model = Appointment
+    context_object_name = 'appointment'
+    #
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        appointment = self.get_object()
+        computed_score, computed_status = calculate_lead_score(appointment)
+        conversation_history = appointment.conversation_history
+        uploaded_files = appointment.get_all_uploaded_files()   # ← NEW
+        detail_source = self.request.GET.get('source', 'appointments')
+        valid_sources = {'appointments', 'dashboard', 'priority_leads', 'followups'}
+        if detail_source not in valid_sources:
+            detail_source = 'appointments'
+
+        is_frame = self.request.GET.get('frame') == '1'
+        base_template = 'bot/layouts/panel.html' if is_frame else 'bot/layouts/base.html'
+
+        source_workspace = {}
+        active_nav = 'appointments'
+        source_back_url = reverse('appointments_list')
+        source_title = 'Appointments'
+        if detail_source == 'dashboard':
+            source_workspace = _dashboard_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            active_nav = 'dashboard'
+            source_back_url = reverse('dashboard')
+            source_title = 'Dashboard'
+        elif detail_source == 'priority_leads':
+            source_workspace = _priority_leads_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            active_nav = 'leads'
+            source_back_url = reverse('priority_leads')
+            source_title = 'Priority Leads'
+        elif detail_source == 'followups':
+            source_workspace = _followups_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            active_nav = 'followups'
+            source_back_url = reverse('followup_dashboard')
+            source_title = 'Follow-ups'
+
+        sidebar_filter = self.request.GET.get('sidebar_filter', 'all')
+        sidebar_context = _appointments_sidebar_context(sidebar_filter)
+
+        context.update({
+            'active_nav': active_nav,
+            'is_frame': is_frame,
+            'base_template': base_template,
+            'sidebar_filter': sidebar_filter,
+            'conversation_history': conversation_history,
+            'completeness': appointment.get_customer_info_completeness(),
+            'documents': uploaded_files,
+            'has_documents': appointment.has_uploaded_documents(),
+            'document_count': len(uploaded_files),
+            'uploaded_images': [f for f in uploaded_files if f['type'] in ('image', 'video')],  # ← NEW
+            'computed_lead_score': computed_score,
+            'computed_lead_status': computed_status,
+            'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
+            'detail_source': detail_source,
+            'source_workspace': source_workspace,
+            'source_back_url': source_back_url,
+            'source_title': source_title,
+            **sidebar_context,
+        })
+        return context
+    def post(self, request, *args, **kwargs):
+        """Handle form submission for updating appointment"""
+        appointment = self.get_object()
+        
+        try:
+            # Update fields from POST data
+            appointment.customer_name = request.POST.get('customer_name', appointment.customer_name)
+            appointment.project_type = request.POST.get('project_type', appointment.project_type)
+            appointment.property_type = request.POST.get('property_type', appointment.property_type)
+            appointment.customer_area = request.POST.get('customer_area', appointment.customer_area)
+            appointment.timeline = request.POST.get('timeline', appointment.timeline)
+            appointment.follow_up_status = request.POST.get('follow_up_status', appointment.follow_up_status)
+            appointment.admin_notes = request.POST.get('admin_notes', appointment.admin_notes)
+
+            next_follow_up_raw = request.POST.get('next_follow_up_at')
+            if next_follow_up_raw:
+                next_dt = datetime.fromisoformat(next_follow_up_raw)
+                sa_timezone = pytz.timezone('Africa/Johannesburg')
+                if next_dt.tzinfo is None:
+                    next_dt = sa_timezone.localize(next_dt)
+                appointment.next_follow_up_at = next_dt
+
+            # Handle datetime fields based on appointment type
+            if appointment.appointment_type == 'job_appointment':
+                job_datetime = request.POST.get('job_scheduled_datetime')
+                if job_datetime:
+                    # Parse string into datetime object
+                    dt = datetime.strptime(job_datetime, "%Y-%m-%d %H:%M")
+                    # Make timezone aware
+                    sa_timezone = pytz.timezone('Africa/Johannesburg')
+                    appointment.job_scheduled_datetime = sa_timezone.localize(dt)
+            else:
+                scheduled_datetime = request.POST.get('scheduled_datetime')
+                if scheduled_datetime:
+                    dt = datetime.fromisoformat(scheduled_datetime)
+                    sa_timezone = pytz.timezone('Africa/Johannesburg')
+                    if dt.tzinfo is None:
+                        dt = sa_timezone.localize(dt)
+                    appointment.scheduled_datetime = dt
+
+            appointment.save()
+            refresh_lead_score(appointment)
+            messages.success(request, 'Appointment updated successfully!')
+
+        except Exception as e:
+            messages.error(request, f'Error updating appointment: {str(e)}')
+
+        # Preserve source/frame/sidebar_filter so the split panel stays intact
+        base_url = reverse('appointment_detail', kwargs={'pk': appointment.pk})
+        qs = request.GET.urlencode()
+        return redirect(f"{base_url}?{qs}" if qs else base_url)
+
+
+@method_decorator(staff_required, name='dispatch')
+class AppointmentDocumentsView(DetailView):
+    template_name = 'bot/pages/appointment_documents.html'
+    model = Appointment
+    context_object_name = 'appointment'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        appointment = self.get_object()
+        documents = appointment.get_all_uploaded_files()   # ← was get_uploaded_documents()
+
+        context.update({
+            'documents': documents,
+            'document_count': len(documents),
+        })
+        return context
+
+
+@staff_required
+def download_document(request, pk, document_type):
+    """View to download specific documents"""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    
+    if document_type == 'plan_file' and appointment.plan_file:
+        try:
+            # Serve the file for download
+            response = HttpResponse(appointment.plan_file.read(), content_type='application/octet-stream')
+            filename = f"plan_{appointment.customer_name or 'customer'}_{appointment.id}{os.path.splitext(appointment.plan_file.name)[1]}"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+        except Exception as e:
+            messages.error(request, f'Error downloading file: {str(e)}')
+    
+    messages.error(request, 'Document not found')
+    return redirect('appointment_documents', pk=appointment.pk)
+
+
+@staff_required
+def update_appointment(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+
+    # ✅ Documents (use helper methods)
+    has_documents = appointment.has_uploaded_documents()
+    document_count = appointment.get_document_count()
+
+    # ✅ Conversation messages (use related_name)
+    conversation_history = appointment.conversation_messages.all()
+
+    if request.method == 'POST':
+        form = AppointmentForm(request.POST, request.FILES, instance=appointment)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Appointment updated successfully')
+            return redirect('appointment_detail', pk=appointment.pk)
+    else:
+        form = AppointmentForm(instance=appointment)
+
+    return render(request, 'bot/pages/appointment_detail.html', {
+        'appointment': appointment,
+        'form': form,
+        'has_documents': has_documents,
+        'document_count': document_count,
+        'conversation_history': conversation_history,
+    })
+
+
+@staff_required
+def confirm_appointment(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment.status = 'confirmed'
+    appointment.save()
+    try:
+        if appointment.scheduled_datetime:
+            plumbot = Plumbot(appointment.phone_number)
+            appointment_details = plumbot.extract_appointment_details()
+            plumbot.send_confirmation_message(appointment_details, appointment.scheduled_datetime)
+    except Exception as exc:
+        print(f"Failed to send confirmation message for appointment {appointment.pk}: {exc}")
+    messages.success(request, 'Appointment confirmed successfully')
+    return redirect('appointment_detail', pk=appointment.pk)
+
+
+@staff_required
+@require_POST
+def complete_lead_appointment(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment.status = 'completed'
+    appointment.follow_up_status = 'completed'
+    appointment.is_lead_active = False
+    appointment.lead_marked_inactive_at = timezone.now()
+    appointment.chatbot_paused = False
+    appointment.save(
+        update_fields=[
+            'status',
+            'follow_up_status',
+            'is_lead_active',
+            'lead_marked_inactive_at',
+            'chatbot_paused',
+            'updated_at',
+        ]
+    )
+    _append_admin_note(appointment, f"{request.user.username}: lead marked complete from appointment detail.")
+    messages.success(request, 'Lead marked as complete and removed from Priority Leads.')
+    return redirect('appointment_detail', pk=appointment.pk)
+
+
+@staff_required
+def cancel_appointment(request, pk):
+    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment.status = 'cancelled'
+    appointment.save()
+    messages.success(request, 'Appointment cancelled')
+    return redirect('appointment_detail', pk=appointment.pk)
+
+
+@staff_required
+def export_appointments(request):
+    from django.http import HttpResponse
+    import csv
+    
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="plumbing_appointments.csv"'
+    
+    writer = csv.writer(response)
+    writer.writerow([
+        'Name', 'Phone', 'Service', 'Property Type', 'Area', 
+        'Timeline', 'Status', 'Appointment Date', 'Created At'
+    ])
+    
+    for appointment in Appointment.objects.all().order_by('-created_at'):
+        writer.writerow([
+            appointment.customer_name or '',
+            appointment.phone_number,
+#            appointment.get_project_type_display() or '',
+            appointment.project_type() or '',
+            appointment.customer_area or '',
+            appointment.timeline or '',
+            appointment.get_status_display(),
+            appointment.scheduled_datetime.strftime('%Y-%m-%d %H:%M') if appointment.scheduled_datetime else '',
+            appointment.created_at.strftime('%Y-%m-%d %H:%M')
+        ])
+    
+    return response
+
+
+@staff_required
+def complete_site_visit(request, pk):
+    """Mark site visit as completed and prepare for job scheduling"""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    
+    if appointment.appointment_type != 'site_visit':
+        messages.error(request, 'This is not a site visit appointment')
+        return redirect('appointment_detail', pk=appointment.pk)
+    
+    if request.method == 'POST':
+        site_visit_notes = request.POST.get('site_visit_notes', '')
+        plumber_assessment = request.POST.get('plumber_assessment', '')
+        
+        # Mark site visit as completed
+        appointment.mark_site_visit_completed(
+            notes=site_visit_notes,
+            assessment=plumber_assessment
+        )
+        
+        messages.success(request, 'Site visit marked as completed. You can now schedule the job appointment.')
+        return redirect('schedule_job', pk=appointment.pk)
+    
+    return render(request, 'bot/pages/complete_site_visit.html', {
+        'appointment': appointment
+    })
+
+
+@csrf_exempt
+def handle_whatsapp_media(request):
+    """FIXED: Handle incoming media files from WhatsApp"""
+    if request.method == 'POST':
+        try:
+            # Get message details
+            sender = request.POST.get('From', '')
+            num_media = int(request.POST.get('NumMedia', 0))
+            
+            if not sender or num_media == 0:
+                return HttpResponse(status=200)
+            
+            print(f"📎 Processing {num_media} media files from {sender}")
+            
+            # Get the appointment
+            try:
+                appointment = Appointment.objects.get(phone_number=sender)
+            except Appointment.DoesNotExist:
+                print(f"❌ No appointment found for {sender}")
+                # Send helpful message
+                twilio_client.messages.create(
+                    body="I don't have an active appointment for this number. Please start by telling me about your plumbing needs.",
+                    from_=TWILIO_WHATSAPP_NUMBER,
+                    to=sender
+                )
+                return HttpResponse(status=200)
+            
+            # Check if we should accept media based on appointment state
+            plumbot = Plumbot(sender)
+            
+            # If they have a plan and we have basic info, initiate upload flow
+            if (appointment.has_plan is True and 
+                appointment.customer_area and 
+                appointment.property_type and
+                appointment.plan_status is None):
+                
+                # Start the plan upload process
+                appointment.plan_status = 'pending_upload'
+                appointment.save()
+                print(f"🔄 Initiated plan upload flow for {sender}")
+            
+            # Only process media if we're in upload flow
+            if appointment.plan_status != 'pending_upload':
+                print(f"ℹ️ Ignoring media - not in upload flow. Status: {appointment.plan_status}")
+                
+                # Send helpful message
+                if appointment.has_plan is True:
+                    response_msg = "I'll need you to send your plan once we collect some basic information first. Let me continue with a few questions."
+                else:
+                    response_msg = "I see you sent a file, but I'm not currently expecting any documents. Let me continue with your appointment details."
+                
+                twilio_client.messages.create(
+                    body=response_msg,
+                    from_=TWILIO_WHATSAPP_NUMBER,
+                    to=sender
+                )
+                return HttpResponse(status=200)
+            
+            # Process each media file
+            uploaded_files = []
+            for i in range(num_media):
+                media_url = request.POST.get(f'MediaUrl{i}', '')
+                media_content_type = request.POST.get(f'MediaContentType{i}', '')
+                
+                if media_url:
+                    file_info = download_and_save_media(
+                        media_url, 
+                        media_content_type, 
+                        appointment, 
+                        i
+                    )
+                    if file_info:
+                        uploaded_files.append(file_info)
+            
+            if uploaded_files:
+                # Update plan upload timestamp
+                appointment.plan_uploaded_at = timezone.now()
+                appointment.save()
+                
+                # Send acknowledgment using the plumbot's handle_plan_upload_flow
+                ack_message = plumbot.handle_plan_upload_flow("file received")
+                
+                twilio_client.messages.create(
+                    body=ack_message,
+                    from_=TWILIO_WHATSAPP_NUMBER,
+                    to=sender
+                )
+            
+            return HttpResponse(status=200)
+            
+        except Exception as e:
+            print(f"❌ Media handling error: {str(e)}")
+            return HttpResponse(status=500)
+    
+    return HttpResponse(status=405)
+
+
+def download_and_save_media(media_url, content_type, appointment, file_index):
+    """Download media from Twilio and save to Django storage - FIXED"""
+    try:
+        # FIXED: Use correct variable names from top of file
+        auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)  # ✅ Changed from ACCOUNT_SID
+        response = requests.get(media_url, auth=auth)
+        
+        if response.status_code != 200:
+            print(f"❌ Failed to download media: {response.status_code}")
+            return None
+        
+        # Determine file extension
+        extension_map = {
+            'image/jpeg': '.jpg',
+            'image/png': '.png', 
+            'image/webp': '.webp',
+            'application/pdf': '.pdf',
+            'image/gif': '.gif'
+        }
+        
+        extension = extension_map.get(content_type, '.bin')
+        
+        # Generate filename
+        timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+        customer_name = appointment.customer_name or 'customer'
+        safe_name = ''.join(c for c in customer_name if c.isalnum())
+        filename = f"plan_{safe_name}_{appointment.id}_{timestamp}_{file_index}{extension}"
+        
+        # Save file
+        file_path = f"customer_plans/{filename}"
+        file_content = ContentFile(response.content, name=filename)
+        
+        saved_path = default_storage.save(file_path, file_content)
+        
+        # Update appointment record if this is the first file
+        if not getattr(appointment, 'plan_file', None):
+            appointment.plan_file = saved_path
+            appointment.save()
+        
+        print(f"✅ Saved media file: {saved_path}")
+        
+        return {
+            'name': filename,
+            'path': saved_path,
+            'size': len(response.content),
+            'content_type': content_type
+        }
+        
+    except Exception as e:
+        print(f"❌ Error downloading/saving media: {str(e)}")
+        return None

@@ -199,7 +199,11 @@ _OOS_KEYWORDS = (
 _TRIVIAL_ACKS = {
     "ok", "okay", "k", "kk", "yes", "no", "sure", "thanks",
     "thank you", "noted", "cool", "sharp", "👍", "🙏",
-    "hongu", "kwete", "zvakanaka",
+    # Shona acknowledgments
+    "hongu", "kwete", "zvakanaka", "zvaita", "zvaenda",
+    "ndatenda", "maita", "maita basa", "mazvita",
+    "ndinzwisisa", "ndanzwisisa", "inzwika",
+    "ehe", "shuwa", "zvakanaka basa",
 }
 
 

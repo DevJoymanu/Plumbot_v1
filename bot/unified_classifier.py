@@ -43,14 +43,28 @@ Return ONLY valid JSON — no markdown, no explanation.
 ─── INTENT (pick one) ────────────────────────────────────────────────────────
 in_scope      Normal plumbing inquiry, product question, booking info, or
               any message that should continue the booking conversation.
+              Shona examples: "Ndoda kubhukisha" (I want to book),
+              "Ndoda kushandura chimbuzi" (I want to change the toilet),
+              "Mutengo weshower chii?" (What's the shower price?),
+              "Mune tub here?" (Do you have tubs?),
+              "Ndichatumira plan mangwana" (I'll send the plan tomorrow).
 out_of_scope  Service we do NOT offer: painting, electrical, roofing,
               solar, borehole, gardening, carpentry, pest control, etc.
 delay_signal  Customer is deferring: "call me later", "not ready yet",
               "will come back", "I'm busy", "abroad", "still building".
+              Shona examples: "Ndiri kunze kwenyika" (I'm out of the country),
+              "Ndichadzokezai" (I'll call you back), "Mbichana" (just a bit later),
+              "Ndichaita contact" (I'll make contact), "Tichataura" (we'll talk),
+              "Ndisati ndagadzirira" (I'm not ready yet),
+              "Ndicharidza rini ndichadzoka" (I'll call when I return).
 complaint     Frustration, price objection, or legitimacy question.
+              Shona examples: "Mutengo unodhura zvakanyanya" (price is way too expensive),
+              "Musatikwashura" (don't cheat us), "Hamusi vaplumber chaiwo here?" (Are you real plumbers?),
+              "Munoitirei inodhura kudaro?" (why is it that expensive?).
 ack           Pure acknowledgment with zero booking intent:
               "ok", "sharp", "thanks", "noted", "fine", "sure", "👍", "👌".
-              Short Shona acks: "maita", "ndatenda", "zvakanaka".
+              Shona acks: "maita", "maita basa", "ndatenda", "mazvita",
+              "zvakanaka", "zvaita", "ndinzwisisa", "hongu", "ehe", "shuwa".
               Only use "ack" when the message adds NOTHING to the conversation.
 
 ─── SERVICE TYPE (one or null) ───────────────────────────────────────────────

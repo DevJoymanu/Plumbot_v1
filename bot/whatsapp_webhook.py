@@ -84,28 +84,40 @@ def _translate_reply_for_customer(customer_message: str, reply: str) -> str:
         return reply
 
     try:
-        prompt = f"""You are a language detector and translator for a Zimbabwean plumbing company's chatbot.
+        prompt = f"""You are a language detector and Shona translator for Homebase Plumbers, a plumbing company in Harare, Zimbabwe.
 
-Customer message (language signal):
+Customer message (use this as the language signal):
 \"\"\"{customer_message}\"\"\"
 
-Bot reply (English):
+Bot reply to translate (English):
 \"\"\"{reply}\"\"\"
 
-TASK:
-1) Detect the customer's language as: "english", "shona", or "mixed".
-2) If language is "shona" or "mixed", translate the bot reply into Shona.
-3) If language is "english", do NOT translate.
+STEP 1 — DETECT LANGUAGE
+Classify the customer's language as one of:
+- "english"  → mostly English, little or no Shona
+- "shona"    → mostly Shona (may include borrowed English plumbing terms)
+- "mixed"    → natural Zimbabwean code-switching (Shona + English blended)
 
-RULES:
-- Preserve numbers, prices, dates, times, emojis, bullet points, and line breaks.
-- Do NOT add extra info or remove any details.
-- Return ONLY valid JSON in the exact format below.
+STEP 2 — TRANSLATE (only if "shona" or "mixed")
+Produce a natural Zimbabwean Shona translation of the bot reply.
 
-RESPONSE JSON FORMAT:
+TRANSLATION RULES:
+1. Use Zimbabwean Shona (Karanga/Zezuru dialect blend common in Harare) — NOT Zambian or Malawian variants.
+2. Keep these words in English — customers know them and use them daily:
+   geyser, tub, shower, vanity, toilet, drain, pipe, plumber, quote, site visit,
+   bathroom, kitchen, installation, supply, assessment, booking, WhatsApp, USD, US$
+3. Keep all numbers, prices (US$...), dates, times, emojis, bullet points, and line breaks exactly as-is.
+4. Keep brand/company names exactly: "Homebase Plumbers", "HomeBase".
+5. For "mixed" — write the reply as natural Zimbabwean code-switching: blend Shona and English the way a Harare local would WhatsApp a friend. Do NOT produce two separate paragraphs.
+6. For "shona" — write fully in Shona except for the technical terms listed above.
+7. Match the tone: casual, warm, WhatsApp-friendly. Not formal. Not stiff.
+8. Do NOT add information not in the original reply. Do NOT remove any detail.
+9. If a sentence is already very short and idiomatic (e.g. "Sharp! 👍"), keep it or use a natural Shona equivalent.
+
+RESPONSE JSON FORMAT (return ONLY this, no markdown):
 {{
   "language": "english|shona|mixed",
-  "shona_reply": "translated text or empty string"
+  "shona_reply": "translated text or empty string if english"
 }}
 """
 
@@ -119,7 +131,7 @@ RESPONSE JSON FORMAT:
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1,
-            max_tokens=600,
+            max_tokens=900,
         )
 
         raw = response.choices[0].message.content.strip()
@@ -129,13 +141,8 @@ RESPONSE JSON FORMAT:
         language = (result.get('language') or '').strip().lower()
         shona_reply = (result.get('shona_reply') or '').strip()
 
-        if language == 'shona':
+        if language in ('shona', 'mixed'):
             return shona_reply or reply
-        if language == 'mixed':
-            if shona_reply:
-                return f"{shona_reply}\n\n{reply}"
-            return reply
-        # Default: English only
         return reply
 
     except Exception as exc:

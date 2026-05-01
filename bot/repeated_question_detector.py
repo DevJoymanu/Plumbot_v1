@@ -466,10 +466,32 @@ def detect_language_simple(message: str) -> str:
     Returns 'shona', 'mixed', or 'english'.
     """
     shona_markers = [
-        'hongu', 'kwete', 'ndinoda', 'ndoda', 'zvinoita', 'mauya', 'tiuye',
-        'mangwana', 'mauro', 'ndichatumira', 'ndinotumira', 'imba', 'bhizimisi',
-        'chimbuzi', 'shawa', 'bhavhu', 'kicheni', 'mapombi',
-        'masikati', 'mangwanani', 'usiku', 'zvakanaka', 'maita basa',
+        # greetings / farewells
+        'mhoro', 'makadii', 'makadini', 'wakadii', 'ndeipi', 'waswera sei',
+        'masikati', 'mangwanani', 'manheru', 'usiku',
+        # acknowledgments
+        'hongu', 'kwete', 'zvakanaka', 'zvaita', 'zvaenda', 'ndatenda',
+        'maita', 'maita basa', 'mazvita', 'ndinzwisisa', 'ndanzwisisa',
+        'inzwika', 'ehe', 'shuwa',
+        # intent / action words
+        'ndinoda', 'ndoda', 'ndinogona', 'handina', 'ndinofarira',
+        'ndichatumira', 'ndinotumira', 'ndichaenda', 'ndinoenda',
+        'tiuye', 'mauya', 'mungauya', 'munouya', 'mauya rini',
+        # questions
+        'chii', 'riini', 'rinhi', 'sei', 'kupi', 'papi', 'mangani',
+        'marii', 'mari', 'mutengo',
+        # time
+        'mangwana', 'nhasi', 'nezuro', 'mauro', 'vhiki', 'mwedzi',
+        'gore', 'kwapera', 'nguva',
+        # household / property
+        'imba', 'musha', 'nzvimbo', 'bhizimisi', 'bhavhu',
+        # plumbing / fixtures (Shona-ised or local terms)
+        'chimbuzi', 'shawa', 'kicheni', 'mapombi', 'pombi', 'mvura',
+        'chidhinha', 'zvindori',
+        # pricing / commerce
+        'zvinodhura', 'inodhura', 'bhadhara', 'dhora', 'peni', 'zviri nani',
+        # classifier markers
+        'zvinoita', 'zvese', 'zvakadai',
     ]
     msg_lower = message.lower()
     shona_count = sum(1 for m in shona_markers if m in msg_lower)
