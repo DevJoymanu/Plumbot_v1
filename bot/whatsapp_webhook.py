@@ -1190,13 +1190,7 @@ def handle_unsupported_media(sender, media_type):
         friendly_name = media_names.get(media_type, 'file')
 
         response_msg = (
-            f"Thanks for the {friendly_name}! ??\n\n"
-            f"I can't process {friendly_name}s right now, but I work great with:\n"
-            f"? Text messages\n"
-            f"? Images (for plans)\n"
-            f"? PDF documents (for plans)\n"
-            f"? Videos\n\n"
-            f"Could you send that as a text message instead?\n\nThanks!"
+            f"We can't open that one — could you send a text or a photo instead?"
         )
         threading.Thread(
             target=delayed_response,
@@ -1219,9 +1213,7 @@ def handle_audio_message(sender, audio_data):
             appointment = Appointment.objects.get(phone_number=phone_number)
         except Appointment.DoesNotExist:
             response_msg = (
-                "Hi there! ??\n\nI received your voice message, but I work better with text messages.\n\n"
-                "Could you please type your message instead? That way I can help you book your "
-                "plumbing appointment more efficiently.\n\nThanks! ??"
+                "Voice notes we can't read unfortunately — just type it out and we'll get you sorted 👍"
             )
             delay = get_random_delay()
             threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
@@ -1229,15 +1221,12 @@ def handle_audio_message(sender, audio_data):
 
         if appointment.plan_status == 'pending_upload':
             response_msg = (
-                "I see you sent an audio message, but I need images or PDF documents for your plan.\n\n"
-                "Please send:\n?? Photos of your plan/blueprint\n?? PDF document\n\n"
-                "Or type \"done\" if you've finished uploading."
+                "That came through as a voice note — for the plans we need photos or a PDF. "
+                "Send those when you're ready, or type \"done\" if you're finished."
             )
         else:
             response_msg = (
-                "I received your voice message! ??\n\n"
-                "However, I work better with text messages. Could you please type your response instead?\n\n"
-                "I'll continue where we left off... ??"
+                "Voice notes we can't read — just type it out and we'll carry on from where we were 👍"
             )
 
         delay = get_random_delay()
@@ -1335,6 +1324,23 @@ def handle_text_message(sender, text_data, message_id=None):
         plumbot = Plumbot(phone_number)
 
         reply = None
+
+        # ── FAQ LAYER ─────────────────────────────────────────────────────────
+        # Handles common factual questions (location, hours, contact, services,
+        # payment) with a hardcoded answer before any DeepSeek call is made.
+        # Deterministic, zero latency, never fails.
+        from bot.faq import lookup_faq
+        _faq_reply = lookup_faq(message_body)
+        if _faq_reply is not None:
+            appointment.add_conversation_message("assistant", _faq_reply)
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, _faq_reply, delay, message_id),
+                daemon=True,
+            ).start()
+            return
+        # ─────────────────────────────────────────────────────────────────────
 
         # ── UNIFIED PRE-CLASSIFIER ────────────────────────────────────────────
         # One DeepSeek call replaces: detect_service_inquiry, handle_out_of_scope,

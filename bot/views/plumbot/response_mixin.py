@@ -557,7 +557,7 @@ class ResponseMixin:
                 # When precomputed_classification is supplied by the webhook, the OOS
                 # handler uses it and skips its own DeepSeek call. Pending-state
                 # resolution (delay flow steps 2-4) still runs normally.
-                from .out_of_scope_handler import handle_out_of_scope
+                from bot.out_of_scope_handler import handle_out_of_scope
                 from bot.unified_classifier import uc_as_oos_classification
                 has_prior_convo = len(self.appointment.conversation_history or []) > 2
                 _oos_precomputed = (
@@ -1018,7 +1018,7 @@ class ResponseMixin:
 
             except Exception as e:
                 print(f"❌ Error generating contextual response: {str(e)}")
-                return "I understand. Let me ask you about the next detail we need for your appointment."
+                return "Sorry, dropped that on our end — could you send that again?"
 
 
         def _classify_availability_response(self, message: str, offered_days: list) -> dict:
@@ -2082,26 +2082,45 @@ class ResponseMixin:
                     if intent == 'combined_pricing':
                         return self.generate_pricing_overview(message)
 
-                    # Tub inquiries: show sizes first, prices only if customer asks
-                    _TUB_INTENTS = {'tub_sales', 'standalone_tub', 'bathtub_installation'}
-                    if intent in _TUB_INTENTS and not self._is_asking_for_price(message):
+                    # Facebook package — always return the anchor price and move to sale
+                    if intent == 'facebook_package':
                         if language == 'shona':
                             return (
-                                "Tubs dzinouya mumhando mbiri: \n\n"
-                                "• *Standard built-in tub* (1500×700mm) — inoiswa mumadziro, "
-                                "ine side chamber\n"
-                                "• *Free-standing tub* (1500–1800mm) — inomira yega, "
-                                "inooneka zvakanaka\n\n"
-                                "Unofunga mhando ipi — yakavakirwa mumadziro kana inomira yega?"
+                                "Facebook package yedu inosvika US$600.\n\n"
+                                f"{self._get_pricing_followup_prompt('shona')}"
                             )
                         return (
-                            "Bathtubs come in two main types: \n\n"
-                            "• *Standard built-in* (1500×700mm) — set into the wall surround, "
-                            "with a side chamber\n"
-                            "• *Freestanding* (1500–1800mm) — standalone statement piece, "
-                            "available in various lengths\n\n"
-                            "Which type are you thinking — built-in or freestanding?"
+                            "Our Facebook package is US$600.\n\n"
+                            f"{self._get_pricing_followup_prompt('english')}"
                         )
+
+                    # Tub inquiries: show sizes first, prices only if customer asks
+                    _TUB_INTENTS = {'tub_sales', 'standalone_tub', 'bathtub_installation'}
+                    if intent in _TUB_INTENTS:
+                        if not self._is_asking_for_price(message):
+                            if language == 'shona':
+                                return (
+                                    "Tubs dzinouya mumhando mbiri — "
+                                    "standard built-in (inoiswa mumadziro) ne freestanding (inomira yega).\n\n"
+                                    "Unofunga mhando ipi?"
+                                )
+                            return (
+                                "Bathtubs come in two main types — "
+                                "standard built-in (set into the wall surround) and freestanding (standalone).\n\n"
+                                "Which type are you thinking?"
+                            )
+                        else:
+                            if language == 'shona':
+                                return (
+                                    "Freestanding tubs dzinotangira paUS$400. "
+                                    "Standard tubs kubva US$80.\n\n"
+                                    "Munoda chii chaizvo?"
+                                )
+                            return (
+                                "Freestanding tubs start from US$400. "
+                                "Standard tubs from US$80.\n\n"
+                                "What did you have in mind?"
+                            )
 
                     if intent in structured_pricing:
                         pricing_payload = structured_pricing[intent]
@@ -2516,36 +2535,20 @@ class ResponseMixin:
             if language == 'shona':
                 reply = (
                     f"{project_context}"
-                    "Mhoro! mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
-                    "Plumber aonawo nzvimbo, mutengo wekupedzisira unogona kukwira kana kuderera. "
-                    "Kubatanidza masevhisi kunogona kukupai discount. Apa breakdown:\n\n"
-                    "• Geyser: Supply kubva US$80, Install kubva US$80\n"
-                    "• Shower cubicle: Supply kubva US$130, Install kubva US$40\n"
-                    "• Vanity unit: Supply kubva US$150, Install kubva US$30\n"
-                    "• Tub: Supply kubva US$80, Install kubva US$80\n"
-                    "• Free-standing tub mixer: Supply kubva US$150, Install kubva US$120\n"
-                    "• Side chamber: Supply kubva US$130, Install kubva US$30\n"
-                    "• Toilet seat: Supply kubva US$50, Install kubva US$20\n\n"
-                    "Mutengo wakakwana unoenderana nesetup yako — "
-                    "plumber wedu aona nzvimbo yako ozokuudza mutengo wakajika.\n\n"
-                    f"{followup}"
+                    "Facebook package yedu inosvika US$600. Inocover bathroom yese — "
+                    "shower cubicle, vanity, toilet, ne tub.\n\n"
+                    "Kana muri kuda tub chete — freestanding tubs dzinotangira paUS$400, "
+                    "standard tubs kubva US$80.\n\n"
+                    "Munoda chii chaizvo?"
                 )
             else:
                 reply = (
                     f"{project_context}"
-                    "Hi! Just a quick note — these prices are rough prices for supply and install "
-                    "(materials included). After the plumber sees the site, the final cost may go up or down. "
-                    "Bundling services can give you a discount. Here's a breakdown:\n\n"
-                    "• Geyser: Supply from US$80, Install from US$80\n"
-                    "• Shower cubicle: Supply from US$130, Install from US$40\n"
-                    "• Vanity unit: Supply from US$150, Install from US$30\n"
-                    "• Tub: Supply from US$80, Install from US$80\n"
-                    "• Free-standing tub mixer: Supply from US$150, Install from US$120\n"
-                    "• Side chamber: Supply from US$130, Install from US$30\n"
-                    "• Toilet seat: Supply from US$50, Install from US$20\n\n"
-                    "Final price depends on your setup — once our plumber sees the space "
-                    "they'll give you a fixed number on the spot.\n\n"
-                    f"{followup}"
+                    "Our Facebook package is US$600. That covers a full bathroom setup — "
+                    "shower cubicle, vanity, toilet, and tub.\n\n"
+                    "If you're looking at just a tub — freestanding tubs start from US$400, "
+                    "standard tubs from US$80.\n\n"
+                    "What did you have in mind?"
                 )
             return reply
 
@@ -2660,51 +2663,54 @@ class ResponseMixin:
                 appointment_context = self.get_appointment_context()
                 retry_context_line = self._build_retry_context_line(updated_fields, next_question)
     
-                system_prompt = f"""
-        You are a sharp, confident sales assistant for Homebase Plumbers in Zimbabwe.
-    
+                system_prompt = f"""You are a member of the Homebase Plumbers team in Harare. You help customers book a free site visit over WhatsApp.
+
+        Text like a real, warm person — short messages, natural, Zimbabwean English. Never robotic, never corporate.
+
+        NEVER say: "I understand", "I apologize", "certainly", "more efficiently", "your plumbing needs", "as an AI"
+        NEVER use bullet points in a chat message.
+        NEVER stack two questions in one message.
+        Emojis only when they fit naturally — not forced at the end of every message.
+        Use "we" not "I" — you represent the whole team.
+
         CURRENT FLOW:
         1. service_type          ✅ or pending
         2. project_description   ✅ or pending
         3. area                  ✅ or pending
         4. availability_date     ✅ or pending
         5. availability_time     ✅ or pending
-    
+
         CURRENT SITUATION:
         {appointment_context}
-    
+
         Next question needed: {next_question}
         New info just received: {updated_fields if updated_fields else 'None'}
         Relevant line to weave in if helpful: {retry_context_line or 'None'}
         Retry count: {retry_count}
-    
-        IMPORTANT INTELLIGENCE RULE:
-        - The user may answer correctly even if their message does NOT exactly match the presented options.
-        - If the user input is a plausible variation (e.g. abbreviations like "Tues", "Thurs", times like "12"), treat it as VALID intent, NOT incorrect input.
-        - Never assume "no match" means the user is wrong — it may just be unnormalized input.
-        - If unsure, ask a clarifying confirmation instead of repeating the original question e.g User: "Tues" → "Got it — do you mean this coming Tuesday?".
+
+        INTELLIGENCE RULE:
+        - Partial answers like "Tues", "Thurs", "12" are valid — confirm naturally: "Got it, this coming Tuesday?"
+        - Never assume no match means they're wrong.
 
         RETRY ESCALATION (retry_count > 0):
-        Retry 1 → Simplify the question to bare minimum.
-        Retry 2 → Offer two explicit choices instead of open question.
-        Retry 3 → Add light urgency: "We're booking up this week."
-    
-        QUESTION MAPPINGS (rephrase these — do NOT use word-for-word):
-        - service_type       → ask which of our three services they need
-        - project_description → ask what they specifically want done, more detail = better quote
-        - area               → ask which suburb/area they are in    
-        - availability_date  → ask which of two upcoming weekday dates works for the site assessment
-        - availability_time  → ask which of two time slots (morning or afternoon) works for that date
-    
+        Retry 1 → Simplify to the bare minimum.
+        Retry 2 → Offer two explicit choices.
+        Retry 3 → Light urgency: "We're getting booked up this week."
+
+        QUESTION MAPPINGS (rephrase — never word-for-word):
+        - service_type        → which of our three services they need
+        - project_description → what specifically needs doing, more detail = better quote
+        - area                → which suburb/area they're in
+        - availability_date   → which of two upcoming weekday dates works for the site visit
+        - availability_time   → morning or afternoon on that date
+
         RULES:
-        - ONE question at a time. No stacking.
-        - If new info was provided, start by thanking them for it.
-        - If new info was provided, add one short relevant line tied to that info before the question.
-        - Rephrase the question to match the customer's tone and wording style.
-        - Zimbabwean English tone.
-        - No markdown headers. Short sentences.
+        - ONE question at a time.
+        - If new info received, acknowledge it briefly and naturally before the next question.
+        - Match their tone and energy.
+        - Short sentences.
         - NEVER ask for info already collected.
-    
+
         Generate the response now:"""
     
                 response = deepseek_client.chat.completions.create(
@@ -2730,7 +2736,7 @@ class ResponseMixin:
     
             except Exception as e:
                 print(f"❌ Error generating contextual response: {str(e)}")
-                return "I understand. Let me ask you about the next detail we need for your appointment."
+                return "Sorry, dropped that on our end — could you send that again?"
 
 
         def _is_standalone_question(self, message: str) -> bool:
