@@ -1495,11 +1495,36 @@ def handle_text_message(sender, text_data, message_id=None):
             objection_type = detect_objection_type(message_body)
             print(f"Objection type: {objection_type}")
 
-            if objection_type == 'pricing' and _is_genuine_pricing_question(message_body, appointment):
+            if objection_type == 'pricing':
+                # Context-aware price: if a specific item was discussed recently,
+                # price that item regardless of whether an overview was already sent.
+                _ITEM_CONTEXT = {
+                    'vanity':   'vanity',
+                    'geyser':   'geyser',
+                    'shower':   'shower_cubicle',
+                    'cubicle':  'shower_cubicle',
+                    'tub':      'tub_sales',
+                    'bathtub':  'tub_sales',
+                    'toilet':   'toilet',
+                    'chamber':  'chamber',
+                    'drain':    'drain_unblocking',
+                    'pipe':     'pipe_repair',
+                }
+                _recent = appointment.conversation_history or []
+                _recent_text = ' '.join(
+                    m.get('content', '') for m in _recent[-6:]
+                ).lower()
+                for _keyword, _intent in _ITEM_CONTEXT.items():
+                    if _keyword in _recent_text:
+                        print(f"Pricing context match: {_keyword} → {_intent}")
+                        reply = plumbot.handle_service_inquiry(_intent, message_body)
+                        break
+
+            if reply is None and objection_type == 'pricing' and _is_genuine_pricing_question(message_body, appointment):
                 reply = plumbot.generate_pricing_overview(message_body)
                 appointment.pricing_overview_sent = True
                 appointment.save(update_fields=['pricing_overview_sent'])
-            elif objection_type == 'pricing' and getattr(appointment, 'pricing_overview_sent', False):
+            elif reply is None and objection_type == 'pricing' and getattr(appointment, 'pricing_overview_sent', False):
                 reply = (
                     "Our Facebook package is US$600 — freestanding tub and side chamber. "
                     "We'll give you a fixed price once we've seen the space. "
