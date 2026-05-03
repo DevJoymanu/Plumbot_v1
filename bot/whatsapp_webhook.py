@@ -1513,6 +1513,7 @@ def handle_text_message(sender, text_data, message_id=None):
                 _recent = appointment.conversation_history or []
                 _recent_text = ' '.join(
                     m.get('content', '') for m in _recent[-6:]
+                    if m.get('role') == 'user'
                 ).lower()
                 for _keyword, _intent in _ITEM_CONTEXT.items():
                     if _keyword in _recent_text:

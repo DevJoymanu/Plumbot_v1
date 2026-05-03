@@ -1862,8 +1862,8 @@ class ResponseMixin:
                                 "Standard built-in tub: Supply from US$80 | Install from US$80 → from US$160 all-in",
                                 "Side chamber (add-on): Supply from US$130 | Install from US$30 → from US$160",
                             ],
-                            "total_line": "Full freestanding setup from US$670. Standard tub from US$160 all-in.",
-                            "cheapest_line": "Starting point is a standard tub at US$80 supply + US$80 install.",
+                            "total_line": "Freestanding tubs from US$400 — mixer US$150, install US$120. Standard tubs from US$80, install from US$80.",
+                            "cheapest_line": "Side chamber adds US$130 supply + US$30 install.",
                             "sn_breakdown_lines": [
                                 "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → kubva US$670 all-in",
                                 "Standard tub: Supply kubva US$80 | Install kubva US$80 → kubva US$160 all-in",
@@ -2092,13 +2092,13 @@ class ResponseMixin:
                         else:
                             if language == 'shona':
                                 return (
-                                    "Freestanding tubs dzinotangira paUS$400. "
-                                    "Standard tubs kubva US$80.\n\n"
+                                    "Freestanding tubs dzinotangira paUS$400 — mixer US$150, install US$120.\n\n"
+                                    "Standard tubs kubva US$80, install kubva US$80.\n\n"
                                     "Munoda chii chaizvo?"
                                 )
                             return (
-                                "Freestanding tubs start from US$400. "
-                                "Standard tubs from US$80.\n\n"
+                                "Freestanding tubs start from US$400 — mixer US$150, install US$120.\n\n"
+                                "Standard tubs from US$80, install from US$80.\n\n"
                                 "What did you have in mind?"
                             )
 
@@ -2490,6 +2490,7 @@ class ResponseMixin:
             recent = self.appointment.conversation_history or []
             recent_text = ' '.join(
                 m.get('content', '') for m in recent[-6:]
+                if m.get('role') == 'user'
             ).lower()
             for keyword, intent in _ITEM_CONTEXT.items():
                 if keyword in recent_text:
