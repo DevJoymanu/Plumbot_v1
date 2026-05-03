@@ -1500,11 +1500,9 @@ def handle_text_message(sender, text_data, message_id=None):
                 appointment.pricing_overview_sent = True
                 appointment.save(update_fields=['pricing_overview_sent'])
             elif objection_type == 'pricing' and getattr(appointment, 'pricing_overview_sent', False):
-                # Pricing overview already sent — give a short redirect instead of silence
                 reply = (
-                    "I've sent you the pricing breakdown above. "
-                    "For a more accurate quote specific to your space, our plumber will "
-                    "give you a fixed price after a free on-site visit. "
+                    "Our Facebook package is US$600 — freestanding tub and side chamber. "
+                    "We'll give you a fixed price once we've seen the space. "
                     f"{plumbot._get_pricing_followup_prompt('english')}"
                 )
 

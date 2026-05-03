@@ -14,6 +14,8 @@ import tempfile
 import base64
 import logging
 
+from ...services.lead_scoring import refresh_lead_score
+
 from ...models import (
     Appointment, Quotation, QuotationItem,
     QuotationTemplate, QuotationTemplateItem, ConversationMessage,

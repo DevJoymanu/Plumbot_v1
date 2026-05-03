@@ -19,9 +19,9 @@ _FACTS = {
         "chat about the job first."
     ),
     'services': (
-        "We handle all plumbing work — repairs, installations, bathroom and kitchen "
-        "renovations, geysers, new builds, you name it.\n\n"
-        "What do you need sorted?"
+        "Yes, we handle all plumbing work — vanities, tubs, geysers, showers, toilets, "
+        "renovations, repairs, new installations, you name it.\n\n"
+        "What are you looking for?"
     ),
     'payment': (
         "Cash, EcoCash, and bank transfer — all good 👍\n\n"
@@ -120,6 +120,11 @@ _TRIGGERS = {
         'do you install',
         'do you handle',
         'can you do',
+        'do you have',
+        'do you sell',
+        'do you stock',
+        'do you supply',
+        'do you carry',
     ],
     'payment': [
         'payment methods',

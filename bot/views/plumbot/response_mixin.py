@@ -1993,7 +1993,7 @@ class ResponseMixin:
                                 "Tub: Supply from US$80, Install from US$80",
                                 "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
                             ],
-                            "total_line": "Roughly looking at about US$600+ for the full bathroom package, depending on the fixtures you choose.",
+                            "total_line": "The Facebook package is US$600 — freestanding tub and side chamber.",
                             "cheapest_line": "The cheapest option is the basic package starting from US$600 before extra fixtures are added.",
                             "sn_breakdown_lines": [
                                 "Shower cubicle: Supply kubva US$130, Install kubva US$40",
@@ -2003,7 +2003,7 @@ class ResponseMixin:
                                 "Tub: Supply kubva US$80, Install kubva US$80",
                                 "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
                             ],
-                            "sn_total_line": "Zvingangoita US$600+ pa full bathroom package, zvichienderana nezvinhu zvamunosarudza.",
+                            "sn_total_line": "Facebook package inosvika US$600 — freestanding tub ne side chamber.",
                             "sn_cheapest_line": "Cheapest option i basic package inotangira paUS$600 zvinhu zvekuwedzera zvisati zvaiswa.",
                         },
                         "drain_unblocking": {
@@ -2535,8 +2535,7 @@ class ResponseMixin:
             if language == 'shona':
                 reply = (
                     f"{project_context}"
-                    "Facebook package yedu inosvika US$600. Inocover bathroom yese — "
-                    "shower cubicle, vanity, toilet, ne tub.\n\n"
+                    "Facebook package yedu inosvika US$600. Ine freestanding tub ne side chamber.\n\n"
                     "Kana muri kuda tub chete — freestanding tubs dzinotangira paUS$400, "
                     "standard tubs kubva US$80.\n\n"
                     "Munoda chii chaizvo?"
@@ -2544,8 +2543,7 @@ class ResponseMixin:
             else:
                 reply = (
                     f"{project_context}"
-                    "Our Facebook package is US$600. That covers a full bathroom setup — "
-                    "shower cubicle, vanity, toilet, and tub.\n\n"
+                    "Our Facebook package is US$600. That's a freestanding tub and side chamber.\n\n"
                     "If you're looking at just a tub — freestanding tubs start from US$400, "
                     "standard tubs from US$80.\n\n"
                     "What did you have in mind?"
