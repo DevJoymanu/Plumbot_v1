@@ -516,7 +516,7 @@ class ResponseMixin:
                         print(f"🔇 Delay signal active — ack suppressed: '{incoming_message[:60]}'")
                         return None
                     else:
-                        from .whatsapp_webhook import _clear_delay_signal_if_present
+                        from bot.whatsapp_webhook import _clear_delay_signal_if_present
                         _clear_delay_signal_if_present(self.appointment)
                         print(f"▶️ Delay signal cleared — customer re-engaged: '{incoming_message[:60]}'")
                         # Fall through to normal processing
@@ -903,9 +903,7 @@ class ResponseMixin:
 
             except Exception as e:
                 print(f"❌ API Error: {str(e)}")
-                return (
-                    "Sorry, I'm having a moment — could you resend your message? 😊"
-                )
+                return "Sorry, dropped that on our end — could you send that again?"
 
 
         def generate_contextual_response(self, incoming_message, next_question, updated_fields):
