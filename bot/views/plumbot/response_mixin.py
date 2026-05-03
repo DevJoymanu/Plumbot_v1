@@ -2491,6 +2491,30 @@ class ResponseMixin:
             if inquiry.get('intent') not in ('none', 'combined_pricing') and inquiry.get('confidence') == 'HIGH':
                 return self.handle_service_inquiry(inquiry['intent'], message)
 
+            # If the message is vague ("how much", "price?") check what was just
+            # discussed in the last few turns and price that item instead.
+            _ITEM_CONTEXT = {
+                'vanity':        'vanity',
+                'geyser':        'geyser',
+                'shower':        'shower_cubicle',
+                'cubicle':       'shower_cubicle',
+                'tub':           'tub_sales',
+                'bathtub':       'tub_sales',
+                'toilet':        'toilet',
+                'chamber':       'chamber',
+                'drain':         'drain_unblocking',
+                'pipe':          'pipe_repair',
+                'facebook':      'facebook_package',
+                'package':       'facebook_package',
+            }
+            recent = self.appointment.conversation_history or []
+            recent_text = ' '.join(
+                m.get('content', '') for m in recent[-6:]
+            ).lower()
+            for keyword, intent in _ITEM_CONTEXT.items():
+                if keyword in recent_text:
+                    return self.handle_service_inquiry(intent, message)
+
             # Detect language
             try:
                 lang_response = deepseek_client.chat.completions.create(
