@@ -157,36 +157,16 @@ class ResponseMixin:
             visit_committed: bool = False,
             language: str = "english",
         ) -> str:
-            """Build consistent pricing replies with a breakdown, rough total, and booking push."""
-            breakdown_text = "\n".join(breakdown_lines)
             if language == "shona":
-                intro = (
-                    "Mhoro! mitengo iyi ndeye rough yesupply neinstall (zvinhu zvakabatanidzwa). "
-                    "Plumber aonawo nzvimbo, mutengo wekupedzisira unogona kukwira kana kuderera. "
-                    "Kubatanidza masevhisi kunogona kukupai discount. Apa breakdown:"
-                )
-                depends_line = (
-                    "Mutengo wakakwana unoenderana nesetup uye inogona kugadziriswa kana plumber auya oona nzvimbo yacho."
-                    if visit_committed else
-                    "Mutengo wakakwana unoenderana nesetup uye inogona kutauriranwa kana tauya kuzoona nzvimbo yacho."
-                )
-            else:
-                intro = (
-                    "Hi! Just a quick note — these prices are rough prices for supply and install "
-                    "(materials included). After the we see the site, the final cost may go up or down. "
-                    "Bundling services can give you a discount. Here's a breakdown:"
-                )
-                depends_line = (
-                    "Final price depends on setup and can still be adjusted once we see the space."
-                    if visit_committed else
-                    "Final price depends on setup and can be negotiated once we get to come out and see the space."
+                return (
+                    f"{total_line}\n\n"
+                    f"{cheapest_line}\n\n"
+                    f"{self._get_pricing_followup_prompt('shona')}"
                 )
             return (
-                f"{intro}\n\n"
-                f"{breakdown_text}\n\n"
-                f"**{total_line}**\n\n"
-                f"{cheapest_line} {depends_line}\n\n"
-                f"{self._get_pricing_followup_prompt(language)}"
+                f"{total_line}\n\n"
+                f"{cheapest_line}\n\n"
+                f"{self._get_pricing_followup_prompt('english')}"
             )
 
 
@@ -1912,37 +1892,37 @@ class ResponseMixin:
                             "breakdown_lines": [
                                 "Geyser: Supply from US$80, Install from US$80",
                             ],
-                            "total_line": "Roughly looking at about US$160 for a standard geyser supply and installation.",
-                            "cheapest_line": "The cheapest option is when you already have the geyser — installation only starts from US$80.",
+                            "total_line": "Geysers start from US$160 all-in — supply and install.",
+                            "cheapest_line": "Already have the geyser? Install-only from US$80.",
                             "sn_breakdown_lines": [
                                 "Geyser: Supply kubva US$80, Install kubva US$80",
                             ],
-                            "sn_total_line": "Zvingangoita US$160 pa standard geyser supply ne installation.",
-                            "sn_cheapest_line": "Cheapest option ndeyekuti muchitova negeyser — installation chete inotangira paUS$80.",
+                            "sn_total_line": "Geysers dzinotangira paUS$160 all-in — supply ne install.",
+                            "sn_cheapest_line": "Muchitova ne geyser? Install chete kubva US$80.",
                         },
                         "shower_cubicle": {
                             "breakdown_lines": [
                                 "Shower cubicle: Supply from US$130, Install from US$40",
                             ],
-                            "total_line": "Roughly looking at about US$170 for everything on a standard cubicle fit.",
-                            "cheapest_line": "The cheapest option is a standard-size cubicle starting from US$170 all-in.",
+                            "total_line": "Shower cubicles start from US$170 all-in — supply and install.",
+                            "cheapest_line": "Already have the cubicle? Install-only from US$40.",
                             "sn_breakdown_lines": [
                                 "Shower cubicle: Supply kubva US$130, Install kubva US$40",
                             ],
-                            "sn_total_line": "Zvingangoita US$170 yezvinhu zvese pa standard cubicle fit.",
-                            "sn_cheapest_line": "Cheapest option i standard-size cubicle inotangira paUS$170 all-in.",
+                            "sn_total_line": "Shower cubicles dzinotangira paUS$170 all-in — supply ne install.",
+                            "sn_cheapest_line": "Muchitova ne cubicle? Install chete kubva US$40.",
                         },
                         "vanity": {
                             "breakdown_lines": [
                                 "Vanity unit: Supply from US$150, Install from US$30",
                             ],
-                            "total_line": "Roughly looking at about US$180 for a basic vanity setup.",
-                            "cheapest_line": "The cheapest option is installation only if you already have a vanity — labour starts from US$30.",
+                            "total_line": "Vanities start from US$180 all-in — supply and install.",
+                            "cheapest_line": "Already have the unit? Install-only from US$30.",
                             "sn_breakdown_lines": [
                                 "Vanity unit: Supply kubva US$150, Install kubva US$30",
                             ],
-                            "sn_total_line": "Zvingangoita US$180 pa basic vanity setup.",
-                            "sn_cheapest_line": "Cheapest option installation chete kana muchitova ne vanity — labour inotangira paUS$30.",
+                            "sn_total_line": "Vanities dzinotangira paUS$180 all-in — supply ne install.",
+                            "sn_cheapest_line": "Muchitova ne vanity? Install chete kubva US$30.",
                         },
                         "bathtub_installation": {
                             "breakdown_lines": [
@@ -1964,8 +1944,8 @@ class ResponseMixin:
                             "breakdown_lines": [
                                 "Toilet seat: Supply from US$50, Install from US$20",
                             ],
-                            "total_line": "Roughly looking at about US$70 for everything on a standard toilet replacement.",
-                            "cheapest_line": "The cheapest option is installation only if you already have the toilet — labour starts from US$20.",
+                            "total_line": "Toilet replacement starts from US$70 all-in — supply and install.",
+                            "cheapest_line": "Already have the toilet? Install-only from US$20.",
                             "sn_breakdown_lines": [
                                 "Toilet seat: Supply kubva US$50, Install kubva US$20",
                             ],
@@ -1976,8 +1956,8 @@ class ResponseMixin:
                             "breakdown_lines": [
                                 "Side chamber: Supply from US$130, Install from US$30",
                             ],
-                            "total_line": "Roughly looking at about US$160 for everything on a standard chamber setup.",
-                            "cheapest_line": "The cheapest option is installation only if you already have the chamber — labour starts from US$30.",
+                            "total_line": "Side chambers start from US$160 all-in — supply and install.",
+                            "cheapest_line": "Already have the chamber? Install-only from US$30.",
                             "sn_breakdown_lines": [
                                 "Side chamber: Supply kubva US$130, Install kubva US$30",
                             ],
@@ -1994,7 +1974,7 @@ class ResponseMixin:
                                 "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
                             ],
                             "total_line": "The Facebook package is US$600 — freestanding tub and side chamber.",
-                            "cheapest_line": "The cheapest option is the basic package starting from US$600 before extra fixtures are added.",
+                            "cheapest_line": "We'll give you the exact price once we've seen the space.",
                             "sn_breakdown_lines": [
                                 "Shower cubicle: Supply kubva US$130, Install kubva US$40",
                                 "Vanity unit: Supply kubva US$150, Install kubva US$30",
