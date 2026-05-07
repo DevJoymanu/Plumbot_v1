@@ -86,6 +86,8 @@ class Command(BaseCommand):
             )
             return
 
+        self._process_delayed_reactivations(now_local, dry_run)
+
         self._print_eligibility_breakdown(now_local, force)
         leads = self._get_eligible_leads(now_local, force)
         self.stdout.write(f'📊 {leads.count()} leads eligible for follow-up')
@@ -108,6 +110,84 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('\n📊 SUMMARY'))
         for k, v in totals.items():
             self.stdout.write(f'  {k}: {v}')
+
+    # ─── Delayed lead re-engagement ──────────────────────────────────────────
+
+    def _process_delayed_reactivations(self, now_local, dry_run):
+        """
+        Finds delayed leads whose follow-up date has arrived, re-activates them,
+        sends a contextual WhatsApp message, and a follow-up email if on file.
+        """
+        import re as _re
+        from bot.customer_emails import send_delay_followup_email
+
+        due = (
+            Appointment.objects
+            .filter(
+                is_lead_active=True,
+                is_delayed=True,
+                delay_followup_due_at__lte=timezone.now(),
+            )
+            .exclude(chatbot_paused=True)
+        )
+
+        count = due.count()
+        if count:
+            self.stdout.write(f'🔔 {count} delayed lead(s) due for re-engagement')
+
+        for lead in due:
+            try:
+                name    = lead.customer_name or ''
+                hi      = f'Hi {name}' if name else 'Hi there'
+                service = self._service_label(lead)
+                area    = lead.customer_area or ''
+                desc    = (lead.project_description or '').strip()
+
+                # Build a specific project reference for the message
+                if desc:
+                    detail = desc[:80]
+                elif area:
+                    detail = f'{service} in {area}'
+                else:
+                    detail = service
+
+                message = (
+                    f'{hi}, hope you\'re back and settled in. '
+                    f'You were looking at {detail} — still keen to move forward? '
+                    f'We\'re ready when you are.'
+                )
+
+                if dry_run:
+                    self.stdout.write(
+                        self.style.SUCCESS(f'🧪 Would reactivate lead {lead.id}: "{message[:100]}…"')
+                    )
+                    continue
+
+                # Re-activate — clear is_delayed and DELAY_SIGNAL tag
+                lead.is_delayed = False
+                notes = lead.internal_notes or ''
+                notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes).strip()
+                lead.internal_notes = notes
+                lead.save(update_fields=['is_delayed', 'internal_notes'])
+
+                # Send WhatsApp re-engagement
+                clean = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
+                whatsapp_api.send_text_message(clean, message)
+                lead.add_conversation_message('assistant', f'[DELAY REACTIVATION] {message}')
+
+                # Send contextual follow-up email if we have one
+                has_email = bool(getattr(lead, 'customer_email', None))
+                if has_email:
+                    send_delay_followup_email(lead)
+
+                self.stdout.write(self.style.SUCCESS(
+                    f'✅ Reactivated lead {lead.id}'
+                    + (' + email sent' if has_email else '')
+                ))
+
+            except Exception as exc:
+                logger.error(f'Error reactivating delayed lead {lead.id}: {exc}')
+                self.stdout.write(self.style.ERROR(f'❌ Delayed lead {lead.id}: {exc}'))
 
     # ─── Eligibility ─────────────────────────────────────────────────────────
 

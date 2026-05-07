@@ -319,31 +319,22 @@ JSON FORMAT:
 }}"""
 
     try:
-        response = _deepseek.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        from bot.services.clients import deepseek_call
+        import json as _json
+        raw = deepseek_call(
             messages=[
-                {
-                    "role": "system",
-                    "content": "Return ONLY valid JSON. No markdown, no explanation.",
-                },
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": "Return ONLY valid JSON. No markdown, no explanation."},
+                {"role": "user",   "content": prompt},
             ],
             temperature=0.1,
             max_tokens=80,
-            response_format={"type": "json_object"},
+            json_response=True,
         )
-        raw = response.choices[0].message.content.strip()
-        raw = raw.replace("```json", "").replace("```", "").strip()
+        result = _json.loads(raw)
 
-        if not raw:
-            raise ValueError("DeepSeek returned empty response")
-
-        import json
-        result = json.loads(raw)
-
-        category = result.get("category", "in_scope")
+        category   = result.get("category", "in_scope")
         confidence = (result.get("confidence") or "LOW").upper()
-        detail = result.get("detail", "")
+        detail     = result.get("detail", "")
 
         valid_categories = {"in_scope", "out_of_scope", "delay_signal", "complaint"}
         if category not in valid_categories:
@@ -619,9 +610,9 @@ def _build_oos_reply(message: str, appointment) -> str:
 
     return (
         f"We specialise in plumbing and bathroom/kitchen renovations, so "
-        f"{asked_for} is unfortunately outside what we do. 🔧\n\n"
+        f"{asked_for} is outside what we do.\n\n"
         f"For that you'd need a specialist — we wouldn't want to steer you wrong.\n\n"
-        f"If there's ever a plumbing job we can help with, just send us a message!"
+        f"If there's ever a plumbing job we can help with, just send us a message."
     )
 
 
@@ -798,6 +789,27 @@ def _compute_followup_date(timeframe_message: str):
     return target.isoformat(), target.strftime('%A %d %B')
 
 
+_TIMEFRAME_RE = re.compile(
+    r'\d+\s*days?'                      # "10 days", "2 day"
+    r'|\d+\s*weeks?'                    # "2 weeks"
+    r'|\d+\s*months?'                   # "3 months"
+    r'|next\s+week'                     # "next week"
+    r'|next\s+month'                    # "next month"
+    r'|end\s+of\s+(the\s+)?month'       # "end of the month"
+    r'|in\s+a\s+week'                   # "in a week"
+    r'|in\s+a\s+month'                  # "in a month"
+    r'|in\s+two\s+weeks'                # "in two weeks"
+    r'|fortnight'                       # "fortnight"
+    r'|svondo\s+rinouya'                # Shona: next week
+    r'|mwedzi\s+unotevera',             # Shona: next month
+    re.IGNORECASE,
+)
+
+
+def _message_has_timeframe(message: str) -> bool:
+    return bool(_TIMEFRAME_RE.search(message))
+
+
 def _build_delay_reply(message: str, appointment) -> str:
     """
     Step 1 of the delay follow-up flow.
@@ -805,7 +817,7 @@ def _build_delay_reply(message: str, appointment) -> str:
     Does NOT mark the lead as delayed yet — that happens at the end of the flow.
     """
     _write_pending(appointment, 'delay_timeframe', message)
-    return "Oh no problem at all! 😊 Roughly when do you think you'll be back in town?"
+    return "No problem at all. Roughly when do you think you'll be back in town?"
 
 
 def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> str:
@@ -819,8 +831,8 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     _write_pending(appointment, 'delay_confirm', f"{message}|{iso_date}")
     logger.info("Delay timeframe parsed: '%s' → follow-up %s", message[:60], iso_date)
     return (
-        f"Got it, no problem! 😊\n\n"
-        f"Would it be okay if we reached out to you on *{friendly_date}* "
+        f"Got it, no problem.\n\n"
+        f"Would it be okay if we reached out to you on {friendly_date} "
         f"just to check you've got all the assistance you need?"
     )
 
@@ -856,15 +868,25 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
     if is_no and not has_timeframe:
         # Flat refusal — no alternative timeframe given
         return (
-            "No worries at all! Whenever you're ready, just send us a message and "
-            "we'll be happy to help. 😊"
+            "No worries at all. Whenever you're ready, just send us a message and "
+            "we'll be happy to help."
         )
 
-    if is_no and has_timeframe:
-        # Customer rejected the suggested date but provided a new timeframe.
-        # Treat the whole message as a step-2 timeframe answer and re-ask.
+    # If the message contains a timeframe but is not a plain confirmation ("yes", "ok", etc.),
+    # treat it as a step-2 timeframe answer and recompute the follow-up date.
+    # This handles "Reach out in a month" arriving at step 3 instead of a confirmation.
+    _YES_TOKENS = {
+        'yes', 'yep', 'yeah', 'yup', 'sure', 'ok', 'okay', 'perfect', 'fine',
+        'great', 'that works', 'sounds good', 'hongu', 'ehe', 'zvakanaka',
+    }
+    is_simple_yes = (
+        msg_lower.strip() in _YES_TOKENS
+        or (len(msg_lower.split()) <= 3
+            and any(tok in msg_lower.split() for tok in ('yes', 'ok', 'okay', 'sure', 'perfect')))
+    )
+    if has_timeframe and not is_simple_yes:
         logger.info(
-            "Delay confirm: 'no' + timeframe detected — restarting from step 2: '%s'",
+            "Delay confirm: timeframe without clear confirmation — re-running step 2: '%s'",
             message[:80],
         )
         return _handle_delay_timeframe_answer(message, {}, appointment)
@@ -891,17 +913,16 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
                 pass
         send_delay_quote_email(appointment, follow_up_date_str=friendly)
         return (
-            "Perfect, we'll do that! 😊 "
+            "Perfect, we'll do that. "
             "We've also sent a quote to your email. "
-            "In the meantime, if anything changes just send us a message — "
-            "we'll be right here."
+            "If anything changes just send us a message — we'll be right here."
         )
 
     # Step 4 — ask for email with quote framing
     _write_pending(appointment, 'delay_email', iso_date or '')
     return (
-        "Perfect! 😊\n\n"
-        "I'll also get our team to send you a proper written quote and portfolio "
+        "Perfect.\n\n"
+        "We'll also send you a proper written quote and portfolio "
         "— easier to save and share with whoever else needs to see it. "
         "What's the best email to reach you on?"
     )
@@ -925,7 +946,7 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
 
     if is_skip:
         return (
-            "No problem at all! Whenever you're ready, just send us a message. 😊"
+            "No problem at all. Whenever you're ready, just send us a message."
         )
 
     # Try to extract a valid email address
@@ -1008,10 +1029,9 @@ def _build_complaint_reply(message: str, appointment) -> str:
     )):
         return (
             "That's a completely fair question — and yes, we're a real plumbing "
-            "company based in Harare. 😊\n\n"
-            "I'm the booking assistant handling initial enquiries, which is why "
-            "my answers are fairly structured. For anything technical or to speak "
-            f"directly with our senior plumber, Tinashe, you can reach him on "
+            "company based in Harare.\n\n"
+            "I'm the booking assistant handling initial enquiries. For anything "
+            "technical or to speak directly with the team, you can reach Takudzwa on "
             f"+{plumber_number}.\n\n"
             "He'll be able to answer any questions you have about the work."
         )
@@ -1087,6 +1107,9 @@ def handle_out_of_scope(
     # ── Step 4: delay signal at any confidence → start two-step follow-up flow ─
     if category == "delay_signal":
         logger.info("Delay signal (%s confidence): '%s'", confidence, message[:80])
+        if _message_has_timeframe(message):
+            logger.info("Timeframe already in message — skipping Step 1")
+            return _handle_delay_timeframe_answer(message, {}, appointment)
         return _build_delay_reply(message, appointment)
 
     # ── Step 5: HIGH confidence — act immediately ─────────────────────────────

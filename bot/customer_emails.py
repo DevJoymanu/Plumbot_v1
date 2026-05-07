@@ -507,36 +507,50 @@ def send_booking_confirmation_email(apt):
 
 def send_delay_quote_email(apt, follow_up_date_str=None):
     """
-    Send HTML quote + portfolio email to a delayed lead.
+    Send quote + portfolio email to a delayed lead.
     Attaches a PDF portfolio with project photos and pricing.
+
+    Deliverability: personal subject, no coloured buttons, plain links only.
     """
     try:
-        name         = getattr(apt, "customer_name", "") or "there"
+        name         = getattr(apt, "customer_name", "") or ""
+        hi           = f"Hi {name}" if name else "Hi there"
         service_hint = f" for {_service(apt)}" if _service(apt) != "Plumbing Service" else ""
+        call         = _call_phone(apt)
         followup_blk = (
-            f'<p>I\'ll also follow up with you around '
-            f'<strong>{follow_up_date_str}</strong>.</p>'
+            f'<p style="margin:0 0 14px;">I\'ll also check in with you around '
+            f'<strong>{follow_up_date_str}</strong> — no rush before then.</p>'
         ) if follow_up_date_str else ""
 
-        subject = f"The info you asked for{service_hint} — HomeBase Plumbers"
-        body    = (
-            f'<p>Hi {name},</p>'
-            '<p>As promised — attached is our portfolio with examples of previous '
-            f'projects and our full pricing guide{service_hint}.</p>'
-            f'{followup_blk}'
-            '<p>When you\'re ready to move forward, the quickest way to reach us is '
-            f'on WhatsApp:</p>'
-            f'<p><a href="https://wa.me/{_WA_NUMBER}" style="background:#25D366;'
-            'color:#fff;text-decoration:none;padding:9px 18px;border-radius:5px;'
-            'font-size:14px;display:inline-block;">💬 Message Us on WhatsApp</a></p>'
-            '<p>No pressure — we\'ll be right here whenever you\'re ready. 😊</p>'
-            '<p><strong>HomeBase Plumbers</strong></p>'
-        )
-        html = _wrap(body)
+        subject = "Portfolio and pricing" + (f" — as requested, {name}" if name else " — as requested")
 
-        # Generate and attach PDF portfolio
-        pdf  = generate_portfolio_pdf()
-        ok   = _send(
+        body = (
+            f'<p style="margin:0 0 14px;">{hi},</p>'
+            f'<p style="margin:0 0 14px;">As promised — attached is our portfolio with '
+            f'previous projects and full pricing guide{service_hint}.</p>'
+            f'{followup_blk}'
+            f'<p style="margin:0 0 14px;">When you\'re ready, reach us on WhatsApp: '
+            f'<a href="https://wa.me/{_WA_NUMBER}" style="color:#111;font-weight:bold;">'
+            f'wa.me/{_WA_NUMBER}</a> '
+            f'or call Takudzwa on '
+            f'<a href="tel:+{call}" style="color:#111;">+{call}</a>.</p>'
+            f'<p style="margin:0;">Takudzwa<br>HomeBase Plumbers</p>'
+        )
+
+        html = (
+            '<!DOCTYPE html><html lang="en"><head>'
+            '<meta charset="UTF-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '</head>'
+            '<body style="margin:0;padding:24px;background:#ffffff;'
+            'font-family:Arial,sans-serif;font-size:15px;color:#111;line-height:1.6;'
+            'max-width:560px;">'
+            f'{body}'
+            '</body></html>'
+        )
+
+        pdf = generate_portfolio_pdf()
+        ok  = _send(
             apt, subject, html,
             attachment=pdf,
             attachment_name="HomeBase_Plumbers_Portfolio.pdf",
@@ -603,6 +617,116 @@ def send_customer_reminder_email(apt, reminder_type):
         return ok
     except Exception:
         logger.exception("send_customer_reminder_email failed — apt %s (%s)", apt.pk, reminder_type)
+        return False
+
+
+def _extract_conversation_context(apt):
+    """
+    Scan the WhatsApp conversation history for specific items the customer mentioned.
+    Returns a short list of labels (e.g. ['freestanding tub', 'side chamber']).
+    """
+    history = getattr(apt, 'conversation_history', None) or []
+    customer_text = ' '.join(
+        m.get('content', '').lower()
+        for m in history
+        if m.get('role') == 'user'
+    )
+    item_map = [
+        ('freestanding tub',  'freestanding tub'),
+        ('standard tub',      'standard tub'),
+        ('shower cubicle',    'shower cubicle'),
+        ('vanity',            'vanity'),
+        ('geyser',            'geyser'),
+        ('toilet',            'toilet'),
+        ('side chamber',      'side chamber'),
+        ('chamber',           'side chamber'),
+        ('kitchen',           'kitchen renovation'),
+        ('tub',               'bathtub'),
+        ('shower',            'shower'),
+    ]
+    seen = set()
+    items = []
+    for keyword, label in item_map:
+        if keyword in customer_text and label not in seen:
+            seen.add(label)
+            items.append(label)
+        if len(items) == 3:
+            break
+    return items
+
+
+def send_delay_followup_email(apt):
+    """
+    Contextual re-engagement email sent on the agreed follow-up date.
+
+    Deliverability design:
+    - Subject is personal, no company name, no promotional language
+    - Body reads as a one-to-one message from a real person (Takudzwa)
+    - No coloured CTA buttons — plain inline links only
+    - Minimal HTML structure, no logo header
+    - Signed off with a real name and direct number
+    All of these push Gmail to route to Primary, not Promotions.
+    """
+    try:
+        name    = getattr(apt, 'customer_name', '') or ''
+        hi      = f'Hi {name}' if name else 'Hi there'
+        service = _service(apt)
+        area    = _area(apt)
+        desc    = (getattr(apt, 'project_description', '') or '').strip()
+        call    = _call_phone(apt)
+
+        # Build the specific project reference from what we know
+        if desc:
+            project_ref = desc[:100]
+        elif service != 'Plumbing Service' and area != 'your area':
+            project_ref = f'{service} in {area}'
+        elif service != 'Plumbing Service':
+            project_ref = service
+        else:
+            project_ref = f'your plumbing project in {area}' if area != 'your area' else 'your plumbing project'
+
+        # Pull specific items from the WhatsApp conversation
+        items = _extract_conversation_context(apt)
+        items_detail = ''
+        if items:
+            items_detail = f' You specifically asked about {" and ".join(items[:2])}.'
+
+        subject = 'Following up as promised' + (f', {name}' if name else '')
+
+        body = (
+            f'<p style="margin:0 0 16px;">{hi},</p>'
+            f'<p style="margin:0 0 16px;">Just following up as we agreed — '
+            f'you mentioned you\'d be back around now and were looking at {project_ref}.{items_detail}</p>'
+            f'<p style="margin:0 0 16px;">Whenever you\'re ready to move forward, '
+            f'the quickest way to reach us is on WhatsApp: '
+            f'<a href="https://wa.me/{_WA_NUMBER}" style="color:#111;font-weight:bold;">'
+            f'wa.me/{_WA_NUMBER}</a>, '
+            f'or call me directly on '
+            f'<a href="tel:+{call}" style="color:#111;">+{call}</a>.</p>'
+            f'<p style="margin:0 0 16px;">No rush — we\'ll be here when you\'re ready.</p>'
+            f'<p style="margin:0;">Takudzwa<br>'
+            f'HomeBase Plumbers<br>'
+            f'<a href="tel:+{call}" style="color:#555;">+{call}</a></p>'
+        )
+
+        html = (
+            '<!DOCTYPE html><html lang="en"><head>'
+            '<meta charset="UTF-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '</head>'
+            '<body style="margin:0;padding:24px;background:#ffffff;'
+            'font-family:Arial,sans-serif;font-size:15px;color:#111;line-height:1.6;'
+            'max-width:560px;">'
+            f'{body}'
+            '</body></html>'
+        )
+
+        ok = _send(apt, subject, html)
+        if ok:
+            logger.info("Delay follow-up email sent — apt %s", apt.pk)
+        return ok
+    except Exception:
+        logger.exception("send_delay_followup_email failed — apt %s", apt.pk)
         return False
 
 

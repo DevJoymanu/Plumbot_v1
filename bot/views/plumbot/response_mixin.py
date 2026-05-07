@@ -515,11 +515,29 @@ class ResponseMixin:
                         self.appointment.add_conversation_message("user", incoming_message)
                         print(f"🔇 Delay signal active — ack suppressed: '{incoming_message[:60]}'")
                         return None
-                    else:
-                        from bot.whatsapp_webhook import _clear_delay_signal_if_present
-                        _clear_delay_signal_if_present(self.appointment)
-                        print(f"▶️ Delay signal cleared — customer re-engaged: '{incoming_message[:60]}'")
-                        # Fall through to normal processing
+                    # Check if this is a follow-up date correction ("No I said a month, not the 20th").
+                    # If so, re-enter the delay flow at step 2 instead of restarting the booking flow.
+                    from bot.out_of_scope_handler import (
+                        _message_has_timeframe, _handle_delay_timeframe_answer,
+                    )
+                    _msg_lower_dc = incoming_message.lower()
+                    _correction_signals = (
+                        'not the', 'not on', 'not that', 'i said', 'said i', 'i meant', 'actually',
+                    )
+                    _is_date_correction = (
+                        _message_has_timeframe(incoming_message)
+                        and any(s in _msg_lower_dc for s in _correction_signals)
+                    )
+                    if _is_date_correction:
+                        reply = _handle_delay_timeframe_answer(incoming_message, {}, self.appointment)
+                        self.appointment.add_conversation_message("user", incoming_message)
+                        self.appointment.add_conversation_message("assistant", reply)
+                        print(f"📅 Delay date correction — re-entering delay flow: '{incoming_message[:60]}'")
+                        return reply
+                    from bot.whatsapp_webhook import _clear_delay_signal_if_present
+                    _clear_delay_signal_if_present(self.appointment)
+                    print(f"▶️ Delay signal cleared — customer re-engaged: '{incoming_message[:60]}'")
+                    # Fall through to normal processing
 
                 # ── FIRST-TIME DELAY / EXIT SIGNAL ───────────────────────────────────
                 # Send one warm acknowledgment, then pause follow-ups.
@@ -2714,17 +2732,15 @@ class ResponseMixin:
 
         Generate the response now:"""
     
-                response = deepseek_client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
+                from bot.services.clients import deepseek_call
+                reply = deepseek_call(
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user",   "content": f"Customer message: '{incoming_message}'"}
+                        {"role": "user",   "content": f"Customer message: '{incoming_message}'"},
                     ],
                     temperature=0.7,
-                    max_tokens=250
+                    max_tokens=250,
                 )
-    
-                reply = response.choices[0].message.content.strip()
     
                 # Reset / increment retry counter
                 if updated_fields:

@@ -169,23 +169,16 @@ def unified_classify(
     )
 
     try:
-        response = client.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        from bot.services.clients import deepseek_call
+        raw = deepseek_call(
             messages=[
-                {
-                    "role": "system",
-                    "content": _SYSTEM.replace("{today}", today_date),
-                },
-                {"role": "user", "content": user_content},
+                {"role": "system", "content": _SYSTEM.replace("{today}", today_date)},
+                {"role": "user",   "content": user_content},
             ],
             temperature=0.0,
-            max_tokens=180,
-            response_format={"type": "json_object"},
+            max_tokens=260,
+            json_response=True,
         )
-        raw = response.choices[0].message.content.strip()
-        if not raw:
-            logger.warning("unified_classify: empty response from DeepSeek")
-            return None
         result = json.loads(raw)
         logger.debug("unified_classify result: %s", result)
         return result
