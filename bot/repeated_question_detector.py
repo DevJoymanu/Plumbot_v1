@@ -16,20 +16,17 @@ CHANGE LOG
   "May I have pictures of your work").
 """
 
-import os
 import json
 import logging
 from typing import Optional
 from django.conf import settings
-from openai import OpenAI
+from bot.services.clients import gemini_client, deepseek_client as _deepseek_fallback
 
 logger = logging.getLogger(__name__)
 
-_DEEPSEEK_KEY = os.environ.get('DEEPSEEK_API_KEY')
-_deepseek = (
-    OpenAI(api_key=_DEEPSEEK_KEY, base_url='https://api.deepseek.com/v1')
-    if _DEEPSEEK_KEY else None
-)
+# Use Gemini for classification; fall back to DeepSeek if Gemini not configured.
+_classifier = gemini_client or _deepseek_fallback
+_classifier_model = "gemini-1.5-flash" if gemini_client else getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-chat')
 
 PLUMBER_NUMBER_FALLBACK = '+263774819901'
 
@@ -78,7 +75,7 @@ def _classify_message_intent(message: str) -> str:
     Returns the intent string.  On any error, returns 'other' (safe default —
     lets the repeat check proceed rather than silently suppressing it).
     """
-    if not _deepseek:
+    if not _classifier:
         return 'other'
 
     prompt = f"""You are a message intent classifier for a Zimbabwean plumbing company's WhatsApp chatbot.
@@ -129,8 +126,8 @@ Customer message: "{message}"
 Intent:"""
 
     try:
-        response = _deepseek.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        response = _classifier.chat.completions.create(
+            model=_classifier_model,
             messages=[
                 {
                     'role': 'system',
@@ -251,7 +248,7 @@ def detect_repeated_question(
                     'matched_answer': str,
                 }
     """
-    if not _deepseek:
+    if not _classifier:
         return None
 
     # ── GATE: classify intent before doing the expensive repeat check ─────────
@@ -309,8 +306,8 @@ Return ONLY valid JSON:
 }}"""
 
     try:
-        response = _deepseek.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        response = _classifier.chat.completions.create(
+            model=_classifier_model,
             messages=[
                 {
                     'role': 'system',
@@ -381,7 +378,7 @@ def generate_repeat_clarification(
     """
     Generate a warm, reassuring response for a repeated question.
     """
-    if not _deepseek:
+    if not _classifier:
         return _fallback_repeat_response(plumber_number)
 
     lang_instruction = (
@@ -424,8 +421,8 @@ RULES:
 Write the message now:"""
 
     try:
-        response = _deepseek.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        response = _classifier.chat.completions.create(
+            model=_classifier_model,
             messages=[
                 {
                     'role': 'system',

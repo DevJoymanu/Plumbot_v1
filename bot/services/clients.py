@@ -11,6 +11,7 @@ TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
 TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER')
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 # Backward-compatible aliases used in older code paths.
 ACCOUNT_SID = TWILIO_ACCOUNT_SID
@@ -24,6 +25,18 @@ deepseek_client = OpenAI(
     api_key=DEEPSEEK_API_KEY,
     base_url="https://api.deepseek.com/v1",
 )
+
+# Gemini Flash — used for all classification and extraction (JSON) tasks.
+# Uses the OpenAI-compatible endpoint so no new SDK is needed.
+gemini_client = (
+    OpenAI(
+        api_key=GEMINI_API_KEY,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
+    if GEMINI_API_KEY else None
+)
+
+GEMINI_MODEL = "gemini-1.5-flash"
 
 
 def deepseek_call(
@@ -80,3 +93,75 @@ def deepseek_call(
                 time.sleep(wait)
 
     raise last_exc
+
+
+def gemini_call(
+    messages,
+    *,
+    temperature=0.0,
+    max_tokens=400,
+    json_response=False,
+    retries=3,
+    timeout=20,
+):
+    """
+    Gemini Flash wrapper for classification and extraction (JSON) tasks.
+    Same call signature as deepseek_call — drop-in replacement.
+
+    Automatically falls back to deepseek_call if:
+      - GEMINI_API_KEY is not set
+      - Gemini fails after all retries
+
+    This means the bot never breaks if Gemini is down or rate-limited.
+    """
+    if not gemini_client:
+        logger.warning("Gemini client not configured — falling back to DeepSeek")
+        return deepseek_call(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            json_response=json_response,
+            retries=retries,
+            timeout=timeout,
+        )
+
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            kwargs = dict(
+                model=GEMINI_MODEL,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+            if json_response:
+                kwargs['response_format'] = {'type': 'json_object'}
+
+            resp = gemini_client.chat.completions.create(**kwargs)
+            content = resp.choices[0].message.content
+
+            if not content or not content.strip():
+                raise ValueError("empty response from Gemini")
+
+            return content.strip()
+
+        except Exception as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                wait = 2 ** attempt
+                logger.warning(
+                    "Gemini attempt %d/%d failed (%s) — retrying in %ds",
+                    attempt + 1, retries, exc, wait,
+                )
+                time.sleep(wait)
+
+    logger.warning("Gemini failed after %d attempts — falling back to DeepSeek", retries)
+    return deepseek_call(
+        messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        json_response=json_response,
+        retries=retries,
+        timeout=timeout,
+    )

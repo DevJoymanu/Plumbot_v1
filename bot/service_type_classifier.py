@@ -22,20 +22,11 @@
 #       lead.save(update_fields=['project_type'])
 
 from __future__ import annotations
-import os
 import logging
 import re
 from django.conf import settings
-from openai import OpenAI
 
 logger = logging.getLogger(__name__)
-
-# ── DeepSeek client (optional — falls back gracefully if key not set) ─────────
-_DEEPSEEK_KEY = os.environ.get('DEEPSEEK_API_KEY')
-_deepseek = (
-    OpenAI(api_key=_DEEPSEEK_KEY, base_url='https://api.deepseek.com/v1')
-    if _DEEPSEEK_KEY else None
-)
 
 # ── Service type constants (match Appointment.project_type values) ────────────
 BATHROOM_RENOVATION      = 'Bathroom Renovation'
@@ -222,13 +213,11 @@ def _keyword_match(message: str) -> str | None:
 
 def _deepseek_classify(message: str) -> str | None:
     """
-    Ask DeepSeek to classify the message.
+    Ask Gemini (or DeepSeek fallback) to classify the message.
     Returns one of the three service type strings, or None if unclassifiable.
     Only called when keyword matching yields no result.
     """
-    if not _deepseek:
-        logger.debug('DeepSeek client not available — skipping AI classification')
-        return None
+    from bot.services.clients import gemini_call
 
     prompt = f"""You are a classification assistant for a plumbing company in Zimbabwe called Homebase Plumbers.
 
@@ -257,8 +246,7 @@ INSTRUCTIONS:
 - Do NOT add any explanation, punctuation, or extra words."""
 
     try:
-        response = _deepseek.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        raw = gemini_call(
             messages=[
                 {
                     'role': 'system',
@@ -271,11 +259,10 @@ INSTRUCTIONS:
                 {'role': 'user', 'content': prompt},
             ],
             max_tokens=20,
-            temperature=0.0,   # deterministic — classification needs consistency
+            temperature=0.0,
         )
-
-        raw = response.choices[0].message.content.strip().strip('"').strip("'")
-        logger.debug(f'DeepSeek classification raw output: {raw!r}')
+        raw = raw.strip('"').strip("'")
+        logger.debug(f'Service type classification raw output: {raw!r}')
 
         if raw in (BATHROOM_RENOVATION, KITCHEN_RENOVATION, NEW_PLUMBING_INSTALLATION):
             return raw
@@ -291,11 +278,11 @@ INSTRUCTIONS:
         if 'new plumbing' in raw_lower or 'installation' in raw_lower:
             return NEW_PLUMBING_INSTALLATION
 
-        logger.warning(f'Unexpected DeepSeek classification output: {raw!r}')
+        logger.warning(f'Unexpected service type classification output: {raw!r}')
         return None
 
     except Exception as exc:
-        logger.warning(f'DeepSeek classification failed: {exc}')
+        logger.warning(f'Service type classification failed: {exc}')
         return None
 
 

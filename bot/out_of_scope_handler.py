@@ -319,9 +319,9 @@ JSON FORMAT:
 }}"""
 
     try:
-        from bot.services.clients import deepseek_call
+        from bot.services.clients import gemini_call
         import json as _json
-        raw = deepseek_call(
+        raw = gemini_call(
             messages=[
                 {"role": "system", "content": "Return ONLY valid JSON. No markdown, no explanation."},
                 {"role": "user",   "content": prompt},

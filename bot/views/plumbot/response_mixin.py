@@ -1916,6 +1916,17 @@ class ResponseMixin:
             )
             return any(kw in msg for kw in price_keywords)
 
+        @staticmethod
+        def _is_asking_for_size(message: str) -> bool:
+            """Return True when the customer is asking about tub dimensions or sizes."""
+            msg = (message or "").lower()
+            size_keywords = (
+                'how big', 'what size', 'what sizes', 'dimensions', 'how large',
+                'how wide', 'how long', 'size', 'big', 'length', 'width', 'cm',
+                'mm', 'metre', 'meter', 'fit', 'fits', 'will it fit',
+            )
+            return any(kw in msg for kw in size_keywords)
+
 
         def handle_service_inquiry(self, intent, message):
                 """Generate response for product/service/pricing inquiries in English or Shona."""
@@ -2166,10 +2177,24 @@ class ResponseMixin:
                             f"{self._get_pricing_followup_prompt('english')}"
                         )
 
-                    # Tub inquiries: show sizes first, prices only if customer asks
+                    # Tub inquiries: answer size questions, then prices, then type
                     _TUB_INTENTS = {'tub_sales', 'standalone_tub', 'bathtub_installation'}
                     if intent in _TUB_INTENTS:
-                        if not self._is_asking_for_price(message):
+                        if self._is_asking_for_size(message):
+                            if language == 'shona':
+                                return (
+                                    "Standard built-in tubs dzinouya mu1500×700mm, 1600×700mm ne1700×750mm.\n\n"
+                                    "Freestanding tubs dzinobva ku1500×750mm kusvika 1800×800mm — "
+                                    "inonyanya kusanangurwa i1700mm.\n\n"
+                                    "Unoshanda neipi saizi?"
+                                )
+                            return (
+                                "Standard built-in tubs come in 1500×700mm, 1600×700mm and 1700×750mm.\n\n"
+                                "Freestanding tubs run from 1500×750mm up to 1800×800mm — "
+                                "the most popular is 1700mm.\n\n"
+                                "Which size works for your space?"
+                            )
+                        elif not self._is_asking_for_price(message):
                             if language == 'shona':
                                 return (
                                     "Tubs dzinouya mumhando mbiri — "

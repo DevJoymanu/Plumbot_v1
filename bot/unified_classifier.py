@@ -169,8 +169,8 @@ def unified_classify(
     )
 
     try:
-        from bot.services.clients import deepseek_call
-        raw = deepseek_call(
+        from bot.services.clients import gemini_call
+        raw = gemini_call(
             messages=[
                 {"role": "system", "content": _SYSTEM.replace("{today}", today_date)},
                 {"role": "user",   "content": user_content},

@@ -21,7 +21,7 @@ from ...models import (
     QuotationTemplate, QuotationTemplateItem, ConversationMessage,
 )
 from ...services.clients import (
-    twilio_client, deepseek_client,
+    twilio_client, deepseek_client, gemini_client,
     TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
     DEEPSEEK_API_KEY,
 )
@@ -284,8 +284,10 @@ class ExtractionMixin:
                 Extract from: "{message}"
                 """
             
-                response = deepseek_client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
+                _extraction_client = gemini_client or deepseek_client
+                _extraction_model  = "gemini-1.5-flash" if gemini_client else settings.DEEPSEEK_MODEL
+                response = _extraction_client.chat.completions.create(
+                    model=_extraction_model,
                     messages=[
                         {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON with no formatting or explanations. NEVER extract plan_status unless actively asking about it RIGHT NOW."},
                         {"role": "user", "content": extraction_prompt}
@@ -294,15 +296,15 @@ class ExtractionMixin:
                     max_tokens=500,
                     response_format={"type": "json_object"},
                 )
-            
+
                 ai_response = response.choices[0].message.content.strip()
 
-                # If DeepSeek returned empty despite response_format, retry once
+                # If Gemini returned empty despite response_format, retry once
                 if not ai_response:
                     import time as _time
                     _time.sleep(0.5)
-                    _retry = deepseek_client.chat.completions.create(
-                        model=settings.DEEPSEEK_MODEL,
+                    _retry = _extraction_client.chat.completions.create(
+                        model=_extraction_model,
                         messages=[
                             {"role": "system", "content": "You are a data extraction assistant. Return ONLY valid JSON with no formatting or explanations. NEVER extract plan_status unless actively asking about it RIGHT NOW."},
                             {"role": "user", "content": extraction_prompt}
