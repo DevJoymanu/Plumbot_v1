@@ -131,6 +131,18 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     # ── BATHROOM RENOVATION ───────────────────────────────────────────────────
     (BATHROOM_RENOVATION, [
         # multi-word phrases first
+        'freestanding tub',
+        'free standing tub',
+        'free-standing tub',
+        'standalone tub',
+        'freestanding bath',
+        'free standing bath',
+        'freestanding',          # "Free standing" / "freestanding" alone → bathroom fixture
+        'free standing',
+        'free-standing',
+        'rain shower',
+        'rainfall shower',
+        'double vanity',
         'bathroom renovation',
         'bathroom upgrade',
         'bathroom remodel',

@@ -992,8 +992,20 @@ class ResponseMixin:
                         self._set_question_retry_count(next_question, 1)
                         return first_pass
                 else:
-                    # retry_count >= 1: bot already offered dates once.
-                    # Classify the customer's reply before repeating the same options.
+                    # retry_count >= 1
+
+                    # Human handoff after 4 failed extraction attempts
+                    if retry_count >= 4:
+                        return self._build_human_handoff_reply()
+
+                    # Semantic rescue on first retry with no extracted data
+                    if not updated_fields and retry_count == 1:
+                        rescue_reply = self._try_semantic_rescue(incoming_message, next_question)
+                        if rescue_reply:
+                            self._set_question_retry_count(next_question, retry_count + 1)
+                            return rescue_reply
+
+                    # Classify availability-date replies before repeating options
                     if next_question == "availability_date":
                         handled = self._handle_availability_date_response(
                             incoming_message, retry_count
@@ -1273,6 +1285,8 @@ class ResponseMixin:
                     f"🤖 Retry response | q={next_question} retry={retry_count} "
                     f"updated={updated_fields}"
                 )
+                if not reply:
+                    return self._hardcoded_retry_fallback(next_question, retry_count)
                 return reply
 
             except Exception as e:
@@ -1356,6 +1370,12 @@ class ResponseMixin:
             Provides context-specific phrasing guidance per question.
             """
             if next_question == "service_type":
+                if retry_count >= 3:
+                    return (
+                        "Ask a simpler angle: which room needs work — bathroom, kitchen, "
+                        "or is this a new installation? Don't mention service names — "
+                        "just ask about the room or whether it's new work."
+                    )
                 return (
                     "Ask which of our three services they need: "
                     "Bathroom Renovation, New Plumbing Installation, or Kitchen Renovation. "
@@ -1439,6 +1459,62 @@ class ResponseMixin:
             options = fallbacks.get(next_question, ["What's the best next step for you?"])
             idx = min(retry_count - 1, len(options) - 1)
             return options[idx]
+
+
+        def _try_semantic_rescue(self, message: str, next_question: str) -> str | None:
+            """
+            Run semantic rescue when extraction returned no useful fields.
+            If rescue identifies a service_type it also persists it to the appointment.
+            Returns a contextual reply string, or None to fall through to normal retry.
+            """
+            try:
+                from bot.semantic_rescue import rescue as _rescue
+
+                history = self.appointment.conversation_history or []
+                lines = []
+                for turn in history[-4:]:
+                    role = "Customer" if turn.get("role") == "user" else "Bot"
+                    content = (turn.get("content") or "").strip()[:80]
+                    if content and not content.startswith("["):
+                        lines.append(f"{role}: {content}")
+                ctx = "\n".join(lines)
+
+                result = _rescue(message, next_question=next_question, conversation_context=ctx)
+
+                input_type = result.get("input_type", "unclear")
+                svc        = result.get("service_type")
+                reply      = result.get("suggested_reply")
+
+                if input_type == "unclear" or not reply:
+                    return None
+
+                if svc and not self.appointment.project_type:
+                    self.appointment.project_type = svc
+                    self.appointment.save(update_fields=["project_type"])
+                    logger.info(
+                        "semantic_rescue: saved service_type=%s from input_type=%s",
+                        svc, input_type,
+                    )
+
+                logger.info("semantic_rescue: returning rescue reply for input_type=%s", input_type)
+                return reply
+
+            except Exception as exc:
+                logger.warning("_try_semantic_rescue error: %s", exc)
+                return None
+
+
+        def _build_human_handoff_reply(self) -> str:
+            """Reply after 4 failed extraction attempts — offer direct human contact."""
+            from bot.out_of_scope_handler import PLUMBER_NUMBER_FALLBACK
+            number = (
+                getattr(self.appointment, "plumber_contact_number", None) or PLUMBER_NUMBER_FALLBACK
+            ).replace("+", "").replace("whatsapp:", "")
+            return (
+                f"Let me get the right person to help you directly — "
+                f"you can reach Tinashe on +{number} and he'll sort it from there.\n\n"
+                "Or just tell me in a few words what you need and I'll take it from there."
+            )
 
 
         def validate_plan_status_with_ai(self, extracted_status: str, original_message: str) -> tuple:

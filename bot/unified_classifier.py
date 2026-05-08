@@ -176,7 +176,7 @@ def unified_classify(
                 {"role": "user",   "content": user_content},
             ],
             temperature=0.0,
-            max_tokens=260,
+            max_tokens=400,
             json_response=True,
         )
         result = json.loads(raw)
