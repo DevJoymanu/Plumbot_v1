@@ -96,6 +96,66 @@ class ResponseMixin:
             return 'have a quick look at the space'
 
 
+        def _get_contextual_description_question(self) -> str:
+            """Return a service-specific, Hormozi-style question to capture project detail."""
+            svc = (self.appointment.project_type or '').lower()
+
+            if svc == 'bathroom_installation':
+                return (
+                    "Are we fitting the bathroom from scratch in a new space, "
+                    "or converting an existing room — and which fixtures do you want: "
+                    "toilet, shower, bath, or the full set?"
+                )
+            if svc == 'kitchen_installation':
+                return (
+                    "Is this kitchen being plumbed fresh, or is there existing pipework "
+                    "to work around — and are we talking sink, dishwasher connection, or both?"
+                )
+            if 'bathroom' in svc and 'kitchen' in svc:
+                return (
+                    "Which room is the priority — bathroom, kitchen, or both at once? "
+                    "And is it a full redo or specific fixtures you want sorted?"
+                )
+            if 'bathroom' in svc:
+                return (
+                    "Is this a full bathroom redo — tiling, fittings, the works — "
+                    "or are you targeting specific things like the shower, tub, or toilet?"
+                )
+            if 'kitchen' in svc:
+                return (
+                    "Is this a full kitchen refit or specific work — "
+                    "new sink, countertop plumbing, or drainage?"
+                )
+            if 'drain' in svc:
+                return (
+                    "Which drain is blocked — kitchen, bathroom, or outside? "
+                    "And is it draining slowly or completely backed up?"
+                )
+            if 'pipe' in svc:
+                return (
+                    "Where's the pipe — in a wall, under a sink, or outside? "
+                    "And is it dripping or has it fully burst?"
+                )
+            if 'geyser' in svc:
+                return (
+                    "Is the geyser not heating at all, leaking, or just making noise — "
+                    "and how long has it been like that?"
+                )
+            if 'toilet' in svc:
+                return (
+                    "What's the toilet doing — leaking at the base, not flushing, "
+                    "or running continuously?"
+                )
+            if 'installation' in svc:
+                return (
+                    "Is this for a new build or an extension — "
+                    "and which areas need plumbing: bathroom, kitchen, or the full house?"
+                )
+            return (
+                "What specifically needs doing — the more detail, "
+                "the sharper the quote we can give you."
+            )
+
         def _format_day(self, date_obj) -> str:
             """Return e.g. 'Monday the 7th' or 'Tuesday the 8th'."""
             day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -113,11 +173,9 @@ class ResponseMixin:
             if next_question == "service_type":
                 return "Uri kuda service ipi chaizvo?" if is_shona else "Which service are you looking at exactly?"
             if next_question == "project_description":
-                return (
-                    "Parizvino, ungandiudza zvishoma kuti chii chaizvo chamunoda kuti chiitwe?"
-                    if is_shona else
-                    "For now, Could you tell me a bit more about the project?"
-                )
+                if is_shona:
+                    return "Parizvino, ungandiudza zvishoma kuti chii chaizvo chamunoda kuti chiitwe?"
+                return self._get_contextual_description_question()
             if next_question == "availability_date":
                 days = self._get_next_two_available_days()
                 if len(days) >= 2:
@@ -1132,10 +1190,7 @@ class ResponseMixin:
                 )
 
             if next_question == "project_description":
-                return (
-                    "Got it! Could you tell me a bit more about the project? "
-                    "The more detail you give, the more accurate we can be with the quote."
-                )
+                return f"Got it! {self._get_contextual_description_question()}"
 
             if next_question == "availability_date":
                 days = self._get_next_two_available_days()
@@ -1383,9 +1438,10 @@ class ResponseMixin:
                 )
 
             if next_question == "project_description":
+                specific_q = self._get_contextual_description_question()
                 return (
-                    "Ask what specifically they want done. Encourage detail by mentioning "
-                    "that more detail = more accurate quote. Keep it conversational."
+                    f"Ask the following specific question about their project — do not rephrase it, "
+                    f"just weave it in naturally: \"{specific_q}\""
                 )
 
             if next_question == "availability_date":
@@ -1436,7 +1492,7 @@ class ResponseMixin:
                     "Just to confirm — which service do you need?",
                 ],
                 'project_description': [
-                    "Could you tell me a bit more about the project?",
+                    self._get_contextual_description_question(),
                     "What exactly needs doing — the more detail the better for the quote.",
                     "What's the main thing you want sorted?",
                 ],
@@ -2729,11 +2785,7 @@ class ResponseMixin:
                         )
 
                     if next_question == "project_description":
-                        return (
-                            "Got it! Could you tell me a bit more about the project? "
-                            "The more detail you give, the more accurate we can be with "
-                            "the quote."
-                        )
+                        return f"Got it! {self._get_contextual_description_question()}"
 
                     if next_question == "availability_date":
                         days       = self._get_next_two_available_days()

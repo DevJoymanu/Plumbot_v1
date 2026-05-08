@@ -68,9 +68,18 @@ ack           Pure acknowledgment with zero booking intent:
               Only use "ack" when the message adds NOTHING to the conversation.
 
 ─── SERVICE TYPE (one or null) ───────────────────────────────────────────────
-bathroom_renovation, kitchen_renovation, bathroom_and_kitchen_renovation,
-new_plumbing_installation, drain_unblocking, pipe_repair, geyser_repair,
-toilet_repair
+bathroom_renovation   — upgrading or remodelling an EXISTING bathroom
+bathroom_installation — fitting out a brand new bathroom space from scratch
+kitchen_renovation    — upgrading or remodelling an EXISTING kitchen
+kitchen_installation  — fitting out a brand new kitchen space from scratch
+bathroom_and_kitchen_renovation, new_plumbing_installation,
+drain_unblocking, pipe_repair, geyser_repair, toilet_repair
+
+Use bathroom_installation / kitchen_installation when the customer says
+"install a bathroom", "build a bathroom", "new bathroom in a new room",
+"want a kitchen installed", "fit a kitchen" etc.
+Use bathroom_renovation / kitchen_renovation when they say "renovate",
+"redo", "upgrade", "remodel", or describe work in an existing bathroom/kitchen.
 
 ─── PRODUCT INTENT (most specific, or "none") ────────────────────────────────
 tub_sales        Any message asking about tub price/cost — "how much tub",

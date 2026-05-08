@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 # ── Service type constants (match Appointment.project_type values) ────────────
 BATHROOM_RENOVATION      = 'Bathroom Renovation'
+BATHROOM_INSTALLATION    = 'bathroom_installation'
 KITCHEN_RENOVATION       = 'Kitchen Renovation'
+KITCHEN_INSTALLATION     = 'kitchen_installation'
 NEW_PLUMBING_INSTALLATION = 'New Plumbing Installation'
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -117,6 +119,45 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         'bheseni rekicheni',
         'tap yekicheni',
         'pombi dzekicheni',
+    ]),
+
+    # ── BATHROOM INSTALLATION (new space, from scratch) ──────────────────────
+    # Must come before BATHROOM_RENOVATION to avoid false matches.
+    (BATHROOM_INSTALLATION, [
+        'install a bathroom',
+        'install bathroom',
+        'installing a bathroom',
+        'installing bathroom',
+        'want a bathroom installed',
+        'bathroom to be installed',
+        'fit a bathroom',
+        'fitting a bathroom',
+        'build a bathroom',
+        'building a bathroom',
+        'new bathroom installation',
+        'bathroom installation',
+        # Shona / mixed
+        'isa bathroom',
+        'bathroom itsva',
+    ]),
+
+    # ── KITCHEN INSTALLATION (new space, from scratch) ────────────────────────
+    (KITCHEN_INSTALLATION, [
+        'install a kitchen',
+        'install kitchen',
+        'installing a kitchen',
+        'installing kitchen',
+        'want a kitchen installed',
+        'kitchen to be installed',
+        'fit a kitchen',
+        'fitting a kitchen',
+        'build a kitchen',
+        'building a kitchen',
+        'new kitchen installation',
+        'kitchen installation',
+        # Shona / mixed
+        'isa kicheni',
+        'kicheni itsva',
     ]),
 
     # ── BATHROOM RENOVATION ───────────────────────────────────────────────────

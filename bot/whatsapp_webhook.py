@@ -860,9 +860,11 @@ def handle_pricing_objection(appointment) -> str:
 
     if not missing:
         service_ranges = {
-            'bathroom_renovation': 'US$1,500 - US$6,000',
-            'kitchen_renovation': 'US$3,000 - US$12,000',
-            'new_plumbing_installation': 'US$700 - US$8,000'
+            'bathroom_renovation':    'US$1,500 - US$6,000',
+            'bathroom_installation':  'US$1,800 - US$7,000',
+            'kitchen_renovation':     'US$3,000 - US$12,000',
+            'kitchen_installation':   'US$3,500 - US$14,000',
+            'new_plumbing_installation': 'US$700 - US$8,000',
         }
         range_str = service_ranges.get(appointment.project_type, 'US$1,000 - US$15,000')
         return (

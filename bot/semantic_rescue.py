@@ -141,7 +141,7 @@ Classify this message and return ONLY valid JSON:
 {{
   "input_type": "product_mention|reference_link|price_query|partial_answer|general_question|unclear",
   "plumbing_mapping": "specific fixture or product they likely mean, or null",
-  "service_type": "bathroom_renovation|kitchen_renovation|new_plumbing_installation|null",
+  "service_type": "bathroom_renovation|bathroom_installation|kitchen_renovation|kitchen_installation|new_plumbing_installation|null",
   "suggested_reply": "1-2 sentence WhatsApp reply acknowledging what they sent and moving forward"
 }}
 

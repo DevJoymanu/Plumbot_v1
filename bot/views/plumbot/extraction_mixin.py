@@ -420,7 +420,8 @@ class ExtractionMixin:
     
                 # ── Service type ──────────────────────────────────────────────────────
                 _VALID_SERVICE_TYPES = {
-                    'bathroom_renovation', 'kitchen_renovation',
+                    'bathroom_renovation', 'bathroom_installation',
+                    'kitchen_renovation', 'kitchen_installation',
                     'bathroom_and_kitchen_renovation', 'new_plumbing_installation',
                     'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
                     'other',
@@ -441,10 +442,13 @@ class ExtractionMixin:
                 # ── Project description ───────────────────────────────────────────────
                 _SERVICE_TYPE_LABELS = {
                     'bathroom renovation', 'bathroom',
+                    'bathroom installation', 'install a bathroom', 'install bathroom',
                     'kitchen renovation', 'kitchen',
+                    'kitchen installation', 'install a kitchen', 'install kitchen',
                     'both renovations', 'bathroom and kitchen renovation',
                     'new plumbing installation', 'plumbing installation',
-                    'bathroom_renovation', 'kitchen_renovation',
+                    'bathroom_renovation', 'bathroom_installation',
+                    'kitchen_renovation', 'kitchen_installation',
                     'bathroom_and_kitchen_renovation', 'new_plumbing_installation',
                     'drain unblocking', 'blocked drain', 'drain_unblocking',
                     'pipe repair', 'pipe_repair', 'leaking pipe', 'burst pipe',
@@ -473,7 +477,25 @@ class ExtractionMixin:
                     updated_fields.append('project_description')
                     print(f"✅ Fallback project_description from raw message: "
                         f"{self.appointment.project_description[:60]}")
-                    
+                elif (
+                    next_question == 'project_description' and
+                    not self.appointment.project_description and
+                    self.appointment.project_type
+                ):
+                    # Customer repeated the service type (or gave nothing new) —
+                    # don't push further; use the service type as the description
+                    _msg_norm = (incoming_message or '').strip().lower().replace(' ', '_')
+                    _svc_norm = (self.appointment.project_type or '').lower()
+                    if (
+                        (incoming_message or '').strip().lower() in _SERVICE_TYPE_LABELS or
+                        _msg_norm == _svc_norm or
+                        _svc_norm.replace('_', ' ') in (incoming_message or '').lower()
+                    ):
+                        _desc = self.appointment.project_type.replace('_', ' ')
+                        self.appointment.project_description = _desc
+                        updated_fields.append('project_description')
+                        print(f"✅ Description skipped — customer repeated service type: {_desc}")
+
                 # ── Area — capture passively whenever volunteered ─────────────────────
                 if (extracted_data.get('area') and
                         extracted_data.get('area') != 'null' and
