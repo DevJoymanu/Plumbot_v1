@@ -52,7 +52,7 @@ def login_view(request):
                 logger.info(f"User {username} logged in successfully")
                 
                 # Redirect to next page or dashboard
-                next_page = request.GET.get('next', 'dashboard12/')
+                next_page = request.GET.get('dashboard/')
                 return redirect(next_page)
             else:
                 messages.error(request, 'Invalid username or password.')
