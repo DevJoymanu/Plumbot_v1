@@ -29,6 +29,7 @@ from ...utils import (
     _append_admin_note,
 )
 from ...whatsapp_cloud_api import whatsapp_api
+from ...plumber_notifications import send_plumber_notification_email
 
 try:
     from google.oauth2 import service_account
@@ -213,7 +214,7 @@ class NotificationMixin:
                         print("❌ No booking notifications sent — check TEAM_NUMBERS env var and WhatsApp API config")
 
                     send_plumber_notification_email(
-                        subject=f"New booking notification for {customer_name}",
+                        subject=f"New booking notification for {appointment_info.get('name', 'Unknown')}",
                         message=team_message,
                     )
 

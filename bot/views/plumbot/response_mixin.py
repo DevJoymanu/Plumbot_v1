@@ -747,11 +747,24 @@ class ResponseMixin:
                     # None means description was just captured — fall through to
                     # the normal booking flow so it asks the next question
 
-                # ── CONFIRMED + COMPLETE — no more questions ──────────────────────────
+                # ── CONFIRMED + COMPLETE — respond contextually, never go silent ─────
                 if (self.appointment.status == 'confirmed' and
                         self.get_next_question_to_ask() == 'complete'):
+                    # Capture name if the customer is still responding to the name ask
+                    if not self.appointment.customer_name:
+                        extracted = self.extract_all_available_info_with_ai(incoming_message) or {}
+                        name = extracted.get('customer_name')
+                        if name:
+                            self.appointment.customer_name = name
+                            self.appointment.save(update_fields=['customer_name'])
+                            reply = self._confirm_or_request_email()
+                            self.appointment.add_conversation_message("user", incoming_message)
+                            self.appointment.add_conversation_message("assistant", reply)
+                            return reply
+                    reply = self._post_booking_contextual_reply(incoming_message)
                     self.appointment.add_conversation_message("user", incoming_message)
-                    return None
+                    self.appointment.add_conversation_message("assistant", reply)
+                    return reply
 
                 # ── ALTERNATIVE TIME SELECTION ────────────────────────────────────────
                 if (self.appointment.status == 'pending' and
@@ -1128,16 +1141,17 @@ class ResponseMixin:
     {{"intent": "accepted_offered|suggested_new_day|rejected_both|unclear", "day_mentioned": "DayName or null", "confidence": "HIGH|LOW"}}"""
 
             try:
-                response = deepseek_client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
+                from bot.services.clients import deepseek_call
+                raw = deepseek_call(
                     messages=[
                         {"role": "system", "content": "Return ONLY valid JSON. No markdown."},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.1,
                     max_tokens=60,
+                    json_response=True,
                 )
-                raw = response.choices[0].message.content.strip().replace("```json", "").replace("```", "").strip()
+                raw = raw.replace("```json", "").replace("```", "").strip()
                 result = json.loads(raw)
                 print(f"🤖 Availability intent: {result}")
                 return result
@@ -2844,8 +2858,10 @@ class ResponseMixin:
         NEVER say: "I understand", "I apologize", "certainly", "more efficiently", "your plumbing needs", "as an AI"
         NEVER use bullet points in a chat message.
         NEVER stack two questions in one message.
+        NEVER use contractions — write "we will" not "we'll", "they will" not "they'll".
         Emojis only when they fit naturally — not forced at the end of every message.
-        Use "we" not "I" — you represent the whole team.
+        Use "we" not "I" or "our" — you represent the whole team.
+        The plumber's name is Takudzwa.
 
         CURRENT FLOW:
         1. service_type          ✅ or pending
@@ -2978,16 +2994,17 @@ class ResponseMixin:
         Reply with ONLY valid JSON:
         {{"classification": "GENUINE_QUESTION" or "BOOKING_ANSWER", "confidence": "HIGH" or "LOW"}}"""
 
-                response = deepseek_client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
+                from bot.services.clients import deepseek_call
+                raw = deepseek_call(
                     messages=[
                         {"role": "system", "content": "Return ONLY valid JSON. No markdown."},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.1,
                     max_tokens=30,
+                    json_response=True,
                 )
-                raw = response.choices[0].message.content.strip().replace("```json", "").replace("```", "").strip()
+                raw = raw.replace("```json", "").replace("```", "").strip()
                 result = json.loads(raw)
                 classification = result.get("classification", "BOOKING_ANSWER")
                 confidence     = result.get("confidence", "LOW")
@@ -3063,6 +3080,7 @@ class ResponseMixin:
         - Monday–Sunday except Saturday (closed Saturdays)
         - Business hours: 8 AM – 6 PM
         - Site assessment is free, plumber gives fixed quote on the spot
+        - The plumber's name is Takudzwa
         - Plumber direct contact: {self.appointment.plumber_contact_number or "+263774819901"}
 
         CUSTOMER CONTEXT:
@@ -3107,6 +3125,59 @@ class ResponseMixin:
             except Exception as exc:
                 print(f"⚠️ Dynamic answer generation failed: {exc}")
                 return None
+
+
+        def _post_booking_contextual_reply(self, message: str) -> str:
+            """
+            Called when the appointment is confirmed+complete and the customer
+            sends any follow-up message.  Uses DeepSeek to reply contextually —
+            acknowledges what they said and reminds them of their booking.
+            Falls back to a safe static reply if DeepSeek fails.
+            """
+            import pytz as _pytz
+            from bot.services.clients import deepseek_call
+
+            sa_tz = _pytz.timezone('Africa/Johannesburg')
+            dt = self.appointment.scheduled_datetime
+            appt_str = (
+                dt.astimezone(sa_tz).strftime('%A, %B %d at %I:%M %p')
+                if dt else "your booked time"
+            )
+            name_part = f", {self.appointment.customer_name}" if self.appointment.customer_name else ""
+
+            system_prompt = (
+                f"You are a WhatsApp assistant for Homebase Plumbers in Harare, Zimbabwe. "
+                f"The plumber's name is Takudzwa. "
+                f"The customer's appointment is CONFIRMED for {appt_str}. "
+                f"They have just sent a follow-up message. "
+                f"Reply warmly in 1-3 sentences. Acknowledge what they said. "
+                f"If they ask who will come or who they are speaking to, say the plumber's name is Takudzwa. "
+                f"If it is extra context about their job, acknowledge it positively. "
+                f"If it mentions a time or date, confirm it matches their booking at {appt_str}. "
+                f"Close with a friendly line such as 'See you on {appt_str}{name_part}! 😊'. "
+                f"Never ask for information that has already been booked. "
+                f"NEVER use the word 'our' — say 'we', 'the team', or 'us' instead. "
+                f"NEVER use contractions — write 'we will' not 'we'll', 'they will' not 'they'll'. "
+                f"Write like a friendly human texting — short, warm, no bullet points."
+            )
+
+            try:
+                raw = deepseek_call(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user",   "content": message},
+                    ],
+                    temperature=0.4,
+                    max_tokens=120,
+                )
+                reply = (raw or "").strip()
+                if reply:
+                    return reply
+            except Exception as exc:
+                print(f"⚠️ Post-booking contextual reply failed: {exc}")
+
+            # Safe fallback — never return None
+            return f"Thanks for that{name_part}! We'll see you on {appt_str}. 😊"
 
 
         def _get_soft_booking_nudge(self) -> str:

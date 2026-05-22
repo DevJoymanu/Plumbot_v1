@@ -380,6 +380,18 @@ def get_random_delay() -> int:
 def delayed_response(sender, reply, delay_seconds, message_id=None):
     try:
         time.sleep(delay_seconds)
+
+        # Abort if the appointment was confirmed during the delay window
+        try:
+            fresh = Appointment.objects.filter(
+                phone_number=f"whatsapp:+{sender}"
+            ).only('status').first()
+            if fresh and fresh.status == 'confirmed':
+                print(f"⚠️ Aborting delayed reply to {sender} — appointment already confirmed")
+                return
+        except Exception:
+            pass  # DB unavailable — proceed with send rather than silently drop
+
         if message_id:
             try:
                 whatsapp_api.mark_message_as_read(message_id)
