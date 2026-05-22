@@ -12,7 +12,6 @@ from django.utils import timezone
 from openai import OpenAI
 
 from bot.models import Appointment
-from bot.plumber_notifications import send_plumber_notification_email
 from bot.whatsapp_cloud_api import whatsapp_api
 from bot.whatsapp_window import is_window_open, filter_queryset_by_window, hours_remaining
 
@@ -88,7 +87,6 @@ class Command(BaseCommand):
                 )
                 continue
 
-            summary = self._generate_conversation_summary(lead)
             inactivity_hours = self._hours_since_response(lead)
             plumber_number = (lead.plumber_contact_number or "+263610318200").replace(
                 "whatsapp:", ""
@@ -105,7 +103,6 @@ class Command(BaseCommand):
                 f"Timeline: {lead.timeline or 'Not specified'}\n"
                 f"Follow-up: {lead.get_follow_up_status_display()}\n"
                 f"Next follow-up: {lead.next_follow_up_at or 'Not set'}\n\n"
-                f"AI Summary:\n{summary}\n\n"
                 f"Lead: https://plumbotv1-production.up.railway.app/appointments/{lead.id}/"
             )
 
@@ -116,28 +113,17 @@ class Command(BaseCommand):
                             f"[DRY RUN] Would notify {plumber_number} for lead {lead.id}"
                         )
                     )
-                    email_ok = send_plumber_notification_email(
-                        subject=f"Priority stale lead alert for {lead.customer_name or 'customer'}",
-                        message=message,
-                        dry_run=True,
-                    )
-                    send_ok = email_ok
+                    send_ok = True
                 else:
-                    wa_ok = True
+                    send_ok = True
                     try:
                         whatsapp_api.send_text_message(plumber_number, message)
                     except Exception:
-                        wa_ok = False
+                        send_ok = False
                         logger.exception(
                             "Failed WhatsApp stale-priority alert for appointment %s",
                             lead.id,
                         )
-
-                    email_ok = send_plumber_notification_email(
-                        subject=f"Priority stale lead alert for {lead.customer_name or 'customer'}",
-                        message=message,
-                    )
-                    send_ok = wa_ok or email_ok
 
                 if send_ok:
                     lead.last_priority_alert_summary = message

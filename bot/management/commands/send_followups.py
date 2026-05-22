@@ -18,6 +18,7 @@ from bot.models import Appointment, LeadStatus
 from bot.whatsapp_cloud_api import whatsapp_api
 from openai import OpenAI
 import os
+import re
 import logging
 import pytz
 
@@ -33,7 +34,7 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
 # ─── Contact windows (local hour, half-open) ─────────────────────────────────
 CONTACT_WINDOWS = [
-    (8, 21),    # All day: 8 AM - 9 PM SAST
+    (8, 22),    # 8 AM – 9 PM CAT (hour < 22 allows sends up to 21:59)
 ]
 
 # ─── Intervals (hours since last customer response OR last follow-up) ─────────
@@ -86,6 +87,7 @@ class Command(BaseCommand):
             )
             return
 
+        self._nudge_delay_flow_ghosts(now_local, dry_run)
         self._process_delayed_reactivations(now_local, dry_run)
 
         self._print_eligibility_breakdown(now_local, force)
@@ -111,12 +113,185 @@ class Command(BaseCommand):
         for k, v in totals.items():
             self.stdout.write(f'  {k}: {v}')
 
+    # ─── Within-window follow-ups for delay flow ghosts ──────────────────────
+
+    # Messages per step per attempt (0-indexed).
+    _DELAY_NUDGE_MESSAGES = {
+        'delay_timeframe': [
+            "Just checking in — roughly when do you think you will be back? Even a ballpark works.",
+            "No rush at all. Just need a rough idea so we can set a reminder for you.",
+            "Last check-in from us — when would work best to reconnect?",
+            "We will leave this with you. Just send us a message whenever you are ready and we will pick up right where we left off.",
+        ],
+        'delay_confirm': [
+            "Just checking — is it okay if we reach out to you on {date}? A quick yes or no is all we need.",
+            "Should we put {date} in the diary to follow up with you?",
+            "Last one from us — would {date} work for us to check in?",
+            "We will leave this with you. Whenever you are ready, just send us a message.",
+        ],
+        'delay_email': [
+            "Just one thing before we go — what email should we send your quote to? Or just say skip.",
+            "Happy to hold the quote until you are ready. What email works best? Just say skip if you would rather not.",
+            "Last ask on the email — what address should we use? Say skip if you would prefer not to share.",
+            "No worries if you would rather not share. We will follow up on WhatsApp on the agreed date.",
+        ],
+    }
+
+    # Spacing between nudges: 2 h before first, then 6 h between each.
+    _DELAY_NUDGE_INTERVALS = (2, 6, 6, 6)
+
+    def _nudge_delay_flow_ghosts(self, now_local, dry_run):
+        """
+        Sends up to 4 contextual WhatsApp follow-ups within the 24-hour window
+        to leads that ghosted at any step of the delay flow:
+          - Step 1 (delay_timeframe): asked "roughly when will you be back?"
+          - Step 2 (delay_confirm):   asked "is it okay if we reach out on {date}?"
+          - Step 3 (delay_email):     asked "what email should we send your quote to?"
+
+        Nudge count and last-sent time are stored in internal_notes so the
+        cron can resume correctly across multiple runs.
+        """
+        now                = timezone.now()
+        window_open_cutoff = now - timedelta(hours=23)
+        min_wait_cutoff    = now - timedelta(hours=1)
+
+        candidates = (
+            Appointment.objects
+            .filter(
+                is_lead_active=True,
+                last_inbound_at__gte=window_open_cutoff,
+                last_inbound_at__lte=min_wait_cutoff,
+                internal_notes__contains='[OOS_PENDING] category=delay_',
+            )
+            .exclude(chatbot_paused=True)
+            .exclude(status='confirmed')
+        )
+
+        count = candidates.count()
+        if count:
+            self.stdout.write(f'💬 {count} delay-flow ghost(s) eligible for in-window nudge')
+
+        for lead in candidates:
+            try:
+                notes      = lead.internal_notes or ''
+                step, date = self._parse_delay_step(notes)
+                if not step:
+                    continue
+
+                nudge_count, last_nudge_at = self._read_delay_nudge_state(notes)
+
+                if nudge_count >= 4:
+                    continue
+
+                # Determine reference time and required wait
+                interval_hours = self._DELAY_NUDGE_INTERVALS[nudge_count]
+                reference      = last_nudge_at if last_nudge_at else lead.last_inbound_at
+                if not reference:
+                    continue
+                elapsed = (now - reference).total_seconds() / 3600
+                if elapsed < interval_hours:
+                    continue
+
+                # Build message
+                name    = lead.customer_name or ''
+                hi      = f'Hi {name}' if name else 'Hi there'
+                template = self._DELAY_NUDGE_MESSAGES[step][nudge_count]
+                body     = template.format(date=date) if '{date}' in template else template
+                message  = f'{hi}, {body}'
+
+                if dry_run:
+                    self.stdout.write(self.style.SUCCESS(
+                        f'🧪 Would send delay nudge #{nudge_count + 1} to lead {lead.id} '
+                        f'[{step}]: "{message[:80]}…"'
+                    ))
+                    continue
+
+                clean = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
+                whatsapp_api.send_text_message(clean, message)
+
+                self._write_delay_nudge_state(lead, nudge_count + 1, now)
+                lead.add_conversation_message(
+                    'assistant', f'[DELAY NUDGE {nudge_count + 1}] {message}'
+                )
+
+                self.stdout.write(self.style.SUCCESS(
+                    f'✅ Delay nudge #{nudge_count + 1}/4 → lead {lead.id} [{step}]'
+                ))
+
+            except Exception as exc:
+                logger.error(f'Delay flow nudge failed for lead {lead.id}: {exc}')
+                self.stdout.write(self.style.ERROR(f'❌ Delay nudge lead {lead.id}: {exc}'))
+
+    def _parse_delay_step(self, notes):
+        """Return (step_name, friendly_date_or_None) from internal_notes."""
+        m = re.search(r'\[OOS_PENDING\] category=(delay_\w+) original=([^\n]*)', notes)
+        if not m:
+            return None, None
+        step     = m.group(1)
+        original = m.group(2).strip()
+        date_str = None
+        if step == 'delay_confirm':
+            parts = original.split('|')
+            iso   = parts[-1].strip() if len(parts) > 1 else None
+            if iso:
+                try:
+                    from datetime import date as _d
+                    date_str = _d.fromisoformat(iso).strftime('%A %d %B')
+                except Exception:
+                    pass
+        return step, date_str
+
+    def _read_delay_nudge_state(self, notes):
+        """Return (count, last_sent_datetime_or_None) from internal_notes."""
+        count_m = re.search(r'\[DELAY_NUDGE_COUNT\] (\d+)', notes)
+        last_m  = re.search(r'\[DELAY_NUDGE_LAST\] ([^\n]+)', notes)
+        count   = int(count_m.group(1)) if count_m else 0
+        last    = None
+        if last_m:
+            try:
+                from datetime import datetime as _dt
+                last = _dt.fromisoformat(last_m.group(1).strip())
+                if last.tzinfo is None:
+                    import pytz as _pytz
+                    last = _pytz.utc.localize(last)
+            except Exception:
+                pass
+        return count, last
+
+    def _write_delay_nudge_state(self, lead, new_count, sent_at):
+        """
+        Persist nudge count and timestamp to internal_notes.
+        When all 4 nudges are exhausted at steps 1 or 2 (before is_delayed is set),
+        clear the stale [OOS_PENDING] state so the lead re-enters normal follow-ups.
+        """
+        notes = lead.internal_notes or ''
+        notes = re.sub(r'\[DELAY_NUDGE_COUNT\] \d+\n?', '', notes)
+        notes = re.sub(r'\[DELAY_NUDGE_LAST\] [^\n]+\n?', '', notes)
+
+        if new_count >= 4 and not lead.is_delayed:
+            # Nudges exhausted — customer never confirmed a return date.
+            # Clear the pending state so the lead can enter regular follow-ups.
+            notes = re.sub(r'\[OOS_PENDING\][^\n]*\n?', '', notes)
+
+        notes = notes.strip()
+        notes = f'{notes}\n[DELAY_NUDGE_COUNT] {new_count}\n[DELAY_NUDGE_LAST] {sent_at.isoformat()}'.strip()
+        lead.internal_notes = notes
+        lead.save(update_fields=['internal_notes'])
+
     # ─── Delayed lead re-engagement ──────────────────────────────────────────
 
     def _process_delayed_reactivations(self, now_local, dry_run):
         """
-        Finds delayed leads whose follow-up date has arrived, re-activates them,
-        sends a contextual WhatsApp message, and a follow-up email if on file.
+        Finds delayed leads whose follow-up date has arrived and contacts them.
+
+        Channel priority:
+          1. WhatsApp — always attempted first.
+          2. Email    — attempted if WhatsApp fails (24-hour window closed)
+                        OR in addition to WhatsApp if the lead has an email.
+
+        Only marks the lead as re-activated after at least one channel succeeds.
+        If both channels fail, delay_followup_due_at is pushed forward 24 hours
+        so the cron retries tomorrow without spamming the same lead.
         """
         import re as _re
         from bot.customer_emails import send_delay_followup_email
@@ -143,7 +318,6 @@ class Command(BaseCommand):
                 area    = lead.customer_area or ''
                 desc    = (lead.project_description or '').strip()
 
-                # Build a specific project reference for the message
                 if desc:
                     detail = desc[:80]
                 elif area:
@@ -152,9 +326,9 @@ class Command(BaseCommand):
                     detail = service
 
                 message = (
-                    f'{hi}, hope you\'re back and settled in. '
+                    f"{hi}, hope you're back and settled in. "
                     f'You were looking at {detail} — still keen to move forward? '
-                    f'We\'re ready when you are.'
+                    f"We're ready when you are."
                 )
 
                 if dry_run:
@@ -163,27 +337,58 @@ class Command(BaseCommand):
                     )
                     continue
 
-                # Re-activate — clear is_delayed and DELAY_SIGNAL tag
-                lead.is_delayed = False
-                notes = lead.internal_notes or ''
-                notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes).strip()
-                lead.internal_notes = notes
-                lead.save(update_fields=['is_delayed', 'internal_notes'])
-
-                # Send WhatsApp re-engagement
-                clean = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-                whatsapp_api.send_text_message(clean, message)
-                lead.add_conversation_message('assistant', f'[DELAY REACTIVATION] {message}')
-
-                # Send contextual follow-up email if we have one
+                clean     = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
                 has_email = bool(getattr(lead, 'customer_email', None))
-                if has_email:
-                    send_delay_followup_email(lead)
+                wa_ok     = False
+                email_ok  = False
 
-                self.stdout.write(self.style.SUCCESS(
-                    f'✅ Reactivated lead {lead.id}'
-                    + (' + email sent' if has_email else '')
-                ))
+                # ── 1. Try WhatsApp ───────────────────────────────────────────
+                try:
+                    whatsapp_api.send_text_message(clean, message)
+                    wa_ok = True
+                except Exception as wa_exc:
+                    logger.warning(
+                        'Delay reactivation WhatsApp failed for lead %s: %s',
+                        lead.id, wa_exc,
+                    )
+                    self.stdout.write(
+                        self.style.WARNING(f'  ⚠️  WhatsApp failed for lead {lead.id} — trying email fallback')
+                    )
+
+                # ── 2. Email — always send if available (supplements or fallback) ──
+                if has_email:
+                    try:
+                        send_delay_followup_email(lead)
+                        email_ok = True
+                    except Exception as email_exc:
+                        logger.warning(
+                            'Delay reactivation email failed for lead %s: %s',
+                            lead.id, email_exc,
+                        )
+
+                # ── 3. At least one channel succeeded → mark re-activated ────
+                if wa_ok or email_ok:
+                    import re as _re2
+                    lead.is_delayed     = False
+                    notes               = lead.internal_notes or ''
+                    notes               = _re2.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes).strip()
+                    lead.internal_notes = notes
+                    lead.save(update_fields=['is_delayed', 'internal_notes'])
+                    lead.add_conversation_message('assistant', f'[DELAY REACTIVATION] {message}')
+
+                    channels = []
+                    if wa_ok:    channels.append('WhatsApp')
+                    if email_ok: channels.append('email')
+                    self.stdout.write(self.style.SUCCESS(
+                        f'✅ Reactivated lead {lead.id} via {" + ".join(channels)}'
+                    ))
+                else:
+                    # Both channels failed — push due date forward 24 h and retry tomorrow
+                    lead.delay_followup_due_at = timezone.now() + timedelta(hours=24)
+                    lead.save(update_fields=['delay_followup_due_at'])
+                    self.stdout.write(self.style.ERROR(
+                        f'❌ Lead {lead.id} — all channels failed, rescheduled for tomorrow'
+                    ))
 
             except Exception as exc:
                 logger.error(f'Error reactivating delayed lead {lead.id}: {exc}')
@@ -202,10 +407,10 @@ class Command(BaseCommand):
             .filter(is_lead_active=True, status='pending', is_delayed=False)
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
-#            .exclude(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
             .exclude(internal_notes__contains='[DELAY_SIGNAL]')
+            .exclude(internal_notes__contains='[OOS_PENDING] category=delay_')
             .exclude(chatbot_paused=True)
-        )        
+        )
         return leads.order_by('last_customer_response', 'created_at')
         
     def _print_eligibility_breakdown(self, now_local, force):

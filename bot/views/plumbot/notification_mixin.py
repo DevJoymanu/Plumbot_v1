@@ -88,11 +88,6 @@ class NotificationMixin:
                     whatsapp_api.send_text_message(number, plumber_message)
                     print(f"✅ Plan notification sent to plumber {number}")
 
-                send_plumber_notification_email(
-                    subject=f"New plan received from {customer_name}",
-                    message=plumber_message,
-                )
-
             except Exception as e:
                 print(f"❌ Error notifying plumber: {str(e)}")
 
@@ -153,10 +148,6 @@ class NotificationMixin:
                     if appointment_info.get('has_plan') is not None:
                         plan_status = "Has existing plan" if appointment_info['has_plan'] else "Needs site visit"
 
-                    # AI conversation summary
-                    from bot.whatsapp_webhook import generate_conversation_summary
-                    ai_summary = generate_conversation_summary(self.appointment)
-
                     customer_phone = (
                         self.phone_number
                         .replace('whatsapp:+', '')
@@ -176,7 +167,6 @@ class NotificationMixin:
                         f"  🏠 Property: {appointment_info.get('property_type', 'Not specified')}\n"
                         f"  ⏰ Timeline: {appointment_info.get('timeline', 'Not specified')}\n"
                         f"  📐 Plan: {plan_status}\n\n"
-                        f"🤖 AI SUMMARY:\n{ai_summary}\n\n"
                         f"🔗 View: https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/"
                     )
 

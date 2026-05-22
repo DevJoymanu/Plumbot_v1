@@ -41,7 +41,6 @@ from django.urls import reverse
 from bot.plumber_notifications import (
     get_plumber_notification_emails,
     send_email_to_recipients,
-    send_plumber_notification_email,
 )
 from bot.customer_emails import send_customer_reminder_email
 from bot.whatsapp_window import is_window_open

@@ -891,13 +891,34 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
         )
         return _handle_delay_timeframe_answer(message, {}, appointment)
 
-    # Store follow-up date
+    # Store follow-up date — in notes AND in delay_followup_due_at so the cron fires correctly
     if iso_date:
         notes = appointment.internal_notes or ''
         tag   = f"[FOLLOW_UP_DATE] {iso_date}"
         if tag not in notes:
             appointment.internal_notes = f"{notes}\n{tag}".strip()
             appointment.save(update_fields=['internal_notes'])
+
+        # Overwrite the hardcoded 14-day date with the customer's agreed date
+        try:
+            from datetime import date as _d
+            from django.utils import timezone as _tz
+            _tz_sast = pytz.timezone('Africa/Johannesburg')
+            agreed_date = _d.fromisoformat(iso_date)
+            agreed_dt   = _tz_sast.localize(
+                datetime(agreed_date.year, agreed_date.month, agreed_date.day, 9, 0)
+            )
+            appointment.delay_followup_due_at = agreed_dt
+            appointment.save(update_fields=['delay_followup_due_at'])
+            logger.info(
+                "delay_followup_due_at updated to agreed date %s for appointment=%s",
+                iso_date, getattr(appointment, 'id', None),
+            )
+        except Exception as _exc:
+            logger.warning(
+                "Could not parse agreed follow-up date '%s': %s", iso_date, _exc
+            )
+
         logger.info("Follow-up date stored: %s for appointment=%s",
                     iso_date, getattr(appointment, 'id', None))
 
@@ -945,6 +966,13 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     is_skip = any(s in msg_lower for s in skip_signals) and '@' not in msg
 
     if is_skip:
+        # Keep delay signal active so regular follow-ups don't spam the customer
+        # and reactivation still fires on the agreed date.
+        notes = appointment.internal_notes or ''
+        if _DELAY_SIGNAL_TAG not in notes:
+            appointment.internal_notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
+        appointment.is_delayed = True
+        appointment.save(update_fields=['internal_notes', 'is_delayed'])
         return (
             "No problem at all. Whenever you're ready, just send us a message."
         )
@@ -977,13 +1005,14 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     from bot.customer_emails import send_delay_quote_email
     send_delay_quote_email(appointment, follow_up_date_str=friendly)
 
-    # Re-write delay signal — it gets cleared when the email address message
-    # passes through generate_response, so we restore it here so that
-    # subsequent acks ("sharp", "ok") are properly suppressed.
+    # Restore delay signal — cleared by the webhook before the OOS handler runs.
+    # Re-writing the tag blocks regular follow-ups; restoring is_delayed=True
+    # ensures _process_delayed_reactivations fires on the agreed date.
     notes = appointment.internal_notes or ''
     if _DELAY_SIGNAL_TAG not in notes:
         appointment.internal_notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
-        appointment.save(update_fields=['internal_notes'])
+    appointment.is_delayed = True
+    appointment.save(update_fields=['internal_notes', 'is_delayed'])
 
     return (
         "Got it! 📧 I'll have that sent across to you shortly.\n\n"

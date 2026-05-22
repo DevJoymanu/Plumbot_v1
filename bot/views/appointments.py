@@ -58,8 +58,6 @@ from ..utils import (
 
 logger = logging.getLogger(__name__)
 from ..services.lead_scoring import refresh_lead_score, calculate_lead_score
-from ..plumber_notifications import send_plumber_notification_email
-
 
 @method_decorator(staff_required, name='dispatch')
 class AppointmentsListView(ListView):

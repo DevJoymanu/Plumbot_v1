@@ -235,17 +235,59 @@ def _send_reply(apt, subject, html_body):
     return _send(apt, subject, html)
 
 
+# ── AI reply generator ────────────────────────────────────────────────────────
+
+def _generate_email_reply(body: str, apt=None) -> str:
+    """Use DeepSeek to answer a customer email query directly."""
+    if not _deepseek:
+        return "Thank you for your message. We will be in touch shortly via WhatsApp."
+
+    service = (getattr(apt, "project_type", "") or "").replace("_", " ").title()
+    area    = getattr(apt, "customer_area", "") or ""
+
+    system = (
+        "You are a customer support agent for HomeBase Plumbers in Harare, Zimbabwe. "
+        "The plumber's name is Takudzwa. "
+        "Answer the customer's email in 2-4 sentences — directly and helpfully. "
+        "Services: bathroom renovation, kitchen renovation, new plumbing installation, "
+        "drain unblocking, pipe repair, geyser repair, toilet repair. "
+        "Pricing: toilet from US$50 supply + US$20 install, shower cubicle US$130 + US$40 install, "
+        "geyser US$80 + US$80 install, full bathroom from US$600. Site assessment is free. "
+        "Hours: Sunday to Friday, 08:00 to 18:00. Based in Hatfield, Harare. "
+        "Never use 'our' — say 'we' or 'the team'. "
+        "Never use contractions — write 'we will' not 'we'll'. "
+        "Write professionally but warmly. No bullet points."
+    )
+    if service:
+        system += f" Customer service interest: {service}."
+    if area:
+        system += f" Customer area: {area}."
+
+    try:
+        resp = _deepseek.chat.completions.create(
+            model=settings.DEEPSEEK_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user",   "content": body[:600]},
+            ],
+            temperature=0.3,
+            max_tokens=150,
+        )
+        reply = resp.choices[0].message.content.strip()
+        return reply if reply else "Thank you for your message. We will be in touch shortly via WhatsApp."
+    except Exception as e:
+        logger.warning("Email reply generation failed: %s", e)
+        return "Thank you for your message. We will be in touch shortly via WhatsApp."
+
+
 # ── Intent handlers ───────────────────────────────────────────────────────────
 
 def _handle_reschedule(apt, date_hint, body, dry_run, stdout):
     """Customer wants to reschedule."""
-    from bot.customer_emails import send_email_reply_notification_to_plumber
-
-    dt = _parse_date_hint(date_hint)
+    dt   = _parse_date_hint(date_hint)
     name = getattr(apt, "customer_name", "") or "there"
 
     if dt:
-        # We have a specific date — update the appointment
         if not dry_run:
             apt.scheduled_datetime = dt
             apt.save(update_fields=["scheduled_datetime"])
@@ -259,36 +301,26 @@ def _handle_reschedule(apt, date_hint, body, dry_run, stdout):
         )
         if not dry_run:
             _send_reply(apt, f"✅ Appointment Rescheduled — {_fmt_dt(dt.astimezone(_SAST))}", body_html)
-            send_email_reply_notification_to_plumber(
-                apt, f"[Reschedule] Customer wants to move to: {_fmt_dt(dt.astimezone(_SAST))}\n\n{body}"
-            )
         stdout(f"    ✅ Rescheduled apt #{apt.pk} → {dt}")
     else:
-        # Date is vague — ask for clarification
         body_html = (
             f'<p>Hi {name},</p>'
             '<p>Happy to reschedule for you! Could you let me know the specific '
             '<strong>date and time</strong> that works best?</p>'
-            '<p>Our working hours are <strong>Sunday–Friday, 08:00–18:00</strong>.</p>'
+            '<p>We are available Sunday to Friday, 08:00 to 18:00.</p>'
             '<p><strong>HomeBase Plumbers</strong></p>'
         )
         if not dry_run:
             _send_reply(apt, "Reschedule Request — What Date Works for You?", body_html)
-            send_email_reply_notification_to_plumber(
-                apt, f"[Reschedule requested — date unclear]\n\n{body}"
-            )
         stdout(f"    ℹ️  Reschedule — asked for specific date, apt #{apt.pk}")
 
 
 def _handle_book(apt, date_hint, body, dry_run, stdout):
     """Customer (delayed lead) wants to book a new appointment."""
-    from bot.customer_emails import send_email_reply_notification_to_plumber
-
     name = getattr(apt, "customer_name", "") or "there"
     dt   = _parse_date_hint(date_hint)
 
     if dt:
-        # Specific date given — provisionally mark as requested
         if not dry_run:
             apt.scheduled_datetime = dt
             apt.status             = "pending"
@@ -296,37 +328,29 @@ def _handle_book(apt, date_hint, body, dry_run, stdout):
 
         body_html = (
             f'<p>Hi {name},</p>'
-            f'<p>Great to hear from you! I\'ve noted <strong>{_fmt_dt(dt.astimezone(_SAST))}</strong> '
-            'as your preferred slot. Our team will confirm availability shortly.</p>'
-            '<p>If that date doesn\'t work, just reply with an alternative.</p>'
+            f'<p>Great to hear from you! We have noted <strong>{_fmt_dt(dt.astimezone(_SAST))}</strong> '
+            'as your preferred slot. The team will confirm availability shortly.</p>'
+            '<p>If that date does not work, just reply with an alternative.</p>'
             '<p><strong>HomeBase Plumbers</strong></p>'
         )
         if not dry_run:
-            _send_reply(apt, "Booking Request Received — We'll Confirm Shortly", body_html)
-            send_email_reply_notification_to_plumber(
-                apt, f"[Booking request] Customer wants: {_fmt_dt(dt.astimezone(_SAST))}\n\n{body}"
-            )
+            _send_reply(apt, "Booking Request Received — We Will Confirm Shortly", body_html)
         stdout(f"    ✅ Booking requested apt #{apt.pk} → {dt}")
     else:
         body_html = (
             f'<p>Hi {name},</p>'
-            '<p>Wonderful — we\'d love to get you booked in!</p>'
+            '<p>Wonderful — we would love to get you booked in!</p>'
             '<p>Could you let me know your preferred <strong>date and time</strong>?</p>'
-            '<p>Our working hours are <strong>Sunday–Friday, 08:00–18:00</strong>.</p>'
+            '<p>We are available Sunday to Friday, 08:00 to 18:00.</p>'
             '<p><strong>HomeBase Plumbers</strong></p>'
         )
         if not dry_run:
-            _send_reply(apt, "Let's Get You Booked — What Day Works?", body_html)
-            send_email_reply_notification_to_plumber(
-                apt, f"[Booking interest — no date given]\n\n{body}"
-            )
+            _send_reply(apt, "Let Us Get You Booked — What Day Works?", body_html)
         stdout(f"    ℹ️  Book request — asked for date, apt #{apt.pk}")
 
 
 def _handle_cancel(apt, body, dry_run, stdout):
     """Customer wants to cancel."""
-    from bot.customer_emails import send_email_reply_notification_to_plumber
-
     name = getattr(apt, "customer_name", "") or "there"
     if not dry_run:
         apt.status = "cancelled"
@@ -335,46 +359,43 @@ def _handle_cancel(apt, body, dry_run, stdout):
     body_html = (
         f'<p>Hi {name},</p>'
         '<p>Your appointment has been <strong>cancelled</strong>. '
-        'We\'re sorry to see you go!</p>'
-        '<p>Whenever you\'re ready to rebook, just reply to this email or '
+        'We are sorry to see you go!</p>'
+        '<p>Whenever you are ready to rebook, just reply to this email or '
         'send us a WhatsApp message.</p>'
         '<p><strong>HomeBase Plumbers</strong></p>'
     )
     if not dry_run:
-        _send_reply(apt, "❌ Appointment Cancelled", body_html)
-        send_email_reply_notification_to_plumber(
-            apt, f"[CANCELLATION]\n\n{body}"
-        )
+        _send_reply(apt, "Appointment Cancelled", body_html)
     stdout(f"    ❌ Cancelled apt #{apt.pk}")
 
 
 def _handle_query(apt, body, dry_run, stdout):
-    """Customer has a question — forward to plumber and send holding reply."""
-    from bot.customer_emails import send_email_reply_notification_to_plumber
-
-    name = getattr(apt, "customer_name", "") or "there"
+    """Customer has a question — answer directly with DeepSeek."""
+    name   = getattr(apt, "customer_name", "") or "there"
+    answer = _generate_email_reply(body, apt)
     body_html = (
         f'<p>Hi {name},</p>'
-        '<p>Thanks for your message! We\'ve passed your query to our team '
-        'and someone will get back to you shortly.</p>'
-        '<p>If it\'s urgent, feel free to WhatsApp us directly.</p>'
+        f'<p>{answer}</p>'
+        '<p>If you have any other questions, feel free to reply or WhatsApp us directly.</p>'
         '<p><strong>HomeBase Plumbers</strong></p>'
     )
     if not dry_run:
-        _send_reply(apt, "We've Received Your Message", body_html)
-        send_email_reply_notification_to_plumber(apt, f"[Query from customer]\n\n{body}")
-    stdout(f"    ℹ️  Query forwarded for apt #{apt.pk}")
+        _send_reply(apt, "Re: Your Enquiry — HomeBase Plumbers", body_html)
+    stdout(f"    ✅ Query answered directly for apt #{apt.pk}")
 
 
 def _handle_other(apt, body, dry_run, stdout):
-    """Unrecognised intent — notify plumber only."""
-    from bot.customer_emails import send_email_reply_notification_to_plumber
-
+    """Unrecognised intent — generate a helpful reply directly."""
+    name   = getattr(apt, "customer_name", "") or "there"
+    answer = _generate_email_reply(body, apt)
+    body_html = (
+        f'<p>Hi {name},</p>'
+        f'<p>{answer}</p>'
+        '<p><strong>HomeBase Plumbers</strong></p>'
+    )
     if not dry_run:
-        send_email_reply_notification_to_plumber(
-            apt, f"[Unclassified email reply]\n\n{body}"
-        )
-    stdout(f"    ⚠️  Unclassified reply for apt #{apt.pk} — plumber notified")
+        _send_reply(apt, "Re: Your Message — HomeBase Plumbers", body_html)
+    stdout(f"    ✅ Replied to unclassified email for apt #{apt.pk}")
 
 
 # ── Main command ──────────────────────────────────────────────────────────────

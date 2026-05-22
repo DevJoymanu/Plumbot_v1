@@ -316,7 +316,6 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         plumber_number = (getattr(fresh, 'plumber_contact_number', None) or '263774819901')
         plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
 
-        ai_summary = generate_conversation_summary(fresh)
         customer_name = fresh.customer_name or "A customer"
 
         if urls:
@@ -334,8 +333,7 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
             f"{file_section}\n\n"
             f"?? APPOINTMENT DETAILS:\n"
             f"  Service: {fresh.project_type or 'Not specified'}\n"
-            f"  Area: {fresh.customer_area or 'Not specified'}\n"
-            f"?? AI SUMMARY:\n{ai_summary}\n\n"
+            f"  Area: {fresh.customer_area or 'Not specified'}\n\n"
             f"?? View appointment:\n"
             f"https://plumbotv1-production.up.railway.app/appointments/{fresh.id}/"
         )
@@ -345,11 +343,6 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
             print(f"? Consolidated plumber alert sent ({len(urls)} file(s)) for {sender}")
         except Exception as e:
             print(f"? Failed to send plumber alert: {e}")
-
-        send_plumber_notification_email(
-            subject=f"Customer media received from {customer_name}",
-            message=alert_message,
-        )
 
     with _plumber_alert_lock:
         # Accumulate the URL
