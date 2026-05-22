@@ -1,0 +1,3009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><base href="http://127.0.0.1:8000/">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>Plumbot Admin</title>
+    
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+<style>
+:root {
+    --color-header: #0a3d5c;
+    --color-header-dark: #072e46;
+    --color-teal: #0e7490;
+    --color-teal-light: #0891b2;
+    --color-green: #25D366;
+    --color-green-bg: #DCF8C6;
+    --color-green-soft: #dcfce7;
+    --color-amber: #f59e0b;
+    --color-amber-bg: #fef9c3;
+    --color-red: #ef4444;
+    --color-red-bg: #fee2e2;
+    --color-blue: #2563eb;
+    --color-blue-mid: #0ea5e9;
+    --color-blue-bg: #dbeafe;
+    --color-bg: #f1f5f9;
+    --color-surface: #ffffff;
+    --color-text: #0f172a;
+    --color-text-2: #334155;
+    --color-muted: #64748b;
+    --color-border: rgba(0, 0, 0, 0.07);
+    --color-border-solid: #e2e8f0;
+    --font-base: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --nav-width: 224px;
+    --bottom-nav-h: 62px;
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 18px;
+    --radius-pill: 999px;
+    --shadow-xs: 0 1px 2px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.04);
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+    --shadow-float: 0 8px 28px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06);
+    --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body { height: 100%; }
+
+body {
+    margin: 0;
+    font-family: var(--font-base);
+    background: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.011em;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* ── Shell ── */
+.pb-shell {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ── Sidebar ── */
+.pb-sidenav {
+    width: var(--nav-width);
+    background: linear-gradient(170deg, #0d4f73 0%, #072e46 100%);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    box-shadow: 2px 0 20px rgba(0,0,0,0.14);
+}
+
+.pb-sidenav__brand {
+    padding: 20px 14px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.09);
+}
+
+.pb-sidenav__brand-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 17px;
+    font-weight: 700;
+    color: #fff;
+    text-decoration: none;
+    letter-spacing: -0.02em;
+}
+
+.pb-sidenav__brand-name i {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.14);
+    border-radius: 10px;
+    font-size: 14px;
+    flex-shrink: 0;
+    transition: background var(--transition);
+}
+
+.pb-sidenav__brand-name:hover i {
+    background: rgba(255,255,255,0.22);
+}
+
+.pb-sidenav__brand-sub {
+    margin-top: 5px;
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.45);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 500;
+    padding-left: 44px;
+}
+
+.pb-sidenav__items,
+.pb-sidenav__secondary {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 8px;
+}
+
+.pb-sidenav__items {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+.pb-sidenav__items::-webkit-scrollbar { display: none; }
+
+.pb-sidenav__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    text-decoration: none;
+    color: rgba(255,255,255,0.62);
+    font-size: 13px;
+    font-weight: 500;
+    transition: background var(--transition), color var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.pb-sidenav__item:hover {
+    background: rgba(255,255,255,0.09);
+    color: rgba(255,255,255,0.9);
+}
+
+.pb-sidenav__item.active {
+    background: rgba(255,255,255,0.14);
+    color: #fff;
+    font-weight: 600;
+}
+
+.pb-sidenav__item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 20px;
+    border-radius: 0 2px 2px 0;
+    background: rgba(255,255,255,0.75);
+}
+
+.pb-sidenav__item .nav-icon {
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 13px;
+    opacity: 0.8;
+    transition: opacity var(--transition);
+}
+
+.pb-sidenav__item:hover .nav-icon,
+.pb-sidenav__item.active .nav-icon { opacity: 1; }
+
+.pb-badge {
+    margin-left: auto;
+    min-width: 18px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #22c55e;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* ── Main content area ── */
+.pb-main {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.pb-content {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    background: var(--color-bg);
+    background-image: radial-gradient(ellipse at 0% 0%, rgba(14,116,144,0.06) 0%, transparent 50%);
+}
+
+.pb-content__inner {
+    min-height: 100%;
+    animation: pb-fadein 0.22s ease both;
+}
+
+@keyframes pb-fadein {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Alerts ── */
+.pb-alert-wrap { padding: 14px 16px 0; }
+
+.pb-alert {
+    margin-bottom: 8px;
+    padding: 10px 16px;
+    border-left: 3px solid;
+    border-radius: var(--radius-md);
+    font-size: 13.5px;
+}
+
+.pb-alert--success  { background: #f0fdf4; border-left-color: #22c55e; color: #15803d; }
+.pb-alert--error    { background: var(--color-red-bg); border-left-color: var(--color-red); color: #991b1b; }
+.pb-alert--warning  { background: var(--color-amber-bg); border-left-color: var(--color-amber); color: #92400e; }
+.pb-alert--info     { background: var(--color-blue-bg); border-left-color: var(--color-blue); color: #1d4ed8; }
+
+/* ── Mobile bottom nav ── */
+.pb-bottomnav {
+    display: none;
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 100;
+    height: var(--bottom-nav-h);
+    background: rgba(255,255,255,0.92);
+    border-top: 1px solid rgba(0,0,0,0.06);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.pb-bottomnav__items { display: flex; height: 100%; }
+
+.pb-bottomnav__item {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 3px;
+    text-decoration: none;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 500;
+    transition: color var(--transition);
+}
+
+.pb-bottomnav__item .nav-icon {
+    font-size: 20px;
+    transition: transform var(--transition);
+}
+
+.pb-bottomnav__item.active {
+    color: var(--color-teal);
+    font-weight: 700;
+}
+
+.pb-bottomnav__item.active .nav-icon { transform: scale(1.1); }
+
+.pb-bottomnav__item.active::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 24px; height: 3px;
+    border-radius: 0 0 4px 4px;
+    background: var(--color-teal);
+}
+
+/* ── Page containers ── */
+.pb-page,
+.pb-content .container,
+.pb-content .container-fluid { padding: 16px; }
+
+/* ── Page topbar / header ── */
+.pb-topbar,
+.pb-content .header {
+    background: linear-gradient(135deg, #0c4a6e 0%, var(--color-header-dark) 100%);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: var(--radius-xl);
+    padding: 18px 20px 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 6px 24px rgba(7,62,92,0.18), 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.pb-topbar h1, .pb-topbar h2,
+.pb-content .header h1, .pb-content .header h2 {
+    margin: 0 0 3px;
+    font-size: clamp(1.2rem, 2vw, 1.7rem);
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.025em;
+}
+
+.pb-topbar p, .pb-content .header p {
+    margin: 0;
+    color: rgba(255,255,255,0.7);
+    font-size: 13px;
+}
+
+/* ── Cards ── */
+.pb-content .card,
+.pb-card,
+.pb-section-card,
+.pb-content .filter-card,
+.pb-content .status-filter-bar,
+.pb-content .delayed-section,
+.pb-content .fd-card,
+.pb-content .pl-section,
+.pb-content .auth-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xs);
+}
+
+.pb-content .card,
+.pb-content .filter-card,
+.pb-content .status-filter-bar { overflow: hidden; }
+
+.pb-content .card-header {
+    background: transparent;
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-border);
+    padding: 14px 16px;
+}
+
+.pb-content .card-body { padding: 16px; }
+
+/* ── Dashboard stat tiles ── */
+.pb-content .dashboard-grid { display: grid; gap: 14px; }
+
+.pb-content .stat-card,
+.pb-content .stat-tile {
+    background: linear-gradient(150deg, rgba(14,116,144,0.07) 0%, rgba(14,116,144,0.02) 100%);
+    border: 1px solid rgba(14,116,144,0.11);
+    box-shadow: var(--shadow-xs);
+}
+
+.pb-content .stat-number,
+.pb-content .stat-value {
+    color: var(--color-header);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Forms ── */
+.pb-content label,
+.pb-content .form-label,
+.pb-content .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--color-text-2);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.pb-content input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.pb-content select,
+.pb-content textarea,
+.pb-content .form-control {
+    width: 100%;
+    min-height: 44px;
+    padding: 11px 14px;
+    border: 1.5px solid var(--color-border-solid);
+    border-radius: var(--radius-md);
+    background: #fff;
+    color: var(--color-text);
+    box-shadow: none;
+    font-family: var(--font-base);
+    font-size: 14px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.pb-content input:hover:not(:focus),
+.pb-content select:hover:not(:focus),
+.pb-content textarea:hover:not(:focus) { border-color: #94a3b8; }
+
+.pb-content input:focus,
+.pb-content select:focus,
+.pb-content textarea:focus,
+.pb-content .form-control:focus {
+    outline: none;
+    border-color: var(--color-teal);
+    box-shadow: 0 0 0 3px rgba(14,116,144,0.12);
+}
+
+.pb-content textarea { min-height: 110px; resize: vertical; }
+
+/* ── Buttons ── */
+.pb-content .btn,
+.pb-content button,
+.pb-content input[type="submit"],
+.pb-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: none;
+    border-radius: var(--radius-pill);
+    padding: 10px 18px;
+    min-height: 42px;
+    font-size: 13.5px;
+    font-weight: 600;
+    font-family: var(--font-base);
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform var(--transition), box-shadow var(--transition), background var(--transition), color var(--transition), opacity var(--transition);
+    letter-spacing: -0.01em;
+}
+
+.pb-content .btn:hover,
+.pb-content button:hover,
+.pb-content input[type="submit"]:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.pb-content .btn:active,
+.pb-content button:active,
+.pb-content input[type="submit"]:active {
+    transform: translateY(0) scale(0.98);
+    box-shadow: none;
+    opacity: 0.88;
+}
+
+.pb-content .btn-primary,
+.pb-content .btn:not(.btn-secondary):not(.btn-success):not(.btn-danger):not(.btn-warning):not(.btn-outline-primary):not(.btn-outline-secondary):not(.btn-outline-danger):not(.btn-outline-success) {
+    background: linear-gradient(135deg, var(--color-teal-light) 0%, var(--color-teal) 100%);
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(14,116,144,0.22);
+}
+
+.pb-content .btn-secondary,
+.pb-content .btn-outline-secondary {
+    background: #f1f5f9;
+    color: var(--color-text-2);
+    border: 1px solid var(--color-border-solid);
+}
+
+.pb-content .btn-success,
+.pb-content .btn-outline-success {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid rgba(34,197,94,0.22);
+}
+
+.pb-content .btn-danger,
+.pb-content .btn-outline-danger {
+    background: var(--color-red-bg);
+    color: #b91c1c;
+    border: 1px solid rgba(239,68,68,0.22);
+}
+
+.pb-content .btn-warning {
+    background: var(--color-amber-bg);
+    color: #92400e;
+    border: 1px solid rgba(245,158,11,0.22);
+}
+
+.pb-content .btn-outline-primary {
+    background: var(--color-blue-bg);
+    color: #1d4ed8;
+    border: 1px solid rgba(59,130,246,0.2);
+}
+
+/* ── List rows ── */
+.pb-content .appointment-item,
+.pb-content .fd-list-row,
+.pb-content .pb-followup-row {
+    background: #fff;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    box-shadow: var(--shadow-xs);
+    transition: box-shadow var(--transition), transform var(--transition);
+}
+
+.pb-content .appointment-item:hover,
+.pb-content .fd-list-row:hover {
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+}
+
+.pb-content .appointment-list,
+.pb-content .quotations-list,
+.pb-content .jobs-list,
+.pb-content .conversation-history { display: grid; gap: 10px; }
+
+.pb-content .appointment-header,
+.pb-content .quotation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.pb-content .appointment-name,
+.pb-content .lead-info-name,
+.pb-content .fd-list-name,
+.pb-content .pb-sched-name {
+    color: var(--color-text);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+/* ── Status pills ── */
+.pb-content .appointment-status,
+.pb-content .status-badge,
+.pb-content .badge,
+.pb-content .pb-status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.pb-content .status-pending,
+.pb-content .status-pending_schedule,
+.pb-content .pb-pill--pending         { background: #fef9c3; color: #a16207; }
+
+.pb-content .status-confirmed,
+.pb-content .status-completed,
+.pb-content .status-available,
+.pb-content .pb-pill--confirmed       { background: #dcfce7; color: #15803d; }
+
+.pb-content .status-cancelled,
+.pb-content .status-unavailable,
+.pb-content .pb-pill--cancelled,
+.pb-content .pb-pill--job             { background: var(--color-red-bg); color: #991b1b; }
+
+.pb-content .status-scheduled,
+.pb-content .status-in_progress,
+.pb-content .pb-pill--delayed         { background: var(--color-blue-bg); color: #1e40af; }
+
+/* ── Muted text ── */
+.pb-content .appointment-details,
+.pb-content .quotation-details { display: grid; gap: 8px; color: var(--color-muted); }
+
+.pb-content .detail-item,
+.pb-content .fd-list-meta,
+.pb-content .pb-sched-sub,
+.pb-content .pb-followup-note { color: var(--color-muted); font-size: 12px; }
+
+/* ── Chat / conversation ── */
+.pb-content .conversation-history {
+    background: #f8fafc;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    padding: 16px;
+}
+
+.pb-content .message {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 16px;
+    margin-bottom: 8px;
+    box-shadow: var(--shadow-xs);
+}
+
+.pb-content .message.user {
+    margin-left: auto;
+    background: var(--color-green-bg);
+    border-top-right-radius: 4px;
+}
+
+.pb-content .message.assistant {
+    margin-right: auto;
+    background: #fff;
+    border-top-left-radius: 4px;
+}
+
+.pb-content .message-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.pb-content .message.user .message-header      { color: var(--color-header); }
+.pb-content .message.assistant .message-header { color: #64748b; }
+
+/* ── Tabs ── */
+.pb-content .tabs {
+    display: flex;
+    gap: 6px;
+    border-bottom: none;
+    margin-bottom: 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.pb-content .tabs::-webkit-scrollbar { display: none; }
+
+.pb-content .tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: var(--color-muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background var(--transition), color var(--transition);
+}
+
+.pb-content .tab:hover { background: #e2e8f0; color: var(--color-text-2); }
+.pb-content .tab.active { background: rgba(14,116,144,0.1); color: var(--color-teal); }
+
+/* ── Tables ── */
+.pb-content table, .pb-content .fd-table { width: 100%; border-collapse: collapse; }
+
+.pb-content th, .pb-content td {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    text-align: left;
+    vertical-align: top;
+}
+
+.pb-content th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--color-muted);
+    background: #f8fafc;
+    font-weight: 600;
+}
+
+/* ── Pagination ── */
+.pb-content .pagination { display: flex; justify-content: center; gap: 4px; margin-top: 18px; }
+
+.pb-content .page-link {
+    min-width: 38px;
+    min-height: 38px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-solid);
+    background: #fff;
+    color: var(--color-teal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background var(--transition), border-color var(--transition);
+}
+
+.pb-content .page-link:hover { background: #f1f5f9; border-color: #cbd5e1; }
+
+.pb-content .page-item.active .page-link {
+    background: var(--color-teal);
+    border-color: var(--color-teal);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(14,116,144,0.22);
+}
+
+/* ── Empty states ── */
+.pb-content .empty-state,
+.pb-content .fd-empty,
+.pb-content .pb-empty-inline {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--color-muted);
+    font-size: 13px;
+}
+
+/* ── Collapsible sections ── */
+.pb-schedule__body {
+    overflow: hidden;
+    max-height: 4000px;
+    transition: max-height 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.24s ease;
+    opacity: 1;
+}
+
+.pb-schedule__body.collapsed {
+    max-height: 0;
+    opacity: 0;
+}
+
+/* ── Auth page ── */
+.pb-auth-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at top left, rgba(37,211,102,0.10), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(14,116,144,0.07), transparent 28%),
+        linear-gradient(150deg, #e8f5f1 0%, #f6fbfa 50%, #eef7f3 100%);
+}
+
+.pb-auth-card {
+    width: 100%;
+    max-width: 440px;
+    background: rgba(255,255,255,0.97);
+    border: 1px solid rgba(7,94,84,0.08);
+    border-radius: 24px;
+    box-shadow: 0 20px 48px rgba(7,94,84,0.10), 0 4px 12px rgba(0,0,0,0.05);
+    padding: 32px 28px;
+}
+
+.pb-auth-brand { text-align: center; margin-bottom: 26px; }
+
+.pb-auth-brand__mark {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 22px;
+    background: linear-gradient(135deg, var(--color-header), var(--color-teal));
+    color: #fff;
+    font-size: 26px;
+    box-shadow: 0 8px 24px rgba(7,62,92,0.22);
+}
+
+.pb-auth-brand h1,
+.pb-auth-brand h2,
+.pb-auth-brand h3 {
+    margin: 0;
+    color: var(--color-text);
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}
+
+.pb-auth-brand p { margin: 8px 0 0; color: var(--color-muted); font-size: 14px; }
+
+.pb-auth-card .alert { border: none; border-radius: 12px; }
+
+.pb-auth-card .form-control {
+    min-height: 48px;
+    border-radius: 14px;
+    border: 1.5px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 14px;
+}
+
+.pb-auth-card .btn-primary {
+    width: 100%;
+    min-height: 48px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #0d5c8a, var(--color-teal));
+    border: none;
+    font-weight: 700;
+    font-size: 15px;
+    box-shadow: 0 4px 16px rgba(7,62,92,0.2);
+}
+
+/* ── Responsive ── */
+@media (max-width: 767px) {
+    .pb-sidenav { display: none; }
+    .pb-bottomnav { display: block; }
+
+    .pb-content { padding-bottom: var(--bottom-nav-h); }
+
+    .pb-page,
+    .pb-content .container,
+    .pb-content .container-fluid { padding: 12px; }
+
+    .pb-topbar,
+    .pb-content .header {
+        border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+        margin: 0 0 12px;
+        padding: 16px 16px 14px;
+    }
+
+    .pb-content .conversation-history { padding: 12px; }
+    .pb-content .message { max-width: 88%; }
+}
+
+@media (min-width: 768px) { .pb-bottomnav { display: none; } }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.13); border-radius: 999px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+</style>
+
+    
+<style>
+  /* Independent scrollbars: lock pb-content, let each pane scroll itself */
+  html, body { height: 100%; }
+  .pb-content { overflow: hidden !important; }
+  .pb-content__inner { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+
+  .appt-workspace {
+    height: 100%;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Frame mode OR appointments source: hide the list pane, full-width detail */
+  .appt-workspace.is-frame .appt-list-pane,
+  .appt-workspace.is-fullwidth .appt-list-pane { display: none; }
+
+  .appt-workspace.is-frame .appt-split,
+  .appt-workspace.is-fullwidth .appt-split { grid-template-columns: 1fr; }
+
+  /* Panel root also needs full-height treatment */
+  .pb-panel-root .appt-workspace { height: calc(100vh - 0px); }
+
+  .appt-split {
+    display: grid;
+    grid-template-columns: 420px minmax(0, 1fr);
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .appt-list-pane {
+    background: #f3f5f8;
+    border-right: 1px solid #dbe2e8;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .appt-list-header {
+    background: var(--color-header);
+    color: #fff;
+    padding: 14px 16px 12px;
+  }
+
+  .appt-list-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .appt-list-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+    margin-top: 2px;
+  }
+
+  .appt-search {
+    padding: 10px 16px;
+    background: var(--color-header);
+  }
+
+  .appt-search input {
+    width: 100%;
+    min-height: 40px;
+    border-radius: 999px;
+    border: none;
+    padding: 0 16px 0 40px;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  }
+
+  .appt-search-wrap {
+    position: relative;
+  }
+
+  .appt-search-wrap i {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    font-size: 14px;
+  }
+
+  .appt-filter-tabs {
+    display: flex;
+    gap: 18px;
+    padding: 0 16px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    overflow-x: auto;
+  }
+
+  .appt-filter-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    color: #6b7280;
+    padding: 12px 0 11px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .appt-filter-tab.is-active {
+    color: var(--color-teal);
+    font-weight: 700;
+  }
+
+  .appt-filter-tab.is-active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--color-teal);
+    border-radius: 999px;
+  }
+
+  .appt-filter-tab span {
+    display: inline-flex;
+    min-width: 18px;
+    height: 18px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #eef2f3;
+    font-size: 11px;
+  }
+
+  .appt-list-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    background: #f5f6f8;
+  }
+
+  .workspace-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    background: #f5f6f8;
+  }
+
+  .workspace-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #fff;
+    border-bottom: 2px solid #ef4444;
+    color: #111827;
+    text-decoration: none;
+  }
+
+  .workspace-banner:hover {
+    background: #fff8f8;
+    text-decoration: none;
+  }
+
+  .workspace-banner-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #111827;
+  }
+
+  .workspace-banner-sub {
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  .workspace-stats {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .workspace-stat {
+    padding: 14px 10px;
+    text-align: center;
+    border-right: 1px solid #eef2f7;
+  }
+
+  .workspace-stat:last-child { border-right: none; }
+  .workspace-stat:nth-child(1) { background: #dff7f1; }
+  .workspace-stat:nth-child(2) { background: #dbeafe; }
+  .workspace-stat:nth-child(3) { background: #fee2e2; }
+  .workspace-stat:nth-child(4) { background: #fef3c7; }
+  .workspace-stat:nth-child(5) { background: #dbeafe; }
+
+  .workspace-stat-value {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--color-header);
+    line-height: 1.1;
+  }
+
+  .workspace-stat-label {
+    margin-top: 3px;
+    font-size: 11px;
+    color: #475569;
+  }
+
+  .workspace-search {
+    padding: 10px 16px;
+    background: var(--color-header);
+  }
+
+  .workspace-search-wrap {
+    position: relative;
+  }
+
+  .workspace-search-wrap i {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    color: #6b7280;
+  }
+
+  .workspace-search input {
+    width: 100%;
+    min-height: 38px;
+    padding: 0 14px 0 38px;
+    border: none;
+    border-radius: 999px;
+    background: #fff;
+  }
+
+  .workspace-chip-row {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    overflow-x: auto;
+  }
+
+  .workspace-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    border: 1px solid rgba(15, 69, 101, 0.08);
+  }
+
+  .workspace-chip.vh { background: #fee2e2; color: #b91c1c; }
+  .workspace-chip.hot { background: #fef3c7; color: #b45309; }
+  .workspace-chip.warm { background: #d1fae5; color: #047857; }
+  .workspace-chip.luke { background: #dbeafe; color: #1d4ed8; }
+  .workspace-chip.cold { background: #eef2f7; color: #64748b; }
+
+  .source-section {
+    margin-top: 8px;
+    background: #fff;
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .source-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #1f2937;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .source-section-header .accent {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .source-section-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #6366f1;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .source-list-row {
+    display: grid;
+    grid-template-columns: auto 44px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-top: 1px solid #eef2f7;
+    text-decoration: none;
+    color: inherit;
+    background: #fff;
+  }
+
+  .source-list-row:hover {
+    background: #f8fafc;
+    text-decoration: none;
+  }
+
+  .source-list-row.is-current {
+    background: #eef7f5;
+  }
+
+  .source-list-row--compact {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+  }
+
+  .source-time {
+    min-width: 48px;
+    height: 48px;
+    padding: 0 6px;
+    border-radius: 14px;
+    background: #dff7f1;
+    color: #059669;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .source-time.pending {
+    background: #fef3c7;
+    color: #b45309;
+  }
+
+  .source-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .source-main { min-width: 0; }
+
+  .source-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .source-meta,
+  .source-subnote {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .source-subnote { margin-top: 3px; }
+
+  .source-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .source-score {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 4px solid #ef4444;
+    background: #fff;
+    color: #ef4444;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .source-stamp {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+  }
+
+  .source-mini-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .source-mini-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .source-mini-btn.call {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .source-mini-btn.wa {
+    background: #dcfce7;
+    color: #047857;
+  }
+
+  .source-empty {
+    padding: 26px 16px;
+    text-align: center;
+    color: #6b7280;
+    font-size: 13px;
+    background: #fff;
+    border-top: 1px solid #eef2f7;
+  }
+
+  .appt-list-row {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid #eceff3;
+    text-decoration: none;
+    color: inherit;
+    background: #fff;
+    transition: background 0.15s ease;
+  }
+
+  .appt-list-row:hover {
+    background: #f8fafb;
+    text-decoration: none;
+  }
+
+  .appt-list-row.is-current {
+    background: #eef7f5;
+  }
+
+  .appt-list-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 18px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .appt-list-main {
+    min-width: 0;
+  }
+
+  .appt-list-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-list-meta,
+  .appt-list-preview {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-list-preview {
+    color: #9ca3af;
+    margin-top: 2px;
+  }
+
+  .appt-list-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .appt-list-time {
+    font-size: 11px;
+    color: #6b7280;
+  }
+  .appt-list-time.overdue { color: #ef4444; font-weight: 600; }
+
+  .appt-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #94a3b8;
+  }
+  .appt-dot--very_hot  { background: #ef4444; }
+  .appt-dot--hot       { background: #f59e0b; }
+  .appt-dot--warm      { background: #22c55e; }
+  .appt-dot--luke_warm { background: #3b82f6; }
+  .appt-dot--cold      { background: #94a3b8; }
+
+  .appt-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .appt-pill.booked { background: #d1fae5; color: #059669; }
+  .appt-pill.pending { background: #fef3c7; color: #d97706; }
+  .appt-pill.cancelled { background: #fee2e2; color: #ef4444; }
+  .appt-pill.delayed { background: #dbeafe; color: #2563eb; }
+  .appt-pill.very_hot { background: #fee2e2; color: #ef4444; }
+  .appt-pill.hot { background: #fef3c7; color: #d97706; }
+  .appt-pill.warm { background: #d1fae5; color: #059669; }
+  .appt-pill.cold,
+  .appt-pill.luke_warm { background: #eef2f7; color: #64748b; }
+
+  .appt-detail-pane {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: #e8ddd6;
+    overflow: hidden;
+  }
+
+  .appt-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 18px;
+    background: var(--color-header);
+    color: #fff;
+  }
+
+  .appt-detail-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .appt-detail-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    font-weight: 800;
+    font-size: 17px;
+    flex-shrink: 0;
+  }
+
+  .appt-detail-name {
+    font-size: 18px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-detail-meta {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.74);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-detail-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .appt-detail-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .appt-detail-action.call {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+  }
+
+  .appt-detail-action.wa {
+    background: #25D366;
+    color: #fff;
+  }
+
+  .appt-detail-statusbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 18px;
+    background: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .appt-score-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 3px solid #ef4444;
+    color: #ef4444;
+    font-size: 11px;
+    font-weight: 800;
+    background: #fff;
+  }
+
+  .appt-tabbar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    background: rgba(255, 255, 255, 0.95);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .appt-tab-btn {
+    border: none;
+    background: transparent;
+    padding: 12px 14px;
+    color: #6b7280;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .appt-tab-btn.is-active {
+    color: var(--color-teal);
+    font-weight: 700;
+  }
+
+  .appt-tab-btn.is-active::after {
+    content: "";
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 0;
+    height: 2px;
+    background: var(--color-teal);
+  }
+
+  .appt-tab-pane {
+    display: none;
+  }
+
+  /* Active tab pane must be flex so it participates in the height chain */
+  .appt-tab-pane.is-active {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Details / quotes pane: scroll its own content */
+  #tab-details.is-active,
+  #tab-quotes.is-active {
+    overflow-y: auto;
+  }
+
+  .appt-chat-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;        /* critical — without this flex won't shrink below content */
+  }
+
+  .appt-chat-scroll {
+    flex: 1;
+    min-height: 0;        /* allow the flex item to shrink and scroll */
+    padding: 18px 16px 22px;
+    overflow-y: auto;
+    background: #e8ddd6;
+  }
+
+  .chat-bubble-row {
+    display: flex;
+    margin-bottom: 14px;
+  }
+
+  .chat-bubble-row.user {
+    justify-content: flex-start;
+  }
+
+  .chat-bubble-row.assistant {
+    justify-content: flex-end;
+  }
+
+  .chat-bubble {
+    max-width: min(72%, 680px);
+    padding: 10px 12px 8px;
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .chat-bubble.user {
+    background: #fff;
+    border-top-left-radius: 4px;
+  }
+
+  .chat-bubble.assistant {
+    background: #d8f8c7;
+    border-top-right-radius: 4px;
+  }
+
+  .chat-bubble-sender {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 3px;
+  }
+
+  .chat-bubble.user .chat-bubble-sender {
+    color: var(--color-header);
+  }
+
+  .chat-bubble.assistant .chat-bubble-sender {
+    color: #455a64;
+  }
+
+  .chat-bubble-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #111827;
+    font-size: 14px;
+  }
+
+  .chat-bubble-time {
+    text-align: right;
+    margin-top: 4px;
+    color: #94a3b8;
+    font-size: 10px;
+  }
+
+  .chat-date-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 0 10px;
+    color: #78716c;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .3px;
+  }
+  .chat-date-divider::before,
+  .chat-date-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(0, 0, 0, .15);
+  }
+
+  .appt-chat-compose {
+    padding: 12px 16px 16px;
+    background: rgba(248, 250, 252, 0.94);
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .appt-quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .appt-quick-actions button,
+  .appt-quick-actions a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #dbe2e8;
+    background: #fff;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 7px 12px;
+    border-radius: 999px;
+    text-decoration: none;
+  }
+
+  .appt-compose-row {
+    display: grid;
+    grid-template-columns: 1fr 44px;
+    gap: 10px;
+    align-items: end;
+  }
+
+  .appt-compose-row textarea {
+    min-height: 54px;
+    max-height: 130px;
+    border-radius: 18px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: #fff;
+    padding: 14px 16px;
+    resize: vertical;
+  }
+
+  .appt-send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: var(--color-header);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .appt-send-btn:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+  }
+
+  .appt-char-count {
+    text-align: right;
+    color: #94a3b8;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+
+  .appt-detail-content {
+    padding: 18px;
+  }
+
+  .appt-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(300px, .9fr);
+    gap: 18px;
+  }
+
+  .detail-card {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .detail-card-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--color-header);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .detail-card-body {
+    padding: 16px;
+  }
+
+  .detail-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .detail-form-grid .full {
+    grid-column: 1 / -1;
+  }
+
+  .detail-field label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+
+  .detail-field input,
+  .detail-field textarea,
+  .detail-field select {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid #dbe2e8;
+    background: #f8fafc;
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    border: none;
+  }
+
+  .action-btn.primary { background: var(--color-header); color: #fff; }
+  .action-btn.success { background: #25D366; color: #fff; }
+  .action-btn.warning { background: #fef3c7; color: #b45309; }
+  .action-btn.danger { background: #fee2e2; color: #dc2626; }
+  .action-btn.ghost { background: #fff; color: #475569; border: 1px solid #dbe2e8; }
+
+  .mini-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mini-stat {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .mini-stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 5px;
+    font-weight: 700;
+  }
+
+  .mini-stat-value {
+    font-size: 14px;
+    color: #0f172a;
+    font-weight: 700;
+  }
+
+  .job-link-list,
+  .quote-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .job-link,
+  .quote-card {
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  .quote-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .quote-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .quote-meta {
+    color: #64748b;
+    font-size: 12px;
+    display: grid;
+    gap: 4px;
+  }
+
+  .quote-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .image-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .image-grid img {
+    width: 100px;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid #dbe2e8;
+  }
+
+  .empty-block {
+    padding: 28px 16px;
+    text-align: center;
+    color: #6b7280;
+  }
+
+  .mobile-back {
+    display: none;
+  }
+
+  @media (max-width: 1200px) {
+    .appt-split {
+      grid-template-columns: 360px minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 980px) {
+    .appt-split {
+      grid-template-columns: 1fr;
+    }
+
+    .appt-list-pane {
+      display: none;
+    }
+
+    .appt-detail-content {
+      padding: 12px;
+    }
+
+    .appt-detail-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .mobile-back {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      color: #fff;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.12);
+      flex-shrink: 0;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .appt-detail-header {
+      padding: 12px;
+      align-items: flex-start;
+    }
+
+    .appt-detail-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    .appt-detail-action {
+      padding: 7px 11px;
+      font-size: 12px;
+    }
+
+    .appt-tabbar {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .detail-form-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .detail-actions,
+    .quote-actions {
+      flex-direction: column;
+    }
+
+    .action-btn,
+    .quote-actions .action-btn,
+    .quote-actions form {
+      width: 100%;
+    }
+
+    .chat-bubble {
+      max-width: 88%;
+    }
+  }
+</style>
+
+</head>
+<body>
+<div class="pb-shell">
+    <nav class="pb-sidenav" aria-label="Main navigation">
+    <div class="pb-sidenav__brand">
+        <a href="/dashboard/" class="pb-sidenav__brand-name">
+            <i class="fas fa-wrench"></i> Plumbot
+        </a>
+        <div class="pb-sidenav__brand-sub">Admin Panel</div>
+    </div>
+
+    <div class="pb-sidenav__items">
+        <a href="/dashboard/" class="pb-sidenav__item ">
+            <i class="fas fa-th-large nav-icon"></i>
+            Dashboard
+        </a>
+        <a href="/appointments/" class="pb-sidenav__item active">
+            <i class="fas fa-calendar-alt nav-icon"></i>
+            Appointments
+        </a>
+        <a href="/leads/priority/" class="pb-sidenav__item ">
+            <i class="fas fa-bolt nav-icon"></i>
+            Priority Leads
+            
+        </a>
+        <a href="/followups/" class="pb-sidenav__item ">
+            <i class="fas fa-bell nav-icon"></i>
+            Follow-ups
+            
+            <span class="pb-badge">6</span>
+            
+        </a>
+        <a href="/jobs/" class="pb-sidenav__item ">
+            <i class="fas fa-hard-hat nav-icon"></i>
+            Job Appointments
+        </a>
+        <a href="/templates/" class="pb-sidenav__item ">
+            <i class="fas fa-file-invoice nav-icon"></i>
+            Templates
+        </a>
+        <a href="/quotations/new/" class="pb-sidenav__item ">
+            <i class="fas fa-file-invoice-dollar nav-icon"></i>
+            New Quotation
+        </a>
+    </div>
+
+    <div class="pb-sidenav__secondary">
+        <a href="/settings/" class="pb-sidenav__item ">
+            <i class="fas fa-cog nav-icon"></i>
+            Settings
+        </a>
+        <a href="/profile/" class="pb-sidenav__item ">
+            <i class="fas fa-user-circle nav-icon"></i>
+            Profile
+        </a>
+        <a href="/logout/" class="pb-sidenav__item">
+            <i class="fas fa-sign-out-alt nav-icon"></i>
+            Logout
+        </a>
+    </div>
+</nav>
+
+
+    <div class="pb-main">
+        <div class="pb-content" id="pb-content">
+            <div class="pb-content__inner">
+                
+
+
+                
+<div class="appt-workspace">
+  <div class="appt-split">
+    <aside class="appt-list-pane">
+      
+      <div class="appt-list-header">
+  <div class="appt-list-title">Appointments</div>
+  <div class="appt-list-subtitle">6 total</div>
+</div>
+
+<div class="appt-search">
+  <div class="appt-search-wrap">
+    <i class="fas fa-search"></i>
+    <input type="text" id="appointmentSearch" placeholder="Search name, phone, service...">
+  </div>
+</div>
+
+<div class="appt-filter-tabs" data-initial-filter="all">
+  <button type="button" class="appt-filter-tab is-active" data-filter="all">All <span>6</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="confirmed">Booked <span>2</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="pending">Pending <span>3</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="cancelled">Cancelled <span>0</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="delayed">Delayed <span>0</span></button>
+</div>
+
+<div class="appt-list-scroll" id="appointmentList">
+  
+  <a href="/appointments/113/?source=appointments&sidebar_filter=all"
+     data-base-href="/appointments/113/?source=appointments"
+     class="appt-list-row is-current"
+     data-status="pending"
+     data-search="pn quotation_9dc9e445_+27610318200 bathroom renovation 141 pritchard street">
+    <div class="appt-list-avatar" data-name="pn">
+      PN
+    </div>
+    <div class="appt-list-main">
+      <div class="appt-list-name">pn</div>
+      <div class="appt-list-meta">Bathroom Renovation · 141 Pritchard Street</div>
+      <div class="appt-list-preview">onno</div>
+    </div>
+    <div class="appt-list-side">
+      <div class="appt-list-time"
+           data-appt-date=""
+           data-status="pending">28 Sep, 22:11</div>
+      <div class="appt-dot appt-dot--cold"></div>
+      <div class="appt-pill pending">
+        Pending
+      </div>
+    </div>
+  </a>
+  
+  <a href="/appointments/112/?source=appointments&sidebar_filter=all"
+     data-base-href="/appointments/112/?source=appointments"
+     class="appt-list-row "
+     data-status="pending"
+     data-search="pn quotation_373cd9a3_+27610318200 bathroom renovation 141 pritchard street">
+    <div class="appt-list-avatar" data-name="pn">
+      PN
+    </div>
+    <div class="appt-list-main">
+      <div class="appt-list-name">pn</div>
+      <div class="appt-list-meta">Bathroom Renovation · 141 Pritchard Street</div>
+      <div class="appt-list-preview">onno</div>
+    </div>
+    <div class="appt-list-side">
+      <div class="appt-list-time"
+           data-appt-date=""
+           data-status="pending">28 Sep, 21:39</div>
+      <div class="appt-dot appt-dot--cold"></div>
+      <div class="appt-pill pending">
+        Pending
+      </div>
+    </div>
+  </a>
+  
+  <a href="/appointments/111/?source=appointments&sidebar_filter=all"
+     data-base-href="/appointments/111/?source=appointments"
+     class="appt-list-row "
+     data-status="pending"
+     data-search="pn quotation_bd1296de_+27610318200 bathroom renovation 141 pritchard street">
+    <div class="appt-list-avatar" data-name="pn">
+      PN
+    </div>
+    <div class="appt-list-main">
+      <div class="appt-list-name">pn</div>
+      <div class="appt-list-meta">Bathroom Renovation · 141 Pritchard Street</div>
+      <div class="appt-list-preview">onno</div>
+    </div>
+    <div class="appt-list-side">
+      <div class="appt-list-time"
+           data-appt-date=""
+           data-status="pending">28 Sep, 21:38</div>
+      <div class="appt-dot appt-dot--cold"></div>
+      <div class="appt-pill pending">
+        Pending
+      </div>
+    </div>
+  </a>
+  
+  <a href="/appointments/110/?source=appointments&sidebar_filter=all"
+     data-base-href="/appointments/110/?source=appointments"
+     class="appt-list-row "
+     data-status="quotation_created"
+     data-search="jon +27610318200 bathroom renovation 141 pritchard street">
+    <div class="appt-list-avatar" data-name="jon">
+      JO
+    </div>
+    <div class="appt-list-main">
+      <div class="appt-list-name">jon</div>
+      <div class="appt-list-meta">Bathroom Renovation · 141 Pritchard Street</div>
+      <div class="appt-list-preview">onon</div>
+    </div>
+    <div class="appt-list-side">
+      <div class="appt-list-time"
+           data-appt-date=""
+           data-status="quotation_created">28 Sep, 21:32</div>
+      <div class="appt-dot appt-dot--cold"></div>
+      <div class="appt-pill delayed">
+        quotation_created
+      </div>
+    </div>
+  </a>
+  
+  <a href="/appointments/109/?source=appointments&sidebar_filter=all"
+     data-base-href="/appointments/109/?source=appointments"
+     class="appt-list-row "
+     data-status="confirmed"
+     data-search="  bathroom_renovation avondale">
+    <div class="appt-list-avatar" data-name="Appointment">
+      AP
+    </div>
+    <div class="appt-list-main">
+      <div class="appt-list-name">Appointment</div>
+      <div class="appt-list-meta">Bathroom Renovation · Avondale</div>
+      <div class="appt-list-preview">No recent note available</div>
+    </div>
+    <div class="appt-list-side">
+      <div class="appt-list-time"
+           data-appt-date=""
+           data-status="confirmed">28 Sep, 02:25</div>
+      <div class="appt-dot appt-dot--cold"></div>
+      <div class="appt-pill booked">
+        Booked
+      </div>
+    </div>
+  </a>
+  
+  <a href="/appointments/108/?source=appointments&sidebar_filter=all"
+     data-base-href="/appointments/108/?source=appointments"
+     class="appt-list-row "
+     data-status="confirmed"
+     data-search=" whatsapp:+27714543043 bathroom_renovation avondale">
+    <div class="appt-list-avatar" data-name="whatsapp:+27714543043">
+      WH
+    </div>
+    <div class="appt-list-main">
+      <div class="appt-list-name">whatsapp:+27714543043</div>
+      <div class="appt-list-meta">Bathroom Renovation · Avondale</div>
+      <div class="appt-list-preview">No recent note available</div>
+    </div>
+    <div class="appt-list-side">
+      <div class="appt-list-time"
+           data-appt-date=""
+           data-status="confirmed">28 Sep, 02:25</div>
+      <div class="appt-dot appt-dot--cold"></div>
+      <div class="appt-pill booked">
+        Booked
+      </div>
+    </div>
+  </a>
+  
+</div>
+
+      
+      
+    </aside>
+
+    <section class="appt-detail-pane">
+      <div class="appt-detail-header">
+        <div class="appt-detail-user">
+          <a href="/appointments/" class="mobile-back" aria-label="Back to appointments">
+            <i class="fas fa-arrow-left"></i>
+          </a>
+          <div class="appt-detail-avatar">PN</div>
+          <div style="min-width:0;">
+            <div class="appt-detail-name">
+              pn
+            </div>
+            <div class="appt-detail-meta">
+              quotation_9dc9e445_+27610318200 · 141 Pritchard Street
+            </div>
+          </div>
+        </div>
+        <div class="appt-detail-actions">
+          <a href="tel:quotation_9dc9e445_+27610318200" class="appt-detail-action call">
+            <i class="fas fa-phone"></i> Call
+          </a>
+          <a href="https://wa.me/quotation_9dc9e445_27610318200"
+            target="_blank" class="appt-detail-action wa">
+            <i class="fab fa-whatsapp"></i> WhatsApp
+          </a>
+        </div>
+      </div>
+
+      <div class="appt-detail-statusbar">
+        <span class="appt-pill pending">
+          Pending
+        </span>
+        <span class="appt-pill cold">
+          Hot
+        </span>
+        <span class="appt-score-chip">75</span>
+        <span style="font-size:13px; color:#475569;">Score 75/100</span>
+        
+      </div>
+
+      <div class="appt-tabbar">
+        <button class="appt-tab-btn is-active" type="button" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
+        <button class="appt-tab-btn" type="button" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
+        <button class="appt-tab-btn" type="button" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
+      </div>
+
+      <div class="appt-tab-pane is-active" id="tab-chat">
+        <div class="appt-chat-pane">
+          <div class="appt-chat-scroll" id="chatScroll">
+            
+            <div class="empty-block">
+              <i class="fas fa-comment-slash" style="font-size:30px; opacity:.3; display:block; margin-bottom:10px;"></i>
+              No conversation history yet.
+            </div>
+            
+          </div>
+
+          <div class="appt-chat-compose">
+            <div class="appt-quick-actions">
+              
+              <form method="post" action="/appointments/113/pause-bot/">
+                <input type="hidden" name="csrfmiddlewaretoken" value="1BFxyfuz92crkiHFYGsmmAtbSXSI7tJ2uikvuuurfl4rYL4uZjDZqVvpgzaG0HXH">
+                <button type="submit"><i class="fas fa-pause"></i> Pause chatbot</button>
+              </form>
+              
+              <button type="button" onclick="insertTemplate('greeting')"><i class="fas fa-hand-sparkles"></i> Greeting</button>
+              <button type="button" onclick="insertTemplate('check_in')"><i class="fas fa-bell"></i> Check-in</button>
+              <button type="button" onclick="insertTemplate('reminder')"><i class="fas fa-clock"></i> Reminder</button>
+              <form method="post" action="/appointments/113/send-portfolio/">
+                <input type="hidden" name="csrfmiddlewaretoken" value="1BFxyfuz92crkiHFYGsmmAtbSXSI7tJ2uikvuuurfl4rYL4uZjDZqVvpgzaG0HXH">
+                <button type="submit"><i class="fas fa-images"></i> Send portfolio</button>
+              </form>
+            </div>
+
+            <form method="post" action="/appointments/113/send-followup/" id="followupForm">
+              <input type="hidden" name="csrfmiddlewaretoken" value="1BFxyfuz92crkiHFYGsmmAtbSXSI7tJ2uikvuuurfl4rYL4uZjDZqVvpgzaG0HXH">
+              <div class="appt-compose-row">
+                <textarea id="followup_message" name="message" placeholder="Type a message..." required></textarea>
+                <button type="submit" class="appt-send-btn" id="sendMessageBtn" aria-label="Send message">
+                  <i class="fas fa-paper-plane"></i>
+                </button>
+              </div>
+              <div class="appt-char-count"><span id="charCount">0</span> / 1000</div>
+              <div id="messageStatus" style="display:none; margin-top:10px;"></div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="appt-tab-pane" id="tab-details">
+        <div class="appt-detail-content">
+          <div class="appt-detail-grid">
+            <div class="detail-card">
+              <div class="detail-card-header">Customer Details</div>
+              <div class="detail-card-body">
+                <form method="post">
+                  <input type="hidden" name="csrfmiddlewaretoken" value="1BFxyfuz92crkiHFYGsmmAtbSXSI7tJ2uikvuuurfl4rYL4uZjDZqVvpgzaG0HXH">
+                  <div class="detail-form-grid">
+                    <div class="detail-field">
+                      <label for="customer_name">Customer Name</label>
+                      <input type="text" id="customer_name" name="customer_name" value="pn">
+                    </div>
+                    <div class="detail-field">
+                      <label for="phone_number">Phone Number</label>
+                      <input type="text" id="phone_number" value="quotation_9dc9e445_+27610318200" readonly>
+                    </div>
+                    <div class="detail-field">
+                      <label for="project_type">Service</label>
+                      <input type="text" id="project_type" name="project_type" value="Bathroom Renovation">
+                    </div>
+                    <div class="detail-field">
+                      <label for="customer_area">Area</label>
+                      <input type="text" id="customer_area" name="customer_area" value="141 Pritchard Street">
+                    </div>
+                    <div class="detail-field">
+                      <label for="scheduled_datetime">Scheduled</label>
+                      <input type="datetime-local" id="scheduled_datetime" name="scheduled_datetime" value="">
+                    </div>
+                    <div class="detail-field">
+                      <label for="property_type">Property Type</label>
+                      <select id="property_type" name="property_type">
+                        
+                        <option value="house" >House</option>
+                        
+                        <option value="business" >Business</option>
+                        
+                        <option value="apartment" >Apartment</option>
+                        
+                        <option value="condo" >Condominium</option>
+                        
+                        <option value="townhouse" >Townhouse</option>
+                        
+                        <option value="commercial" >Commercial</option>
+                        
+                        <option value="office" >Office</option>
+                        
+                        <option value="other" >Other</option>
+                        
+                      </select>
+                    </div>
+                    <div class="detail-field full">
+                      <label for="project_description">Project Description</label>
+                      <textarea id="project_description" name="project_description" rows="4">onno</textarea>
+                    </div>
+                    <div class="detail-field">
+                      <label for="follow_up_status">Follow-up Status</label>
+                      <select id="follow_up_status" name="follow_up_status">
+                        <option value="pending" selected>Pending</option>
+                        <option value="in_progress" >In Progress</option>
+                        <option value="waiting_customer" >Waiting Customer</option>
+                        <option value="completed" >Completed</option>
+                        <option value="closed_lost" >Closed Lost</option>
+                      </select>
+                    </div>
+                    <div class="detail-field">
+                      <label for="next_follow_up_at">Next Follow-up</label>
+                      <input type="datetime-local" id="next_follow_up_at" name="next_follow_up_at" value="">
+                    </div>
+                    <div class="detail-field full">
+                      <label for="admin_notes">Admin Notes</label>
+                      <textarea id="admin_notes" name="admin_notes" rows="4"></textarea>
+                    </div>
+                  </div>
+
+                  <div class="detail-actions">
+                    <button type="submit" class="action-btn primary"><i class="fas fa-save"></i> Save Changes</button>
+                    
+                    <a href="/appointments/113/confirm/" class="action-btn success"><i class="fas fa-check"></i> Confirm</a>
+                    
+                    
+                    <button type="submit"
+                            formaction="/appointments/113/complete-lead/"
+                            formmethod="post"
+                            onclick="return confirm('Mark this lead as completed and remove it from Priority Leads?');"
+                            class="action-btn primary">
+                      <i class="fas fa-flag-checkered"></i> Complete
+                    </button>
+                    
+                    
+                    <a href="/appointments/113/cancel/" class="action-btn danger"><i class="fas fa-times"></i> Cancel</a>
+                    
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <div style="display:grid; gap:18px;">
+              <div class="detail-card">
+                <div class="detail-card-header">Lead Summary</div>
+                <div class="detail-card-body">
+                  <div class="mini-stat-grid">
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Lead Score</div>
+                      <div class="mini-stat-value">75/100</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Lead Status</div>
+                      <div class="mini-stat-value">Hot</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Completeness</div>
+                      <div class="mini-stat-value">42.857142857142854%</div>
+                    </div>
+                    <div class="mini-stat">
+                      <div class="mini-stat-label">Appointment Type</div>
+                      <div class="mini-stat-value">Site Visit</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-card">
+                <div class="detail-card-header">Scheduling</div>
+                <div class="detail-card-body">
+                  
+                    
+                    <div class="mini-stat" style="margin-bottom:12px;">
+                      <div class="mini-stat-label">Site Visit Completed</div>
+                      <div class="mini-stat-value">Sep 28, 2025 22:11</div>
+                    </div>
+                    <a href="/appointments/113/schedule-job/" class="action-btn success"><i class="fas fa-calendar-plus"></i> Schedule Job</a>
+                    
+                  
+                </div>
+              </div>
+
+              
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="appt-tab-pane" id="tab-quotes">
+        <div class="appt-detail-content">
+          <div class="detail-card">
+            <div class="detail-card-header">
+              <span>Quotations</span>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <a href="/appointments/113/create-quotation/" class="action-btn primary"><i class="fas fa-plus"></i> New Quote</a>
+                <div style="position:relative;">
+                  <button class="action-btn success" type="button" onclick="toggleTemplateDropdown()" id="templateDropdownBtn">
+                    <i class="fas fa-file-invoice"></i> From Template
+                  </button>
+                  <div id="templateDropdown" style="display:none; position:absolute; top:100%; right:0; min-width:260px; margin-top:8px; background:#fff; border:1px solid #dbe2e8; border-radius:14px; box-shadow:0 14px 34px rgba(15, 23, 42, 0.14); z-index:20;">
+                    <div style="padding:12px; border-bottom:1px solid #eef2f7;">
+                      <input type="text" id="quickTemplateSearch" placeholder="Search templates..." style="width:100%; border:1px solid #dbe2e8; border-radius:10px; padding:10px 12px;" oninput="quickSearchTemplates()">
+                    </div>
+                    <div id="quickTemplateList" style="max-height:320px; overflow:auto;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="detail-card-body">
+              
+              <div class="quote-list">
+                
+                <div class="quote-card">
+                  <div class="quote-header">
+                    <div>
+                      <div class="quote-title">Bathroom Renovation for pn</div>
+                      <div class="quote-meta">
+                        <div>Total: US$168.00</div>
+                        <div>Created: Sep 28, 2025 21:42</div>
+                        
+                      </div>
+                    </div>
+                    <div class="appt-pill cold">
+                      Draft
+                    </div>
+                  </div>
+                  <div class="quote-actions">
+                    <a href="/quotations/1/" class="action-btn ghost"><i class="fas fa-eye"></i> View</a>
+                    <a href="/quotations/1/edit/" class="action-btn ghost"><i class="fas fa-edit"></i> Edit</a>
+                    <form method="post" action="/quotations/1/duplicate/">
+                      <input type="hidden" name="csrfmiddlewaretoken" value="1BFxyfuz92crkiHFYGsmmAtbSXSI7tJ2uikvuuurfl4rYL4uZjDZqVvpgzaG0HXH">
+                      <button type="submit" class="action-btn warning" onclick="return confirm('Duplicate this quotation?');"><i class="fas fa-copy"></i> Duplicate</button>
+                    </form>
+                    <form method="post" action="/quotations/1/delete/">
+                      <input type="hidden" name="csrfmiddlewaretoken" value="1BFxyfuz92crkiHFYGsmmAtbSXSI7tJ2uikvuuurfl4rYL4uZjDZqVvpgzaG0HXH">
+                      <button type="submit" class="action-btn danger" onclick="return confirm('Delete this quotation permanently?');"><i class="fas fa-trash"></i> Delete</button>
+                    </form>
+                    
+                    <a href="/quotations/1/send/" class="action-btn success"><i class="fab fa-whatsapp"></i> Send</a>
+                    
+                  </div>
+                </div>
+                
+              </div>
+              
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<nav class="pb-bottomnav" aria-label="Mobile navigation">
+    <div class="pb-bottomnav__items">
+        <a href="/dashboard/" class="pb-bottomnav__item ">
+            <i class="fas fa-th-large nav-icon"></i>
+            Home
+        </a>
+        <a href="/appointments/" class="pb-bottomnav__item active">
+            <i class="fas fa-calendar-alt nav-icon"></i>
+            Appointments
+        </a>
+        <a href="/leads/priority/" class="pb-bottomnav__item ">
+            <i class="fas fa-bolt nav-icon"></i>
+            Leads
+        </a>
+        <a href="/followups/" class="pb-bottomnav__item ">
+            <i class="fas fa-bell nav-icon"></i>
+            Follow-ups
+        </a>
+        <a href="/settings/" class="pb-bottomnav__item ">
+            <i class="fas fa-ellipsis-h nav-icon"></i>
+            More
+        </a>
+    </div>
+</nav>
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Collapse toggle — CSS handles the max-height animation
+        document.querySelectorAll('[data-collapse-toggle]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var targetId = this.getAttribute('data-collapse-toggle');
+                var section = document.getElementById(targetId);
+                if (section) {
+                    section.classList.toggle('collapsed');
+                }
+            });
+        });
+
+        // Mobile input font size (prevents iOS zoom)
+        if (window.innerWidth <= 768) {
+            document.querySelectorAll('input, select, textarea').forEach(function (input) {
+                input.style.fontSize = '16px';
+            });
+        }
+
+        // Press-scale feedback on interactive rows
+        var pressTargets = '.pb-sched-row, .pb-followup-row, .inbox-row, .delayed-row';
+        document.querySelectorAll(pressTargets).forEach(function (el) {
+            el.addEventListener('pointerdown', function () { this.style.transform = 'scale(0.993)'; }, { passive: true });
+            el.addEventListener('pointerup',   function () { this.style.transform = ''; }, { passive: true });
+            el.addEventListener('pointerleave',function () { this.style.transform = ''; }, { passive: true });
+        });
+
+        // Auto-dismiss flash alerts after 4 s
+        document.querySelectorAll('.pb-alert').forEach(function (alert) {
+            setTimeout(function () {
+                alert.style.transition = 'opacity 0.4s ease, max-height 0.4s ease, padding 0.4s ease';
+                alert.style.opacity = '0';
+                alert.style.maxHeight = '0';
+                alert.style.padding = '0';
+                alert.style.marginBottom = '0';
+            }, 4000);
+        });
+    });
+</script>
+<script>
+var PlumbotDates = (function () {
+  var TZ = 'Africa/Johannesburg';
+
+  function _parts(date) {
+    var result = {};
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(date).forEach(function (part) {
+      result[part.type] = part.value;
+    });
+    return result;
+  }
+
+  function sameDay(a, b) {
+    var pa = _parts(a), pb = _parts(b);
+    return pa.year === pb.year && pa.month === pb.month && pa.day === pb.day;
+  }
+
+  function _calDay(date) {
+    var p = _parts(date);
+    return new Date(parseInt(p.year, 10), parseInt(p.month, 10) - 1, parseInt(p.day, 10));
+  }
+
+  function daysDiff(a, b) {
+    return Math.round((_calDay(b) - _calDay(a)) / 86400000);
+  }
+
+  function hhmm(date) {
+    var p = _parts(date);
+    return p.hour + ':' + p.minute;
+  }
+
+  function _wd(date)    { return date.toLocaleString('en-GB', { timeZone: TZ, weekday: 'short' }); }
+  function _day(date)   { return date.toLocaleString('en-GB', { timeZone: TZ, day: 'numeric' }); }
+  function _monS(date)  { return date.toLocaleString('en-GB', { timeZone: TZ, month: 'short' }); }
+  function _monL(date)  { return date.toLocaleString('en-GB', { timeZone: TZ, month: 'long' }); }
+
+  function formatAppointmentDate(iso) {
+    if (!iso) return '';
+    var dt = new Date(iso);
+    if (isNaN(dt.getTime())) return '';
+    var now = new Date();
+    var t = hhmm(dt);
+    if (sameDay(dt, now)) return 'Today · ' + t;
+    if (daysDiff(now, dt) === 1) return 'Tomorrow · ' + t;
+    return _wd(dt) + ', ' + _day(dt) + ' ' + _monS(dt) + ' · ' + t;
+  }
+
+  function isOverdue(iso, status) {
+    if (!iso) return false;
+    if (status === 'cancelled' || status === 'completed') return false;
+    return new Date(iso).getTime() < Date.now();
+  }
+
+  function formatMessageTime(iso) {
+    if (!iso) return '';
+    var dt = new Date(iso);
+    if (isNaN(dt.getTime())) return '';
+    var now = new Date();
+    var t = hhmm(dt);
+    if (sameDay(dt, now)) return t;
+    var diff = daysDiff(dt, now);
+    if (diff === 1) return 'Yesterday · ' + t;
+    if (diff <= 7)  return _wd(dt) + ' · ' + t;
+    var p = _parts(dt), pn = _parts(now);
+    var dm = _day(dt) + ' ' + _monS(dt);
+    if (p.year === pn.year) return dm + ' · ' + t;
+    return dm + ' ' + p.year + ' · ' + t;
+  }
+
+  function dividerLabel(iso) {
+    var dt = new Date(iso);
+    var now = new Date();
+    if (sameDay(dt, now)) return 'Today';
+    if (daysDiff(dt, now) === 1) return 'Yesterday';
+    var p = _parts(dt), pn = _parts(now);
+    var label = _wd(dt) + ', ' + _day(dt) + ' ' + _monL(dt);
+    if (p.year !== pn.year) label += ' ' + p.year;
+    return label;
+  }
+
+  function initAppointmentDates() {
+    document.querySelectorAll('[data-appt-date]').forEach(function (el) {
+      var iso = el.dataset.apptDate;
+      if (!iso) return;
+      var formatted = formatAppointmentDate(iso);
+      if (formatted) el.textContent = formatted;
+      if (isOverdue(iso, el.dataset.status || '')) el.classList.add('overdue');
+    });
+  }
+
+  function initChatTimestamps() {
+    var scroll = document.getElementById('chatScroll');
+    if (!scroll) return;
+    scroll.querySelectorAll('.chat-bubble-time[data-ts]').forEach(function (el) {
+      var f = formatMessageTime(el.dataset.ts);
+      if (f) el.textContent = f;
+    });
+    var rows = Array.from(scroll.querySelectorAll('.chat-bubble-row[data-ts]'));
+    var lastDay = null;
+    rows.forEach(function (row) {
+      var iso = row.dataset.ts;
+      if (!iso) return;
+      var dt = new Date(iso);
+      if (isNaN(dt.getTime())) return;
+      if (!lastDay || !sameDay(dt, lastDay)) {
+        var divider = document.createElement('div');
+        divider.className = 'chat-date-divider';
+        divider.innerHTML = '<span>' + dividerLabel(iso) + '</span>';
+        row.parentNode.insertBefore(divider, row);
+        lastDay = dt;
+      }
+    });
+  }
+
+  return {
+    formatAppointmentDate: formatAppointmentDate,
+    formatMessageTime: formatMessageTime,
+    dividerLabel: dividerLabel,
+    isOverdue: isOverdue,
+    sameDay: sameDay,
+    initAppointmentDates: initAppointmentDates,
+    initChatTimestamps: initChatTimestamps
+  };
+}());
+</script>
+
+<script>
+  function showAppointmentTab(tabName) {
+    document.querySelectorAll('.appt-tab-btn').forEach(function (btn) {
+      btn.classList.toggle('is-active', btn.getAttribute('data-tab') === tabName);
+    });
+    document.querySelectorAll('.appt-tab-pane').forEach(function (pane) {
+      pane.classList.toggle('is-active', pane.id === 'tab-' + tabName);
+    });
+    if (tabName === 'chat') {
+      scrollChatBottom();
+    }
+  }
+
+  document.querySelectorAll('.appt-tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      showAppointmentTab(btn.getAttribute('data-tab'));
+    });
+  });
+
+  function scrollChatBottom() {
+    var chat = document.getElementById('chatScroll');
+    if (chat) {
+      chat.scrollTop = chat.scrollHeight;
+    }
+  }
+
+  const messageTemplates = {
+    greeting: `Hi {name},\n\nThanks for reaching out. I wanted to personally follow up on your plumbing request.\n\nHow can I help move this forward today?\n\nBest,\n{your_name}`,
+    check_in: `Hi {name},\n\nJust checking in to see if you're still interested in moving ahead with your plumbing project.\n\nWe'd be happy to help whenever you're ready.\n\nBest,\n{your_name}`,
+    reminder: `Hi {name},\n\nQuick reminder that we're still available to help with your plumbing project.\n\nLet me know if you'd like to book a visit or ask any questions.\n\nBest,\n{your_name}`
+  };
+
+  function insertTemplate(templateName) {
+    var template = messageTemplates[templateName];
+    if (!template) return;
+    var customerName = 'pn';
+    var yourName = 'plumbot_demo';
+    var message = template.replace(/{name}/g, customerName).replace(/{your_name}/g, yourName);
+    var field = document.getElementById('followup_message');
+    field.value = message;
+    updateCharCount();
+    field.focus();
+  }
+
+  function updateCharCount() {
+    var field = document.getElementById('followup_message');
+    var counter = document.getElementById('charCount');
+    if (field && counter) {
+      counter.textContent = field.value.length;
+    }
+    var sendBtn = document.getElementById('sendMessageBtn');
+    if (sendBtn) {
+      sendBtn.disabled = !(field && field.value.trim());
+    }
+  }
+
+  function updateJobStatus(jobId, newStatus) {
+    if (!confirm('Change job status to ' + newStatus.replace('_', ' ') + '?')) {
+      return;
+    }
+
+    fetch('/jobs/' + jobId + '/update-status/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+      },
+      body: 'status=' + encodeURIComponent(newStatus)
+    })
+    .then(function (response) { return response.json(); })
+    .then(function (data) {
+      if (data.success) {
+        window.location.reload();
+      } else {
+        alert(data.error || 'Unable to update job status.');
+      }
+    })
+    .catch(function () {
+      alert('Unable to update job status right now.');
+    });
+  }
+
+  document.getElementById('followupForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = this;
+    var messageField = document.getElementById('followup_message');
+    var messageText = messageField.value.trim();
+    var sendBtn = document.getElementById('sendMessageBtn');
+    var statusDiv = document.getElementById('messageStatus');
+
+    if (!messageText) {
+      return;
+    }
+
+    sendBtn.disabled = true;
+    statusDiv.style.display = 'none';
+
+    fetch(form.action, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: new URLSearchParams({ message: messageText })
+    })
+    .then(function (response) {
+      return response.json().then(function (data) {
+        return { ok: response.ok, data: data };
+      });
+    })
+    .then(function (result) {
+      statusDiv.style.display = 'block';
+      if (result.ok && result.data.ok) {
+        statusDiv.innerHTML = '<div class="pb-alert pb-alert--success">✅ ' + (result.data.message || 'Message sent successfully.') + '</div>';
+        messageField.value = '';
+        updateCharCount();
+        setTimeout(function () { window.location.reload(); }, 1200);
+      } else {
+        statusDiv.innerHTML = '<div class="pb-alert pb-alert--error">❌ ' + (result.data.error || 'Could not send the message.') + '</div>';
+        sendBtn.disabled = false;
+      }
+    })
+    .catch(function () {
+      statusDiv.style.display = 'block';
+      statusDiv.innerHTML = '<div class="pb-alert pb-alert--error">❌ Could not reach the server. Check your connection.</div>';
+      sendBtn.disabled = false;
+      updateCharCount();
+    });
+  });
+
+  var quickTemplates = [];
+
+  function toggleTemplateDropdown() {
+    var dropdown = document.getElementById('templateDropdown');
+    if (dropdown.style.display === 'block') {
+      dropdown.style.display = 'none';
+      return;
+    }
+    dropdown.style.display = 'block';
+    loadQuickTemplates();
+  }
+
+  function loadQuickTemplates() {
+    var listEl = document.getElementById('quickTemplateList');
+    listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;"><i class="fas fa-spinner fa-spin"></i></div>';
+
+    fetch('/api/quotation-templates/?active_only=true')
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (data.success && data.templates) {
+          quickTemplates = data.templates;
+          displayQuickTemplates(quickTemplates);
+        } else {
+          listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">No templates found.</div>';
+        }
+      })
+      .catch(function () {
+        listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">Could not load templates.</div>';
+      });
+  }
+
+  function displayQuickTemplates(templates) {
+    var listEl = document.getElementById('quickTemplateList');
+    if (!templates.length) {
+      listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">No templates found.</div>';
+      return;
+    }
+    listEl.innerHTML = templates.map(function (t) {
+      return '<a href="/templates/' + t.id + '/use/113/" style="display:block; padding:12px 14px; text-decoration:none; color:#0f172a; border-bottom:1px solid #eef2f7;">'
+        + '<div style="font-weight:700; font-size:13px;">' + t.name + '</div>'
+        + '<div style="font-size:12px; color:#64748b; margin-top:2px;">' + t.items_count + ' items · US$' + t.estimated_cost.toFixed(2) + '</div>'
+        + '</a>';
+    }).join('');
+  }
+
+  function quickSearchTemplates() {
+    var search = document.getElementById('quickTemplateSearch').value.toLowerCase();
+    var filtered = quickTemplates.filter(function (t) {
+      return t.name.toLowerCase().includes(search) ||
+        (t.description && t.description.toLowerCase().includes(search));
+    });
+    displayQuickTemplates(filtered);
+  }
+
+  document.addEventListener('click', function (e) {
+    var dropdown = document.getElementById('templateDropdown');
+    var btn = document.getElementById('templateDropdownBtn');
+    if (dropdown && btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  // ── Appointments sidebar: persistent tab state ──
+  (function () {
+    var appointmentSearch = document.getElementById('appointmentSearch');
+    if (!appointmentSearch) return;   // only runs when source === 'appointments'
+
+    var TAB_KEY = 'plumbot_sidebar_tab';
+
+    function storedTab() {
+      try { return sessionStorage.getItem(TAB_KEY) || 'all'; } catch (e) { return 'all'; }
+    }
+    function saveTab(f) {
+      try { sessionStorage.setItem(TAB_KEY, f); } catch (e) {}
+    }
+    function activeFilter() {
+      var btn = document.querySelector('.appt-filter-tab.is-active');
+      return btn ? btn.getAttribute('data-filter') : 'all';
+    }
+
+    function syncRowLinks(filter) {
+      document.querySelectorAll('.appt-list-row').forEach(function (row) {
+        var baseHref = row.getAttribute('data-base-href');
+        if (!baseHref) return;
+        row.setAttribute('href', baseHref + '&sidebar_filter=' + encodeURIComponent(filter || 'all'));
+      });
+    }
+
+    function applyTabFilter(filter) {
+      // Update tab button styles
+      document.querySelectorAll('.appt-filter-tab').forEach(function (tab) {
+        tab.classList.toggle('is-active', tab.getAttribute('data-filter') === filter);
+      });
+      // Filter rows (combined with current search term)
+      var term = appointmentSearch.value.trim().toLowerCase();
+      document.querySelectorAll('.appt-list-row').forEach(function (row) {
+        var matchesFilter = filter === 'all' || row.getAttribute('data-status') === filter;
+        var matchesSearch = !term || (row.getAttribute('data-search') || '').indexOf(term) > -1;
+        row.style.display = matchesFilter && matchesSearch ? '' : 'none';
+      });
+      syncRowLinks(filter);
+    }
+
+    // 1. Determine initial filter:
+    //    URL param (server-set) → sessionStorage → default 'all'
+    var tabsEl = document.querySelector('.appt-filter-tabs[data-initial-filter]');
+    var urlFilter = tabsEl ? tabsEl.getAttribute('data-initial-filter') : 'all';
+    var initial = (urlFilter && urlFilter !== 'all') ? urlFilter : storedTab();
+    applyTabFilter(initial);
+
+    // 2. Tab button clicks — apply + persist
+    document.querySelectorAll('.appt-filter-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var f = btn.getAttribute('data-filter');
+        applyTabFilter(f);
+        saveTab(f);
+      });
+    });
+
+    // 3. Search — re-apply current tab so hidden rows stay hidden
+    appointmentSearch.addEventListener('input', function () {
+      applyTabFilter(activeFilter());
+    });
+
+    // 4. Row clicks — persist active tab and ensure navigation carries it through
+    document.querySelectorAll('.appt-list-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        var filter = activeFilter();
+        saveTab(filter);
+        var baseHref = row.getAttribute('data-base-href');
+        if (baseHref) {
+          row.setAttribute('href', baseHref + '&sidebar_filter=' + encodeURIComponent(filter || 'all'));
+        }
+      });
+    });
+  }());
+
+  document.addEventListener('DOMContentLoaded', function () {
+    PlumbotDates.initAppointmentDates();
+    PlumbotDates.initChatTimestamps();
+    updateCharCount();
+    scrollChatBottom();
+
+    // Enable send button as soon as the user types something
+    var msgField = document.getElementById('followup_message');
+    if (msgField) {
+      msgField.addEventListener('input', updateCharCount);
+    }
+
+    // Avatar colour by first char of name
+    var AVATAR_COLORS = ['#22c55e','#ef4444','#f59e0b','#0f766e','#f97316','#8b5cf6','#14b8a6'];
+    document.querySelectorAll('.appt-list-avatar[data-name]').forEach(function (el) {
+      var n = el.getAttribute('data-name') || '';
+      el.style.background = AVATAR_COLORS[n.charCodeAt(0) % AVATAR_COLORS.length];
+    });
+
+    // Job status buttons (data-pk + data-status instead of inline onclick)
+    document.querySelectorAll('.js-job-status').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        updateJobStatus(btn.getAttribute('data-pk'), btn.getAttribute('data-status'));
+      });
+    });
+  });
+</script>
+
+</body>
+</html>
