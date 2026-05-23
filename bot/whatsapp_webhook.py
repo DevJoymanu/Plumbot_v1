@@ -67,6 +67,12 @@ _pending_batch_timers: dict = {}    # sender -> threading.Timer
 _pending_batch_lock = threading.Lock()
 MESSAGE_BATCH_WINDOW_SECONDS = 45   # wait this long after the LAST message before generating a reply
 
+# Per-sender cancel events for delayed sends still in their sleep window.
+# When a new message arrives, the event is set so the sleeping thread aborts
+# instead of sending a now-stale reply. The next batch covers everything.
+_pending_send_events: dict = {}     # sender -> threading.Event
+_pending_send_lock = threading.Lock()
+
 # DeepSeek client for translation (optional)
 _DEEPSEEK_KEY = os.environ.get('DEEPSEEK_API_KEY')
 _deepseek = (
@@ -377,9 +383,27 @@ def get_random_delay() -> int:
     return seconds
 
 
-def delayed_response(sender, reply, delay_seconds, message_id=None):
+def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event=None):
     try:
-        time.sleep(delay_seconds)
+        # Sleep in short chunks so a cancel_event can interrupt the wait quickly.
+        _POLL = 5  # seconds between cancellation checks
+        slept = 0
+        while slept < delay_seconds:
+            if cancel_event and cancel_event.is_set():
+                print(f"🚫 Delayed send cancelled for {sender} — superseded by a new message")
+                return
+            chunk = min(_POLL, delay_seconds - slept)
+            time.sleep(chunk)
+            slept += chunk
+
+        if cancel_event and cancel_event.is_set():
+            print(f"🚫 Delayed send cancelled for {sender} — superseded by a new message")
+            return
+
+        # Clear the registry entry now that we're about to send (prevents stale cancellation).
+        with _pending_send_lock:
+            if _pending_send_events.get(sender) is cancel_event:
+                _pending_send_events.pop(sender, None)
 
         # Abort if the appointment was confirmed during the delay window
         try:
@@ -1334,7 +1358,18 @@ def handle_text_message(sender, text_data, message_id=None):
 
 
 def _enqueue_for_response(sender: str, message_body: str, message_id):
-    """Add message to the per-sender batch queue and reset the debounce timer."""
+    """Add message to the per-sender batch queue and reset the debounce timer.
+
+    Also cancels any delayed send already in flight — the next batch will generate
+    a single reply that covers all unanswered messages via conversation history.
+    """
+    # Cancel a pending send if one is sleeping (msg arrived during the send delay window).
+    with _pending_send_lock:
+        old_event = _pending_send_events.pop(sender, None)
+        if old_event is not None:
+            old_event.set()
+            print(f"🚫 Pending send cancelled for {sender} — will be handled in next batch")
+
     with _pending_batch_lock:
         if sender not in _pending_batches:
             _pending_batches[sender] = []
@@ -1623,8 +1658,15 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         print("Assistant reply saved to conversation history")
 
         delay = get_random_delay()
+        cancel_event = threading.Event()
+        with _pending_send_lock:
+            _pending_send_events[sender] = cancel_event
         print(f"Random delay: {delay // 60} minute(s)")
-        threading.Thread(target=delayed_response, args=(sender, reply, delay, message_id), daemon=True).start()
+        threading.Thread(
+            target=delayed_response,
+            args=(sender, reply, delay, message_id, cancel_event),
+            daemon=True,
+        ).start()
         print(f"Response scheduled for {delay // 60} minute(s) from now")
 
     except Exception as e:
