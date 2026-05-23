@@ -60,6 +60,13 @@ _text_dedupe_lock = threading.Lock()
 _recent_text_events: dict = {}  # key=(sender, normalized_text) -> monotonic timestamp
 TEXT_DEDUPE_WINDOW_SECONDS = 20
 
+# Message batch accumulator — collects messages sent by the same customer within a short
+# window so that a single combined reply addresses all of them at once.
+_pending_batches: dict = {}         # sender -> list of (message_body, message_id)
+_pending_batch_timers: dict = {}    # sender -> threading.Timer
+_pending_batch_lock = threading.Lock()
+MESSAGE_BATCH_WINDOW_SECONDS = 45   # wait this long after the LAST message before generating a reply
+
 # DeepSeek client for translation (optional)
 _DEEPSEEK_KEY = os.environ.get('DEEPSEEK_API_KEY')
 _deepseek = (
@@ -1316,15 +1323,73 @@ def handle_text_message(sender, text_data, message_id=None):
         if new_status != previous_status and new_status in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
             notify_admin_of_priority_lead(appointment, sender)
 
+        # Queue the message — if another arrives within MESSAGE_BATCH_WINDOW_SECONDS the
+        # timer resets, and one combined reply handles both concerns together.
+        _enqueue_for_response(sender, message_body, message_id)
+
+    except Exception as e:
+        print(f"Error handling text: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+
+def _enqueue_for_response(sender: str, message_body: str, message_id):
+    """Add message to the per-sender batch queue and reset the debounce timer."""
+    with _pending_batch_lock:
+        if sender not in _pending_batches:
+            _pending_batches[sender] = []
+        _pending_batches[sender].append((message_body, message_id))
+        count = len(_pending_batches[sender])
+
+        existing = _pending_batch_timers.pop(sender, None)
+        if existing is not None:
+            existing.cancel()
+            print(f"🔄 Batch timer reset for {sender} — {count} message(s) pending")
+        else:
+            print(f"⏳ Batch timer started for {sender} ({MESSAGE_BATCH_WINDOW_SECONDS}s)")
+
+        timer = threading.Timer(MESSAGE_BATCH_WINDOW_SECONDS, _flush_text_batch, args=(sender,))
+        timer.daemon = True
+        _pending_batch_timers[sender] = timer
+        timer.start()
+
+
+def _flush_text_batch(sender: str):
+    """Timer callback — drain the queue and generate one reply covering all messages."""
+    with _pending_batch_lock:
+        batch = _pending_batches.pop(sender, [])
+        _pending_batch_timers.pop(sender, None)
+
+    if not batch:
+        return
+
+    messages = [body for body, _ in batch]
+    last_message_id = batch[-1][1]
+
+    if len(messages) == 1:
+        combined = messages[0]
+        print(f"📤 Batch flush: 1 message for {sender}")
+    else:
+        combined = "\n".join(messages)
+        print(f"📦 Batch flush: {len(messages)} messages combined for {sender} → '{combined[:120]}'")
+
+    _generate_and_schedule_reply(sender, combined, last_message_id)
+
+
+def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None):
+    """Generate a bot reply for message_body and schedule it with a 1-5 min send delay."""
+    try:
+        phone_number = f"whatsapp:+{sender}"
+        appointment = Appointment.objects.filter(phone_number=phone_number).first()
+        if not appointment:
+            return
+
         if appointment.chatbot_paused:
             print(f"Chatbot paused for {phone_number}; skipping auto response.")
             return
 
         if appointment.status == 'confirmed' and is_post_booking_ack_message(message_body):
-            print(
-                f"Post-booking ack detected; no reply sent. "
-                f"sender={sender}, message='{message_body}'"
-            )
+            print(f"Post-booking ack detected; no reply sent. sender={sender}, message='{message_body}'")
             return
 
         from .views import Plumbot
@@ -1333,9 +1398,6 @@ def handle_text_message(sender, text_data, message_id=None):
         reply = None
 
         # ── FAQ LAYER ─────────────────────────────────────────────────────────
-        # Handles common factual questions (location, hours, contact, services,
-        # payment) with a hardcoded answer before any DeepSeek call is made.
-        # Deterministic, zero latency, never fails.
         from bot.faq import lookup_faq
         _faq_reply = lookup_faq(message_body)
         if _faq_reply is not None:
@@ -1347,11 +1409,8 @@ def handle_text_message(sender, text_data, message_id=None):
                 daemon=True,
             ).start()
             return
-        # ─────────────────────────────────────────────────────────────────────
 
         # ── UNIFIED PRE-CLASSIFIER ────────────────────────────────────────────
-        # One DeepSeek call replaces: detect_service_inquiry, handle_out_of_scope,
-        # detect_repeated_question pre-classifier, photo request check, plan-later check.
         from bot.unified_classifier import (
             unified_classify,
             uc_intent, uc_confidence, uc_product_intent,
@@ -1366,7 +1425,6 @@ def handle_text_message(sender, text_data, message_id=None):
             today_date=_tz.now().strftime('%Y-%m-%d'),
         )
         _quick_service_check = uc_as_service_inquiry(_uclass)
-        # ─────────────────────────────────────────────────────────────────────
 
         _is_clear_product_inquiry = (
             _quick_service_check.get('intent') not in ('none', 'pictures') and
@@ -1378,7 +1436,7 @@ def handle_text_message(sender, text_data, message_id=None):
         )
         _has_pricing_signal = any(p in message_body.lower() for p in _pricing_signals)
 
-        # -- STEP 1: Previous work photo request (uses unified result) --------
+        # -- STEP 1: Previous work photo request --------------------------------
         print(f"Checking photo request: '{message_body}'")
         if uc_is_photo_request(_uclass) and not _is_clear_product_inquiry and not _has_pricing_signal:
             print("Photo request detected")
@@ -1394,9 +1452,8 @@ def handle_text_message(sender, text_data, message_id=None):
             threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), daemon=True).start()
             return
 
-        # -- STEP 1b: Out-of-scope / delay / complaint (uses unified result) --
+        # -- STEP 1b: Out-of-scope / delay / complaint --------------------------
         from .out_of_scope_handler import handle_out_of_scope
-
         oos_reply = handle_out_of_scope(
             message_body, appointment,
             precomputed=uc_as_oos_classification(_uclass),
@@ -1412,11 +1469,7 @@ def handle_text_message(sender, text_data, message_id=None):
             ).start()
             return
 
-        # -- STEP 2: Service-specific pricing inquiry -------------------------
-        # Block service inquiry responses once:
-        #   (a) we are mid-conversation (collecting booking details), OR
-        #   (b) ANY pricing has already been sent (overview or specific intent), OR
-        #   (c) the specific intent was already sent to this lead.
+        # -- STEP 2: Service-specific pricing inquiry ---------------------------
         any_pricing_sent = (
             getattr(appointment, 'pricing_overview_sent', False) or
             bool(appointment.sent_pricing_intents) or
@@ -1458,13 +1511,10 @@ def handle_text_message(sender, text_data, message_id=None):
         intent = inquiry.get('intent')
         price_requested = _explicitly_requests_price(message_body)
 
-        # Specific product intents bypass the mid-conversation gate entirely —
-        # the customer asked about a specific item so always give the price.
         _is_specific_product_inquiry = (
             intent in PRICING_AUTO_REPLY_INTENTS and
             inquiry.get('confidence') == 'HIGH'
         )
-
         should_bypass_mid_conversation_gate = (
             intent in NON_PRICING_AUTO_REPLY_INTENTS or
             price_requested or
@@ -1479,10 +1529,7 @@ def handle_text_message(sender, text_data, message_id=None):
             if (intent not in NON_PRICING_AUTO_REPLY_INTENTS and
                     intent not in PRICING_AUTO_REPLY_INTENTS and
                     not price_requested):
-                print(
-                    f"Skipping priced service inquiry for intent: {intent} "
-                    f"- no explicit price request"
-                )
+                print(f"Skipping priced service inquiry for intent: {intent} - no explicit price request")
             else:
                 already_sent = _has_sent_pricing_for_intent(appointment, intent)
                 if already_sent and intent != 'combined_pricing':
@@ -1495,16 +1542,12 @@ def handle_text_message(sender, text_data, message_id=None):
                         print(f"Re-sending combined pricing reply for: {intent}")
                     reply = plumbot.handle_service_inquiry(intent, message_body)
 
-        # -- STEP 3: Full pricing overview ------------------------------------
-        # FIX 2: _is_genuine_pricing_question now also blocks if any specific
-        # intent was already sent.
+        # -- STEP 3: Full pricing overview --------------------------------------
         if reply is None:
             objection_type = detect_objection_type(message_body)
             print(f"Objection type: {objection_type}")
 
             if objection_type == 'pricing':
-                # Context-aware price: if a specific item was discussed recently,
-                # price that item regardless of whether an overview was already sent.
                 _ITEM_CONTEXT = {
                     'vanity':   'vanity',
                     'geyser':   'geyser',
@@ -1539,19 +1582,14 @@ def handle_text_message(sender, text_data, message_id=None):
                     f"{plumbot._get_pricing_followup_prompt('english')}"
                 )
 
-        # -- STEP 3b: Repeated-question detection -----------------------------
-        # Only run the full detector when the unified classifier flagged a repeat.
-        # This eliminates the pre-classifier API call entirely.
+        # -- STEP 3b: Repeated-question detection ------------------------------
         if reply is None and uc_is_repeat(_uclass):
             repeat_info = detect_repeated_question(
                 message_body,
                 appointment.conversation_history or [],
             )
             if repeat_info:
-                print(
-                    f"?? Repeated question detected — matched: "
-                    f"'{repeat_info['matched_question'][:60]}'"
-                )
+                print(f"Repeated question detected — matched: '{repeat_info['matched_question'][:60]}'")
                 lang = detect_language_simple(message_body)
                 plumber_contact = (
                     getattr(appointment, 'plumber_contact_number', None)
@@ -1564,8 +1602,8 @@ def handle_text_message(sender, text_data, message_id=None):
                     plumber_number=plumber_contact,
                     language_hint=lang,
                 )
- 
-        # -- STEP 4: Normal Plumbot processing --------------------------------
+
+        # -- STEP 4: Normal Plumbot processing ---------------------------------
         if reply is None:
             print("Running normal Plumbot processing")
             reply = plumbot.generate_response(
@@ -1573,13 +1611,9 @@ def handle_text_message(sender, text_data, message_id=None):
                 precomputed_service_inquiry=inquiry,
                 precomputed_classification=_uclass,
             )
-            
-        # -- STEP 4: Normal Plumbot processing --------------------------------
-        
 
-        # -- generate_response returns None when conversation is complete ----------
         if reply is None:
-            print("?? Conversation complete — no reply sent")
+            print("🔇 Conversation complete — no reply sent")
             return
 
         appointment.add_conversation_message("assistant", reply)
@@ -1594,7 +1628,7 @@ def handle_text_message(sender, text_data, message_id=None):
         print(f"Response scheduled for {delay // 60} minute(s) from now")
 
     except Exception as e:
-        print(f"Error handling text: {str(e)}")
+        print(f"Error generating reply: {str(e)}")
         import traceback
         traceback.print_exc()
 
