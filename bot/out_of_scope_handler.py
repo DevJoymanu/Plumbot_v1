@@ -327,7 +327,7 @@ JSON FORMAT:
                 {"role": "user",   "content": prompt},
             ],
             temperature=0.1,
-            max_tokens=80,
+            max_tokens=150,
             json_response=True,
         )
         result = _json.loads(raw)
@@ -669,6 +669,11 @@ def _compute_followup_date(timeframe_message: str):
         """Clamp day to the last valid day of the month and return a date."""
         return _date(year, month, min(day, _cal.monthrange(year, month)[1]))
 
+    # ── 0. Tomorrow / mangwana ────────────────────────────────────────────────
+    if re.search(r'\btomorrow\b|\bmangwana\b', msg, re.IGNORECASE):
+        target = today + timedelta(days=1)
+        return target.isoformat(), target.strftime('%A %d %B')
+
     # ── 1. Specific weekday ("on a Tuesday", "next Friday") ──────────────────
     weekday_info = _extract_future_weekday(timeframe_message)
     if weekday_info:
@@ -800,6 +805,8 @@ _TIMEFRAME_RE = re.compile(
     r'|in\s+a\s+month'                  # "in a month"
     r'|in\s+two\s+weeks'                # "in two weeks"
     r'|fortnight'                       # "fortnight"
+    r'|tomorrow'                        # "tomorrow", "call you tomorrow"
+    r'|mangwana'                        # Shona: tomorrow
     r'|svondo\s+rinouya'                # Shona: next week
     r'|mwedzi\s+unotevera',             # Shona: next month
     re.IGNORECASE,
