@@ -594,18 +594,9 @@ class ResponseMixin:
                         self.appointment.add_conversation_message("assistant", reply)
                         print(f"📅 Delay date correction — re-entering delay flow: '{incoming_message[:60]}'")
                         return reply
-                    # If the delay flow has a pending step (step 2/3/4), the customer
-                    # is still in the flow — don't clear the signal yet. Let the OOS
-                    # handler process the step and re-write is_delayed itself.
-                    from bot.out_of_scope_handler import _read_pending
-                    _pending = _read_pending(self.appointment)
-                    if _pending and _pending.get('category', '').startswith('delay'):
-                        print(f"🔄 Delay flow pending ({_pending['category']}) — routing to OOS handler without clearing signal")
-                        # Fall through to OOS handler below without clearing
-                    else:
-                        from bot.whatsapp_webhook import _clear_delay_signal_if_present
-                        _clear_delay_signal_if_present(self.appointment)
-                        print(f"▶️ Delay signal cleared — customer re-engaged: '{incoming_message[:60]}'")
+                    from bot.whatsapp_webhook import _clear_delay_signal_if_present
+                    _clear_delay_signal_if_present(self.appointment)
+                    print(f"▶️ Delay signal cleared — customer re-engaged: '{incoming_message[:60]}'")
                     # Fall through to normal processing
 
                 # ── FIRST-TIME DELAY / EXIT SIGNAL ───────────────────────────────────
