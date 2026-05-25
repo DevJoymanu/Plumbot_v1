@@ -571,6 +571,24 @@ class ResponseMixin:
                 # Acks ("ok", "sharp", 👍) → save silently, no reply.
                 # Substantive message → clear flag, fall through to normal processing.
                 if self._delay_signal_active():
+                    # When the appointment is already marked delayed, obvious acks
+                    # ("ok", "thanks", "👍", etc.) should always be suppressed without
+                    # a DeepSeek call. is_delayed=True is all the context we need.
+                    _obvious_acks = {
+                        'ok', 'okay', 'k', 'kk', 'oky', 'oh ok', 'oh okay', 'ooh ok',
+                        'ooh okay', 'sharp', 'shap', 'sho', 'cool', 'nice', 'noted',
+                        'got it', 'alright', 'great', 'good', 'fine', 'sure', 'yes',
+                        'yep', 'yeah', 'yup', 'no', 'nope', 'nah', 'ok thanks',
+                        'ok thank you', 'thanks', 'thank you', 'thank u', 'thx', 'thnx',
+                        'understood', 'i see', 'ah ok', 'ah okay', 'oh ok thanks',
+                        'oh okay thanks', 'ok cool', 'ok bye', 'okay bye', 'bye',
+                        'no worries', '👍', '🙏', '✅', '😊', 'bo', 'bho',
+                        'hongu', 'zvakanaka', 'maita basa', 'ndatenda',
+                    }
+                    if (incoming_message or '').strip().lower() in _obvious_acks:
+                        self.appointment.add_conversation_message("user", incoming_message)
+                        print(f"🔇 Delay active — ack suppressed without DeepSeek: '{incoming_message[:60]}'")
+                        return None
                     if self._is_delay_or_exit_signal(incoming_message):
                         self.appointment.add_conversation_message("user", incoming_message)
                         print(f"🔇 Delay signal active — ack suppressed: '{incoming_message[:60]}'")
