@@ -37,8 +37,6 @@ import pytz
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from openai import OpenAI
-
 logger = logging.getLogger(__name__)
 
 _SAST        = pytz.timezone("Africa/Johannesburg")
@@ -47,15 +45,6 @@ _EMAIL_FROM  = os.environ.get("IMAP_EMAIL", "")
 _IMAP_HOST   = os.environ.get("IMAP_HOST", "imap.gmail.com")
 _IMAP_PORT   = int(os.environ.get("IMAP_PORT", 993))
 _IMAP_PASS   = os.environ.get("IMAP_PASSWORD", "")
-
-_deepseek = (
-    OpenAI(
-        api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-        base_url="https://api.deepseek.com/v1",
-    )
-    if os.environ.get("DEEPSEEK_API_KEY")
-    else None
-)
 
 
 # ── IMAP helpers ──────────────────────────────────────────────────────────────
@@ -169,9 +158,9 @@ Respond with ONLY valid JSON:
 
 
 def _classify_intent(body: str, appointment=None) -> dict:
-    """Use DeepSeek to classify the email intent."""
-    if not _deepseek:
-        return {"intent": "other", "date": None}
+    """Classify email intent using DeepSeek."""
+    from bot.services.clients import deepseek_call
+    import json
 
     apt_context = ""
     if appointment and appointment.scheduled_datetime:
@@ -179,17 +168,15 @@ def _classify_intent(body: str, appointment=None) -> dict:
         apt_context = f"\nExisting appointment: {dt.strftime('%A %d %B %Y at %H:%M')}"
 
     try:
-        resp = _deepseek.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        raw = deepseek_call(
             messages=[
                 {"role": "system", "content": _INTENT_SYSTEM},
                 {"role": "user",   "content": f"{apt_context}\n\nCustomer email:\n{body[:800]}"},
             ],
             temperature=0.0,
-            max_tokens=80,
+            max_tokens=120,
+            json_response=True,
         )
-        import json
-        raw = resp.choices[0].message.content.strip()
         return json.loads(raw)
     except Exception as e:
         logger.warning("Intent classification failed: %s", e)
@@ -238,9 +225,8 @@ def _send_reply(apt, subject, html_body):
 # ── AI reply generator ────────────────────────────────────────────────────────
 
 def _generate_email_reply(body: str, apt=None) -> str:
-    """Use DeepSeek to answer a customer email query directly."""
-    if not _deepseek:
-        return "Thank you for your message. We will be in touch shortly via WhatsApp."
+    """Generate a helpful email reply using DeepSeek."""
+    from bot.services.clients import deepseek_call
 
     service = (getattr(apt, "project_type", "") or "").replace("_", " ").title()
     area    = getattr(apt, "customer_area", "") or ""
@@ -264,8 +250,7 @@ def _generate_email_reply(body: str, apt=None) -> str:
         system += f" Customer area: {area}."
 
     try:
-        resp = _deepseek.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        reply = deepseek_call(
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user",   "content": body[:600]},
@@ -273,8 +258,7 @@ def _generate_email_reply(body: str, apt=None) -> str:
             temperature=0.3,
             max_tokens=150,
         )
-        reply = resp.choices[0].message.content.strip()
-        return reply if reply else "Thank you for your message. We will be in touch shortly via WhatsApp."
+        return reply
     except Exception as e:
         logger.warning("Email reply generation failed: %s", e)
         return "Thank you for your message. We will be in touch shortly via WhatsApp."

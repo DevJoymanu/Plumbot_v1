@@ -550,13 +550,26 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
         )
 
         pdf = generate_portfolio_pdf()
-        ok  = _send(
+        if pdf is None:
+            # Retry once — PDF generation can fail transiently on first run
+            logger.warning("generate_portfolio_pdf returned None for apt %s — retrying", apt.pk)
+            pdf = generate_portfolio_pdf()
+
+        if pdf is None:
+            logger.error(
+                "Portfolio PDF could not be generated for apt %s — email NOT sent", apt.pk
+            )
+            return False
+
+        ok = _send(
             apt, subject, html,
             attachment=pdf,
             attachment_name="HomeBase_Plumbers_Portfolio.pdf",
         )
         if ok:
-            logger.info("Delay quote email sent — apt %s", apt.pk)
+            logger.info("Delay quote email sent with PDF — apt %s", apt.pk)
+        else:
+            logger.error("Delay quote email FAILED to send — apt %s", apt.pk)
         return ok
     except Exception:
         logger.exception("send_delay_quote_email failed — apt %s", apt.pk)

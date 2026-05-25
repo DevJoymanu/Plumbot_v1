@@ -693,7 +693,7 @@ class ResponseMixin:
                         )
                     )
                 )
-                if not mid_conversation:
+                if not mid_conversation and current_question != 'project_description':
                     inquiry = precomputed_service_inquiry or self.detect_service_inquiry(incoming_message)
                     PRODUCT_INTENTS = {
                         'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',

@@ -21,7 +21,7 @@ from ...models import (
     QuotationTemplate, QuotationTemplateItem, ConversationMessage,
 )
 from ...services.clients import (
-    twilio_client, deepseek_client, gemini_client,
+    twilio_client, deepseek_client,
     TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
     DEEPSEEK_API_KEY,
 )
@@ -284,8 +284,8 @@ class ExtractionMixin:
                 Extract from: "{message}"
                 """
             
-                _extraction_client = gemini_client or deepseek_client
-                _extraction_model  = "gemini-1.5-flash" if gemini_client else settings.DEEPSEEK_MODEL
+                _extraction_client = deepseek_client
+                _extraction_model  = settings.DEEPSEEK_MODEL
                 response = _extraction_client.chat.completions.create(
                     model=_extraction_model,
                     messages=[
@@ -299,7 +299,7 @@ class ExtractionMixin:
 
                 ai_response = response.choices[0].message.content.strip()
 
-                # If Gemini returned empty despite response_format, retry once
+                # If DeepSeek returned empty despite response_format, retry once
                 if not ai_response:
                     import time as _time
                     _time.sleep(0.5)

@@ -20,13 +20,11 @@ import json
 import logging
 from typing import Optional
 from django.conf import settings
-from bot.services.clients import gemini_client, deepseek_client as _deepseek_fallback
+from bot.services.clients import deepseek_client as _classifier
 
 logger = logging.getLogger(__name__)
 
-# Use Gemini for classification; fall back to DeepSeek if Gemini not configured.
-_classifier = gemini_client or _deepseek_fallback
-_classifier_model = "gemini-1.5-flash" if gemini_client else getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-chat')
+_classifier_model = getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-chat')
 
 PLUMBER_NUMBER_FALLBACK = '+263774819901'
 

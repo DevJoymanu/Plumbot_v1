@@ -125,7 +125,7 @@ def _deepseek_rescue(
 ) -> dict | None:
     """DeepSeek-powered rescue for inputs that keyword matching couldn't handle."""
     try:
-        from bot.services.clients import gemini_call as deepseek_call
+        from bot.services.clients import deepseek_call
     except ImportError:
         return None
 

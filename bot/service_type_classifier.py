@@ -254,11 +254,11 @@ def _keyword_match(message: str) -> str | None:
 
 def _deepseek_classify(message: str) -> str | None:
     """
-    Ask Gemini (or DeepSeek fallback) to classify the message.
+    Ask DeepSeek to classify the message.
     Returns one of the three service type strings, or None if unclassifiable.
     Only called when keyword matching yields no result.
     """
-    from bot.services.clients import gemini_call
+    from bot.services.clients import deepseek_call
 
     prompt = f"""You are a classification assistant for a plumbing company in Zimbabwe called Homebase Plumbers.
 
@@ -287,7 +287,7 @@ INSTRUCTIONS:
 - Do NOT add any explanation, punctuation, or extra words."""
 
     try:
-        raw = gemini_call(
+        raw = deepseek_call(
             messages=[
                 {
                     'role': 'system',
