@@ -16,7 +16,6 @@ from django.utils import timezone
 from datetime import timedelta
 from bot.models import Appointment, LeadStatus
 from bot.whatsapp_cloud_api import whatsapp_api
-from openai import OpenAI
 import os
 import re
 import logging
@@ -25,10 +24,6 @@ import pytz
 logger = logging.getLogger(__name__)
 
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
-deepseek_client = (
-    OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com/v1")
-    if DEEPSEEK_API_KEY else None
-)
 
 SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
@@ -604,7 +599,7 @@ class Command(BaseCommand):
 
     def _generate_message(self, lead, next_question, attempt):
         last_question = self._last_bot_question(lead)
-        if deepseek_client:
+        if DEEPSEEK_API_KEY:
             try:
                 return self._ai_message(lead, next_question, attempt, last_question)
             except Exception as exc:
@@ -715,8 +710,8 @@ RULES — every single one must be followed:
 
 Output ONLY the message text. No labels, no quotes around it, no explanation."""
 
-        response = deepseek_client.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL,
+        from bot.services.clients import deepseek_call
+        raw = deepseek_call(
             messages=[
                 {
                     'role': 'system',
@@ -732,8 +727,16 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             max_tokens=300,
         )
 
-        message = response.choices[0].message.content.strip()
-        message = message.replace('**', '').replace('__', '')
+        message = raw.strip().replace('**', '').replace('__', '')
+
+        # Guard: if DeepSeek returned something too short to be a real follow-up,
+        # fall back to the template so we never send a bare "Hi" or empty string.
+        if len(message) < 20:
+            logger.warning(
+                f'AI follow-up too short ({len(message)} chars) for lead {lead.id} '
+                f'— falling back to template'
+            )
+            return self._template_message(lead, next_question, attempt)
 
         logger.info(
             f'AI follow-up | lead={lead.id} attempt={attempt} '
