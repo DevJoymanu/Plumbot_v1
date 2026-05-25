@@ -302,7 +302,7 @@ class BookingMixin:
             sa_tz = _pytz.timezone('Africa/Johannesburg')
             date_obj = self._get_selected_local_date()
             if not date_obj:
-                return "What time works best for you — morning or afternoon?"
+                return "What time works best for you — 9am or 2pm?"
     
             # Try 12:00 first, then 13, 14, 15, 16
             for h in [12, 13, 14, 15, 16]:
@@ -324,7 +324,7 @@ class BookingMixin:
             # No slot found — ask them to pick a time
             return (
                 "We're quite booked that day from noon onwards. "
-                "What time works best for you — morning or afternoon?"
+                "What time works best for you — 9am or 2pm?"
             )
 
 

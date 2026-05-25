@@ -1248,7 +1248,7 @@ class ResponseMixin:
                         f"Perfect, for {day_label} — "
                         f"what works better: {time_a} or {time_b}?"
                     )
-                return "What time works best for you — morning or afternoon?"
+                return "What time works best for you — 9am or 2pm?"
 
             if next_question == "area":
                 return "All good, what area are you in?"
@@ -2843,7 +2843,7 @@ class ResponseMixin:
                                 f"Perfect, for {day_label} — "
                                 f"what works better: {time_a} or {time_b}?"
                             )
-                        return "What time works best for you — morning or afternoon?"
+                        return "What time works best for you — 9am or 2pm?"
 
                     if next_question == "area":
                         return "All good, what area are you in?"

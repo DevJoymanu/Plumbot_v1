@@ -273,6 +273,9 @@ Reply rules:
 - Keep replies concise — 2 to 5 sentences for most messages
 - Use presumptive framing — offer choices, not yes/no questions
 - Never repitch the site visit to a customer who has already agreed to one
+- When offering time slots, always use specific times — "9am or 2pm" not "morning or afternoon"
+- Never ask for a property address — ask for area or neighbourhood instead (e.g. "Which area are you in?")
+- If the customer volunteers their full address without being asked, accept it naturally and move on — never ask for it
 - Sign every reply exactly as: Takudzwa\\nHomeBase Plumbers"""
 
 
