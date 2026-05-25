@@ -1,5 +1,6 @@
 import base64
 import logging
+from email.utils import parseaddr
 
 import requests
 from django.conf import settings
@@ -25,6 +26,7 @@ def get_plumber_notification_emails():
 def send_email_to_recipients(
     recipients, subject, message, *, dry_run=False,
     html_message=None, attachment=None, attachment_name="attachment.pdf",
+    from_name=None, message_id=None,
 ):
     """
     Send email to an explicit list of recipients.
@@ -46,12 +48,18 @@ def send_email_to_recipients(
         return _send_via_sendgrid(
             sendgrid_api_key, recipients, subject, message,
             html_message=html_message, attachment=attachment,
-            attachment_name=attachment_name,
+            attachment_name=attachment_name, from_name=from_name,
+            message_id=message_id,
         )
 
     try:
         from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
+        if from_name:
+            _, addr = parseaddr(from_email or "")
+            from_email = f"{from_name} <{addr}>" if addr else from_email
         msg = EmailMultiAlternatives(subject, message, from_email, recipients)
+        if message_id:
+            msg.extra_headers["Message-ID"] = message_id
         if html_message:
             msg.attach_alternative(html_message, "text/html")
         if attachment:
@@ -104,7 +112,8 @@ def send_plumber_notification_email(subject, message, *, dry_run=False, html_mes
 
 def _send_via_sendgrid(
     api_key, recipients, subject, message, html_message=None,
-    attachment=None, attachment_name="attachment.pdf",
+    attachment=None, attachment_name="attachment.pdf", from_name=None,
+    message_id=None,
 ):
     content = []
     if message:
@@ -114,19 +123,29 @@ def _send_via_sendgrid(
     if not content:
         content = [{"type": "text/plain", "value": "(no content)"}]
 
+    from_raw = (
+        getattr(settings, "SENDGRID_FROM_EMAIL", None)
+        or getattr(settings, "DEFAULT_FROM_EMAIL", None)
+        or ""
+    )
+    parsed_name, parsed_email = parseaddr(from_raw)
+    sender = {"email": parsed_email or from_raw}
+    display_name = from_name or parsed_name or None
+    if display_name:
+        sender["name"] = display_name
+
     payload = {
         "personalizations": [
             {
                 "to": [{"email": email} for email in recipients],
             }
         ],
-        "from": {
-            "email": getattr(settings, "SENDGRID_FROM_EMAIL", None)
-            or getattr(settings, "DEFAULT_FROM_EMAIL", None),
-        },
+        "from": sender,
         "subject": subject,
         "content": content,
     }
+    if message_id:
+        payload["headers"] = {"Message-ID": message_id}
 
     if attachment:
         payload["attachments"] = [{

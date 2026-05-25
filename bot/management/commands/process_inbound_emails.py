@@ -17,14 +17,18 @@ Required environment variables:
 Flow per incoming email:
   1. Parse subject for [APT-XXX] → match Appointment in DB
   2. Strip quoted text → extract new customer message only
-  3. DeepSeek classifies intent: reschedule / book / cancel / confirm / query / other
-  4. Handle intent — update DB, send reply email, notify plumber if needed
-  5. Mark email as read (\\Seen)
+  3. DeepSeek classifies structural intent (reschedule / cancel / book / confirm / other)
+  4. Apply DB changes for structural intents (reschedule datetime, cancel status)
+  5. Generate a full Plumbot-style reply using the same Hormozi framework as WhatsApp
+  6. Append both messages to appointment.conversation_history
+  7. Send HTML reply email with contact buttons
+  8. Mark email as read (\\Seen)
 
 New emails with no [APT-XXX] tag are logged and skipped (manual handling).
 """
 
 import email
+import html as _html
 import imaplib
 import logging
 import os
@@ -92,7 +96,20 @@ def _decode_header_value(value):
     return "".join(decoded)
 
 
-def _extract_apt_id(subject: str):
+def _extract_apt_id(subject: str, msg=None):
+    """
+    Extract appointment PK.
+    Primary:  In-Reply-To / References header — the APT ID is encoded in the
+              Message-ID we set when sending (e.g. <apt-375.1748123456@...>).
+    Fallback: [APT-XXX] tag in subject — for legacy emails sent before the
+              Message-ID approach was deployed.
+    """
+    if msg is not None:
+        for header in ("In-Reply-To", "References"):
+            val = msg.get(header, "") or ""
+            m = re.search(r'<apt-(\d+)\.', val, re.IGNORECASE)
+            if m:
+                return int(m.group(1))
     m = _APT_TAG_RE.search(subject or "")
     return int(m.group(1)) if m else None
 
@@ -222,164 +239,229 @@ def _send_reply(apt, subject, html_body):
     return _send(apt, subject, html)
 
 
-# ── AI reply generator ────────────────────────────────────────────────────────
+# ── Plumbot email engine ──────────────────────────────────────────────────────
 
-def _generate_email_reply(body: str, apt=None) -> str:
-    """Generate a helpful email reply using DeepSeek."""
+_EMAIL_PLUMBOT_SYSTEM = """You are Plumbot, the sales and scheduling assistant for HomeBase Plumbers in Harare, Zimbabwe. You are communicating via EMAIL — write in clean, professional email style. No markdown, no asterisks, no emojis.
+
+Before every reply, reason through these steps internally:
+1. Intent — What is the customer asking or signalling? Look beyond the literal words.
+2. Stage — Which qualification stage are they in: value, price, qualification, or close?
+3. History — What has already been discussed? Never repeat a question already answered.
+4. Commitment signals — Are they ready to book? If yes, move to close immediately.
+5. Exit signals — Are they stepping back? Acknowledge warmly and leave the door open.
+
+Qualification framework (Hormozi order):
+- Value: lead with what we offer and why it matters
+- Price: be upfront about costs before deep qualification
+- Qualification: service type, project detail, area, preferred timing
+- Close: offer the free on-site assessment as a presumptive close
+
+Pricing reference (starting rates, USD):
+- Full bathroom renovation: from US$600 (supply and labour)
+- Toilet: supply from US$50 + install from US$20
+- Shower cubicle: supply from US$130 + install from US$40
+- Vanity unit: supply from US$150 + install from US$30
+- Geyser supply and install: from US$160
+- Full geyser replacement: US$350
+- Drain unblocking: from US$20
+- Burst pipe repair: from US$40
+Free on-site assessment available — no obligation.
+Hours: Sunday to Friday, 08:00 to 18:00. Based in Hatfield, Harare.
+
+Reply rules:
+- Write in the same language the customer used (English or Shona)
+- Keep replies concise — 2 to 5 sentences for most messages
+- Use presumptive framing — offer choices, not yes/no questions
+- Never repitch the site visit to a customer who has already agreed to one
+- Sign every reply exactly as: Takudzwa\\nHomeBase Plumbers"""
+
+
+def _text_to_html(text: str) -> str:
+    """Convert plain-text paragraphs to email-safe HTML."""
+    paragraphs = text.strip().split("\n\n")
+    parts = []
+    for para in paragraphs:
+        para = para.strip()
+        if para:
+            escaped = _html.escape(para).replace("\n", "<br>")
+            parts.append(f'<p style="margin:0 0 14px;">{escaped}</p>')
+    return "\n".join(parts)
+
+
+def _build_email_html(reply_text: str, apt=None) -> str:
+    """Wrap AI plain-text reply in email HTML with contact buttons."""
+    from bot.customer_emails import _contact_buttons, _call_phone
+
+    # Strip any WhatsApp markdown the AI may have included
+    clean = reply_text.strip()
+    for ch in ("**", "__", "*"):
+        clean = clean.replace(ch, "")
+
+    call = _call_phone(apt) if apt else "263774819901"
+    return _text_to_html(clean) + "\n" + _contact_buttons(call)
+
+
+def _reply_subject(apt, intent: str) -> str:
+    """Build a personal reply subject line (APT tag appended by _send)."""
+    name = getattr(apt, "customer_name", "") or ""
+    svc  = (getattr(apt, "project_type", "") or "").replace("_", " ").title()
+    suffix = f", {name}" if name else ""
+    if intent == "reschedule":
+        return f"Re: Your reschedule request{suffix}"
+    if intent == "cancel":
+        return f"Re: Cancellation confirmed{suffix}"
+    if svc:
+        return f"Re: {svc}{suffix}"
+    return f"Re: Your message{suffix}"
+
+
+_SIGNATURE_LINES = frozenset({
+    "takudzwa", "takudzwa,", "homebase plumbers", "homebase plumbers.",
+    "homebase plumbers,", "takudzwa | homebase plumbers",
+})
+
+_PRICING_KEYWORDS = ("us$", "usd", "supply", "install", "from us", "free assessment", "site visit")
+
+# Maps intent strings (used by WhatsApp bot) to keywords that indicate pricing
+# was discussed in the email reply for that specific product.
+# Order matters: more specific entries must come before broader ones (e.g.
+# standalone_tub before tub_sales so "freestanding tub" doesn't only hit tub_sales).
+_PRICED_INTENT_KEYWORDS = [
+    ("standalone_tub",   ("freestanding", "free-standing", "free standing", "standalone")),
+    ("tub_sales",        ("bathtub", "standard tub", " tub ")),
+    ("geyser_repair",    ("geyser repair",)),
+    ("geyser",           ("geyser",)),
+    ("shower_cubicle",   ("shower cubicle",)),
+    ("vanity",           ("vanity", "vanities")),
+    ("toilet_repair",    ("toilet repair",)),
+    ("toilet",           ("toilet",)),
+    ("chamber",          ("side chamber", " chamber")),
+    ("drain_unblocking", ("drain unblock", "unblocking", "blocked drain")),
+    ("pipe_repair",      ("pipe repair", "burst pipe", "leaking pipe")),
+]
+
+
+def _detect_priced_intents(reply_text: str) -> list[str]:
+    """
+    Return a list of pricing intent strings covered in this email reply.
+    Only marks an intent if the reply contains BOTH a price figure (US$ / USD)
+    AND a product keyword — so a general question reply without prices is ignored.
+    """
+    low = reply_text.lower()
+    if "us$" not in low and "usd" not in low and "$" not in low:
+        return []
+    found = []
+    for intent, keywords in _PRICED_INTENT_KEYWORDS:
+        if any(kw in low for kw in keywords):
+            found.append(intent)
+    return found
+
+
+def _strip_signature_for_history(text: str) -> str:
+    """Remove email sign-off lines before saving to conversation_history."""
+    lines = text.strip().split("\n")
+    while lines and lines[-1].strip().lower() in _SIGNATURE_LINES:
+        lines.pop()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def _reply_discusses_pricing(reply_text: str) -> bool:
+    low = reply_text.lower()
+    return any(k in low for k in _PRICING_KEYWORDS)
+
+
+def _sync_state_after_email(apt, reply_text: str, dry_run: bool) -> None:
+    """
+    Keep WhatsApp-specific state flags in sync after an email exchange so the
+    WhatsApp bot does not repeat things already covered over email.
+
+    - Clears is_delayed: customer re-engaged, so they are no longer paused.
+    - Sets pricing_overview_sent: if reply contained any pricing.
+    - Updates sent_pricing_intents: records every specific product that was priced.
+    """
+    if dry_run:
+        return
+
+    dirty = []
+
+    if apt.is_delayed:
+        apt.clear_delayed(save=False)
+        dirty.append("is_delayed")
+
+    if _reply_discusses_pricing(reply_text):
+        if not apt.pricing_overview_sent:
+            apt.pricing_overview_sent = True
+            dirty.append("pricing_overview_sent")
+
+        priced = _detect_priced_intents(reply_text)
+        if priced:
+            current = list(apt.sent_pricing_intents or [])
+            new     = [i for i in priced if i not in current]
+            if new:
+                apt.sent_pricing_intents = current + new
+                dirty.append("sent_pricing_intents")
+
+    if dirty:
+        apt.save(update_fields=dirty)
+
+
+def _generate_plumbot_email_reply(
+    customer_message: str, apt=None, context_note: str = ""
+) -> str:
+    """
+    Generate a full Plumbot-style reply for an email using the Hormozi framework.
+    Passes the full conversation history to DeepSeek for context continuity.
+    context_note: system-side note about a DB action just taken (e.g. reschedule confirmed).
+    """
     from bot.services.clients import deepseek_call
 
     service = (getattr(apt, "project_type", "") or "").replace("_", " ").title()
     area    = getattr(apt, "customer_area", "") or ""
+    name    = getattr(apt, "customer_name", "") or ""
+    status  = getattr(apt, "status", "") or ""
 
-    system = (
-        "You are a customer support agent for HomeBase Plumbers in Harare, Zimbabwe. "
-        "The plumber's name is Takudzwa. "
-        "Answer the customer's email in 2-4 sentences — directly and helpfully. "
-        "Services: bathroom renovation, kitchen renovation, new plumbing installation, "
-        "drain unblocking, pipe repair, geyser repair, toilet repair. "
-        "Pricing: toilet from US$50 supply + US$20 install, shower cubicle US$130 + US$40 install, "
-        "geyser US$80 + US$80 install, full bathroom from US$600. Site assessment is free. "
-        "Hours: Sunday to Friday, 08:00 to 18:00. Based in Hatfield, Harare. "
-        "Never use 'our' — say 'we' or 'the team'. "
-        "Never use contractions — write 'we will' not 'we'll'. "
-        "Write professionally but warmly. No bullet points."
-    )
+    system = _EMAIL_PLUMBOT_SYSTEM
     if service:
-        system += f" Customer service interest: {service}."
+        system += f"\nCustomer service interest: {service}."
     if area:
-        system += f" Customer area: {area}."
+        system += f"\nCustomer area: {area}."
+    if name:
+        system += f"\nCustomer name: {name}."
+    if status == "confirmed":
+        system += "\nThis appointment is already confirmed."
+    if context_note:
+        system += f"\n[ACTION TAKEN: {context_note}]"
+
+    # Build message list from conversation history (last 14 messages for context)
+    history  = getattr(apt, "conversation_history", None) or []
+    messages = [{"role": "system", "content": system}]
+    for msg in history[-14:]:
+        role    = msg.get("role", "user")
+        content = (msg.get("content") or "").strip()
+        if content and not content.startswith("["):
+            messages.append({
+                "role": role if role in ("user", "assistant") else "user",
+                "content": content,
+            })
+    messages.append({"role": "user", "content": customer_message[:1000]})
 
     try:
         reply = deepseek_call(
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": body[:600]},
-            ],
-            temperature=0.3,
-            max_tokens=150,
+            messages=messages,
+            temperature=0.4,
+            max_tokens=350,
         )
-        return reply
+        return reply.strip()
     except Exception as e:
-        logger.warning("Email reply generation failed: %s", e)
-        return "Thank you for your message. We will be in touch shortly via WhatsApp."
-
-
-# ── Intent handlers ───────────────────────────────────────────────────────────
-
-def _handle_reschedule(apt, date_hint, body, dry_run, stdout):
-    """Customer wants to reschedule."""
-    dt   = _parse_date_hint(date_hint)
-    name = getattr(apt, "customer_name", "") or "there"
-
-    if dt:
-        if not dry_run:
-            apt.scheduled_datetime = dt
-            apt.save(update_fields=["scheduled_datetime"])
-
-        body_html = (
-            f'<p>Hi {name},</p>'
-            f'<p>Done! Your appointment has been rescheduled to '
-            f'<strong>{_fmt_dt(dt.astimezone(_SAST))}</strong>.</p>'
-            '<p>If you need to make any further changes, just reply to this email.</p>'
-            '<p><strong>HomeBase Plumbers</strong></p>'
+        logger.warning("Plumbot email reply generation failed: %s", e)
+        hi = f"Hi {name},\n\n" if name else ""
+        return (
+            f"{hi}Thank you for your message. "
+            "We will get back to you shortly.\n\n"
+            "Takudzwa\nHomeBase Plumbers"
         )
-        if not dry_run:
-            _send_reply(apt, f"✅ Appointment Rescheduled — {_fmt_dt(dt.astimezone(_SAST))}", body_html)
-        stdout(f"    ✅ Rescheduled apt #{apt.pk} → {dt}")
-    else:
-        body_html = (
-            f'<p>Hi {name},</p>'
-            '<p>Happy to reschedule for you! Could you let me know the specific '
-            '<strong>date and time</strong> that works best?</p>'
-            '<p>We are available Sunday to Friday, 08:00 to 18:00.</p>'
-            '<p><strong>HomeBase Plumbers</strong></p>'
-        )
-        if not dry_run:
-            _send_reply(apt, "Reschedule Request — What Date Works for You?", body_html)
-        stdout(f"    ℹ️  Reschedule — asked for specific date, apt #{apt.pk}")
-
-
-def _handle_book(apt, date_hint, body, dry_run, stdout):
-    """Customer (delayed lead) wants to book a new appointment."""
-    name = getattr(apt, "customer_name", "") or "there"
-    dt   = _parse_date_hint(date_hint)
-
-    if dt:
-        if not dry_run:
-            apt.scheduled_datetime = dt
-            apt.status             = "pending"
-            apt.save(update_fields=["scheduled_datetime", "status"])
-
-        body_html = (
-            f'<p>Hi {name},</p>'
-            f'<p>Great to hear from you! We have noted <strong>{_fmt_dt(dt.astimezone(_SAST))}</strong> '
-            'as your preferred slot. The team will confirm availability shortly.</p>'
-            '<p>If that date does not work, just reply with an alternative.</p>'
-            '<p><strong>HomeBase Plumbers</strong></p>'
-        )
-        if not dry_run:
-            _send_reply(apt, "Booking Request Received — We Will Confirm Shortly", body_html)
-        stdout(f"    ✅ Booking requested apt #{apt.pk} → {dt}")
-    else:
-        body_html = (
-            f'<p>Hi {name},</p>'
-            '<p>Wonderful — we would love to get you booked in!</p>'
-            '<p>Could you let me know your preferred <strong>date and time</strong>?</p>'
-            '<p>We are available Sunday to Friday, 08:00 to 18:00.</p>'
-            '<p><strong>HomeBase Plumbers</strong></p>'
-        )
-        if not dry_run:
-            _send_reply(apt, "Let Us Get You Booked — What Day Works?", body_html)
-        stdout(f"    ℹ️  Book request — asked for date, apt #{apt.pk}")
-
-
-def _handle_cancel(apt, body, dry_run, stdout):
-    """Customer wants to cancel."""
-    name = getattr(apt, "customer_name", "") or "there"
-    if not dry_run:
-        apt.status = "cancelled"
-        apt.save(update_fields=["status"])
-
-    body_html = (
-        f'<p>Hi {name},</p>'
-        '<p>Your appointment has been <strong>cancelled</strong>. '
-        'We are sorry to see you go!</p>'
-        '<p>Whenever you are ready to rebook, just reply to this email or '
-        'send us a WhatsApp message.</p>'
-        '<p><strong>HomeBase Plumbers</strong></p>'
-    )
-    if not dry_run:
-        _send_reply(apt, "Appointment Cancelled", body_html)
-    stdout(f"    ❌ Cancelled apt #{apt.pk}")
-
-
-def _handle_query(apt, body, dry_run, stdout):
-    """Customer has a question — answer directly with DeepSeek."""
-    name   = getattr(apt, "customer_name", "") or "there"
-    answer = _generate_email_reply(body, apt)
-    body_html = (
-        f'<p>Hi {name},</p>'
-        f'<p>{answer}</p>'
-        '<p>If you have any other questions, feel free to reply or WhatsApp us directly.</p>'
-        '<p><strong>HomeBase Plumbers</strong></p>'
-    )
-    if not dry_run:
-        _send_reply(apt, "Re: Your Enquiry — HomeBase Plumbers", body_html)
-    stdout(f"    ✅ Query answered directly for apt #{apt.pk}")
-
-
-def _handle_other(apt, body, dry_run, stdout):
-    """Unrecognised intent — generate a helpful reply directly."""
-    name   = getattr(apt, "customer_name", "") or "there"
-    answer = _generate_email_reply(body, apt)
-    body_html = (
-        f'<p>Hi {name},</p>'
-        f'<p>{answer}</p>'
-        '<p><strong>HomeBase Plumbers</strong></p>'
-    )
-    if not dry_run:
-        _send_reply(apt, "Re: Your Message — HomeBase Plumbers", body_html)
-    stdout(f"    ✅ Replied to unclassified email for apt #{apt.pk}")
 
 
 # ── Main command ──────────────────────────────────────────────────────────────
@@ -443,12 +525,12 @@ class Command(BaseCommand):
                 msg     = email.message_from_bytes(raw)
                 subject = _decode_header_value(msg.get("Subject", ""))
                 sender  = parseaddr(msg.get("From", ""))[1]
-                apt_id  = _extract_apt_id(subject)
+                apt_id  = _extract_apt_id(subject, msg)
 
                 out(f"\n  ─ From: {sender} | Subject: {subject[:70]}")
 
                 if not apt_id:
-                    out(f"    SKIP  No [APT-XXX] tag in subject — manual handling required")
+                    out(f"    SKIP  No appointment reference found — manual handling required")
                     skipped += 1
                     _mark_seen(imap, uid)
                     continue
@@ -473,24 +555,89 @@ class Command(BaseCommand):
                 out(f"    APT #{apt_id} | Customer: {apt.customer_name or sender}")
                 out(f"    Body: {clean[:100]}{'…' if len(clean) > 100 else ''}")
 
-                result     = _classify_intent(clean, apt)
-                intent     = result.get("intent", "other")
-                date_hint  = result.get("date")
+                result    = _classify_intent(clean, apt)
+                intent    = result.get("intent", "other")
+                date_hint = result.get("date")
 
                 out(f"    Intent: {intent} | Date hint: {date_hint}")
 
+                # ── Structural DB actions ─────────────────────────────────────
+                context_note = ""
+
                 if intent == "reschedule":
-                    _handle_reschedule(apt, date_hint, clean, dry_run, out)
-                elif intent == "book":
-                    _handle_book(apt, date_hint, clean, dry_run, out)
+                    dt = _parse_date_hint(date_hint)
+                    if dt:
+                        if not dry_run:
+                            apt.scheduled_datetime = dt
+                            apt.save(update_fields=["scheduled_datetime"])
+                        context_note = (
+                            f"Appointment rescheduled to {_fmt_dt(dt.astimezone(_SAST))}. "
+                            "Confirm this clearly to the customer."
+                        )
+                        out(f"    ✅ Rescheduled apt #{apt.pk} → {dt}")
+                    else:
+                        context_note = (
+                            "Customer wants to reschedule but did not give a specific date. "
+                            "Ask for their preferred date and time."
+                        )
+                        out(f"    ℹ️  Reschedule — no date extracted, apt #{apt.pk}")
+
                 elif intent == "cancel":
-                    _handle_cancel(apt, clean, dry_run, out)
+                    if not dry_run:
+                        apt.status = "cancelled"
+                        apt.save(update_fields=["status"])
+                    context_note = (
+                        "Appointment cancelled as the customer requested. "
+                        "Confirm warmly and leave the door open for rebooking."
+                    )
+                    out(f"    ❌ Cancelled apt #{apt.pk}")
+
+                elif intent == "book":
+                    dt = _parse_date_hint(date_hint)
+                    if dt:
+                        if not dry_run:
+                            apt.scheduled_datetime = dt
+                            apt.status             = "pending"
+                            apt.save(update_fields=["scheduled_datetime", "status"])
+                        context_note = (
+                            f"Booking request received for {_fmt_dt(dt.astimezone(_SAST))}. "
+                            "Confirm receipt and note that the team will confirm availability."
+                        )
+                        out(f"    ✅ Booking requested apt #{apt.pk} → {dt}")
+                    else:
+                        context_note = (
+                            "Customer wants to book but did not give a specific date or time. "
+                            "Ask for their preferred date and time."
+                        )
+                        out(f"    ℹ️  Book intent — no date extracted, apt #{apt.pk}")
+
                 elif intent == "confirm":
-                    out(f"    ✅ Confirmation received — no action needed, apt #{apt_id}")
-                elif intent == "query":
-                    _handle_query(apt, clean, dry_run, out)
-                else:
-                    _handle_other(apt, clean, dry_run, out)
+                    context_note = (
+                        "Customer confirmed their appointment. "
+                        "Acknowledge warmly and remind them of the appointment details."
+                    )
+                    out(f"    ✅ Confirmation received — apt #{apt.pk}")
+
+                # ── Conversation history (customer turn) ──────────────────────
+                if not dry_run:
+                    apt.add_conversation_message("user", clean)
+
+                # ── Plumbot reply ─────────────────────────────────────────────
+                reply_text = _generate_plumbot_email_reply(clean, apt, context_note)
+                out(f"    Reply preview: {reply_text[:80]}{'…' if len(reply_text) > 80 else ''}")
+
+                if not dry_run:
+                    # Save content only — strip sign-off so WhatsApp bot doesn't
+                    # see "Takudzwa\nHomeBase Plumbers" as conversation content.
+                    history_reply = _strip_signature_for_history(reply_text)
+                    apt.add_conversation_message("assistant", history_reply)
+
+                    # Keep WhatsApp state flags in sync with what was covered by email.
+                    _sync_state_after_email(apt, reply_text, dry_run)
+
+                    subject   = _reply_subject(apt, intent)
+                    html_body = _build_email_html(reply_text, apt)
+                    _send_reply(apt, subject, html_body)
 
                 _mark_seen(imap, uid)
                 processed += 1

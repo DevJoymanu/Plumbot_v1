@@ -16,6 +16,7 @@ Design decisions:
 
 import logging
 import os
+import time
 from io import BytesIO
 
 import pytz
@@ -101,6 +102,21 @@ def _apt_card(apt):
     )
 
 
+def _contact_buttons(call):
+    """WhatsApp + Call buttons — outlined (no fill) to avoid Gmail Promotions routing."""
+    return (
+        '<p style="margin:16px 0;line-height:1;">'
+        f'<a href="https://wa.me/{_WA_NUMBER}" style="display:inline-block;'
+        f'border:1.5px solid #1a9e4a;color:#1a9e4a;text-decoration:none;'
+        f'padding:9px 16px;border-radius:4px;font-size:14px;font-weight:bold;'
+        f'margin-right:10px;">💬 WhatsApp</a>'
+        f'<a href="tel:+{call}" style="display:inline-block;'
+        f'border:1.5px solid #555;color:#333;text-decoration:none;'
+        f'padding:9px 16px;border-radius:4px;font-size:14px;">📞 Call Takudzwa</a>'
+        '</p>'
+    )
+
+
 def _wa_nudge():
     """WhatsApp nudge — used instead of "reply to this email" copy."""
     return (
@@ -129,26 +145,36 @@ def _wrap(body_html):
 
 
 def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfolio.pdf"):
-    """Send email to the customer with APT tag in subject."""
+    """
+    Send email to the customer.
+    APT ID is encoded in the Message-ID header (invisible to the customer) rather
+    than appended to the subject line.  The IMAP poller reads In-Reply-To to match
+    replies back to the appointment, with a subject-tag fallback for legacy emails.
+    """
     from bot.plumber_notifications import send_email_to_recipients
     email = getattr(apt, "customer_email", None)
     if not email:
         logger.warning("No customer_email on appointment %s — skipping", apt.pk)
         return False
-    tagged = f"{subject} {_apt_tag(apt)}"
-    plain  = (
-        f"{tagged}\n\n"
+    # Unique per-email Message-ID that encodes the appointment PK
+    domain     = getattr(settings, "EMAIL_DOMAIN", "homebaseplumbers.co.zw")
+    message_id = f"<apt-{apt.pk}.{int(time.time())}@{domain}>"
+    plain = (
+        f"{subject}\n\n"
         f"Service: {_service(apt)}\n"
         f"Area:    {_area(apt)}\n"
         f"Date:    {_fmt_date(apt)} at {_fmt_time(apt)}\n\n"
         f"WhatsApp: https://wa.me/{_WA_NUMBER}\n"
+        f"Call Takudzwa: +{_call_phone(apt)}\n"
         f"HomeBase Plumbers"
     )
     return send_email_to_recipients(
-        [email], tagged, plain,
+        [email], subject, plain,
         html_message=html,
         attachment=attachment,
         attachment_name=attachment_name,
+        from_name="Takudzwa",
+        message_id=message_id,
     )
 
 
@@ -529,11 +555,8 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
             f'<p style="margin:0 0 14px;">As promised — attached is our portfolio with '
             f'previous projects and full pricing guide{service_hint}.</p>'
             f'{followup_blk}'
-            f'<p style="margin:0 0 14px;">When you\'re ready, reach us on WhatsApp: '
-            f'<a href="https://wa.me/{_WA_NUMBER}" style="color:#111;font-weight:bold;">'
-            f'wa.me/{_WA_NUMBER}</a> '
-            f'or call Takudzwa on '
-            f'<a href="tel:+{call}" style="color:#111;">+{call}</a>.</p>'
+            f'<p style="margin:0 0 6px;">When you\'re ready:</p>'
+            f'{_contact_buttons(call)}'
             f'<p style="margin:0;">Takudzwa<br>HomeBase Plumbers</p>'
         )
 
@@ -710,12 +733,8 @@ def send_delay_followup_email(apt):
             f'<p style="margin:0 0 16px;">{hi},</p>'
             f'<p style="margin:0 0 16px;">Just following up as we agreed — '
             f'you mentioned you\'d be back around now and were looking at {project_ref}.{items_detail}</p>'
-            f'<p style="margin:0 0 16px;">Whenever you\'re ready to move forward, '
-            f'the quickest way to reach us is on WhatsApp: '
-            f'<a href="https://wa.me/{_WA_NUMBER}" style="color:#111;font-weight:bold;">'
-            f'wa.me/{_WA_NUMBER}</a>, '
-            f'or call me directly on '
-            f'<a href="tel:+{call}" style="color:#111;">+{call}</a>.</p>'
+            f'<p style="margin:0 0 6px;">Whenever you\'re ready to move forward:</p>'
+            f'{_contact_buttons(call)}'
             f'<p style="margin:0 0 16px;">No rush — we\'ll be here when you\'re ready.</p>'
             f'<p style="margin:0;">Takudzwa<br>'
             f'HomeBase Plumbers<br>'

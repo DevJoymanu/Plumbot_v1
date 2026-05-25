@@ -144,6 +144,7 @@ DEFAULT_FROM_EMAIL = f"{_from_name} <{_from_address}>"
 SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
 SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
 SENDGRID_FROM_EMAIL = os.environ.get('SENDGRID_FROM_EMAIL', DEFAULT_FROM_EMAIL)
+EMAIL_DOMAIN = os.environ.get('EMAIL_DOMAIN', 'homebaseplumbers.co.zw')
 
 APPEND_SLASH = False
 
