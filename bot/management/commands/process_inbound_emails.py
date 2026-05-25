@@ -543,6 +543,13 @@ class Command(BaseCommand):
                     _mark_seen(imap, uid)
                     continue
 
+                # If the appointment has no email on record (e.g. lead came via
+                # WhatsApp), capture it from the sender so we can reply.
+                if not apt.customer_email and sender and "@" in sender:
+                    apt.customer_email = sender
+                    apt.save(update_fields=["customer_email"])
+                    out(f"    📧 Saved customer email from sender: {sender}")
+
                 body   = _get_plain_body(msg)
                 clean  = _strip_quoted(body)
 
