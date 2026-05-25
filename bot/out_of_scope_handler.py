@@ -929,7 +929,7 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
         logger.info("Follow-up date stored: %s for appointment=%s",
                     iso_date, getattr(appointment, 'id', None))
 
-    # If email already captured, skip Step 4
+    # If email already captured, send the portfolio and close out.
     if getattr(appointment, 'customer_email', None):
         from bot.customer_emails import send_delay_quote_email
         friendly = None
@@ -946,13 +946,12 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
             "If anything changes just send us a message — we'll be right here."
         )
 
-    # Step 4 — ask for email with quote framing
-    _write_pending(appointment, 'delay_email', iso_date or '')
+    # No email on file — close out cleanly. Don't ask for email after the
+    # customer has already confirmed they're stepping away; it feels like
+    # chasing them on the way out. The email can be captured when they re-engage.
     return (
-        "Perfect.\n\n"
-        "We'll also send you a proper written quote and portfolio "
-        "— easier to save and share with whoever else needs to see it. "
-        "What's the best email to reach you on?"
+        "Perfect, we'll reach out then. "
+        "Speak soon! 👋"
     )
 
 
