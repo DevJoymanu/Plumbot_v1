@@ -1334,8 +1334,28 @@ def handle_text_message(sender, text_data, message_id=None):
         if delay_check.get('is_delay'):
             mark_delay_signal(appointment, message_body)
         else:
-            # Customer re-engaged with a substantive message — clear any prior pause.
-            _clear_delay_signal_if_present(appointment)
+            # Don't clear the delay signal for bare acks ("ok", "thanks", "👍").
+            # A customer typing "ok" after the bot's farewell is acknowledging the
+            # delay confirmation — treating it as re-engagement asks the next
+            # qualification question (e.g. "What suburb are you in?").
+            _DELAY_ACKS = {
+                'ok', 'okay', 'k', 'kk', 'oky', 'oh ok', 'oh okay',
+                'sharp', 'shap', 'sho', 'cool', 'nice', 'noted',
+                'got it', 'alright', 'great', 'good', 'fine', 'sure', 'yes',
+                'yep', 'yeah', 'yup', 'ok thanks', 'ok thank you',
+                'thanks', 'thank you', 'thank u', 'thx', 'thnx',
+                'understood', 'i see', 'ah ok', 'ah okay', 'ok cool',
+                'ok bye', 'okay bye', 'bye', 'no worries',
+                '👍', '🙏', '✅', '😊', 'bo', 'bho',
+                'hongu', 'zvakanaka', 'maita basa', 'ndatenda',
+            }
+            _msg_norm = (message_body or '').strip().lower()
+            if appointment.is_delayed and _msg_norm in _DELAY_ACKS:
+                # Ack while delayed — keep the pause, save silently, no reply.
+                print(f"🔇 Delay active — ack ignored at arrival: '{message_body[:60]}'")
+            else:
+                # Customer re-engaged with a substantive message — clear the pause.
+                _clear_delay_signal_if_present(appointment)
 
         # Auto-classify service type from the customer's message
         if not appointment.project_type:
