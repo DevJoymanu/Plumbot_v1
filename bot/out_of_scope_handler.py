@@ -806,6 +806,7 @@ _TIMEFRAME_RE = re.compile(
     r'|in\s+two\s+weeks'                # "in two weeks"
     r'|fortnight'                       # "fortnight"
     r'|tomorrow'                        # "tomorrow", "call you tomorrow"
+    r'|monday|tuesday|wednesday|thursday|friday|saturday|sunday'  # day names
     r'|mangwana'                        # Shona: tomorrow
     r'|svondo\s+rinouya'                # Shona: next week
     r'|mwedzi\s+unotevera',             # Shona: next month
@@ -817,12 +818,52 @@ def _message_has_timeframe(message: str) -> bool:
     return bool(_TIMEFRAME_RE.search(message))
 
 
+def _message_has_timeframe_ai(message: str) -> bool:
+    """
+    Ask DeepSeek whether the message already contains a time reference the customer
+    will be available (day name, date, relative week/month expression, etc.).
+    Falls back to the regex if the API call fails.
+    """
+    from bot.services.clients import deepseek_call
+    try:
+        result = deepseek_call(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a yes/no classifier. "
+                        "Reply with only the single word 'yes' or 'no'."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Does the following message mention a specific time or date "
+                        "when the person will be available or back in touch? "
+                        "(Examples that count: a day name like 'Thursday', a date, "
+                        "'next week', 'end of month', 'tomorrow', 'in two weeks'.)\n\n"
+                        f"Message: {message}"
+                    ),
+                },
+            ],
+            temperature=0.0,
+            max_tokens=5,
+        )
+        return result.strip().lower().startswith('yes')
+    except Exception as exc:
+        logger.warning("_message_has_timeframe_ai failed (%s) — falling back to regex", exc)
+        return _message_has_timeframe(message)
+
+
 def _build_delay_reply(message: str, appointment) -> str:
     """
     Step 1 of the delay follow-up flow.
-    Ask the customer roughly when they'll be back so we can suggest a check-in date.
+    If the message already contains a timeframe, skip straight to step 2.
+    Otherwise ask when they'll be back so we can suggest a check-in date.
     Does NOT mark the lead as delayed yet — that happens at the end of the flow.
     """
+    if _message_has_timeframe_ai(message):
+        return _handle_delay_timeframe_answer(message, {}, appointment)
     _write_pending(appointment, 'delay_timeframe', message)
     return "No problem at all. Roughly when do you think you'll be back in town?"
 
