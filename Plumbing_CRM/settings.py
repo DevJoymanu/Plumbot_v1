@@ -130,7 +130,9 @@ AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
 TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
 
 # Email configuration
-EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+# IPv4-forcing backend avoids "Network is unreachable" on hosts without
+# IPv6 egress (Railway). See bot/email_backends.py.
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'bot.email_backends.IPv4SMTPBackend')
 EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
