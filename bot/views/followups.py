@@ -181,15 +181,57 @@ def test_followup_email(request):
     # In-memory override only — never save, so the real customer isn't touched.
     apt.customer_email = to_addr
 
-    if kind == "last_check":
-        ok = send_delay_last_check_email(apt)
-    elif kind == "quote":
-        ok = send_delay_quote_email(apt, follow_up_date_str="next Friday")
-    else:
-        kind = "followup"
-        ok = send_delay_followup_email(apt)
+    # Diagnostic mode: open an explicit mail connection and surface any SMTP
+    # error in the JSON response so we don't have to dig through Railway logs.
+    import traceback
+    from django.conf import settings as _settings
+    from django.core.mail import get_connection
 
-    return JsonResponse({"sent": bool(ok), "apt": apt.pk, "kind": kind, "to": to_addr})
+    smtp_diag = {
+        "host":     getattr(_settings, "EMAIL_HOST", ""),
+        "port":     getattr(_settings, "EMAIL_PORT", None),
+        "use_tls":  getattr(_settings, "EMAIL_USE_TLS", None),
+        "use_ssl":  getattr(_settings, "EMAIL_USE_SSL", None),
+        "user":     getattr(_settings, "EMAIL_HOST_USER", ""),
+        "backend":  getattr(_settings, "EMAIL_BACKEND", ""),
+        "from":     getattr(_settings, "DEFAULT_FROM_EMAIL", ""),
+        "reply_to": getattr(_settings, "EMAIL_REPLY_TO", ""),
+    }
+
+    # Pre-flight: open the connection to surface auth / TLS errors directly.
+    error = None
+    try:
+        conn = get_connection()
+        conn.open()
+        conn.close()
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-800:]}"
+
+    if error:
+        return JsonResponse({
+            "sent": False, "apt": apt.pk, "kind": kind, "to": to_addr,
+            "smtp": smtp_diag, "error": error,
+        }, status=500)
+
+    try:
+        if kind == "last_check":
+            ok = send_delay_last_check_email(apt)
+        elif kind == "quote":
+            ok = send_delay_quote_email(apt, follow_up_date_str="next Friday")
+        else:
+            kind = "followup"
+            ok = send_delay_followup_email(apt)
+    except Exception as exc:
+        return JsonResponse({
+            "sent": False, "apt": apt.pk, "kind": kind, "to": to_addr,
+            "smtp": smtp_diag,
+            "error": f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-800:]}",
+        }, status=500)
+
+    return JsonResponse({
+        "sent": bool(ok), "apt": apt.pk, "kind": kind, "to": to_addr,
+        "smtp": smtp_diag,
+    })
 
 
 @staff_required
