@@ -2920,7 +2920,7 @@ class ResponseMixin:
         - NEVER ask for info already collected.
 
         Generate the response now:"""
-    
+
                 from bot.services.clients import deepseek_call
                 reply = deepseek_call(
                     messages=[
