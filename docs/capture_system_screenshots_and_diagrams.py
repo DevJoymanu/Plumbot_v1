@@ -224,7 +224,7 @@ def create_diagrams() -> list[tuple[str, Path]]:
                 "Plumbot brain|AI classification, response generation, language matching, and flow routing.",
                 "CRM database|Appointments, leads, conversations, quotes, jobs, reminders, and uploaded files are stored.",
                 "Dashboard|Team manages leads, appointments, quotations, follow-ups, jobs, and settings.",
-                "External services|WhatsApp Cloud API, Google Calendar, email/SendGrid, file storage, and AI APIs.",
+                "External services|WhatsApp Cloud API, Google Calendar, SMTP email, file storage, and AI APIs.",
             ],
         ),
         (

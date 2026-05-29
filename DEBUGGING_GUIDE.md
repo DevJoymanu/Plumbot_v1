@@ -597,7 +597,8 @@ All of these must be set in Railway (or your `.env` file for local development).
 | `WHATSAPP_ACCESS_TOKEN` | Sending WhatsApp messages | `bot/whatsapp_cloud_api.py` |
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp sender identity | `bot/whatsapp_cloud_api.py` |
 | `WHATSAPP_VERIFY_TOKEN` | Webhook verification with Meta | `bot/whatsapp_webhook.py` |
-| `SENDGRID_API_KEY` | Sending emails | `bot/customer_emails.py` |
+| `EMAIL_HOST` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | Sending emails (SMTP) | `bot/plumber_notifications.py` |
+| `EMAIL_REPLY_TO` | Where customer replies route to | `bot/plumber_notifications.py` |
 | `GOOGLE_CALENDAR_ID` | Which calendar to add events to | `bot/views/plumbot/notification_mixin.py` |
 | `DEBUG` | `False` in production | `settings.py` |
 | `ALLOWED_HOSTS` | Railway domain | `settings.py` |

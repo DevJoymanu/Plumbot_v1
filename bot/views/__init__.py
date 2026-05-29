@@ -80,6 +80,7 @@ from .followups import (
     mark_lead_inactive,
     reactivate_lead,
     test_followup_message,
+    test_followup_email,
     manual_followup_check,
     pause_chatbot,
     resume_chatbot,

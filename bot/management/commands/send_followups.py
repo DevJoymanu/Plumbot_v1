@@ -52,6 +52,11 @@ MAX_FOLLOWUPS_PER_STATUS = {
     LeadStatus.COLD:     4,
 }
 
+# Hours between the first delay re-engagement email (sent on the agreed
+# follow-up date) and the second/final "last check" email. Keep this on the
+# longer side so we never feel pushy on a cold-but-polite lead.
+DELAY_SECOND_TOUCH_HOURS = 96  # 4 days
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 class Command(BaseCommand):
@@ -279,17 +284,31 @@ class Command(BaseCommand):
         """
         Finds delayed leads whose follow-up date has arrived and contacts them.
 
-        Channel priority:
-          1. WhatsApp — always attempted first.
-          2. Email    — attempted if WhatsApp fails (24-hour window closed)
-                        OR in addition to WhatsApp if the lead has an email.
+        Two-touch email sequence (per lead, per delay cycle):
+          • Touch 1 — sent immediately when delay_followup_due_at arrives.
+                      WhatsApp goes out alongside touch 1 (single shot).
+                      [DELAY_EMAIL_COUNT] is bumped to 1.
+                      delay_followup_due_at is pushed forward by
+                      DELAY_SECOND_TOUCH_HOURS so the cron returns for touch 2.
+          • Touch 2 — sent ~4 days after touch 1 via send_delay_last_check_email.
+                      Short, copy-different, explicit exit ("reply 'later'").
+                      [DELAY_EMAIL_COUNT] is bumped to 2.
+                      is_delayed and [DELAY_SIGNAL] are cleared — lead is fully
+                      retired from the delay queue at this point.
 
-        Only marks the lead as re-activated after at least one channel succeeds.
-        If both channels fail, delay_followup_due_at is pushed forward 24 hours
-        so the cron retries tomorrow without spamming the same lead.
+        Leads without an email skip the 2-touch path entirely: one WhatsApp
+        shot and we clear is_delayed (preserves the original single-shot
+        behaviour for SMS-only leads).
+
+        If a touch fails to send through either channel,
+        delay_followup_due_at is pushed forward 24 hours so the cron retries
+        tomorrow without spamming the same lead.
         """
         import re as _re
-        from bot.customer_emails import send_delay_followup_email
+        from bot.customer_emails import (
+            send_delay_followup_email,
+            send_delay_last_check_email,
+        )
 
         due = (
             Appointment.objects
@@ -320,6 +339,12 @@ class Command(BaseCommand):
                 else:
                     detail = service
 
+                has_email   = bool(getattr(lead, 'customer_email', None))
+                email_count = self._read_delay_email_count(lead.internal_notes or '')
+                # touch == 2 only if we've already sent touch 1 AND we have an email
+                is_second_touch = has_email and email_count >= 1
+
+                # ── Build the WhatsApp message (touch 1 only) ───────────────────
                 message = (
                     f"{hi}, hope you're back and settled in. "
                     f'You were looking at {detail} — still keen to move forward? '
@@ -327,58 +352,105 @@ class Command(BaseCommand):
                 )
 
                 if dry_run:
+                    label = 'last-check email' if is_second_touch else 'reactivation'
                     self.stdout.write(
-                        self.style.SUCCESS(f'🧪 Would reactivate lead {lead.id}: "{message[:100]}…"')
+                        self.style.SUCCESS(
+                            f'🧪 Would send {label} to lead {lead.id} '
+                            f'(email_count={email_count}, has_email={has_email})'
+                        )
                     )
                     continue
 
-                clean     = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-                has_email = bool(getattr(lead, 'customer_email', None))
-                wa_ok     = False
-                email_ok  = False
+                clean    = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
+                wa_ok    = False
+                email_ok = False
 
-                # ── 1. Try WhatsApp ───────────────────────────────────────────
-                try:
-                    whatsapp_api.send_text_message(clean, message)
-                    wa_ok = True
-                except Exception as wa_exc:
-                    logger.warning(
-                        'Delay reactivation WhatsApp failed for lead %s: %s',
-                        lead.id, wa_exc,
-                    )
-                    self.stdout.write(
-                        self.style.WARNING(f'  ⚠️  WhatsApp failed for lead {lead.id} — trying email fallback')
-                    )
-
-                # ── 2. Email — always send if available (supplements or fallback) ──
-                if has_email:
+                if is_second_touch:
+                    # ── Touch 2: email only ─────────────────────────────────
                     try:
-                        send_delay_followup_email(lead)
+                        send_delay_last_check_email(lead)
                         email_ok = True
                     except Exception as email_exc:
                         logger.warning(
-                            'Delay reactivation email failed for lead %s: %s',
+                            'Delay last-check email failed for lead %s: %s',
                             lead.id, email_exc,
                         )
-
-                # ── 3. At least one channel succeeded → mark re-activated ────
-                if wa_ok or email_ok:
-                    import re as _re2
-                    lead.is_delayed     = False
-                    notes               = lead.internal_notes or ''
-                    notes               = _re2.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes).strip()
-                    lead.internal_notes = notes
-                    lead.save(update_fields=['is_delayed', 'internal_notes'])
-                    lead.add_conversation_message('assistant', f'[DELAY REACTIVATION] {message}')
-
-                    channels = []
-                    if wa_ok:    channels.append('WhatsApp')
-                    if email_ok: channels.append('email')
-                    self.stdout.write(self.style.SUCCESS(
-                        f'✅ Reactivated lead {lead.id} via {" + ".join(channels)}'
-                    ))
                 else:
-                    # Both channels failed — push due date forward 24 h and retry tomorrow
+                    # ── Touch 1: WhatsApp + (optional) email ────────────────
+                    try:
+                        whatsapp_api.send_text_message(clean, message)
+                        wa_ok = True
+                    except Exception as wa_exc:
+                        logger.warning(
+                            'Delay reactivation WhatsApp failed for lead %s: %s',
+                            lead.id, wa_exc,
+                        )
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f'  ⚠️  WhatsApp failed for lead {lead.id} — trying email fallback'
+                            )
+                        )
+
+                    if has_email:
+                        try:
+                            send_delay_followup_email(lead)
+                            email_ok = True
+                        except Exception as email_exc:
+                            logger.warning(
+                                'Delay reactivation email failed for lead %s: %s',
+                                lead.id, email_exc,
+                            )
+
+                # ── Outcome handling ─────────────────────────────────────────
+                if wa_ok or email_ok:
+                    notes = lead.internal_notes or ''
+
+                    if is_second_touch:
+                        # Final touch fired — retire from delay queue
+                        lead.is_delayed = False
+                        notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes).strip()
+                        if email_ok:
+                            notes = self._set_delay_email_count(notes, 2)
+                        lead.internal_notes = notes
+                        lead.save(update_fields=['is_delayed', 'internal_notes'])
+                        lead.add_conversation_message(
+                            'assistant', '[DELAY LAST CHECK] last-check email sent'
+                        )
+                        self.stdout.write(self.style.SUCCESS(
+                            f'✅ Last-check email sent for lead {lead.id} — delay queue cleared'
+                        ))
+                    elif email_ok:
+                        # Touch 1 went out on email — keep the lead in the delay
+                        # queue so we can fire touch 2 in DELAY_SECOND_TOUCH_HOURS.
+                        notes = self._set_delay_email_count(notes, 1)
+                        lead.internal_notes        = notes
+                        lead.delay_followup_due_at = (
+                            timezone.now() + timedelta(hours=DELAY_SECOND_TOUCH_HOURS)
+                        )
+                        lead.save(update_fields=[
+                            'internal_notes', 'delay_followup_due_at',
+                        ])
+                        lead.add_conversation_message('assistant', f'[DELAY REACTIVATION] {message}')
+
+                        channels = []
+                        if wa_ok:    channels.append('WhatsApp')
+                        if email_ok: channels.append('email')
+                        self.stdout.write(self.style.SUCCESS(
+                            f'✅ Reactivated lead {lead.id} via {" + ".join(channels)} '
+                            f'— last-check email queued in {DELAY_SECOND_TOUCH_HOURS}h'
+                        ))
+                    else:
+                        # WhatsApp succeeded but no email available — single-shot path
+                        lead.is_delayed = False
+                        notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes).strip()
+                        lead.internal_notes = notes
+                        lead.save(update_fields=['is_delayed', 'internal_notes'])
+                        lead.add_conversation_message('assistant', f'[DELAY REACTIVATION] {message}')
+                        self.stdout.write(self.style.SUCCESS(
+                            f'✅ Reactivated lead {lead.id} via WhatsApp (no email on file)'
+                        ))
+                else:
+                    # All channels failed — retry tomorrow without spamming
                     lead.delay_followup_due_at = timezone.now() + timedelta(hours=24)
                     lead.save(update_fields=['delay_followup_due_at'])
                     self.stdout.write(self.style.ERROR(
@@ -388,6 +460,23 @@ class Command(BaseCommand):
             except Exception as exc:
                 logger.error(f'Error reactivating delayed lead {lead.id}: {exc}')
                 self.stdout.write(self.style.ERROR(f'❌ Delayed lead {lead.id}: {exc}'))
+
+    # ─── Delay-email state helpers (internal_notes-backed, no migration) ─────
+
+    def _read_delay_email_count(self, notes: str) -> int:
+        """Return the number of delay re-engagement emails sent so far (0, 1, or 2)."""
+        m = re.search(r'\[DELAY_EMAIL_COUNT\] (\d+)', notes or '')
+        return int(m.group(1)) if m else 0
+
+    def _set_delay_email_count(self, notes: str, new_count: int) -> str:
+        """Write/replace [DELAY_EMAIL_COUNT] and [DELAY_EMAIL_LAST] in internal_notes."""
+        notes = notes or ''
+        notes = re.sub(r'\[DELAY_EMAIL_COUNT\] \d+\n?', '', notes)
+        notes = re.sub(r'\[DELAY_EMAIL_LAST\] [^\n]+\n?', '', notes).strip()
+        stamp = timezone.now().isoformat()
+        return (
+            f'{notes}\n[DELAY_EMAIL_COUNT] {new_count}\n[DELAY_EMAIL_LAST] {stamp}'
+        ).strip()
 
     # ─── Eligibility ─────────────────────────────────────────────────────────
 

@@ -42,6 +42,6 @@
   <circle cx="148" cy="746" r="22" fill="#0f766e"/>
   <text x="148" y="753" text-anchor="middle" font-size="20" font-family="Arial" fill="#ffffff" font-weight="700">6</text>
   <text x="190" y="741" font-size="22" font-family="Arial" fill="#0f172a" font-weight="700">External services</text>
-  <text x="190" y="767" font-size="17" font-family="Arial" fill="#475569">WhatsApp Cloud API, Google Calendar, email/SendGrid, file storage, and AI APIs.</text>
+  <text x="190" y="767" font-size="17" font-family="Arial" fill="#475569">WhatsApp Cloud API, Google Calendar, SMTP email, file storage, and AI APIs.</text>
 
 </svg>

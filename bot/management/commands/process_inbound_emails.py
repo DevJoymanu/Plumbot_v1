@@ -160,12 +160,13 @@ def _strip_quoted(text: str) -> str:
 _INTENT_SYSTEM = """You are an email intent classifier for a plumbing company.
 
 Classify the customer email into ONE of:
-  reschedule  — customer wants to change their appointment date/time
-  book        — customer wants to book a new appointment (no existing confirmed booking)
-  cancel      — customer wants to cancel their appointment
-  confirm     — customer is confirming their existing appointment
-  query       — customer has a question (pricing, service, location, etc.)
-  other       — none of the above
+  reschedule      — customer wants to change their appointment date/time
+  book            — customer wants to book a new appointment (no existing confirmed booking)
+  cancel          — customer wants to cancel their appointment
+  confirm         — customer is confirming their existing appointment
+  query           — customer has a question (pricing, service, location, etc.)
+  acknowledgement — customer is only acknowledging receipt, saying thanks, or politely closing the thread with NO question and NO new information. Examples: "thanks", "thank you", "thx", "thnks", "ok", "okay", "kk", "alright", "noted", "cool", "got it", "👍", "received", or Shona equivalents like "tatenda", "maita", "zvakanaka", "sawa". Use this intent even if the word is misspelled or abbreviated. If they say thanks AND ask something or provide new info, prefer 'query' or the matching intent instead.
+  other           — none of the above
 
 Also extract:
   date  — the preferred date/time mentioned (ISO 8601 if possible, else descriptive string, or null)
@@ -313,9 +314,29 @@ def _reply_subject(apt, intent: str) -> str:
         return f"Re: Your reschedule request{suffix}"
     if intent == "cancel":
         return f"Re: Cancellation confirmed{suffix}"
+    if intent == "acknowledgement":
+        return f"Re: Your message{suffix}"
     if svc:
         return f"Re: {svc}{suffix}"
     return f"Re: Your message{suffix}"
+
+
+def _build_acknowledgement_reply(apt) -> tuple[str, str]:
+    """
+    Short, warm acknowledgement for a one-word reply ('thanks', 'ok', etc.).
+    Returns (plain_text_for_history, html_body) — no value stack, no CTA
+    buttons, no qualifying question. Mirrors how a human would handle a
+    polite thread-closer.
+    """
+    name = getattr(apt, "customer_name", "") or ""
+    hi   = f"Hi {name}" if name else "Hi there"
+    plain = (
+        f"{hi},\n\n"
+        "Got it — thanks. Talk soon.\n\n"
+        "Takudzwa\nHomeBase Plumbers"
+    )
+    html = _text_to_html(plain)
+    return plain, html
 
 
 _SIGNATURE_LINES = frozenset({
@@ -375,21 +396,56 @@ def _reply_discusses_pricing(reply_text: str) -> bool:
     return any(k in low for k in _PRICING_KEYWORDS)
 
 
-def _sync_state_after_email(apt, reply_text: str, dry_run: bool) -> None:
+_COMMITMENT_INTENTS = frozenset({"book", "reschedule", "confirm"})
+
+_ACK_MARKER = "[ACK_REPLIED]"
+
+
+def _ack_already_replied(apt) -> bool:
+    """True if we've already sent an acknowledgement reply in this thread."""
+    return _ACK_MARKER in (apt.internal_notes or "")
+
+
+def _set_ack_replied(apt) -> None:
+    """Mark that we've sent an ack reply, so subsequent acks stay silent."""
+    notes = (apt.internal_notes or "").strip()
+    if _ACK_MARKER in notes:
+        return
+    apt.internal_notes = f"{notes}\n{_ACK_MARKER}".strip()
+    apt.save(update_fields=["internal_notes"])
+
+
+def _clear_ack_replied(apt) -> None:
+    """Clear the ack marker when the customer returns with substantive engagement."""
+    notes = apt.internal_notes or ""
+    if _ACK_MARKER not in notes:
+        return
+    apt.internal_notes = re.sub(r"\[ACK_REPLIED\]\n?", "", notes).strip()
+    apt.save(update_fields=["internal_notes"])
+
+
+def _sync_state_after_email(apt, reply_text: str, dry_run: bool, intent: str = "other") -> None:
     """
     Keep WhatsApp-specific state flags in sync after an email exchange so the
     WhatsApp bot does not repeat things already covered over email.
 
-    - Clears is_delayed: customer re-engaged, so they are no longer paused.
+    - Clears is_delayed: ONLY on commitment intents (book / reschedule / confirm).
+      A bare 'thanks', a question ('query'), or 'other' replies leave the
+      delayed state intact — research and acknowledgement are not commitment,
+      and pulling a customer out of their stated timeline disengages them.
     - Sets pricing_overview_sent: if reply contained any pricing.
     - Updates sent_pricing_intents: records every specific product that was priced.
     """
     if dry_run:
         return
 
+    # Customer came back with substantive engagement → unmute future acks.
+    if intent != "acknowledgement":
+        _clear_ack_replied(apt)
+
     dirty = []
 
-    if apt.is_delayed:
+    if apt.is_delayed and intent in _COMMITMENT_INTENTS:
         apt.clear_delayed(save=False)
         dirty.append("is_delayed")
 
@@ -632,7 +688,34 @@ class Command(BaseCommand):
                 if not dry_run:
                     apt.add_conversation_message("user", clean)
 
-                # ── Plumbot reply ─────────────────────────────────────────────
+                # ── Acknowledgement-only reply (short path, no pitch) ─────────
+                if intent == "acknowledgement":
+                    # Reply once per thread. If we've already sent an ack reply,
+                    # stay silent — replying to "ok" after we said "talk soon"
+                    # makes the system feel automated and undoes the warmth.
+                    if _ack_already_replied(apt):
+                        out("    Acknowledgement (suppressed — already replied once in this thread)")
+                        _mark_seen(imap, uid)
+                        processed += 1
+                        continue
+
+                    plain_reply, html_body = _build_acknowledgement_reply(apt)
+                    out(f"    Reply preview: {plain_reply[:80]}{'…' if len(plain_reply) > 80 else ''}")
+
+                    if not dry_run:
+                        history_reply = _strip_signature_for_history(plain_reply)
+                        apt.add_conversation_message("assistant", history_reply)
+                        # Sync state but DO NOT clear is_delayed for acknowledgements.
+                        _sync_state_after_email(apt, plain_reply, dry_run, intent)
+                        subject = _reply_subject(apt, intent)
+                        _send_reply(apt, subject, html_body)
+                        _set_ack_replied(apt)
+
+                    _mark_seen(imap, uid)
+                    processed += 1
+                    continue
+
+                # ── Plumbot reply (full Hormozi-framework path) ───────────────
                 reply_text = _generate_plumbot_email_reply(clean, apt, context_note)
                 out(f"    Reply preview: {reply_text[:80]}{'…' if len(reply_text) > 80 else ''}")
 
@@ -643,7 +726,7 @@ class Command(BaseCommand):
                     apt.add_conversation_message("assistant", history_reply)
 
                     # Keep WhatsApp state flags in sync with what was covered by email.
-                    _sync_state_after_email(apt, reply_text, dry_run)
+                    _sync_state_after_email(apt, reply_text, dry_run, intent)
 
                     subject   = _reply_subject(apt, intent)
                     html_body = _build_email_html(reply_text, apt)

@@ -142,8 +142,7 @@ _from_address = os.environ.get('EMAIL_FROM_ADDRESS', EMAIL_HOST_USER or 'team@ho
 _from_name    = os.environ.get('EMAIL_FROM_NAME', 'HomeBase Plumbers')
 DEFAULT_FROM_EMAIL = f"{_from_name} <{_from_address}>"
 SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
-SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
-SENDGRID_FROM_EMAIL = os.environ.get('SENDGRID_FROM_EMAIL', DEFAULT_FROM_EMAIL)
+EMAIL_REPLY_TO = os.environ.get('EMAIL_REPLY_TO', _from_address)
 EMAIL_DOMAIN = os.environ.get('EMAIL_DOMAIN', 'homebaseplumbers.co.zw')
 
 APPEND_SLASH = False

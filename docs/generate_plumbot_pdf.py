@@ -962,7 +962,7 @@ def build():
         ("Plumber marks job as Completed (dashboard)",          BRAND_DARK),
         ("System triggers post-job email workflow",             FUNNEL_2),
         ("Customer email fetched from appointment record",      FUNNEL_3),
-        ("Personalised review email sent via SendGrid",         FUNNEL_4),
+        ("Personalised review email sent via SMTP",             FUNNEL_4),
         ("Customer clicks review link → Google Maps",          FUNNEL_5),
         ("5-star review posted → Google ranking improves",     FUNNEL_7),
     ]
@@ -1146,7 +1146,7 @@ def build():
         ["WhatsApp Channel", "Meta WhatsApp Cloud API","Inbound/outbound WhatsApp messaging"],
         ["AI Engine",        "DeepSeek v3-flash",      "Intent classification, NLP, responses"],
         ["Calendar",         "Google Calendar API",    "Appointment booking & conflict detection"],
-        ["Email",            "SendGrid",               "Customer emails & review requests"],
+        ["Email",            "SMTP (Gmail)",           "Customer emails & review requests"],
         ["Cloud Hosting",    "Railway.app",            "Production server & cron jobs"],
         ["File Storage",     "AWS S3 / Local",         "Customer plans, images, documents"],
         ["Cron Jobs",        "Railway Cron",           "Follow-ups, reminders, notifications"],
@@ -1182,7 +1182,7 @@ def build():
                 (PW*0.50,  55,  "PostgreSQL\nDatabase",   FUNNEL_3),
                 (PW*0.73,  175, "DeepSeek\nAI Engine",    FUNNEL_4),
                 (PW*0.73,  130, "Google\nCalendar",       FUNNEL_5),
-                (PW*0.73,  85,  "SendGrid\nEmail",        FUNNEL_6),
+                (PW*0.73,  85,  "SMTP\nEmail",            FUNNEL_6),
                 (PW*0.73,  40,  "AWS S3\nStorage",        colors.HexColor("#607D8B")),
             ]
             bw, bh = 68, 32
@@ -1260,7 +1260,7 @@ def build():
 
     story.append(Paragraph(b("Immediate Next Steps:"), H2))
     next_steps = [
-        ("Implement Google Review email trigger",     "When job status → completed, fire automated review email via SendGrid."),
+        ("Implement Google Review email trigger",     "When job status → completed, fire automated review email via SMTP."),
         ("Configure Google review link",             "Add the Homebase Plumbers Google Maps direct review URL to the email template."),
         ("Test end-to-end funnel",                   "Run a test appointment through to completion and verify the review email fires."),
         ("Dashboard review metric",                  "Add 'Reviews Sent This Month' stat card to the admin dashboard."),

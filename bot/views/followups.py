@@ -134,6 +134,65 @@ def test_followup_message(request, pk):
 
 
 @staff_required
+def test_followup_email(request):
+    """
+    Fire a delay-flow email to an arbitrary address for deliverability testing.
+
+    GET params:
+      to    — target email address (required)
+      kind  — 'followup' (default) | 'last_check' | 'quote'
+      apt   — appointment PK to clone context from (default: most recent
+              appointment with a customer_email on file)
+
+    Returns JSON: {"sent": bool, "apt": int, "kind": str, "to": str}.
+    The appointment's customer_email is temporarily overridden in-memory
+    (NOT saved) so the real customer is never contacted.
+    """
+    from bot.customer_emails import (
+        send_delay_followup_email,
+        send_delay_last_check_email,
+        send_delay_quote_email,
+    )
+    from bot.models import Appointment
+
+    to_addr = (request.GET.get("to") or "").strip()
+    if "@" not in to_addr:
+        return JsonResponse({"error": "missing or invalid 'to' query param"}, status=400)
+
+    kind = (request.GET.get("kind") or "followup").strip()
+    apt_pk = request.GET.get("apt")
+
+    if apt_pk:
+        try:
+            apt = Appointment.objects.get(pk=int(apt_pk))
+        except (ValueError, Appointment.DoesNotExist):
+            return JsonResponse({"error": f"appointment {apt_pk} not found"}, status=404)
+    else:
+        apt = (
+            Appointment.objects
+            .filter(customer_email__isnull=False)
+            .exclude(customer_email="")
+            .order_by("-id")
+            .first()
+        )
+        if not apt:
+            return JsonResponse({"error": "no appointment with a customer_email found"}, status=404)
+
+    # In-memory override only — never save, so the real customer isn't touched.
+    apt.customer_email = to_addr
+
+    if kind == "last_check":
+        ok = send_delay_last_check_email(apt)
+    elif kind == "quote":
+        ok = send_delay_quote_email(apt, follow_up_date_str="next Friday")
+    else:
+        kind = "followup"
+        ok = send_delay_followup_email(apt)
+
+    return JsonResponse({"sent": bool(ok), "apt": apt.pk, "kind": kind, "to": to_addr})
+
+
+@staff_required
 @require_POST
 def manual_followup_check(request):
     """Manually trigger follow-up check (for testing/debugging)"""

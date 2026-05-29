@@ -127,6 +127,7 @@ urlpatterns = [
     path('appointments/<int:pk>/mark-inactive/', views.mark_lead_inactive, name='mark_lead_inactive'),
     path('appointments/<int:pk>/reactivate/', views.reactivate_lead, name='reactivate_lead'),
     path('appointments/<int:pk>/test-followup/', views.test_followup_message, name='test_followup_message'),
+    path('followups/test-email/', views.test_followup_email, name='test_followup_email'),
 
     # Manual vs Automatic Follow-up Management
     path('appointments/<int:pk>/send-followup/', views.send_followup, name='send_followup'),

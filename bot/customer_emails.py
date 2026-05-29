@@ -550,24 +550,27 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
 
         subject = "Portfolio and pricing" + (f" — as requested, {name}" if name else " — as requested")
 
+        # Prose only — bullets + bold "free" + outlined CTAs were sending
+        # this to Promotions. Same sales mechanics, delivered in plain
+        # sentences so Gmail reads it as a personal note.
+        followup_inline = (
+            f' I\'ll also check in with you around {follow_up_date_str} — no rush before then.'
+            if follow_up_date_str else ''
+        )
         body = (
-            f'<p style="margin:0 0 14px;">{hi},</p>'
-            f'<p style="margin:0 0 14px;">As promised — attached is our portfolio with '
-            f'previous projects and full pricing guide{service_hint}.</p>'
-            f'{followup_blk}'
-            f'<p style="margin:0 0 6px;">When you\'re ready:</p>'
-            f'{_contact_buttons(call)}'
-            f'<p style="margin:0;">Takudzwa<br>HomeBase Plumbers</p>'
+            f'<p>{hi},</p>'
+            f'<p>As promised — attached is our portfolio with previous projects '
+            f'and the full pricing guide{service_hint}.{followup_inline}</p>'
+            f'<p>Worth knowing before you decide: the on-site visit and written quote '
+            f'cost nothing, you see the fixed price before any work starts, and we '
+            f'don\'t leave until you\'re happy with the job.</p>'
+            f'<p>If you\'d like to lock in a time, reply with a day that suits — '
+            f'morning or afternoon — and I\'ll sort it.</p>'
+            f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
         )
 
         html = (
-            '<!DOCTYPE html><html lang="en"><head>'
-            '<meta charset="UTF-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '</head>'
-            '<body style="margin:0;padding:24px;background:#ffffff;'
-            'font-family:Arial,sans-serif;font-size:15px;color:#111;line-height:1.6;'
-            'max-width:560px;">'
+            '<!DOCTYPE html><html><body>'
             f'{body}'
             '</body></html>'
         )
@@ -601,14 +604,18 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
 
 _REMINDER_CONFIGS = {
     'two_days': {
-        'subject': "See you on {date} — {service}",
+        'subject': "See you on {date} — quick confirm?",
         'intro':   'Your appointment is coming up in <strong>2 days</strong>.',
-        'footer':  'Please ensure someone is home and the work area is accessible.',
+        'footer':  ('Quick favour — reply <strong>YES</strong> on WhatsApp if all is still '
+                    'good for {date}, or let us know if anything needs to shift. '
+                    'Please ensure someone is home and the work area is accessible.'),
     },
     'one_day': {
-        'subject': "Your appointment is tomorrow — {service} at {time}",
+        'subject': "Tomorrow at {time} — still good?",
         'intro':   'Your appointment is <strong>tomorrow</strong>.',
-        'footer':  'Please ensure someone is home and water can be shut off if needed.',
+        'footer':  ('A quick <strong>YES</strong> on WhatsApp confirms you\'re still on for '
+                    'tomorrow — that way we don\'t double-book the slot. '
+                    'Please ensure someone is home and water can be shut off if needed.'),
     },
     'morning': {
         'subject': "Today at {time} — {service}",
@@ -639,11 +646,12 @@ def send_customer_reminder_email(apt, reminder_type):
 
         subject = cfg['subject'].format(service=svc, date=d, time=t)
         intro   = cfg['intro'].format(time=t, date=d, name=name)
+        footer  = cfg['footer'].format(time=t, date=d, name=name)
         body    = (
             f'<p>Hi {name},</p>'
             f'<p>{intro}</p>'
             f'{_apt_card(apt)}'
-            f'<p>{cfg["footer"]}</p>'
+            f'<p>{footer}</p>'
             f'{_wa_nudge()}'
         )
         html = _wrap(body)
@@ -727,28 +735,25 @@ def send_delay_followup_email(apt):
         if items:
             items_detail = f' You specifically asked about {" and ".join(items[:2])}.'
 
-        subject = 'Following up as promised' + (f', {name}' if name else '')
+        subject = 'Still on for your plumbing work' + (f', {name}?' if name else '?')
 
+        # Prose only — no bullets, no buttons, no styled body wrapper.
+        # The sales mechanics (risk reversal + micro-yes close) are folded
+        # into natural sentences so Gmail reads this as a personal email.
         body = (
-            f'<p style="margin:0 0 16px;">{hi},</p>'
-            f'<p style="margin:0 0 16px;">Just following up as we agreed — '
-            f'you mentioned you\'d be back around now and were looking at {project_ref}.{items_detail}</p>'
-            f'<p style="margin:0 0 6px;">Whenever you\'re ready to move forward:</p>'
-            f'{_contact_buttons(call)}'
-            f'<p style="margin:0 0 16px;">No rush — we\'ll be here when you\'re ready.</p>'
-            f'<p style="margin:0;">Takudzwa<br>'
-            f'HomeBase Plumbers<br>'
-            f'<a href="tel:+{call}" style="color:#555;">+{call}</a></p>'
+            f'<p>{hi},</p>'
+            f'<p>Circling back as we agreed — you said you\'d be back around now '
+            f'and were looking at {project_ref}.{items_detail}</p>'
+            f'<p>Just so you know how it works: we come out and have a look at no cost, '
+            f'agree the price in writing before any work starts, and we don\'t leave '
+            f'until you\'re happy with the job.</p>'
+            f'<p>If you want to take the next step, reply with a day that suits — '
+            f'morning or afternoon — and I\'ll pop you in the diary.</p>'
+            f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
         )
 
         html = (
-            '<!DOCTYPE html><html lang="en"><head>'
-            '<meta charset="UTF-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '</head>'
-            '<body style="margin:0;padding:24px;background:#ffffff;'
-            'font-family:Arial,sans-serif;font-size:15px;color:#111;line-height:1.6;'
-            'max-width:560px;">'
+            '<!DOCTYPE html><html><body>'
             f'{body}'
             '</body></html>'
         )
@@ -759,6 +764,54 @@ def send_delay_followup_email(apt):
         return ok
     except Exception:
         logger.exception("send_delay_followup_email failed — apt %s", apt.pk)
+        return False
+
+
+def send_delay_last_check_email(apt):
+    """
+    Second (final) re-engagement email — sent a few days after
+    send_delay_followup_email when the lead still hasn't responded.
+
+    Copy intentionally short, different from the first touch, and explicitly
+    leaves the door open (reply "later" to be closed out quietly). This is
+    the last email we send to a delayed lead.
+
+    Deliverability rules (same as the first touch):
+    - Personal subject, no company name, no promotional language
+    - Plain links only, no coloured CTA buttons
+    - Minimal HTML, signed off by Takudzwa with direct number
+    """
+    try:
+        name    = getattr(apt, 'customer_name', '') or ''
+        hi      = f'Hi {name}' if name else 'Hi there'
+        call    = _call_phone(apt)
+
+        subject = 'Quick last check' + (f', {name}' if name else '')
+
+        body = (
+            f'<p>{hi},</p>'
+            f'<p>I won\'t keep emailing — promise. Just wanted to give you '
+            f'one last easy way to pick this up.</p>'
+            f'<p>If the timing is right, reply with a day that suits you '
+            f'(morning or afternoon) and I\'ll book the on-site visit at no cost.</p>'
+            f'<p>If the timing\'s off, no problem at all — just reply "later" '
+            f'and we\'ll quietly close this out. You can always come back to '
+            f'us when you\'re ready.</p>'
+            f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
+        )
+
+        html = (
+            '<!DOCTYPE html><html><body>'
+            f'{body}'
+            '</body></html>'
+        )
+
+        ok = _send(apt, subject, html)
+        if ok:
+            logger.info("Delay last-check email sent — apt %s", apt.pk)
+        return ok
+    except Exception:
+        logger.exception("send_delay_last_check_email failed — apt %s", apt.pk)
         return False
 
 
