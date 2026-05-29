@@ -133,12 +133,24 @@ TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+141
 # IPv4-forcing backend avoids "Network is unreachable" on hosts without
 # IPv6 egress (Railway). See bot/email_backends.py.
 EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'bot.email_backends.IPv4SMTPBackend')
+# Self-correct: if the plain SMTP backend is configured (via a stale env var),
+# transparently upgrade it to the IPv4-forcing one so we don't depend on the
+# operator updating EMAIL_BACKEND by hand.
+if EMAIL_BACKEND == 'django.core.mail.backends.smtp.EmailBackend':
+    EMAIL_BACKEND = 'bot.email_backends.IPv4SMTPBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False') == 'True'
+# Normalize TLS/SSL to the port so a mismatched env var (e.g. SSL on 587)
+# can't cause a handshake failure once the network path is up.
+#   port 465 → implicit SSL    port 587 → STARTTLS
+if EMAIL_PORT == 465:
+    EMAIL_USE_SSL, EMAIL_USE_TLS = True, False
+elif EMAIL_PORT == 587:
+    EMAIL_USE_TLS, EMAIL_USE_SSL = True, False
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '20'))
 _from_address = os.environ.get('EMAIL_FROM_ADDRESS', EMAIL_HOST_USER or 'team@homebaseplumbers.co.zw')
 _from_name    = os.environ.get('EMAIL_FROM_NAME', 'HomeBase Plumbers')
