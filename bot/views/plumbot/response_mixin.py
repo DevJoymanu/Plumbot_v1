@@ -2110,6 +2110,51 @@ class ResponseMixin:
             return any(kw in msg for kw in size_keywords)
 
 
+        @staticmethod
+        def _is_availability_question(message: str) -> bool:
+            """
+            True when the lead is asking IF we have/do/sell something (a yes/no
+            availability question), as opposed to HOW MUCH it costs.
+            """
+            msg = (message or "").lower()
+            markers = (
+                'do you have', 'do u have', 'if you have', 'if u have',
+                'have you got', 'do you sell', 'do u sell', 'do you do',
+                'do u do', 'do you stock', 'do you supply', 'can you supply',
+                'do you offer', 'do you provide', 'you got any', 'you have any',
+                'are you able to', 'can you get',
+            )
+            return any(m in msg for m in markers)
+
+        def _affirm_and_progress(self, intent: str, language: str = "english") -> str:
+            """
+            Affirmative 'yes we do' reply that progresses the sale, for when a
+            lead asks IF we have/do a product (not its price).
+            """
+            names = {
+                'vanity':               'vanity units',
+                'geyser':               'geysers',
+                'shower_cubicle':       'shower cubicles',
+                'toilet':               'toilets',
+                'chamber':              'side chambers',
+                'bathtub_installation': 'bathtubs',
+                'tub_sales':            'bathtubs',
+                'standalone_tub':       'freestanding tubs',
+            }
+            name = names.get(intent, 'that')
+            if language == 'shona':
+                return (
+                    f"Hongu, tinacho uye tinoita kuiswa kwe{name} 👍\n\n"
+                    "Uri kuda ichi chete, kana full bathroom? Tinogona kuuya tione "
+                    "tikupe mutengo wakajika — assessment yemahara."
+                )
+            return (
+                f"Yes — we supply and install {name} 👍\n\n"
+                "Are you after just that, or a full bathroom setup? We can come take "
+                "a look and give you a fixed price — the on-site assessment is free."
+            )
+
+
         # ── Multi-intent (Hybrid) composer ────────────────────────────────────
         # Concise canonical one-liners for composing answers to multi-part
         # messages. Product lines mirror structured_pricing[...]['total_line']
@@ -2558,6 +2603,17 @@ class ResponseMixin:
                                 "Standard tubs from US$80, install from US$80.\n\n"
                                 "What did you have in mind?"
                             )
+
+                    # "Do you have/do X?" with no price asked → confirm yes and
+                    # progress the sale instead of leading with a price.
+                    _AVAIL_PROGRESS_INTENTS = {
+                        'vanity', 'geyser', 'shower_cubicle', 'toilet', 'chamber',
+                        'bathtub_installation',
+                    }
+                    if (intent in _AVAIL_PROGRESS_INTENTS and
+                            self._is_availability_question(message) and
+                            not self._is_asking_for_price(message)):
+                        return self._affirm_and_progress(intent, language)
 
                     if intent in structured_pricing:
                         pricing_payload = structured_pricing[intent]
