@@ -1717,15 +1717,20 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # explicitly asking a price, let the booking flow capture it and advance
         # instead of dropping a price pitch and stalling.
         booking_capture_phase = False
+        is_project_description = False
         try:
             booking_capture_phase = (
                 plumbot.get_next_question_to_ask() in ('service_type', 'project_description')
             )
+            # Declarative project descriptions ("I want a bathroom with a toilet
+            # for my new home") should be acknowledged + progressed, never priced
+            # — even after the service/description fields are already captured.
+            is_project_description = plumbot._looks_like_project_description_reply(message_body)
         except Exception:
-            booking_capture_phase = False
+            pass
 
-        if booking_capture_phase and not price_requested:
-            print("Skipping service inquiry reply - capturing service as booking detail (no price asked)")
+        if (booking_capture_phase or is_project_description) and not price_requested:
+            print("Skipping service inquiry reply - lead is describing their project (no price asked)")
         elif mid_conversation and not should_bypass_mid_conversation_gate:
             print("Skipping service inquiry reply - mid-conversation and no explicit info/price request")
         elif intent != 'none' and (
