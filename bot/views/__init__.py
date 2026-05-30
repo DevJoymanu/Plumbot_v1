@@ -81,6 +81,7 @@ from .followups import (
     reactivate_lead,
     test_followup_message,
     test_followup_email,
+    followup_test_suite,
     manual_followup_check,
     pause_chatbot,
     resume_chatbot,

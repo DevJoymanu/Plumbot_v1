@@ -1,0 +1,220 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}Follow-up & Email Test Suite — Plumbot{% endblock %}
+
+{% block extra_css %}
+<style>
+  .ts-wrap { max-width: 920px; margin: 0 auto; padding: 8px 4px 40px; }
+  .ts-head h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+  .ts-head p { color: #6b7280; margin: 0 0 18px; font-size: 14px; }
+  .ts-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+    padding: 20px 22px; margin-bottom: 20px;
+  }
+  .ts-card h2 { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+  .ts-card .ts-sub { color: #6b7280; font-size: 13px; margin: 0 0 16px; }
+  .ts-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 8px 18px; margin: 6px 0 16px;
+  }
+  .ts-check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .ts-field { margin-bottom: 14px; }
+  .ts-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; color: #374151; }
+  .ts-input, .ts-select {
+    width: 100%; padding: 8px 10px; border: 1px solid #d1d5db;
+    border-radius: 7px; font-size: 14px;
+  }
+  .ts-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .ts-row > .ts-field { flex: 1; min-width: 200px; }
+  .ts-btn {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    border: none; border-radius: 7px; padding: 9px 16px; font-size: 14px;
+    font-weight: 600; color: #fff; background: var(--color-header, #1f6feb);
+  }
+  .ts-btn.secondary { background: #4b5563; }
+  .ts-btn.ghost { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+  .ts-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+  .ts-results { margin-top: 16px; border-top: 1px solid #eee; padding-top: 14px; }
+  .ts-item { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; font-size: 14px; }
+  .ts-pill { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; flex-shrink: 0; }
+  .ts-pill.ok { background: #dcfce7; color: #166534; }
+  .ts-pill.bad { background: #fee2e2; color: #991b1b; }
+  .ts-err { color: #991b1b; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .ts-pre {
+    background: #0d1117; color: #d1d5db; border-radius: 8px; padding: 14px;
+    font-size: 12px; white-space: pre-wrap; word-break: break-word;
+    max-height: 380px; overflow: auto; font-family: ui-monospace, monospace;
+  }
+  .ts-msg-preview {
+    background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+    padding: 14px; font-size: 14px; white-space: pre-wrap; margin-top: 10px;
+  }
+  .ts-inline { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .ts-hint { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ts-wrap">
+  <div class="ts-head">
+    <h1><i class="fas fa-vial"></i> Follow-up &amp; Email Test Suite</h1>
+    <p>Fire any customer email, preview / send a WhatsApp follow-up, or run the
+       follow-up cron — all without touching real leads. The chosen appointment is
+       only used for context; its email is overridden in memory and never saved.</p>
+  </div>
+
+  {% include "bot/includes/messages.html" %}
+
+  {# ── Shared appointment-context picker note ── #}
+  <div class="ts-card">
+    <h2><i class="fas fa-envelope"></i> Customer emails</h2>
+    <p class="ts-sub">Send any (or all) email templates to a test address. Runs an
+       SMTP pre-flight first so connection failures show up here, not just in logs.</p>
+
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="send_emails">
+
+      <div class="ts-row">
+        <div class="ts-field">
+          <label for="to_email">Target email</label>
+          <input class="ts-input" type="email" id="to_email" name="to_email"
+                 value="{{ form.to_email|default:default_email }}"
+                 placeholder="you@example.com" required>
+        </div>
+        <div class="ts-field">
+          <label for="apt_email">Context appointment</label>
+          <select class="ts-select" id="apt_email" name="apt">
+            <option value="">Most recent appointment</option>
+            {% for a in recent_appointments %}
+            <option value="{{ a.pk }}" {% if form.apt == a.pk|stringformat:"s" %}selected{% endif %}>
+              #{{ a.pk }} — {{ a.customer_name|default:a.phone_number }}{% if a.project_type %} ({{ a.project_type }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="ts-grid">
+        {% for kind, label in email_tests %}
+        <label class="ts-check">
+          <input type="checkbox" name="email_kinds" value="{{ kind }}"> {{ label }}
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="ts-actions">
+        <button class="ts-btn" type="submit">
+          <i class="fas fa-paper-plane"></i> Send selected
+        </button>
+        <button class="ts-btn secondary" type="submit" name="send_all" value="1">
+          <i class="fas fa-layer-group"></i> Send ALL emails
+        </button>
+      </div>
+    </form>
+
+    {% if results.type == 'email' %}
+    <div class="ts-results">
+      <strong>Results</strong> — sent to <code>{{ results.to }}</code> using appointment #{{ results.apt }}
+      {% for item in results.items %}
+      <div class="ts-item">
+        <span class="ts-pill {% if item.ok %}ok{% else %}bad{% endif %}">{% if item.ok %}SENT{% else %}FAIL{% endif %}</span>
+        <div>
+          {{ item.label }}
+          {% if item.error %}<div class="ts-err">{{ item.error }}</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── WhatsApp follow-up ── #}
+  <div class="ts-card">
+    <h2><i class="fab fa-whatsapp"></i> WhatsApp follow-up message</h2>
+    <p class="ts-sub">Generate the exact template message the cron would send for a
+       given stage and attempt. Leave "Actually send" unticked to just preview.</p>
+
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="followup_message">
+
+      <div class="ts-row">
+        <div class="ts-field">
+          <label for="question">Stage / question</label>
+          <select class="ts-select" id="question" name="question">
+            {% for q in followup_questions %}
+            <option value="{{ q }}" {% if form.question == q %}selected{% endif %}>{{ q }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="ts-field">
+          <label for="attempt">Attempt (1–4)</label>
+          <select class="ts-select" id="attempt" name="attempt">
+            {% for n in "1234" %}
+            <option value="{{ n }}" {% if form.attempt == n|stringformat:"s" %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="ts-field">
+          <label for="apt_wa">Context appointment</label>
+          <select class="ts-select" id="apt_wa" name="apt">
+            <option value="">Most recent appointment</option>
+            {% for a in recent_appointments %}
+            <option value="{{ a.pk }}">#{{ a.pk }} — {{ a.customer_name|default:a.phone_number }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="ts-field">
+        <label for="to_phone">Target phone (only needed to actually send)</label>
+        <input class="ts-input" type="text" id="to_phone" name="to_phone"
+               value="{{ form.to_phone }}" placeholder="263776255077">
+      </div>
+
+      <div class="ts-actions">
+        <label class="ts-inline"><input type="checkbox" name="do_send" value="1"> Actually send via WhatsApp</label>
+        <button class="ts-btn" type="submit">
+          <i class="fas fa-wand-magic-sparkles"></i> Generate / Send
+        </button>
+      </div>
+    </form>
+
+    {% if results.type == 'followup' %}
+    <div class="ts-results">
+      <strong>{{ results.question }} · attempt #{{ results.attempt }}</strong>
+      {% if results.sent %}<span class="ts-pill ok">SENT</span>{% endif %}
+      {% if results.error %}<div class="ts-err">{{ results.error }}</div>{% endif %}
+      <div class="ts-msg-preview">{{ results.message }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Follow-up cron ── #}
+  <div class="ts-card">
+    <h2><i class="fas fa-robot"></i> Follow-up cron</h2>
+    <p class="ts-sub">Run the <code>send_followups</code> command. Dry-run shows what
+       would be sent without sending; force ignores contact windows and cooldowns.</p>
+
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="run_cron">
+      <div class="ts-actions">
+        <label class="ts-inline"><input type="checkbox" name="dry_run" value="1" checked> Dry-run</label>
+        <label class="ts-inline"><input type="checkbox" name="force" value="1"> Force (ignore windows)</label>
+        <button class="ts-btn" type="submit">
+          <i class="fas fa-play"></i> Run cron
+        </button>
+      </div>
+    </form>
+
+    {% if results.type == 'cron' %}
+    <div class="ts-results">
+      {% if results.error %}<div class="ts-err">{{ results.error }}</div>{% endif %}
+      <pre class="ts-pre">{{ results.output|default:"(no output)" }}</pre>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

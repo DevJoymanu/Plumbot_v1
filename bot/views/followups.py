@@ -143,6 +143,8 @@ def test_followup_email(request):
       kind  — 'followup' (default) | 'last_check' | 'quote'
       apt   — appointment PK to clone context from (default: most recent
               appointment with a customer_email on file)
+      probe — if set (e.g. ?probe=1), skip sending and instead test raw TCP
+              reachability to SMTP ports 587/465/2525 from this container
 
     Returns JSON: {"sent": bool, "apt": int, "kind": str, "to": str}.
     The appointment's customer_email is temporarily overridden in-memory
@@ -154,6 +156,33 @@ def test_followup_email(request):
         send_delay_quote_email,
     )
     from bot.models import Appointment
+
+    # Egress probe mode (?probe=1): test raw TCP reachability to the SMTP
+    # submission ports from THIS container, isolating the network layer from
+    # SMTP/TLS/auth. A timeout means the host is dropping outbound SMTP;
+    # 'refused' means reachable but nothing listening. 2525 is the fallback
+    # submission port relays expose for hosts that block 587/465.
+    if request.GET.get("probe"):
+        import socket
+        import time
+
+        results = {}
+        for host, port in (
+            ("smtp.gmail.com", 587),
+            ("smtp.gmail.com", 465),
+            ("smtp.gmail.com", 2525),
+        ):
+            started = time.monotonic()
+            try:
+                socket.create_connection((host, port), timeout=10).close()
+                outcome = "OPEN"
+            except Exception as exc:  # noqa: BLE001 — surface every failure mode
+                outcome = f"{type(exc).__name__}: {exc}"
+            results[f"{host}:{port}"] = {
+                "result": outcome,
+                "ms": round((time.monotonic() - started) * 1000),
+            }
+        return JsonResponse({"probe": True, "ports": results})
 
     to_addr = (request.GET.get("to") or "").strip()
     if "@" not in to_addr:
@@ -232,6 +261,203 @@ def test_followup_email(request):
         "sent": bool(ok), "apt": apt.pk, "kind": kind, "to": to_addr,
         "smtp": smtp_diag,
     })
+
+
+@staff_required
+def followup_test_suite(request):
+    """
+    Unified test console for everything follow-up related, in one page:
+
+      • Customer emails — fire any (or ALL) of the delay emails, reminder
+        emails, and the booking confirmation to an arbitrary address.
+      • WhatsApp follow-up — generate the exact template message the cron would
+        send for a given stage/attempt, and optionally deliver it to a number.
+      • Follow-up cron — run `send_followups` with a dry-run / force toggle and
+        see the captured output.
+
+    Nothing here touches a real lead: the appointment used for context has its
+    customer_email overridden in-memory only (never saved), so the genuine
+    customer is never emailed. See the JSON-only `test_followup_email` endpoint
+    for the lower-level deliverability / SMTP-probe diagnostic.
+    """
+    from bot.customer_emails import (
+        send_delay_followup_email,
+        send_delay_last_check_email,
+        send_delay_quote_email,
+        send_booking_confirmation_email,
+        send_customer_reminder_email,
+    )
+
+    # kind -> (human label, callable(apt) -> bool)
+    EMAIL_TESTS = {
+        'delay_followup':       ('Delay re-engagement email',     lambda a: send_delay_followup_email(a)),
+        'delay_last_check':     ('Delay last-check email',        lambda a: send_delay_last_check_email(a)),
+        'delay_quote':          ('Delay quote + portfolio email', lambda a: send_delay_quote_email(a, follow_up_date_str='next Friday')),
+        'booking_confirmation': ('Booking confirmation email',    lambda a: send_booking_confirmation_email(a)),
+        'reminder_two_days':    ('Reminder — 2 days before',      lambda a: send_customer_reminder_email(a, 'two_days')),
+        'reminder_one_day':     ('Reminder — 1 day before',       lambda a: send_customer_reminder_email(a, 'one_day')),
+        'reminder_morning':     ('Reminder — morning of',         lambda a: send_customer_reminder_email(a, 'morning')),
+        'reminder_two_hours':   ('Reminder — 2 hours before',     lambda a: send_customer_reminder_email(a, 'two_hours')),
+        'reminder_thirty_mins': ('Reminder — 30 mins before',     lambda a: send_customer_reminder_email(a, 'thirty_mins')),
+    }
+    FOLLOWUP_QUESTIONS = ['service_type', 'project_description', 'area', 'availability', 'complete']
+
+    context = {
+        'active_nav': 'followups',
+        'email_tests': [(k, label) for k, (label, _fn) in EMAIL_TESTS.items()],
+        'followup_questions': FOLLOWUP_QUESTIONS,
+        'default_email': getattr(request.user, 'email', '') or '',
+        'recent_appointments': Appointment.objects.order_by('-id')[:25],
+        'results': None,
+        # echo back form values so the page keeps state after a POST
+        'form': request.POST if request.method == 'POST' else {},
+    }
+
+    if request.method != 'POST':
+        return render(request, 'bot/pages/followup_test_suite.html', context)
+
+    action = request.POST.get('action', '')
+    apt_pk = (request.POST.get('apt') or '').strip()
+
+    def _resolve_apt():
+        """Return (appointment, error_message)."""
+        if apt_pk:
+            try:
+                return Appointment.objects.get(pk=int(apt_pk)), None
+            except (ValueError, Appointment.DoesNotExist):
+                return None, f'Appointment {apt_pk} not found.'
+        apt = Appointment.objects.order_by('-id').first()
+        if not apt:
+            return None, 'No appointments exist to use as test context.'
+        return apt, None
+
+    # ── Customer email tests ────────────────────────────────────────────────
+    if action == 'send_emails':
+        to_email = (request.POST.get('to_email') or '').strip()
+        kinds = request.POST.getlist('email_kinds')
+        if request.POST.get('send_all'):
+            kinds = list(EMAIL_TESTS.keys())
+
+        if '@' not in to_email:
+            messages.error(request, 'Enter a valid target email address.')
+        elif not kinds:
+            messages.error(request, 'Select at least one email to send (or use "Send ALL").')
+        else:
+            apt, err = _resolve_apt()
+            if err:
+                messages.error(request, err)
+            else:
+                # In-memory override only — the real customer is never emailed.
+                apt.customer_email = to_email
+
+                # SMTP pre-flight so an auth/TLS failure surfaces on the page
+                # rather than failing silently for every email.
+                import traceback
+                from django.core.mail import get_connection
+                smtp_error = None
+                try:
+                    conn = get_connection()
+                    conn.open()
+                    conn.close()
+                except Exception as exc:
+                    smtp_error = f'{type(exc).__name__}: {exc}\n{traceback.format_exc()[-600:]}'
+
+                items = []
+                if smtp_error:
+                    items.append({'label': 'SMTP connection', 'ok': False, 'error': smtp_error})
+                else:
+                    for kind in kinds:
+                        label, fn = EMAIL_TESTS[kind]
+                        try:
+                            ok = fn(apt)
+                            items.append({
+                                'label': label, 'ok': bool(ok),
+                                'error': None if ok else 'send returned False (check logs)',
+                            })
+                        except Exception as exc:
+                            items.append({
+                                'label': label, 'ok': False,
+                                'error': f'{type(exc).__name__}: {exc}',
+                            })
+
+                sent_n = sum(1 for i in items if i['ok'])
+                fail_n = len(items) - sent_n
+                if sent_n:
+                    messages.success(request, f'✅ {sent_n} email(s) sent to {to_email}.')
+                if fail_n:
+                    messages.warning(request, f'⚠️ {fail_n} email(s) failed — see results below.')
+                context['results'] = {
+                    'type': 'email', 'to': to_email, 'apt': apt.pk, 'items': items,
+                }
+
+    # ── WhatsApp follow-up message ──────────────────────────────────────────
+    elif action == 'followup_message':
+        to_phone = (request.POST.get('to_phone') or '').strip()
+        question = request.POST.get('question', 'complete')
+        try:
+            attempt = max(1, min(4, int(request.POST.get('attempt') or 1)))
+        except ValueError:
+            attempt = 1
+        do_send = bool(request.POST.get('do_send'))
+
+        apt, err = _resolve_apt()
+        if err:
+            messages.error(request, err)
+        else:
+            from bot.management.commands.send_followups import Command
+            cmd = Command()
+            # Use the deterministic template engine (no DeepSeek call) so the
+            # preview is repeatable; this is exactly what the cron falls back to.
+            gen = cmd._template_message(apt, question, attempt)
+            message = gen['message']
+
+            sent = False
+            send_error = None
+            if do_send:
+                if not to_phone:
+                    send_error = 'Phone number required to actually send.'
+                else:
+                    try:
+                        whatsapp_api.send_text_message(clean_phone_number(to_phone), message)
+                        sent = True
+                    except Exception as exc:
+                        send_error = f'{type(exc).__name__}: {exc}'
+
+            if sent:
+                messages.success(request, f'✅ Follow-up message sent to {to_phone}.')
+            elif send_error:
+                messages.error(request, f'Failed to send: {send_error}')
+            else:
+                messages.info(request, 'Generated follow-up preview (not sent).')
+
+            context['results'] = {
+                'type': 'followup', 'message': message, 'question': question,
+                'attempt': attempt, 'sent': sent, 'error': send_error, 'apt': apt.pk,
+            }
+
+    # ── Follow-up cron run ──────────────────────────────────────────────────
+    elif action == 'run_cron':
+        from django.core.management import call_command
+        from io import StringIO
+        out = StringIO()
+        cmd_args = []
+        if request.POST.get('dry_run'):
+            cmd_args.append('--dry-run')
+        if request.POST.get('force'):
+            cmd_args.append('--force')
+        try:
+            call_command('send_followups', *cmd_args, stdout=out)
+            messages.success(request, 'Follow-up cron run completed.')
+            context['results'] = {'type': 'cron', 'output': out.getvalue(), 'error': None}
+        except Exception as exc:
+            import traceback
+            messages.error(request, f'Cron run failed: {exc}')
+            context['results'] = {
+                'type': 'cron', 'output': out.getvalue(),
+                'error': f'{type(exc).__name__}: {exc}\n{traceback.format_exc()[-800:]}',
+            }
+
+    return render(request, 'bot/pages/followup_test_suite.html', context)
 
 
 @staff_required
