@@ -2068,15 +2068,35 @@ class ResponseMixin:
 
         @staticmethod
         def _is_asking_for_price(message: str) -> bool:
-            """Return True only when the customer explicitly asks about cost/price."""
+            """
+            Return True when the customer is asking about cost/price.
+
+            Primary path is the DeepSeek classifier (robust to typos,
+            abbreviations like "hw much", and Shona/English mixing); falls back
+            to keyword matching when DeepSeek is unavailable or returns nothing.
+            """
             msg = (message or "").lower()
+            if not msg:
+                return False
+
+            # ── Primary: DeepSeek intent classification ──
+            from bot.services.clients import deepseek_detects_price_request
+            ai = deepseek_detects_price_request(message)
+            if ai is not None:
+                return ai
+
+            # ── Fallback: keyword match (DeepSeek down / empty) ──
             price_keywords = (
                 'price', 'cost', 'how much', 'charge', 'fee', 'rate',
+                'hw much', 'hw mch', 'hwmuch', 'how mch', 'howmuch',
                 'mutengo', 'mbozha', 'dollar', ' usd', '$', 'cheap', 'afford',
                 'estimate', 'quote', 'pricing', 'what does', 'what do you charge',
                 'expensive', 'budget',
             )
-            return any(kw in msg for kw in price_keywords)
+            if any(kw in msg for kw in price_keywords):
+                return True
+            # Catch abbreviated / misspelt "how much": "hw much", "howmuch", "hw mch"…
+            return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
 
         @staticmethod
         def _is_asking_for_size(message: str) -> bool:

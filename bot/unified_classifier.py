@@ -177,6 +177,7 @@ def unified_classify(
         f"Customer message: \"{message}\""
     )
 
+    raw = None
     try:
         from bot.services.clients import deepseek_call
         raw = deepseek_call(
@@ -192,7 +193,12 @@ def unified_classify(
         logger.debug("unified_classify result: %s", result)
         return result
     except Exception as exc:
-        logger.warning("unified_classify failed: %s", exc)
+        # Log the raw body on failure so a malformed/truncated JSON is visible
+        # (distinguishes "DeepSeek returned junk" from "DeepSeek returned nothing").
+        logger.warning(
+            "unified_classify failed: %s | raw=%r",
+            exc, (raw[:400] if raw else raw),
+        )
         return None
 
 

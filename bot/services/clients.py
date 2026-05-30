@@ -62,10 +62,32 @@ def deepseek_call(
                 kwargs['response_format'] = {'type': 'json_object'}
 
             resp = deepseek_client.chat.completions.create(**kwargs)
-            content = resp.choices[0].message.content
+            choice = resp.choices[0]
+            content = choice.message.content
 
             if not content or not content.strip():
-                raise ValueError("empty response from DeepSeek")
+                # Diagnostic: surface WHY it's empty so we can act —
+                #   finish_reason='length'         → truncated (raise max_tokens)
+                #   finish_reason='content_filter' → filtered
+                #   finish_reason='stop' + completion_tokens≈0 → genuinely empty
+                #                                    completion (DeepSeek-side degradation)
+                #   reasoning_content present but content empty → reasoning model
+                #                                    put everything in the wrong field
+                finish    = getattr(choice, "finish_reason", "?")
+                usage     = getattr(resp, "usage", None)
+                reasoning = getattr(choice.message, "reasoning_content", None)
+                usage_str = (
+                    f"prompt={getattr(usage, 'prompt_tokens', '?')},"
+                    f"completion={getattr(usage, 'completion_tokens', '?')}"
+                    if usage else "n/a"
+                )
+                logger.warning(
+                    "DeepSeek EMPTY content | model=%s finish_reason=%s usage=%s "
+                    "reasoning_len=%s max_tokens=%s",
+                    _model, finish, usage_str,
+                    len(reasoning) if reasoning else 0, max_tokens,
+                )
+                raise ValueError(f"empty response from DeepSeek (finish_reason={finish})")
 
             return content.strip()
 
