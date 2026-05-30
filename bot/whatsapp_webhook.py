@@ -385,6 +385,20 @@ def get_random_delay() -> int:
 
 def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event=None):
     try:
+        # Snapshot the appointment status at the START of the delay window. The
+        # abort guard below must only drop a reply that was generated while the
+        # lead was still PENDING and then got confirmed mid-wait (a stale
+        # pre-booking question). Post-booking replies — the "what name?" / "what
+        # email?" asks — are generated when the status is ALREADY confirmed, and
+        # must NOT be aborted, or the customer never receives them.
+        try:
+            _initial = Appointment.objects.filter(
+                phone_number=f"whatsapp:+{sender}"
+            ).only('status').first()
+            was_confirmed_at_start = bool(_initial and _initial.status == 'confirmed')
+        except Exception:
+            was_confirmed_at_start = False
+
         # Sleep in short chunks so a cancel_event can interrupt the wait quickly.
         _POLL = 5  # seconds between cancellation checks
         slept = 0
@@ -405,13 +419,15 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
             if _pending_send_events.get(sender) is cancel_event:
                 _pending_send_events.pop(sender, None)
 
-        # Abort if the appointment was confirmed during the delay window
+        # Abort only if the appointment got confirmed DURING the delay window —
+        # i.e. this reply is a stale pre-booking question superseded by a booking.
+        # Replies generated after confirmation (the name/email asks) are kept.
         try:
             fresh = Appointment.objects.filter(
                 phone_number=f"whatsapp:+{sender}"
             ).only('status').first()
-            if fresh and fresh.status == 'confirmed':
-                print(f"⚠️ Aborting delayed reply to {sender} — appointment already confirmed")
+            if fresh and fresh.status == 'confirmed' and not was_confirmed_at_start:
+                print(f"⚠️ Aborting delayed reply to {sender} — confirmed mid-wait (stale pre-booking reply)")
                 return
         except Exception:
             pass  # DB unavailable — proceed with send rather than silently drop
