@@ -15,11 +15,9 @@ DEFAULT_PLUMBER_NOTIFICATION_EMAILS = [
 ]
 
 # Temporarily muted recipients — these are filtered out of every plumber
-# notification regardless of which list they came from. To un-mute, remove the
-# address here (case-insensitive match). Muted 2026-05-30 at the user's request.
-MUTED_NOTIFICATION_EMAILS = {
-    "homebsconstruction@gmail.com",
-}
+# notification regardless of which list they came from. Add an address here
+# (case-insensitive) to mute it. Currently none are muted.
+MUTED_NOTIFICATION_EMAILS: set[str] = set()
 
 
 def get_plumber_notification_emails():
