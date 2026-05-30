@@ -75,6 +75,68 @@ class ResponseMixin:
             return any(phrase in msg for phrase in decline_phrases)
 
 
+        def _parse_name_from_reply(self, message: str):
+            """
+            Deterministically pull a person's name from a reply to the name
+            question — no DeepSeek. Strips common lead-ins ("my name is", "i'm",
+            "it's", "this is", "call me") and validates the remainder with
+            is_valid_name. Conservative: rejects emails, questions, long phrases,
+            and obvious non-name words. Returns a title-cased name, or None.
+            """
+            raw = (message or '').strip()
+            if not raw or '@' in raw or '?' in raw:
+                return None
+            cleaned = re.sub(
+                r"^(?:my name is|my name'?s|the name is|name is|i am|i'?m|"
+                r"it'?s|its|this is|call me|im)\b[\s:,\-]*",
+                '', raw, flags=re.IGNORECASE,
+            ).strip().strip('.,!?:;"\'').strip()
+            tokens = cleaned.split()
+            if not tokens or len(tokens) > 3:
+                return None
+            _NON_NAME = {
+                'send', 'email', 'confirm', 'confirmation', 'skip', 'price',
+                'cost', 'when', 'where', 'what', 'how', 'why', 'who', 'yes',
+                'no', 'ok', 'okay', 'please', 'thanks', 'thank', 'book',
+                'booking', 'appointment', 'time', 'morning', 'afternoon',
+                'today', 'tomorrow',
+            }
+            if any(t.lower() in _NON_NAME for t in tokens):
+                return None
+            candidate = ' '.join(tokens)
+            if self.is_valid_name(candidate):
+                return candidate.title()
+            return None
+
+
+        def _handle_name_step(self, incoming_message, updated_fields):
+            """
+            Resolve the post-booking name question deterministically so a DeepSeek
+            outage can't stall the flow before the email step.
+
+            Order: name already captured this turn → ask email; explicit decline →
+            acknowledge; otherwise try a regex name capture → ask email; else re-ask.
+            Returns the reply string.
+            """
+            if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
+                return self._confirm_or_request_email()
+            if self._declines_sharing_name(incoming_message):
+                self._mark_customer_name_declined()
+                return (
+                    "No problem at all. Your appointment is still confirmed — "
+                    "we'll use this WhatsApp number for updates."
+                )
+            parsed_name = self._parse_name_from_reply(incoming_message)
+            if parsed_name:
+                self.appointment.customer_name = parsed_name
+                self.appointment.save(update_fields=['customer_name'])
+                return self._confirm_or_request_email()
+            return (
+                "One last thing — what name should we put on the booking? "
+                "If you'd rather not share it, just say no."
+            )
+
+
         def _describe_project_context(self) -> str:
             """Build a short, human-readable visit purpose based on project details."""
             project = (self.appointment.project_type or '').lower().replace('_', ' ')
@@ -1064,18 +1126,7 @@ class ResponseMixin:
                     return self._handle_all_day_response()
 
                 if next_question == "name":
-                    if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
-                        return self._confirm_or_request_email()
-                    if self._declines_sharing_name(incoming_message):
-                        self._mark_customer_name_declined()
-                        return (
-                            "No problem at all. Your appointment is still confirmed — "
-                            "we'll use this WhatsApp number for updates."
-                        )
-                    return (
-                        "One last thing — what name should we put on the booking? "
-                        "If you'd rather not share it, just say no."
-                    )
+                    return self._handle_name_step(incoming_message, updated_fields)
 
                 if retry_count == 0:
                     first_pass = self._get_first_pass_question(next_question)
@@ -2800,14 +2851,7 @@ class ResponseMixin:
                     return self._handle_all_day_response()
                 #
                 if next_question == "name":
-                    # Name was just saved in this turn — ask for email (or confirm)
-                    if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
-                        return self._confirm_or_request_email()
-                    # Name not yet provided — ask for it
-                    return (
-                        "One last thing — what name should we put on the booking? "
-                        "If you'd rather not share it, just say no."
-                    )
+                    return self._handle_name_step(incoming_message, updated_fields)
 
                 # ── First-pass: exact hardcoded questions (retry_count == 0) ─────────
 
@@ -2850,21 +2894,7 @@ class ResponseMixin:
 
                     #
                     if next_question == "name":
-                        # If name was just captured this turn, ask for email (or confirm)
-                        if self.appointment.customer_name and 'customer_name' in (updated_fields or []):
-                            return self._confirm_or_request_email()
-                        # Name declined this turn
-                        if self._declines_sharing_name(incoming_message):
-                            self._mark_customer_name_declined()
-                            return (
-                                "No problem at all. Your appointment is still confirmed — "
-                                "we'll use this WhatsApp number for updates."
-                            )
-                        # Still waiting for name
-                        return (
-                            "One last thing — what name should we put on the booking? "
-                            "If you'd rather not share it, just say no."
-                        )
+                        return self._handle_name_step(incoming_message, updated_fields)
                 # ── AI-driven retries ─────────────────────────────────────────────────
                 appointment_context = self.get_appointment_context()
                 retry_context_line = self._build_retry_context_line(updated_fields, next_question)
