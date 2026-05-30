@@ -174,7 +174,9 @@ def test_followup_email(request):
         ):
             started = time.monotonic()
             try:
-                socket.create_connection((host, port), timeout=10).close()
+                # 4s, not 10s: three sequential 10s connects = 30s, which hits
+                # gunicorn's sync-worker timeout and gets the worker killed.
+                socket.create_connection((host, port), timeout=4).close()
                 outcome = "OPEN"
             except Exception as exc:  # noqa: BLE001 — surface every failure mode
                 outcome = f"{type(exc).__name__}: {exc}"
@@ -340,6 +342,7 @@ def followup_test_suite(request):
     if action == 'probe':
         import socket
         import time
+        from concurrent.futures import ThreadPoolExecutor
 
         configured_host = (getattr(settings, 'EMAIL_HOST', '') or 'smtp.gmail.com').strip()
         configured_port = getattr(settings, 'EMAIL_PORT', 587)
@@ -347,7 +350,15 @@ def followup_test_suite(request):
         # IPv4-only connect, matching IPv4SMTPBackend — the IPv6 AAAA record
         # for these hosts fails instantly with ENETUNREACH on Railway and would
         # otherwise mask the real (IPv4) result.
-        def _probe_ipv4(host, port, timeout=8):
+        #
+        # Timeout is deliberately short (4s) and all targets run concurrently:
+        # gunicorn's sync worker is killed after 30s, so a sequential sweep of
+        # blocking connects (7 × 8s = 56s) would crash the worker. Concurrent +
+        # short keeps total wall-time at ~one timeout.
+        PROBE_TIMEOUT = 4
+
+        def _probe_ipv4(target):
+            host, port, _is_cfg = target
             started = time.monotonic()
             try:
                 infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
@@ -355,7 +366,7 @@ def followup_test_suite(request):
                     raise OSError('no IPv4 address (A record) for host')
                 af, socktype, proto, _canon, sa = infos[0]
                 s = socket.socket(af, socktype, proto)
-                s.settimeout(timeout)
+                s.settimeout(PROBE_TIMEOUT)
                 s.connect(sa)
                 s.close()
                 return True, None, round((time.monotonic() - started) * 1000)
@@ -377,9 +388,11 @@ def followup_test_suite(request):
             if (host, port) != (configured_host, configured_port):
                 targets.append((host, port, False))
 
+        with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+            outcomes = list(pool.map(_probe_ipv4, targets))
+
         port_results = []
-        for host, port, is_cfg in targets:
-            ok, err, ms = _probe_ipv4(host, port)
+        for (host, port, is_cfg), (ok, err, ms) in zip(targets, outcomes):
             port_results.append({
                 'label': f'{host}:{port}' + (' (configured)' if is_cfg else ''),
                 'ok': ok, 'error': err, 'ms': ms,
