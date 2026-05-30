@@ -208,7 +208,7 @@ class BookingMixin:
 
             return (
                 f"Perfect — thanks, {customer_name}. You're all set for your "
-                f"*free on-site assessment* on **{formatted_datetime}** in {customer_area}. "
+                f"*free on-site assessment* on *{formatted_datetime}* in {customer_area}. "
                 "Our senior plumber will call you 30 minutes before arrival to confirm. "
                 "See you then!"
             )

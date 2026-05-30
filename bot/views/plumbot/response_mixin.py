@@ -773,7 +773,11 @@ class ResponseMixin:
                         )
                     )
                 )
-                if not mid_conversation and current_question != 'project_description':
+                # Don't auto-price while collecting the service / description —
+                # a lead naming a service there should be captured and advanced,
+                # not answered with a price pitch. Explicit price asks are still
+                # handled by the earlier webhook service-inquiry check.
+                if not mid_conversation and current_question not in ('project_description', 'service_type'):
                     inquiry = precomputed_service_inquiry or self.detect_service_inquiry(incoming_message)
                     PRODUCT_INTENTS = {
                         'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',

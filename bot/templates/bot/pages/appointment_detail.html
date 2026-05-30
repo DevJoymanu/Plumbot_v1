@@ -1329,6 +1329,10 @@
                       <input type="text" id="phone_number" value="{{ appointment.phone_number|default:'' }}" readonly>
                     </div>
                     <div class="detail-field">
+                      <label for="customer_email">Email</label>
+                      <input type="email" id="customer_email" name="customer_email" value="{{ appointment.customer_email|default:'' }}" placeholder="Not provided">
+                    </div>
+                    <div class="detail-field">
                       <label for="project_type">Service</label>
                       <input type="text" id="project_type" name="project_type" value="{{ appointment.project_type|default:'' }}">
                     </div>

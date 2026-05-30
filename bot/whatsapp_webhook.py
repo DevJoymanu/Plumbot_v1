@@ -1592,7 +1592,21 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             _is_specific_product_inquiry
         )
 
-        if mid_conversation and not should_bypass_mid_conversation_gate:
+        # When the bot is actively collecting the service / project description
+        # and the lead simply NAMES a service (e.g. "Shower Cubicles") without
+        # explicitly asking a price, let the booking flow capture it and advance
+        # instead of dropping a price pitch and stalling.
+        booking_capture_phase = False
+        try:
+            booking_capture_phase = (
+                plumbot.get_next_question_to_ask() in ('service_type', 'project_description')
+            )
+        except Exception:
+            booking_capture_phase = False
+
+        if booking_capture_phase and not price_requested:
+            print("Skipping service inquiry reply - capturing service as booking detail (no price asked)")
+        elif mid_conversation and not should_bypass_mid_conversation_gate:
             print("Skipping service inquiry reply - mid-conversation and no explicit info/price request")
         elif intent != 'none' and (
             inquiry.get('confidence') == 'HIGH' or intent in PRODUCT_INTENTS
