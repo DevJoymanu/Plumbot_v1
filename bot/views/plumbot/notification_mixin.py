@@ -203,9 +203,32 @@ class NotificationMixin:
                     if sent_count == 0:
                         print("❌ No booking notifications sent — check TEAM_NUMBERS env var and WhatsApp API config")
 
+                    # HTML version with Call/WhatsApp-customer CTA buttons so
+                    # the plumber can reach the customer in one tap. Falls back
+                    # to plain-text only if the builder fails.
+                    booking_html = None
+                    try:
+                        from ...customer_emails import build_plumber_booking_email_html
+                        site_url = (getattr(settings, 'SITE_URL', '') or
+                                    'https://plumbotv1-production.up.railway.app').rstrip('/')
+                        booking_html = build_plumber_booking_email_html(
+                            customer_name=appointment_info.get('name', 'Unknown'),
+                            customer_phone_digits=customer_phone,
+                            datetime_str=display_datetime.strftime('%A, %B %d at %I:%M %p'),
+                            service=service_name,
+                            area=appointment_info.get('area'),
+                            property_type=appointment_info.get('property_type'),
+                            timeline=appointment_info.get('timeline'),
+                            plan_status=plan_status,
+                            view_url=f"{site_url}/appointments/{self.appointment.id}/",
+                        )
+                    except Exception as html_error:
+                        print(f"⚠️ Booking email HTML build failed: {html_error}")
+
                     send_plumber_notification_email(
-                        subject=f"New booking notification for {appointment_info.get('name', 'Unknown')}",
+                        subject=f"New booking — {appointment_info.get('name', 'Unknown')}",
                         message=team_message,
+                        html_message=booking_html,
                     )
 
                 except Exception as e:

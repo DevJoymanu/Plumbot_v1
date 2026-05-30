@@ -130,6 +130,28 @@ def _wa_nudge():
     )
 
 
+def _customer_contact_buttons(customer_phone_digits):
+    """
+    Call + WhatsApp buttons that target the CUSTOMER — for plumber-facing
+    emails (e.g. new-booking notifications), where the plumber needs to reach
+    the customer, not the business line.
+    """
+    digits = _clean_phone(customer_phone_digits)
+    if not digits:
+        return ''
+    return (
+        '<p style="margin:16px 0;line-height:1;">'
+        f'<a href="https://wa.me/{digits}" style="display:inline-block;'
+        'border:1.5px solid #1a9e4a;color:#1a9e4a;text-decoration:none;'
+        'padding:9px 16px;border-radius:4px;font-size:14px;font-weight:bold;'
+        'margin-right:10px;">💬 WhatsApp customer</a>'
+        f'<a href="tel:+{digits}" style="display:inline-block;'
+        'border:1.5px solid #555;color:#333;text-decoration:none;'
+        'padding:9px 16px;border-radius:4px;font-size:14px;">📞 Call customer</a>'
+        '</p>'
+    )
+
+
 def _wrap(body_html):
     """Minimal HTML wrapper — clean, not promotional."""
     return (
@@ -860,6 +882,56 @@ def send_delay_last_check_email(apt):
     except Exception:
         logger.exception("send_delay_last_check_email failed — apt %s", apt.pk)
         return False
+
+
+def build_plumber_booking_email_html(
+    *, customer_name, customer_phone_digits, datetime_str, service,
+    area=None, property_type=None, timeline=None, plan_status=None,
+    view_url=None,
+):
+    """
+    HTML body for the plumber new-booking notification email.
+
+    Shows the booking details and Call/WhatsApp buttons that dial the CUSTOMER
+    (via _customer_contact_buttons), so the plumber can reach them in one tap.
+    Returns a fully wrapped HTML string.
+    """
+    name = customer_name or "Unknown"
+    digits = _clean_phone(customer_phone_digits)
+
+    rows = [('📅 Date/Time', datetime_str), ('🔧 Service', service)]
+    if area:          rows.append(('📍 Area', area))
+    if property_type: rows.append(('🏠 Property', property_type))
+    if timeline:      rows.append(('⏰ Timeline', timeline))
+    if plan_status:   rows.append(('📐 Plan', plan_status))
+    if digits:        rows.append(('📞 Phone', f'+{digits}'))
+
+    detail_rows = ''.join(
+        f'<p style="margin:3px 0;color:#444;font-size:14px;">'
+        f'<strong>{label}:</strong> {value}</p>'
+        for label, value in rows
+    )
+    card = (
+        '<div style="border-left:4px solid #25D366;padding:12px 16px;'
+        'margin:16px 0;background:#f9f9f9;border-radius:0 6px 6px 0;">'
+        f'{detail_rows}'
+        '</div>'
+    )
+
+    view_link = (
+        f'<p style="margin:16px 0 0;font-size:14px;">'
+        f'<a href="{view_url}" style="color:#1a9e4a;">View full details →</a></p>'
+        if view_url else ''
+    )
+
+    body = (
+        f'<p>Hi Team,</p>'
+        f'<p>New appointment booked by <strong>{name}</strong>.</p>'
+        f'{card}'
+        f'{_customer_contact_buttons(digits)}'
+        f'{view_link}'
+    )
+    return _wrap(body)
 
 
 def send_email_reply_notification_to_plumber(apt, customer_reply_text):
