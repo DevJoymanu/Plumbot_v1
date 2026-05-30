@@ -2155,6 +2155,47 @@ class ResponseMixin:
                 "a look and give you a fixed price — the on-site assessment is free."
             )
 
+        @staticmethod
+        def _is_custom_vs_ready_question(message: str) -> bool:
+            """True when the lead is asking whether a product is custom-made or ready-made."""
+            msg = (message or "").lower()
+            markers = (
+                'custom', 'ready made', 'ready-made', 'readily available',
+                'readily avail', 'off the shelf', 'off-the-shelf', 'made to order',
+                'made-to-order', 'bespoke', 'build to fit', 'built to fit',
+                'pre made', 'pre-made', 'premade', 'standard size', 'standard sizes',
+            )
+            return any(m in msg for m in markers)
+
+        def _answer_custom_vs_ready(self, intent: str, language: str = "english") -> str:
+            """We do both — ready-made and custom — then progress the sale."""
+            names = {
+                'vanity':               'vanity units',
+                'shower_cubicle':       'shower cubicles',
+                'chamber':              'side chambers',
+                'toilet':               'toilets',
+                'bathtub_installation': 'tubs',
+            }
+            name = names.get(intent, 'fittings')
+            if language == 'shona':
+                body = (
+                    f"Tinokwanisa zvese 👍 — tine {name} ari ready-made, uye tinogona "
+                    f"kuronga custom build inokwana paspace yako. Tichakuratidza ma "
+                    f"options patinouya kuzoona."
+                )
+            else:
+                body = (
+                    f"We can do both 👍 — we supply ready-made {name}, or arrange a "
+                    f"custom build to fit your space. We'll go through the options "
+                    f"when we come take a look."
+                )
+            try:
+                return body + "\n\n" + self._get_pricing_followup_prompt(
+                    'shona' if language == 'shona' else 'english'
+                )
+            except Exception:
+                return body + "\n\nWant us to come take a look and lock in a fixed price? The assessment is free."
+
 
         # ── Multi-intent (Hybrid) composer ────────────────────────────────────
         # Concise canonical one-liners for composing answers to multi-part
@@ -2604,6 +2645,16 @@ class ResponseMixin:
                                 "Standard tubs from US$80, install from US$80.\n\n"
                                 "What did you have in mind?"
                             )
+
+                    # "Custom or ready-made?" (no price asked) → we do both, then progress.
+                    _FIXTURE_INTENTS = {
+                        'vanity', 'shower_cubicle', 'chamber', 'toilet',
+                        'bathtub_installation',
+                    }
+                    if (intent in _FIXTURE_INTENTS and
+                            self._is_custom_vs_ready_question(message) and
+                            not self._is_asking_for_price(message)):
+                        return self._answer_custom_vs_ready(intent, language)
 
                     # "Do you have/do X?" with no price asked → confirm yes and
                     # progress the sale instead of leading with a price.
