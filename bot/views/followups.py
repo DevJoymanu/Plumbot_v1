@@ -341,33 +341,55 @@ def followup_test_suite(request):
         import socket
         import time
 
-        host = (getattr(settings, 'EMAIL_HOST', '') or 'smtp.gmail.com').strip()
+        configured_host = (getattr(settings, 'EMAIL_HOST', '') or 'smtp.gmail.com').strip()
         configured_port = getattr(settings, 'EMAIL_PORT', 587)
-        ports = []
-        for p in (configured_port, 587, 465, 2525):
-            if p not in ports:
-                ports.append(p)
 
-        port_results = []
-        for port in ports:
+        # IPv4-only connect, matching IPv4SMTPBackend — the IPv6 AAAA record
+        # for these hosts fails instantly with ENETUNREACH on Railway and would
+        # otherwise mask the real (IPv4) result.
+        def _probe_ipv4(host, port, timeout=8):
             started = time.monotonic()
             try:
-                socket.create_connection((host, port), timeout=10).close()
-                outcome, ok = 'OPEN', True
+                infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+                if not infos:
+                    raise OSError('no IPv4 address (A record) for host')
+                af, socktype, proto, _canon, sa = infos[0]
+                s = socket.socket(af, socktype, proto)
+                s.settimeout(timeout)
+                s.connect(sa)
+                s.close()
+                return True, None, round((time.monotonic() - started) * 1000)
             except Exception as exc:  # noqa: BLE001 — surface every failure mode
-                outcome, ok = f'{type(exc).__name__}: {exc}', False
+                return False, f'{type(exc).__name__}: {exc}', round((time.monotonic() - started) * 1000)
+
+        # The configured endpoint first, then known relays that ALSO listen on
+        # 2525 — this distinguishes "Gmail/this-host blocked" from "all outbound
+        # SMTP blocked". If a 2525 relay is OPEN, SMTP is viable via that relay.
+        targets = [(configured_host, configured_port, True)]
+        for host, port in (
+            ('smtp.gmail.com', 587),
+            ('smtp.sendgrid.net', 587),
+            ('smtp.sendgrid.net', 2525),
+            ('smtp-relay.brevo.com', 587),
+            ('smtp-relay.brevo.com', 2525),
+            ('smtp.mailgun.org', 2525),
+        ):
+            if (host, port) != (configured_host, configured_port):
+                targets.append((host, port, False))
+
+        port_results = []
+        for host, port, is_cfg in targets:
+            ok, err, ms = _probe_ipv4(host, port)
             port_results.append({
-                'label': f'{host}:{port}' + (' (configured)' if port == configured_port else ''),
-                'ok': ok,
-                'error': None if ok else outcome,
-                'ms': round((time.monotonic() - started) * 1000),
+                'label': f'{host}:{port}' + (' (configured)' if is_cfg else ''),
+                'ok': ok, 'error': err, 'ms': ms,
             })
 
         if any(r['ok'] for r in port_results):
-            messages.success(request, 'At least one SMTP port is reachable from this container.')
+            messages.success(request, 'At least one SMTP endpoint is reachable over IPv4 — a relay on that host/port will work.')
         else:
-            messages.error(request, 'No SMTP port is reachable — outbound SMTP is being blocked.')
-        context['results'] = {'type': 'probe', 'host': host, 'items': port_results}
+            messages.error(request, 'No SMTP endpoint is reachable over IPv4 — this host blocks all outbound SMTP. SMTP cannot work here; email must be sent from somewhere with SMTP egress.')
+        context['results'] = {'type': 'probe', 'host': configured_host, 'items': port_results}
 
     # ── Customer email tests ────────────────────────────────────────────────
     elif action == 'send_emails':
