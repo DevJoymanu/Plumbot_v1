@@ -538,7 +538,8 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
     Send quote + portfolio email to a delayed lead.
     Attaches a PDF portfolio with project photos and pricing.
 
-    Deliverability: personal subject, no coloured buttons, plain links only.
+    Deliverability: personal subject, two outlined CTA buttons (Call +
+    WhatsApp), SendGrid link/open tracking disabled so links stay clean.
     """
     try:
         name         = getattr(apt, "customer_name", "") or ""
@@ -552,9 +553,10 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
 
         subject = "Portfolio and pricing" + (f" — as requested, {name}" if name else " — as requested")
 
-        # Prose only — bullets + bold "free" + outlined CTAs were sending
-        # this to Promotions. Same sales mechanics, delivered in plain
-        # sentences so Gmail reads it as a personal note.
+        # Prose + two outlined CTA buttons. Avoid bullets and the word "free"
+        # (kept as "no cost"), which are promotional triggers; the buttons are
+        # safe now that SendGrid link/open tracking is disabled, so links aren't
+        # rewrapped. Same sales mechanics, in plain sentences = personal note.
         followup_inline = (
             f' I\'ll also check in with you around {follow_up_date_str} — no rush before then.'
             if follow_up_date_str else ''
@@ -567,7 +569,8 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
             f'cost nothing, you see the fixed price before any work starts, and we '
             f'don\'t leave until you\'re happy with the job.</p>'
             f'<p>If you\'d like to lock in a time, reply with a day that suits — '
-            f'morning or afternoon — and I\'ll sort it.</p>'
+            f'morning or afternoon — and I\'ll sort it. Or reach me directly:</p>'
+            f'{_contact_buttons(call)}'
             f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
         )
 
@@ -744,7 +747,8 @@ def send_delay_followup_email(apt):
     Deliverability design:
     - Subject is personal, no company name, no promotional language
     - Body reads as a one-to-one message from a real person (Takudzwa)
-    - No coloured CTA buttons — plain inline links only
+    - Two outlined CTA buttons (Call + WhatsApp); safe for Primary routing
+      because SendGrid link/open tracking is disabled (clean tel:/wa.me links)
     - Minimal HTML structure, no logo header
     - Signed off with a real name and direct number
     All of these push Gmail to route to Primary, not Promotions.
@@ -775,9 +779,11 @@ def send_delay_followup_email(apt):
 
         subject = 'Still on for your plumbing work' + (f', {name}?' if name else '?')
 
-        # Prose only — no bullets, no buttons, no styled body wrapper.
-        # The sales mechanics (risk reversal + micro-yes close) are folded
-        # into natural sentences so Gmail reads this as a personal email.
+        # Prose + two outlined CTA buttons (Call + WhatsApp). With SendGrid
+        # click/open tracking disabled (see _send_via_sendgrid), the tel:/wa.me
+        # links stay clean, so the buttons no longer trigger Promotions routing.
+        # The sales mechanics (risk reversal + micro-yes close) stay in natural
+        # sentences so Gmail still reads this as a personal email.
         body = (
             f'<p>{hi},</p>'
             f'<p>Circling back as we agreed — you said you\'d be back around now '
@@ -786,7 +792,9 @@ def send_delay_followup_email(apt):
             f'agree the price in writing before any work starts, and we don\'t leave '
             f'until you\'re happy with the job.</p>'
             f'<p>If you want to take the next step, reply with a day that suits — '
-            f'morning or afternoon — and I\'ll pop you in the diary.</p>'
+            f'morning or afternoon — and I\'ll pop you in the diary. '
+            f'Or reach me directly:</p>'
+            f'{_contact_buttons(call)}'
             f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
         )
 
@@ -816,7 +824,7 @@ def send_delay_last_check_email(apt):
 
     Deliverability rules (same as the first touch):
     - Personal subject, no company name, no promotional language
-    - Plain links only, no coloured CTA buttons
+    - Two outlined CTA buttons (Call + WhatsApp); SendGrid tracking disabled
     - Minimal HTML, signed off by Takudzwa with direct number
     """
     try:
@@ -835,6 +843,7 @@ def send_delay_last_check_email(apt):
             f'<p>If the timing\'s off, no problem at all — just reply "later" '
             f'and we\'ll quietly close this out. You can always come back to '
             f'us when you\'re ready.</p>'
+            f'{_contact_buttons(call)}'
             f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
         )
 

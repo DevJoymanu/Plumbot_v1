@@ -190,6 +190,18 @@ def _send_via_sendgrid(
             "filename": attachment_name,
         }]
 
+    # Disable all SendGrid tracking. Click-tracking rewrites every link through
+    # a sendgrid.net tracking domain and open-tracking injects a 1px pixel —
+    # both are strong Gmail "bulk/promotional" signals that push transactional
+    # mail to the Promotions tab. Turning them off keeps tel:/wa.me links clean
+    # and lets these read as personal 1:1 email (Primary/Updates).
+    payload["tracking_settings"] = {
+        "click_tracking":        {"enable": False, "enable_text": False},
+        "open_tracking":         {"enable": False},
+        "subscription_tracking": {"enable": False},
+        "ganalytics":            {"enable": False},
+    }
+
     try:
         response = requests.post(
             "https://api.sendgrid.com/v3/mail/send",
