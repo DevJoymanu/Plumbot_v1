@@ -91,3 +91,27 @@ class FollowUpDeliveryModeTests(TestCase):
 
         mock_send_text.assert_not_called()
         mock_send_template.assert_not_called()
+
+
+class CustomerEmailAsyncTests(TestCase):
+    @patch('bot.customer_emails.threading.Thread')
+    def test_delay_quote_email_queues_daemon_thread(self, mock_thread):
+        from bot.customer_emails import send_delay_quote_email_async
+
+        appointment = Appointment.objects.create(
+            phone_number='whatsapp:+10000000008',
+            customer_email='customer@example.com',
+        )
+
+        result = send_delay_quote_email_async(
+            appointment,
+            follow_up_date_str='Sunday 31 May',
+        )
+
+        mock_thread.assert_called_once()
+        thread_kwargs = mock_thread.call_args.kwargs
+        self.assertTrue(callable(thread_kwargs['target']))
+        self.assertEqual(thread_kwargs['name'], f'delay-quote-email-{appointment.pk}')
+        self.assertTrue(thread_kwargs['daemon'])
+        mock_thread.return_value.start.assert_called_once()
+        self.assertIs(result, mock_thread.return_value)

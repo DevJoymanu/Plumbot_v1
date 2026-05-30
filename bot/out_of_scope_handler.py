@@ -972,7 +972,7 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
 
     # If email already captured, skip Step 4
     if getattr(appointment, 'customer_email', None):
-        from bot.customer_emails import send_delay_quote_email
+        from bot.customer_emails import send_delay_quote_email_async
         friendly = None
         if iso_date:
             try:
@@ -980,7 +980,7 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
                 friendly = _d.fromisoformat(iso_date).strftime('%A %d %B')
             except Exception:
                 pass
-        send_delay_quote_email(appointment, follow_up_date_str=friendly)
+        send_delay_quote_email_async(appointment, follow_up_date_str=friendly)
         return (
             "Perfect, we'll do that. "
             "We've also sent a quote to your email. "
@@ -1050,8 +1050,8 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
         except Exception:
             pass
 
-    from bot.customer_emails import send_delay_quote_email
-    send_delay_quote_email(appointment, follow_up_date_str=friendly)
+    from bot.customer_emails import send_delay_quote_email_async
+    send_delay_quote_email_async(appointment, follow_up_date_str=friendly)
 
     # Restore delay signal — cleared by the webhook before the OOS handler runs.
     # Re-writing the tag blocks regular follow-ups; restoring is_delayed=True

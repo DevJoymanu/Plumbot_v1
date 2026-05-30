@@ -16,12 +16,14 @@ Design decisions:
 
 import logging
 import os
+import threading
 import time
 from io import BytesIO
 
 import pytz
 
 from django.conf import settings
+from django.db import close_old_connections
 
 logger = logging.getLogger(__name__)
 
@@ -600,6 +602,42 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
     except Exception:
         logger.exception("send_delay_quote_email failed — apt %s", apt.pk)
         return False
+
+
+def send_delay_quote_email_async(apt, follow_up_date_str=None):
+    """
+    Queue the delay quote email without blocking the WhatsApp response path.
+
+    Railway can silently drop outbound SMTP, which makes smtplib wait until its
+    socket timeout. Running this in a daemon thread keeps the customer-facing
+    WhatsApp flow responsive while preserving the same email logging.
+    """
+    apt_id = getattr(apt, "pk", None)
+    if not apt_id:
+        logger.warning("Delay quote email async skipped - appointment has no pk")
+        return None
+
+    def _worker():
+        close_old_connections()
+        try:
+            from bot.models import Appointment
+            fresh_apt = Appointment.objects.filter(pk=apt_id).first()
+            if not fresh_apt:
+                logger.warning("Delay quote email async skipped - apt %s not found", apt_id)
+                return
+            send_delay_quote_email(fresh_apt, follow_up_date_str=follow_up_date_str)
+        except Exception:
+            logger.exception("Delay quote email async worker failed - apt %s", apt_id)
+        finally:
+            close_old_connections()
+
+    thread = threading.Thread(
+        target=_worker,
+        name=f"delay-quote-email-{apt_id}",
+        daemon=True,
+    )
+    thread.start()
+    return thread
 
 
 _REMINDER_CONFIGS = {
