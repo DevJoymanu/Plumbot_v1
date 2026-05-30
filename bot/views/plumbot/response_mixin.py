@@ -853,6 +853,10 @@ class ResponseMixin:
                                 intent not in PRICING_AUTO_REPLY_INTENTS and
                                 not price_requested):
                             print(f"Skipping priced service inquiry: {intent} - no explicit price request")
+                        elif self._looks_like_project_description_reply(incoming_message) and not price_requested:
+                            # Lead is describing their project, not asking a price —
+                            # let the booking flow acknowledge & progress instead.
+                            print(f"⏭️ Skipping service inquiry — lead describing project, no price asked ({intent})")
                         elif intent in sent:
                             print(f"⏭️ Skipping already-sent service inquiry: {intent}")
                         else:
