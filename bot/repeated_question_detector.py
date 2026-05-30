@@ -55,6 +55,22 @@ _GENERIC_INFO_REQUEST_SNIPPETS = (
     'need more information',
 )
 
+# Bot replies that are NOT real answers — if a "repeat" matched one of these,
+# the bot never actually answered, so re-asking is legitimate (don't treat as
+# a redundant repeat; let it fall through to be answered properly).
+_NON_ANSWER_SNIPPETS = (
+    'how may we assist you',
+    'how can we assist you',
+    'how may we help you',
+)
+
+
+def _is_non_answer(answer: str) -> bool:
+    text = (answer or '').strip().lower()
+    if not text:
+        return True
+    return any(snippet in text for snippet in _NON_ANSWER_SNIPPETS)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # NEW: DeepSeek intent pre-classifier
@@ -333,6 +349,13 @@ Return ONLY valid JSON:
             idx = int(matched_index) - 1
             if 0 <= idx < len(pairs):
                 matched_pair = pairs[idx]
+                if _is_non_answer(matched_pair['answer']):
+                    logger.info(
+                        "Repeat-question suppressed — the prior 'answer' was the "
+                        "generic greeting (the bot never actually answered), so the "
+                        "re-ask is legitimate and should be answered."
+                    )
+                    return None
                 if (
                     _is_generic_intake_answer(matched_pair['answer']) and
                     _looks_like_project_detail_message(new_message)
