@@ -65,7 +65,39 @@
 
   {% include "bot/includes/messages.html" %}
 
-  {# ── Shared appointment-context picker note ── #}
+  {# ── SMTP egress diagnostics ── #}
+  <div class="ts-card">
+    <h2><i class="fas fa-network-wired"></i> SMTP egress probe</h2>
+    <p class="ts-sub">Raw TCP reachability test to the mail submission ports from this
+       container. Run this first if emails fail with <code>TimeoutError</code> — a
+       timeout means the host is blocking outbound SMTP, not an auth/TLS problem.</p>
+
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="probe">
+      <div class="ts-actions">
+        <button class="ts-btn" type="submit">
+          <i class="fas fa-satellite-dish"></i> Probe SMTP ports
+        </button>
+      </div>
+    </form>
+
+    {% if results.type == 'probe' %}
+    <div class="ts-results">
+      <strong>Reachability</strong> — host <code>{{ results.host }}</code>
+      {% for item in results.items %}
+      <div class="ts-item">
+        <span class="ts-pill {% if item.ok %}ok{% else %}bad{% endif %}">{% if item.ok %}OPEN{% else %}BLOCKED{% endif %}</span>
+        <div>
+          {{ item.label }} <span class="ts-hint">· {{ item.ms }} ms</span>
+          {% if item.error %}<div class="ts-err">{{ item.error }}</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
   <div class="ts-card">
     <h2><i class="fas fa-envelope"></i> Customer emails</h2>
     <p class="ts-sub">Send any (or all) email templates to a test address. Runs an

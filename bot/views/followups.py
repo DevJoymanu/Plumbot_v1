@@ -331,8 +331,46 @@ def followup_test_suite(request):
             return None, 'No appointments exist to use as test context.'
         return apt, None
 
+    # ── SMTP egress probe ───────────────────────────────────────────────────
+    # A raw TCP reachability test from THIS container to the submission ports,
+    # isolating the network layer from SMTP/TLS/auth. A timeout means the host
+    # is silently dropping outbound SMTP (Railway blocks these on some plans);
+    # 'refused' means reachable but nothing is listening. This is the first
+    # thing to run when sends fail with TimeoutError.
+    if action == 'probe':
+        import socket
+        import time
+
+        host = (getattr(settings, 'EMAIL_HOST', '') or 'smtp.gmail.com').strip()
+        configured_port = getattr(settings, 'EMAIL_PORT', 587)
+        ports = []
+        for p in (configured_port, 587, 465, 2525):
+            if p not in ports:
+                ports.append(p)
+
+        port_results = []
+        for port in ports:
+            started = time.monotonic()
+            try:
+                socket.create_connection((host, port), timeout=10).close()
+                outcome, ok = 'OPEN', True
+            except Exception as exc:  # noqa: BLE001 — surface every failure mode
+                outcome, ok = f'{type(exc).__name__}: {exc}', False
+            port_results.append({
+                'label': f'{host}:{port}' + (' (configured)' if port == configured_port else ''),
+                'ok': ok,
+                'error': None if ok else outcome,
+                'ms': round((time.monotonic() - started) * 1000),
+            })
+
+        if any(r['ok'] for r in port_results):
+            messages.success(request, 'At least one SMTP port is reachable from this container.')
+        else:
+            messages.error(request, 'No SMTP port is reachable — outbound SMTP is being blocked.')
+        context['results'] = {'type': 'probe', 'host': host, 'items': port_results}
+
     # ── Customer email tests ────────────────────────────────────────────────
-    if action == 'send_emails':
+    elif action == 'send_emails':
         to_email = (request.POST.get('to_email') or '').strip()
         kinds = request.POST.getlist('email_kinds')
         if request.POST.get('send_all'):
