@@ -424,16 +424,20 @@ def followup_test_suite(request):
                 apt.customer_email = to_email
 
                 # SMTP pre-flight so an auth/TLS failure surfaces on the page
-                # rather than failing silently for every email.
-                import traceback
-                from django.core.mail import get_connection
+                # rather than failing silently for every email. Skipped when
+                # SendGrid is the active transport (sends go over HTTPS/443,
+                # not SMTP — an SMTP probe would always fail on Railway and
+                # wrongly block every send).
                 smtp_error = None
-                try:
-                    conn = get_connection()
-                    conn.open()
-                    conn.close()
-                except Exception as exc:
-                    smtp_error = f'{type(exc).__name__}: {exc}\n{traceback.format_exc()[-600:]}'
+                if not getattr(settings, 'SENDGRID_API_KEY', ''):
+                    import traceback
+                    from django.core.mail import get_connection
+                    try:
+                        conn = get_connection()
+                        conn.open()
+                        conn.close()
+                    except Exception as exc:
+                        smtp_error = f'{type(exc).__name__}: {exc}\n{traceback.format_exc()[-600:]}'
 
                 items = []
                 if smtp_error:
