@@ -2196,6 +2196,105 @@ class ResponseMixin:
             except Exception:
                 return body + "\n\nWant us to come take a look and lock in a fixed price? The assessment is free."
 
+        @staticmethod
+        def _is_greeting_or_opener(message: str) -> bool:
+            """
+            True for greetings and genuinely vague openers ("more info", "I saw your
+            ad") that warrant the 'How may we assist you' prompt. A SPECIFIC question
+            (e.g. "what do you specialize in?", "what services do you offer?") returns
+            False so it gets a real answer.
+            """
+            msg = (message or "").strip().lower().rstrip("!.?")
+            if not msg:
+                return True
+            greetings = {
+                'hi', 'hello', 'hey', 'hie', 'yo', 'howzit', 'sharp', 'eita',
+                'sawubona', 'mhoro', 'makadii', 'masikati', 'mangwanani',
+                'good morning', 'good afternoon', 'good evening', 'hi there',
+            }
+            if msg in greetings:
+                return True
+            opener_phrases = (
+                'more information', 'more info', 'tell me more', 'can you help',
+                'i need help', 'help me', 'i saw your ad', 'saw your advert',
+                "i'm interested", 'im interested', 'i am interested',
+                'get more information', 'get more info',
+            )
+            return any(p in msg for p in opener_phrases)
+
+        @staticmethod
+        def _is_general_product_question(message: str) -> bool:
+            """
+            True when the message is an open question about a product (not a price,
+            size, availability, or custom/ready question — those are handled
+            separately). Catches things like materials, colours, brands, warranty,
+            delivery, "what kind", etc.
+            """
+            msg = (message or "").strip().lower()
+            if not msg:
+                return False
+            if '?' in msg:
+                return True
+            interrogatives = (
+                'what ', 'which ', 'how ', 'do you', 'does it', 'is it ', 'is the ',
+                'are they', 'are these', 'are the', 'can you', 'can it', 'will it',
+                'what kind', 'what type', 'colour', 'color', 'material', 'warranty',
+                'guarantee', 'brand', 'delivery', 'how long',
+            )
+            return any(q in msg for q in interrogatives)
+
+        def _answer_product_question(self, intent: str, message: str, language: str = "english") -> str:
+            """
+            Grounded short answer to a non-price product question. Uses only known
+            facts; defers anything it doesn't know to the free on-site assessment
+            (never invents prices/brands/colours/specs). Then progresses the sale.
+            """
+            name_map = {
+                'vanity': 'vanity units', 'geyser': 'geysers',
+                'shower_cubicle': 'shower cubicles', 'toilet': 'toilets',
+                'chamber': 'side chambers', 'bathtub_installation': 'bathtubs',
+                'tub_sales': 'bathtubs', 'standalone_tub': 'freestanding tubs',
+            }
+            name = name_map.get(intent, 'fittings')
+            price_line = self._COMPOSE_SNIPPETS.get(intent, '')
+            answer = None
+            try:
+                from bot.services.clients import deepseek_call
+                facts = (
+                    f"Product: {name}. {price_line} "
+                    "We supply both ready-made units and can arrange custom builds for fixtures. "
+                    "Free on-site assessment where we go through all options together. "
+                    "HomeBase Plumbers, Hatfield Harare, open Sun-Fri 8am-6pm."
+                )
+                answer = deepseek_call(
+                    messages=[
+                        {"role": "system", "content":
+                            "You are a HomeBase Plumbers assistant in Harare. Answer the "
+                            "customer's product question in ONE short, warm sentence using ONLY "
+                            "the facts given. If the facts don't cover it, say you'll go through "
+                            "it on the free on-site assessment. NEVER invent prices, brands, "
+                            "colours, materials, or specs. Reply in "
+                            + ("Shona." if language == 'shona' else "English.")},
+                        {"role": "user", "content": f"Facts: {facts}\n\nQuestion: {message}"},
+                    ],
+                    temperature=0.3, max_tokens=90, retries=1, timeout=8,
+                ).strip()
+            except Exception:
+                answer = None
+            if not answer:
+                answer = (
+                    f"Mubvunzo wakanaka — tichaona ma options e{name} patinouya kuzoona."
+                    if language == 'shona' else
+                    f"Good question — we'll go through the {name} options when we come take a look."
+                )
+            try:
+                answer += "\n\n" + self._get_pricing_followup_prompt(
+                    'shona' if language == 'shona' else 'english'
+                )
+            except Exception:
+                answer += "\n\nWant us to come take a look? The on-site assessment is free."
+            return answer
+
 
         # ── Multi-intent (Hybrid) composer ────────────────────────────────────
         # Concise canonical one-liners for composing answers to multi-part
@@ -2666,6 +2765,14 @@ class ResponseMixin:
                             self._is_availability_question(message) and
                             not self._is_asking_for_price(message)):
                         return self._affirm_and_progress(intent, language)
+
+                    # Any other non-price product question (materials, colours,
+                    # brands, "what kind", etc.) → grounded answer that defers
+                    # unknowns to the free assessment, instead of dumping a price.
+                    if (intent in _AVAIL_PROGRESS_INTENTS and
+                            self._is_general_product_question(message) and
+                            not self._is_asking_for_price(message)):
+                        return self._answer_product_question(intent, message, language)
 
                     if intent in structured_pricing:
                         pricing_payload = structured_pricing[intent]
@@ -3376,8 +3483,11 @@ class ResponseMixin:
             if not deepseek_client:
                 return None
 
-            # ── GREETING / GENERIC OPENER — short-circuit before any DeepSeek call
-            if self.get_next_question_to_ask() == "service_type":
+            # ── GREETING / GENERIC OPENER — short-circuit before any DeepSeek call.
+            # Only for actual greetings/vague openers — a specific question (e.g.
+            # "what do you specialize in?") must fall through to a real answer.
+            if (self.get_next_question_to_ask() == "service_type"
+                    and self._is_greeting_or_opener(message)):
                 return "Hello,\nHow may we assist you on plumbing services"
 
 
