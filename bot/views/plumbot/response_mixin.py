@@ -1536,9 +1536,9 @@ class ResponseMixin:
                     "What day works for you?",
                 ],
                 'availability_time': [
-                    "Morning or afternoon — which works better for you?",
-                    "What time suits you best?",
-                    "Morning or afternoon?",
+                    "What works better for you — 9AM or 2PM?",
+                    "Would 9AM or 2PM suit you for the visit?",
+                    "9AM or 2PM?",
                 ],
                 'area': [
                     "Which area are you based in?",

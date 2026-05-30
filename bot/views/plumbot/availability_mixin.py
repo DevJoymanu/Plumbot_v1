@@ -112,6 +112,95 @@ class AvailabilityMixin:
                         )
                     )
 
+            # ── "at <hour>" embedded in a sentence (e.g. "can you come at 8") ──
+            # The 'at' cue avoids grabbing a date ordinal like "the 3rd"; the
+            # ordinal lookahead is a second guard. Resolves bare hours via the
+            # business-hours heuristic (8–11 → AM, 1–7 → PM).
+            at_match = re.search(
+                r'\bat\s+(\d{1,2})(?!\s*(?:st|nd|rd|th))(?:[:.](\d{2}))?\s*(am|pm)?',
+                msg,
+            )
+            if at_match:
+                hour = self._normalize_business_hour(
+                    int(at_match.group(1)), at_match.group(3)
+                )
+                if hour is not None:
+                    minute = int(at_match.group(2)) if at_match.group(2) else 0
+                    return sa_tz.localize(
+                        datetime.combine(
+                            selected_date,
+                            datetime.min.time().replace(hour=hour, minute=minute),
+                        )
+                    )
+
+            # ── Vague time-of-day words → a concrete slot on the selected day ──
+            # Stops the "morning" → "Morning or afternoon?" loop: a part-of-day
+            # reply is resolved to a real available slot (morning≈9AM, arvo≈2PM).
+            if re.search(r'\b(morning|mrng|mng)\b', msg):
+                slot = self._slot_for_part_of_day(selected_date, 'morning')
+                if slot:
+                    return slot
+            if re.search(r'\b(afternoon|arvo|aftanoon)\b', msg):
+                slot = self._slot_for_part_of_day(selected_date, 'afternoon')
+                if slot:
+                    return slot
+            if re.search(r'\b(noon|midday|mid-day|lunch)\b', msg):
+                return sa_tz.localize(
+                    datetime.combine(
+                        selected_date, datetime.min.time().replace(hour=12)
+                    )
+                )
+
+            return None
+
+
+        def _normalize_business_hour(self, hour, am_pm):
+            """
+            Resolve a bare/clock hour to a 24h business hour (8–17), or None if
+            it can't sit inside the 8 AM–6 PM window.
+
+            With no am/pm given, applies a plumbing-hours heuristic: 8–11 read as
+            AM, 12 as noon, and 1–7 as PM (so "at 2" → 14:00, "at 8" → 08:00).
+            """
+            if am_pm == 'pm' and hour != 12:
+                hour += 12
+            elif am_pm == 'am' and hour == 12:
+                hour = 0
+            elif am_pm is None and 1 <= hour <= 7:
+                hour += 12  # afternoon by default for ambiguous low hours
+            return hour if 8 <= hour < 18 else None
+
+
+        def _slot_for_part_of_day(self, selected_date, part):
+            """
+            Map 'morning'/'afternoon' to a concrete, available slot on the day.
+            Prefers an actually-free preferred slot; returns None only if nothing
+            in that part of the day is available.
+            """
+            sa_tz = pytz.timezone('Africa/Johannesburg')
+            if part == 'morning':
+                hour_range = range(8, 12)
+                preferred  = [9, 10, 11, 8]
+            else:
+                hour_range = range(12, 18)
+                preferred  = [14, 13, 15, 16]
+
+            # First, honour any already-computed available slots in that range.
+            for slot in self._get_two_available_times_for_date(selected_date):
+                local = slot.astimezone(sa_tz) if slot.tzinfo else sa_tz.localize(slot)
+                if local.hour in hour_range:
+                    return local
+
+            # Otherwise pick the first preferred hour that's actually free.
+            for h in preferred:
+                candidate = sa_tz.localize(
+                    datetime.combine(
+                        selected_date, datetime.min.time().replace(hour=h)
+                    )
+                )
+                is_avail, _ = self.check_appointment_availability(candidate)
+                if is_avail:
+                    return candidate
             return None
 
 
