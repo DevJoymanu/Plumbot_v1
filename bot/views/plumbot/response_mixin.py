@@ -575,6 +575,7 @@ class ResponseMixin:
                 'move', 'remove', 'redo', 'renovat', 'upgrade', 'fit',
                 'chamber', 'shower', 'toilet', 'geyser', 'basin', 'sink',
                 'bath', 'bathtub', 'tub', 'pipe', 'drain', 'tile',
+                'vanity', 'vanities', 'vanitys', 'cubicle', 'cubicles',
             )
             return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
 
