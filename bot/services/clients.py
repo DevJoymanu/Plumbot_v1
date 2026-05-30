@@ -82,3 +82,55 @@ def deepseek_call(
     raise last_exc
 
 
+def deepseek_detects_price_request(message: str):
+    """
+    DeepSeek-backed check for whether a customer message is asking about price /
+    cost / a quote. Robust to spelling errors, abbreviations ("hw much"), and
+    Shona/English mixing in a way a keyword list can't be.
+
+    Returns:
+        True / False  — the model's classification
+        None          — DeepSeek unavailable or unparseable (caller should fall
+                         back to keyword matching so detection never goes dark)
+    """
+    import json
+
+    if not DEEPSEEK_API_KEY or not (message or '').strip():
+        return None
+
+    try:
+        raw = deepseek_call(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You classify WhatsApp messages from plumbing customers. "
+                        "Decide whether the customer is asking about price, cost, "
+                        "a quote, or how much something costs. Account for typos, "
+                        "abbreviations (e.g. 'hw much' = 'how much'), and mixed "
+                        "English/Shona (e.g. 'marii', 'mutengo'). Reply with strict "
+                        "JSON only, no prose."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f'Message: "{message}"\n\n'
+                        'Is the customer asking about price/cost/a quote? '
+                        'Respond ONLY as JSON: {"price_request": true} or '
+                        '{"price_request": false}.'
+                    ),
+                },
+            ],
+            temperature=0,
+            max_tokens=20,
+            json_response=True,
+            retries=1,   # fast gate check — fall back to keywords quickly on failure
+            timeout=8,
+        )
+        return bool(json.loads(raw).get("price_request"))
+    except Exception as exc:  # noqa: BLE001 — any failure → let caller fall back
+        logger.warning("deepseek_detects_price_request failed (%s) — caller falls back", exc)
+        return None
+
+

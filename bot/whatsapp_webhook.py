@@ -481,18 +481,34 @@ def detect_objection_type(message: str) -> str:
 
 def _explicitly_requests_price(message: str) -> bool:
     """
-    Return True only when the customer clearly asks about pricing.
+    Return True when the customer is asking about pricing.
+
+    Primary path is a DeepSeek classifier (catches typos, abbreviations, and
+    Shona/English mixing). If DeepSeek is unavailable or returns nothing, fall
+    back to keyword matching so price detection never goes completely dark.
     """
     msg = (message or '').strip().lower()
     if not msg:
         return False
 
+    # ── Primary: DeepSeek intent classification ──
+    from bot.services.clients import deepseek_detects_price_request
+    ai = deepseek_detects_price_request(message)
+    if ai is not None:
+        return ai
+
+    # ── Fallback: keyword match (DeepSeek down / empty) ──
     price_markers = (
         'price', 'pricing', 'cost', 'quote', 'quotation', 'how much',
         'how much is', 'how much are', 'charges', 'charge', 'rate', 'rates',
+        'hw much', 'hw mch', 'hwmuch', 'how mch', 'howmuch',
         'mutengo', 'marii', 'mari', 'zvinodhura', 'inodhura', 'bhadhara',
     )
-    return any(marker in msg for marker in price_markers)
+    if any(marker in msg for marker in price_markers):
+        return True
+    # Catch abbreviated / misspelt "how much": "hw much", "howmuch", "hw mch"…
+    import re
+    return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
 
 
 def is_post_booking_ack_message(message: str) -> bool:
