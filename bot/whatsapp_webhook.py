@@ -511,6 +511,50 @@ def _explicitly_requests_price(message: str) -> bool:
     return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
 
 
+def _keyword_product_intent(message: str):
+    """
+    Keyword fallback for product/service intent when the AI classifier returns
+    'none' (e.g. during a DeepSeek outage). Returns an intent string matching
+    handle_service_inquiry()'s intents, or None. Conservative — only fires on
+    clear product keywords, most-specific first.
+    """
+    msg = (message or '').lower()
+    if not msg:
+        return None
+
+    has_tub = ('tub' in msg) or ('bathtub' in msg)
+    if has_tub and any(k in msg for k in (
+        'freestanding', 'free standing', 'free-standing', 'stand alone',
+        'standalone', 'stand-alone',
+    )):
+        return 'standalone_tub'
+    if 'geyser' in msg or 'water heater' in msg:
+        if any(k in msg for k in ('not working', 'broken', 'leak', 'no hot water',
+                                  'repair', 'fix', 'tripping')):
+            return 'geyser_repair'
+        return 'geyser'
+    if 'cubicle' in msg or 'shower' in msg:
+        return 'shower_cubicle'
+    if 'vanity' in msg:
+        return 'vanity'
+    if 'chamber' in msg:
+        return 'chamber'
+    if 'toilet' in msg:
+        if any(k in msg for k in ('not flush', "won't flush", 'wont flush', 'leak',
+                                  'broken', 'running', 'fix', 'repair')):
+            return 'toilet_repair'
+        return 'toilet'
+    if has_tub:
+        return 'tub_sales'
+    if any(k in msg for k in ('drain', 'blocked', 'clog', 'sewer')):
+        return 'drain_unblocking'
+    if 'pipe' in msg or 'burst' in msg:
+        return 'pipe_repair'
+    if 'facebook' in msg or 'package' in msg:
+        return 'facebook_package'
+    return None
+
+
 def is_post_booking_ack_message(message: str) -> bool:
     msg = (message or "").strip().lower()
     if not msg:
@@ -1512,6 +1556,15 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             today_date=_tz.now().strftime('%Y-%m-%d'),
         )
         _quick_service_check = uc_as_service_inquiry(_uclass)
+
+        # Fallback: if the AI classifier returned no product intent (e.g. DeepSeek
+        # empty/failed), derive it from product keywords so price asks like
+        # "stand alone tub hw much" still resolve to a priceable intent.
+        if _quick_service_check.get('intent') in (None, 'none'):
+            _kw_intent = _keyword_product_intent(message_body)
+            if _kw_intent:
+                _quick_service_check = {'intent': _kw_intent, 'confidence': 'HIGH'}
+                print(f"🔁 Product intent keyword fallback: {_kw_intent}")
 
         _is_clear_product_inquiry = (
             _quick_service_check.get('intent') not in ('none', 'pictures') and
