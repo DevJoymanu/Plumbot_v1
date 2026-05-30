@@ -709,6 +709,35 @@ class ResponseMixin:
 
                 current_question = self.get_next_question_to_ask()
 
+                # ── Bare ack ("ok", "sure", "noted") at the service-type stage,
+                # after the bot has already engaged → nudge the sale forward
+                # instead of re-sending the generic "How may we assist you"
+                # greeting. A second ack leaves the door open (no loop).
+                if (current_question == 'service_type'
+                        and self._is_bare_ack(incoming_message)
+                        and len(self.appointment.conversation_history or []) > 2):
+                    _history = self.appointment.conversation_history or []
+                    _last_bot = next(
+                        (m.get('content', '') for m in reversed(_history)
+                         if m.get('role') == 'assistant'),
+                        '',
+                    ).lower()
+                    if 'whenever you' in _last_bot:
+                        reply = (
+                            "All good — just message me whenever you're ready and "
+                            "we'll pick it up from there 👍"
+                        )
+                    else:
+                        reply = (
+                            "No worries 👍 Whenever you're ready — are you after a "
+                            "bathroom or kitchen reno, a new installation, or a "
+                            "specific repair? I can give you a rough price or set up "
+                            "a free site visit."
+                        )
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    self.appointment.add_conversation_message("assistant", reply)
+                    return reply
+
                 # ── OUT-OF-SCOPE / DELAY / COMPLAINT HANDLER ─────────────────────────
                 # When precomputed_classification is supplied by the webhook, the OOS
                 # handler uses it and skips its own DeepSeek call. Pending-state
@@ -2197,6 +2226,32 @@ class ResponseMixin:
                 return body + "\n\nWant us to come take a look and lock in a fixed price? The assessment is free."
 
         @staticmethod
+        def _is_bare_ack(message: str) -> bool:
+            """True for a standalone acknowledgement ('ok', 'sure', 'noted', 👍) with no content."""
+            msg = (message or "").strip().lower().strip('.!?,👍🙏✨ ')
+            if not msg:
+                return False
+            acks = {
+                'ok', 'okay', 'oky', 'k', 'kk', 'ok cool', 'okay cool', 'alright',
+                'aright', 'cool', 'nice', 'noted', 'sharp', 'sho', 'sawa',
+                'thanks', 'thank you', 'ta', 'great', 'perfect',
+            }
+            return msg in acks
+
+        @staticmethod
+        def _is_services_overview_question(message: str) -> bool:
+            """True for 'what do you specialize in / what services / what do you do' questions."""
+            msg = (message or "").lower()
+            markers = (
+                'special',          # specialize / specialise / specialty / specialist
+                'what services', 'what service do', 'services do you',
+                'what do you do', 'what do you offer', 'what do you provide',
+                'what kind of work', 'what type of work', 'what can you do',
+                'what work do you', 'what are your services',
+            )
+            return any(m in msg for m in markers)
+
+        @staticmethod
         def _is_greeting_or_opener(message: str) -> bool:
             """
             True for greetings and genuinely vague openers ("more info", "I saw your
@@ -3489,6 +3544,17 @@ class ResponseMixin:
             if (self.get_next_question_to_ask() == "service_type"
                     and self._is_greeting_or_opener(message)):
                 return "Hello,\nHow may we assist you on plumbing services"
+
+            # ── Services overview — controlled, concise answer + sale-progress
+            # question (don't free-form this; keep the offering on-brand).
+            if self._is_services_overview_question(message):
+                return (
+                    "We specialize in:\n"
+                    "• Bathroom & kitchen renovations\n"
+                    "• New bathroom & kitchen installations\n"
+                    "• New plumbing installations\n\n"
+                    "Is there anything specific you were looking for?"
+                )
 
 
             try:
