@@ -252,6 +252,65 @@ def _keyword_match(message: str) -> str | None:
     return None
 
 
+def classify_service_types_multi(message: str) -> list[str]:
+    """
+    Return ALL distinct service types explicitly mentioned in the message,
+    ordered by first appearance (e.g. "bathroom and kitchen renovation" ->
+    ["Bathroom Renovation", "Kitchen Renovation"]). Keyword-based only — used
+    to capture multi-service requests that single classification would drop.
+    """
+    if not message or not message.strip():
+        return []
+    norm = _normalise(message)
+    earliest: dict[str, int] = {}
+    for service_type, patterns in _KEYWORD_RULES:
+        for pattern in patterns:
+            pos = None
+            if '.*' in pattern or pattern.startswith('^') or pattern.endswith('$'):
+                m = re.search(pattern, norm)
+                if m:
+                    pos = m.start()
+            else:
+                idx = norm.find(pattern)
+                if idx != -1:
+                    pos = idx
+            if pos is not None and (service_type not in earliest or pos < earliest[service_type]):
+                earliest[service_type] = pos
+
+    # Catch split "X and Y renovation" phrasing, where the room noun is
+    # separated from the 'renovation' keyword (e.g. "bathroom and kitchen
+    # renovation" — "bathroom renovation" never appears as a contiguous phrase).
+    if re.search(r'renovat|remodel|\breno\b|\brenos\b|upgrade', norm):
+        if 'bathroom' in norm and BATHROOM_RENOVATION not in earliest:
+            earliest[BATHROOM_RENOVATION] = norm.find('bathroom')
+        if 'kitchen' in norm and KITCHEN_RENOVATION not in earliest:
+            earliest[KITCHEN_RENOVATION] = norm.find('kitchen')
+
+    return [st for st, _ in sorted(earliest.items(), key=lambda kv: kv[1])]
+
+
+# Human-readable labels for building a combined project description.
+_DESC_LABELS = {
+    BATHROOM_RENOVATION:       'bathroom renovation',
+    KITCHEN_RENOVATION:        'kitchen renovation',
+    NEW_PLUMBING_INSTALLATION: 'new plumbing installation',
+    BATHROOM_INSTALLATION:     'bathroom installation',
+    KITCHEN_INSTALLATION:      'kitchen installation',
+}
+
+
+def _combined_service_description(types: list[str]) -> str:
+    """Build a friendly description string from multiple service types."""
+    labels = [_DESC_LABELS.get(t, t) for t in types]
+    if len(labels) == 1:
+        combined = labels[0]
+    elif len(labels) == 2:
+        combined = f"{labels[0]} and {labels[1]}"
+    else:
+        combined = ", ".join(labels[:-1]) + f", and {labels[-1]}"
+    return combined[:1].upper() + combined[1:]
+
+
 def _deepseek_classify(message: str) -> str | None:
     """
     Ask DeepSeek to classify the message.
@@ -389,6 +448,25 @@ def classify_and_save(lead, message: str) -> str | None:
         # Already classified — don't overwrite
         return lead.project_type
 
+    # Capture ALL services the lead mentioned (keyword pass). If they named more
+    # than one (e.g. "bathroom and kitchen renovation"), set project_type to the
+    # first and record the full scope in project_description so nothing is lost.
+    multi = classify_service_types_multi(message)
+    if multi:
+        primary = multi[0]
+        lead.project_type = primary
+        fields = ['project_type']
+        if len(multi) > 1 and not lead.project_description:
+            lead.project_description = _combined_service_description(multi)
+            fields.append('project_description')
+            logger.info(
+                f'Lead {lead.id} multi-service captured: "{lead.project_description}"'
+            )
+        lead.save(update_fields=fields)
+        logger.info(f'Lead {lead.id} project_type set to "{primary}" from message: {message[:80]!r}')
+        return primary
+
+    # No keyword hit — fall back to DeepSeek single-type classification.
     service_type = classify_service_type(message)
     if service_type:
         lead.project_type = service_type

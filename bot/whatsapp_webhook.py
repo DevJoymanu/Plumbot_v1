@@ -511,6 +511,24 @@ def _explicitly_requests_price(message: str) -> bool:
     return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
 
 
+def _explicitly_requests_photos(message: str) -> bool:
+    """
+    True when the customer explicitly asks to see pictures/photos/catalogue —
+    even if they also name products. Used so an explicit photo request always
+    sends photos instead of being swallowed by the product-inquiry path.
+    """
+    import re
+    msg = (message or '').lower()
+    if not msg:
+        return False
+    markers = (
+        r'\bpic\b', r'\bpics\b', r'\bpicture', r'\bphoto', r'\bimage',
+        r'\bcatalog', r'\bcatalogue', r'\bportfolio', r'\bgallery',
+        r'see your work', r'previous work', r'examples of', r'show me',
+    )
+    return any(re.search(m, msg) for m in markers)
+
+
 def _keyword_product_intent(message: str):
     """
     Keyword fallback for product/service intent when the AI classifier returns
@@ -1605,8 +1623,14 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         # -- STEP 1: Previous work photo request --------------------------------
         print(f"Checking photo request: '{message_body}'")
-        if uc_is_photo_request(_uclass) and not _is_clear_product_inquiry and not _has_pricing_signal:
-            print("Photo request detected")
+        # An EXPLICIT photo request ("can I have a pic", "catalogue", "send photos")
+        # must send photos even when products are named (which would otherwise
+        # flag it as a product inquiry and suppress the photo path).
+        _explicit_photo = _explicitly_requests_photos(message_body)
+        if _explicit_photo or (
+            uc_is_photo_request(_uclass) and not _is_clear_product_inquiry and not _has_pricing_signal
+        ):
+            print(f"Photo request detected (explicit={_explicit_photo})")
             photos_queued = send_previous_work_photos(sender, appointment)
             if photos_queued:
                 return
