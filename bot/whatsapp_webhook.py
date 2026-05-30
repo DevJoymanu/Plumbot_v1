@@ -1576,6 +1576,33 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         )
         _has_pricing_signal = any(p in message_body.lower() for p in _pricing_signals)
 
+        # -- STEP 0: Multi-intent compose (2+ questions in one message) ---------
+        # e.g. "where are you based and how much" → answer both in one reply.
+        # Only fires for 2+ answerable INFO intents; booking-related messages
+        # fall through to the normal flow untouched.
+        try:
+            _multi = plumbot.compose_multi_answer(message_body)
+        except Exception as _multi_exc:
+            print(f"⚠️ Multi-intent compose failed: {_multi_exc}")
+            _multi = None
+        if _multi and _multi.get('reply'):
+            print(f"🧩 Multi-intent compose — intents={_multi.get('intents')}")
+            if _multi.get('send_photos'):
+                send_previous_work_photos(sender, appointment)
+            for _pi in (_multi.get('intents') or []):
+                if _pi not in ('location', 'hours', 'pictures', 'other'):
+                    _mark_pricing_intent_sent(appointment, _pi)
+            reply_text = _multi['reply']
+            appointment.add_conversation_message("assistant", reply_text)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response, args=(sender, reply_text, delay, message_id), daemon=True
+            ).start()
+            return
+
         # -- STEP 1: Previous work photo request --------------------------------
         print(f"Checking photo request: '{message_body}'")
         if uc_is_photo_request(_uclass) and not _is_clear_product_inquiry and not _has_pricing_signal:

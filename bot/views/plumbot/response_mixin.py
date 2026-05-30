@@ -2110,6 +2110,164 @@ class ResponseMixin:
             return any(kw in msg for kw in size_keywords)
 
 
+        # ── Multi-intent (Hybrid) composer ────────────────────────────────────
+        # Concise canonical one-liners for composing answers to multi-part
+        # messages. Product lines mirror structured_pricing[...]['total_line']
+        # in handle_service_inquiry — keep them in sync if prices change.
+        _COMPOSE_SNIPPETS = {
+            'standalone_tub':  "Freestanding (standalone) tubs: full setup from US$670 all-in (tub US$400 + mixer US$150 + install US$120).",
+            'tub_sales':       "Freestanding tubs from US$400 (mixer US$150, install US$120). Standard built-in tubs from US$160 all-in.",
+            'bathtub_installation': "Standard built-in tub from US$160 all-in; freestanding setup from US$670 all-in.",
+            'geyser':          "Geysers from US$160 all-in — supply and install.",
+            'shower_cubicle':  "Shower cubicles from US$170 all-in — supply and install.",
+            'vanity':          "Vanities from US$180 all-in — supply and install.",
+            'toilet':          "Toilet replacement from US$70 all-in — supply and install.",
+            'chamber':         "Side chambers from US$160 all-in — supply and install.",
+            'facebook_package': "Our Facebook package is US$600 — freestanding tub and side chamber.",
+            'location':        "We're based in Hatfield, Harare 📍",
+            'hours':           "We're open Sunday to Friday, 8 AM–6 PM ⏰",
+        }
+        _COMPOSE_KNOWN = set(_COMPOSE_SNIPPETS) | {'pictures', 'combined_pricing', 'other'}
+
+        def _split_intents(self, message: str):
+            """
+            Split a message into distinct answerable sub-questions.
+            Returns a list of {"intent", "question"} (DeepSeek; keyword fallback).
+            """
+            try:
+                from bot.services.clients import deepseek_call
+                raw = deepseek_call(
+                    messages=[
+                        {"role": "system", "content":
+                            "You split a plumbing customer's WhatsApp message into the "
+                            "distinct things they are asking. Return strict JSON only."},
+                        {"role": "user", "content":
+                            f'Message: "{message}"\n\n'
+                            "List each distinct question/request. For each pick the best intent from:\n"
+                            "standalone_tub, tub_sales, geyser, shower_cubicle, vanity, toilet, "
+                            "chamber (product pricing); facebook_package; combined_pricing "
+                            "(overall/total pricing); location (where based/address); hours "
+                            "(opening times); pictures (wants photos of work/products); booking "
+                            "(wants to book/schedule/site visit/pick a day); other.\n"
+                            "Only include things actually asked. Account for typos/abbreviations "
+                            "and Shona/English mixing.\n"
+                            'Respond ONLY as JSON: {"items":[{"intent":"...","question":"..."}]}'},
+                    ],
+                    temperature=0, max_tokens=200, json_response=True, retries=1, timeout=8,
+                )
+                items = (json.loads(raw).get("items") or [])
+                out = [
+                    {"intent": i.get("intent", "other"), "question": (i.get("question") or message)}
+                    for i in items if isinstance(i, dict) and i.get("intent")
+                ]
+                if out:
+                    return out
+            except Exception as exc:
+                logger.warning("_split_intents DeepSeek failed (%s) — keyword fallback", exc)
+            return self._split_intents_keyword(message)
+
+        def _split_intents_keyword(self, message: str):
+            """Keyword fallback splitter for when DeepSeek is unavailable."""
+            msg = (message or '').lower()
+            items, seen = [], set()
+
+            def add(intent):
+                if intent and intent not in seen:
+                    seen.add(intent)
+                    items.append({"intent": intent, "question": message})
+
+            price_kw = ('price', 'pricing', 'prices', 'cost', 'how much', 'hw much',
+                        'hwmuch', 'how mch', 'quote', 'marii', 'mari', 'mutengo', '$')
+            if any(k in msg for k in price_kw):
+                from bot.whatsapp_webhook import _keyword_product_intent
+                add(_keyword_product_intent(message))
+            if any(k in msg for k in ('where', 'located', 'location', 'address', 'based', 'muri kupi')):
+                add('location')
+            if any(k in msg for k in ('hours', 'open', 'what time are you', 'when are you open', 'opening')):
+                add('hours')
+            if any(k in msg for k in ('picture', 'photos', 'pics', 'images', 'see your work', 'previous work')):
+                add('pictures')
+            return items
+
+        def compose_multi_answer(self, message: str):
+            """
+            Hybrid multi-intent answer. Returns {"reply", "send_photos"} when the
+            message contains 2+ distinct answerable info intents, else None (so
+            the normal single-intent flow handles it). Booking/scheduling intents
+            are deliberately NOT composed here — they stay with the booking flow.
+            """
+            items = self._split_intents(message)
+            if not items:
+                return None
+
+            # Distinct intents, order preserved
+            distinct = list(dict.fromkeys(
+                i["intent"] for i in items if i.get("intent")
+            ))
+
+            # If the lead is also trying to book, don't hijack the booking flow.
+            if 'booking' in distinct:
+                return None
+
+            answerable = [i for i in distinct if i in self._COMPOSE_KNOWN]
+            if len(answerable) < 2:
+                return None
+
+            answers, send_photos = [], False
+            q_by_intent = {i["intent"]: i.get("question") or message for i in items}
+
+            for intent in answerable:
+                if intent == 'pictures':
+                    send_photos = True
+                    answers.append("Sending photos of our previous work now 📸")
+                elif intent == 'combined_pricing':
+                    answers.append(
+                        "Rough all-in prices (supply + install): geyser from US$160, "
+                        "shower cubicle from US$170, vanity from US$180, toilet from US$70, "
+                        "side chamber from US$160, tub from US$160. Final price confirmed on site."
+                    )
+                elif intent in self._COMPOSE_SNIPPETS:
+                    answers.append(self._COMPOSE_SNIPPETS[intent])
+                elif intent == 'other':
+                    prose = self._concise_ai_answer(q_by_intent.get('other', message))
+                    if prose:
+                        answers.append(prose)
+
+            if len(answers) < 2:
+                return None
+
+            reply = "\n\n".join(answers)
+            try:
+                reply += "\n\n" + self._get_pricing_followup_prompt('english')
+            except Exception:
+                reply += "\n\nWould you like us to come take a look and lock in a fixed price?"
+            return {"reply": reply, "send_photos": send_photos, "intents": answerable}
+
+        def _concise_ai_answer(self, question: str):
+            """One short, grounded prose answer for a sub-question with no canonical reply."""
+            try:
+                from bot.services.clients import deepseek_call
+                facts = (
+                    "HomeBase Plumbers, Hatfield Harare. Open Sun–Fri 8am–6pm (closed Sat). "
+                    "Free on-site assessment. Services: bathroom/kitchen renovations, geysers, "
+                    "shower cubicles, vanities, toilets, tubs, drains, pipe & geyser repairs. "
+                    "Facebook package US$600 (freestanding tub + side chamber)."
+                )
+                return deepseek_call(
+                    messages=[
+                        {"role": "system", "content":
+                            "You are a HomeBase Plumbers assistant in Harare. Answer the customer's "
+                            "question in ONE short, warm sentence using ONLY the facts provided. "
+                            "If the facts don't cover it, say you'll confirm with the team. No prices "
+                            "you weren't given."},
+                        {"role": "user", "content": f"Facts: {facts}\n\nQuestion: {question}"},
+                    ],
+                    temperature=0.3, max_tokens=80, retries=1, timeout=8,
+                ).strip()
+            except Exception:
+                return None
+
+
         def handle_service_inquiry(self, intent, message):
                 """Generate response for product/service/pricing inquiries in English or Shona."""
                 try:

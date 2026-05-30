@@ -24,6 +24,32 @@ deepseek_client = OpenAI(
     base_url="https://api.deepseek.com/v1",
 )
 
+# ── Disable DeepSeek "thinking" mode on every call ───────────────────────────
+# deepseek-v4-flash defaults to thinking mode: it emits chain-of-thought into a
+# separate `reasoning_content` field BEFORE the answer. That reasoning consumes
+# the max_tokens budget, so `content` comes back empty (finish_reason=length) on
+# small-budget calls and JSON gets truncated on larger ones — which broke every
+# classifier/extractor in the bot. We never read reasoning_content, so we turn
+# thinking off for ALL calls here (covers all 11 call sites, current + future)
+# while staying on the non-deprecated v4-flash model. Set DEEPSEEK_THINKING=
+# enabled to re-enable. Docs: https://api-docs.deepseek.com/guides/thinking_mode
+_DEEPSEEK_THINKING = os.environ.get("DEEPSEEK_THINKING", "disabled")
+_orig_completions_create = deepseek_client.chat.completions.create
+
+
+def _completions_create_no_thinking(*args, **kwargs):
+    extra = dict(kwargs.get("extra_body") or {})
+    extra.setdefault("thinking", {"type": _DEEPSEEK_THINKING})
+    kwargs["extra_body"] = extra
+    return _orig_completions_create(*args, **kwargs)
+
+
+try:
+    deepseek_client.chat.completions.create = _completions_create_no_thinking
+    logger.info("DeepSeek thinking mode set to '%s' for all calls", _DEEPSEEK_THINKING)
+except Exception:  # pragma: no cover — SDK shape changed; calls still work, just with thinking on
+    logger.warning("Could not install DeepSeek thinking-disable wrapper — calls keep default mode")
+
 
 
 def deepseek_call(
