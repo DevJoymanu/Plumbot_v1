@@ -142,17 +142,29 @@ def get_test_appointment():
             'customer_area': None,
         }
     )
-    # Reset for clean test
+    # Reset for clean test — include the dispatcher-gating fields so pricing
+    # inquiries are not skipped because a prior test marked the intent as sent.
     appt.project_type = None
     appt.has_plan = None
     appt.customer_area = None
     appt.conversation_history = []
+    appt.sent_pricing_intents = []
+    appt.pricing_overview_sent = False
+    appt.status = 'pending'
+    appt.scheduled_datetime = None
+    appt.is_delayed = False
+    appt.delay_followup_due_at = None
+    appt.internal_notes = ''
     appt.save()
     return appt
 
 
 def get_bot(appt):
-    return Plumbot(appt)
+    # Plumbot.__init__ takes a phone_number and resolves its own appointment via
+    # get_or_create. Passing the phone string makes the bot operate on the SAME
+    # row get_test_appointment() just reset (otherwise it resolves a junk row that
+    # accumulates state across runs and makes the e2e checks flaky).
+    return Plumbot(appt.phone_number)
 
 
 # ============================================================
@@ -464,6 +476,347 @@ results.log(
     "e2e: 'site visit, no plan' does not ask plan question again",
     passed,
     got=response[:200]
+)
+
+# ============================================================
+# TEST 7: Delay nudge never renders "None" (conv 421 — null-date)
+# ============================================================
+
+print("\n" + "="*60)
+print("TEST 7: DELAY NUDGE DATE RENDERING (null-date fix, conv 421)")
+print("="*60)
+
+from urllib.parse import quote as _quote
+from bot.management.commands.send_followups import Command as _FollowupCommand
+
+_cmd = _FollowupCommand()
+
+# Reproduce exactly what out_of_scope_handler._write_pending stores at delay_confirm:
+# the original is url-encoded, so the "|iso" separator becomes %7C.
+_iso = '2026-06-15'
+_encoded = _quote(f'next week|{_iso}', safe='')
+_notes = f'[OOS_PENDING] category=delay_confirm original={_encoded}'
+
+_step, _friendly = _cmd._parse_delay_step(_notes)
+results.log(
+    "null-date: delay_confirm note decodes to the real follow-up date",
+    _step == 'delay_confirm' and bool(_friendly) and 'June' in (_friendly or ''),
+    expected="friendly date containing 'June' (e.g. 'Monday 15 June')",
+    got=f"step={_step}, date={_friendly}",
+)
+
+# The customer-facing nudge body must contain the date and must NOT contain "None".
+_template = _cmd._DELAY_NUDGE_MESSAGES['delay_confirm'][0]
+_body = _template.format(date=_friendly)
+results.log(
+    "null-date: rendered nudge body must_include date, must_exclude 'None'",
+    'None' not in _body and 'June' in _body,
+    expected="contains real date, never the literal 'None'",
+    got=_body,
+)
+
+# A note missing the iso part must yield no date, so the send guard skips it
+# (rather than sending "reach out to you on None").
+_bad_notes = f'[OOS_PENDING] category=delay_confirm original={_quote("next week", safe="")}'
+_, _bad_friendly = _cmd._parse_delay_step(_bad_notes)
+results.log(
+    "null-date: missing iso yields no date so the nudge is skipped (not 'None')",
+    _bad_friendly is None,
+    expected="None (guard suppresses the {date} nudge)",
+    got=str(_bad_friendly),
+)
+
+# ============================================================
+# TEST 8: Follow-up scheduler state guard (conv 378 + 411)
+# ============================================================
+
+print("\n" + "="*60)
+print("TEST 8: SCHEDULER STATE GUARD (conv 378 handed-off / parked / confirmed)")
+print("="*60)
+
+from django.utils import timezone as _tz
+from datetime import timedelta as _td
+import pytz as _pytz
+_SA = _pytz.timezone('Africa/Johannesburg')
+_now_local = _tz.now().astimezone(_SA)
+
+_cmd2 = _FollowupCommand()
+
+def _reset_guard_lead():
+    g = get_test_appointment()
+    g.internal_notes = ''
+    g.is_delayed = False
+    g.delay_followup_due_at = None
+    g.chatbot_paused = False
+    g.followup_stage = 'none'
+    g.is_lead_active = True
+    g.status = 'pending'
+    g.last_customer_response = _tz.now() - _td(hours=5)
+    g.save()
+    return g
+
+# A handed-off lead must be excluded by the shared state guard (conv 411)
+_g = _reset_guard_lead()
+_g.internal_notes = '[HANDED_OFF]'
+_g.save(update_fields=['internal_notes'])
+_kept = _cmd2._exclude_suppressed_states(Appointment.objects.filter(pk=_g.pk)).exists()
+results.log("state-guard: [HANDED_OFF] lead suppressed from follow-ups (conv 411)",
+            _kept is False, expected="excluded", got=f"kept={_kept}")
+
+# A parked lead must be excluded by the shared state guard
+_g.internal_notes = '[PARKED]'
+_g.save(update_fields=['internal_notes'])
+_kept = _cmd2._exclude_suppressed_states(Appointment.objects.filter(pk=_g.pk)).exists()
+results.log("state-guard: [PARKED] lead suppressed from follow-ups",
+            _kept is False, expected="excluded", got=f"kept={_kept}")
+
+# A clean lead must NOT be excluded by the state guard
+_g.internal_notes = ''
+_g.save(update_fields=['internal_notes'])
+_kept = _cmd2._exclude_suppressed_states(Appointment.objects.filter(pk=_g.pk)).exists()
+results.log("state-guard: clean lead still eligible (no over-suppression)",
+            _kept is True, expected="kept", got=f"kept={_kept}")
+
+# A lead with an agreed future re-contact date is parked out of normal follow-ups (conv 378)
+_g = _reset_guard_lead()
+_g.delay_followup_due_at = _tz.now() + _td(days=3)
+_g.save(update_fields=['delay_followup_due_at'])
+_eligible_now = _cmd2._get_eligible_leads(_now_local, force=True)
+results.log("state-guard: future delay date parks lead from normal follow-ups (conv 378)",
+            not _eligible_now.filter(pk=_g.pk).exists(),
+            expected="excluded from normal follow-ups", got="present" )
+
+# Control: same lead with NO future date IS eligible for normal follow-ups
+_g.delay_followup_due_at = None
+_g.save(update_fields=['delay_followup_due_at'])
+_eligible_now = _cmd2._get_eligible_leads(_now_local, force=True)
+results.log("state-guard: lead without a parked date remains eligible",
+            _eligible_now.filter(pk=_g.pk).exists(),
+            expected="eligible", got="excluded")
+
+# ============================================================
+# TEST 9: Webhook dedup + lead-score idempotency (conv 369)
+# ============================================================
+
+print("\n" + "="*60)
+print("TEST 9: WEBHOOK DEDUP / NO DOUBLE-COUNT (conv 369)")
+print("="*60)
+
+from bot.models import WhatsAppInboundEvent
+from bot.services.lead_scoring import calculate_lead_score, refresh_lead_score
+from django.db import IntegrityError as _IntegrityError, transaction as _txn
+
+# 1) WAMID dedup is active: the same message_id can never be stored twice.
+_wamid = 'wamid.TESTDEDUP369'
+WhatsAppInboundEvent.objects.filter(message_id=_wamid).delete()
+WhatsAppInboundEvent.objects.create(message_id=_wamid, sender='263000000000')
+_second_insert_blocked = False
+try:
+    with _txn.atomic():
+        WhatsAppInboundEvent.objects.create(message_id=_wamid, sender='263000000000')
+except _IntegrityError:
+    _second_insert_blocked = True
+WhatsAppInboundEvent.objects.filter(message_id=_wamid).delete()
+results.log(
+    "webhook-dedup: duplicate message_id rejected by unique constraint",
+    _second_insert_blocked, expected="IntegrityError on 2nd insert", got=str(_second_insert_blocked),
+)
+
+# 2) Lead score is idempotent: recomputing never inflates it (duplicates can't double-count).
+_appt = get_test_appointment()
+_appt.project_type = 'bathroom_renovation'
+_appt.customer_area = 'Hatfield'
+_appt.save()
+_s1, _ = calculate_lead_score(_appt)
+_s2, _ = calculate_lead_score(_appt)
+refresh_lead_score(_appt); refresh_lead_score(_appt)
+results.log(
+    "webhook-dedup: lead score is idempotent (field-based, no per-message count)",
+    _s1 == _s2 == _appt.lead_score,
+    expected="stable score across recomputes", got=f"{_s1}/{_s2}/{_appt.lead_score}",
+)
+
+# 3) conversation_history never doubles a back-to-back identical inbound line.
+_appt = get_test_appointment()  # resets conversation_history to []
+_appt.add_conversation_message("user", "U have stand alone tub 1.5 hw much")
+_appt.add_conversation_message("user", "U have stand alone tub 1.5 hw much")  # the double-add
+_dupes = sum(
+    1 for m in _appt.conversation_history
+    if m.get("role") == "user" and m.get("content") == "U have stand alone tub 1.5 hw much"
+)
+results.log(
+    "webhook-dedup: identical back-to-back user line stored once (conv 369)",
+    _dupes == 1, expected="1 stored entry", got=f"{_dupes} entries",
+)
+
+# Control: a genuine repeat separated by an assistant reply is preserved.
+_appt = get_test_appointment()
+_appt.add_conversation_message("user", "ok")
+_appt.add_conversation_message("assistant", "Great — what area are you in?")
+_appt.add_conversation_message("user", "ok")
+_ok_count = sum(1 for m in _appt.conversation_history if m.get("role") == "user" and m.get("content") == "ok")
+results.log(
+    "webhook-dedup: genuine repeat (separated by reply) is preserved",
+    _ok_count == 2, expected="2 entries", got=f"{_ok_count} entries",
+)
+
+# ============================================================
+# TEST 10: Delay intent split (conv 427 / 415 / 421 / 378)
+# ============================================================
+
+print("\n" + "="*60)
+print("TEST 10: DELAY INTENT SPLIT (busy / access / travelling / brush-off)")
+print("="*60)
+
+from bot.out_of_scope_handler import (
+    _delay_subtype_keywords, _DELAY_SUBTYPE_REPLIES, _has_travel_negation,
+)
+
+# conv 427: "We are not out of town but we go to work" must NOT be read as travel.
+_sub = _delay_subtype_keywords("We are not out of town but we go to work")
+results.log(
+    "delay-split: 'not out of town but we go to work' -> busy (conv 427)",
+    _sub == 'busy', expected="busy", got=_sub,
+)
+results.log(
+    "delay-split: explicit travel negation detected (conv 427)",
+    _has_travel_negation("We are not out of town but we go to work") is True,
+    expected="True", got=str(_has_travel_negation("We are not out of town but we go to work")),
+)
+
+# Each distinct situation maps to its own sub-type.
+for _msg, _want in [
+    ("I'm abroad, will contact when I return", 'travelling'),
+    ("I need to arrange access with my tenant first", 'access'),
+    ("I work during the day so it's tricky", 'busy'),
+    ("Maybe later, just saving your number for now", 'brush_off'),
+]:
+    _got = _delay_subtype_keywords(_msg)
+    results.log(f"delay-split: '{_msg[:38]}' -> {_want}", _got == _want,
+                expected=_want, got=_got)
+
+# The busy and access replies must NOT assume travel ("back in town").
+for _st in ('busy', 'access'):
+    _r = _DELAY_SUBTYPE_REPLIES[_st]
+    results.log(f"delay-split: '{_st}' reply does not assume travel",
+                'back in town' not in _r.lower() and 'back?' not in _r.lower(),
+                expected="no travel assumption", got=_r)
+
+# The travelling reply is still allowed to ask when they'll be back.
+results.log("delay-split: 'travelling' reply still asks about return",
+            'back' in _DELAY_SUBTYPE_REPLIES['travelling'].lower(),
+            expected="asks about return", got=_DELAY_SUBTYPE_REPLIES['travelling'])
+
+# ============================================================
+# TEST 11: Answer direct questions first (conv 369 / 411)
+# ============================================================
+
+print("\n" + "="*60)
+print("TEST 11: ANSWER DIRECT QUESTIONS FIRST (identity, conv 369/411)")
+print("="*60)
+
+appt = get_test_appointment()
+bot = get_bot(appt)
+
+# "Who am I speaking to?" must be answered (Plumbot identity), not ignored.
+_r = bot._maybe_answer_identity_question("Who am I speaking to?")
+results.log(
+    "direct-q: 'who am I speaking to?' is answered (conv 369)",
+    _r is not None and ('plumbot' in _r.lower() or 'homebase' in _r.lower()),
+    expected="identity answer mentioning Plumbot/Homebase", got=str(_r),
+)
+
+# "Which plumber is coming?" must name/route to Tinashe (protected handoff).
+_r = bot._maybe_answer_identity_question("Which plumber is coming to my house?")
+results.log(
+    "direct-q: 'which plumber is coming?' names the plumber (conv 369)",
+    _r is not None and 'tinashe' in _r.lower(),
+    expected="answer naming Tinashe", got=str(_r),
+)
+
+# A normal booking message must NOT trigger the identity handler (no over-reach).
+_r = bot._maybe_answer_identity_question("I need a geyser installed in Hatfield")
+results.log(
+    "direct-q: non-identity message is not hijacked",
+    _r is None, expected="None", got=str(_r),
+)
+
+# ============================================================
+# TEST 12: Adaptive tub pricing (conv 427)
+# ============================================================
+
+print("\n" + "="*60)
+print("TEST 12: ADAPTIVE TUB PRICING (built-in vs freestanding, conv 427)")
+print("="*60)
+
+appt = get_test_appointment()
+bot = get_bot(appt)
+
+# Type detection from the customer's wording.
+results.log("adaptive-pricing: 'built-in tub' detected as built_in",
+            bot._tub_type_in_message("how much for a built-in tub") == 'built_in',
+            expected="built_in", got=str(bot._tub_type_in_message("how much for a built-in tub")))
+results.log("adaptive-pricing: 'freestanding tub' detected as freestanding",
+            bot._tub_type_in_message("price of a freestanding tub") == 'freestanding',
+            expected="freestanding", got=str(bot._tub_type_in_message("price of a freestanding tub")))
+results.log("adaptive-pricing: plain 'a tub' has no specific type",
+            bot._tub_type_in_message("how much for a tub") is None,
+            expected="None", got=str(bot._tub_type_in_message("how much for a tub")))
+
+# When the customer asked about a built-in tub, the reply must LEAD with built-in
+# (US$160), not the freestanding US$400.
+_r = bot._tub_price_reply('built_in', 'english')
+_built_idx = _r.lower().find('built-in')
+_free_idx = _r.lower().find('freestanding')
+results.log("adaptive-pricing: built-in question leads with built-in price (conv 427)",
+            '160' in _r and _built_idx != -1 and (_free_idx == -1 or _built_idx < _free_idx),
+            expected="built-in (US$160) leads", got=_r)
+
+# Freestanding/unspecified still leads with freestanding (price clarity preserved).
+_r = bot._tub_price_reply('freestanding', 'english')
+results.log("adaptive-pricing: freestanding question still leads with US$400",
+            '400' in _r and _r.lower().find('freestanding') < _r.lower().find('standard'),
+            expected="freestanding (US$400) leads", got=_r)
+
+# ============================================================
+# TEST 13: Input-format validation at the name step (conv 410)
+# ============================================================
+
+print("\n" + "="*60)
+print("TEST 13: INPUT FORMAT VALIDATION (email at name step, conv 410)")
+print("="*60)
+
+bot = get_bot(get_test_appointment())
+# Reset the row the bot actually operates on (Plumbot resolves its own appointment).
+bot.appointment.customer_name = None
+bot.appointment.customer_email = None
+bot.appointment.conversation_history = []
+bot.appointment.save()
+
+_r = bot._handle_name_step("john.doe@example.com", updated_fields=[])
+# Must NOT be the bare name re-ask; must acknowledge the email and ask the name.
+results.log(
+    "input-format: email at name step is captured + name asked (conv 410)",
+    'email' in _r.lower() and 'name' in _r.lower() and 'one last thing' not in _r.lower(),
+    expected="acknowledges email, asks name", got=_r,
+)
+bot.appointment.refresh_from_db()
+results.log(
+    "input-format: email stored when typed at the name step",
+    bot.appointment.customer_email == "john.doe@example.com",
+    expected="john.doe@example.com", got=str(bot.appointment.customer_email),
+)
+
+# A real name at the name step is still handled normally (no over-reach).
+bot = get_bot(get_test_appointment())
+bot.appointment.customer_name = None
+bot.appointment.customer_email = None
+bot.appointment.save()
+_r2 = bot._handle_name_step("Tapiwa", updated_fields=[])
+results.log(
+    "input-format: a normal name is still accepted",
+    'email' in _r2.lower() or 'confirm' in _r2.lower(),  # proceeds to email/confirm step
+    expected="proceeds past the name step", got=_r2,
 )
 
 # ============================================================

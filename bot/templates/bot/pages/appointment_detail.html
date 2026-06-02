@@ -872,6 +872,70 @@
     cursor: not-allowed;
   }
 
+  .appt-pdf-form {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(160px, .8fr) 44px;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .appt-pdf-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .appt-pdf-picker,
+  .appt-pdf-caption {
+    min-width: 0;
+    min-height: 44px;
+    border: 1px solid #dbe2e8;
+    background: #fff;
+    color: #475569;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+
+  .appt-pdf-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .appt-pdf-picker span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .appt-pdf-caption {
+    padding: 10px 12px;
+  }
+
+  .appt-pdf-send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: #16a34a;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .appt-pdf-send-btn:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+  }
+
   .appt-char-count {
     text-align: right;
     color: #94a3b8;
@@ -1135,6 +1199,15 @@
       width: 100%;
     }
 
+    .appt-pdf-form {
+      grid-template-columns: 1fr 44px;
+    }
+
+    .appt-pdf-caption {
+      grid-column: 1 / -1;
+      order: 3;
+    }
+
     .chat-bubble {
       max-width: 88%;
     }
@@ -1295,6 +1368,19 @@
                 <button type="submit"><i class="fas fa-images"></i> Send portfolio</button>
               </form>
             </div>
+
+            <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfForm">
+              {% csrf_token %}
+              <input type="file" id="pdf_document" class="appt-pdf-input" name="document" accept="application/pdf,.pdf" required>
+              <label class="appt-pdf-picker" for="pdf_document">
+                <i class="fas fa-file-pdf"></i>
+                <span id="pdfFileName">Choose PDF</span>
+              </label>
+              <input type="text" id="pdf_caption" class="appt-pdf-caption" name="caption" placeholder="Caption" maxlength="1024">
+              <button type="submit" class="appt-pdf-send-btn" id="sendPdfBtn" aria-label="Send PDF" disabled>
+                <i class="fab fa-whatsapp"></i>
+              </button>
+            </form>
 
             <form method="post" action="{% url 'send_followup' appointment.pk %}" id="followupForm">
               {% csrf_token %}
@@ -1632,6 +1718,17 @@
     }
   }
 
+  function updatePdfSendState() {
+    var input = document.getElementById('pdf_document');
+    var label = document.getElementById('pdfFileName');
+    var sendBtn = document.getElementById('sendPdfBtn');
+    if (!input || !label || !sendBtn) return;
+
+    var hasFile = input.files && input.files.length > 0;
+    label.textContent = hasFile ? input.files[0].name : 'Choose PDF';
+    sendBtn.disabled = !hasFile;
+  }
+
   function updateJobStatus(jobId, newStatus) {
     if (!confirm('Change job status to ' + newStatus.replace('_', ' ') + '?')) {
       return;
@@ -1854,6 +1951,12 @@
     var msgField = document.getElementById('followup_message');
     if (msgField) {
       msgField.addEventListener('input', updateCharCount);
+    }
+
+    var pdfInput = document.getElementById('pdf_document');
+    if (pdfInput) {
+      pdfInput.addEventListener('change', updatePdfSendState);
+      updatePdfSendState();
     }
 
     // Avatar colour by first char of name

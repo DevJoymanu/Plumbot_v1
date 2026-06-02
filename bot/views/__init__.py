@@ -90,6 +90,7 @@ from .followups import (
     send_followup,
     send_portfolio_to_lead,
     send_image_to_lead,
+    send_pdf_to_lead,
     send_bulk_followup,
 )
 

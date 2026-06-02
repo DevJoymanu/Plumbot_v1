@@ -804,6 +804,17 @@ class Appointment(models.Model):
             if not isinstance(self.conversation_history, list):
                 self.conversation_history = []
 
+            # Idempotency guard (conv 369): the webhook logs the inbound user
+            # message on arrival and generate_response logs it again on its reply
+            # paths. Skip a back-to-back duplicate of the same role+content so one
+            # inbound line is never doubled in the transcript. Genuine repeats are
+            # separated by the assistant's reply, so they are preserved.
+            if self.conversation_history:
+                last = self.conversation_history[-1]
+                if isinstance(last, dict) and last.get("role") == role and last.get("content") == content:
+                    print(f"↩️  Skipped duplicate {role} message in conversation_history")
+                    return
+
             # Create message object
             message = {
                 "role": role,
@@ -978,6 +989,29 @@ class Appointment(models.Model):
                 l for l in notes.splitlines() if '[DELAY_SIGNAL]' not in l).strip()
         if save:
             self.save(update_fields=['is_delayed','internal_notes'])
+
+    # ── Follow-up suppression states (internal_notes-backed, no migration) ──────
+    HANDOFF_TAG = '[HANDED_OFF]'   # handed-off / awaiting-human
+    PARKED_TAG  = '[PARKED]'       # parked / soft brush-off
+
+    def _add_notes_tag(self, tag, save=True):
+        notes = (self.internal_notes or '').strip()
+        if tag in notes:
+            return False
+        self.internal_notes = f"{notes}\n{tag}".strip()
+        if save:
+            self.save(update_fields=['internal_notes'])
+        return True
+
+    def mark_handed_off(self, save=True):
+        """Routed to a human (Tinashe): suppress proactive follow-ups. The bot
+        still answers if the customer replies."""
+        return self._add_notes_tag(self.HANDOFF_TAG, save=save)
+
+    def mark_parked(self, save=True):
+        """Customer asked to be left alone / soft brush-off: suppress follow-ups
+        until they re-engage."""
+        return self._add_notes_tag(self.PARKED_TAG, save=save)
 
     @property
     def delay_days_remaining(self):

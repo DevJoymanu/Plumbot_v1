@@ -855,17 +855,142 @@ def _message_has_timeframe_ai(message: str) -> bool:
         return _message_has_timeframe(message)
 
 
+def _has_travel_negation(message: str) -> bool:
+    """True when the customer explicitly denies being away (corrects a travel
+    assumption), e.g. conv 427 'We are not out of town but we go to work'."""
+    m = (message or '').lower()
+    return any(p in m for p in (
+        'not out of town', 'not away', 'not abroad', 'not travel', 'not going anywhere',
+        'we are not out', "aren't out of town", 'not on holiday', 'not on vacation',
+    ))
+
+
+def _delay_subtype_keywords(message: str) -> str:
+    """
+    Keyword fallback for the delay sub-type (used when DeepSeek is unavailable).
+    Returns one of: 'travelling' | 'access' | 'busy' | 'brush_off' | 'unknown'.
+    """
+    m = (message or '').lower()
+    if any(p in m for p in (
+        'not interested', 'maybe later', 'some other time', 'will see',
+        'think about it', 'just saving', 'saving your number', 'saved your number',
+        'needed to save', 'window shopping', 'leave it',
+    )):
+        return 'brush_off'
+    if not _has_travel_negation(message) and any(p in m for p in (
+        'out of town', 'abroad', 'overseas', 'travelling', 'traveling', 'on a trip',
+        'holiday', 'vacation', 'not in harare', 'not in zimbabwe', 'out of the country',
+        'when i return', 'when i get back', 'back home',
+    )):
+        return 'travelling'
+    if any(p in m for p in (
+        'arrange access', 'tenant', 'landlord', 'keys', 'my wife', 'my husband',
+        'my spouse', 'still building', 'not plastered', 'under construction',
+        'speak to my', 'check with my', 'consult my',
+    )):
+        return 'access'
+    if any(p in m for p in (
+        'go to work', 'at work', 'working', 'during the day', 'i work', 'we work',
+        'busy at work', 'shift', 'knock off', 'after work', 'tied up', 'quite busy',
+        'busy now', 'busy at the moment',
+    )):
+        return 'busy'
+    return 'unknown'
+
+
+# Each reply funnels into the existing `delay_timeframe` step (an open timeframe
+# question), so the downstream delay flow (steps 2-4) is unchanged. None of them
+# assume the customer is travelling unless that is actually the sub-type.
+_DELAY_SUBTYPE_REPLIES = {
+    'busy': (
+        "Totally understand — plenty of our clients are at work during the day, "
+        "so we also do evenings and weekends. When would suit you best to get this sorted?"
+    ),
+    'access': (
+        "No problem at all — just sort the access on your side and we'll work around you. "
+        "When would be a good time for us to come through?"
+    ),
+    'travelling': "No problem at all. Roughly when do you think you'll be back?",
+    'unknown':    "No problem at all. When would suit you to pick this up?",
+}
+
+
+def _classify_delay_subtype(message: str, appointment) -> str:
+    """
+    Split the single delay signal into a specific sub-type so we don't reply to a
+    busy/at-work or access-arranging customer with a travel-assuming question.
+
+    Returns: 'busy' | 'access' | 'travelling' | 'brush_off' | 'unknown'.
+    DeepSeek handles nuance/negation; falls back to keywords when unavailable.
+    """
+    kw = _delay_subtype_keywords(message)
+    valid = {'busy', 'access', 'travelling', 'brush_off', 'unknown'}
+
+    sub = kw
+    if _deepseek:
+        try:
+            from bot.services.clients import deepseek_call
+            import json as _json
+            raw = deepseek_call(
+                messages=[
+                    {"role": "system", "content": "Return ONLY valid JSON. No markdown."},
+                    {"role": "user", "content": (
+                        "A plumbing customer is deferring a booking. Which ONE sub-type best "
+                        "fits their reason?\n"
+                        "- busy: they have time but are working / tied up during the day\n"
+                        "- access: they need to arrange access (tenant, keys, spouse, still building)\n"
+                        "- travelling: they are genuinely away / out of town / abroad\n"
+                        "- brush_off: a soft no / not really interested / just saved the number\n"
+                        "- unknown: none of the above is clear\n\n"
+                        "Do NOT pick 'travelling' if they say they are NOT out of town.\n\n"
+                        f"Message: \"{message}\"\n\n"
+                        '{"subtype": "busy|access|travelling|brush_off|unknown"}'
+                    )},
+                ],
+                temperature=0.0,
+                max_tokens=20,
+                json_response=True,
+            )
+            parsed = (_json.loads(raw).get('subtype') or '').strip().lower()
+            if parsed in valid:
+                sub = parsed
+        except Exception as exc:
+            logger.warning("delay sub-type classify failed (%s) — using keywords", exc)
+            sub = kw
+
+    # Never assume travel when the customer explicitly negates it (conv 427).
+    if sub == 'travelling' and _has_travel_negation(message):
+        return kw if kw != 'travelling' else 'busy'
+    return sub
+
+
 def _build_delay_reply(message: str, appointment) -> str:
     """
     Step 1 of the delay follow-up flow.
     If the message already contains a timeframe, skip straight to step 2.
-    Otherwise ask when they'll be back so we can suggest a check-in date.
+    Otherwise classify the delay sub-type and reply appropriately — never
+    assuming travel for a busy/at-work or access-arranging customer (conv 427).
     Does NOT mark the lead as delayed yet — that happens at the end of the flow.
     """
     if _message_has_timeframe_ai(message):
         return _handle_delay_timeframe_answer(message, {}, appointment)
+
+    subtype = _classify_delay_subtype(message, appointment)
+
+    if subtype == 'brush_off':
+        # Soft brush-off — acknowledge, park the lead so the scheduler stays
+        # silent (P0 state-guard), and leave the door open.
+        try:
+            appointment.mark_parked(save=True)
+        except Exception:
+            pass
+        return (
+            "No worries at all — we'll leave it with you. Whenever you're ready, just "
+            "send us a message and we'll pick up right where we left off."
+        )
+
     _write_pending(appointment, 'delay_timeframe', message)
-    return "No problem at all. Roughly when do you think you'll be back in town?"
+    return _DELAY_SUBTYPE_REPLIES.get(subtype, _DELAY_SUBTYPE_REPLIES['unknown'])
 
 
 def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> str:

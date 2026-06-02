@@ -1,4 +1,9 @@
+import os
+
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from datetime import timedelta
@@ -115,3 +120,69 @@ class CustomerEmailAsyncTests(TestCase):
         self.assertTrue(thread_kwargs['daemon'])
         mock_thread.return_value.start.assert_called_once()
         self.assertIs(result, mock_thread.return_value)
+
+
+class SendPdfToLeadTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='pdf-sender',
+            password='testpass123',
+            is_staff=True,
+        )
+        self.client.force_login(self.user)
+        self.appointment = Appointment.objects.create(
+            phone_number='whatsapp:+10000000009',
+            customer_name='Test Customer',
+        )
+
+    @patch('bot.views.followups.whatsapp_api.send_local_document')
+    def test_staff_can_send_pdf_from_appointment_detail(self, mock_send_document):
+        document = SimpleUploadedFile(
+            'site-plan.pdf',
+            b'%PDF-1.4\n%%EOF\n',
+            content_type='application/pdf',
+        )
+
+        response = self.client.post(
+            reverse('send_pdf_to_lead', args=[self.appointment.pk]),
+            {'document': document, 'caption': 'Site plan'},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('appointment_detail', args=[self.appointment.pk]))
+        mock_send_document.assert_called_once()
+
+        args = mock_send_document.call_args.args
+        kwargs = mock_send_document.call_args.kwargs
+        self.assertEqual(args[0], '10000000009')
+        self.assertTrue(args[1].endswith('.pdf'))
+        self.assertFalse(os.path.exists(args[1]))
+        self.assertEqual(kwargs['caption'], 'Site plan')
+        self.assertEqual(kwargs['filename'], 'site-plan.pdf')
+
+        self.appointment.refresh_from_db()
+        self.assertIsNotNone(self.appointment.last_outbound_at)
+        self.assertEqual(
+            self.appointment.conversation_history[-1]['content'],
+            '[PDF SENT] site-plan.pdf | Caption: Site plan',
+        )
+
+    @patch('bot.views.followups.whatsapp_api.send_local_document')
+    def test_non_pdf_upload_is_rejected(self, mock_send_document):
+        document = SimpleUploadedFile(
+            'notes.txt',
+            b'hello',
+            content_type='text/plain',
+        )
+
+        response = self.client.post(
+            reverse('send_pdf_to_lead', args=[self.appointment.pk]),
+            {'document': document},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        mock_send_document.assert_not_called()
+
+        self.appointment.refresh_from_db()
+        self.assertEqual(self.appointment.conversation_history, [])
+        self.assertIsNone(self.appointment.last_outbound_at)

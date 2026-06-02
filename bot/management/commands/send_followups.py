@@ -20,6 +20,7 @@ import os
 import re
 import logging
 import pytz
+from urllib.parse import unquote
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,14 @@ class Command(BaseCommand):
                 name    = lead.customer_name or ''
                 hi      = f'Hi {name}' if name else 'Hi there'
                 template = self._DELAY_NUDGE_MESSAGES[step][nudge_count]
+                if '{date}' in template and not date:
+                    # Never render a missing date as the literal word "None" to a
+                    # customer. Skip until the stored follow-up date is available.
+                    logger.warning(
+                        "Delay nudge skipped for lead %s: %s template needs a date "
+                        "but none is stored", lead.id, step,
+                    )
+                    continue
                 body     = template.format(date=date) if '{date}' in template else template
                 message  = f'{hi}, {body}'
 
@@ -228,7 +237,9 @@ class Command(BaseCommand):
         if not m:
             return None, None
         step     = m.group(1)
-        original = m.group(2).strip()
+        # _write_pending url-encodes the original (the "|" separator becomes %7C),
+        # so decode it before splitting — matches how _read_pending reads it back.
+        original = unquote(m.group(2).strip())
         date_str = None
         if step == 'delay_confirm':
             parts = original.split('|')
@@ -319,6 +330,7 @@ class Command(BaseCommand):
             )
             .exclude(chatbot_paused=True)
         )
+        due = self._exclude_suppressed_states(due)
 
         count = due.count()
         if count:
@@ -480,6 +492,14 @@ class Command(BaseCommand):
 
     # ─── Eligibility ─────────────────────────────────────────────────────────
 
+    def _exclude_suppressed_states(self, qs):
+        """State guard — never proactively message a lead that has been handed
+        to a human or parked. Mirrors the prior pending_upload over-firing fix."""
+        return (
+            qs.exclude(internal_notes__contains='[HANDED_OFF]')
+              .exclude(internal_notes__contains='[PARKED]')
+        )
+
     def _get_eligible_leads(self, now_local, force):
         from django.db.models import Q
 
@@ -494,7 +514,13 @@ class Command(BaseCommand):
             .exclude(internal_notes__contains='[DELAY_SIGNAL]')
             .exclude(internal_notes__contains='[OOS_PENDING] category=delay_')
             .exclude(chatbot_paused=True)
+            # Already-confirmed: an agreed future re-contact date is set, so this
+            # lead is parked until then and owned by the delayed-reactivation path.
+            # (clear_delayed leaves delay_followup_due_at set — this stops the lead
+            # leaking back into normal follow-ups, e.g. conv 378.)
+            .exclude(delay_followup_due_at__gt=timezone.now())
         )
+        leads = self._exclude_suppressed_states(leads)
         return leads.order_by('last_customer_response', 'created_at')
         
     def _print_eligibility_breakdown(self, now_local, force):

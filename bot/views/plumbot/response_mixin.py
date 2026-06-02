@@ -75,6 +75,50 @@ class ResponseMixin:
             return any(phrase in msg for phrase in decline_phrases)
 
 
+        def _tub_type_in_message(self, message):
+            """Return 'built_in' | 'freestanding' | None based on the tub type the
+            customer actually named, so the price reply can lead with it."""
+            m = (message or '').lower()
+            if any(w in m for w in (
+                'built-in', 'built in', 'builtin', 'inbuilt', 'in-built',
+                'standard tub', 'standard built', 'drop-in', 'drop in', 'alcove', 'set in',
+            )):
+                return 'built_in'
+            if any(w in m for w in (
+                'freestanding', 'free standing', 'free-standing',
+                'standalone', 'stand alone', 'stand-alone',
+            )):
+                return 'freestanding'
+            return None
+
+        def _tub_price_reply(self, tub_type, language):
+            """Tub price reply that leads with the type the customer asked about
+            (conv 427). Freestanding/unspecified keeps the existing copy."""
+            if tub_type == 'built_in':
+                if language == 'shona':
+                    return (
+                        "Standard built-in tubs dzinotangira paUS$160 all-in (tub US$80 + install US$80).\n\n"
+                        "Kana uchida freestanding, idzo dzinotangira paUS$400 (mixer US$150, install US$120).\n\n"
+                        "Munoda chii chaizvo?"
+                    )
+                return (
+                    "Standard built-in tubs are from US$160 all-in (tub US$80 + install US$80).\n\n"
+                    "If you'd prefer a freestanding one, those start from US$400 (mixer US$150, install US$120).\n\n"
+                    "What did you have in mind?"
+                )
+            # freestanding or unspecified — lead with freestanding (existing copy)
+            if language == 'shona':
+                return (
+                    "Freestanding tubs dzinotangira paUS$400 — mixer US$150, install US$120.\n\n"
+                    "Standard tubs kubva US$80, install kubva US$80.\n\n"
+                    "Munoda chii chaizvo?"
+                )
+            return (
+                "Freestanding tubs start from US$400 — mixer US$150, install US$120.\n\n"
+                "Standard tubs from US$80, install from US$80.\n\n"
+                "What did you have in mind?"
+            )
+
         def _parse_name_from_reply(self, message: str):
             """
             Deterministically pull a person's name from a reply to the name
@@ -131,6 +175,19 @@ class ResponseMixin:
                 self.appointment.customer_name = parsed_name
                 self.appointment.save(update_fields=['customer_name'])
                 return self._confirm_or_request_email()
+            # Input-format guard (conv 410): an email typed at the name step should
+            # not just re-ask the name. Capture it (email is the next step anyway)
+            # and ask for the name clearly.
+            _email = self._extract_email_from_text(incoming_message)
+            if _email:
+                if not self.appointment.customer_email:
+                    self.appointment.customer_email = _email
+                    self.appointment.save(update_fields=['customer_email'])
+                return (
+                    "Got the email, thanks 👍\n\n"
+                    "And what name should we put on the booking? "
+                    "If you'd rather not share it, just say no."
+                )
             return (
                 "One last thing — what name should we put on the booking? "
                 "If you'd rather not share it, just say no."
@@ -706,6 +763,16 @@ class ResponseMixin:
                     self.appointment.add_conversation_message("assistant", reply)
                     self._mark_delay_signal()
                     return reply
+
+                # ── DIRECT QUESTION FIRST ─────────────────────────────────────────────
+                # If the customer asks a plain identity question ("who am I speaking
+                # to?", "which plumber is coming?"), answer it before the booking-stage
+                # logic can override it (conv 369 / 411 "answer my question direct").
+                _identity_reply = self._maybe_answer_identity_question(incoming_message)
+                if _identity_reply is not None:
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    self.appointment.add_conversation_message("assistant", _identity_reply)
+                    return _identity_reply
 
                 current_question = self.get_next_question_to_ask()
 
@@ -1700,9 +1767,49 @@ class ResponseMixin:
                 return None
 
 
+        def _maybe_answer_identity_question(self, message) -> str:
+            """
+            Answer a direct identity question before advancing the booking flow.
+            Returns the answer, or None if the message is not an identity question
+            (so the normal flow proceeds untouched). Routes to the protected
+            human contact (Tinashe) for the hands-on plumber.
+            """
+            m = (message or '').lower()
+            asks_plumber = any(p in m for p in (
+                'which plumber', 'who is coming', "who's coming", 'name of the plumber',
+                'plumber name', "plumber's name", 'who will come', 'who is the plumber',
+                'who will be coming', 'which technician', 'who am i dealing',
+            ))
+            asks_bot = any(p in m for p in (
+                'who am i speaking', 'who am i talking', 'who is this', "who's this",
+                'whom am i', 'what is your name', "what's your name", 'are you a bot',
+                'is this a bot', 'who are you',
+            ))
+            if not (asks_plumber or asks_bot):
+                return None
+            number = (
+                getattr(self.appointment, 'plumber_contact_number', None) or '+263774819901'
+            )
+            if asks_plumber:
+                return (
+                    f"You'll be looked after by Tinashe, our lead plumber at Homebase Plumbers — "
+                    f"he handles the visit personally. You can reach him directly on {number}."
+                )
+            return (
+                "You're chatting with Plumbot, the assistant for Homebase Plumbers here in Harare 👋 "
+                f"Our plumber Tinashe handles the hands-on work (reach him on {number}). "
+                "What can we help you get sorted?"
+            )
+
         def _build_human_handoff_reply(self) -> str:
             """Reply after 4 failed extraction attempts — offer direct human contact."""
             from bot.out_of_scope_handler import PLUMBER_NUMBER_FALLBACK
+            # Mark handed-off so the follow-up scheduler stays silent (conv 411).
+            # The bot still answers if the customer re-engages here.
+            try:
+                self.appointment.mark_handed_off(save=True)
+            except Exception:
+                pass
             number = (
                 getattr(self.appointment, "plumber_contact_number", None) or PLUMBER_NUMBER_FALLBACK
             ).replace("+", "").replace("whatsapp:", "")
@@ -2513,7 +2620,45 @@ class ResponseMixin:
                 return None
 
 
+        # Intents whose replies quote a price and must carry the approximate-price
+        # disclaimer (protected "price clarity" behaviour).
+        _PRICED_INTENTS = {
+            'tub_sales', 'standalone_tub', 'bathtub_installation', 'geyser',
+            'shower_cubicle', 'vanity', 'toilet', 'chamber', 'facebook_package',
+            'combined_pricing', 'drain_unblocking', 'pipe_repair', 'geyser_repair',
+            'toilet_repair', 'pricing',
+        }
+
+        def _ensure_price_disclaimer(self, intent, reply):
+            """Make sure every priced reply states the price is approximate and the
+            exact quote is confirmed free at the on-site visit. Idempotent and
+            inserted before the closing question so the reply still ends on the CTA."""
+            if not reply or intent not in self._PRICED_INTENTS:
+                return reply
+            low = reply.lower()
+            if 'approximate' in low or 'may vary' in low:
+                return reply
+            is_shona = any(t in low for t in (
+                'kubva', 'inotangira', 'munoda', 'uri kuda', 'tiuye', 'zvichienda', 'ne install',
+            ))
+            disclaimer = (
+                "Aya mamapurice ekutanga anenge — mutengo chaiwo unosimbiswa pa on-site visit yemahara."
+                if is_shona else
+                "These are approximate starting prices — your exact quote is confirmed free at the on-site visit."
+            )
+            parts = reply.split('\n\n')
+            if len(parts) >= 2:
+                parts.insert(len(parts) - 1, disclaimer)
+                return '\n\n'.join(parts)
+            return f"{reply}\n\n{disclaimer}"
+
         def handle_service_inquiry(self, intent, message):
+            """Public entry: build the priced reply, then guarantee the approximate-
+            price disclaimer is attached (protected price-clarity behaviour)."""
+            reply = self._handle_service_inquiry_impl(intent, message)
+            return self._ensure_price_disclaimer(intent, reply)
+
+        def _handle_service_inquiry_impl(self, intent, message):
                 """Generate response for product/service/pricing inquiries in English or Shona."""
                 try:
                     # Detect language
@@ -2792,16 +2937,10 @@ class ResponseMixin:
                                 "Which type are you thinking?"
                             )
                         else:
-                            if language == 'shona':
-                                return (
-                                    "Freestanding tubs dzinotangira paUS$400 — mixer US$150, install US$120.\n\n"
-                                    "Standard tubs kubva US$80, install kubva US$80.\n\n"
-                                    "Munoda chii chaizvo?"
-                                )
-                            return (
-                                "Freestanding tubs start from US$400 — mixer US$150, install US$120.\n\n"
-                                "Standard tubs from US$80, install from US$80.\n\n"
-                                "What did you have in mind?"
+                            # Lead with the tub type the customer actually asked
+                            # about — built-in vs freestanding (conv 427).
+                            return self._tub_price_reply(
+                                self._tub_type_in_message(message), language
                             )
 
                     # "Custom or ready-made?" (no price asked) → we do both, then progress.

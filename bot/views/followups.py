@@ -745,6 +745,67 @@ def send_image_to_lead(request, pk):
 
 
 @staff_required
+@require_POST
+def send_pdf_to_lead(request, pk):
+    """Send a PDF picked from the staff member's device to the lead via WhatsApp."""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    uploaded = request.FILES.get('document')
+    caption = request.POST.get('caption', '').strip()
+
+    if not uploaded:
+        messages.error(request, 'Please choose a PDF file to send.')
+        return redirect('appointment_detail', pk=pk)
+
+    # Validate file type and size (WhatsApp documents max 100 MB)
+    name_lower = (uploaded.name or '').lower()
+    is_pdf = name_lower.endswith('.pdf') or uploaded.content_type == 'application/pdf'
+    if not is_pdf:
+        messages.error(request, 'Only PDF files can be sent. Please select a .pdf document.')
+        return redirect('appointment_detail', pk=pk)
+    if uploaded.size and uploaded.size > 100 * 1024 * 1024:
+        messages.error(request, 'PDF is too large to send (100 MB max).')
+        return redirect('appointment_detail', pk=pk)
+
+    # Keep the original filename so it shows correctly in WhatsApp
+    safe_filename = os.path.basename(uploaded.name) or f'document_{appointment.pk}.pdf'
+    if not safe_filename.lower().endswith('.pdf'):
+        safe_filename += '.pdf'
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            for chunk in uploaded.chunks():
+                tmp.write(chunk)
+            temp_path = tmp.name
+
+        clean_phone = clean_phone_number(appointment.phone_number)
+        whatsapp_api.send_local_document(
+            clean_phone,
+            temp_path,
+            caption=caption or None,
+            filename=safe_filename,
+        )
+
+        appointment.add_conversation_message(
+            'assistant',
+            f'[PDF SENT] {safe_filename}' + (f' | Caption: {caption}' if caption else '')
+        )
+        appointment.last_outbound_at = timezone.now()
+        appointment.save(update_fields=['last_outbound_at'])
+        messages.success(request, f'PDF "{safe_filename}" sent successfully!')
+    except Exception as e:
+        messages.error(request, f'Failed to send PDF: {str(e)}')
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+    return redirect('appointment_detail', pk=pk)
+
+
+@staff_required
 def send_bulk_followup(request):
     """Send manual follow-up to multiple leads at once"""
     if request.method == 'POST':

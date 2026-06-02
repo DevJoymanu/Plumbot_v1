@@ -14,6 +14,8 @@ Falls back gracefully to None — callers must handle None by running their
 own individual classifiers as before.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
