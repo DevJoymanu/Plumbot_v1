@@ -874,7 +874,7 @@
 
   .appt-pdf-form {
     display: grid;
-    grid-template-columns: minmax(180px, 1fr) minmax(160px, .8fr) 44px;
+    grid-template-columns: minmax(180px, 1fr) minmax(160px, .8fr) auto;
     gap: 10px;
     align-items: center;
     margin-bottom: 10px;
@@ -919,16 +919,19 @@
   }
 
   .appt-pdf-send-btn {
-    width: 44px;
+    min-width: 112px;
     height: 44px;
-    border-radius: 50%;
+    border-radius: 12px;
     border: none;
     background: #16a34a;
     color: #fff;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 8px;
     font-size: 16px;
+    font-weight: 800;
+    padding: 0 14px;
   }
 
   .appt-pdf-send-btn:disabled {
@@ -1200,11 +1203,16 @@
     }
 
     .appt-pdf-form {
-      grid-template-columns: 1fr 44px;
+      grid-template-columns: 1fr;
     }
 
     .appt-pdf-caption {
-      grid-column: 1 / -1;
+      grid-column: auto;
+      order: 2;
+    }
+
+    .appt-pdf-send-btn {
+      width: 100%;
       order: 3;
     }
 
@@ -1371,7 +1379,7 @@
 
             <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfChatForm">
               {% csrf_token %}
-              <input type="file" id="pdf_document_chat" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" required>
+              <input type="file" id="pdf_document_chat" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" onchange="updatePdfSendState(this.form)" required>
               <label class="appt-pdf-picker" for="pdf_document_chat">
                 <i class="fas fa-file-pdf"></i>
                 <span class="js-pdf-name">Choose PDF</span>
@@ -1379,6 +1387,7 @@
               <input type="text" class="appt-pdf-caption" name="caption" placeholder="Caption" maxlength="1024">
               <button type="submit" class="appt-pdf-send-btn js-pdf-send" aria-label="Send PDF" disabled>
                 <i class="fab fa-whatsapp"></i>
+                <span>Send PDF</span>
               </button>
             </form>
 
@@ -1564,7 +1573,7 @@
                 <div class="detail-card-body">
                   <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfDetailsForm">
                     {% csrf_token %}
-                    <input type="file" id="pdf_document_details" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" required>
+                    <input type="file" id="pdf_document_details" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" onchange="updatePdfSendState(this.form)" required>
                     <label class="appt-pdf-picker" for="pdf_document_details">
                       <i class="fas fa-file-pdf"></i>
                       <span class="js-pdf-name">Choose PDF</span>
@@ -1572,6 +1581,7 @@
                     <input type="text" class="appt-pdf-caption" name="caption" placeholder="Caption" maxlength="1024">
                     <button type="submit" class="appt-pdf-send-btn js-pdf-send" aria-label="Send PDF" disabled>
                       <i class="fab fa-whatsapp"></i>
+                      <span>Send PDF</span>
                     </button>
                   </form>
 
@@ -1730,6 +1740,7 @@
   }
 
   function updatePdfSendState(form) {
+    if (!form) return;
     var input = form.querySelector('.js-pdf-input');
     var label = form.querySelector('.js-pdf-name');
     var sendBtn = form.querySelector('.js-pdf-send');
