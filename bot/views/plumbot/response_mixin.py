@@ -91,22 +91,49 @@ class ResponseMixin:
                 return 'freestanding'
             return None
 
+        def _budget_fit_close(self, language: str = "english") -> str:
+            """Hormozi-styled budget-fit qualifier for the end of a price reply.
+
+            A bare "Is this within your budget?" anchors on the constraint, makes
+            the customer defend their wallet, and invites a flat "no". Reframed:
+            value word ("invest" / outcome of getting it sorted), presumptive (it
+            assumes they're buying), and forward-leaning so a "yes" hands straight
+            off to the free on-site visit close."""
+            if language == "shona":
+                return "Ndiyo here mari yamaitarisira kuti tigadzirise izvi nemazvo?"
+            return "Is that around what you were looking to invest to get it sorted properly?"
+
         def _tub_price_reply(self, tub_type, language):
             """Tub price reply that leads with the type the customer asked about
-            (conv 427). Freestanding/unspecified keeps the existing copy."""
+            (conv 427). When the customer has already named a type, close with a
+            Hormozi-styled budget-fit qualifier (`_budget_fit_close`) before the
+            booking close; only when the type is still unspecified do we ask the
+            open "which one?" question."""
             if tub_type == 'built_in':
                 if language == 'shona':
                     return (
                         "Standard built-in tubs dzinotangira paUS$160 all-in (tub US$80 + install US$80).\n\n"
                         "Kana uchida freestanding, idzo dzinotangira paUS$400 (mixer US$150, install US$120).\n\n"
-                        "Munoda chii chaizvo?"
+                        f"{self._budget_fit_close('shona')}"
                     )
                 return (
                     "Standard built-in tubs are from US$160 all-in (tub US$80 + install US$80).\n\n"
                     "If you'd prefer a freestanding one, those start from US$400 (mixer US$150, install US$120).\n\n"
-                    "What did you have in mind?"
+                    f"{self._budget_fit_close('english')}"
                 )
-            # freestanding or unspecified — lead with freestanding (existing copy)
+            if tub_type == 'freestanding':
+                if language == 'shona':
+                    return (
+                        "Freestanding tubs dzinotangira paUS$400 — mixer US$150, install US$120.\n\n"
+                        "Standard tubs kubva US$80, install kubva US$80.\n\n"
+                        f"{self._budget_fit_close('shona')}"
+                    )
+                return (
+                    "Freestanding tubs start from US$400 — mixer US$150, install US$120.\n\n"
+                    "Standard tubs from US$80, install from US$80.\n\n"
+                    f"{self._budget_fit_close('english')}"
+                )
+            # Unspecified — they haven't told us which tub yet, so ask which one.
             if language == 'shona':
                 return (
                     "Freestanding tubs dzinotangira paUS$400 — mixer US$150, install US$120.\n\n"
@@ -2422,12 +2449,14 @@ class ResponseMixin:
                 'tub_sales': 'bathtubs', 'standalone_tub': 'freestanding tubs',
             }
             name = name_map.get(intent, 'fittings')
-            price_line = self._COMPOSE_SNIPPETS.get(intent, '')
             answer = None
             try:
                 from bot.services.clients import deepseek_call
+                # The customer did NOT ask for price here (this path is gated on
+                # `not _is_asking_for_price`), so the price snippet is deliberately
+                # kept OUT of the facts — never volunteer a price unprompted.
                 facts = (
-                    f"Product: {name}. {price_line} "
+                    f"Product: {name}. "
                     "We supply both ready-made units and can arrange custom builds for fixtures. "
                     "Free on-site assessment where we go through all options together. "
                     "HomeBase Plumbers, Hatfield Harare, open Sun-Fri 8am-6pm."
@@ -2438,8 +2467,9 @@ class ResponseMixin:
                             "You are a HomeBase Plumbers assistant in Harare. Answer the "
                             "customer's product question in ONE short, warm sentence using ONLY "
                             "the facts given. If the facts don't cover it, say you'll go through "
-                            "it on the free on-site assessment. NEVER invent prices, brands, "
-                            "colours, materials, or specs. Reply in "
+                            "it on the free on-site assessment. The customer has NOT asked about "
+                            "price — do NOT mention or volunteer any price or cost. NEVER invent "
+                            "prices, brands, colours, materials, or specs. Reply in "
                             + ("Shona." if language == 'shona' else "English.")},
                         {"role": "user", "content": f"Facts: {facts}\n\nQuestion: {message}"},
                     ],
