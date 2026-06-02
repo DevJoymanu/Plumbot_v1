@@ -1369,15 +1369,15 @@
               </form>
             </div>
 
-            <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfForm">
+            <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfChatForm">
               {% csrf_token %}
-              <input type="file" id="pdf_document" class="appt-pdf-input" name="document" accept="application/pdf,.pdf" required>
-              <label class="appt-pdf-picker" for="pdf_document">
+              <input type="file" id="pdf_document_chat" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" required>
+              <label class="appt-pdf-picker" for="pdf_document_chat">
                 <i class="fas fa-file-pdf"></i>
-                <span id="pdfFileName">Choose PDF</span>
+                <span class="js-pdf-name">Choose PDF</span>
               </label>
-              <input type="text" id="pdf_caption" class="appt-pdf-caption" name="caption" placeholder="Caption" maxlength="1024">
-              <button type="submit" class="appt-pdf-send-btn" id="sendPdfBtn" aria-label="Send PDF" disabled>
+              <input type="text" class="appt-pdf-caption" name="caption" placeholder="Caption" maxlength="1024">
+              <button type="submit" class="appt-pdf-send-btn js-pdf-send" aria-label="Send PDF" disabled>
                 <i class="fab fa-whatsapp"></i>
               </button>
             </form>
@@ -1559,10 +1559,22 @@
                 </div>
               </div>
 
-              {% if has_documents or uploaded_images %}
               <div class="detail-card">
                 <div class="detail-card-header">Documents & Images</div>
                 <div class="detail-card-body">
+                  <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfDetailsForm">
+                    {% csrf_token %}
+                    <input type="file" id="pdf_document_details" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" required>
+                    <label class="appt-pdf-picker" for="pdf_document_details">
+                      <i class="fas fa-file-pdf"></i>
+                      <span class="js-pdf-name">Choose PDF</span>
+                    </label>
+                    <input type="text" class="appt-pdf-caption" name="caption" placeholder="Caption" maxlength="1024">
+                    <button type="submit" class="appt-pdf-send-btn js-pdf-send" aria-label="Send PDF" disabled>
+                      <i class="fab fa-whatsapp"></i>
+                    </button>
+                  </form>
+
                   {% if has_documents %}
                   <div class="mini-stat" style="margin-bottom:12px;">
                     <div class="mini-stat-label">Uploaded Documents</div>
@@ -1582,7 +1594,6 @@
                   {% endif %}
                 </div>
               </div>
-              {% endif %}
             </div>
           </div>
         </div>
@@ -1718,10 +1729,10 @@
     }
   }
 
-  function updatePdfSendState() {
-    var input = document.getElementById('pdf_document');
-    var label = document.getElementById('pdfFileName');
-    var sendBtn = document.getElementById('sendPdfBtn');
+  function updatePdfSendState(form) {
+    var input = form.querySelector('.js-pdf-input');
+    var label = form.querySelector('.js-pdf-name');
+    var sendBtn = form.querySelector('.js-pdf-send');
     if (!input || !label || !sendBtn) return;
 
     var hasFile = input.files && input.files.length > 0;
@@ -1953,11 +1964,14 @@
       msgField.addEventListener('input', updateCharCount);
     }
 
-    var pdfInput = document.getElementById('pdf_document');
-    if (pdfInput) {
-      pdfInput.addEventListener('change', updatePdfSendState);
-      updatePdfSendState();
-    }
+    document.querySelectorAll('.appt-pdf-form').forEach(function (form) {
+      var pdfInput = form.querySelector('.js-pdf-input');
+      if (!pdfInput) return;
+      pdfInput.addEventListener('change', function () {
+        updatePdfSendState(form);
+      });
+      updatePdfSendState(form);
+    });
 
     // Avatar colour by first char of name
     var AVATAR_COLORS = ['#22c55e','#ef4444','#f59e0b','#0f766e','#f97316','#8b5cf6','#14b8a6'];
