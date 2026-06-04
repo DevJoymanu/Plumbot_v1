@@ -414,7 +414,7 @@ class RescheduleMixin:
             except Exception as e:
                 print(f"❌ Error processing successful reschedule: {str(e)}")
                 # Fallback confirmation
-                return f"✅ Appointment rescheduled to {new_datetime.strftime('%A, %B %d at %I:%M %p')}. Our team will contact you before arrival."
+                return f" Appointment rescheduled to {new_datetime.strftime('%A, %B %d at %I:%M %p')}. Our team will contact you before arrival."
 
 
         def log_ai_reschedule_decision(self, message, ai_decision, confidence=None):

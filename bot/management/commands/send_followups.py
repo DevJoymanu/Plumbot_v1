@@ -89,6 +89,7 @@ class Command(BaseCommand):
             return
 
         self._nudge_delay_flow_ghosts(now_local, dry_run)
+        self._nudge_parked_leads(now_local, dry_run)
         self._process_delayed_reactivations(now_local, dry_run)
 
         self._print_eligibility_breakdown(now_local, force)
@@ -286,6 +287,137 @@ class Command(BaseCommand):
 
         notes = notes.strip()
         notes = f'{notes}\n[DELAY_NUDGE_COUNT] {new_count}\n[DELAY_NUDGE_LAST] {sent_at.isoformat()}'.strip()
+        lead.internal_notes = notes
+        lead.save(update_fields=['internal_notes'])
+
+    # ─── Re-engagement for parked (soft brush-off) leads ─────────────────────
+
+    # Gentle re-engagement messages for leads who soft-exited ("I'll get back
+    # to you") and were parked. The greeting is prepended separately (like the
+    # delay nudge), so these are bodies only. The first re-offers the portfolio
+    # (safe whether or not they already received it); the last leaves the door
+    # open and stops.
+    _PARKED_NUDGE_MESSAGES = [
+        "just checking in — no pressure at all. If it helps while you decide, I can "
+        "send over our portfolio of past projects and full pricing. Or whenever you "
+        "are ready, a free on-site visit and fixed quote is one message away.",
+        "we will leave this with you. Whenever the time is right, just send us a "
+        "message and we will pick up right where we left off.",
+    ]
+
+    # Days to wait before each parked nudge: 3 days before the first, then 7 more
+    # before the second. Spaced over days (not hours) — they asked to be left alone.
+    _PARKED_NUDGE_INTERVALS_DAYS = (3, 7)
+
+    # Don't re-engage leads who have been cold for more than this — at that point
+    # they are genuinely dormant and a nudge is just spam.
+    _PARKED_NUDGE_MAX_AGE_DAYS = 30
+
+    def _nudge_parked_leads(self, now_local, dry_run):
+        """
+        Gently re-engage leads who soft brushed off ("I'll get back to you") and
+        were parked via mark_parked() ([PARKED] tag). Sends up to 2 spaced
+        WhatsApp nudges (3 days, then 7 days), then leaves them fully alone.
+
+        Count and last-sent time live in internal_notes so the cron resumes
+        across runs. Leads still mid delay-flow ([OOS_PENDING] category=delay_)
+        are left to _nudge_delay_flow_ghosts; this only handles parked leads not
+        in that flow. Respects the contact window (gated by the caller in
+        handle()).
+        """
+        now = timezone.now()
+        window_open_cutoff = now - timedelta(days=self._PARKED_NUDGE_MAX_AGE_DAYS)
+
+        candidates = (
+            Appointment.objects
+            .filter(
+                is_lead_active=True,
+                internal_notes__contains='[PARKED]',
+                last_inbound_at__gte=window_open_cutoff,
+            )
+            .exclude(status='confirmed')
+            .exclude(chatbot_paused=True)
+            .exclude(internal_notes__contains='[HANDED_OFF]')
+            .exclude(internal_notes__contains='[OOS_PENDING] category=delay_')
+        )
+
+        count = candidates.count()
+        if count:
+            self.stdout.write(f'🅿️ {count} parked lead(s) eligible for re-engagement nudge')
+
+        for lead in candidates:
+            try:
+                notes = lead.internal_notes or ''
+                nudge_count, last_nudge_at = self._read_parked_nudge_state(notes)
+
+                if nudge_count >= len(self._PARKED_NUDGE_INTERVALS_DAYS):
+                    continue
+
+                # The customer replied after our last nudge → they re-engaged;
+                # let the live conversation take over and stop nudging.
+                if last_nudge_at and lead.last_inbound_at and lead.last_inbound_at > last_nudge_at:
+                    continue
+
+                interval_days = self._PARKED_NUDGE_INTERVALS_DAYS[nudge_count]
+                reference     = last_nudge_at if last_nudge_at else lead.last_inbound_at
+                if not reference:
+                    continue
+                elapsed_days = (now - reference).total_seconds() / 86400
+                if elapsed_days < interval_days:
+                    continue
+
+                name = lead.customer_name or ''
+                hi   = f'Hi {name}' if name else 'Hi there'
+                body = self._PARKED_NUDGE_MESSAGES[nudge_count]
+                message = f'{hi}, {body}'
+
+                if dry_run:
+                    self.stdout.write(self.style.SUCCESS(
+                        f'🧪 Would send parked nudge #{nudge_count + 1} to lead {lead.id}: '
+                        f'"{message[:80]}…"'
+                    ))
+                    continue
+
+                clean = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
+                whatsapp_api.send_text_message(clean, message)
+
+                self._write_parked_nudge_state(lead, nudge_count + 1, now)
+                lead.add_conversation_message(
+                    'assistant', f'[PARKED NUDGE {nudge_count + 1}] {message}'
+                )
+
+                self.stdout.write(self.style.SUCCESS(
+                    f'✅ Parked nudge #{nudge_count + 1}/'
+                    f'{len(self._PARKED_NUDGE_INTERVALS_DAYS)} → lead {lead.id}'
+                ))
+
+            except Exception as exc:
+                logger.error(f'Parked nudge failed for lead {lead.id}: {exc}')
+                self.stdout.write(self.style.ERROR(f'❌ Parked nudge lead {lead.id}: {exc}'))
+
+    def _read_parked_nudge_state(self, notes):
+        """Return (count, last_sent_datetime_or_None) from internal_notes."""
+        count_m = re.search(r'\[PARKED_NUDGE_COUNT\] (\d+)', notes or '')
+        last_m  = re.search(r'\[PARKED_NUDGE_LAST\] ([^\n]+)', notes or '')
+        count   = int(count_m.group(1)) if count_m else 0
+        last    = None
+        if last_m:
+            try:
+                from datetime import datetime as _dt
+                last = _dt.fromisoformat(last_m.group(1).strip())
+                if last.tzinfo is None:
+                    import pytz as _pytz
+                    last = _pytz.utc.localize(last)
+            except Exception:
+                pass
+        return count, last
+
+    def _write_parked_nudge_state(self, lead, new_count, sent_at):
+        """Persist parked-nudge count and timestamp to internal_notes."""
+        notes = lead.internal_notes or ''
+        notes = re.sub(r'\[PARKED_NUDGE_COUNT\] \d+\n?', '', notes)
+        notes = re.sub(r'\[PARKED_NUDGE_LAST\] [^\n]+\n?', '', notes).strip()
+        notes = f'{notes}\n[PARKED_NUDGE_COUNT] {new_count}\n[PARKED_NUDGE_LAST] {sent_at.isoformat()}'.strip()
         lead.internal_notes = notes
         lead.save(update_fields=['internal_notes'])
 

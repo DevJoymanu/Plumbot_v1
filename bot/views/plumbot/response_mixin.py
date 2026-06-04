@@ -113,36 +113,36 @@ class ResponseMixin:
                 if language == 'shona':
                     return (
                         "Standard built-in tubs dzinotangira paUS$160 all-in (tub US$80 + install US$80).\n\n"
-                        "Kana uchida freestanding, idzo dzinotangira paUS$400 (mixer US$150, install US$120).\n\n"
+                        "Kana uchida freestanding, idzo dzinotangira paUS$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
                         f"{self._budget_fit_close('shona')}"
                     )
                 return (
                     "Standard built-in tubs are from US$160 all-in (tub US$80 + install US$80).\n\n"
-                    "If you'd prefer a freestanding one, those start from US$400 (mixer US$150, install US$120).\n\n"
+                    "If you'd prefer a freestanding one, those start from US$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
                     f"{self._budget_fit_close('english')}"
                 )
             if tub_type == 'freestanding':
                 if language == 'shona':
                     return (
-                        "Freestanding tubs dzinotangira paUS$400 — mixer US$150, install US$120.\n\n"
-                        "Standard tubs kubva US$80, install kubva US$80.\n\n"
+                        "Freestanding tubs dzinotangira paUS$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
+                        "Standard built-in tubs kubva paUS$160 all-in (tub US$80 + install US$80).\n\n"
                         f"{self._budget_fit_close('shona')}"
                     )
                 return (
-                    "Freestanding tubs start from US$400 — mixer US$150, install US$120.\n\n"
-                    "Standard tubs from US$80, install from US$80.\n\n"
+                    "Freestanding tubs start from US$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
+                    "Standard built-in tubs from US$160 all-in (tub US$80 + install US$80).\n\n"
                     f"{self._budget_fit_close('english')}"
                 )
             # Unspecified — they haven't told us which tub yet, so ask which one.
             if language == 'shona':
                 return (
-                    "Freestanding tubs dzinotangira paUS$400 — mixer US$150, install US$120.\n\n"
-                    "Standard tubs kubva US$80, install kubva US$80.\n\n"
+                    "Freestanding tubs dzinotangira paUS$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
+                    "Standard built-in tubs kubva paUS$160 all-in (tub US$80 + install US$80).\n\n"
                     "Munoda chii chaizvo?"
                 )
             return (
-                "Freestanding tubs start from US$400 — mixer US$150, install US$120.\n\n"
-                "Standard tubs from US$80, install from US$80.\n\n"
+                "Freestanding tubs start from US$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
+                "Standard built-in tubs from US$160 all-in (tub US$80 + install US$80).\n\n"
                 "What did you have in mind?"
             )
 
@@ -211,7 +211,7 @@ class ResponseMixin:
                     self.appointment.customer_email = _email
                     self.appointment.save(update_fields=['customer_email'])
                 return (
-                    "Got the email, thanks 👍\n\n"
+                    "Got the email, thanks \n\n"
                     "And what name should we put on the booking? "
                     "If you'd rather not share it, just say no."
                 )
@@ -444,7 +444,7 @@ class ResponseMixin:
             if appointment_confirmed or customer_said_later:
                 if is_explicit_delay or is_obvious_ack:
                     print(
-                        f"✅ Exit signal accepted: confirmed={appointment_confirmed}, "
+                        f" Exit signal accepted: confirmed={appointment_confirmed}, "
                         f"said_later={customer_said_later}, msg='{msg}'"
                     )
                     return True
@@ -559,7 +559,7 @@ class ResponseMixin:
                 confidence = result.get('confidence', 'LOW')
 
                 print(
-                    f"🤖 DeepSeek exit intent: '{message}' → "
+                    f" DeepSeek exit intent: '{message}' → "
                     f"intent={intent}, confidence={confidence}"
                 )
 
@@ -583,18 +583,18 @@ class ResponseMixin:
                 return (
                     f"Perfect — see you on {formatted}! "
                     "We will call you 30 minutes before arrival. "
-                    "Feel free to message anytime if you have questions. 😊"
+                    "Feel free to message anytime if you have questions."
                 )
 
             if self._customer_said_they_will_reach_out():
                 return (
                     "No problem at all! Whenever you're ready, just drop us a message and "
-                    "we'll pick up right where we left off. 😊"
+                    "we'll pick up right where we left off."
                 )
 
             return (
                 "No problem at all! Whenever you're ready, just drop us a message and "
-                "we'll pick up right where we left off. 😊"
+                "we'll pick up right where we left off."
             )
 
 
@@ -722,7 +722,7 @@ class ResponseMixin:
             return False
 
 
-        def generate_response(self, incoming_message, precomputed_service_inquiry=None, precomputed_classification=None):
+        def generate_response(self, incoming_message, precomputed_service_inquiry=None, precomputed_classification=None, quoted_context=None):
             try:
                 # ── EMAIL CAPTURE (post-booking) ──────────────────────────────────────
                 # Must be checked first — the customer's email address should not be
@@ -819,11 +819,11 @@ class ResponseMixin:
                     if 'whenever you' in _last_bot:
                         reply = (
                             "All good — just message me whenever you're ready and "
-                            "we'll pick it up from there 👍"
+                            "we'll pick it up from there"
                         )
                     else:
                         reply = (
-                            "No worries 👍 Whenever you're ready — are you after a "
+                            "No worries Whenever you're ready — are you after a "
                             "bathroom or kitchen reno, a new installation, or a "
                             "specific repair? I can give you a rough price or set up "
                             "a free site visit."
@@ -1077,6 +1077,7 @@ class ResponseMixin:
                             incoming_message,
                             next_question,
                             ['plan_status'],
+                            quoted_context=quoted_context,
                         )
                         reply = "Perfect! You can send your plan whenever you're ready. " + reply
                         return reply
@@ -1094,9 +1095,9 @@ class ResponseMixin:
                                        self.appointment.internal_notes or '')
                     _city = _m.group(1) if _m else 'that area'
                     reply = (
-                        f"Thank you for reaching out! 😊 Unfortunately we currently only "
+                        f"Thank you for reaching out! Unfortunately we currently only "
                         f"service the *Harare* area and don't cover *{_city}* at the moment.\n\n"
-                        "If you ever have any plumbing work in Harare, we'd love to help! 🔧"
+                        "If you ever have any plumbing work in Harare, we'd love to help!"
                     )
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
@@ -1130,7 +1131,7 @@ class ResponseMixin:
                 if 'garage' in _msg_lc and (_scope_q or '?' in incoming_message):
                     reply = (
                         "Yes! We handle all plumbing work in garages and outbuildings — "
-                        "sinks, water points, drainage, and pipework. 🔧\n\n"
+                        "sinks, water points, drainage, and pipework. \n\n"
                         "Is this for a garage at the same property, or is it a separate job?"
                     )
                     self.appointment.add_conversation_message("user", incoming_message)
@@ -1157,7 +1158,7 @@ class ResponseMixin:
                                 if alternatives else ""
                             )
                             reply = (
-                                "We unfortunately don't operate on Saturdays. 😊\n\n"
+                                "We unfortunately don't operate on Saturdays. \n\n"
                                 "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
                             )
                             if alt_text:
@@ -1203,18 +1204,20 @@ class ResponseMixin:
                                 reply = f"{direct_answer}\n\n{nudge}" if nudge else direct_answer
                         else:
                             reply = self.generate_contextual_response(
-                                incoming_message, next_question, updated_fields
+                                incoming_message, next_question, updated_fields,
+                                quoted_context=quoted_context,
                             )
                     else:
                         reply = self.generate_contextual_response(
-                            incoming_message, next_question, updated_fields
+                            incoming_message, next_question, updated_fields,
+                            quoted_context=quoted_context,
                         )
 
                 # Guard: never return None or empty — send a safe fallback instead
                 if not reply or not str(reply).strip():
                     reply = (
                         "Sorry, I didn't quite catch that. Could you tell me more about "
-                        "what plumbing work you need? 😊"
+                        "what plumbing work you need?"
                     )
 
                 self.appointment.add_conversation_message("user", incoming_message)
@@ -1226,7 +1229,7 @@ class ResponseMixin:
                 return "Sorry, dropped that on our end — could you send that again?"
 
 
-        def generate_contextual_response(self, incoming_message, next_question, updated_fields):
+        def generate_contextual_response(self, incoming_message, next_question, updated_fields, quoted_context=None):
             """
             Generate the next bot message.
 
@@ -1251,7 +1254,7 @@ class ResponseMixin:
                         if alternatives else ""
                     )
                     reply = (
-                        "We unfortunately don't operate on Saturdays. 😊\n\n"
+                        "We unfortunately don't operate on Saturdays. \n\n"
                         "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
                     )
                     if alt_text:
@@ -1313,6 +1316,7 @@ class ResponseMixin:
                     next_question=next_question,
                     updated_fields=updated_fields or [],
                     retry_count=new_retry,
+                    quoted_context=quoted_context,
                 )
 
             except Exception as e:
@@ -1398,7 +1402,7 @@ class ResponseMixin:
                     self.appointment.scheduled_datetime = None
                     self.appointment.save(update_fields=["scheduled_datetime"])
                 self._set_question_retry_count("availability_date", 0)
-                return "Oh okay 👍 when are you available? We're open Sunday–Friday, 8 AM–6 PM."
+                return "Oh okay when are you available? We're open Sunday–Friday, 8 AM–6 PM."
 
             if intent == "suggested_new_day" and day_mentioned and confidence == "HIGH":
                 # Confirm the new day without repeating the original options
@@ -1462,6 +1466,7 @@ class ResponseMixin:
             next_question: str,
             updated_fields: list,
             retry_count: int,
+            quoted_context: str = None,
         ) -> str:
             """
             Generate a retry response that:
@@ -1523,10 +1528,18 @@ class ResponseMixin:
             else:
                 escalation = "Natural rephrasing."
 
+            reply_to_block = (
+                f'\n    THE CUSTOMER IS REPLYING TO THIS EARLIER MESSAGE OF YOURS:\n'
+                f'    "{quoted_context}"\n'
+                f'    Read their reply as a direct response to that message — resolve any\n'
+                f'    references like "this one", "the first", or "that" against it.\n'
+                if quoted_context else ""
+            )
+
             prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe.
 
     CUSTOMER'S LAST MESSAGE: "{incoming_message}"
-
+{reply_to_block}
     WHAT TO DO:
     {opening_instruction}
 
@@ -1571,7 +1584,7 @@ class ResponseMixin:
                 reply = response.choices[0].message.content.strip()
                 reply = reply.replace('**', '').replace('__', '')
                 print(
-                    f"🤖 Retry response | q={next_question} retry={retry_count} "
+                    f" Retry response | q={next_question} retry={retry_count} "
                     f"updated={updated_fields}"
                 )
                 if not reply:
@@ -1823,7 +1836,7 @@ class ResponseMixin:
                     f"he handles the visit personally. You can reach him directly on {number}."
                 )
             return (
-                "You're chatting with Plumbot, the assistant for Homebase Plumbers here in Harare 👋 "
+                "You're chatting with Plumbot, the assistant for Homebase Plumbers here in Harare"
                 f"Our plumber Tinashe handles the hands-on work (reach him on {number}). "
                 "What can we help you get sorted?"
             )
@@ -2167,7 +2180,7 @@ class ResponseMixin:
             * "Can I come and see the tubs"
             * "When can I come in"
 
-        ⚠️ IMPORTANT EXCEPTIONS — these are NOT location_visit:
+ IMPORTANT EXCEPTIONS — these are NOT location_visit:
         * 'Site visit' alone = customer is answering a plan question (needs site visit to their property)
         * 'Site visit would be perfect' = same
         * 'I need a site visit' = same
@@ -2312,12 +2325,12 @@ class ResponseMixin:
             name = names.get(intent, 'that')
             if language == 'shona':
                 return (
-                    f"Hongu, tinacho uye tinoita kuiswa kwe{name} 👍\n\n"
+                    f"Hongu, tinacho uye tinoita kuiswa kwe{name} \n\n"
                     "Uri kuda ichi chete, kana full bathroom? Tinogona kuuya tione "
                     "tikupe mutengo wakajika — assessment yemahara."
                 )
             return (
-                f"Yes — we supply and install {name} 👍\n\n"
+                f"Yes — we supply and install {name} \n\n"
                 "Are you after just that, or a full bathroom setup? We can come take "
                 "a look and give you a fixed price — the on-site assessment is free."
             )
@@ -2346,13 +2359,13 @@ class ResponseMixin:
             name = names.get(intent, 'fittings')
             if language == 'shona':
                 body = (
-                    f"Tinokwanisa zvese 👍 — tine {name} ari ready-made, uye tinogona "
+                    f"Tinokwanisa zvese — tine {name} ari ready-made, uye tinogona "
                     f"kuronga custom build inokwana paspace yako. Tichakuratidza ma "
                     f"options patinouya kuzoona."
                 )
             else:
                 body = (
-                    f"We can do both 👍 — we supply ready-made {name}, or arrange a "
+                    f"We can do both — we supply ready-made {name}, or arrange a "
                     f"custom build to fit your space. We'll go through the options "
                     f"when we come take a look."
                 )
@@ -2365,8 +2378,8 @@ class ResponseMixin:
 
         @staticmethod
         def _is_bare_ack(message: str) -> bool:
-            """True for a standalone acknowledgement ('ok', 'sure', 'noted', 👍) with no content."""
-            msg = (message or "").strip().lower().strip('.!?,👍🙏✨ ')
+            """True for a standalone acknowledgement ('ok', 'sure', 'noted', ) with no content."""
+            msg = (message or "").strip().lower().strip('.!?,')
             if not msg:
                 return False
             acks = {
@@ -2498,7 +2511,7 @@ class ResponseMixin:
         # in handle_service_inquiry — keep them in sync if prices change.
         _COMPOSE_SNIPPETS = {
             'standalone_tub':  "Freestanding (standalone) tubs: full setup from US$670 all-in (tub US$400 + mixer US$150 + install US$120).",
-            'tub_sales':       "Freestanding tubs from US$400 (mixer US$150, install US$120). Standard built-in tubs from US$160 all-in.",
+            'tub_sales':       "Freestanding tubs from US$670 all-in (tub US$400 + mixer US$150 + install US$120). Standard built-in tubs from US$160 all-in.",
             'bathtub_installation': "Standard built-in tub from US$160 all-in; freestanding setup from US$670 all-in.",
             'geyser':          "Geysers from US$160 all-in — supply and install.",
             'shower_cubicle':  "Shower cubicles from US$170 all-in — supply and install.",
@@ -2506,8 +2519,8 @@ class ResponseMixin:
             'toilet':          "Toilet replacement from US$70 all-in — supply and install.",
             'chamber':         "Side chambers from US$160 all-in — supply and install.",
             'facebook_package': "Our Facebook package is US$600 — freestanding tub and side chamber.",
-            'location':        "We're based in Hatfield, Harare 📍",
-            'hours':           "We're open Sunday to Friday, 8 AM–6 PM ⏰",
+            'location':        "We're based in Hatfield, Harare",
+            'hours':           "We're open Sunday to Friday, 8 AM–6 PM",
         }
         _COMPOSE_KNOWN = set(_COMPOSE_SNIPPETS) | {'pictures', 'combined_pricing', 'other'}
 
@@ -2601,7 +2614,7 @@ class ResponseMixin:
             for intent in answerable:
                 if intent == 'pictures':
                     send_photos = True
-                    answers.append("Sending photos of our previous work now 📸")
+                    answers.append("Sending photos of our previous work now")
                 elif intent == 'combined_pricing':
                     answers.append(
                         "Rough all-in prices (supply + install): geyser from US$160, "
@@ -2725,7 +2738,7 @@ class ResponseMixin:
                                 "Standard built-in tub: Supply from US$80 | Install from US$80 → from US$160 all-in",
                                 "Side chamber (add-on): Supply from US$130 | Install from US$30 → from US$160",
                             ],
-                            "total_line": "Freestanding tubs from US$400 — mixer US$150, install US$120. Standard tubs from US$80, install from US$80.",
+                            "total_line": "Full freestanding setup from US$670 all-in (tub US$400 + mixer US$150 + install US$120). Standard built-in tubs from US$160 all-in.",
                             "cheapest_line": "Side chamber adds US$130 supply + US$30 install.",
                             "sn_breakdown_lines": [
                                 "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → kubva US$670 all-in",
@@ -3028,83 +3041,85 @@ class ResponseMixin:
 
                         "tub_sales": {
                             "en": (
-                                "Tubs start from US$400 supply-only, or US$500–$800 supply + install — "
-                                "depends on the style and size. \n\n"
+                                "Standard built-in tubs are from US$160 all-in (tub US$80 + install US$80), "
+                                "and freestanding tubs from US$670 all-in (tub US$400 + mixer US$150 + install US$120) "
+                                "— premium styles can be more. \n\n"
                                 "Do you know what size space you're working with, or would it be easier "
                                 "to have us come measure and give you a fixed price on the spot? "
                                 "(Site assessment is free)"
                             ),
                             "en_v": (
-                                "Tubs start from US$400 supply-only, or US$500–$800 supply + install — "
-                                "depends on the style and size. \n\n"
+                                "Standard built-in tubs are from US$160 all-in (tub US$80 + install US$80), "
+                                "and freestanding tubs from US$670 all-in (tub US$400 + mixer US$150 + install US$120) "
+                                "— premium styles can be more. \n\n"
                                 "Our plumber will go through the options with you when they come out."
                             ),
                             "sn": (
-                                "Tubs dzinotangira kuUS$400 supply chete, kana US$500–$800 supply neinstallation — "
-                                "zvichienda nemhando neukuru. \n\n"
+                                "Standard built-in tubs dzinotangira paUS$160 all-in (tub US$80 + install US$80), "
+                                "freestanding kubva US$670 all-in (tub US$400 + mixer US$150 + install US$120) "
+                                "— premium dzinogona kudhura kupfuura. \n\n"
                                 "Unoziva ukuru hwenzvimbo yako here, kana tiuye tiite free assessment "
                                 "tikupe mutengo wakakwana pasite?"
                             ),
                             "sn_v": (
-                                "Tubs dzinotangira kuUS$400 supply chete, kana US$500–$800 supply neinstallation. \n\n"
+                                "Standard built-in tubs dzinotangira paUS$160 all-in (tub US$80 + install US$80), "
+                                "freestanding kubva US$670 all-in (tub US$400 + mixer US$150 + install US$120). \n\n"
                                 "Plumber wedu achakuratidza zvinosarudzwa paauya."
                             ),
                         },
 
                         "standalone_tub": {
                             "en": (
-                                "Standalone / freestanding tubs run US$400–$800 supply, plus US$120–$200 "
-                                "to fit and finish. \n\n"
+                                "Freestanding tubs are from US$670 all-in. \n\n"
                                 "Full breakdown:\n"
                                 "• Free-standing tub supply: from US$400\n"
                                 "• Free-standing mixer: from US$150\n"
-                                "• tub installation: US$120\n"
-                                "• Side chamber: US$130 (installation US$30)\n\n"
-                                "Most customers are all-in at US$750–$1,200 depending on the tub they pick.\n\n"
+                                "• Tub installation: US$120\n"
+                                "• Side chamber (optional add-on): US$130 + US$30 install\n\n"
+                                "Premium tubs can be more depending on the style you pick.\n\n"
                                 "Do you already know which tub style you want, or would you like us to come "
                                 "out and show you options on-site? (Free visit, no obligation)"
                             ),
                             "en_v": (
-                                "Standalone / freestanding tubs run US$400–$800 supply, plus US$120–$200 "
-                                "to fit and finish. \n\n"
+                                "Freestanding tubs are from US$670 all-in. \n\n"
                                 "Full breakdown:\n"
                                 "• Free-standing tub supply: from US$400\n"
                                 "• Free-standing mixer: from US$150\n"
-                                "• Mixer + tub installation: US$120\n"
-                                "• Side chamber: US$130 (installation US$30)\n\n"
-                                "Most customers are all-in at US$750–$1,200 depending on the tub they pick.\n\n"
+                                "• Tub installation: US$120\n"
+                                "• Side chamber (optional add-on): US$130 + US$30 install\n\n"
+                                "Premium tubs can be more depending on the style you pick.\n\n"
                                 "Our plumber will go through the options with you on-site."
                             ),
                             "sn": (
-                                "Free-standing tubs dzinotangira kuUS$400 supply, neUS$120–$200 "
-                                "yeinstallation. \n\n"
+                                "Free-standing tubs dzinotangira kuUS$670 all-in. \n\n"
+                                "Full breakdown:\n"
                                 "• Free-standing tub: kubva US$400\n"
                                 "• Free-standing mixer: kubva US$150\n"
-                                "• Kuisa mixer netub: US$120\n"
-                                "• Side chamber: US$130 (installation US$30)\n\n"
-                                "Vazhinji vanobhadhara US$750–$1,200 zvichienda netub yavasarudza.\n\n"
+                                "• Kuisa tub: US$120\n"
+                                "• Side chamber (optional): US$130 + US$30 install\n\n"
+                                "Tub dze premium dzinogona kudhura kupfuura zvichienda nemhando.\n\n"
                                 "Unoziva mhando yetub yaungada here, kana tiuye tikuratidze zvinosarudzwa pasite?"
                             ),
                             "sn_v": (
-                                "Free-standing tubs dzinotangira kuUS$400 supply, neUS$120–$200 yeinstallation. \n\n"
+                                "Free-standing tubs dzinotangira kuUS$670 all-in. \n\n"
                                 "• Free-standing tub: kubva US$400\n"
                                 "• Free-standing mixer: kubva US$150\n"
-                                "• Kuisa mixer netub: US$120\n"
-                                "• Side chamber: US$130 (installation US$30)\n\n"
-                                "Vazhinji vanobhadhara US$750–$1,200. Plumber wedu achakuratidza paauya."
+                                "• Kuisa tub: US$120\n"
+                                "• Side chamber (optional): US$130 + US$30 install\n\n"
+                                "Plumber wedu achakuratidza paauya."
                             ),
                         },
 
                         "geyser": {
                             "en": (
                                 "Geyser installation starts from US$80 — most jobs land between US$80–$180 "
-                                "depending on the geyser size and access. 🔥\n\n"
+                                "depending on the geyser size and access. \n\n"
                                 "What size geyser are you putting in? (100L, 150L, 200L?) — "
                                 "that'll let me give you a tighter number right now."
                             ),
                             "sn": (
                                 "Kuisa geyser kunotangira kuUS$80 — mazhinji mapoka anosvika US$80–$180 "
-                                "zvichienda nekukura kwegeyser. 🔥\n\n"
+                                "zvichienda nekukura kwegeyser. \n\n"
                                 "Geyser yaunoda yakura zvakadini? (100L, 150L, 200L?) — "
                                 "ndingakupe mutengo wakajika zviri nani."
                             ),
@@ -3113,25 +3128,25 @@ class ResponseMixin:
                         "shower_cubicle": {
                             "en": (
                                 "Shower cubicles (900×900mm) start from US$130 supply + US$40 install — "
-                                "so roughly US$170 all-in for a standard fit. 🚿\n\n"
+                                "so roughly US$170 all-in for a standard fit. \n\n"
                                 "Bigger cubicles or custom sizes run a bit more. "
                                 "Do you know the rough dimensions, or should we come out and measure? "
                                 "(Free site visit)"
                             ),
                             "en_v": (
                                 "Shower cubicles (900×900mm) start from US$130 supply + US$40 install — "
-                                "roughly US$170 all-in for a standard fit. 🚿\n\n"
+                                "roughly US$170 all-in for a standard fit. \n\n"
                                 "Bigger or custom sizes run a bit more. Our plumber will measure up "
                                 "and confirm the exact price when they come out."
                             ),
                             "sn": (
                                 "Shower cubicles (900×900mm) dzinotangira kuUS$130 supply neUS$40 installation — "
-                                "pamwe US$170 yese. 🚿\n\n"
+                                "pamwe US$170 yese. \n\n"
                                 "Huru dzakakura dzinoti nzira dzinopfuura. "
                                 "Unoziva saizi here, kana tiuye tiite free visit tiite measurement?"
                             ),
                             "sn_v": (
-                                "Shower cubicles dzinotangira kuUS$170 yese ye900×900mm. 🚿\n\n"
+                                "Shower cubicles dzinotangira kuUS$170 yese ye900×900mm. \n\n"
                                 "Plumber wedu achaveza uye akupe mutengo wakajika paauya."
                             ),
                         },
@@ -3139,12 +3154,12 @@ class ResponseMixin:
                         "vanity": {
                             "en": (
                                 "Custom vanity units start from US$150 + US$30 labour — "
-                                "most jobs come out at US$180–$350 depending on size and finish. 🪞\n\n"
+                                "most jobs come out at US$180–$350 depending on size and finish. \n\n"
                                 "What size are you thinking? (Width in cm helps, even roughly)"
                             ),
                             "sn": (
                                 "Ma vanity unit anotangira kuUS$150 neUS$30 yevashandi — "
-                                "mazhinji mapoka anosvika US$180–$350 zvichienda nekukura nekugadzirwa. 🪞\n\n"
+                                "mazhinji mapoka anosvika US$180–$350 zvichienda nekukura nekugadzirwa. \n\n"
                                 "Unofunga ukuru hwakaita sei? (Upamhi mucm unobatsira, kunyangwe wakangofanana)"
                             ),
                         },
@@ -3172,14 +3187,14 @@ class ResponseMixin:
 
                         "toilet": {
                             "en": (
-                                "Toilet supply + install runs US$70–$120 for a standard close-coupled unit: 🚽\n\n"
+                                "Toilet supply + install runs US$70–$120 for a standard close-coupled unit: \n\n"
                                 "• Close-coupled toilet supply: from US$50\n"
                                 "• Installation: from US$20\n"
                                 "• Side chamber: US$130 (install US$30)\n\n"
                                 "Are you replacing an existing toilet or fitting a new one in a fresh space?"
                             ),
                             "sn": (
-                                "Toilet supply neinstallation inosvika US$70–$120 yetoilet yakajairwa: 🚽\n\n"
+                                "Toilet supply neinstallation inosvika US$70–$120 yetoilet yakajairwa: \n\n"
                                 "• Close-coupled toilet: kubva US$50\n"
                                 "• Kuisa: kubva US$20\n"
                                 "• Side chamber: US$130 (install US$30)\n\n"
@@ -3189,12 +3204,12 @@ class ResponseMixin:
 
                         "chamber": {
                             "en": (
-                                "Side chamber supply + install is US$160 all-in (US$130 supply, US$30 fit). 🚽\n\n"
+                                "Side chamber supply + install is US$160 all-in (US$130 supply, US$30 fit). \n\n"
                                 "If you also need a toilet: close-coupled units start from US$50 supply + US$20 install.\n\n"
                                 "Are you just doing the chamber, or the full toilet setup?"
                             ),
                             "sn": (
-                                "Side chamber supply neinstallation ndiUS$160 yese (US$130 supply, US$30 kuisa). 🚽\n\n"
+                                "Side chamber supply neinstallation ndiUS$160 yese (US$130 supply, US$30 kuisa). \n\n"
                                 "Kana uchidawo toilet: close-coupled toilet inotangira kuUS$50 supply neUS$20 installation.\n\n"
                                 "Uri kuita chamber chete kana setup yese yetoilet?"
                             ),
@@ -3202,41 +3217,41 @@ class ResponseMixin:
 
                         "facebook_package": {
                             "en": (
-                                "The bathroom package from our Facebook ad starts from US$600. 📢\n\n"
+                                "The bathroom package from our Facebook ad starts from US$600. \n\n"
                                 "That covers the core fit-out — exact price depends on the size of your bathroom "
                                 "and fixtures you choose.\n\n"
                                 "Want us to come do a free on-site assessment so we can lock in your exact number?"
                             ),
                             "en_v": (
-                                "The bathroom package from our Facebook ad starts from US$600. 📢\n\n"
+                                "The bathroom package from our Facebook ad starts from US$600. \n\n"
                                 "Exact price depends on your bathroom size and fixtures. "
                                 "Our plumber will lock in your exact price when they come out."
                             ),
                             "sn": (
-                                "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. 📢\n\n"
+                                "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. \n\n"
                                 "Iyo inofukidza basa guru — mutengo wakakwana unoenderana nekukura kwebathroom "
                                 "nemhando yezvinhu zvaunosarudza.\n\n"
                                 "Unoda here kuti tiuye tiite free assessment tikupe mutengo wakajika?"
                             ),
                             "sn_v": (
-                                "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. 📢\n\n"
+                                "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. \n\n"
                                 "Plumber wedu achakupa mutengo wakajika paauya."
                             ),
                         },
 
                         "location_ask": {
-                            "en": "We are based in Hatfield, Harare, and yourself 📍\n\n",
-                            "sn": "Tiri muHatfield, Harare. 📍\n\n",
+                            "en": "We are based in Hatfield, Harare, and yourself \n\n",
+                            "sn": "Tiri muHatfield, Harare. \n\n",
                         },
 
                         "location_visit": {
                             "en": (
-                                "We work by appointment rather than walk-ins. 📍 We're in Hatfield, Harare.\n\n"
+                                "We work by appointment rather than walk-ins. We're in Hatfield, Harare.\n\n"
                                 "Would you like us to come to you instead? We can do a free on-site assessment "
                                 "at your place — saves you the trip and gets you a fixed price on the spot."
                             ),
                             "sn": (
-                                "Tinoshandisa ne appointment, hatisi kushanda ne walk-ins. 📍 Tiri muHatfield, Harare.\n\n"
+                                "Tinoshandisa ne appointment, hatisi kushanda ne walk-ins. Tiri muHatfield, Harare.\n\n"
                                 "Unoda here kuti tiuye kwauri? Tinogona kuita free assessment paimba yako — "
                                 "kukuponesa rwendo uye tikupe mutengo wakakwana pasite."
                             ),
@@ -3245,12 +3260,12 @@ class ResponseMixin:
                         "previous_quotation": {
                             "en": (
                                 f"For your previous quotation, please reach out to our plumber directly "
-                                f"and they'll pull it up for you right away. 📄\n\n"
+                                f"and they'll pull it up for you right away. \n\n"
                                 f"Contact: {plumber_number}"
                             ),
                             "sn": (
                                 f"Kuti uwane quotation yako yekare, taura neplumber yedu directly "
-                                f"uye vachakubatsira nekukurumidza. 📄\n\n"
+                                f"uye vachakubatsira nekukurumidza. \n\n"
                                 f"Bata: {plumber_number}"
                             ),
                         },
@@ -3345,15 +3360,13 @@ class ResponseMixin:
 
             if language == "shona":
                 return (
-                    "Tub netoilet zviri paFacebook picture zvinenge zviri around US$500, "
-                    "uye labour ingangoita US$150 👍\n\n"
+                    "Facebook package yedu inosvika US$600 — ine freestanding tub ne side chamber.\n\n"
                     "Final price inoenderana nesetup, saka tinozoconfirm kana tauya tangoona space.\n\n"
                     f"{self._get_pricing_followup_prompt('shona')}"
                 )
 
             return (
-                "The tub & toilet on the Facebook picture are around US$500, "
-                "and labour is about US$150 👍\n\n"
+                "Our Facebook package is US$600 — that's a freestanding tub and side chamber.\n\n"
                 "Final price depends on the setup, so we confirm after a quick site check.\n\n"
                 f"{self._get_pricing_followup_prompt('english')}"
             )
@@ -3441,16 +3454,16 @@ class ResponseMixin:
                 reply = (
                     f"{project_context}"
                     "Facebook package yedu inosvika US$600. Ine freestanding tub ne side chamber.\n\n"
-                    "Kana muri kuda tub chete — freestanding tubs dzinotangira paUS$400, "
-                    "standard tubs kubva US$80.\n\n"
+                    "Kana muri kuda tub chete — freestanding tubs dzinotangira paUS$670 all-in, "
+                    "standard built-in tubs kubva US$160 all-in.\n\n"
                     "Munoda chii chaizvo?"
                 )
             else:
                 reply = (
                     f"{project_context}"
                     "Our Facebook package is US$600. That's a freestanding tub and side chamber.\n\n"
-                    "If you're looking at just a tub — freestanding tubs start from US$400, "
-                    "standard tubs from US$80.\n\n"
+                    "If you're looking at just a tub — freestanding tubs start from US$670 all-in, "
+                    "standard built-in tubs from US$160 all-in.\n\n"
                     "What did you have in mind?"
                 )
             return reply
@@ -3475,7 +3488,7 @@ class ResponseMixin:
                         timezone.now() + timedelta(days=1)
                     )
                     alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
-                    reply = "We unfortunately don't operate on Saturdays. 😊\n\nOur working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                    reply = "We unfortunately don't operate on Saturdays. \n\nOur working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
                     if alt_text:
                         reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
                     else:
@@ -3554,11 +3567,11 @@ class ResponseMixin:
         The plumber's name is Takudzwa.
 
         CURRENT FLOW:
-        1. service_type          ✅ or pending
-        2. project_description   ✅ or pending
-        3. area                  ✅ or pending
-        4. availability_date     ✅ or pending
-        5. availability_time     ✅ or pending
+        1. service_type or pending
+        2. project_description or pending
+        3. area or pending
+        4. availability_date or pending
+        5. availability_time or pending
 
         CURRENT SITUATION:
         {appointment_context}
@@ -3772,9 +3785,9 @@ class ResponseMixin:
         - Shower cubicle (900x900mm): supply from US$130, install from US$40
         - Vanity unit: supply from US$150, install from US$30
         - Geyser: supply from US$80, install from US$80
-        - Bathtub (ordinary): supply from US$80, install from US$80
-        - Freestanding tub: supply from US$400, mixer from US$150, install US$120
-        - Side chamber: supply from US$130, install from US$30
+        - Bathtub (ordinary/built-in): supply from US$80, install from US$80 → from US$160 all-in
+        - Freestanding tub: supply from US$400, mixer from US$150, install US$120 → from US$670 all-in
+        - Side chamber: supply from US$130, install from US$30 → from US$160 all-in
         - Full bathroom package: from US$600+
         - Site assessment / visit: FREE
 
@@ -3858,7 +3871,7 @@ class ResponseMixin:
                 f"If they ask who will come or who they are speaking to, say the plumber's name is Takudzwa. "
                 f"If it is extra context about their job, acknowledge it positively. "
                 f"If it mentions a time or date, confirm it matches their booking at {appt_str}. "
-                f"Close with a friendly line such as 'See you on {appt_str}{name_part}! 😊'. "
+                f"Close with a friendly line such as 'See you on {appt_str}{name_part}!'. "
                 f"Never ask for information that has already been booked. "
                 f"NEVER use the word 'our' — say 'we', 'the team', or 'us' instead. "
                 f"NEVER use contractions — write 'we will' not 'we'll', 'they will' not 'they'll'. "
@@ -3881,7 +3894,7 @@ class ResponseMixin:
                 print(f"⚠️ Post-booking contextual reply failed: {exc}")
 
             # Safe fallback — never return None
-            return f"Thanks for that{name_part}! We'll see you on {appt_str}. 😊"
+            return f"Thanks for that{name_part}! We'll see you on {appt_str}."
 
 
         def _get_soft_booking_nudge(self) -> str:

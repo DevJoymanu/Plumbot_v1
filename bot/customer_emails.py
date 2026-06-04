@@ -31,6 +31,15 @@ _SAST          = pytz.timezone("Africa/Johannesburg")
 _PLUMBER_PHONE = "263774819901"     # fallback call number
 _WA_NUMBER     = "263776255077"     # business WhatsApp (fixed)
 
+# Pre-designed portfolio PDF emailed to leads. If this file exists it is sent
+# as-is; otherwise we fall back to the ReportLab-generated version below.
+# Override the location with the PORTFOLIO_PDF_PATH env var if needed.
+PORTFOLIO_PDF_PATH = os.environ.get(
+    "PORTFOLIO_PDF_PATH",
+    os.path.join(os.path.dirname(__file__), "portfolio_assets",
+                 "HomeBase_Plumbers_Portfolio.pdf"),
+)
+
 
 # ── Formatting helpers ────────────────────────────────────────────────────────
 
@@ -90,15 +99,15 @@ def _apt_card(apt):
         '<div style="border-left:4px solid #25D366;padding:12px 16px;'
         'margin:16px 0;background:#f9f9f9;border-radius:0 6px 6px 0;">'
         f'<p style="margin:0 0 6px;font-size:15px;font-weight:bold;color:#111;">'
-        f'📅 {_fmt_date(apt)} at {_fmt_time(apt)}</p>'
-        f'<p style="margin:3px 0;color:#444;font-size:14px;">🔧 {_service(apt)}</p>'
-        f'<p style="margin:3px 0;color:#444;font-size:14px;">📍 {_area(apt)}</p>'
+        f' {_fmt_date(apt)} at {_fmt_time(apt)}</p>'
+        f'<p style="margin:3px 0;color:#444;font-size:14px;"> {_service(apt)}</p>'
+        f'<p style="margin:3px 0;color:#444;font-size:14px;"> {_area(apt)}</p>'
         '<p style="margin:10px 0 0;">'
         f'<a href="tel:+{call}" style="background:#444;color:#fff;text-decoration:none;'
-        f'padding:7px 14px;border-radius:4px;font-size:13px;margin-right:8px;">📞 Call</a>'
+        f'padding:7px 14px;border-radius:4px;font-size:13px;margin-right:8px;"> Call</a>'
         f'<a href="https://wa.me/{_WA_NUMBER}" style="background:#25D366;color:#fff;'
         f'text-decoration:none;padding:7px 14px;border-radius:4px;font-size:13px;">'
-        f'💬 WhatsApp</a>'
+        f' WhatsApp</a>'
         '</p>'
         '</div>'
     )
@@ -111,10 +120,10 @@ def _contact_buttons(call):
         f'<a href="https://wa.me/{_WA_NUMBER}" style="display:inline-block;'
         f'border:1.5px solid #1a9e4a;color:#1a9e4a;text-decoration:none;'
         f'padding:9px 16px;border-radius:4px;font-size:14px;font-weight:bold;'
-        f'margin-right:10px;">💬 WhatsApp</a>'
+        f'margin-right:10px;"> WhatsApp</a>'
         f'<a href="tel:+{call}" style="display:inline-block;'
         f'border:1.5px solid #555;color:#333;text-decoration:none;'
-        f'padding:9px 16px;border-radius:4px;font-size:14px;">📞 Call Takudzwa</a>'
+        f'padding:9px 16px;border-radius:4px;font-size:14px;"> Call Takudzwa</a>'
         '</p>'
     )
 
@@ -144,10 +153,10 @@ def _customer_contact_buttons(customer_phone_digits):
         f'<a href="https://wa.me/{digits}" style="display:inline-block;'
         'border:1.5px solid #1a9e4a;color:#1a9e4a;text-decoration:none;'
         'padding:9px 16px;border-radius:4px;font-size:14px;font-weight:bold;'
-        'margin-right:10px;">💬 WhatsApp customer</a>'
+        'margin-right:10px;"> WhatsApp customer</a>'
         f'<a href="tel:+{digits}" style="display:inline-block;'
         'border:1.5px solid #555;color:#333;text-decoration:none;'
-        'padding:9px 16px;border-radius:4px;font-size:14px;">📞 Call customer</a>'
+        'padding:9px 16px;border-radius:4px;font-size:14px;"> Call customer</a>'
         '</p>'
     )
 
@@ -223,6 +232,33 @@ _PHOTO_CAPTIONS = [
 
 
 def generate_portfolio_pdf():
+    """
+    Return the PDF portfolio to attach to lead emails, as bytes (or None).
+
+    Prefers the pre-designed static PDF at PORTFOLIO_PDF_PATH. If that file is
+    missing or unreadable, falls back to the ReportLab-generated version so the
+    email is never sent without a portfolio.
+    """
+    try:
+        if os.path.exists(PORTFOLIO_PDF_PATH):
+            with open(PORTFOLIO_PDF_PATH, "rb") as fh:
+                data = fh.read()
+            if data:
+                logger.info("Using static portfolio PDF (%s, %d bytes)",
+                            PORTFOLIO_PDF_PATH, len(data))
+                return data
+            logger.warning("Static portfolio PDF is empty (%s) — falling back",
+                           PORTFOLIO_PDF_PATH)
+        else:
+            logger.warning("Static portfolio PDF not found (%s) — falling back "
+                           "to generated PDF", PORTFOLIO_PDF_PATH)
+    except Exception:
+        logger.exception("Reading static portfolio PDF failed — falling back")
+
+    return _generate_portfolio_pdf_reportlab()
+
+
+def _generate_portfolio_pdf_reportlab():
     """
     Generate a PDF portfolio with previous project photos and full pricing.
     Returns bytes of the PDF, or None on failure.
@@ -543,7 +579,7 @@ def send_booking_confirmation_email(apt):
             '<p>Our plumber will call you 30 minutes before arrival. '
             'Please ensure someone is home and the work area is accessible.</p>'
             f'{_wa_nudge()}'
-            '<p>See you then! 🔧<br><strong>HomeBase Plumbers</strong></p>'
+            '<p>See you then! <br><strong>HomeBase Plumbers</strong></p>'
         )
         html = _wrap(body)
         ok   = _send(apt, subject, html)
@@ -899,12 +935,12 @@ def build_plumber_booking_email_html(
     name = customer_name or "Unknown"
     digits = _clean_phone(customer_phone_digits)
 
-    rows = [('📅 Date/Time', datetime_str), ('🔧 Service', service)]
-    if area:          rows.append(('📍 Area', area))
-    if property_type: rows.append(('🏠 Property', property_type))
-    if timeline:      rows.append(('⏰ Timeline', timeline))
-    if plan_status:   rows.append(('📐 Plan', plan_status))
-    if digits:        rows.append(('📞 Phone', f'+{digits}'))
+    rows = [(' Date/Time', datetime_str), (' Service', service)]
+    if area:          rows.append((' Area', area))
+    if property_type: rows.append((' Property', property_type))
+    if timeline:      rows.append((' Timeline', timeline))
+    if plan_status:   rows.append((' Plan', plan_status))
+    if digits:        rows.append((' Phone', f'+{digits}'))
 
     detail_rows = ''.join(
         f'<p style="margin:3px 0;color:#444;font-size:14px;">'

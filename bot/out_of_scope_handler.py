@@ -872,6 +872,13 @@ def _delay_subtype_keywords(message: str) -> str:
     """
     m = (message or '').lower()
     if any(p in m for p in (
+        'other quote', 'another quote', 'more quotes', 'few quotes', 'get quotes',
+        'getting quotes', 'quotation', 'compare', 'comparing', 'comparison',
+        'shop around', 'other plumber', 'another plumber', 'second opinion',
+        'source other', 'check around', 'see other',
+    )):
+        return 'comparison_shopping'
+    if any(p in m for p in (
         'not interested', 'maybe later', 'some other time', 'will see',
         'think about it', 'just saving', 'saving your number', 'saved your number',
         'needed to save', 'window shopping', 'leave it',
@@ -924,7 +931,7 @@ def _classify_delay_subtype(message: str, appointment) -> str:
     DeepSeek handles nuance/negation; falls back to keywords when unavailable.
     """
     kw = _delay_subtype_keywords(message)
-    valid = {'busy', 'access', 'travelling', 'brush_off', 'unknown'}
+    valid = {'busy', 'access', 'travelling', 'brush_off', 'comparison_shopping', 'unknown'}
 
     sub = kw
     if _deepseek:
@@ -940,11 +947,13 @@ def _classify_delay_subtype(message: str, appointment) -> str:
                         "- busy: they have time but are working / tied up during the day\n"
                         "- access: they need to arrange access (tenant, keys, spouse, still building)\n"
                         "- travelling: they are genuinely away / out of town / abroad\n"
+                        "- comparison_shopping: they want to get or compare other quotes, shop "
+                        "around, or check other plumbers before deciding\n"
                         "- brush_off: a soft no / not really interested / just saved the number\n"
                         "- unknown: none of the above is clear\n\n"
                         "Do NOT pick 'travelling' if they say they are NOT out of town.\n\n"
                         f"Message: \"{message}\"\n\n"
-                        '{"subtype": "busy|access|travelling|brush_off|unknown"}'
+                        '{"subtype": "busy|access|travelling|comparison_shopping|brush_off|unknown"}'
                     )},
                 ],
                 temperature=0.0,
@@ -978,15 +987,65 @@ def _build_delay_reply(message: str, appointment) -> str:
     subtype = _classify_delay_subtype(message, appointment)
 
     if subtype == 'brush_off':
-        # Soft brush-off — acknowledge, park the lead so the scheduler stays
-        # silent (P0 state-guard), and leave the door open.
+        # Soft brush-off — instead of just letting the lead go, make one
+        # value-add attempt: offer the portfolio (past projects + full pricing)
+        # by email so they have something detailed to weigh while they decide or
+        # when they come back. Park the lead so the scheduler stays silent
+        # (P0 state-guard) if they ghost; parking does not block inbound replies.
         try:
             appointment.mark_parked(save=True)
         except Exception:
             pass
+        # Already have their email → just send the portfolio now.
+        if getattr(appointment, 'customer_email', None):
+            try:
+                from bot.customer_emails import send_delay_quote_email_async
+                send_delay_quote_email_async(appointment)
+            except Exception:
+                logger.exception("brush_off portfolio email failed — apt %s",
+                                 getattr(appointment, 'pk', None))
+            return (
+                "No worries at all — we'll leave it with you.\n\n"
+                "I've just emailed you our portfolio of past projects with photos and "
+                "full pricing, so you've got everything to look over. Whenever you're "
+                "ready, just send us a message and we'll pick up right where we left off."
+            )
+        # Otherwise ask for their email; the reply funnels into the existing
+        # delay_email step, which captures it and sends the portfolio PDF.
+        _write_pending(appointment, 'delay_email', '')
         return (
-            "No worries at all — we'll leave it with you. Whenever you're ready, just "
-            "send us a message and we'll pick up right where we left off."
+            "No worries at all — we'll leave it with you.\n\n"
+            "Before you go — we've got a portfolio of past projects with photos and "
+            "full pricing that's worth a look while you decide. Want me to email it "
+            "over? Just share your email and I'll send it across."
+        )
+
+    if subtype == 'comparison_shopping':
+        # Price-shopping objection — don't fight it. Send the portfolio over
+        # WhatsApp so they weigh us on quality (not just price), arm them to
+        # compare like-for-like, then funnel into the timeframe step so we keep
+        # a return date. (Hormozi: agree → reframe the comparison → low-risk ask.)
+        photos_ok = False
+        try:
+            from bot.whatsapp_webhook import send_previous_work_photos
+            clean_phone = (appointment.phone_number or '').replace('whatsapp:', '')
+            photos_ok = send_previous_work_photos(clean_phone, appointment)
+        except Exception:
+            logger.exception("comparison_shopping portfolio send failed — apt %s",
+                             getattr(appointment, 'pk', None))
+        _write_pending(appointment, 'delay_timeframe', message)
+        intro = (
+            "Smart to compare. I'm sending through some of our past jobs now so "
+            "you can weigh us on quality, not just price.\n\n"
+            if photos_ok else
+            "Smart to compare.\n\n"
+        )
+        return (
+            f"{intro}"
+            "One tip while you compare — check the others are all-in (parts + labour) "
+            "and guarantee the work; that's usually where cheaper quotes catch people "
+            "out. Ours is fixed before we start, nothing added later.\n\n"
+            "When are you hoping to get it sorted by?"
         )
 
     _write_pending(appointment, 'delay_timeframe', message)
@@ -1133,9 +1192,12 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     msg       = (message or '').strip()
     msg_lower = msg.lower()
 
-    # Detect skip / refusal
+    # Detect skip / refusal — including "just use WhatsApp / this platform" which
+    # is a decline of email, not an invalid address to re-ask for (conv evidence).
     skip_signals = ('skip', 'no', 'nope', 'nah', 'dont have', "don't have",
-                    'prefer not', 'rather not', 'whatsapp', 'here', 'na')
+                    'prefer not', 'rather not', 'whatsapp', 'here', 'na',
+                    'this platform', 'this chat', 'this app', 'use this',
+                    'on here', 'over here', 'message me', 'text me')
     is_skip = any(s in msg_lower for s in skip_signals) and '@' not in msg
 
     if is_skip:
@@ -1187,10 +1249,18 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     appointment.is_delayed = True
     appointment.save(update_fields=['internal_notes', 'is_delayed'])
 
+    if iso_date:
+        return (
+            "Got it! I'll have that sent across to you shortly.\n\n"
+            "We'll also check back in with you on the agreed date. "
+            "Speak soon!"
+        )
+    # No agreed date (e.g. soft brush-off offered the portfolio) — close on the
+    # portfolio without referencing a date that was never set.
     return (
-        "Got it! 📧 I'll have that sent across to you shortly.\n\n"
-        "We'll also check back in with you on the agreed date. "
-        "Speak soon! 👋"
+        "Got it! I'll send our portfolio and pricing across to you shortly.\n\n"
+        "Take your time looking through it — whenever you're ready, just send us a "
+        "message and we'll pick up right where we left off."
     )
 
 

@@ -264,11 +264,12 @@ def check_response_quality(intent, response, checks):
             all_passed = False
     return all_passed
 
-# Standalone tub
+# Standalone tub — headlines the all-in US$670 (homebase.md source of truth)
+# with the US$400 tub component shown, plus the approximate-price disclaimer.
 resp = bot.handle_service_inquiry('standalone_tub', "standalone tub price")
-checks = ['400', 'US$', 'approximate', 'plan', 'site visit']
+checks = ['400', '670', 'US$', 'approximate', 'site visit']
 passed = check_response_quality('standalone_tub', resp, checks)
-results.log("pricing: standalone_tub contains US$400 + disclaimer", passed, got=resp[:100])
+results.log("pricing: standalone_tub contains US$670 all-in (US$400 component) + disclaimer", passed, got=resp[:120])
 
 # Geyser
 resp = bot.handle_service_inquiry('geyser', "geyser installation")
@@ -312,10 +313,16 @@ checks = ['Hatfield', 'Harare', 'appointment']
 passed = check_response_quality('location_visit', resp, checks)
 results.log("location: contains Hatfield + appointment mention", passed, got=resp[:100])
 
-# Tub sales - should NOT claim we sell retail
+# Tub sales - must NOT falsely claim retail; should qualify the tub type first
+# (built-in vs freestanding) or clarify supply-and-install.
 resp = bot.handle_service_inquiry('tub_sales', "do you sell tubs")
-passed = 'retail' in resp.lower() or "don't operate as a retail" in resp.lower() or "supply and install" in resp.lower()
-results.log("tub_sales: clarifies not a retail store + supply+install", passed, got=resp[:150])
+_r = resp.lower()
+passed = (
+    ('built-in' in _r and 'freestanding' in _r)
+    or 'supply and install' in _r
+    or 'retail' in _r
+)
+results.log("tub_sales: engages on tub types (built-in vs freestanding), no false retail claim", passed, got=resp[:150])
 
 # ============================================================
 # TEST 3: Disclaimer Attached to All Pricing
@@ -772,11 +779,12 @@ results.log("adaptive-pricing: built-in question leads with built-in price (conv
             '160' in _r and _built_idx != -1 and (_free_idx == -1 or _built_idx < _free_idx),
             expected="built-in (US$160) leads", got=_r)
 
-# Freestanding/unspecified still leads with freestanding (price clarity preserved).
+# Freestanding/unspecified still leads with freestanding, headlined at the
+# all-in US$670 (homebase.md source of truth) with the US$400 tub component shown.
 _r = bot._tub_price_reply('freestanding', 'english')
-results.log("adaptive-pricing: freestanding question still leads with US$400",
-            '400' in _r and _r.lower().find('freestanding') < _r.lower().find('standard'),
-            expected="freestanding (US$400) leads", got=_r)
+results.log("adaptive-pricing: freestanding leads with all-in US$670 (US$400 tub component shown)",
+            '670' in _r and '400' in _r and _r.lower().find('freestanding') < _r.lower().find('standard'),
+            expected="freestanding (US$670 all-in) leads", got=_r)
 
 # ============================================================
 # TEST 13: Input-format validation at the name step (conv 410)

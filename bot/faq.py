@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 # Plain strings — no LLM, no API call, always correct.
 _FACTS = {
     'location': (
-        "We're in Hatfield, Harare 📍\n\n"
+        "We're in Hatfield, Harare \n\n"
         "We come to you though — just let us know which area you're in "
         "and we'll get the visit sorted."
     ),
@@ -24,11 +24,11 @@ _FACTS = {
         "What are you looking for?"
     ),
     'payment': (
-        "Cash, EcoCash, and bank transfer — all good 👍\n\n"
+        "Cash, EcoCash, and bank transfer — all good \n\n"
         "You'll get the full price before anything starts, no surprises."
     ),
     'free_quote': (
-        "Yes, the site visit and quote are completely free 👍\n\n"
+        "Yes, the site visit and quote are completely free \n\n"
         "We come to you, have a look, and give you a fixed price on the spot "
         "before any work starts."
     ),
@@ -38,7 +38,7 @@ _FACTS = {
         "We'll give you a clearer timeline once we've seen the space."
     ),
     'licensed': (
-        "Yes, we're fully licensed and registered 👍\n\n"
+        "Yes, we're fully licensed and registered \n\n"
         "Happy to share our credentials — just ask."
     ),
 }

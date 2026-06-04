@@ -159,7 +159,7 @@ class PlanUploadMixin:
             
                 upload_message = f"""Perfect! Since you have a plan for your {service_name}, I'll need you to send it to me so our plumber can review it.
 
-    📋 PLAN UPLOAD INSTRUCTIONS:
+ PLAN UPLOAD INSTRUCTIONS:
 
     1. Take clear photos of your plan/blueprint
     2. Send them as images in this chat (one by one)
@@ -266,22 +266,22 @@ class PlanUploadMixin:
                         "plan to our plumber for review."
                     )
 
-                completion_message = f"""✅ PLAN SENT SUCCESSFULLY!
+                completion_message = f""" PLAN SENT SUCCESSFULLY!
 
         {intro_message}
 
-        📞 NEXT STEPS:
+ NEXT STEPS:
         • Our plumber will review your plan within 24 hours
         • They'll contact you directly on this number: {self.phone_number.replace('whatsapp:', '')}
         • They'll discuss the project details and provide a quote
         • Once approved, they'll book your appointment or message you to complete booking
 
-        🔧 PLUMBER DIRECT CONTACT:
+ PLUMBER DIRECT CONTACT:
         If you need to reach them directly: {plumber_number.replace('+263', '0').replace('+', '')}
 
         You don't need to do anything now — just wait for their call. They're very responsive!
 
-        Questions? Feel free to ask here anytime 😊
+        Questions? Feel free to ask here anytime 
         """
 
                 return completion_message
@@ -338,7 +338,7 @@ class PlanUploadMixin:
         
             if hours_since < 24:
                 remaining_hours = int(24 - hours_since)
-                return f"""📋 PLAN STATUS UPDATE:
+                return f""" PLAN STATUS UPDATE:
 
     Your plan was sent {int(hours_since)} hours ago. Our plumber typically responds within 24 hours.
 
@@ -371,7 +371,7 @@ class PlanUploadMixin:
             """Handle urgent plan review requests"""
             try:
                 # Send urgent notification to plumber
-                urgent_message = f"""🚨 URGENT PLAN REVIEW REQUEST
+                urgent_message = f""" URGENT PLAN REVIEW REQUEST
 
     Customer: {self.appointment.customer_name or 'Customer'}
     Phone: {self.phone_number.replace('whatsapp:', '')}
@@ -390,7 +390,7 @@ class PlanUploadMixin:
                     to='whatsapp:+0774819901'
                 )
             
-                return """🚨 I've marked your plan review as URGENT and notified our plumber immediately.
+                return """ I've marked your plan review as URGENT and notified our plumber immediately.
 
     They should contact you within the next few hours.
 

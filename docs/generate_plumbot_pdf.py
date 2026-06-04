@@ -921,7 +921,7 @@ def build():
     story.append(WhatsAppBubble([
         ("bot",  "Hi! Welcome to Homebase Plumbers 👋 I'm Plumbot, your personal plumbing assistant. What can we help you with today?"),
         ("user", "Hi I want to renovate my bathroom"),
-        ("bot",  "Great choice — a bathroom reno can transform your whole home! We do full bathroom renovations from US$1,500. To give you an accurate quote, which area of Harare are you in?"),
+        ("bot",  "Great choice — a bathroom reno can transform your whole home! We do full bathroom renovations from US$600. To give you an accurate quote, which area of Harare are you in?"),
         ("user", "Im in Borrowdale"),
         ("bot",  "Perfect, we cover Borrowdale. Do you already have plans/drawings for the bathroom, or would you prefer our plumber does a quick free site visit first to assess the space?"),
         ("user", "No plans yet, I'd like a site visit"),

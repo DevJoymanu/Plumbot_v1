@@ -797,8 +797,15 @@ class Appointment(models.Model):
         last_message = self.conversation_history[-1].get('content', '')[:50] + '...' if self.conversation_history else ''
         return f"{messages} messages. Last: {last_message}"
 
-    def add_conversation_message(self, role, content):
-        """Add a message to conversation history"""
+    def add_conversation_message(self, role, content, message_id=None, quoted=None):
+        """Add a message to conversation history.
+
+        message_id — the WhatsApp WAMID for this message. Stored so that a later
+        inbound reply quoting this message (Cloud API `context.id`) can be
+        resolved back to its text via ``resolve_quoted_message``.
+        quoted — text of the earlier message this one is replying to (when the
+        customer used WhatsApp's reply-to feature). Kept as transcript metadata.
+        """
         try:
             # Ensure conversation_history is a list
             if not isinstance(self.conversation_history, list):
@@ -812,6 +819,17 @@ class Appointment(models.Model):
             if self.conversation_history:
                 last = self.conversation_history[-1]
                 if isinstance(last, dict) and last.get("role") == role and last.get("content") == content:
+                    # Backfill the WAMID/quote onto the existing entry if the
+                    # arrival log had them and this re-log carries new detail.
+                    _changed = False
+                    if message_id and not last.get("message_id"):
+                        last["message_id"] = message_id
+                        _changed = True
+                    if quoted and not last.get("quoted"):
+                        last["quoted"] = quoted
+                        _changed = True
+                    if _changed:
+                        self.save(update_fields=["conversation_history"])
                     print(f"↩️  Skipped duplicate {role} message in conversation_history")
                     return
 
@@ -821,6 +839,10 @@ class Appointment(models.Model):
                 "content": content,
                 "timestamp": timezone.now().isoformat()
             }
+            if message_id:
+                message["message_id"] = message_id
+            if quoted:
+                message["quoted"] = quoted
 
             # Append to history
             self.conversation_history.append(message)
@@ -835,6 +857,44 @@ class Appointment(models.Model):
             import traceback
             traceback.print_exc()
             raise  # Re-raise so errors aren't silently ignored
+
+    def attach_message_id(self, role, content, message_id):
+        """Stamp an outbound WAMID onto the matching conversation entry.
+
+        Assistant replies are logged to history before they are actually sent,
+        so the WAMID only becomes known once the send returns. Find the most
+        recent entry with this role+content that has no WAMID yet and set it,
+        enabling later quoted-reply resolution against the bot's own messages.
+        """
+        if not message_id or not isinstance(self.conversation_history, list):
+            return
+        try:
+            for entry in reversed(self.conversation_history):
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("role") == role
+                    and entry.get("content") == content
+                    and not entry.get("message_id")
+                ):
+                    entry["message_id"] = message_id
+                    self.save(update_fields=["conversation_history"])
+                    return
+        except Exception as e:
+            print(f"⚠️ Could not attach message_id {message_id}: {e}")
+
+    def resolve_quoted_message(self, message_id):
+        """Return the text of a previously stored message by its WAMID.
+
+        Used to turn a quoted-reply's `context.id` into the actual text the
+        customer is replying to. Returns None when the quoted message predates
+        WAMID storage or isn't in this conversation's history.
+        """
+        if not message_id or not isinstance(self.conversation_history, list):
+            return None
+        for entry in reversed(self.conversation_history):
+            if isinstance(entry, dict) and entry.get("message_id") == message_id:
+                return entry.get("content")
+        return None
 
 
     def get_customer_info_completeness(self):

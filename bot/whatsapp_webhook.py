@@ -125,7 +125,7 @@ TRANSLATION RULES:
 6. For "shona" — write fully in Shona except for the technical terms listed above.
 7. Match the tone: casual, warm, WhatsApp-friendly. Not formal. Not stiff.
 8. Do NOT add information not in the original reply. Do NOT remove any detail.
-9. If a sentence is already very short and idiomatic (e.g. "Sharp! 👍"), keep it or use a natural Shona equivalent.
+9. If a sentence is already very short and idiomatic (e.g. "Sharp!"), keep it or use a natural Shona equivalent.
 
 RESPONSE JSON FORMAT (return ONLY this, no markdown):
 {{
@@ -276,13 +276,13 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
 
         if media_type == 'video':
             customer_reply = (
-                "Got that, thanks for sharing! 🎥\n\n"
+                "Got that, thanks for sharing! \n\n"
                 "Could you describe what you're looking to get done? "
                 "The more detail the better — even a rough idea helps us plan the visit."
             )
         else:
             customer_reply = (
-                "Got it, thanks for sharing that! 📋\n\n"
+                "Got it, thanks for sharing that! \n\n"
                 "Could you describe what you'd like done, or is there something specific "
                 "you'd like to change? Just a few words is fine."
             )
@@ -440,9 +440,24 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         if not reply or not reply.strip():
             print(f"⚠️ Skipping empty reply to {sender} — no message to send")
             return
-        whatsapp_api.send_text_message(sender, reply)
+        send_result = whatsapp_api.send_text_message(sender, reply)
         preview = reply.replace('\n', ' ')[:120]
         print(f"🤖 Bot → +{sender}: {preview}{'…' if len(reply) > 120 else ''}")
+
+        # Record the outbound WAMID against this reply so that if the customer
+        # later replies to (highlights) it, we can resolve their quote back to
+        # this text. The assistant turn was logged before the send, so we stamp
+        # the now-known WAMID onto it.
+        try:
+            sent_wamid = (send_result or {}).get('messages', [{}])[0].get('id')
+            if sent_wamid:
+                appt = Appointment.objects.filter(
+                    phone_number=f"whatsapp:+{sender}"
+                ).first()
+                if appt:
+                    appt.attach_message_id("assistant", reply, sent_wamid)
+        except Exception as e:
+            print(f"⚠️ Could not record outbound WAMID: {e}")
     except Exception as e:
         print(f"❌ Error in delayed response: {str(e)}")
 
@@ -908,6 +923,40 @@ def send_catalogue_images(sender, appointment=None) -> bool:
     return True
 
 
+def send_portfolio_item(sender, item, appointment=None) -> bool:
+    """
+    Send ONE specific portfolio piece (image + its title/price/story caption)
+    when a customer asks about that piece by name or feature.
+
+    Returns True if the image was queued, False if the file is missing
+    (caller should fall back to the generic gallery / a text reply).
+    """
+    from bot import portfolio_catalog
+
+    image_path = portfolio_catalog.image_path_for(item)
+    if not os.path.exists(image_path):
+        print(f"Portfolio item image missing on disk: {image_path}")
+        return False
+
+    caption = portfolio_catalog.build_item_caption(item)
+
+    def _send():
+        try:
+            time.sleep(1)  # let any preceding text land first
+            whatsapp_api.send_local_image(sender, image_path, caption=caption)
+            if appointment:
+                appointment.add_conversation_message(
+                    "assistant", f"[MEDIA] Sent portfolio item '{item['title']}'"
+                )
+                appointment.add_conversation_message("assistant", caption)
+            print(f"Sent portfolio item '{item['id']}' to {sender}")
+        except Exception as exc:
+            print(f"Failed to send portfolio item '{item['id']}': {exc}")
+
+    threading.Thread(target=_send, daemon=True).start()
+    return True
+
+
 def get_previous_work_images() -> list:
     images = []
     if not os.path.exists(PREVIOUS_WORK_IMAGES_DIR):
@@ -989,22 +1038,33 @@ def handle_pricing_objection(appointment) -> str:
         missing.append("whether you have a plan")
 
     if not missing:
-        service_ranges = {
-            'bathroom_renovation':    'US$1,500 - US$6,000',
-            'bathroom_installation':  'US$1,800 - US$7,000',
-            'kitchen_renovation':     'US$3,000 - US$12,000',
-            'kitchen_installation':   'US$3,500 - US$14,000',
-            'new_plumbing_installation': 'US$700 - US$8,000',
+        # "from" rates taken verbatim from bot/sales_profiles/homebase.md (the
+        # pricing source of truth). Quote "from" and defer the exact figure to
+        # the free site visit — never invent prices beyond the profile table.
+        service_from = {
+            'bathroom_renovation':       'from US$600',
+            'bathroom_installation':     'from US$600',
+            'kitchen_renovation':        'from US$600',
+            'kitchen_installation':      'from US$600',
+            'new_plumbing_installation': None,  # not in the price table → defer
         }
-        range_str = service_ranges.get(appointment.project_type, 'US$1,000 - US$15,000')
+        from_price = service_from.get(appointment.project_type)
+        service_label = appointment.project_type.replace('_', ' ')
+        price_line = (
+            f"Our {service_label} work starts {from_price}, with the final "
+            f"price confirmed on site."
+            if from_price else
+            f"Pricing for {service_label} depends on the scope, and we confirm "
+            f"the exact figure on site."
+        )
         return (
-            f"Based on your {appointment.project_type.replace('_', ' ')}, typical pricing ranges "
-            f"from {range_str}.\n\nHowever, the exact cost depends on:\n"
-            f"• Specific fixtures and materials you choose\n"
-            f"• Size and complexity of the work\n"
+            f"{price_line}\n\nThe exact cost depends on:\n"
+            f"• The specific fixtures and materials you choose\n"
+            f"• The size and complexity of the work\n"
             f"• Your exact location ({appointment.customer_area})\n\n"
-            f"For an accurate quote, our plumber will need to "
-            f"{'review your plan' if appointment.has_plan else 'do a site visit'}.\n\n"
+            f"The site visit and quote are completely free — our plumber will "
+            f"{'review your plan' if appointment.has_plan else 'do a free site visit'} "
+            f"and give you a fixed price before any work starts.\n\n"
             f"Would you like to proceed with booking?"
         )
 
@@ -1066,7 +1126,7 @@ def handle_webhook_event(request):
 
     except Exception as e:
         print(f"❌ Webhook processing error: {str(e)}")
-        return HttpResponse(status=200)  # 🔥 prevent retry loop
+        return HttpResponse(status=200)  # prevent retry loop
 
 def process_webhook_in_background(body):
     try:
@@ -1074,7 +1134,7 @@ def process_webhook_in_background(body):
             for change in entry.get('changes', []):
                 if change.get('field') == 'messages':
                     
-                    value = change.get('value', {})  # ✅ DEFINE VALUE HERE
+                    value = change.get('value', {})  # DEFINE VALUE HERE
                     
                     process_message_change(value)
 
@@ -1087,7 +1147,7 @@ def process_message_change(value):
         statuses = value.get('statuses', [])
         if statuses:
             process_status_updates(statuses)
-            return  # 🔥 CRITICAL FIX — stops the loop
+            return  # CRITICAL FIX — stops the loop
 
         # ✅ 2. HANDLE MESSAGES ONLY
         messages = value.get('messages', [])
@@ -1117,9 +1177,16 @@ def process_message_change(value):
 
             print(f"📩 Processing message from {sender}, type: {message_type}")
 
+            # WhatsApp reply-to ("highlighted") context — the Cloud API attaches
+            # only the WAMID of the quoted message, not its text. We resolve it to
+            # the actual text downstream against stored conversation history.
+            quoted_id = (message.get('context') or {}).get('id')
 
             if message_type == 'text':
-                handle_text_message(sender, message.get('text', {}), message_id=message_id)
+                handle_text_message(
+                    sender, message.get('text', {}),
+                    message_id=message_id, quoted_id=quoted_id,
+                )
 
             elif message_type == 'image':
                 handle_media_message(sender, message.get('image', {}), 'image')
@@ -1345,7 +1412,7 @@ def handle_audio_message(sender, audio_data):
             appointment = Appointment.objects.get(phone_number=phone_number)
         except Appointment.DoesNotExist:
             response_msg = (
-                "Voice notes we can't read unfortunately — just type it out and we'll get you sorted 👍"
+                "Voice notes we can't read unfortunately — just type it out and we'll get you sorted"
             )
             delay = get_random_delay()
             threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
@@ -1358,7 +1425,7 @@ def handle_audio_message(sender, audio_data):
             )
         else:
             response_msg = (
-                "Voice notes we can't read — just type it out and we'll carry on from where we were 👍"
+                "Voice notes we can't read — just type it out and we'll carry on from where we were"
             )
 
         delay = get_random_delay()
@@ -1395,7 +1462,7 @@ def _is_duplicate_text_event(sender: str, message_body: str) -> bool:
         return False
 
 
-def handle_text_message(sender, text_data, message_id=None):
+def handle_text_message(sender, text_data, message_id=None, quoted_id=None):
     try:
         message_body = text_data.get('body', '').strip()
         if not message_body:
@@ -1417,7 +1484,18 @@ def handle_text_message(sender, text_data, message_id=None):
             defaults={'status': 'pending'}
         )
 
-        appointment.add_conversation_message("user", message_body)
+        # Resolve a WhatsApp reply-to ("highlighted message") into its text so the
+        # bot knows which earlier message the customer is responding to.
+        quoted_text = appointment.resolve_quoted_message(quoted_id) if quoted_id else None
+        if quoted_id:
+            if quoted_text:
+                print(f"🔗 Reply to earlier message: '{quoted_text[:80]}'")
+            else:
+                print(f"🔗 Reply to message {quoted_id} — not found in history")
+
+        appointment.add_conversation_message(
+            "user", message_body, message_id=message_id, quoted=quoted_text,
+        )
         print("User message saved to conversation history")
 
         appointment.mark_customer_response()
@@ -1463,7 +1541,7 @@ def handle_text_message(sender, text_data, message_id=None):
 
         # Queue the message — if another arrives within MESSAGE_BATCH_WINDOW_SECONDS the
         # timer resets, and one combined reply handles both concerns together.
-        _enqueue_for_response(sender, message_body, message_id)
+        _enqueue_for_response(sender, message_body, message_id, quoted_text)
 
     except Exception as e:
         print(f"Error handling text: {str(e)}")
@@ -1471,7 +1549,7 @@ def handle_text_message(sender, text_data, message_id=None):
         traceback.print_exc()
 
 
-def _enqueue_for_response(sender: str, message_body: str, message_id):
+def _enqueue_for_response(sender: str, message_body: str, message_id, quoted_text=None):
     """Add message to the per-sender batch queue and reset the debounce timer.
 
     Also cancels any delayed send already in flight — the next batch will generate
@@ -1487,7 +1565,7 @@ def _enqueue_for_response(sender: str, message_body: str, message_id):
     with _pending_batch_lock:
         if sender not in _pending_batches:
             _pending_batches[sender] = []
-        _pending_batches[sender].append((message_body, message_id))
+        _pending_batches[sender].append((message_body, message_id, quoted_text))
         count = len(_pending_batches[sender])
 
         existing = _pending_batch_timers.pop(sender, None)
@@ -1512,8 +1590,12 @@ def _flush_text_batch(sender: str):
     if not batch:
         return
 
-    messages = [body for body, _ in batch]
+    messages = [body for body, _, _ in batch]
     last_message_id = batch[-1][1]
+    # The quoted context that matters is whatever the customer last replied to.
+    quoted_text = next(
+        (q for _, _, q in reversed(batch) if q), None
+    )
 
     if len(messages) == 1:
         combined = messages[0]
@@ -1522,10 +1604,10 @@ def _flush_text_batch(sender: str):
         combined = "\n".join(messages)
         print(f"📦 Batch flush: {len(messages)} messages combined for {sender} → '{combined[:120]}'")
 
-    _generate_and_schedule_reply(sender, combined, last_message_id)
+    _generate_and_schedule_reply(sender, combined, last_message_id, quoted_text)
 
 
-def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None):
+def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None):
     """Generate a bot reply for message_body and schedule it with a 1-5 min send delay."""
     try:
         phone_number = f"whatsapp:+{sender}"
@@ -1618,6 +1700,44 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             delay = get_random_delay()
             threading.Thread(
                 target=delayed_response, args=(sender, reply_text, delay, message_id), daemon=True
+            ).start()
+            return
+
+        # -- STEP 0b: Specific portfolio piece request --------------------------
+        # If the customer points at ONE distinctive piece ("the gold taps one",
+        # "how much was the black bathtub", "that marble shower"), send just that
+        # image with its title/price/story caption instead of the whole gallery.
+        # Generic / ambiguous asks return None and fall through to STEP 1.
+        try:
+            from bot import portfolio_catalog
+            _portfolio_item = portfolio_catalog.match_portfolio_item(message_body)
+        except Exception as _pc_exc:
+            print(f"Portfolio item match failed: {_pc_exc}")
+            _portfolio_item = None
+        if _portfolio_item is not None:
+            print(f"Specific portfolio item request: {_portfolio_item['id']}")
+            if send_portfolio_item(sender, _portfolio_item, appointment):
+                return
+
+        # -- STEP 0c: Portfolio menu request ------------------------------------
+        # Customer wants to know WHAT we can show ("what can you show me?") but
+        # hasn't named a piece — reply with the text menu of available pieces so
+        # they can pick one. Distinct from "send me your portfolio" (gallery).
+        try:
+            _menu_request = portfolio_catalog.is_catalogue_menu_request(message_body)
+            _menu_text = portfolio_catalog.catalogue_overview() if _menu_request else None
+        except Exception as _menu_exc:
+            print(f"Portfolio menu check failed: {_menu_exc}")
+            _menu_text = None
+        if _menu_text:
+            print("Portfolio menu request — sending catalogue overview")
+            appointment.add_conversation_message("assistant", _menu_text)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response, args=(sender, _menu_text, delay, message_id), daemon=True
             ).start()
             return
 
@@ -1820,6 +1940,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 message_body,
                 precomputed_service_inquiry=inquiry,
                 precomputed_classification=_uclass,
+                quoted_context=quoted_text,
             )
 
         if reply is None:

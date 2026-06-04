@@ -89,7 +89,7 @@ class ExtractionMixin:
                         sa_time = self.appointment.scheduled_datetime.astimezone(sa_timezone)
                         formatted_datetime = sa_time.strftime('%A, %B %d, %Y at %I:%M %p')
                         context_parts.append(f"Scheduled: {formatted_datetime}")
-                        context_parts.append(f"⚠️ CRITICAL: When mentioning appointment time, ALWAYS use: {formatted_datetime}")
+                        context_parts.append(f" CRITICAL: When mentioning appointment time, ALWAYS use: {formatted_datetime}")
                     except Exception as dt_error:
                         print(f"⚠️ Error formatting scheduled datetime: {dt_error}")
                         context_parts.append("Scheduled: Error reading datetime")

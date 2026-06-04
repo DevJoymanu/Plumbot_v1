@@ -511,14 +511,14 @@ class AvailabilityMixin:
             
                 # Format same day options
                 if same_day:
-                    message_parts.append("\n📅 Same day options:")
+                    message_parts.append("\n Same day options:")
                     for alt in same_day:
                         time_only = alt['datetime'].strftime('%I:%M %p')
                         message_parts.append(f"• {time_only}")
             
                 # Format next days options  
                 if next_days:
-                    message_parts.append("\n📅 Other days:")
+                    message_parts.append("\n Other days:")
                     for alt in next_days:
                         message_parts.append(f"• {alt['display']}")
             
