@@ -882,18 +882,48 @@ class Appointment(models.Model):
         except Exception as e:
             print(f"⚠️ Could not attach message_id {message_id}: {e}")
 
+    def record_sent_media(self, media_map, summary):
+        """Log a batch of sent images with a {wamid: description} index.
+
+        Each image we send has its own WAMID; storing wamid→description lets a
+        later customer reply that quotes a specific image ("this one how much")
+        resolve back to what that image shows. Stored as a single transcript
+        entry so the per-image WAMIDs don't bloat the visible conversation.
+        """
+        if not media_map:
+            return
+        try:
+            if not isinstance(self.conversation_history, list):
+                self.conversation_history = []
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": summary,
+                "timestamp": timezone.now().isoformat(),
+                "media_index": media_map,
+            })
+            self.save(update_fields=["conversation_history"])
+            print(f"🖼️  Recorded {len(media_map)} sent image WAMID(s) for reply resolution")
+        except Exception as e:
+            print(f"⚠️ Could not record sent media index: {e}")
+
     def resolve_quoted_message(self, message_id):
-        """Return the text of a previously stored message by its WAMID.
+        """Return the text/description of a previously stored message by its WAMID.
 
         Used to turn a quoted-reply's `context.id` into the actual text the
-        customer is replying to. Returns None when the quoted message predates
-        WAMID storage or isn't in this conversation's history.
+        customer is replying to — including a specific image they highlighted,
+        resolved via a batch's media index. Returns None when the quoted message
+        predates WAMID storage or isn't in this conversation's history.
         """
         if not message_id or not isinstance(self.conversation_history, list):
             return None
         for entry in reversed(self.conversation_history):
-            if isinstance(entry, dict) and entry.get("message_id") == message_id:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("message_id") == message_id:
                 return entry.get("content")
+            media_index = entry.get("media_index")
+            if isinstance(media_index, dict) and message_id in media_index:
+                return media_index[message_id]
         return None
 
 

@@ -927,6 +927,40 @@ def build_catalogue_price_text(followup: str) -> str:
     )
 
 
+def _describe_work_image(filename: str) -> str:
+    """
+    Human description of a sent image, derived from its filename, so a customer
+    who replies to a specific photo ("this one how much") can be told — and the
+    bot reminded — what that photo shows. Curated portfolio titles win when the
+    filename matches a catalogued piece; otherwise the name is tidied up.
+    """
+    import re
+    base = os.path.splitext(os.path.basename(filename or ''))[0]
+    if not base:
+        return "one of our previous work photos"
+
+    # Curated title for catalogued pieces.
+    try:
+        from bot import portfolio_catalog
+        for item in portfolio_catalog.PORTFOLIO_ITEMS:
+            if os.path.splitext(item['filename'])[0].lower() == base.lower():
+                return item['title']
+    except Exception:
+        pass
+
+    # Derive from the filename: split camelCase, tidy separators, drop camera /
+    # WhatsApp codes and bare numbers (e.g. IMG-20250205-WA0009 → no useful text).
+    cleaned = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', base)
+    cleaned = re.sub(r'(?<=[A-Za-z])(?=\d)', ' ', cleaned)
+    cleaned = re.sub(r'[_\-()]+', ' ', cleaned)
+    cleaned = re.sub(r'\b(?:img|image|photo|wa|whatsapp)\d*\b', ' ', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\b\d+\b', ' ', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip().lower()
+    if len(cleaned) < 3:
+        return "one of our previous work photos"
+    return cleaned
+
+
 def get_catalogue_images() -> list:
     images = []
     if not os.path.exists(CATALOGUE_IMAGES_DIR):
@@ -955,14 +989,18 @@ def send_catalogue_images(sender, appointment=None) -> bool:
         try:
             time.sleep(1)  # let the text message arrive first
             sent_count = 0
+            media_index = {}
             for index, image_path in enumerate(images):
                 caption = "HomeBase Plumbers — product catalogue" if index == 0 else None
-                whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                wamid = (result or {}).get('messages', [{}])[0].get('id')
+                if wamid:
+                    media_index[wamid] = _describe_work_image(image_path)
                 sent_count += 1
                 time.sleep(0.5)
             if appointment:
-                appointment.add_conversation_message(
-                    "assistant", f"[MEDIA] Sent {sent_count} catalogue image(s)"
+                appointment.record_sent_media(
+                    media_index, f"[MEDIA] Sent {sent_count} catalogue image(s)"
                 )
             print(f"Sent {sent_count}/{len(images)} catalogue images to {sender}")
         except Exception as exc:
@@ -992,11 +1030,18 @@ def send_portfolio_item(sender, item, appointment=None) -> bool:
     def _send():
         try:
             time.sleep(1)  # let any preceding text land first
-            whatsapp_api.send_local_image(sender, image_path, caption=caption)
+            result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
+            wamid = (result or {}).get('messages', [{}])[0].get('id')
             if appointment:
-                appointment.add_conversation_message(
-                    "assistant", f"[MEDIA] Sent portfolio item '{item['title']}'"
-                )
+                if wamid:
+                    appointment.record_sent_media(
+                        {wamid: item['title']},
+                        f"[MEDIA] Sent portfolio item '{item['title']}'",
+                    )
+                else:
+                    appointment.add_conversation_message(
+                        "assistant", f"[MEDIA] Sent portfolio item '{item['title']}'"
+                    )
                 appointment.add_conversation_message("assistant", caption)
             print(f"Sent portfolio item '{item['id']}' to {sender}")
         except Exception as exc:
@@ -1055,9 +1100,13 @@ def send_previous_work_photos(sender, appointment=None):
             time.sleep(delay_seconds)
             whatsapp_api.send_text_message(sender, intro)
             sent_count = 0
+            media_index = {}
             for index, image_path in enumerate(images):
                 caption = "Our previous work - high quality plumbing & renovations" if index == 0 else None
-                whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                wamid = (result or {}).get('messages', [{}])[0].get('id')
+                if wamid:
+                    media_index[wamid] = _describe_work_image(image_path)
                 sent_count += 1
                 time.sleep(0.5)
             follow_up = "Those are some of our recent jobs. Anything there you'd like for your bathroom? We can do a free site visit to show you exactly what's possible in your space."
@@ -1065,8 +1114,8 @@ def send_previous_work_photos(sender, appointment=None):
             whatsapp_api.send_text_message(sender, follow_up)
             if appointment:
                 appointment.add_conversation_message("assistant", intro)
-                appointment.add_conversation_message(
-                    "assistant", f"[MEDIA] Sent {sent_count} previous work image(s)"
+                appointment.record_sent_media(
+                    media_index, f"[MEDIA] Sent {sent_count} previous work image(s)"
                 )
                 appointment.add_conversation_message("assistant", follow_up)
             print(f"Sent {sent_count}/{len(images)} previous work images to {sender}")
