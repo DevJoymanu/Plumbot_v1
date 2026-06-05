@@ -363,17 +363,17 @@ class ResponseMixin:
             visit_committed: bool = False,
             language: str = "english",
         ) -> str:
-            if language == "shona":
-                return (
-                    f"{total_line}\n\n"
-                    f"{cheapest_line}\n\n"
-                    f"{self._get_pricing_followup_prompt('shona')}"
-                )
-            return (
-                f"{total_line}\n\n"
-                f"{cheapest_line}\n\n"
-                f"{self._get_pricing_followup_prompt('english')}"
+            # Lead with the supply/install breakdown so the customer sees the
+            # components behind the all-in figure, then the total, the cheapest
+            # option, and the next booking step.
+            followup = self._get_pricing_followup_prompt(
+                'shona' if language == 'shona' else 'english'
             )
+            parts = []
+            if breakdown_lines:
+                parts.append("\n".join(f"• {line}" for line in breakdown_lines))
+            parts.extend([total_line, cheapest_line, followup])
+            return "\n\n".join(p for p in parts if p)
 
 
         def _is_delay_or_exit_signal(self, message: str) -> bool:

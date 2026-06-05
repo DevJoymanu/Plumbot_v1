@@ -953,6 +953,47 @@ WORK_IMAGE_TITLES = {
     'standalone_freestanding_tub.jpg': 'Black freestanding tub with granite double vanity',
 }
 
+# Product/service intent shown in each photo — used to price the RIGHT item when
+# a customer replies to a specific image asking "this one how much". Intents map
+# to handle_service_inquiry()'s pricing; 'kitchen' has no per-item price (it's a
+# renovation), so it's handled with a dedicated "from US$600" reply.
+WORK_IMAGE_INTENT = {
+    'Cubicle.jpg': 'shower_cubicle',
+    'Full_kitchen_renovation.jpeg': 'kitchen',
+    'IMG-20250205-WA0009.jpg': 'standalone_tub',
+    'IMG-20250205-WA0022.jpg': 'bathtub_installation',
+    'IMG-20250205-WA0048.jpg': 'standalone_tub',
+    'IMG-20250205-WA0098.jpg': 'kitchen',
+    'Kitchen_installation.jpeg': 'kitchen',
+    'chamber_and_sink.jpg': 'toilet',
+    'chamber_and_sink_2.jpg': 'toilet',
+    'custom_double_vanity.jpg': 'vanity',
+    'doubleVanity2.jpeg': 'vanity',
+    'freestandingBathtub.jpeg': 'standalone_tub',
+    'full_bathroom_renovation.jpg': 'bathtub_installation',
+    'odinary_tub(built-in).jpg': 'bathtub_installation',
+    'ordinar_tub(built-in)_2.jpg': 'bathtub_installation',
+    'rainShower.jpeg': 'shower_cubicle',
+    'standalone_freestanding_tub(2).jpg': 'standalone_tub',
+    'standalone_freestanding_tub.jpg': 'standalone_tub',
+}
+
+# Resolve a quoted image's TITLE (what resolve_quoted_message returns) back to
+# its product intent.
+_TITLE_TO_INTENT = {
+    WORK_IMAGE_TITLES[fn]: intent
+    for fn, intent in WORK_IMAGE_INTENT.items()
+    if fn in WORK_IMAGE_TITLES
+}
+
+
+def intent_for_quoted_image(quoted_text: str):
+    """Return the product intent for a quoted image title, or None if the quoted
+    message isn't one of our titled work photos."""
+    if not quoted_text:
+        return None
+    return _TITLE_TO_INTENT.get(quoted_text.strip())
+
 
 def _describe_work_image(filename: str) -> str:
     """
@@ -1905,6 +1946,46 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             'marii', 'mari', 'mutengo', 'zvinodhura', 'zvese',
         )
         _has_pricing_signal = any(p in message_body.lower() for p in _pricing_signals)
+
+        # -- STEP 0-pre: Price ask on a quoted previous-work image --------------
+        # The customer tapped a specific photo and asked its price ("this one how
+        # much", "this one rinoita marii"). The quoted image already resolved to
+        # its title; map that to the product shown and price THAT item, instead
+        # of falling through to the generic Facebook-package pitch.
+        _quoted_img_intent = intent_for_quoted_image(quoted_text)
+        if _quoted_img_intent and _explicitly_requests_price(message_body):
+            print(f"💬 Quoted-image price ask → {_quoted_img_intent} ('{quoted_text}')")
+            if _quoted_img_intent == 'kitchen':
+                _lang = detect_language_simple(message_body)
+                if _lang == 'shona':
+                    reply = (
+                        "Iyi i full kitchen renovation — dzinotangira paUS$600, "
+                        "mutengo chaiwo uchasimbiswa pa free site visit kana taona nzvimbo.\n\n"
+                        f"{plumbot._get_pricing_followup_prompt('shona')}"
+                    )
+                else:
+                    reply = (
+                        "That's a full kitchen renovation — those start from US$600, with the "
+                        "exact figure confirmed on a free site visit once we've seen the space.\n\n"
+                        f"{plumbot._get_pricing_followup_prompt('english')}"
+                    )
+            else:
+                # Append the image title so the tub-type detector leads with the
+                # right tub (built-in vs freestanding) shown in that photo.
+                reply = plumbot.handle_service_inquiry(
+                    _quoted_img_intent, f"{message_body} ({quoted_text})"
+                )
+                _mark_pricing_intent_sent(appointment, _quoted_img_intent)
+            if reply:
+                appointment.add_conversation_message("assistant", reply)
+                appointment.last_outbound_at = timezone.now()
+                appointment.last_contacted_at = appointment.last_outbound_at
+                appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+                delay = get_random_delay()
+                threading.Thread(
+                    target=delayed_response, args=(sender, reply, delay, message_id), daemon=True
+                ).start()
+                return
 
         # -- STEP 0: Multi-intent compose (2+ questions in one message) ---------
         # e.g. "where are you based and how much" → answer both in one reply.
