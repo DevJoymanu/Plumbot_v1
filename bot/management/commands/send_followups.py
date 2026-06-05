@@ -165,6 +165,9 @@ class Command(BaseCommand):
                 last_inbound_at__lte=min_wait_cutoff,
                 internal_notes__contains='[OOS_PENDING] category=delay_',
             )
+            # Access check-ins already have a scheduled reactivation at the agreed
+            # time — don't also nudge them here (would double-message).
+            .exclude(internal_notes__contains='category=delay_checkin')
             .exclude(chatbot_paused=True)
             .exclude(status='confirmed')
         )
@@ -488,15 +491,30 @@ class Command(BaseCommand):
                 # touch == 2 only if we've already sent touch 1 AND we have an email
                 is_second_touch = has_email and email_count >= 1
 
+                # Access check-in: the lead deferred to arrange access (no one
+                # home / tenant / keys), not to travel. Use an access-appropriate
+                # message and treat it as a single WhatsApp shot (no quote-email
+                # 2-touch sequence).
+                is_access_checkin = '[DELAY_KIND] access_checkin' in (lead.internal_notes or '')
+
                 # ── Build the WhatsApp message (touch 1 only) ───────────────────
-                message = (
-                    f"{hi}, hope you're back and settled in. "
-                    f'You were looking at {detail} — still keen to move forward? '
-                    f"We're ready when you are."
-                )
+                if is_access_checkin:
+                    message = (
+                        f"{hi}, just checking in — were you able to sort out access "
+                        f"on your side? Happy to lock in a time to come through "
+                        f"whenever suits you."
+                    )
+                else:
+                    message = (
+                        f"{hi}, hope you're back and settled in. "
+                        f'You were looking at {detail} — still keen to move forward? '
+                        f"We're ready when you are."
+                    )
 
                 if dry_run:
-                    label = 'last-check email' if is_second_touch else 'reactivation'
+                    label = ('access check-in' if is_access_checkin
+                             else 'last-check email' if is_second_touch
+                             else 'reactivation')
                     self.stdout.write(
                         self.style.SUCCESS(
                             f'🧪 Would send {label} to lead {lead.id} '
@@ -508,6 +526,39 @@ class Command(BaseCommand):
                 clean    = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
                 wa_ok    = False
                 email_ok = False
+
+                if is_access_checkin:
+                    # ── Access check-in: single WhatsApp shot ───────────────
+                    try:
+                        whatsapp_api.send_text_message(clean, message)
+                        wa_ok = True
+                    except Exception as wa_exc:
+                        logger.warning(
+                            'Access check-in WhatsApp failed for lead %s: %s',
+                            lead.id, wa_exc,
+                        )
+                    if wa_ok:
+                        notes = lead.internal_notes or ''
+                        notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes)
+                        notes = _re.sub(r'\[DELAY_KIND\] access_checkin\n?', '', notes)
+                        notes = _re.sub(r'\[OOS_PENDING\][^\n]*\n?', '', notes).strip()
+                        lead.is_delayed     = False
+                        lead.internal_notes = notes
+                        lead.save(update_fields=['is_delayed', 'internal_notes'])
+                        lead.add_conversation_message(
+                            'assistant', f'[DELAY ACCESS CHECK-IN] {message}'
+                        )
+                        self.stdout.write(self.style.SUCCESS(
+                            f'✅ Access check-in sent for lead {lead.id} — delay queue cleared'
+                        ))
+                    else:
+                        # Retry tomorrow rather than spamming.
+                        lead.delay_followup_due_at = timezone.now() + timedelta(hours=24)
+                        lead.save(update_fields=['delay_followup_due_at'])
+                        self.stdout.write(self.style.WARNING(
+                            f'  ⚠️  Access check-in failed for lead {lead.id} — retry in 24h'
+                        ))
+                    continue
 
                 if is_second_touch:
                     # ── Touch 2: email only ─────────────────────────────────

@@ -789,9 +789,14 @@ def _compute_followup_date(timeframe_message: str):
         except Exception as exc:
             logger.warning("_compute_followup_date DeepSeek failed: %s", exc)
 
-    # ── 13. Default: 2 weeks from now ────────────────────────────────────────
-    target = today + timedelta(weeks=2)
-    return target.isoformat(), target.strftime('%A %d %B')
+    # ── 13. No timeframe could be determined ─────────────────────────────────
+    # Do NOT fabricate a date. The caller re-asks the customer for a rough
+    # timeframe rather than silently scheduling an arbitrary follow-up.
+    logger.info(
+        "No timeframe parseable from '%s' — returning None",
+        (timeframe_message or '')[:60],
+    )
+    return None, None
 
 
 _TIMEFRAME_RE = re.compile(
@@ -996,7 +1001,8 @@ def _build_delay_reply(message: str, appointment) -> str:
             appointment.mark_parked(save=True)
         except Exception:
             pass
-        # Already have their email → just send the portfolio now.
+        # Already have their email → send the portfolio now, then ask for a rough
+        # follow-up date so we check back in proactively.
         if getattr(appointment, 'customer_email', None):
             try:
                 from bot.customer_emails import send_delay_quote_email_async
@@ -1004,20 +1010,28 @@ def _build_delay_reply(message: str, appointment) -> str:
             except Exception:
                 logger.exception("brush_off portfolio email failed — apt %s",
                                  getattr(appointment, 'pk', None))
+            notes = appointment.internal_notes or ''
+            if '[DELAY_QUOTE_SENT]' not in notes:
+                appointment.internal_notes = f'{notes}\n[DELAY_QUOTE_SENT]'.strip()
+                appointment.save(update_fields=['internal_notes'])
+            _write_pending(appointment, 'delay_timeframe', '')
             return (
                 "No worries at all — we'll leave it with you.\n\n"
-                "I've just emailed you our portfolio of past projects with photos and "
-                "full pricing, so you've got everything to look over. Whenever you're "
-                "ready, just send us a message and we'll pick up right where we left off."
+                "I've just emailed you our portfolio of past projects with photos, "
+                "plus a more detailed pricing guide, so you've got everything to look "
+                "over.\n\n"
+                "So we check back in at the right time — roughly when are you hoping "
+                "to get this sorted? Even a rough idea like next week or end of the "
+                "month is perfect."
             )
         # Otherwise ask for their email; the reply funnels into the existing
         # delay_email step, which captures it and sends the portfolio PDF.
         _write_pending(appointment, 'delay_email', '')
         return (
             "No worries at all — we'll leave it with you.\n\n"
-            "Before you go — we've got a portfolio of past projects with photos and "
-            "full pricing that's worth a look while you decide. Want me to email it "
-            "over? Just share your email and I'll send it across."
+            "Before you go — we've got a portfolio of past projects with photos, plus "
+            "a more detailed pricing guide, that's worth a look while you decide. Want "
+            "me to email it over? Just share your email and I'll send it across."
         )
 
     if subtype == 'comparison_shopping':
@@ -1048,6 +1062,12 @@ def _build_delay_reply(message: str, appointment) -> str:
             "When are you hoping to get it sorted by?"
         )
 
+    if subtype == 'access':
+        # They want the work but need to arrange access (no one home, tenant,
+        # keys, spouse). Don't push a 14-day reactivation — propose a concrete
+        # near-term check-in so we can lock in a slot once access is sorted.
+        return _build_access_checkin_reply(message, appointment)
+
     _write_pending(appointment, 'delay_timeframe', message)
     return _DELAY_SUBTYPE_REPLIES.get(subtype, _DELAY_SUBTYPE_REPLIES['unknown'])
 
@@ -1055,11 +1075,18 @@ def _build_delay_reply(message: str, appointment) -> str:
 def _store_delay_followup_date(appointment, iso_date):
     """
     Persist the agreed follow-up date on the appointment: a [FOLLOW_UP_DATE] note
-    tag plus an override of delay_followup_due_at (replacing the default 14-day
-    date) so the reactivation cron fires on the customer's agreed date.
+    tag plus an override of delay_followup_due_at so the reactivation cron fires
+    on the customer's agreed date. A concrete date means the lead is owned by the
+    reactivation queue, so any prior parked/brush-off suppression is lifted.
     """
     if not iso_date:
         return
+    # A scheduled follow-up and "parked" are mutually exclusive — unpark so the
+    # reactivation cron (which excludes parked leads) can fire on the date.
+    try:
+        appointment.unpark(save=True)
+    except Exception:
+        pass
     notes = appointment.internal_notes or ''
     tag   = f"[FOLLOW_UP_DATE] {iso_date}"
     if tag not in notes:
@@ -1096,6 +1123,223 @@ def _friendly_iso(iso_date):
         return None
 
 
+# ── Near-term check-in scheduling (access / "no one home" deferrals) ───────────
+_CHECKIN_TZ           = 'Africa/Johannesburg'
+_CHECKIN_MIN_HOURS    = 12   # don't pester before they've had time to arrange
+_CHECKIN_MAX_HOURS    = 23   # stay inside WhatsApp's 24h free-message window
+_CHECKIN_PREFER_HOUR  = 18   # 6pm — natural evening check-in
+_CHECKIN_CIVIL_HOURS  = range(8, 21)  # 8am–8pm: civil hours to contact a customer
+
+
+def _friendly_checkin(dt, now) -> str:
+    """A check-in datetime → 'this evening at 8' / 'tomorrow afternoon at 1'."""
+    hour = dt.hour
+    part = 'morning' if hour < 12 else ('afternoon' if hour < 17 else 'evening')
+    h12  = hour % 12 or 12
+    tstr = f"{h12}" if dt.minute == 0 else f"{h12}:{dt.minute:02d}"
+    if dt.date() == now.date():
+        when = f"this {part}"
+    elif dt.date() == (now + timedelta(days=1)).date():
+        when = f"tomorrow {part}"
+    else:
+        when = f"{dt.strftime('%A')} {part}"
+    return f"{when} at {tstr}"
+
+
+def _compute_access_checkin(now=None):
+    """
+    Pick a near-term check-in time for an access / "no one home" deferral.
+
+    Strict window: at least _CHECKIN_MIN_HOURS after the conversation and no more
+    than _CHECKIN_MAX_HOURS (keeps us inside WhatsApp's 24h free-message window).
+    Within that window prefer 6pm; otherwise the civil-hour time closest to 6pm.
+    Returns (checkin_dt_sast, friendly_str).
+    """
+    tz = pytz.timezone(_CHECKIN_TZ)
+    if now is None:
+        now = datetime.now(tz)
+    elif now.tzinfo is None:
+        now = tz.localize(now)
+
+    earliest = now + timedelta(hours=_CHECKIN_MIN_HOURS)
+    latest   = now + timedelta(hours=_CHECKIN_MAX_HOURS)
+
+    best, best_score = None, None
+    for day_offset in (0, 1):
+        day = (now + timedelta(days=day_offset)).date()
+        for hour in _CHECKIN_CIVIL_HOURS:
+            cand = tz.localize(datetime(day.year, day.month, day.day, hour, 0))
+            if earliest <= cand <= latest:
+                score = abs(hour - _CHECKIN_PREFER_HOUR)
+                if best is None or score < best_score or (score == best_score and cand < best):
+                    best, best_score = cand, score
+
+    if best is None:
+        # No civil-hour slot fits (e.g. the window is entirely overnight).
+        # Fall back to the earliest allowed time, nudged to the next civil hour.
+        cand = earliest.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        if cand.hour < 8:
+            cand = cand.replace(hour=8)
+        elif cand.hour > 20:
+            cand = (cand + timedelta(days=1)).replace(hour=8)
+        best = cand
+
+    return best, _friendly_checkin(best, now)
+
+
+def _build_access_checkin_reply(message: str, appointment) -> str:
+    """
+    Access / "no one home" deferral: instead of pushing a 14-day reactivation,
+    propose a concrete near-term check-in (12–24h out, prefer evening) so we can
+    lock in a time once the customer has sorted access on their side. Marks the
+    lead delayed and schedules delay_followup_due_at to the check-in time.
+    """
+    checkin_dt, friendly = _compute_access_checkin()
+
+    mark_delay_signal(appointment, message)
+
+    notes     = appointment.internal_notes or ''
+    additions = []
+    if '[DELAY_KIND] access_checkin' not in notes:
+        additions.append('[DELAY_KIND] access_checkin')
+    tag = f"[FOLLOW_UP_DATE] {checkin_dt.date().isoformat()}"
+    if tag not in notes:
+        additions.append(tag)
+    if additions:
+        appointment.internal_notes = (notes + '\n' + '\n'.join(additions)).strip()
+    # Overwrite the default 14-day reactivation date with the agreed check-in time.
+    appointment.delay_followup_due_at = checkin_dt
+    appointment.save(update_fields=['internal_notes', 'delay_followup_due_at'])
+
+    _write_pending(appointment, 'delay_checkin', checkin_dt.isoformat())
+    logger.info(
+        "Access check-in scheduled for %s (appointment=%s)",
+        checkin_dt.isoformat(), getattr(appointment, 'id', None),
+    )
+    return (
+        "No problem at all. Is it okay if we check in with you about the access "
+        f"arrangements {friendly}? That gives you time to sort things on your side "
+        "and we'll lock in a slot to come through."
+    )
+
+
+def _handle_delay_checkin_answer(message: str, pending: dict, appointment) -> str:
+    """
+    Reply to the access check-in proposal ("is it okay if we check in {time}?").
+    Yes → confirm the scheduled check-in. A different time → recompute via the
+    standard timeframe flow. A flat no → leave the door open and stop the
+    scheduled check-in so we don't pester them.
+    """
+    _clear_pending(appointment)
+
+    iso_dt    = pending.get('original', '') or ''
+    msg_lower = (message or '').strip().lower()
+
+    no_signals = ('no', 'nope', "don't", 'do not', 'not necessary', 'no need',
+                  'kwete', 'please don', 'leave it', "i'll message", 'i will message',
+                  "i'll let you know", 'let you know', 'rather not')
+    is_no = any(s in msg_lower for s in no_signals)
+
+    _YES_TOKENS = {
+        'yes', 'yep', 'yeah', 'yup', 'sure', 'ok', 'okay', 'okey', 'perfect',
+        'fine', 'great', 'cool', 'that works', 'sounds good', 'hongu', 'ehe',
+        'zvakanaka', 'no problem', 'works', 'please do',
+    }
+    is_affirmation = (
+        msg_lower in _YES_TOKENS
+        or (len(msg_lower.split()) <= 4
+            and any(t in msg_lower.split() for t in
+                    ('yes', 'ok', 'okay', 'sure', 'perfect', 'fine', 'great', 'cool')))
+    )
+
+    # A different time / day ("make it tomorrow", "after 7", "Friday") → recompute
+    # through the standard timeframe handler so we honour their preference.
+    _TF_WORDS = ('tomorrow', 'week', 'month', 'monday', 'tuesday', 'wednesday',
+                 'thursday', 'friday', 'saturday', 'sunday', 'later', 'tonight',
+                 "o'clock", 'around', 'pm', 'am')
+    has_tf = any(w in msg_lower for w in _TF_WORDS)
+
+    if is_no and not has_tf:
+        appointment.clear_delayed(save=True)
+        return (
+            "No worries at all. Whenever you've sorted access on your side, just "
+            "send us a message and we'll jump straight on it."
+        )
+
+    if has_tf and not is_affirmation:
+        return _handle_delay_timeframe_answer(message, {}, appointment)
+
+    # Affirmation — the check-in is already scheduled; confirm it warmly.
+    friendly = ''
+    try:
+        dt = datetime.fromisoformat(iso_dt)
+        friendly = ' ' + _friendly_checkin(dt, datetime.now(dt.tzinfo))
+    except Exception:
+        pass
+    return (
+        f"Perfect, we'll check in with you{friendly}. Take your time sorting "
+        "access and we'll line everything up from there."
+    )
+
+
+# Number of times we re-ask for a timeframe in-session before leaving the door
+# open (the within-window nudges keep gently asking after that).
+_DELAY_TF_REASK_TAG = '[DELAY_TF_REASK]'
+_DELAY_TF_MAX_REASKS = 2
+
+
+def _read_delay_reask(appointment) -> int:
+    m = re.search(r'\[DELAY_TF_REASK\] (\d+)', appointment.internal_notes or '')
+    return int(m.group(1)) if m else 0
+
+
+def _clear_delay_reask(appointment) -> None:
+    notes = appointment.internal_notes or ''
+    if _DELAY_TF_REASK_TAG in notes:
+        appointment.internal_notes = re.sub(
+            r'\n?\[DELAY_TF_REASK\] \d+', '', notes).strip()
+        appointment.save(update_fields=['internal_notes'])
+
+
+def _reask_delay_timeframe(message: str, appointment) -> str:
+    """
+    The customer deferred but gave no usable timeframe. Ask for a rough one
+    instead of fabricating a date. After _DELAY_TF_MAX_REASKS attempts, leave the
+    door open without scheduling anything (no arbitrary follow-up date).
+    """
+    count = _read_delay_reask(appointment)
+
+    if count >= _DELAY_TF_MAX_REASKS:
+        # Asked enough — don't loop or invent a date. Park the lead so it gets
+        # gentle re-engagement rather than sitting in delay limbo with no date.
+        _clear_pending(appointment)
+        _clear_delay_reask(appointment)
+        try:
+            appointment.clear_delayed(save=True)
+            appointment.mark_parked(save=True)
+        except Exception:
+            logger.exception("Failed to park lead after timeframe re-asks — apt %s",
+                             getattr(appointment, 'pk', None))
+        return (
+            "No problem at all — I'll leave this with you. Whenever you have a "
+            "rough idea of timing, just send us a message and we'll pick up right "
+            "where we left off."
+        )
+
+    # Record the attempt, keep the timeframe step pending, and ask more concretely.
+    notes = re.sub(r'\n?\[DELAY_TF_REASK\] \d+', '', appointment.internal_notes or '').strip()
+    appointment.internal_notes = f"{notes}\n{_DELAY_TF_REASK_TAG} {count + 1}".strip()
+    appointment.save(update_fields=['internal_notes'])
+    _write_pending(appointment, 'delay_timeframe', message)
+    logger.info("Delay timeframe re-ask #%s (no timeframe in '%s')",
+                count + 1, message[:60])
+    return (
+        "No problem at all. Roughly when are you thinking of getting it sorted? "
+        "Even a rough idea works — say next week, end of the month, or a specific "
+        "day, and I'll set a reminder to check in with you then."
+    )
+
+
 def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> str:
     """
     Step 2 (merged): customer gave their timeframe ("next week", "end of the
@@ -1104,8 +1348,15 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     ask for the email in the same message. The reply funnels straight into the
     delay_email step, saving a full back-and-forth.
     """
-    _clear_pending(appointment)
     iso_date, friendly_date = _compute_followup_date(message)
+
+    # No timeframe could be detected — ask the customer rather than inventing a
+    # date. (Replaces the old silent 14-day default.)
+    if not iso_date:
+        return _reask_delay_timeframe(message, appointment)
+
+    _clear_pending(appointment)
+    _clear_delay_reask(appointment)
     logger.info("Delay timeframe parsed: '%s' → follow-up %s", message[:60], iso_date)
 
     # Presumptively commit: mark the lead delayed and store the agreed date now,
@@ -1113,13 +1364,21 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     mark_delay_signal(appointment, message)
     _store_delay_followup_date(appointment, iso_date)
 
-    # Email already on file → send the quote now and skip the ask entirely.
+    # Email already on file → confirm the date. Skip the quote email if we already
+    # sent the portfolio earlier in this delay flow (avoids a duplicate send).
     if getattr(appointment, 'customer_email', None):
+        if '[DELAY_QUOTE_SENT]' in (appointment.internal_notes or ''):
+            return (
+                f"Perfect — we'll check back in with you on {friendly_date}. "
+                "Take your time with the portfolio; if anything changes just send "
+                "us a message and we'll pick up right where we left off."
+            )
         from bot.customer_emails import send_delay_quote_email_async
         send_delay_quote_email_async(appointment, follow_up_date_str=friendly_date)
         return (
             f"Got it, no problem. We'll check back on {friendly_date}.\n\n"
-            "I've also sent a written quote and portfolio to your email. "
+            "I've also sent a written quote and our portfolio — past projects plus "
+            "a more detailed pricing guide — to your email. "
             "If anything changes just send us a message — we'll be right here."
         )
 
@@ -1127,8 +1386,9 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     _write_pending(appointment, 'delay_email', iso_date or '')
     return (
         f"Got it, no problem. We'll check back on {friendly_date} — and I'll "
-        "send a written quote and portfolio over too, easier to save and share "
-        "with whoever else needs to see it.\n\n"
+        "send a written quote and our portfolio over too, with a more detailed "
+        "pricing guide and past projects, easier to save and share with whoever "
+        "else needs to see it.\n\n"
         "What's the best email for that?"
     )
 
@@ -1205,8 +1465,9 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
     _write_pending(appointment, 'delay_email', iso_date or '')
     return (
         "Perfect.\n\n"
-        "We'll also send you a proper written quote and portfolio "
-        "— easier to save and share with whoever else needs to see it. "
+        "We'll also send you a proper written quote and our portfolio — with a "
+        "more detailed pricing guide and past projects — easier to save and share "
+        "with whoever else needs to see it. "
         "What's the best email to reach you on?"
     )
 
@@ -1231,13 +1492,16 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     is_skip = any(s in msg_lower for s in skip_signals) and '@' not in msg
 
     if is_skip:
-        # Keep delay signal active so regular follow-ups don't spam the customer
-        # and reactivation still fires on the agreed date.
-        notes = appointment.internal_notes or ''
-        if _DELAY_SIGNAL_TAG not in notes:
-            appointment.internal_notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
-        appointment.is_delayed = True
-        appointment.save(update_fields=['internal_notes', 'is_delayed'])
+        # They'd rather not share an email. Respect it — park for gentle
+        # re-engagement instead of leaving the lead delayed with no follow-up
+        # date (which would otherwise go dormant). Pending was cleared above, so
+        # the parked re-engagement nudges can pick this lead up.
+        try:
+            appointment.clear_delayed(save=False)
+            appointment.mark_parked(save=True)
+        except Exception:
+            logger.exception("Failed to park lead after email skip — apt %s",
+                             getattr(appointment, 'pk', None))
         return (
             "No problem at all. Whenever you're ready, just send us a message."
         )
@@ -1273,9 +1537,14 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     # Restore delay signal — cleared by the webhook before the OOS handler runs.
     # Re-writing the tag blocks regular follow-ups; restoring is_delayed=True
     # ensures _process_delayed_reactivations fires on the agreed date.
+    # [DELAY_QUOTE_SENT] guards against re-sending the same portfolio email if the
+    # customer then gives a timeframe (the timeframe step checks for this tag).
     notes = appointment.internal_notes or ''
     if _DELAY_SIGNAL_TAG not in notes:
-        appointment.internal_notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
+        notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
+    if '[DELAY_QUOTE_SENT]' not in notes:
+        notes = f'{notes}\n[DELAY_QUOTE_SENT]'.strip()
+    appointment.internal_notes = notes
     appointment.is_delayed = True
     appointment.save(update_fields=['internal_notes', 'is_delayed'])
 
@@ -1285,12 +1554,15 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
             "We'll also check back in with you on the agreed date. "
             "Speak soon!"
         )
-    # No agreed date (e.g. soft brush-off offered the portfolio) — close on the
-    # portfolio without referencing a date that was never set.
+    # No agreed date yet (e.g. soft brush-off led with the portfolio offer) — ask
+    # for a rough follow-up date so we check back proactively instead of waiting.
+    _write_pending(appointment, 'delay_timeframe', '')
     return (
-        "Got it! I'll send our portfolio and pricing across to you shortly.\n\n"
-        "Take your time looking through it — whenever you're ready, just send us a "
-        "message and we'll pick up right where we left off."
+        "Got it! I'll send our portfolio of past projects — plus a more detailed "
+        "pricing guide — across to you shortly.\n\n"
+        "So we check back in at the right time — roughly when are you hoping to "
+        "get this sorted? Even a rough idea like next week or end of the month is "
+        "perfect."
     )
 
 
@@ -1380,6 +1652,10 @@ def handle_out_of_scope(
         if pending_cat == "delay_confirm":
             logger.info("Delay flow step 3 — confirm answer: '%s'", message[:60])
             return _handle_delay_confirm_answer(message, pending, appointment)
+
+        if pending_cat == "delay_checkin":
+            logger.info("Delay flow — access check-in answer: '%s'", message[:60])
+            return _handle_delay_checkin_answer(message, pending, appointment)
 
         if pending_cat == "delay_email":
             logger.info("Delay flow step 4 — email answer: '%s'", message[:60])

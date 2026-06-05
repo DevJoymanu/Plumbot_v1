@@ -1052,23 +1052,24 @@ class Appointment(models.Model):
         return self.uploaded_file_count
 # Keep your other models (ConversationMessage, AppointmentNote, AppointmentReminder, ServiceArea) unchanged
 
-    DELAY_FOLLOWUP_DAYS = 14
-
     def mark_delayed(self, source_message='', save=True):
+        # Flags the lead as deferring. Deliberately does NOT fabricate a
+        # follow-up date — delay_followup_due_at is set only once the
+        # conversation flow detects (or asks for) the customer's actual
+        # timeframe. A null due date means the reactivation cron stays quiet
+        # until a real date is captured (no arbitrary 14-day default).
         if self.is_delayed:
             return False
         from django.utils import timezone
-        from datetime import timedelta
         now = timezone.now()
         self.is_delayed = True
         self.delay_signal_detected_at = now
-        self.delay_followup_due_at = now + timedelta(days=self.DELAY_FOLLOWUP_DAYS)
         notes = (self.internal_notes or '').strip()
         if '[DELAY_SIGNAL]' not in notes:
             self.internal_notes = f"{notes}\n[DELAY_SIGNAL]".strip()
         if save:
             self.save(update_fields=['is_delayed','delay_signal_detected_at',
-                                    'delay_followup_due_at','internal_notes'])
+                                    'internal_notes'])
         return True
 
     def clear_delayed(self, save=True):
@@ -1092,6 +1093,21 @@ class Appointment(models.Model):
         if save:
             self.save(update_fields=['internal_notes'])
         return True
+
+    def _remove_notes_tag(self, tag, save=True):
+        notes = self.internal_notes or ''
+        if tag not in notes:
+            return False
+        self.internal_notes = '\n'.join(
+            l for l in notes.splitlines() if tag not in l).strip()
+        if save:
+            self.save(update_fields=['internal_notes'])
+        return True
+
+    def unpark(self, save=True):
+        """Lift the parked/soft-brush-off suppression — e.g. once the customer
+        re-engages and agrees a concrete follow-up date."""
+        return self._remove_notes_tag(self.PARKED_TAG, save=save)
 
     def mark_handed_off(self, save=True):
         """Routed to a human (Tinashe): suppress proactive follow-ups. The bot
