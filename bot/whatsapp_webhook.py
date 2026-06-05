@@ -377,8 +377,8 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
 
 
 def get_random_delay() -> int:
-    minutes = random.randint(1, 3)
-    seconds = minutes * 60
+    minutes = random.randint(1, 5)
+    seconds = minutes * 1
     print(f"?? Random delay: {minutes} minute(s)")
     return seconds
 
