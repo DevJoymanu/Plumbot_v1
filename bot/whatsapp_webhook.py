@@ -927,17 +927,51 @@ def build_catalogue_price_text(followup: str) -> str:
     )
 
 
+# Curated titles for the work photos on disk. Each title names the product /
+# service shown so it works as BOTH the visible WhatsApp caption AND the
+# description stored against the image's WAMID — when a customer replies to a
+# photo ("this one how much"), the bot resolves it to this title and knows which
+# product/service they mean. Keep keys in sync with bot/previous_work_photos/.
+WORK_IMAGE_TITLES = {
+    'Cubicle.jpg': 'Walk-in glass shower cubicle',
+    'Full_kitchen_renovation.jpeg': 'Full kitchen renovation with quartz island',
+    'IMG-20250205-WA0009.jpg': 'Freestanding bathtub with black mixer',
+    'IMG-20250205-WA0022.jpg': 'Built-in bath, toilet and vanity set',
+    'IMG-20250205-WA0048.jpg': 'Black freestanding tub with floor-standing mixer',
+    'IMG-20250205-WA0098.jpg': 'Modern kitchen with quartz island and double sink',
+    'Kitchen_installation.jpeg': 'Navy shaker kitchen installation',
+    'chamber_and_sink.jpg': 'Toilet and pedestal basin suite',
+    'chamber_and_sink_2.jpg': 'Backlit toilet with compact vanity',
+    'custom_double_vanity.jpg': 'Custom double vanity with gold taps',
+    'doubleVanity2.jpeg': 'Double vanity with gold taps',
+    'freestandingBathtub.jpeg': 'Freestanding slipper tub with toilet',
+    'full_bathroom_renovation.jpg': 'Clawfoot tub bathroom renovation',
+    'odinary_tub(built-in).jpg': 'Built-in bath with vessel-basin vanity',
+    'ordinar_tub(built-in)_2.jpg': 'Built-in bath installation',
+    'rainShower.jpeg': 'Rain shower with handheld set',
+    'standalone_freestanding_tub(2).jpg': 'Freestanding tub with wall-hung toilet',
+    'standalone_freestanding_tub.jpg': 'Black freestanding tub with granite double vanity',
+}
+
+
 def _describe_work_image(filename: str) -> str:
     """
-    Human description of a sent image, derived from its filename, so a customer
-    who replies to a specific photo ("this one how much") can be told — and the
-    bot reminded — what that photo shows. Curated portfolio titles win when the
-    filename matches a catalogued piece; otherwise the name is tidied up.
+    Human description of a sent image, used both as its WhatsApp caption and as
+    the description stored against its WAMID, so a customer who replies to a
+    specific photo ("this one how much") can be told — and the bot reminded —
+    which product/service that photo shows. Curated titles win; catalogued
+    portfolio pieces are next; otherwise the filename is tidied up.
     """
     import re
-    base = os.path.splitext(os.path.basename(filename or ''))[0]
+    name = os.path.basename(filename or '')
+    base = os.path.splitext(name)[0]
     if not base:
         return "one of our previous work photos"
+
+    # Curated title for a known gallery file (case-insensitive on filename).
+    for known_name, title in WORK_IMAGE_TITLES.items():
+        if known_name.lower() == name.lower():
+            return title
 
     # Curated title for catalogued pieces.
     try:
@@ -991,11 +1025,12 @@ def send_catalogue_images(sender, appointment=None) -> bool:
             sent_count = 0
             media_index = {}
             for index, image_path in enumerate(images):
-                caption = "HomeBase Plumbers — product catalogue" if index == 0 else None
+                title = _describe_work_image(image_path)
+                caption = f"HomeBase Plumbers product catalogue — {title}" if index == 0 else title
                 result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:
-                    media_index[wamid] = _describe_work_image(image_path)
+                    media_index[wamid] = title
                 sent_count += 1
                 time.sleep(0.5)
             if appointment:
@@ -1064,6 +1099,93 @@ def get_previous_work_images() -> list:
     return images
 
 
+def _strip_emojis(text: str) -> str:
+    """Remove emojis to honour the no-emoji house rule on customer-facing copy."""
+    import re
+    if not text:
+        return text
+    cleaned = re.sub(
+        r'[\U0001F000-\U0001FAFF\U00002600-\U000027BF'
+        r'\U0001F1E6-\U0001F1FF\U00002B00-\U00002BFF️]',
+        '', text,
+    )
+    return re.sub(r'\s+', ' ', cleaned).strip()
+
+
+def _fallback_photo_followup(appointment=None) -> str:
+    """Project-type-aware follow-up used when DeepSeek is unavailable."""
+    project = (getattr(appointment, 'project_type', None) or '')
+    if 'kitchen' in project:
+        focus = "your kitchen"
+    elif 'bathroom' in project:
+        focus = "your bathroom"
+    else:
+        focus = "your project"
+    return (
+        f"Did anything there catch your eye for {focus}? "
+        "We can do a free on-site visit and show you exactly what's possible "
+        "in your space."
+    )
+
+
+def generate_photo_followup(appointment=None) -> str:
+    """
+    Build a CONTEXTUAL one-liner to send after the work-photo gallery — tailored
+    to what this lead has actually been discussing — instead of a fixed
+    'anything for your bathroom?' line. Falls back to a project-type template if
+    DeepSeek is unavailable.
+    """
+    default = _fallback_photo_followup(appointment)
+    if appointment is None:
+        return default
+    try:
+        from bot.services.clients import deepseek_call
+
+        history = appointment.conversation_history or []
+        lines = []
+        for m in history[-10:]:
+            if not isinstance(m, dict):
+                continue
+            content = (m.get('content') or '').strip()
+            if not content or content.startswith('[MEDIA]') or content.startswith('[IMAGE]'):
+                continue
+            who = 'Customer' if m.get('role') == 'user' else 'Plumbot'
+            lines.append(f"{who}: {content}")
+        transcript = "\n".join(lines[-6:])
+        project = (appointment.project_type or '').replace('_', ' ') or 'not stated yet'
+
+        reply = deepseek_call(
+            messages=[
+                {"role": "system", "content": (
+                    "You are Plumbot, a warm WhatsApp assistant for Homebase Plumbers in "
+                    "Harare, Zimbabwe. You have JUST sent the customer a gallery of our "
+                    "previous-work photos. Write ONE short follow-up message (max 2 "
+                    "sentences) that:\n"
+                    "- refers to what THIS customer has actually been discussing\n"
+                    "- invites them to point out anything in the photos they liked\n"
+                    "- gently nudges toward the free on-site visit / next booking step\n"
+                    "Reply in the SAME language the customer used (English or Shona). "
+                    "No emojis. Do not quote a price. Sound like a knowledgeable colleague "
+                    "texting, not a script. Output only the message text."
+                )},
+                {"role": "user", "content": (
+                    f"Customer's project: {project}\n\n"
+                    f"Recent conversation:\n{transcript or '(no prior detail)'}\n\n"
+                    "Write the follow-up message now."
+                )},
+            ],
+            temperature=0.7,
+            max_tokens=90,
+            retries=1,
+            timeout=10,
+        )
+        reply = _strip_emojis((reply or '').strip().strip('"').strip())
+        return reply or default
+    except Exception as exc:
+        print(f"Photo follow-up generation failed ({exc}) — using template")
+        return default
+
+
 # -----------------------------------------------------------------------------
 # FIX 3 — PREVIOUS WORK PHOTO DEDUP
 # send_previous_work_photos now returns True ONLY after photos are confirmed
@@ -1102,14 +1224,15 @@ def send_previous_work_photos(sender, appointment=None):
             sent_count = 0
             media_index = {}
             for index, image_path in enumerate(images):
-                caption = "Our previous work - high quality plumbing & renovations" if index == 0 else None
+                title = _describe_work_image(image_path)
+                caption = f"HomeBase Plumbers — {title}" if index == 0 else title
                 result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:
-                    media_index[wamid] = _describe_work_image(image_path)
+                    media_index[wamid] = title
                 sent_count += 1
                 time.sleep(0.5)
-            follow_up = "Those are some of our recent jobs. Anything there you'd like for your bathroom? We can do a free site visit to show you exactly what's possible in your space."
+            follow_up = generate_photo_followup(appointment)
             time.sleep(1)
             whatsapp_api.send_text_message(sender, follow_up)
             if appointment:
