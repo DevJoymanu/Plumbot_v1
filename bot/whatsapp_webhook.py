@@ -65,7 +65,7 @@ TEXT_DEDUPE_WINDOW_SECONDS = 20
 _pending_batches: dict = {}         # sender -> list of (message_body, message_id)
 _pending_batch_timers: dict = {}    # sender -> threading.Timer
 _pending_batch_lock = threading.Lock()
-MESSAGE_BATCH_WINDOW_SECONDS = 2   # wait this long after the LAST message before generating a reply
+MESSAGE_BATCH_WINDOW_SECONDS = 45   # wait this long after the LAST message before generating a reply
 
 # Per-sender cancel events for delayed sends still in their sleep window.
 # When a new message arrives, the event is set so the sleeping thread aborts
@@ -378,7 +378,7 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
 
 def get_random_delay() -> int:
     minutes = random.randint(1, 5)
-    seconds = minutes * 1
+    seconds = minutes * 60
     print(f"?? Random delay: {minutes} minute(s)")
     return seconds
 
@@ -927,92 +927,17 @@ def build_catalogue_price_text(followup: str) -> str:
     )
 
 
-# Curated titles for the work photos on disk. Each title names the product /
-# service shown so it works as BOTH the visible WhatsApp caption AND the
-# description stored against the image's WAMID — when a customer replies to a
-# photo ("this one how much"), the bot resolves it to this title and knows which
-# product/service they mean. Keep keys in sync with bot/previous_work_photos/.
-WORK_IMAGE_TITLES = {
-    'Cubicle.jpg': 'Walk-in glass shower cubicle',
-    'Full_kitchen_renovation.jpeg': 'Full kitchen renovation with quartz island',
-    'IMG-20250205-WA0009.jpg': 'Freestanding bathtub with black mixer',
-    'IMG-20250205-WA0022.jpg': 'Built-in bath, toilet and vanity set',
-    'IMG-20250205-WA0048.jpg': 'Black freestanding tub with floor-standing mixer',
-    'IMG-20250205-WA0098.jpg': 'Modern kitchen with quartz island and double sink',
-    'Kitchen_installation.jpeg': 'Navy shaker kitchen installation',
-    'chamber_and_sink.jpg': 'Toilet and pedestal basin suite',
-    'chamber_and_sink_2.jpg': 'Backlit toilet with compact vanity',
-    'custom_double_vanity.jpg': 'Custom double vanity with gold taps',
-    'doubleVanity2.jpeg': 'Double vanity with gold taps',
-    'freestandingBathtub.jpeg': 'Freestanding slipper tub with toilet',
-    'full_bathroom_renovation.jpg': 'Clawfoot tub bathroom renovation',
-    'odinary_tub(built-in).jpg': 'Built-in bath with vessel-basin vanity',
-    'ordinar_tub(built-in)_2.jpg': 'Built-in bath installation',
-    'rainShower.jpeg': 'Rain shower with handheld set',
-    'standalone_freestanding_tub(2).jpg': 'Freestanding tub with wall-hung toilet',
-    'standalone_freestanding_tub.jpg': 'Black freestanding tub with granite double vanity',
-}
-
-# Product/service intent shown in each photo — used to price the RIGHT item when
-# a customer replies to a specific image asking "this one how much". Intents map
-# to handle_service_inquiry()'s pricing; 'kitchen' has no per-item price (it's a
-# renovation), so it's handled with a dedicated "from US$600" reply.
-WORK_IMAGE_INTENT = {
-    'Cubicle.jpg': 'shower_cubicle',
-    'Full_kitchen_renovation.jpeg': 'kitchen',
-    'IMG-20250205-WA0009.jpg': 'standalone_tub',
-    'IMG-20250205-WA0022.jpg': 'bathtub_installation',
-    'IMG-20250205-WA0048.jpg': 'standalone_tub',
-    'IMG-20250205-WA0098.jpg': 'kitchen',
-    'Kitchen_installation.jpeg': 'kitchen',
-    'chamber_and_sink.jpg': 'toilet',
-    'chamber_and_sink_2.jpg': 'toilet',
-    'custom_double_vanity.jpg': 'vanity',
-    'doubleVanity2.jpeg': 'vanity',
-    'freestandingBathtub.jpeg': 'standalone_tub',
-    'full_bathroom_renovation.jpg': 'bathtub_installation',
-    'odinary_tub(built-in).jpg': 'bathtub_installation',
-    'ordinar_tub(built-in)_2.jpg': 'bathtub_installation',
-    'rainShower.jpeg': 'shower_cubicle',
-    'standalone_freestanding_tub(2).jpg': 'standalone_tub',
-    'standalone_freestanding_tub.jpg': 'standalone_tub',
-}
-
-# Resolve a quoted image's TITLE (what resolve_quoted_message returns) back to
-# its product intent.
-_TITLE_TO_INTENT = {
-    WORK_IMAGE_TITLES[fn]: intent
-    for fn, intent in WORK_IMAGE_INTENT.items()
-    if fn in WORK_IMAGE_TITLES
-}
-
-
-def intent_for_quoted_image(quoted_text: str):
-    """Return the product intent for a quoted image title, or None if the quoted
-    message isn't one of our titled work photos."""
-    if not quoted_text:
-        return None
-    return _TITLE_TO_INTENT.get(quoted_text.strip())
-
-
 def _describe_work_image(filename: str) -> str:
     """
-    Human description of a sent image, used both as its WhatsApp caption and as
-    the description stored against its WAMID, so a customer who replies to a
-    specific photo ("this one how much") can be told — and the bot reminded —
-    which product/service that photo shows. Curated titles win; catalogued
-    portfolio pieces are next; otherwise the filename is tidied up.
+    Human description of a sent image, derived from its filename, so a customer
+    who replies to a specific photo ("this one how much") can be told — and the
+    bot reminded — what that photo shows. Curated portfolio titles win when the
+    filename matches a catalogued piece; otherwise the name is tidied up.
     """
     import re
-    name = os.path.basename(filename or '')
-    base = os.path.splitext(name)[0]
+    base = os.path.splitext(os.path.basename(filename or ''))[0]
     if not base:
         return "one of our previous work photos"
-
-    # Curated title for a known gallery file (case-insensitive on filename).
-    for known_name, title in WORK_IMAGE_TITLES.items():
-        if known_name.lower() == name.lower():
-            return title
 
     # Curated title for catalogued pieces.
     try:
@@ -1066,12 +991,11 @@ def send_catalogue_images(sender, appointment=None) -> bool:
             sent_count = 0
             media_index = {}
             for index, image_path in enumerate(images):
-                title = _describe_work_image(image_path)
-                caption = f"HomeBase Plumbers product catalogue — {title}" if index == 0 else title
+                caption = "HomeBase Plumbers — product catalogue" if index == 0 else None
                 result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:
-                    media_index[wamid] = title
+                    media_index[wamid] = _describe_work_image(image_path)
                 sent_count += 1
                 time.sleep(0.5)
             if appointment:
@@ -1265,12 +1189,11 @@ def send_previous_work_photos(sender, appointment=None):
             sent_count = 0
             media_index = {}
             for index, image_path in enumerate(images):
-                title = _describe_work_image(image_path)
-                caption = f"HomeBase Plumbers — {title}" if index == 0 else title
+                caption = "Our previous work - high quality plumbing & renovations" if index == 0 else None
                 result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:
-                    media_index[wamid] = title
+                    media_index[wamid] = _describe_work_image(image_path)
                 sent_count += 1
                 time.sleep(0.5)
             follow_up = generate_photo_followup(appointment)
@@ -1946,46 +1869,6 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             'marii', 'mari', 'mutengo', 'zvinodhura', 'zvese',
         )
         _has_pricing_signal = any(p in message_body.lower() for p in _pricing_signals)
-
-        # -- STEP 0-pre: Price ask on a quoted previous-work image --------------
-        # The customer tapped a specific photo and asked its price ("this one how
-        # much", "this one rinoita marii"). The quoted image already resolved to
-        # its title; map that to the product shown and price THAT item, instead
-        # of falling through to the generic Facebook-package pitch.
-        _quoted_img_intent = intent_for_quoted_image(quoted_text)
-        if _quoted_img_intent and _explicitly_requests_price(message_body):
-            print(f"💬 Quoted-image price ask → {_quoted_img_intent} ('{quoted_text}')")
-            if _quoted_img_intent == 'kitchen':
-                _lang = detect_language_simple(message_body)
-                if _lang == 'shona':
-                    reply = (
-                        "Iyi i full kitchen renovation — dzinotangira paUS$600, "
-                        "mutengo chaiwo uchasimbiswa pa free site visit kana taona nzvimbo.\n\n"
-                        f"{plumbot._get_pricing_followup_prompt('shona')}"
-                    )
-                else:
-                    reply = (
-                        "That's a full kitchen renovation — those start from US$600, with the "
-                        "exact figure confirmed on a free site visit once we've seen the space.\n\n"
-                        f"{plumbot._get_pricing_followup_prompt('english')}"
-                    )
-            else:
-                # Append the image title so the tub-type detector leads with the
-                # right tub (built-in vs freestanding) shown in that photo.
-                reply = plumbot.handle_service_inquiry(
-                    _quoted_img_intent, f"{message_body} ({quoted_text})"
-                )
-                _mark_pricing_intent_sent(appointment, _quoted_img_intent)
-            if reply:
-                appointment.add_conversation_message("assistant", reply)
-                appointment.last_outbound_at = timezone.now()
-                appointment.last_contacted_at = appointment.last_outbound_at
-                appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
-                delay = get_random_delay()
-                threading.Thread(
-                    target=delayed_response, args=(sender, reply, delay, message_id), daemon=True
-                ).start()
-                return
 
         # -- STEP 0: Multi-intent compose (2+ questions in one message) ---------
         # e.g. "where are you based and how much" → answer both in one reply.

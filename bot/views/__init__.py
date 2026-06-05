@@ -34,6 +34,8 @@ from .quotations import (
 
 from .dashboard import DashboardView
 
+from .public_call import call_redirect
+
 from .appointments import (
     AppointmentsListView,
     PriorityLeadsView,

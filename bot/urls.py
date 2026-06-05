@@ -35,6 +35,9 @@ urlpatterns = [
     #path('webhook/', bot, name='whatsapp_webhook'),
     path('webhook/', whatsapp_webhook, name='whatsapp_webhook'),
 
+    # Public click-to-call bridge for the portfolio PDF's Call button.
+    path('call/', views.call_redirect, name='call_redirect'),
+
     # Authentication URLs
     path('', login_view, name='login'),
     path('login/', login_view, name='login'),
