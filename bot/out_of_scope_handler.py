@@ -1052,20 +1052,84 @@ def _build_delay_reply(message: str, appointment) -> str:
     return _DELAY_SUBTYPE_REPLIES.get(subtype, _DELAY_SUBTYPE_REPLIES['unknown'])
 
 
+def _store_delay_followup_date(appointment, iso_date):
+    """
+    Persist the agreed follow-up date on the appointment: a [FOLLOW_UP_DATE] note
+    tag plus an override of delay_followup_due_at (replacing the default 14-day
+    date) so the reactivation cron fires on the customer's agreed date.
+    """
+    if not iso_date:
+        return
+    notes = appointment.internal_notes or ''
+    tag   = f"[FOLLOW_UP_DATE] {iso_date}"
+    if tag not in notes:
+        appointment.internal_notes = f"{notes}\n{tag}".strip()
+        appointment.save(update_fields=['internal_notes'])
+
+    try:
+        from datetime import date as _d
+        _tz_sast = pytz.timezone('Africa/Johannesburg')
+        agreed_date = _d.fromisoformat(iso_date)
+        agreed_dt   = _tz_sast.localize(
+            datetime(agreed_date.year, agreed_date.month, agreed_date.day, 9, 0)
+        )
+        appointment.delay_followup_due_at = agreed_dt
+        appointment.save(update_fields=['delay_followup_due_at'])
+        logger.info(
+            "delay_followup_due_at updated to agreed date %s for appointment=%s",
+            iso_date, getattr(appointment, 'id', None),
+        )
+    except Exception as _exc:
+        logger.warning(
+            "Could not parse agreed follow-up date '%s': %s", iso_date, _exc
+        )
+
+
+def _friendly_iso(iso_date):
+    """ISO date → 'Friday 12 June', or None if unparseable/empty."""
+    if not iso_date:
+        return None
+    try:
+        from datetime import date as _d
+        return _d.fromisoformat(iso_date).strftime('%A %d %B')
+    except Exception:
+        return None
+
+
 def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> str:
     """
-    Step 2: customer gave their timeframe ("next week", "end of the month", etc.).
-    Compute a specific date within that window and ask permission to follow up.
+    Step 2 (merged): customer gave their timeframe ("next week", "end of the
+    month", etc.). Compute a specific follow-up date, presumptively commit to it
+    (Hormozi presumptive close — no separate yes/no permission round-trip), and
+    ask for the email in the same message. The reply funnels straight into the
+    delay_email step, saving a full back-and-forth.
     """
     _clear_pending(appointment)
     iso_date, friendly_date = _compute_followup_date(message)
-    # Encode the follow-up date alongside the timeframe so step 3 can read it
-    _write_pending(appointment, 'delay_confirm', f"{message}|{iso_date}")
     logger.info("Delay timeframe parsed: '%s' → follow-up %s", message[:60], iso_date)
+
+    # Presumptively commit: mark the lead delayed and store the agreed date now,
+    # rather than gating on a separate confirmation step.
+    mark_delay_signal(appointment, message)
+    _store_delay_followup_date(appointment, iso_date)
+
+    # Email already on file → send the quote now and skip the ask entirely.
+    if getattr(appointment, 'customer_email', None):
+        from bot.customer_emails import send_delay_quote_email_async
+        send_delay_quote_email_async(appointment, follow_up_date_str=friendly_date)
+        return (
+            f"Got it, no problem. We'll check back on {friendly_date}.\n\n"
+            "I've also sent a written quote and portfolio to your email. "
+            "If anything changes just send us a message — we'll be right here."
+        )
+
+    # Ask for the email alongside the presumptive date confirmation.
+    _write_pending(appointment, 'delay_email', iso_date or '')
     return (
-        f"Got it, no problem.\n\n"
-        f"Would it be okay if we reached out to you on {friendly_date} "
-        f"just to check you've got all the assistance you need?"
+        f"Got it, no problem. We'll check back on {friendly_date} — and I'll "
+        "send a written quote and portfolio over too, easier to save and share "
+        "with whoever else needs to see it.\n\n"
+        "What's the best email for that?"
     )
 
 
@@ -1124,46 +1188,12 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
         return _handle_delay_timeframe_answer(message, {}, appointment)
 
     # Store follow-up date — in notes AND in delay_followup_due_at so the cron fires correctly
-    if iso_date:
-        notes = appointment.internal_notes or ''
-        tag   = f"[FOLLOW_UP_DATE] {iso_date}"
-        if tag not in notes:
-            appointment.internal_notes = f"{notes}\n{tag}".strip()
-            appointment.save(update_fields=['internal_notes'])
-
-        # Overwrite the hardcoded 14-day date with the customer's agreed date
-        try:
-            from datetime import date as _d
-            from django.utils import timezone as _tz
-            _tz_sast = pytz.timezone('Africa/Johannesburg')
-            agreed_date = _d.fromisoformat(iso_date)
-            agreed_dt   = _tz_sast.localize(
-                datetime(agreed_date.year, agreed_date.month, agreed_date.day, 9, 0)
-            )
-            appointment.delay_followup_due_at = agreed_dt
-            appointment.save(update_fields=['delay_followup_due_at'])
-            logger.info(
-                "delay_followup_due_at updated to agreed date %s for appointment=%s",
-                iso_date, getattr(appointment, 'id', None),
-            )
-        except Exception as _exc:
-            logger.warning(
-                "Could not parse agreed follow-up date '%s': %s", iso_date, _exc
-            )
-
-        logger.info("Follow-up date stored: %s for appointment=%s",
-                    iso_date, getattr(appointment, 'id', None))
+    _store_delay_followup_date(appointment, iso_date)
 
     # If email already captured, skip Step 4
     if getattr(appointment, 'customer_email', None):
         from bot.customer_emails import send_delay_quote_email_async
-        friendly = None
-        if iso_date:
-            try:
-                from datetime import date as _d
-                friendly = _d.fromisoformat(iso_date).strftime('%A %d %B')
-            except Exception:
-                pass
+        friendly = _friendly_iso(iso_date)
         send_delay_quote_email_async(appointment, follow_up_date_str=friendly)
         return (
             "Perfect, we'll do that. "
