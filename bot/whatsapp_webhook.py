@@ -544,6 +544,30 @@ def _explicitly_requests_photos(message: str) -> bool:
     return any(re.search(m, msg) for m in markers)
 
 
+def _explicitly_requests_catalogue(message: str) -> bool:
+    """
+    True when the customer asks for the PRODUCT range / catalogue together with
+    pricing — e.g. "send your products and prices", "what products do you have",
+    "send catalogue and prices", "product list", "price list". These should get
+    the product catalogue images AND the price list alongside, not a single
+    product's price line. Distinct from a previous-work photo request (past jobs).
+    """
+    import re
+    msg = (message or '').lower()
+    if not msg:
+        return False
+    patterns = (
+        r'\bproducts?\b.*\bprices?\b',           # "products and prices"
+        r'\bprices?\b.*\bproducts?\b',           # "prices and products"
+        r'\b(?:send|share|show)\b.*\bproducts?\b',  # "send your products"
+        r'\b(?:your|what|which)\s+products?\b',  # "your products", "what products"
+        r'\bproduct list\b',
+        r'\bprice ?list\b',
+        r'\bcatalog(?:ue)?\b.*\bprices?\b',      # "catalogue and prices"
+    )
+    return any(re.search(p, msg) for p in patterns)
+
+
 def _keyword_product_intent(message: str):
     """
     Keyword fallback for product/service intent when the AI classifier returns
@@ -876,6 +900,31 @@ CATALOGUE_IMAGES_DIR = os.environ.get(
     os.path.join(os.path.dirname(__file__), 'catalogue_photos')
 )
 SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+
+
+# Single source of truth for the product price list shown alongside the
+# catalogue. "from" rates mirror bot/sales_profiles/homebase.md.
+CATALOGUE_PRICE_LINES = (
+    "• Toilet: Supply from US$50 | Install from US$20\n"
+    "• Tub (built-in): Supply from US$80 | Install from US$80\n"
+    "• Free-standing tub: Supply from US$400 | Mixer from US$150 | Install from US$120\n"
+    "• Shower cubicle: Supply from US$130 | Install from US$40\n"
+    "• Vanity unit: Supply from US$150 | Install from US$30\n"
+    "• Geyser: Supply from US$80 | Install from US$80\n"
+    "• Side chamber: Supply from US$130 | Install from US$30"
+)
+
+
+def build_catalogue_price_text(followup: str) -> str:
+    """Text price list sent alongside the catalogue images."""
+    return (
+        "Here's our product catalogue — rough supply + install prices "
+        "(final cost confirmed after a free site visit):\n\n"
+        f"{CATALOGUE_PRICE_LINES}\n\n"
+        "Bundling items can get you a discount. "
+        "The plumber gives a fixed quote on the spot after seeing the space.\n\n"
+        f"{followup}"
+    )
 
 
 def get_catalogue_images() -> list:
@@ -1629,8 +1678,17 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         reply = None
 
         # ── FAQ LAYER ─────────────────────────────────────────────────────────
+        # Skip FAQ for explicit photo/catalogue requests — a broad trigger like
+        # "do you have…" must not swallow "do you have pics of your work" or
+        # "what products do you have" before they reach the photo / catalogue
+        # send paths below.
         from bot.faq import lookup_faq
-        _faq_reply = lookup_faq(message_body)
+        _faq_reply = (
+            None
+            if (_explicitly_requests_photos(message_body)
+                or _explicitly_requests_catalogue(message_body))
+            else lookup_faq(message_body)
+        )
         if _faq_reply is not None:
             appointment.add_conversation_message("assistant", _faq_reply)
             delay = get_random_delay()
@@ -1738,6 +1796,33 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             delay = get_random_delay()
             threading.Thread(
                 target=delayed_response, args=(sender, _menu_text, delay, message_id), daemon=True
+            ).start()
+            return
+
+        # -- STEP 0d: Product catalogue + prices request ------------------------
+        # "send your products and prices" → send the catalogue images AND the
+        # price list alongside (not a single product's price line). Falls back to
+        # previous-work photos if no catalogue images are configured.
+        if _explicitly_requests_catalogue(message_body):
+            print("Product catalogue + prices request detected")
+            images_queued = send_catalogue_images(sender, appointment)
+            if not images_queued:
+                images_queued = send_previous_work_photos(sender, appointment)
+            price_text = build_catalogue_price_text(
+                plumbot._get_pricing_followup_prompt('english')
+            )
+            appointment.add_conversation_message("assistant", price_text)
+            appointment.pricing_overview_sent = True
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=[
+                'pricing_overview_sent', 'last_outbound_at', 'last_contacted_at'
+            ])
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, price_text, delay, message_id),
+                daemon=True,
             ).start()
             return
 
