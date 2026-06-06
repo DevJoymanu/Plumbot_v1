@@ -695,6 +695,11 @@ class Command(BaseCommand):
         leads = (
             Appointment.objects
             .filter(is_lead_active=True, status='pending', is_delayed=False)
+            # Quotation-only stubs have a synthetic phone_number (see
+            # quotation_templates.py) and no real WhatsApp number, so any send
+            # to them 400s. Never proactively message them. Mirrors the same
+            # exclusion already applied in quotation_templates.py.
+            .exclude(phone_number__startswith='quotation_only_')
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
             .exclude(internal_notes__contains='[DELAY_SIGNAL]')
@@ -773,6 +778,11 @@ class Command(BaseCommand):
             return {'status': 'sent', **result}
 
         clean_phone = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
+        if not clean_phone.isdigit():
+            # Not a real WhatsApp number (e.g. quotation-only stub) — sending
+            # would 400 against the Cloud API. Skip instead of erroring forever.
+            logger.debug(f'Lead {lead.id} skipped: non-numeric phone {clean_phone!r}')
+            return {'status': 'skipped'}
         whatsapp_api.send_text_message(clean_phone, message)
 
         lead.last_followup_sent = timezone.now()
