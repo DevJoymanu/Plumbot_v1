@@ -2669,6 +2669,12 @@ class ResponseMixin:
             if not reply or intent not in self._PRICED_INTENTS:
                 return reply
             low = reply.lower()
+            # Only attach the price disclaimer when the reply actually quotes a
+            # price. Availability answers ("Yes, we supply and install X") carry
+            # no figure, so an "approximate starting prices" line would dangle
+            # with nothing to qualify.
+            if '$' not in reply:
+                return reply
             if 'approximate' in low or 'may vary' in low:
                 return reply
             is_shona = any(t in low for t in (

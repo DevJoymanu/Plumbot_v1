@@ -1188,8 +1188,16 @@ def send_previous_work_photos(sender, appointment=None):
             whatsapp_api.send_text_message(sender, intro)
             sent_count = 0
             media_index = {}
+            from bot import portfolio_catalog
             for index, image_path in enumerate(images):
-                caption = "Our previous work - high quality plumbing & renovations" if index == 0 else None
+                # Per-image caption from the catalogue (title + price + spec) so
+                # each piece is labelled; generic fallback for uncatalogued shots.
+                caption = portfolio_catalog.build_gallery_caption(image_path)
+                if caption is None:
+                    caption = (
+                        "Our previous work - high quality plumbing & renovations"
+                        if index == 0 else None
+                    )
                 result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:

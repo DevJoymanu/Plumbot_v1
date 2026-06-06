@@ -349,6 +349,25 @@ def build_item_caption(item: dict) -> str:
     )
 
 
+def build_gallery_caption(filename: str) -> Optional[str]:
+    """Concise per-image caption for a whole-gallery send, looked up by image
+    filename: title + indicative price + one-line spec (no long story/CTA, since
+    a gallery sends many images at once). Returns None when the image isn't a
+    catalogued piece, so the caller can fall back to a generic caption.
+    """
+    base = os.path.splitext(os.path.basename(filename or ''))[0].lower()
+    if not base:
+        return None
+    for item in PORTFOLIO_ITEMS:
+        if os.path.splitext(item['filename'])[0].lower() == base:
+            return (
+                f"{item['title']}\n"
+                f"Pricing: {item['price']} (final price confirmed on site).\n"
+                f"{item['description']}"
+            )
+    return None
+
+
 def catalogue_overview() -> Optional[str]:
     """Short text menu of the pieces we can send, for 'what can you show me?'.
 
