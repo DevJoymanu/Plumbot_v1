@@ -820,11 +820,30 @@ class Command(BaseCommand):
                 or lead.created_at
             )
 
+        # Human-timing jitter: shift the due moment by a stable per-lead,
+        # per-attempt offset (3–57 min) so follow-ups land at natural minutes
+        # (e.g. 8:03, 12:48) instead of clustering on the hour, and so leads
+        # sharing a reference time don't all fire together. Deterministic, so a
+        # lead's due moment doesn't jump around between minute-by-minute checks.
+        jitter_hours = self._send_jitter_minutes(lead, attempt_index) / 60.0
+        wait_hours += jitter_hours
+
         elapsed = (timezone.now() - reference).total_seconds() / 3600
 
         if elapsed < wait_hours:
             return False, f'{elapsed:.1f}h elapsed, need {wait_hours:.1f}h (attempt #{attempt_index + 1})'
         return True, ''
+
+    @staticmethod
+    def _send_jitter_minutes(lead, attempt_index):
+        """Deterministic 3–57 minute offset for a given lead+attempt.
+
+        Stable across cron runs (no salted hash) so the computed due time is
+        identical every minute the cron checks — the lead simply crosses the
+        threshold once, at a natural-looking minute.
+        """
+        seed = (lead.id * 2654435761 + attempt_index * 40503) & 0xFFFFFFFF
+        return 3 + (seed % 55)
 
     def _stage_label(self, lead):
         labels = ['day_1', 'day_3', 'week_1', 'week_2', 'month_1', 'completed']
