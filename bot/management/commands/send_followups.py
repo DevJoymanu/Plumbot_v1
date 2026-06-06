@@ -28,9 +28,12 @@ DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
 
 SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
-# ─── Contact windows (local hour, half-open) ─────────────────────────────────
+# ─── Contact windows (local time, half-open) ─────────────────────────────────
+# Each entry is (open_hour, open_minute, close_hour, close_minute) in CAT.
+# Opens at 8:21 and closes at 20:53 (not round o'clock times) so sends don't
+# land at obvious bot times; half-open, so the last possible send is 20:52.
 CONTACT_WINDOWS = [
-    (8, 22),    # 8 AM – 9 PM CAT (hour < 22 allows sends up to 21:59)
+    (8, 21, 20, 53),
 ]
 
 # ─── Intervals (hours since last customer response OR last follow-up) ─────────
@@ -132,9 +135,9 @@ class Command(BaseCommand):
             "We will leave this with you. Whenever you are ready, just send us a message.",
         ],
         'delay_email': [
-            "Just one thing before we go — what email should we send your quote to? Or just say skip.",
-            "Happy to hold the quote until you are ready. What email works best? Just say skip if you would rather not.",
-            "Last ask on the email — what address should we use? Say skip if you would prefer not to share.",
+            "Just one thing before we go — what email should we send your quote to?",
+            "Happy to hold the quote until you are ready. What email works best?",
+            "Last ask on the email — what address should we use?",
             "No worries if you would rather not share. We will follow up on WhatsApp on the agreed date.",
         ],
     }
@@ -851,8 +854,11 @@ class Command(BaseCommand):
         return labels[idx]
 
     def _in_contact_window(self, now_local):
-        hour = now_local.hour
-        return any(s <= hour < e for s, e in CONTACT_WINDOWS)
+        mins = now_local.hour * 60 + now_local.minute
+        return any(
+            (oh * 60 + om) <= mins < (ch * 60 + cm)
+            for oh, om, ch, cm in CONTACT_WINDOWS
+        )
 
     # ─── Next question ────────────────────────────────────────────────────────
 
