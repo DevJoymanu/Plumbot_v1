@@ -1166,16 +1166,27 @@ class ResponseMixin:
                             'facebook_package', 'location_ask', 'location_visit',
                             'previous_quotation', 'pictures', 'combined_pricing',
                         }
-                        _inquiry      = self.detect_service_inquiry(incoming_message)
+                        # When the customer is replying to (quoting) an earlier
+                        # message — e.g. a portfolio photo — a bare "how much is
+                        # this?" has no referent on its own. Fold the quoted text
+                        # in so intent detection and the answer know what "this"
+                        # points to. incoming_message stays raw for the rule-based
+                        # checks above (acks/dates); only these LLM-facing calls
+                        # see the augmented version.
+                        _q_msg = (
+                            f'{incoming_message}\n\n[Customer is replying to: "{quoted_context}"]'
+                            if quoted_context else incoming_message
+                        )
+                        _inquiry      = self.detect_service_inquiry(_q_msg)
                         _intent       = _inquiry.get('intent', 'none')
                         direct_answer = None
                         _from_service_inquiry = False
                         _already_sent = _intent in (getattr(self.appointment, 'sent_pricing_intents', None) or [])
                         if _intent in PRODUCT_INTENTS and _inquiry.get('confidence') == 'HIGH' and not _already_sent:
-                            direct_answer = self.handle_service_inquiry(_intent, incoming_message)
+                            direct_answer = self.handle_service_inquiry(_intent, _q_msg)
                             _from_service_inquiry = bool(direct_answer)
                         if not direct_answer:
-                            direct_answer = self._answer_standalone_question(incoming_message)
+                            direct_answer = self._answer_standalone_question(_q_msg)
                             _from_service_inquiry = False
                         if direct_answer:
                             # handle_service_inquiry already ends with a followup question
