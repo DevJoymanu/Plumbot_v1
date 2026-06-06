@@ -111,4 +111,4 @@ On WhatsApp, when a customer long-presses one of the bot's messages and replies 
 - **Stamp-after-send / back-fill.** Assistant replies are logged before the (1–5 min delayed) send; the WAMID is back-filled by `attach_message_id` once the send returns. The duplicate-guard back-fill in `add_conversation_message` exists so the arrival-time metadata survives `generate_response`'s re-log of the same turn.
 - **Schemaless extension of `conversation_history`.** New per-turn metadata is added as optional JSON keys, never new columns — consistent with how the rest of the transcript is stored, and avoids migrations.
 - **Batch carries the quote.** The debounce accumulator threads `quoted_text` through and uses the last non-empty one, so rapid-fire replies still attribute the quote to the right (latest) message.
-- All new parameters are **optional with safe defaults** (`None`), so every existing caller and the WAMID-dedup logic keep working untouched — preserve that when extending.
+- All new parameters are **optional with safe defaults** (`None`), so every existing caller and the WAMID-dedup logic keep working untouched, preserve that when extending.
