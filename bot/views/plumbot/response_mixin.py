@@ -2288,6 +2288,14 @@ class ResponseMixin:
                 'do u do', 'do you stock', 'do you supply', 'can you supply',
                 'do you offer', 'do you provide', 'you got any', 'you have any',
                 'are you able to', 'can you get',
+                # Past-tense phrasings ("did you sell …?") read as availability
+                # questions too — treat them the same as the present tense.
+                'did you have', 'did u have', 'did you sell', 'did u sell',
+                'did you do', 'did u do', 'did you stock', 'did you supply',
+                'did you offer', 'did you provide', 'did you carry',
+                # "do/did you carry" and bare "you sell/stock/carry/supply"
+                'do you carry', 'do u carry',
+                'you sell', 'you stock', 'you carry', 'you supply',
             )
             return any(m in msg for m in markers)
 
@@ -2309,14 +2317,12 @@ class ResponseMixin:
             name = names.get(intent, 'that')
             if language == 'shona':
                 return (
-                    f"Hongu, tinacho uye tinoita kuiswa kwe{name} \n\n"
-                    "Uri kuda ichi chete, kana full bathroom? Tinogona kuuya tione "
-                    "tikupe mutengo wakajika — assessment yemahara."
+                    f"Hongu, tinacho uye tinoita kuiswa kwe{name}.\n\n"
+                    "Uri kuda ichi chete, kana full bathroom?"
                 )
             return (
-                f"Yes — we supply and install {name} \n\n"
-                "Are you after just that, or a full bathroom setup? We can come take "
-                "a look and give you a fixed price — the on-site assessment is free."
+                f"Yes — we supply and install {name}.\n\n"
+                "Are you after just that, or a full bathroom setup?"
             )
 
         @staticmethod

@@ -1897,11 +1897,25 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             ).start()
             return
 
+        # -- STEP 0a: Any catalogue / pictures request → send the WHOLE gallery -
+        # When a lead asks for the catalogue, pictures, photos or to "see our
+        # work", send every image in previous_work_photos so they can spot
+        # anything else they like — we deliberately do NOT narrow to a single
+        # matched piece here. Exception: an explicit "products AND prices" ask
+        # falls through to STEP 0d so the price list still goes out alongside.
+        if (_explicitly_requests_photos(message_body)
+                and not _explicitly_requests_catalogue(message_body)):
+            print("Catalogue/pictures request → sending full previous-work gallery")
+            if send_previous_work_photos(sender, appointment):
+                return
+            # No images on disk → fall through to the existing handlers below.
+
         # -- STEP 0b: Specific portfolio piece request --------------------------
         # If the customer points at ONE distinctive piece ("the gold taps one",
-        # "how much was the black bathtub", "that marble shower"), send just that
-        # image with its title/price/story caption instead of the whole gallery.
-        # Generic / ambiguous asks return None and fall through to STEP 1.
+        # "how much was the black bathtub", "that marble shower") WITHOUT asking
+        # for the catalogue/pictures outright, send just that image with its
+        # title/price/story caption. Generic photo/catalogue asks are handled by
+        # STEP 0a above; ambiguous matches return None and fall through to STEP 1.
         try:
             from bot import portfolio_catalog
             _portfolio_item = portfolio_catalog.match_portfolio_item(message_body)

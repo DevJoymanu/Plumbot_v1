@@ -50,7 +50,7 @@ PORTFOLIO_IMAGES_DIR = os.environ.get(
 PORTFOLIO_ITEMS: list[dict] = [
     {
         'id': 'modern-kitchen-island',
-        'filename': 'modernKitchenIsland.jpeg',
+        'filename': 'Full_kitchen_renovation.jpeg',
         'title': 'Modern Open-Plan Kitchen',
         'price': 'kitchen renovation from US$600',
         'description': 'White quartz island, pendant lighting, built-in oven and gas hob, full marble-look floor.',
@@ -66,7 +66,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'navy-shaker-kitchen',
-        'filename': 'navyShakerKitchen.jpeg',
+        'filename': 'Kitchen_installation.jpeg',
         'title': 'Navy Shaker Kitchen',
         'price': 'kitchen renovation from US$600',
         'description': 'Navy shaker cabinetry, white quartz tops, gas hob on the island, soft patterned tile floor.',
@@ -82,10 +82,10 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'freestanding-tub-hex',
-        'filename': 'freestandingTubHexBorder.jpeg',
+        'filename': 'standalone_freestanding_tub(2).jpg',
         'title': 'Freestanding Tub & Wall-Hung Toilet',
         'price': 'freestanding tub from US$670; full bathroom renovation from US$600',
-        'description': 'Oval freestanding tub, black floor-mounted mixer, hexagon mosaic border, wall-hung toilet.',
+        'description': 'Oval freestanding tub, black wall-mounted mixer, hexagon mosaic border, wall-hung toilet.',
         'story': (
             'A couple in Mount Pleasant wanted a hotel-style soak after long days. '
             'We set the freestanding tub against a marble-look wall with a black mixer for contrast, '
@@ -99,7 +99,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'gold-tap-double-vanity',
-        'filename': 'doubleVanity.jpeg',  # already on disk
+        'filename': 'custom_double_vanity.jpg',
         'title': 'Gold-Tap Double Vanity',
         'price': 'vanity unit from US$180; full bathroom renovation from US$600',
         'description': 'Twin white vessel basins on black granite, brushed-gold square mixers, marble-look walls.',
@@ -116,7 +116,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'black-granite-vanity-tub',
-        'filename': 'blackGraniteVanityTub.jpeg',
+        'filename': 'standalone_freestanding_tub.jpg',
         'title': 'Black Granite Vanity & Designer Tub',
         'price': 'freestanding tub from US$670 + vanity from US$180; full renovation from US$600',
         'description': 'Floating black granite vanity, twin white vessel basins, black wall taps, sculpted black freestanding tub.',
@@ -149,7 +149,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'classic-toilet-basin',
-        'filename': 'classicToiletBasinSuite.jpeg',
+        'filename': 'chamber_and_sink.jpg',
         'title': 'Classic Toilet & Basin Suite',
         'price': 'toilet & cistern from US$70',
         'description': 'Clean close-coupled toilet with a matching pedestal basin on neutral floor tiles.',
@@ -166,7 +166,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'clawfoot-tub-feature-wall',
-        'filename': 'clawfootTubFeatureWall.jpeg',
+        'filename': 'full_bathroom_renovation.jpg',
         'title': 'Vintage Clawfoot Tub Bathroom',
         'price': 'freestanding tub from US$670; full bathroom renovation from US$600',
         'description': 'White roll-top clawfoot tub, brick-effect feature tiling, wall-hung toilet and corner basin.',
@@ -183,7 +183,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'walk-in-rain-shower',
-        'filename': 'walkInRainShower.jpeg',
+        'filename': 'Cubicle.jpg',
         'title': 'Walk-In Rain Shower',
         'price': 'shower cubicle from US$170; full bathroom renovation from US$600',
         'description': 'Frameless glass walk-in shower, overhead rain head, mosaic feature stripe, level drainage.',
@@ -199,7 +199,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'marble-builtin-tub',
-        'filename': 'marbleBuiltInTub.jpeg',
+        'filename': 'ordinar_tub(built-in)_2.jpg',
         'title': 'Marble Built-In Bathtub',
         'price': 'standard bathtub from US$160; full bathroom renovation from US$600',
         'description': 'Built-in bathtub clad in marble-look tile, chrome telephone mixer, bright airy finish.',
@@ -215,7 +215,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'marble-tub-black-tap-vanity',
-        'filename': 'marbleTubBlackTapVanity.jpeg',
+        'filename': 'odinary_tub(built-in).jpg',
         'title': 'Marble Bathtub & Black-Tap Vanity',
         'price': 'standard bathtub from US$160 + vanity from US$180; full renovation from US$600',
         'description': 'Built-in marble-look bathtub beside a white vanity with a matte-black vessel mixer.',
