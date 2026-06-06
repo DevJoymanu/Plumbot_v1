@@ -338,33 +338,22 @@ def match_portfolio_item(message: str) -> Optional[dict]:
 # Customer-facing copy
 # ─────────────────────────────────────────────────────────────────────────────
 def build_item_caption(item: dict) -> str:
-    """WhatsApp caption for a single portfolio piece. No emojis (house rule)."""
-    return (
-        f"{item['title']}\n"
-        f"Pricing: {item['price']} (final price confirmed on site).\n"
-        f"{item['description']}\n\n"
-        f"{item['story']}\n\n"
-        f"Want something like this in your space? We can do a free site visit "
-        f"and quote it for your exact layout."
-    )
+    """WhatsApp caption for a single portfolio piece — product/service name only.
+    No pricing, no emojis (house rule)."""
+    return item['title']
 
 
 def build_gallery_caption(filename: str) -> Optional[str]:
-    """Concise per-image caption for a whole-gallery send, looked up by image
-    filename: title + indicative price + one-line spec (no long story/CTA, since
-    a gallery sends many images at once). Returns None when the image isn't a
-    catalogued piece, so the caller can fall back to a generic caption.
+    """Per-image caption for a whole-gallery send, looked up by image filename:
+    the product/service name only (no pricing). Returns None when the image isn't
+    a catalogued piece, so the caller can fall back to a generic caption.
     """
     base = os.path.splitext(os.path.basename(filename or ''))[0].lower()
     if not base:
         return None
     for item in PORTFOLIO_ITEMS:
         if os.path.splitext(item['filename'])[0].lower() == base:
-            return (
-                f"{item['title']}\n"
-                f"Pricing: {item['price']} (final price confirmed on site).\n"
-                f"{item['description']}"
-            )
+            return item['title']
     return None
 
 
@@ -379,7 +368,7 @@ def catalogue_overview() -> Optional[str]:
     lines = ["Here are some of the pieces I can send you:"]
     for item in items:
         lines.append(f"- {item['title']}")
-    lines.append("\nTell me which one you'd like to see and I'll send it with pricing.")
+    lines.append("\nTell me which one you'd like to see and I'll send it across.")
     return "\n".join(lines)
 
 

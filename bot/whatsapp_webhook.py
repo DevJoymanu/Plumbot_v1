@@ -1012,7 +1012,7 @@ def send_catalogue_images(sender, appointment=None) -> bool:
 
 def send_portfolio_item(sender, item, appointment=None) -> bool:
     """
-    Send ONE specific portfolio piece (image + its title/price/story caption)
+    Send ONE specific portfolio piece (image + its product/service-name caption)
     when a customer asks about that piece by name or feature.
 
     Returns True if the image was queued, False if the file is missing
@@ -1190,8 +1190,8 @@ def send_previous_work_photos(sender, appointment=None):
             media_index = {}
             from bot import portfolio_catalog
             for index, image_path in enumerate(images):
-                # Per-image caption from the catalogue (title + price + spec) so
-                # each piece is labelled; generic fallback for uncatalogued shots.
+                # Per-image caption from the catalogue (product/service name only,
+                # no pricing); generic fallback for uncatalogued shots.
                 caption = portfolio_catalog.build_gallery_caption(image_path)
                 if caption is None:
                     caption = (

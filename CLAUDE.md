@@ -112,3 +112,6 @@ On WhatsApp, when a customer long-presses one of the bot's messages and replies 
 - **Schemaless extension of `conversation_history`.** New per-turn metadata is added as optional JSON keys, never new columns — consistent with how the rest of the transcript is stored, and avoids migrations.
 - **Batch carries the quote.** The debounce accumulator threads `quoted_text` through and uses the last non-empty one, so rapid-fire replies still attribute the quote to the right (latest) message.
 - All new parameters are **optional with safe defaults** (`None`), so every existing caller and the WAMID-dedup logic keep working untouched, preserve that when extending.
+
+### NB
+at the end of evey edit provide a suitable "git commit -m" name
