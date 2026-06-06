@@ -1868,6 +1868,27 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 _quick_service_check = {'intent': _kw_intent, 'confidence': 'HIGH'}
                 print(f"🔁 Product intent keyword fallback: {_kw_intent}")
 
+        # When the customer is replying to a specific earlier message (e.g. a
+        # portfolio photo) and names no product themselves ("this one rinoita
+        # marii"), the quote tells us which item they mean. Re-derive the service
+        # intent from the quote-augmented message so a price ask prices the
+        # QUOTED item — not a stale intent carried over from history. The raw
+        # message_body stays untouched for the rule engine / language detection;
+        # only this LLM-facing classification sees the quote (house pattern).
+        if quoted_text:
+            _q_msg = f'{message_body}\n\n[Customer is replying to: "{quoted_text}"]'
+            try:
+                _quoted_inquiry = plumbot.detect_service_inquiry(_q_msg)
+            except Exception as _qe:
+                _quoted_inquiry = None
+                print(f"⚠️ Quote-derived service inquiry failed: {_qe}")
+            if _quoted_inquiry and _quoted_inquiry.get('intent') not in (None, 'none'):
+                print(
+                    f"🔗 Quote-derived service intent: {_quoted_inquiry} "
+                    f"(was {_quick_service_check})"
+                )
+                _quick_service_check = _quoted_inquiry
+
         _is_clear_product_inquiry = (
             _quick_service_check.get('intent') not in ('none', 'pictures') and
             _quick_service_check.get('confidence') == 'HIGH'
