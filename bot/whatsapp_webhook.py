@@ -1868,26 +1868,25 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 _quick_service_check = {'intent': _kw_intent, 'confidence': 'HIGH'}
                 print(f"🔁 Product intent keyword fallback: {_kw_intent}")
 
-        # When the customer is replying to a specific earlier message (e.g. a
-        # portfolio photo) and names no product themselves ("this one rinoita
-        # marii"), the quote tells us which item they mean. Re-derive the service
-        # intent from the quote-augmented message so a price ask prices the
-        # QUOTED item — not a stale intent carried over from history. The raw
-        # message_body stays untouched for the rule engine / language detection;
-        # only this LLM-facing classification sees the quote (house pattern).
+        # When the customer replies to a specific earlier message (e.g. a
+        # portfolio photo), the quote tells us which item "this one" refers to.
+        # Map it to a product intent DETERMINISTICALLY: the customer's own
+        # product word wins, else the quoted photo's. We use the keyword resolver
+        # rather than the LLM because short photo captions get mis-mapped by the
+        # classifier (observed: a "rain shower" quote → tub_sales). The keyword
+        # map ('shower' → shower_cubicle) is exact. Raw message_body stays
+        # untouched for the rule engine; only this classification sees the quote.
         if quoted_text:
-            _q_msg = f'{message_body}\n\n[Customer is replying to: "{quoted_text}"]'
-            try:
-                _quoted_inquiry = plumbot.detect_service_inquiry(_q_msg)
-            except Exception as _qe:
-                _quoted_inquiry = None
-                print(f"⚠️ Quote-derived service inquiry failed: {_qe}")
-            if _quoted_inquiry and _quoted_inquiry.get('intent') not in (None, 'none'):
+            _det_intent = (
+                _keyword_product_intent(message_body)
+                or _keyword_product_intent(quoted_text)
+            )
+            if _det_intent and _det_intent != _quick_service_check.get('intent'):
                 print(
-                    f"🔗 Quote-derived service intent: {_quoted_inquiry} "
+                    f"🔗 Quote-derived service intent: {_det_intent} "
                     f"(was {_quick_service_check})"
                 )
-                _quick_service_check = _quoted_inquiry
+                _quick_service_check = {'intent': _det_intent, 'confidence': 'HIGH'}
 
         _is_clear_product_inquiry = (
             _quick_service_check.get('intent') not in ('none', 'pictures') and

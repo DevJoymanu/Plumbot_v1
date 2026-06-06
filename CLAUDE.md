@@ -64,54 +64,53 @@ Then respond:
 
 ## Current State
 
-This section is context for the next session. It explains how the **WhatsApp quoted-reply ("highlighted message") feature** works end to end, what's solid, what's fragile, and the patterns to preserve. Read it before touching the conversation/send pipeline.
+Orientation for the next session: what the system does today, why it's built this way, and what to watch. Reflects the codebase as of June 2026.
 
-### What "reading highlighted texts" means here
-On WhatsApp, when a customer long-presses one of the bot's messages and replies to it, the grey quoted snippet is a *reply context*. The Twilio/Meta Cloud API delivers this as a `context` object on the inbound message that contains **only the WAMID** of the quoted message (`context.id`) — **never the quoted text itself**. So the bot can't "read" the highlight directly; it must map that WAMID back to text it already stored. The whole feature is built around that constraint.
+### Architecture
+- Django app `bot/` on Railway; WhatsApp via Twilio/Meta Cloud API; all AI via **DeepSeek** through the OpenAI SDK pointed at `api.deepseek.com`.
+- The shared DeepSeek client lives in `bot/services/clients.py`; it monkey-patches `chat.completions.create` to **force "thinking" mode off on every call** — thinking mode consumed the `max_tokens` budget and returned empty/truncated JSON, breaking all classifiers (set `DEEPSEEK_THINKING=enabled` to revert).
+- `Plumbot` (`bot/views/plumbot/`) is composed from mixins — `state`, `response`, `extraction`, `availability`, `booking`, `reschedule`, `notification`, `plan_upload`; `base.py` wires them and `get_or_create`s the `Appointment` per phone number.
 
-### Files involved and what each part does
+### Inbound pipeline (`bot/whatsapp_webhook.py`)
+- `process_message_change` → `handle_text_message(sender, text, message_id, quoted_id)` logs the user turn, resolves any quoted reply, then **debounce-batches per sender** (`_enqueue_for_response` / `_flush_text_batch`) so rapid-fire texts get one answer.
+- `_generate_and_schedule_reply` is the router; first step to produce a reply wins, in order: FAQ → unified pre-classifier → STEP 0 multi-intent compose → 0a whole-gallery → 0b specific portfolio piece → 0c portfolio menu → 0d catalogue+prices → 1 photo request → 1b out-of-scope/delay/complaint → 2 service-specific pricing → 3 full pricing overview → 3b repeated-question → 4 normal `generate_response`.
+- Outbound is sent on a **1–5 min random delay** via `delayed_response` in a daemon thread; a new inbound message **cancels the pending send** (`_pending_send_events`) so the batch re-runs with the latest context.
 
-**`bot/models.py`** — `Appointment` conversation helpers (the storage + resolution layer). `conversation_history` is a `JSONField` list of `{role, content, timestamp}` dicts; the feature adds three optional keys to entries (`message_id`, `quoted`, `media_index`) with **no migration** (JSONField is schemaless).
-- `add_conversation_message(role, content, message_id=None, quoted=None)` — logs a turn and stores the WAMID + the resolved quoted text. The back-to-back duplicate guard now *back-fills* `message_id`/`quoted` onto an existing identical entry instead of dropping them (matters because the webhook logs the user turn on arrival and `generate_response` re-logs it).
-- `attach_message_id(role, content, message_id)` — stamps an outbound WAMID onto an already-logged entry, matching the most recent role+content entry that has no WAMID yet. Needed because we log the assistant reply *before* we send it (the WAMID only exists after the send returns).
-- `record_sent_media(media_map, summary)` — logs one transcript entry for a batch of sent images carrying a `media_index` of `{wamid: description}`, so replies that quote a specific photo resolve to what that photo shows (without bloating history with one entry per image).
-- `resolve_quoted_message(message_id)` — turns an inbound `context.id` into text: scans history newest-first for a matching `message_id`, then checks each entry's `media_index`. Returns `None` when the quoted message predates the feature or was sent through a non-stamping path.
+### Unified classifier (`bot/unified_classifier.py`)
+- One DeepSeek call returns a dict consumed by all downstream handlers (OOS intent, product/service intent, booking-data extraction, photo/repeat/plan-later flags), replacing ~6 separate calls; on failure it returns `None` and callers fall back to their individual classifiers. Accessors: `uc_as_service_inquiry`, `uc_as_oos_classification`, `uc_is_photo_request`, etc.
 
-**`bot/whatsapp_webhook.py`** — the ingestion + send pipeline (where WAMIDs are captured and resolved).
-- `process_message_change` extracts `quoted_id = (message.get('context') or {}).get('id')` and passes it to `handle_text_message`.
-- `handle_text_message(sender, text_data, message_id, quoted_id)` resolves `quoted_text` via `appointment.resolve_quoted_message`, logs the user turn with `message_id` + `quoted`, prints a `🔗` diagnostic line, and forwards `quoted_text` into the batch.
-- `_enqueue_for_response` / `_flush_text_batch` — the per-sender debounce batch now carries a 3-tuple `(message_body, message_id, quoted_text)`; on flush it uses the **last non-empty** quote in the batch (the customer's most recent reply target).
-- `_generate_and_schedule_reply` passes `quoted_context=quoted_text` into `plumbot.generate_response`.
-- `delayed_response` captures the result of `send_text_message`, pulls `sent_wamid` from `messages[0].id`, and calls `attach_message_id("assistant", reply, sent_wamid)` after the send. **This is the main place outbound text WAMIDs get stored.**
-- `send_previous_work_photos` captures each image's WAMID into a `media_index` and calls `record_sent_media(...)`. **This is where outbound image WAMIDs get stored.**
+### Conversation storage (`bot/models.py` — `Appointment`)
+- `conversation_history` is a schemaless `JSONField` of `{role, content, timestamp}` dicts plus optional `message_id`/`quoted`/`media_index` keys — transcript metadata never gets migrations.
+- Helpers: `add_conversation_message` (logs a turn, back-fills WAMID/quote onto a duplicate entry), `attach_message_id` (stamps an outbound WAMID after send), `record_sent_media` (one entry per image batch carrying `{wamid: description}`), `resolve_quoted_message` (maps inbound `context.id` → stored text/description).
 
-**`bot/views/plumbot/response_mixin.py`** — where the quote reaches the LLM.
-- `generate_response(..., quoted_context=None)` threads the quote to its three `generate_contextual_response` calls.
-- `generate_contextual_response(..., quoted_context=None)` → `_generate_retry_response(..., quoted_context=None)`, which injects a "THE CUSTOMER IS REPLYING TO THIS EARLIER MESSAGE OF YOURS: …" block into the DeepSeek prompt so references like "this one"/"the first" resolve.
-- **Changed most recently (this session):** the standalone/service-inquiry branch in `generate_response` now builds `_q_msg` (the raw message augmented with `[Customer is replying to: "…"]`) and feeds it to `detect_service_inquiry`, `handle_service_inquiry`, and `_answer_standalone_question`. This is what makes "how much is this?" work when it's a reply to a portfolio photo or price line — that path previously never saw the quote, which is why the feature appeared to "not work" for the most common case. `incoming_message` stays **raw** for the rule-based checks; only the LLM-facing calls get `_q_msg`.
+### Quoted-reply ("highlighted message") feature
+- WhatsApp delivers only the quoted message's **WAMID** (`context.id`), never its text, so outbound WAMIDs are stamped onto history (text in `delayed_response`, images in `send_previous_work_photos` via `record_sent_media`) and resolved locally on the way back.
+- The resolved quote travels as a **separate** `quoted_context` parameter to LLM/classification calls only — never the rule engine. Before STEP 2, `_generate_and_schedule_reply` re-derives the service intent **deterministically** via `_keyword_product_intent` (the customer's own product word wins, else the quoted photo's caption — e.g. a "rain shower" quote → `shower_cubicle`), so "this one how much?" on a portfolio photo prices the quoted item instead of a stale carried-over intent. Deterministic on purpose: the LLM mis-maps short photo captions (a "rain shower" caption was classified `tub_sales`).
+- Fragile: coverage is **not universal** (availability/date classifier, FAQ, multi-intent compose, booking path don't receive the quote); only the two stamping send-paths resolve — others return `None` and silently behave quote-less (signature log: `🔗 … not found in history`).
 
-### Completed and working
-- WAMID storage for outbound **text** (via `delayed_response`) and outbound **images** (via `record_sent_media`).
-- Inbound `context.id` extraction → resolution to text/description.
-- Quote injected into the DeepSeek prompt on the **retry-rephrase** path and the **standalone/service-inquiry** path.
-- Resolution logic verified in isolation (Django shell): text quote → text, image quote → description, unknown WAMID → `None`.
+### Portfolio / catalogue (`bot/portfolio_catalog.py`)
+- Static list of previous-work pieces (title, "from" price, description, keywords); `match_portfolio_item` returns one item only when the message clearly references a specific piece, else `None` → whole-gallery send. Prices are the business's own "from" rates from `bot/sales_profiles/homebase.md` (source of truth — keep in sync, never invent figures); captions are title-only.
 
-### Partially done / fragile (do not assume these are covered)
-- **Injection coverage is not universal.** The quote reaches the LLM only in the retry path and the standalone/service-inquiry path. It is **not** passed into: the availability/date classifier (`_classify_availability_response` / `_handle_availability_date_response` — so replying to a "Tuesday or Thursday?" offer with "the first" won't carry the quote into date classification), the FAQ layer, multi-intent compose, or the booking path. Extending coverage means threading `quoted_context` into those specific handlers the same way.
-- **Outbound stamping only happens on two paths.** Replies that quote a message sent via a *direct* `send_text_message` call (plumber alerts, the photos intro line, and the `generate_photo_followup` text) will resolve to `None` because those sends don't stamp a WAMID. If a quote "isn't recognised," check whether the quoted message was sent through a stamping path.
-- **Resolution is best-effort.** Messages predating the feature, or in a different appointment's history, return `None`; the bot then silently behaves as if there were no quote. The `🔗 Reply to message <id> — not found in history` log line is the signature of this.
-- **`attach_message_id` matches by exact content.** Two identical bot replies are disambiguated only by "most recent without a WAMID" — usually correct, but a possible mis-stamp edge case.
-- **Windows-local gotcha:** `add_conversation_message` (and other handlers) `print()` emoji; on a Windows cp1252 console this raises `UnicodeEncodeError`, and `add_conversation_message` *re-raises*. Harmless on Railway (UTF-8 stdout) but it will crash local shell/test runs unless you set `PYTHONIOENCODING=utf-8`.
-- **Not verified against live WhatsApp this session** — only unit-level. End-to-end confirmation should use the Railway `🔗` log lines.
-- **Unrelated in-flight edits in the working tree:** `bot/portfolio_catalog.py`, plus a gallery-caption change in `send_previous_work_photos` and a price-disclaimer guard in `response_mixin.py` (`'$' not in reply → skip disclaimer`). These came from a parallel session and are unrelated to the quote feature; don't bundle them blindly.
+### Pricing & sales (`response_mixin.py`)
+- `detect_service_inquiry` → priceable intent; `handle_service_inquiry(intent, message)` builds the reply from a `structured_pricing` table keyed by intent (message used only for language detection). `generate_pricing_overview` gives the full menu; `compose_multi_answer` answers 2+ info questions at once.
+- Pricing is gated: don't volunteer price when unasked, don't re-send an already-sent intent, and don't price a message that is a project description / booking-capture answer.
 
-### Key architecture decisions / patterns to preserve
-- **WAMID round-trip, not text capture.** Because the API gives only `context.id`, the design stores WAMIDs on history entries and resolves locally. Keep storing outbound WAMIDs whenever you add a new send path, or quotes to those messages silently break.
-- **Keep the quote out of the rule engine.** The state machine (acks, date parsing, dedupe, keyword classifiers) runs on **raw** `incoming_message`. The quote is a *separate* `quoted_context`/`_q_msg` that only ever reaches LLM/classification calls. Folding the quote into `incoming_message` globally would corrupt date parsing, ack detection (`.strip().lower() in acks`), and pricing-keyword scans — that's why it's threaded as its own parameter.
-- **Stamp-after-send / back-fill.** Assistant replies are logged before the (1–5 min delayed) send; the WAMID is back-filled by `attach_message_id` once the send returns. The duplicate-guard back-fill in `add_conversation_message` exists so the arrival-time metadata survives `generate_response`'s re-log of the same turn.
-- **Schemaless extension of `conversation_history`.** New per-turn metadata is added as optional JSON keys, never new columns — consistent with how the rest of the transcript is stored, and avoids migrations.
-- **Batch carries the quote.** The debounce accumulator threads `quoted_text` through and uses the last non-empty one, so rapid-fire replies still attribute the quote to the right (latest) message.
-- All new parameters are **optional with safe defaults** (`None`), so every existing caller and the WAMID-dedup logic keep working untouched, preserve that when extending.
+### Booking, availability, scheduling
+- `extraction_mixin` pulls fields (service, area, plan status, name, datetime) and tracks `get_next_question_to_ask`; `availability_mixin` checks business-hours slots and suggests alternatives; `booking_mixin` validates completeness and books; `reschedule_mixin` handles AI-detected reschedules; `plan_upload_mixin` handles "I'll send my plan" flows and plan-status nudges; `notification_mixin` alerts the plumber and optionally Google Calendar.
 
-### NB
-at the end of evey edit provide a suitable "git commit -m" name
+### Follow-ups & cron (`bot/management/commands/`)
+- `send_followups` — 4 follow-ups over 18h (0/6/12/18h) for cold leads. Other Railway crons: `send_reminders`, `send_job_reminders`, `notify_priority_leads`, `summarize_unconfirmed_leads`, `process_inbound_emails`.
+
+### Email
+- Customer/transactional email goes through the **SendGrid v3 HTTP API (port 443)** in `bot/plumber_notifications.py` (`_send_via_sendgrid`); Railway blocks all outbound SMTP, so the legacy `IPv4SMTPBackend` (`bot/email_backends.py`) is a fallback only. SendGrid click/open tracking is disabled to keep `tel:`/`wa.me` links clean. HTML templates live in `bot/customer_emails.py`; subjects carry `[APT-{id}]` so IMAP replies match back to the appointment.
+
+### Supporting classifiers / safety nets
+- `faq.py` (no-API canned facts), `out_of_scope_handler.py` (OOS / delay / complaint), `repeated_question_detector.py` (re-asked questions), `semantic_rescue.py` (rescue unclassifiable messages), `service_type_classifier.py` (bathroom / kitchen / new-install), `services/lead_scoring.py` (lead prioritisation).
+
+### Conventions to follow
+- Reuse existing infra; no new dependencies without being asked. Preserve WAMID dedup and exit-signal-first ordering.
+- **Keep the quote out of the rule engine** — thread it as `quoted_context`/`_q_msg` to LLM calls only; any new send path must stamp its WAMID or quotes to it break silently.
+- New per-turn metadata = optional JSON keys, never new columns; new handler params optional with `None` defaults so existing callers keep working untouched.
+- **No emojis in customer-facing copy** (logs/dashboards fine). Support English + Shona.
+- **Windows-local gotcha:** handlers `print()` emoji; set `PYTHONIOENCODING=utf-8` or local shell/test runs raise `UnicodeEncodeError` (harmless on Railway's UTF-8 stdout).
+- At the end of every edit, provide a suitable `git commit -m` message.
