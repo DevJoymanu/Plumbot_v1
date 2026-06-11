@@ -1027,6 +1027,51 @@ class Command(BaseCommand):
                         email_failed += 1
                         self.stdout.write(self.style.ERROR("    FAIL  Email 3 Morning"))
 
+        # ── Email 6: Date-but-no-time — morning of the agreed date @ 07:00 ───
+        # A lead committed an appointment DATE but never a time (stored at
+        # midnight). On the morning of that date, remind the plumber to call and
+        # pin the time down. Complements the immediate alert fired when the lead
+        # first gave the date. Once per appointment (guarded by an eflag).
+        if _email_in_window(now_local, 7, 0):
+            from bot.plumber_notifications import send_plumber_followup_alert
+            no_time_apts = []
+            for a in (
+                Appointment.objects
+                .filter(scheduled_datetime__isnull=False)
+                .exclude(status__in=["cancelled", "no_show", "completed"])
+            ):
+                sast = _to_sast(a.scheduled_datetime)
+                if not sast or sast.date() != today:
+                    continue
+                if sast.hour != 0 or sast.minute != 0:
+                    continue  # a real time is set — nothing to chase
+                no_time_apts.append(a)
+
+            if not no_time_apts:
+                self.stdout.write("    INFO  Email 6 (Date-no-time): none due today — skipped")
+            for a in no_time_apts:
+                flag = f"email_date_no_time_{a.pk}_{today.isoformat()}"
+                if _eflag_set(a, flag):
+                    email_skipped += 1
+                    self.stdout.write(f"    SKIP  Email 6 Date-no-time apt#{a.pk}: already sent")
+                    continue
+                ok = (
+                    send_plumber_followup_alert(a, reason="date_no_time")
+                    if not dry_run else True
+                )
+                if ok:
+                    if not dry_run:
+                        _eflag_mark(a, flag)
+                    email_sent += 1
+                    self.stdout.write(self.style.SUCCESS(
+                        f"    SENT  Email 6 Date-no-time → apt#{a.pk} ({_service(a)})"
+                    ))
+                else:
+                    email_failed += 1
+                    self.stdout.write(self.style.ERROR(
+                        f"    FAIL  Email 6 Date-no-time → apt#{a.pk}"
+                    ))
+
         # ── Emails 4 & 5: Per-appointment rolling reminders ──────────────────
         for apt in active_apts:
             if not _to_sast(apt.scheduled_datetime):

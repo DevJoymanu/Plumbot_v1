@@ -638,14 +638,28 @@ class Command(BaseCommand):
                             f'— last-check email queued in {DELAY_SECOND_TOUCH_HOURS}h'
                         ))
                     else:
-                        # WhatsApp succeeded but no email available — single-shot path
+                        # WhatsApp succeeded but no email available — single-shot path.
+                        # Hand the plumber the lead too: with no email the automated
+                        # sequence ends here, so a human should follow up on the
+                        # agreed date.
+                        try:
+                            from bot.plumber_notifications import send_plumber_followup_alert
+                            send_plumber_followup_alert(
+                                lead, reason='no_email_followup',
+                                follow_up_date_str=now_local.strftime('%A %d %B'),
+                            )
+                        except Exception:
+                            logger.exception(
+                                'Plumber follow-up alert failed for lead %s', lead.id
+                            )
                         lead.is_delayed = False
                         notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes).strip()
                         lead.internal_notes = notes
                         lead.save(update_fields=['is_delayed', 'internal_notes'])
                         lead.add_conversation_message('assistant', f'[DELAY REACTIVATION] {message}')
                         self.stdout.write(self.style.SUCCESS(
-                            f'✅ Reactivated lead {lead.id} via WhatsApp (no email on file)'
+                            f'✅ Reactivated lead {lead.id} via WhatsApp (no email on file) '
+                            f'— plumber alerted to follow up'
                         ))
                 else:
                     # All channels failed — retry tomorrow without spamming

@@ -612,6 +612,62 @@ def _keyword_product_intent(message: str):
     return None
 
 
+# Weekday tokens (full names + common abbreviations), most ambiguous handled by
+# word-boundary matching so "wed" matches "Wed" but not "wedding", "sun" not
+# "sunny", etc. Order matches Python's weekday() index (Monday=0).
+_AVAILABILITY_DAY_PATTERNS = [
+    (0, r'mon(?:day)?'),
+    (1, r'tue(?:s|sday)?'),
+    (2, r'wed(?:s|nesday)?'),
+    (3, r'thu(?:r|rs|rsday)?'),
+    (4, r'fri(?:day)?'),
+    (5, r'sat(?:urday)?'),
+    (6, r'sun(?:day)?'),
+]
+
+
+def _keyword_availability_date(message: str):
+    """
+    Deterministic day-name → next-future-date resolver. Mirrors
+    _keyword_product_intent: conservative, no LLM round-trip. Returns a
+    'YYYY-MM-DDT00:00' string (date only, midnight) for a bare weekday,
+    'tomorrow', or 'today' token, else None. Saturday (closed) → None.
+
+    Used to backfill the unified classifier's availability when the LLM misses
+    the date math on partial inputs like "out of town but Wed I'm available".
+    The LLM's value always wins when present (it may carry a specific time);
+    this only fills an empty slot.
+    """
+    import re
+    from datetime import timedelta
+    import pytz
+
+    msg = (message or '').lower()
+    if not msg:
+        return None
+
+    now = timezone.now().astimezone(pytz.timezone('Africa/Johannesburg'))
+
+    def _fmt(d):
+        return d.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M')
+
+    if re.search(r'\btoday\b', msg):
+        return _fmt(now)
+    if re.search(r'\b(?:tomorrow|tmrw|tmr|2moro)\b', msg):
+        candidate = now + timedelta(days=1)
+        return None if candidate.weekday() == 5 else _fmt(candidate)
+
+    for weekday_idx, pattern in _AVAILABILITY_DAY_PATTERNS:
+        if re.search(r'\b' + pattern + r'\b', msg):
+            if weekday_idx == 5:          # Saturday — business is closed
+                return None
+            days_ahead = (weekday_idx - now.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7            # "Monday" on a Monday → next Monday
+            return _fmt(now + timedelta(days=days_ahead))
+    return None
+
+
 def is_post_booking_ack_message(message: str) -> bool:
     msg = (message or "").strip().lower()
     if not msg:
@@ -1857,6 +1913,21 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             conversation_history=appointment.conversation_history,
             today_date=_tz.now().strftime('%Y-%m-%d'),
         )
+
+        # Deterministic availability backfill: on partial inputs the LLM can miss
+        # or mis-resolve a bare weekday ("out of town but Wed I'm available"). A
+        # day name maps to an exact next-future date with no LLM round-trip, so
+        # fill it in when the classifier left availability empty. The LLM's value
+        # always wins when present (it may carry a specific time).
+        if _uclass is not None:
+            _ext = _uclass.get('extracted') or {}
+            if not _ext.get('availability') or _ext.get('availability') == 'null':
+                _kw_date = _keyword_availability_date(message_body)
+                if _kw_date:
+                    _ext['availability'] = _kw_date
+                    _uclass['extracted'] = _ext
+                    print(f"📅 Availability keyword backfill: {_kw_date}")
+
         _quick_service_check = uc_as_service_inquiry(_uclass)
 
         # Fallback: if the AI classifier returned no product intent (e.g. DeepSeek
@@ -1867,6 +1938,20 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             if _kw_intent:
                 _quick_service_check = {'intent': _kw_intent, 'confidence': 'HIGH'}
                 print(f"🔁 Product intent keyword fallback: {_kw_intent}")
+
+        # Confidence gate: DeepSeek classified a product intent but flagged it LOW
+        # (ambiguous/short message). On exactly these inputs the LLM picks a
+        # plausible-but-wrong neighbour, so when the deterministic keyword resolver
+        # fires we trust it over the uncertain LLM guess. Only overrides on a real
+        # disagreement; if the resolver is silent we keep the LLM's LOW result.
+        elif _quick_service_check.get('confidence') == 'LOW':
+            _kw_intent = _keyword_product_intent(message_body)
+            if _kw_intent and _kw_intent != _quick_service_check.get('intent'):
+                print(
+                    f"🎯 LOW-confidence override: {_kw_intent} "
+                    f"(was {_quick_service_check.get('intent')})"
+                )
+                _quick_service_check = {'intent': _kw_intent, 'confidence': 'HIGH'}
 
         # When the customer replies to a specific earlier message (e.g. a
         # portfolio photo), the quote tells us which item "this one" refers to.

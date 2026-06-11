@@ -59,6 +59,12 @@ delay_signal  Customer is deferring: "call me later", "not ready yet",
               "Ndichaita contact" (I'll make contact), "Tichataura" (we'll talk),
               "Ndisati ndagadzirira" (I'm not ready yet),
               "Ndicharidza rini ndichadzoka" (I'll call when I return).
+              ⚠ NOT a delay if the customer names a specific day or time they
+              WILL be available — even alongside a temporary absence. "I'm out of
+              Harare but Wednesday I'm available", "away this week, free Sunday",
+              "ndiri kunze asi neChina ndinenge ndiripo" → in_scope, and put that
+              day into extracted.availability. Open-ended absence with NO stated
+              day stays delay_signal.
 complaint     Frustration, price objection, or legitimacy question.
               Shona examples: "Mutengo unodhura zvakanyanya" (price is way too expensive),
               "Musatikwashura" (don't cheat us), "Hamusi vaplumber chaiwo here?" (Are you real plumbers?),
@@ -99,6 +105,8 @@ area              Suburb, neighbourhood, or city name.
                   ⚠ When next_question is "area", treat short unknown words
                   as suburb names — NOT customer names.
 availability      Date+time → YYYY-MM-DDTHH:MM  |  Date only → YYYY-MM-DDT00:00
+                  A bare weekday ("Wed", "Wednesday", "neChina") → the NEXT
+                  future date with that weekday relative to TODAY.
                   "available all day" / "anytime" / "whole day" → null.
 customer_name     Only if explicitly given: "my name is X", "I'm X", "call me X".
 project_description  Verbatim project detail (max 120 chars).
@@ -110,6 +118,45 @@ is_plan_later     true if customer says they'll send their plan/blueprint/
                   drawing at a later time ("I'll send the plan later").
 is_repeat_question  true if the customer is asking something that has clearly
                   already been answered earlier in the conversation.
+
+─── WORKED EXAMPLES (input → output) ─────────────────────────────────────────
+These show the EXACT reasoning for the cases that get misclassified most often.
+Match the pattern, do not copy values blindly.
+
+# Short product price ask — map the product word, even with typos:
+"standalone tub hw much"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"standalone_tub","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# "rain shower" / "rain head" is a SHOWER, never a tub:
+"how much for a rain shower"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"shower_cubicle","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# Code-switched booking — pull every field present:
+"Ndoda kubhukisha geyser repair, ndiri Hatfield, Sunday morning"
+{"intent":"in_scope","confidence":"HIGH","service_type":"geyser_repair","product_intent":"geyser_repair","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":"Hatfield","availability":null,"customer_name":null,"project_description":"geyser repair"}}
+
+# Partial answer when next_question=area — a short unknown word is a SUBURB, not a name:
+(Appointment: ... | next_question=area)  "Ziko"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":"Ziko","availability":null,"customer_name":null,"project_description":null}}
+
+# Genuinely ambiguous one-word message with no context — LOW confidence so the
+# deterministic layer can take over:
+"this one"
+{"intent":"in_scope","confidence":"LOW","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# Temporary absence BUT a named available day → in_scope booking, NOT a delay.
+# Capture the weekday as the next matching date (here TODAY=2026-06-11 Thursday,
+# so "Wed" → 2026-06-17; always recompute against the real TODAY):
+"M out of Hre but Wed I will be available"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":"2026-06-17T00:00","customer_name":null,"project_description":null}}
+
+# Shona delay signal (open-ended, no day named):
+"Ndichadzokezai, ndisati ndagadzirira"
+{"intent":"delay_signal","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# Pure Shona acknowledgment — adds nothing to the conversation:
+"maita basa"
+{"intent":"ack","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
 
 ─── OUTPUT FORMAT (return exactly this structure) ────────────────────────────
 {

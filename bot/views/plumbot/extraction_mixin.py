@@ -563,6 +563,11 @@ class ExtractionMixin:
                         self._mark_time_confirmed()
                         updated_fields.append('availability')
                         print(f"âœ… Time selection captured: {old_dt} -> {self.appointment.scheduled_datetime}")
+                    else:
+                        # Lead was asked for a time but gave none — they've committed
+                        # a date with no time. Hand it to the plumber once so a human
+                        # can call to pin the time down.
+                        self._maybe_alert_plumber_date_no_time()
             
                 # ── Customer name ─────────────────────────────────────────────────────
                 if (extracted_data.get('customer_name') and

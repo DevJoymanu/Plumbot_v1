@@ -42,6 +42,35 @@ logger = logging.getLogger(__name__)
 
 
 class NotificationMixin:
+        def _maybe_alert_plumber_date_no_time(self):
+            """
+            Email the plumber once when a lead has committed an appointment DATE
+            but no time, so a human can call to pin the time down. Guarded by a
+            [DATE_NO_TIME_ALERTED] note so it fires at most once per lead.
+
+            A date-only booking is stored at midnight; a confirmed time is not.
+            We compare in SAST because scheduled_datetime is read back in UTC.
+            """
+            apt = self.appointment
+            if not apt or not apt.scheduled_datetime:
+                return
+            notes = apt.internal_notes or ''
+            if '[DATE_NO_TIME_ALERTED]' in notes:
+                return
+            sast = apt.scheduled_datetime.astimezone(pytz.timezone('Africa/Johannesburg'))
+            if sast.hour != 0 or sast.minute != 0:
+                return  # a real time is set — nothing to chase
+            try:
+                from ...plumber_notifications import send_plumber_followup_alert
+                send_plumber_followup_alert(apt, reason='date_no_time')
+                apt.internal_notes = f'{notes}\n[DATE_NO_TIME_ALERTED]'.strip()
+                apt.save(update_fields=['internal_notes'])
+                logger.info("Plumber alerted: date but no time — apt %s",
+                            getattr(apt, 'pk', None))
+            except Exception:
+                logger.exception("_maybe_alert_plumber_date_no_time failed — apt %s",
+                                 getattr(apt, 'pk', None))
+
         def notify_plumber_about_plan(self):
             """Send plan details to plumber via WhatsApp"""
             try:

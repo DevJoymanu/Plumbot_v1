@@ -130,6 +130,57 @@ def send_plumber_notification_email(subject, message, *, dry_run=False, html_mes
     )
 
 
+def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
+                                dry_run=False):
+    """
+    Email the plumber to personally follow up a lead the bot could not fully
+    close on its own. Two cases:
+      • 'no_email_followup' — lead wants a follow-up later but gave no email, so
+        the automated email sequence can't reach them.
+      • 'date_no_time'      — lead booked a DATE but no time; needs a call to
+        pin the time before the slot can be confirmed.
+
+    Plain and actionable, with a click-to-WhatsApp link so the plumber can reach
+    the lead in one tap. Reuses the same delivery path as every other plumber
+    notification.
+    """
+    name    = getattr(appointment, "customer_name", "") or "Unknown"
+    phone   = _clean_phone(getattr(appointment, "phone_number", ""))
+    service = _service(appointment)
+    area    = getattr(appointment, "customer_area", "") or "not given"
+    desc    = (getattr(appointment, "project_description", "") or "").strip() or "not given"
+
+    reason_detail = {
+        "no_email_followup": (
+            "This lead asked to be followed up later but did NOT share an email, "
+            "so the automated email sequence can't reach them. Please follow up "
+            "on WhatsApp."
+        ),
+        "date_no_time": (
+            "This lead gave an appointment DATE but no time. Please call or "
+            "WhatsApp to confirm a time so the booking can be locked in."
+        ),
+    }.get(reason, str(reason))
+
+    when_line  = f"\nAgreed follow-up date: {follow_up_date_str}" if follow_up_date_str else ""
+    sched_line = ""
+    if reason == "date_no_time" and getattr(appointment, "scheduled_datetime", None):
+        sched_line = f"\nBooked date (no time yet): {_fmt_date(appointment)}"
+
+    wa_link = f"https://wa.me/{phone}" if phone else ""
+    subject = f"[Lead follow-up] {name} - {service}"
+    message = (
+        f"{reason_detail}\n\n"
+        f"Customer: {name}\n"
+        f"WhatsApp: {phone}  {wa_link}\n"
+        f"Service: {service}\n"
+        f"Area: {area}\n"
+        f"Project: {desc}"
+        f"{when_line}{sched_line}\n"
+    )
+    return send_plumber_notification_email(subject, message, dry_run=dry_run)
+
+
 def _send_via_sendgrid(
     api_key, recipients, subject, message, *, html_message=None,
     attachment=None, attachment_name="attachment.pdf", from_name=None,

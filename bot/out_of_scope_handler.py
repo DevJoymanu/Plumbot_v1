@@ -117,7 +117,78 @@ def mark_delay_signal(appointment, source_message: str = "") -> bool:
         logger.info("Delay signal written for appointment=%s from message='%s'",
                     getattr(appointment, 'id', None), (source_message or '')[:80])
     return marked
-    
+
+
+def send_lead_magnet_on_whatsapp(appointment) -> bool:
+    """
+    Send the portfolio/pricing PDF (our lead magnet) straight to the customer on
+    WhatsApp as a document, instead of emailing it. Used when a lead asks to get
+    it "on this number / on WhatsApp / right here". Guarded by a
+    [LEAD_MAGNET_WA_SENT] note so we never double-send.
+    """
+    notes = appointment.internal_notes or ''
+    if '[LEAD_MAGNET_WA_SENT]' in notes:
+        return True
+    try:
+        import os as _os, tempfile as _tempfile
+        from bot.whatsapp_cloud_api import whatsapp_api
+        from bot.plumber_notifications import PORTFOLIO_PDF_PATH
+
+        to = (getattr(appointment, 'phone_number', '') or '').replace('whatsapp:', '').strip()
+        if not to:
+            return False
+
+        doc_path = PORTFOLIO_PDF_PATH
+        if not _os.path.exists(doc_path):
+            # Static asset missing — fall back to the generated portfolio bytes.
+            from bot.customer_emails import generate_portfolio_pdf
+            data = generate_portfolio_pdf()
+            if not data:
+                return False
+            tmp = _tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+            tmp.write(data)
+            tmp.close()
+            doc_path = tmp.name
+
+        whatsapp_api.send_local_document(
+            to, doc_path,
+            caption="Our portfolio of past projects plus a detailed pricing guide.",
+            filename="HomeBase_Plumbers_Portfolio.pdf",
+        )
+        appointment.internal_notes = f'{notes}\n[LEAD_MAGNET_WA_SENT]'.strip()
+        appointment.save(update_fields=['internal_notes'])
+        logger.info("Lead magnet PDF sent on WhatsApp — apt %s",
+                    getattr(appointment, 'pk', None))
+        return True
+    except Exception:
+        logger.exception("send_lead_magnet_on_whatsapp failed — apt %s",
+                         getattr(appointment, 'pk', None))
+        return False
+
+
+def _alert_plumber_no_email(appointment, iso_date=None) -> None:
+    """
+    Hand the plumber a lead that needs a follow-up but gave no email, so a human
+    can chase it on WhatsApp. Guarded by [PLUMBER_FOLLOWUP_ALERTED] so the live
+    flow fires it at most once; the reactivation cron alerts again on the agreed
+    follow-up date.
+    """
+    notes = appointment.internal_notes or ''
+    if '[PLUMBER_FOLLOWUP_ALERTED]' in notes:
+        return
+    try:
+        from bot.plumber_notifications import send_plumber_followup_alert
+        friendly = _friendly_iso(iso_date) if iso_date else None
+        send_plumber_followup_alert(
+            appointment, reason='no_email_followup', follow_up_date_str=friendly,
+        )
+        appointment.internal_notes = f'{notes}\n[PLUMBER_FOLLOWUP_ALERTED]'.strip()
+        appointment.save(update_fields=['internal_notes'])
+    except Exception:
+        logger.exception("_alert_plumber_no_email failed — apt %s",
+                         getattr(appointment, 'pk', None))
+
+
 def detect_delay_signal_message(message: str, appointment=None) -> dict:
     """
     Detect whether a customer message signals they are deferring for later.
@@ -1483,25 +1554,72 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     msg       = (message or '').strip()
     msg_lower = msg.lower()
 
-    # Detect skip / refusal — including "just use WhatsApp / this platform" which
-    # is a decline of email, not an invalid address to re-ask for (conv evidence).
+    # First: did they ask to receive it HERE on WhatsApp rather than by email?
+    # That's a positive "send it to me on this number" — honour it by sending the
+    # lead magnet PDF directly, instead of treating it as a flat decline.
+    wa_delivery_signals = ('whatsapp', 'this number', 'this platform', 'this chat',
+                           'this app', 'use this', 'on here', 'over here',
+                           'send it here', 'send it', 'send them', 'send through',
+                           'just send', 'right here', 'send here')
+    wants_whatsapp = ('@' not in msg) and any(s in msg_lower for s in wa_delivery_signals)
+
+    if wants_whatsapp:
+        send_lead_magnet_on_whatsapp(appointment)
+        # Keep the lead in the reactivation queue so we still check back on the
+        # agreed date. Restore the delay signal (cleared before the OOS handler ran).
+        notes = appointment.internal_notes or ''
+        if _DELAY_SIGNAL_TAG not in notes:
+            notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
+        appointment.internal_notes = notes
+        appointment.is_delayed = True
+        appointment.save(update_fields=['internal_notes', 'is_delayed'])
+        if iso_date:
+            _store_delay_followup_date(appointment, iso_date)
+        # No email captured but a follow-up is needed → hand it to the plumber now;
+        # the cron alerts again on the agreed date (no-email branch).
+        _alert_plumber_no_email(appointment, iso_date)
+        if iso_date:
+            return (
+                "Done — I've sent our portfolio and pricing guide straight to you "
+                f"here on WhatsApp. We'll also check back in around {_friendly_iso(iso_date)}. "
+                "If anything changes just send us a message."
+            )
+        _write_pending(appointment, 'delay_timeframe', '')
+        return (
+            "Done — I've sent our portfolio and pricing guide straight to you here "
+            "on WhatsApp.\n\nSo we check back at the right time — roughly when are "
+            "you hoping to get this sorted? Even a rough idea like next week or end "
+            "of the month is perfect."
+        )
+
+    # Detect skip / refusal — a flat decline of email (not a request to receive
+    # it on WhatsApp, handled above).
     skip_signals = ('skip', 'no', 'nope', 'nah', 'dont have', "don't have",
-                    'prefer not', 'rather not', 'whatsapp', 'here', 'na',
-                    'this platform', 'this chat', 'this app', 'use this',
-                    'on here', 'over here', 'message me', 'text me')
+                    'prefer not', 'rather not', 'na',
+                    'message me', 'text me')
     is_skip = any(s in msg_lower for s in skip_signals) and '@' not in msg
 
     if is_skip:
-        # They'd rather not share an email. Respect it — park for gentle
-        # re-engagement instead of leaving the lead delayed with no follow-up
-        # date (which would otherwise go dormant). Pending was cleared above, so
-        # the parked re-engagement nudges can pick this lead up.
-        try:
-            appointment.clear_delayed(save=False)
-            appointment.mark_parked(save=True)
-        except Exception:
-            logger.exception("Failed to park lead after email skip — apt %s",
-                             getattr(appointment, 'pk', None))
+        # They'd rather not share an email. Respect it. If they agreed a follow-up
+        # date, keep the lead in the reactivation queue so the plumber is alerted
+        # on that date; otherwise park for gentle re-engagement.
+        if iso_date:
+            notes = appointment.internal_notes or ''
+            if _DELAY_SIGNAL_TAG not in notes:
+                notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
+            appointment.internal_notes = notes
+            appointment.is_delayed = True
+            appointment.save(update_fields=['internal_notes', 'is_delayed'])
+            _store_delay_followup_date(appointment, iso_date)
+        else:
+            try:
+                appointment.clear_delayed(save=False)
+                appointment.mark_parked(save=True)
+            except Exception:
+                logger.exception("Failed to park lead after email skip — apt %s",
+                                 getattr(appointment, 'pk', None))
+        # Requires a follow-up but no email → alert the plumber to chase on WhatsApp.
+        _alert_plumber_no_email(appointment, iso_date)
         return (
             "No problem at all. Whenever you're ready, just send us a message."
         )
