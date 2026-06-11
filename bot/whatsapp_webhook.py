@@ -65,7 +65,7 @@ TEXT_DEDUPE_WINDOW_SECONDS = 20
 _pending_batches: dict = {}         # sender -> list of (message_body, message_id)
 _pending_batch_timers: dict = {}    # sender -> threading.Timer
 _pending_batch_lock = threading.Lock()
-MESSAGE_BATCH_WINDOW_SECONDS = 1   # wait this long after the LAST message before generating a reply
+MESSAGE_BATCH_WINDOW_SECONDS = 45   # wait this long after the LAST message before generating a reply
 
 # Per-sender cancel events for delayed sends still in their sleep window.
 # When a new message arrives, the event is set so the sleeping thread aborts
@@ -378,7 +378,7 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
 
 def get_random_delay() -> int:
     minutes = random.randint(1, 5)
-    seconds = minutes * 1
+    seconds = minutes * 60
     print(f"?? Random delay: {minutes} minute(s)")
     return seconds
 
