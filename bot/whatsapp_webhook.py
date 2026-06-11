@@ -612,6 +612,31 @@ def _keyword_product_intent(message: str):
     return None
 
 
+# Product "family" groups variants of the same item (tub_sales / standalone_tub
+# both = tub). Used to decide when the customer's own keyword should override the
+# LLM: a different FAMILY is a real misclassification (shower vs tub), while the
+# same family is just a specificity difference where the LLM's choice is kept.
+_PRODUCT_FAMILY = {
+    'tub_sales': 'tub', 'standalone_tub': 'tub', 'bathtub_installation': 'tub',
+    'shower_cubicle': 'shower',
+    'geyser': 'geyser', 'geyser_repair': 'geyser',
+    'toilet': 'toilet', 'toilet_repair': 'toilet',
+    'vanity': 'vanity',
+    'chamber': 'chamber',
+    'drain_unblocking': 'drain',
+    'pipe_repair': 'pipe',
+    'facebook_package': 'facebook',
+}
+
+
+def _product_family(intent):
+    """Return the product family for an intent, or None for non-product intents
+    ('none', 'pictures', location asks, etc.) so they never match a real product."""
+    if not intent or intent in ('none', 'pictures', 'location_ask', 'location_visit'):
+        return None
+    return _PRODUCT_FAMILY.get(intent, intent)
+
+
 # Weekday tokens (full names + common abbreviations), most ambiguous handled by
 # word-boundary matching so "wed" matches "Wed" but not "wedding", "sun" not
 # "sunny", etc. Order matches Python's weekday() index (Monday=0).
@@ -1930,26 +1955,24 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         _quick_service_check = uc_as_service_inquiry(_uclass)
 
-        # Fallback: if the AI classifier returned no product intent (e.g. DeepSeek
-        # empty/failed), derive it from product keywords so price asks like
-        # "stand alone tub hw much" still resolve to a priceable intent.
-        if _quick_service_check.get('intent') in (None, 'none'):
+        # Cross-check the LLM product intent against the customer's own product
+        # word. The deterministic keyword resolver only fires when the customer
+        # literally named a product, and on those inputs it is authoritative — the
+        # LLM sometimes lands on the wrong product FAMILY even at HIGH confidence
+        # (observed: "bathroom cubicles" → tub_sales, "rain shower" → tub_sales).
+        # So whenever the keyword resolver names a DIFFERENT family than the LLM,
+        # the customer's literal word wins. This also covers the old empty-intent
+        # case (family(none)=None ≠ any product) and the LOW-confidence case. A
+        # SAME-family disagreement (tub_sales vs standalone_tub) keeps the LLM's
+        # more specific choice. Quoted-message handling stays separate below.
+        if not quoted_text:
             _kw_intent = _keyword_product_intent(message_body)
-            if _kw_intent:
-                _quick_service_check = {'intent': _kw_intent, 'confidence': 'HIGH'}
-                print(f"🔁 Product intent keyword fallback: {_kw_intent}")
-
-        # Confidence gate: DeepSeek classified a product intent but flagged it LOW
-        # (ambiguous/short message). On exactly these inputs the LLM picks a
-        # plausible-but-wrong neighbour, so when the deterministic keyword resolver
-        # fires we trust it over the uncertain LLM guess. Only overrides on a real
-        # disagreement; if the resolver is silent we keep the LLM's LOW result.
-        elif _quick_service_check.get('confidence') == 'LOW':
-            _kw_intent = _keyword_product_intent(message_body)
-            if _kw_intent and _kw_intent != _quick_service_check.get('intent'):
+            if (_kw_intent
+                    and _product_family(_kw_intent)
+                        != _product_family(_quick_service_check.get('intent'))):
                 print(
-                    f"🎯 LOW-confidence override: {_kw_intent} "
-                    f"(was {_quick_service_check.get('intent')})"
+                    f"🎯 Keyword product override: {_kw_intent} "
+                    f"(LLM said {_quick_service_check.get('intent')})"
                 )
                 _quick_service_check = {'intent': _kw_intent, 'confidence': 'HIGH'}
 

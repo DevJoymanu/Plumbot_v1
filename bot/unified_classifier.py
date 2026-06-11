@@ -131,6 +131,10 @@ Match the pattern, do not copy values blindly.
 "how much for a rain shower"
 {"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"shower_cubicle","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
 
+# "cubicle" / "shower cubicle" / "bathroom cubicle" is a SHOWER, never a tub:
+"did you sell bathroom cubicles"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"shower_cubicle","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
 # Code-switched booking — pull every field present:
 "Ndoda kubhukisha geyser repair, ndiri Hatfield, Sunday morning"
 {"intent":"in_scope","confidence":"HIGH","service_type":"geyser_repair","product_intent":"geyser_repair","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":"Hatfield","availability":null,"customer_name":null,"project_description":"geyser repair"}}
