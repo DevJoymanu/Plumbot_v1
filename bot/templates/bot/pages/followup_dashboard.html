@@ -167,12 +167,21 @@
     position: sticky; top: 0; z-index: 1;
   }
 
-  /* ── Right panel (empty state) ── */
-  .fd-right {
+  /* ── Right panel (lead detail loads in an iframe) ── */
+  .fd-right { position: relative; background: #f9fafb; color: #9ca3af; }
+  .fd-right-placeholder {
+    position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
     flex-direction: column; gap: 10px;
-    background: #f9fafb; color: #9ca3af;
   }
+  .fd-detail-frame {
+    width: 100%; height: 100%; border: none; display: none; background: #fff;
+  }
+  .fd-right.has-detail .fd-detail-frame { display: block; }
+  .fd-right.has-detail .fd-right-placeholder { display: none; }
+
+  /* Active row highlight (selected lead) */
+  .fd-row.is-active { background: #eef6f6; }
   .fd-right-icon  { font-size: 42px; opacity: .3; }
   .fd-right-title { font-size: 15px; font-weight: 600; color: #374151; }
   .fd-right-sub   { font-size: 13px; }
@@ -391,11 +400,14 @@
     </div>{# /fd-scroll #}
   </div>{# /fd-left #}
 
-  {# ── Right panel: empty state ── #}
-  <div class="fd-right">
-    <div class="fd-right-icon">💬</div>
-    <div class="fd-right-title">Select an appointment</div>
-    <div class="fd-right-sub">to view details and conversation</div>
+  {# ── Right panel: lead detail loads here so the left sidebar stays put ── #}
+  <div class="fd-right" id="fdRight">
+    <div class="fd-right-placeholder" id="fdRightPlaceholder">
+      <div class="fd-right-icon">💬</div>
+      <div class="fd-right-title">Select an appointment</div>
+      <div class="fd-right-sub">to view details and conversation</div>
+    </div>
+    <iframe name="fdDetail" id="fdDetail" class="fd-detail-frame" title="Lead details"></iframe>
   </div>
 
 </div>{# /fd-shell #}
@@ -420,6 +432,26 @@
       document.querySelectorAll('.fd-pane').forEach(function (p) {
         p.classList.toggle('is-active', p.id === 'fdtab-' + name);
       });
+    });
+  });
+
+  // Load a clicked lead into the right panel so the left sidebar/tabs never
+  // change. Falls back to normal navigation on narrow screens where the right
+  // panel is hidden.
+  var fdRight = document.getElementById('fdRight');
+  var fdFrame = document.getElementById('fdDetail');
+  document.querySelectorAll('a.fd-row').forEach(function (row) {
+    row.addEventListener('click', function (e) {
+      if (!fdRight || !fdFrame) return;
+      if (getComputedStyle(fdRight).display === 'none') return; // mobile: navigate
+      e.preventDefault();
+      var href = row.getAttribute('href');
+      fdFrame.src = href + (href.indexOf('?') === -1 ? '?' : '&') + 'frame=1';
+      fdRight.classList.add('has-detail');
+      document.querySelectorAll('.fd-row.is-active').forEach(function (r) {
+        r.classList.remove('is-active');
+      });
+      row.classList.add('is-active');
     });
   });
 })();
