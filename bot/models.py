@@ -1426,6 +1426,7 @@ class Appointment(models.Model):
                 'scheduled_for': due,
                 'status': _status(due, reengaged),
                 'note': 'Sent on the agreed re-contact date.',
+                'source': 'delay',
             })
             last_check = due + timedelta(hours=96)  # DELAY_SECOND_TOUCH_HOURS
             items.append({
@@ -1433,6 +1434,7 @@ class Appointment(models.Model):
                 'scheduled_for': last_check,
                 'status': _status(last_check, last_checked),
                 'note': 'Final check-in, 4 days after the re-engagement.',
+                'source': 'delay',
             })
 
         if self.scheduled_datetime:
@@ -1453,6 +1455,7 @@ class Appointment(models.Model):
                     'scheduled_for': when,
                     'status': _status(when, sent),
                     'note': 'Email used only if the WhatsApp 24h window is closed.',
+                    'source': 'reminder',
                 })
 
         items.sort(key=lambda x: x['scheduled_for'])

@@ -149,8 +149,9 @@
     font-size: 10px; font-weight: 700; text-transform: uppercase;
     padding: 2px 8px; border-radius: 20px;
   }
-  .fd-status--pending { background: #dbeafe; color: #1e40af; }
-  .fd-status--failed  { background: #fee2e2; color: #991b1b; }
+  .fd-status--pending  { background: #dbeafe; color: #1e40af; }
+  .fd-status--overdue  { background: #fef3c7; color: #92400e; }
+  .fd-status--failed   { background: #fee2e2; color: #991b1b; }
   .fd-badge-bad {
     display: inline-flex; align-items: center; gap: 4px; margin-top: 5px;
     font-size: 10px; font-weight: 700; color: #991b1b; background: #fee2e2;
@@ -357,19 +358,19 @@
 
       {# ════════ EMAILS TAB ════════ #}
       <div class="fd-pane" id="fdtab-email">
-        <div class="fd-section-label">⏰ Upcoming — {{ scheduled_email|length }}</div>
-        {% for sf in scheduled_email %}
-        <a href="{% url 'appointment_detail' sf.appointment.pk %}?source=followups" class="fd-row">
-          <div class="fd-avatar" data-name="{{ sf.appointment.customer_name|default:'?' }}">{{ sf.appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
+        <div class="fd-section-label">⏰ Upcoming — {{ upcoming_email|length }}</div>
+        {% for em in upcoming_email %}
+        <a href="{% url 'appointment_detail' em.lead.pk %}?source=followups" class="fd-row">
+          <div class="fd-avatar" data-name="{{ em.lead.customer_name|default:'?' }}">{{ em.lead.customer_name|default:"?"|slice:":2"|upper }}</div>
           <div class="fd-row-main">
-            <div class="fd-row-name">{{ sf.appointment.customer_name|default:sf.appointment.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-            <div class="fd-row-note">{{ sf.subject|default:sf.message|default:"Email follow-up"|truncatechars:70 }}</div>
-            <span class="fd-status fd-status--{{ sf.status }}">{{ sf.status }}</span>
+            <div class="fd-row-name">{{ em.lead.customer_name|default:em.lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+            <div class="fd-row-note">{{ em.label|truncatechars:70 }} · {{ em.lead.customer_email }}</div>
+            <span class="fd-status fd-status--{{ em.status }}">{{ em.status }}</span>
           </div>
-          <div class="fd-row-time normal" style="text-align:right;">{{ sf.scheduled_for|date:"j M, H:i" }}</div>
+          <div class="fd-row-time normal" style="text-align:right;">{{ em.scheduled_for|date:"j M, H:i" }}</div>
         </a>
         {% empty %}
-        <div class="fd-empty">No upcoming emails scheduled.</div>
+        <div class="fd-empty">No upcoming emails due.</div>
         {% endfor %}
 
         <div class="fd-section-label">✅ Recently Sent — {{ sent_email|length }}</div>

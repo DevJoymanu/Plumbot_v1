@@ -245,11 +245,43 @@ def _followups_workspace_data(response_age='1w_minus'):
         .filter(channel='whatsapp', status__in=['pending', 'failed'])
         .select_related('appointment').order_by('scheduled_for')[:50]
     )
-    scheduled_email = list(
+
+    # Upcoming emails = staff-queued rows PLUS the delay/reminder emails the
+    # automation will send (delayed leads with an email captured, etc.). The
+    # latter aren't ScheduledFollowup rows — they're computed per lead — so
+    # surface them here too, otherwise delayed leads due for an email never show.
+    upcoming_email = []
+    for sf in (
         ScheduledFollowup.objects
         .filter(channel='email', status__in=['pending', 'failed'])
         .select_related('appointment').order_by('scheduled_for')[:50]
+    ):
+        upcoming_email.append({
+            'lead': sf.appointment,
+            'label': sf.subject or sf.message or 'Email follow-up',
+            'scheduled_for': sf.scheduled_for,
+            'status': sf.status,
+            'source': 'scheduled',
+        })
+
+    email_leads = (
+        Appointment.objects
+        .exclude(customer_email__isnull=True).exclude(customer_email='')
+        .filter(Q(delay_followup_due_at__isnull=False) | Q(scheduled_datetime__isnull=False))
+        .order_by('delay_followup_due_at', 'scheduled_datetime')[:300]
     )
+    for apt in email_leads:
+        for it in apt.get_upcoming_emails()['items']:
+            if it['status'] in ('pending', 'overdue'):
+                upcoming_email.append({
+                    'lead': apt,
+                    'label': it['label'],
+                    'scheduled_for': it['scheduled_for'],
+                    'status': it['status'],
+                    'source': it.get('source', 'delay'),
+                })
+    upcoming_email.sort(key=lambda x: x['scheduled_for'])
+    upcoming_email = upcoming_email[:60]
 
     # Recently-sent follow-ups, flattened from each lead's history. Bounded to
     # the most recently-updated leads so the page stays fast; each event carries
@@ -278,7 +310,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         'recent_responses': recent_responses,
         'recent_inactive': recent_inactive,
         'scheduled_whatsapp': scheduled_whatsapp,
-        'scheduled_email': scheduled_email,
+        'upcoming_email': upcoming_email,
         'sent_whatsapp': sent_whatsapp,
         'sent_email': sent_email,
         'response_age_label': 'All-time' if response_age == 'all' else (
