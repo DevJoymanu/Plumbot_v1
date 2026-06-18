@@ -424,12 +424,16 @@ def followup_test_suite(request):
                 apt.customer_email = to_email
 
                 # SMTP pre-flight so an auth/TLS failure surfaces on the page
-                # rather than failing silently for every email. Skipped when
-                # SendGrid is the active transport (sends go over HTTPS/443,
-                # not SMTP — an SMTP probe would always fail on Railway and
-                # wrongly block every send).
+                # rather than failing silently for every email. Skipped when an
+                # HTTP transport (Brevo or SendGrid) is active (sends go over
+                # HTTPS/443, not SMTP — an SMTP probe would always fail on
+                # Railway and wrongly block every send).
+                http_transport = (
+                    getattr(settings, 'BREVO_API_KEY', '')
+                    or getattr(settings, 'SENDGRID_API_KEY', '')
+                )
                 smtp_error = None
-                if not getattr(settings, 'SENDGRID_API_KEY', ''):
+                if not http_transport:
                     import traceback
                     from django.core.mail import get_connection
                     try:
