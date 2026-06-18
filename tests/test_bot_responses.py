@@ -213,6 +213,37 @@ for msg, llm_intent, expected in INTENT_CORRECTION_CASES:
     except Exception as e:
         results.log(f"_correct_service_intent: '{msg[:38]}'", False, got=str(e))
 
+# Guard against volunteering a price block on a carried-over intent that landed
+# on a bare booking-field reply. The production bug: the area answer "Avondale"
+# was classified as shower_cubicle and the bot dumped the cubicle price block.
+from bot.whatsapp_webhook import _is_unprompted_carryover_pricing
+_PRICING_AUTO = {
+    'geyser', 'shower_cubicle', 'vanity', 'toilet', 'chamber',
+    'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
+    'facebook_package',
+}
+# (message, classified intent, price_requested, expected: should we SKIP the price?)
+CARRYOVER_PRICING_CASES = [
+    ("Avondale",               "shower_cubicle", False, True),   # the bug
+    ("Hatfield",               "shower_cubicle", False, True),
+    ("need to make arrangements", "shower_cubicle", False, True),
+    ("shower cubicle",         "shower_cubicle", False, False),  # names product → price ok
+    ("how much for a cubicle", "shower_cubicle", True,  False),  # price asked → price ok
+    ("Avondale",               "none",           False, False),  # not a priceable intent
+]
+for msg, intent, price_req, expected in CARRYOVER_PRICING_CASES:
+    try:
+        got = _is_unprompted_carryover_pricing(intent, msg, price_req, _PRICING_AUTO)
+        results.log(
+            f"_is_unprompted_carryover_pricing: '{msg[:30]}' [{intent}]",
+            got == expected,
+            f"skip={got}",
+            expected=f"skip={expected}",
+            got=f"skip={got}",
+        )
+    except Exception as e:
+        results.log(f"_is_unprompted_carryover_pricing: '{msg[:30]}'", False, got=str(e))
+
 # ============================================================
 # TEST 1: Service Inquiry Detection
 # ============================================================

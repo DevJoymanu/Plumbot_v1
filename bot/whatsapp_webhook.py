@@ -648,6 +648,26 @@ def _product_family(intent):
     return _PRODUCT_FAMILY.get(intent, intent)
 
 
+def _is_unprompted_carryover_pricing(intent, message, price_requested,
+                                     pricing_auto_reply_intents):
+    """True when a price block would fire on a reply that NAMES no product and
+    ASKS no price — i.e. the priceable intent was carried over from the running
+    topic onto a bare booking-field answer (classic: the area reply "Avondale"
+    coming back classified as shower_cubicle, then dumping the cubicle price).
+
+    Deterministic guard: the LLM intent is unreliable on short booking-field
+    replies, so the customer's own words must corroborate before we ever
+    volunteer a price (CLAUDE.md: never volunteer price; prefer deterministic
+    resolvers for short/fuzzy strings). Pure function so it is regression-testable
+    without the API.
+    """
+    return (
+        intent in pricing_auto_reply_intents
+        and not price_requested
+        and _keyword_product_intent(message) is None
+    )
+
+
 # Weekday tokens (full names + common abbreviations), most ambiguous handled by
 # word-boundary matching so "wed" matches "Wed" but not "wedding", "sun" not
 # "sunny", etc. Order matches Python's weekday() index (Monday=0).
@@ -2246,6 +2266,13 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         if (booking_capture_phase or is_project_description) and not price_requested:
             print("Skipping service inquiry reply - lead is describing their project (no price asked)")
+        elif _is_unprompted_carryover_pricing(
+            intent, message_body, price_requested, PRICING_AUTO_REPLY_INTENTS
+        ):
+            print(
+                f"Skipping service inquiry reply - '{message_body}' names no product "
+                f"and no price asked (carried-over intent: {intent})"
+            )
         elif mid_conversation and not should_bypass_mid_conversation_gate:
             print("Skipping service inquiry reply - mid-conversation and no explicit info/price request")
         elif intent != 'none' and (
