@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, time as dt_time
 import pytz
 import json
 import re
@@ -1293,17 +1293,43 @@ class Appointment(models.Model):
         """Structured follow-up events parsed from conversation_history.
 
         Returns a list (newest first) of dicts:
-          {index, channel, channel_label, kind, text, timestamp, edited}
+          {index, channel, channel_label, kind, text, timestamp, edited,
+           within_window, hours_since_inbound}
         `index` is the position in conversation_history, used to edit the entry
         in place. `timestamp` is an aware datetime or None. `text` has the
         ``[MARKER]`` prefix stripped for display; the marker is preserved on
         save so channel/kind detection keeps working.
+
+        For WhatsApp events, `within_window` reports whether the message was
+        sent inside the 24-hour customer-service window (i.e. within 24h of the
+        customer's last inbound message before it). A free-form WhatsApp message
+        sent outside that window is rejected by the Cloud API and never reaches
+        the customer, so the UI flags those as not delivered. `within_window` is
+        None when it can't be determined (no prior inbound / missing timestamp),
+        and is always None for email events (the window doesn't apply).
         """
         history = self.conversation_history if isinstance(self.conversation_history, list) else []
         events = []
+        last_inbound_ts = None  # most recent customer message timestamp seen so far
         for idx, entry in enumerate(history):
-            if not isinstance(entry, dict) or entry.get('role') != 'assistant':
+            if not isinstance(entry, dict):
                 continue
+            role = entry.get('role')
+            ts_raw = entry.get('timestamp')
+            dt = None
+            if ts_raw:
+                try:
+                    dt = datetime.fromisoformat(ts_raw)
+                except (ValueError, TypeError):
+                    dt = None
+
+            if role == 'user':
+                if dt is not None:
+                    last_inbound_ts = dt
+                continue
+            if role != 'assistant':
+                continue
+
             content = (entry.get('content') or '').strip()
             matched = None
             for prefix, label, channel in self.FOLLOWUP_MARKERS:
@@ -1316,13 +1342,13 @@ class Appointment(models.Model):
             # Strip the full bracketed marker (handles e.g. "[DELAY NUDGE 2]").
             close = content.find(']')
             body = content[close + 1:].strip() if close != -1 else content
-            ts = entry.get('timestamp')
-            dt = None
-            if ts:
-                try:
-                    dt = datetime.fromisoformat(ts)
-                except (ValueError, TypeError):
-                    dt = None
+
+            within_window = None
+            hours_since_inbound = None
+            if channel == 'whatsapp' and dt is not None and last_inbound_ts is not None:
+                hours_since_inbound = (dt - last_inbound_ts).total_seconds() / 3600
+                within_window = hours_since_inbound <= 24
+
             events.append({
                 'index': idx,
                 'channel': channel,
@@ -1331,9 +1357,92 @@ class Appointment(models.Model):
                 'text': body,
                 'timestamp': dt,
                 'edited': bool(entry.get('edited_at')),
+                'within_window': within_window,
+                'hours_since_inbound': hours_since_inbound,
             })
         events.reverse()  # newest first
         return events
+
+    def get_whatsapp_followups(self):
+        """WhatsApp follow-up events only (newest first)."""
+        return [e for e in self.get_followup_log() if e['channel'] == 'whatsapp']
+
+    def get_email_followups(self):
+        """Email follow-up events only (newest first)."""
+        return [e for e in self.get_followup_log() if e['channel'] == 'email']
+
+    def get_upcoming_emails(self):
+        """Scheduled customer-facing emails for this lead, with send dates/times.
+
+        Returns {'has_email': bool, 'items': [...]} where each item is
+        {label, scheduled_for (aware datetime), status, note}, sorted by time.
+        status is 'sent' (real evidence of a send), 'pending' (future), or
+        'overdue' (past with no send recorded — e.g. the cron hasn't fired).
+
+        Covers two sequences:
+          • Delay re-engagement (keyed off delay_followup_due_at): the
+            re-engagement email, then the last-check email 4 days later.
+          • Pre-appointment reminders (keyed off scheduled_datetime). These go
+            out by email only when the WhatsApp 24h window is closed at send
+            time — noted on each reminder item.
+        """
+        now = timezone.now()
+        sast = pytz.timezone('Africa/Johannesburg')
+        items = []
+
+        def _status(scheduled_for, sent):
+            if sent:
+                return 'sent'
+            return 'pending' if scheduled_for >= now else 'overdue'
+
+        # Evidence of delay emails already sent (markers logged by the cron).
+        history_text = ''
+        if isinstance(self.conversation_history, list):
+            history_text = '\n'.join(
+                (e.get('content') or '') for e in self.conversation_history
+                if isinstance(e, dict) and e.get('role') == 'assistant'
+            )
+        reengaged = '[DELAY REACTIVATION]' in history_text or '[DELAY ACCESS CHECK-IN]' in history_text
+        last_checked = '[DELAY LAST CHECK]' in history_text
+
+        if self.delay_followup_due_at:
+            due = self.delay_followup_due_at
+            items.append({
+                'label': 'Delay re-engagement email',
+                'scheduled_for': due,
+                'status': _status(due, reengaged),
+                'note': 'Sent on the agreed re-contact date.',
+            })
+            last_check = due + timedelta(hours=96)  # DELAY_SECOND_TOUCH_HOURS
+            items.append({
+                'label': 'Last-check email',
+                'scheduled_for': last_check,
+                'status': _status(last_check, last_checked),
+                'note': 'Final check-in, 4 days after the re-engagement.',
+            })
+
+        if self.scheduled_datetime:
+            sd_sast = self.scheduled_datetime.astimezone(sast)
+
+            def _at(d, hour, minute=0):
+                return sast.localize(datetime.combine(d, dt_time(hour, minute)))
+
+            reminders = [
+                ('Reminder — 2 days before',  _at((sd_sast - timedelta(days=2)).date(), 18, 0), self.reminder_1_day_sent),
+                ('Reminder — 1 day before',   _at((sd_sast - timedelta(days=1)).date(), 18, 0), self.reminder_1_day_sent),
+                ('Reminder — morning of',     _at(sd_sast.date(), 7, 0),                        self.reminder_morning_sent),
+                ('Reminder — 2 hours before', self.scheduled_datetime - timedelta(hours=2),     self.reminder_2_hours_sent),
+            ]
+            for label, when, sent in reminders:
+                items.append({
+                    'label': label,
+                    'scheduled_for': when,
+                    'status': _status(when, sent),
+                    'note': 'Email used only if the WhatsApp 24h window is closed.',
+                })
+
+        items.sort(key=lambda x: x['scheduled_for'])
+        return {'has_email': bool(self.customer_email), 'items': items}
 
     @property
     def last_followup_event(self):

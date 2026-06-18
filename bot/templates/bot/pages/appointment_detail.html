@@ -668,7 +668,7 @@
 
   .appt-tabbar {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     background: rgba(255, 255, 255, 0.95);
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   }
@@ -676,12 +676,15 @@
   .appt-tab-btn {
     border: none;
     background: transparent;
-    padding: 12px 14px;
+    padding: 12px 8px;
     color: #6b7280;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     position: relative;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .appt-tab-btn.is-active {
@@ -715,7 +718,8 @@
   /* Details / quotes pane: scroll its own content */
   #tab-details.is-active,
   #tab-quotes.is-active,
-  #tab-followups.is-active {
+  #tab-wa-followups.is-active,
+  #tab-email-followups.is-active {
     overflow-y: auto;
   }
 
@@ -767,6 +771,38 @@
     padding: 10px 12px; font-family: inherit; font-size: 14px; resize: vertical;
   }
   .fu-edit-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+  /* Undelivered WhatsApp follow-up (sent outside the 24h window) */
+  .fu-entry--undelivered {
+    border-color: #fecaca; background: #fef2f2;
+  }
+  .fu-entry--undelivered .fu-text { color: #7f1d1d; }
+  .fu-badge-bad {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700;
+    color: #991b1b; background: #fee2e2;
+    padding: 3px 9px; border-radius: 20px;
+  }
+
+  /* Upcoming / scheduled emails */
+  .fu-sched {
+    display: flex; align-items: flex-start; gap: 12px;
+    border: 1px solid #eef2f7; border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 10px; background: #fff;
+  }
+  .fu-sched:last-child { margin-bottom: 0; }
+  .fu-sched-main { flex: 1; min-width: 0; }
+  .fu-sched-label { font-size: 14px; font-weight: 600; color: #1f2937; }
+  .fu-sched-time  { font-size: 13px; color: #374151; margin-top: 3px; }
+  .fu-sched-note  { font-size: 12px; color: #9ca3af; margin-top: 3px; }
+
+  .fu-pill {
+    flex-shrink: 0; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .3px; padding: 3px 10px; border-radius: 20px;
+  }
+  .fu-pill--sent    { background: #dcfce7; color: #166534; }
+  .fu-pill--pending { background: #dbeafe; color: #1e40af; }
+  .fu-pill--overdue { background: #fee2e2; color: #991b1b; }
 
   .appt-chat-pane {
     display: flex;
@@ -1234,7 +1270,7 @@
     }
 
     .appt-tabbar {
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }
 
     .detail-form-grid {
@@ -1379,7 +1415,8 @@
         <button class="appt-tab-btn is-active" type="button" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
         <button class="appt-tab-btn" type="button" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
         <button class="appt-tab-btn" type="button" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
-        <button class="appt-tab-btn" type="button" data-tab="followups"><i class="far fa-paper-plane"></i> Follow-ups</button>
+        <button class="appt-tab-btn" type="button" data-tab="wa-followups"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+        <button class="appt-tab-btn" type="button" data-tab="email-followups"><i class="fas fa-envelope"></i> Email</button>
       </div>
 
       <div class="appt-tab-pane is-active" id="tab-chat">
@@ -1729,12 +1766,13 @@
         </div>
       </div>
 
-      <div class="appt-tab-pane" id="tab-followups">
+      {# ── WhatsApp follow-ups tab ── #}
+      <div class="appt-tab-pane" id="tab-wa-followups">
         <div class="appt-detail-content">
 
-          {# ── Upcoming (scheduled) follow-up ── #}
+          {# ── Upcoming (scheduled) WhatsApp follow-up ── #}
           <div class="detail-card">
-            <div class="detail-card-header">Upcoming Follow-up</div>
+            <div class="detail-card-header">Upcoming WhatsApp Follow-up</div>
             <div class="detail-card-body">
               <form method="post" action="{% url 'update_followup_schedule' appointment.pk %}?{{ request.GET.urlencode }}">
                 {% csrf_token %}
@@ -1763,20 +1801,105 @@
             </div>
           </div>
 
-          {# ── Follow-up history log ── #}
+          {# ── WhatsApp follow-up history ── #}
           <div class="detail-card">
             <div class="detail-card-header">
-              <span>Follow-up History</span>
-              <span class="fu-count">{{ appointment.get_followup_log|length }} sent</span>
+              <span>WhatsApp Follow-up History</span>
+              <span class="fu-count">{{ appointment.get_whatsapp_followups|length }} sent</span>
             </div>
             <div class="detail-card-body">
-              {% for ev in appointment.get_followup_log %}
+              {% for ev in appointment.get_whatsapp_followups %}
+              <div class="fu-entry {% if ev.within_window == False %}fu-entry--undelivered{% endif %}">
+                <div class="fu-entry-head">
+                  <span class="fu-stamp fu-stamp--whatsapp"><i class="fab fa-whatsapp"></i> WhatsApp</span>
+                  <span class="fu-kind">{{ ev.kind }}</span>
+                  <span class="fu-time">
+                    {% if ev.timestamp %}{{ ev.timestamp|date:"j M Y, H:i" }}{% else %}No timestamp{% endif %}
+                  </span>
+                  {% if ev.within_window == False %}
+                  <span class="fu-badge-bad" title="Sent outside WhatsApp's 24-hour customer-service window — a free-form message can't be delivered then.">
+                    <i class="fas fa-triangle-exclamation"></i> Not delivered — outside 24h window
+                  </span>
+                  {% endif %}
+                  {% if ev.edited %}<span class="fu-edited">edited</span>{% endif %}
+                  <button type="button" class="fu-edit-btn" onclick="toggleFollowupEdit({{ ev.index }})" aria-label="Edit follow-up">
+                    <i class="fas fa-pen"></i>
+                  </button>
+                </div>
+                <div class="fu-text" id="fu-text-{{ ev.index }}">{{ ev.text|default:"(no message text)"|linebreaksbr }}</div>
+                <form method="post" action="{% url 'edit_followup_log' appointment.pk %}?{{ request.GET.urlencode }}"
+                      class="fu-edit-form" id="fu-form-{{ ev.index }}" style="display:none;">
+                  {% csrf_token %}
+                  <input type="hidden" name="index" value="{{ ev.index }}">
+                  <textarea name="text" rows="3" class="fu-edit-input">{{ ev.text }}</textarea>
+                  <div class="fu-edit-actions">
+                    <button type="submit" class="action-btn primary"><i class="fas fa-check"></i> Save</button>
+                    <button type="button" class="action-btn ghost" onclick="toggleFollowupEdit({{ ev.index }})">Cancel</button>
+                  </div>
+                </form>
+              </div>
+              {% empty %}
+              <div class="empty-block">
+                <i class="fab fa-whatsapp" style="font-size:30px; opacity:.25; display:block; margin-bottom:10px;"></i>
+                No WhatsApp follow-ups have been sent yet.
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {# ── Email follow-ups tab ── #}
+      <div class="appt-tab-pane" id="tab-email-followups">
+        <div class="appt-detail-content">
+
+          {# ── Upcoming / scheduled emails ── #}
+          <div class="detail-card">
+            <div class="detail-card-header">
+              <span>Upcoming Emails</span>
+              {% if not appointment.get_upcoming_emails.has_email %}
+              <span class="fu-count" style="color:#b45309;">No email on file</span>
+              {% endif %}
+            </div>
+            <div class="detail-card-body">
+              {% if not appointment.get_upcoming_emails.has_email %}
+              <div class="fu-hint" style="margin-bottom:10px;">
+                Add a customer email in the Details tab so these emails can be sent.
+              </div>
+              {% endif %}
+              {% for em in appointment.get_upcoming_emails.items %}
+              <div class="fu-sched">
+                <div class="fu-sched-main">
+                  <div class="fu-sched-label">{{ em.label }}</div>
+                  <div class="fu-sched-time">
+                    <i class="far fa-clock"></i> {{ em.scheduled_for|date:"D j M Y, H:i" }}
+                  </div>
+                  <div class="fu-sched-note">{{ em.note }}</div>
+                </div>
+                <span class="fu-pill fu-pill--{{ em.status }}">{{ em.status }}</span>
+              </div>
+              {% empty %}
+              <div class="empty-block">
+                <i class="far fa-calendar" style="font-size:30px; opacity:.25; display:block; margin-bottom:10px;"></i>
+                No upcoming emails scheduled. They appear once a re-contact date
+                or appointment is set.
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          {# ── Email follow-up history ── #}
+          <div class="detail-card">
+            <div class="detail-card-header">
+              <span>Email History</span>
+              <span class="fu-count">{{ appointment.get_email_followups|length }} sent</span>
+            </div>
+            <div class="detail-card-body">
+              {% for ev in appointment.get_email_followups %}
               <div class="fu-entry">
                 <div class="fu-entry-head">
-                  <span class="fu-stamp fu-stamp--{{ ev.channel }}">
-                    {% if ev.channel == 'email' %}<i class="fas fa-envelope"></i>{% else %}<i class="fab fa-whatsapp"></i>{% endif %}
-                    {{ ev.channel_label }}
-                  </span>
+                  <span class="fu-stamp fu-stamp--email"><i class="fas fa-envelope"></i> Email</span>
                   <span class="fu-kind">{{ ev.kind }}</span>
                   <span class="fu-time">
                     {% if ev.timestamp %}{{ ev.timestamp|date:"j M Y, H:i" }}{% else %}No timestamp{% endif %}
@@ -1800,8 +1923,8 @@
               </div>
               {% empty %}
               <div class="empty-block">
-                <i class="far fa-paper-plane" style="font-size:30px; opacity:.25; display:block; margin-bottom:10px;"></i>
-                No follow-ups have been sent yet.
+                <i class="fas fa-envelope-open" style="font-size:30px; opacity:.25; display:block; margin-bottom:10px;"></i>
+                No emails have been sent yet.
               </div>
               {% endfor %}
             </div>
