@@ -334,8 +334,23 @@
 
       {# ════════ WHATSAPP TAB ════════ #}
       <div class="fd-pane" id="fdtab-wa">
-        <div class="fd-section-label">⏰ Upcoming — {{ scheduled_whatsapp|length }}</div>
-        {% for sf in scheduled_whatsapp %}
+        {% if overdue_whatsapp %}
+        <div class="fd-section-label">⚠️ Overdue — {{ overdue_whatsapp|length }}</div>
+        {% for sf in overdue_whatsapp %}
+        <a href="{% url 'appointment_detail' sf.appointment.pk %}?source=followups" class="fd-row">
+          <div class="fd-avatar" data-name="{{ sf.appointment.customer_name|default:'?' }}">{{ sf.appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
+          <div class="fd-row-main">
+            <div class="fd-row-name">{{ sf.appointment.customer_name|default:sf.appointment.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+            <div class="fd-row-note">{{ sf.message|default:"WhatsApp follow-up"|truncatechars:70 }}</div>
+            <span class="fd-status fd-status--overdue">overdue</span>
+          </div>
+          <div class="fd-row-time urgent" style="text-align:right;">{{ sf.scheduled_for|date:"j M, H:i" }}</div>
+        </a>
+        {% endfor %}
+        {% endif %}
+
+        <div class="fd-section-label">⏰ Upcoming — {{ upcoming_whatsapp|length }}</div>
+        {% for sf in upcoming_whatsapp %}
         <a href="{% url 'appointment_detail' sf.appointment.pk %}?source=followups" class="fd-row">
           <div class="fd-avatar" data-name="{{ sf.appointment.customer_name|default:'?' }}">{{ sf.appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
           <div class="fd-row-main">
@@ -367,6 +382,21 @@
 
       {# ════════ EMAILS TAB ════════ #}
       <div class="fd-pane" id="fdtab-email">
+        {% if overdue_email %}
+        <div class="fd-section-label">⚠️ Overdue — {{ overdue_email|length }}</div>
+        {% for em in overdue_email %}
+        <a href="{% url 'appointment_detail' em.lead.pk %}?source=followups" class="fd-row">
+          <div class="fd-avatar" data-name="{{ em.lead.customer_name|default:'?' }}">{{ em.lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+          <div class="fd-row-main">
+            <div class="fd-row-name">{{ em.lead.customer_name|default:em.lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+            <div class="fd-row-note">{{ em.label|truncatechars:70 }} · {{ em.lead.customer_email }}</div>
+            <span class="fd-status fd-status--overdue">overdue</span>
+          </div>
+          <div class="fd-row-time urgent" style="text-align:right;">{{ em.scheduled_for|date:"j M, H:i" }}</div>
+        </a>
+        {% endfor %}
+        {% endif %}
+
         <div class="fd-section-label">⏰ Upcoming — {{ upcoming_email|length }}</div>
         {% for em in upcoming_email %}
         <a href="{% url 'appointment_detail' em.lead.pk %}?source=followups" class="fd-row">

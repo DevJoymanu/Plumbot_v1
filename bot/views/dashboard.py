@@ -190,11 +190,9 @@ def _followups_workspace_data(response_age='1w_minus'):
         '1w_minus': timedelta(weeks=1),
         '4w_minus': timedelta(weeks=4),
     }
-    # One window applied to every section: backward (cutoff) for past/recent
-    # items, forward (horizon) for upcoming/scheduled items. 'all' = unbounded.
-    window = age_map_minus.get(response_age) if response_age != 'all' else None
-    cutoff = now - window if window else None
-    horizon = now + window if window else None
+    cutoff = None
+    if response_age != 'all' and response_age in age_map_minus:
+        cutoff = now - age_map_minus[response_age]
 
     base_active = Appointment.objects.filter(
         is_lead_active=True,
@@ -235,34 +233,29 @@ def _followups_workspace_data(response_age='1w_minus'):
         recent_responses = recent_responses.filter(last_customer_response__gte=cutoff)
     recent_responses = recent_responses.order_by('-last_customer_response')[:10]
 
-    # Inactive within the selected window (default to 30 days for 'all').
     recent_inactive = Appointment.objects.filter(
         is_lead_active=False,
-        lead_marked_inactive_at__gte=(cutoff or now - timedelta(days=30)),
+        lead_marked_inactive_at__gte=now - timedelta(days=30)
     ).order_by('-lead_marked_inactive_at')[:10]
 
     # ── Per-channel follow-up views (WhatsApp / Emails tabs) ──
     from ..models import ScheduledFollowup
-    _sched_wa_qs = ScheduledFollowup.objects.filter(
-        channel='whatsapp', status__in=['pending', 'failed']
-    )
-    if horizon:
-        _sched_wa_qs = _sched_wa_qs.filter(scheduled_for__lte=horizon)
     scheduled_whatsapp = list(
-        _sched_wa_qs.select_related('appointment').order_by('scheduled_for')[:50]
+        ScheduledFollowup.objects
+        .filter(channel='whatsapp', status__in=['pending', 'failed'])
+        .select_related('appointment').order_by('scheduled_for')[:50]
     )
 
     # Upcoming emails = staff-queued rows PLUS the delay/reminder emails the
     # automation will send (delayed leads with an email captured, etc.). The
     # latter aren't ScheduledFollowup rows — they're computed per lead — so
     # surface them here too, otherwise delayed leads due for an email never show.
-    _sched_em_qs = ScheduledFollowup.objects.filter(
-        channel='email', status__in=['pending', 'failed']
-    )
-    if horizon:
-        _sched_em_qs = _sched_em_qs.filter(scheduled_for__lte=horizon)
     upcoming_email = []
-    for sf in _sched_em_qs.select_related('appointment').order_by('scheduled_for')[:50]:
+    for sf in (
+        ScheduledFollowup.objects
+        .filter(channel='email', status__in=['pending', 'failed'])
+        .select_related('appointment').order_by('scheduled_for')[:50]
+    ):
         upcoming_email.append({
             'lead': sf.appointment,
             'label': sf.subject or sf.message or 'Email follow-up',
@@ -279,19 +272,14 @@ def _followups_workspace_data(response_age='1w_minus'):
     )
     for apt in email_leads:
         for it in apt.get_upcoming_emails()['items']:
-            if it['status'] not in ('pending', 'overdue'):
-                continue
-            # Overdue items always show (still due); future items only within
-            # the selected forward horizon.
-            if horizon and it['status'] == 'pending' and it['scheduled_for'] > horizon:
-                continue
-            upcoming_email.append({
-                'lead': apt,
-                'label': it['label'],
-                'scheduled_for': it['scheduled_for'],
-                'status': it['status'],
-                'source': it.get('source', 'delay'),
-            })
+            if it['status'] in ('pending', 'overdue'):
+                upcoming_email.append({
+                    'lead': apt,
+                    'label': it['label'],
+                    'scheduled_for': it['scheduled_for'],
+                    'status': it['status'],
+                    'source': it.get('source', 'delay'),
+                })
     upcoming_email.sort(key=lambda x: x['scheduled_for'])
     upcoming_email = upcoming_email[:60]
 
@@ -313,6 +301,12 @@ def _followups_workspace_data(response_age='1w_minus'):
     sent_whatsapp = sent_whatsapp[:40]
     sent_email = sent_email[:40]
 
+    # Split queued items into Overdue (due time already passed) vs Upcoming.
+    overdue_whatsapp = [sf for sf in scheduled_whatsapp if sf.scheduled_for and sf.scheduled_for < now]
+    upcoming_whatsapp = [sf for sf in scheduled_whatsapp if not (sf.scheduled_for and sf.scheduled_for < now)]
+    overdue_email = [e for e in upcoming_email if e['scheduled_for'] and e['scheduled_for'] < now]
+    upcoming_email_list = [e for e in upcoming_email if not (e['scheduled_for'] and e['scheduled_for'] < now)]
+
     return {
         'selected_response_age': response_age,
         'total_active_leads': base_active.count(),
@@ -321,8 +315,10 @@ def _followups_workspace_data(response_age='1w_minus'):
         'ready_leads': ready_for_followup[:20],
         'recent_responses': recent_responses,
         'recent_inactive': recent_inactive,
-        'scheduled_whatsapp': scheduled_whatsapp,
-        'upcoming_email': upcoming_email,
+        'overdue_whatsapp': overdue_whatsapp,
+        'upcoming_whatsapp': upcoming_whatsapp,
+        'overdue_email': overdue_email,
+        'upcoming_email': upcoming_email_list,
         'sent_whatsapp': sent_whatsapp,
         'sent_email': sent_email,
         'response_age_label': 'All-time' if response_age == 'all' else (
