@@ -238,6 +238,37 @@ def _followups_workspace_data(response_age='1w_minus'):
         lead_marked_inactive_at__gte=now - timedelta(days=30)
     ).order_by('-lead_marked_inactive_at')[:10]
 
+    # ── Per-channel follow-up views (WhatsApp / Emails tabs) ──
+    from ..models import ScheduledFollowup
+    scheduled_whatsapp = list(
+        ScheduledFollowup.objects
+        .filter(channel='whatsapp', status__in=['pending', 'failed'])
+        .select_related('appointment').order_by('scheduled_for')[:50]
+    )
+    scheduled_email = list(
+        ScheduledFollowup.objects
+        .filter(channel='email', status__in=['pending', 'failed'])
+        .select_related('appointment').order_by('scheduled_for')[:50]
+    )
+
+    # Recently-sent follow-ups, flattened from each lead's history. Bounded to
+    # the most recently-updated leads so the page stays fast; each event carries
+    # its lead so the template can link straight to the conversation.
+    _epoch = datetime(1970, 1, 1, tzinfo=pytz.utc)
+    sent_whatsapp, sent_email = [], []
+    for apt in Appointment.objects.order_by('-updated_at')[:200]:
+        for ev in apt.get_followup_log():
+            ts = ev.get('timestamp')
+            if cutoff and ts and ts < cutoff:
+                continue
+            (sent_whatsapp if ev['channel'] == 'whatsapp' else sent_email).append(
+                {'lead': apt, 'ev': ev}
+            )
+    sent_whatsapp.sort(key=lambda x: x['ev']['timestamp'] or _epoch, reverse=True)
+    sent_email.sort(key=lambda x: x['ev']['timestamp'] or _epoch, reverse=True)
+    sent_whatsapp = sent_whatsapp[:40]
+    sent_email = sent_email[:40]
+
     return {
         'selected_response_age': response_age,
         'total_active_leads': base_active.count(),
@@ -246,6 +277,10 @@ def _followups_workspace_data(response_age='1w_minus'):
         'ready_leads': ready_for_followup[:20],
         'recent_responses': recent_responses,
         'recent_inactive': recent_inactive,
+        'scheduled_whatsapp': scheduled_whatsapp,
+        'scheduled_email': scheduled_email,
+        'sent_whatsapp': sent_whatsapp,
+        'sent_email': sent_email,
         'response_age_label': 'All-time' if response_age == 'all' else (
             'Last 30 Days' if response_age == '4w_minus' else 'Last 7 Days'
         ),

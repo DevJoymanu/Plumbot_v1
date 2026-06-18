@@ -124,6 +124,39 @@
   }
   .fd-toolbar select:focus { border-color: var(--color-teal); }
 
+  /* ── Channel tabs ── */
+  .fd-tabs {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    background: #fff; border-bottom: 1px solid #f0f0f0; flex-shrink: 0;
+  }
+  .fd-tab {
+    border: none; background: transparent; cursor: pointer;
+    padding: 11px 8px; font-size: 13px; font-weight: 600; color: #6b7280;
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+    justify-content: center;
+  }
+  .fd-tab.is-active { color: var(--color-teal); }
+  .fd-tab.is-active::after {
+    content: ""; position: absolute; left: 16px; right: 16px; bottom: 0;
+    height: 2px; background: var(--color-teal);
+  }
+  .fd-pane { display: none; }
+  .fd-pane.is-active { display: block; }
+
+  /* Scheduled-status + undelivered pills (channel tabs) */
+  .fd-status {
+    display: inline-block; margin-top: 5px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 20px;
+  }
+  .fd-status--pending { background: #dbeafe; color: #1e40af; }
+  .fd-status--failed  { background: #fee2e2; color: #991b1b; }
+  .fd-badge-bad {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 5px;
+    font-size: 10px; font-weight: 700; color: #991b1b; background: #fee2e2;
+    padding: 2px 8px; border-radius: 20px;
+  }
+
   /* ── Section label inside list ── */
   .fd-section-label {
     padding: 10px 16px 6px;
@@ -188,7 +221,17 @@
       </a>
     </div>
 
+    {# ── Channel tabs ── #}
+    <div class="fd-tabs">
+      <button type="button" class="fd-tab is-active" data-fdtab="leads"><i class="fas fa-users"></i> Leads</button>
+      <button type="button" class="fd-tab" data-fdtab="wa"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+      <button type="button" class="fd-tab" data-fdtab="email"><i class="fas fa-envelope"></i> Emails</button>
+    </div>
+
     <div class="fd-scroll">
+
+      {# ════════ LEADS TAB ════════ #}
+      <div class="fd-pane is-active" id="fdtab-leads">
 
       {# ── Needs attention (ready_leads) ── #}
       {% if ready_leads %}
@@ -277,6 +320,73 @@
       <div class="fd-empty">🎉 No pending follow-ups</div>
       {% endif %}
 
+      </div>{# /fdtab-leads #}
+
+      {# ════════ WHATSAPP TAB ════════ #}
+      <div class="fd-pane" id="fdtab-wa">
+        <div class="fd-section-label">⏰ Upcoming — {{ scheduled_whatsapp|length }}</div>
+        {% for sf in scheduled_whatsapp %}
+        <a href="{% url 'appointment_detail' sf.appointment.pk %}?source=followups" class="fd-row">
+          <div class="fd-avatar" data-name="{{ sf.appointment.customer_name|default:'?' }}">{{ sf.appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
+          <div class="fd-row-main">
+            <div class="fd-row-name">{{ sf.appointment.customer_name|default:sf.appointment.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+            <div class="fd-row-note">{{ sf.message|default:"WhatsApp follow-up"|truncatechars:70 }}</div>
+            <span class="fd-status fd-status--{{ sf.status }}">{{ sf.status }}</span>
+          </div>
+          <div class="fd-row-time normal" style="text-align:right;">{{ sf.scheduled_for|date:"j M, H:i" }}</div>
+        </a>
+        {% empty %}
+        <div class="fd-empty">No upcoming WhatsApp follow-ups scheduled.</div>
+        {% endfor %}
+
+        <div class="fd-section-label">✅ Recently Sent — {{ sent_whatsapp|length }}</div>
+        {% for item in sent_whatsapp %}
+        <a href="{% url 'appointment_detail' item.lead.pk %}?source=followups" class="fd-row">
+          <div class="fd-avatar" data-name="{{ item.lead.customer_name|default:'?' }}">{{ item.lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+          <div class="fd-row-main">
+            <div class="fd-row-name">{{ item.lead.customer_name|default:item.lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+            <div class="fd-row-note">{{ item.ev.kind }} · {{ item.ev.text|default:"(no text)"|truncatechars:60 }}</div>
+            {% if item.ev.within_window == False %}<span class="fd-badge-bad"><i class="fas fa-triangle-exclamation"></i> Not delivered — outside 24h</span>{% endif %}
+          </div>
+          <div class="fd-row-time normal" style="text-align:right;">{% if item.ev.timestamp %}{{ item.ev.timestamp|date:"j M, H:i" }}{% endif %}</div>
+        </a>
+        {% empty %}
+        <div class="fd-empty">No WhatsApp follow-ups sent in this window.</div>
+        {% endfor %}
+      </div>{# /fdtab-wa #}
+
+      {# ════════ EMAILS TAB ════════ #}
+      <div class="fd-pane" id="fdtab-email">
+        <div class="fd-section-label">⏰ Upcoming — {{ scheduled_email|length }}</div>
+        {% for sf in scheduled_email %}
+        <a href="{% url 'appointment_detail' sf.appointment.pk %}?source=followups" class="fd-row">
+          <div class="fd-avatar" data-name="{{ sf.appointment.customer_name|default:'?' }}">{{ sf.appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
+          <div class="fd-row-main">
+            <div class="fd-row-name">{{ sf.appointment.customer_name|default:sf.appointment.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+            <div class="fd-row-note">{{ sf.subject|default:sf.message|default:"Email follow-up"|truncatechars:70 }}</div>
+            <span class="fd-status fd-status--{{ sf.status }}">{{ sf.status }}</span>
+          </div>
+          <div class="fd-row-time normal" style="text-align:right;">{{ sf.scheduled_for|date:"j M, H:i" }}</div>
+        </a>
+        {% empty %}
+        <div class="fd-empty">No upcoming emails scheduled.</div>
+        {% endfor %}
+
+        <div class="fd-section-label">✅ Recently Sent — {{ sent_email|length }}</div>
+        {% for item in sent_email %}
+        <a href="{% url 'appointment_detail' item.lead.pk %}?source=followups" class="fd-row">
+          <div class="fd-avatar" data-name="{{ item.lead.customer_name|default:'?' }}">{{ item.lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+          <div class="fd-row-main">
+            <div class="fd-row-name">{{ item.lead.customer_name|default:item.lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+            <div class="fd-row-note">{{ item.ev.kind }} · {{ item.ev.text|default:"(no text)"|truncatechars:60 }}</div>
+          </div>
+          <div class="fd-row-time normal" style="text-align:right;">{% if item.ev.timestamp %}{{ item.ev.timestamp|date:"j M, H:i" }}{% endif %}</div>
+        </a>
+        {% empty %}
+        <div class="fd-empty">No emails sent in this window.</div>
+        {% endfor %}
+      </div>{# /fdtab-email #}
+
     </div>{# /fd-scroll #}
   </div>{# /fd-left #}
 
@@ -297,6 +407,19 @@
   document.querySelectorAll('.fd-avatar[data-name]').forEach(function (el) {
     var n = el.getAttribute('data-name') || '';
     el.style.background = COLORS[n.charCodeAt(0) % COLORS.length];
+  });
+
+  // Channel tab switching (Leads / WhatsApp / Emails)
+  document.querySelectorAll('.fd-tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var name = btn.getAttribute('data-fdtab');
+      document.querySelectorAll('.fd-tab').forEach(function (b) {
+        b.classList.toggle('is-active', b === btn);
+      });
+      document.querySelectorAll('.fd-pane').forEach(function (p) {
+        p.classList.toggle('is-active', p.id === 'fdtab-' + name);
+      });
+    });
   });
 })();
 </script>
