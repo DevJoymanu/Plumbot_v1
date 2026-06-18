@@ -722,6 +722,32 @@ def cancel_scheduled_followup(request, sf_id):
     return _followup_redirect(request, sf.appointment_id)
 
 
+@staff_required
+@require_POST
+def update_lead_email(request, pk):
+    """Add/update (or clear) the customer's email address from the Email tab."""
+    from django.core.validators import validate_email
+    from django.core.exceptions import ValidationError
+
+    appointment = get_object_or_404(Appointment, pk=pk)
+    email = (request.POST.get('customer_email') or '').strip()
+
+    if email:
+        try:
+            validate_email(email)
+        except ValidationError:
+            messages.error(request, 'Enter a valid email address.')
+            return _followup_redirect(request, pk)
+        appointment.customer_email = email
+        appointment.save(update_fields=['customer_email'])
+        messages.success(request, f'Email saved: {email}')
+    else:
+        appointment.customer_email = None
+        appointment.save(update_fields=['customer_email'])
+        messages.success(request, 'Email cleared.')
+    return _followup_redirect(request, pk)
+
+
 def _email_body_to_text(html):
     """Plain-text rendition of an email body for the inline editor."""
     from django.utils.html import strip_tags

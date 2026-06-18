@@ -836,6 +836,14 @@
   }
   .em-modal-frame { width: 100%; height: 70vh; border: none; }
 
+  /* Customer email card (top of Email tab) */
+  .em-email-card .detail-card-body { display: flex; flex-direction: column; gap: 10px; }
+  .em-email-current { font-size: 15px; font-weight: 600; color: #1f2937; }
+  .em-email-current a { color: var(--color-teal); text-decoration: none; }
+  .em-email-none { color: #b45309; font-weight: 600; }
+  .em-email-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .em-email-input { max-width: 340px; flex: 1; min-width: 200px; }
+
   .appt-chat-pane {
     display: flex;
     flex-direction: column;
@@ -1938,13 +1946,33 @@
       <div class="appt-tab-pane" id="tab-email-followups">
         <div class="appt-detail-content">
 
+          {# ── Customer email: shown at the top, add/edit inline ── #}
+          <div class="detail-card em-email-card">
+            <div class="detail-card-header">Customer Email</div>
+            <div class="detail-card-body">
+              <div class="em-email-current">
+                {% if appointment.customer_email %}
+                <i class="fas fa-envelope"></i> <a href="mailto:{{ appointment.customer_email }}">{{ appointment.customer_email }}</a>
+                {% else %}
+                <span class="em-email-none"><i class="fas fa-envelope-open"></i> No email on file</span>
+                {% endif %}
+              </div>
+              <form method="post" action="{% url 'update_lead_email' appointment.pk %}?{{ request.GET.urlencode }}" class="em-email-form">
+                {% csrf_token %}
+                <input type="email" name="customer_email" value="{{ appointment.customer_email|default:'' }}"
+                       placeholder="name@example.com" class="fu-edit-input em-email-input">
+                <button type="submit" class="action-btn primary"><i class="fas fa-save"></i> Save email</button>
+              </form>
+            </div>
+          </div>
+
           {# ── Schedule an email follow-up (real send queue) ── #}
           <div class="detail-card">
             <div class="detail-card-header">Schedule an Email Follow-up</div>
             <div class="detail-card-body">
               {% if not appointment.customer_email %}
               <div class="fu-hint" style="margin-bottom:10px; color:#b45309;">
-                This lead has no email on file — add one in the Details tab before scheduling.
+                This lead has no email on file — add one in the Customer Email box above before scheduling.
               </div>
               {% endif %}
               <form method="post" action="{% url 'schedule_followup' appointment.pk %}?{{ request.GET.urlencode }}">
@@ -2006,7 +2034,7 @@
             <div class="detail-card-body">
               {% if not appointment.customer_email %}
               <div class="fu-hint" style="margin-bottom:10px; color:#b45309;">
-                This lead has no email on file — add one in the Details tab to send.
+                This lead has no email on file — add one in the Customer Email box above to send.
               </div>
               {% endif %}
               <form method="post" action="{% url 'lead_send_catalog_emails' appointment.pk %}?{{ request.GET.urlencode }}">
@@ -2096,7 +2124,7 @@
             <div class="detail-card-body">
               {% if not appointment.get_upcoming_emails.has_email %}
               <div class="fu-hint" style="margin-bottom:10px;">
-                Add a customer email in the Details tab so these emails can be sent.
+                Add a customer email in the Customer Email box above so these emails can be sent.
               </div>
               {% endif %}
               {% for em in appointment.get_upcoming_emails.items %}

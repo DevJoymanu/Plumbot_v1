@@ -145,6 +145,7 @@ urlpatterns = [
     path('appointments/<int:pk>/email-edit-data/', views.lead_email_edit_data, name='lead_email_edit_data'),
     path('appointments/<int:pk>/send-catalog-emails/', views.lead_send_catalog_emails, name='lead_send_catalog_emails'),
     path('appointments/<int:pk>/send-email-now/', views.lead_send_email_now, name='lead_send_email_now'),
+    path('appointments/<int:pk>/update-email/', views.update_lead_email, name='update_lead_email'),
     path('appointments/<int:pk>/pause-bot/', pause_chatbot, name='pause_chatbot'),
     path('appointments/<int:pk>/resume-bot/', resume_chatbot, name='resume_chatbot'),
     path('appointments/<int:pk>/pause-auto-followup/', views.pause_auto_followup, name='pause_auto_followup'),
