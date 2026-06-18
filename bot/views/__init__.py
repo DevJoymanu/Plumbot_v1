@@ -94,6 +94,8 @@ from .followups import (
     send_image_to_lead,
     send_pdf_to_lead,
     send_bulk_followup,
+    edit_followup_log,
+    update_followup_schedule,
 )
 
 from .plumbot import Plumbot

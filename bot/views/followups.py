@@ -566,6 +566,84 @@ def manual_followup_check(request):
     return redirect('followup_dashboard')
 
 
+def _followup_redirect(request, pk):
+    """Redirect back to the appointment detail, preserving source/frame query."""
+    base_url = reverse('appointment_detail', kwargs={'pk': pk})
+    qs = request.GET.urlencode()
+    return redirect(f"{base_url}?{qs}" if qs else base_url)
+
+
+@staff_required
+@require_POST
+def edit_followup_log(request, pk):
+    """Correct the recorded text of a follow-up already logged in history.
+
+    Display/record only — this does NOT re-send anything. The ``[MARKER]``
+    prefix is preserved so channel/kind detection (get_followup_log) keeps
+    working, and an ``edited_at`` stamp is added for transparency.
+    """
+    appointment = get_object_or_404(Appointment, pk=pk)
+
+    try:
+        index = int(request.POST.get('index', ''))
+    except (TypeError, ValueError):
+        messages.error(request, 'Invalid follow-up entry.')
+        return _followup_redirect(request, pk)
+
+    new_text = (request.POST.get('text') or '').strip()
+    history = appointment.conversation_history if isinstance(appointment.conversation_history, list) else []
+
+    if not (0 <= index < len(history)) or not isinstance(history[index], dict):
+        messages.error(request, 'Follow-up entry not found.')
+        return _followup_redirect(request, pk)
+    if not new_text:
+        messages.error(request, 'Follow-up text cannot be empty.')
+        return _followup_redirect(request, pk)
+
+    content = history[index].get('content') or ''
+    close = content.find(']')
+    prefix = content[:close + 1] if close != -1 else ''
+    history[index]['content'] = (f'{prefix} {new_text}').strip() if prefix else new_text
+    history[index]['edited_at'] = timezone.now().isoformat()
+
+    appointment.conversation_history = history
+    appointment.save(update_fields=['conversation_history'])
+    _append_admin_note(appointment, f"{request.user.username}: edited a logged follow-up message.")
+    messages.success(request, 'Follow-up message updated.')
+    return _followup_redirect(request, pk)
+
+
+@staff_required
+@require_POST
+def update_followup_schedule(request, pk):
+    """Edit the upcoming (scheduled) follow-up: when it fires and its status."""
+    appointment = get_object_or_404(Appointment, pk=pk)
+
+    next_raw = (request.POST.get('next_follow_up_at') or '').strip()
+    if next_raw:
+        try:
+            next_dt = datetime.fromisoformat(next_raw)
+            sa_timezone = pytz.timezone('Africa/Johannesburg')
+            if next_dt.tzinfo is None:
+                next_dt = sa_timezone.localize(next_dt)
+            appointment.next_follow_up_at = next_dt
+        except ValueError:
+            messages.error(request, 'Could not read the follow-up date/time.')
+            return _followup_redirect(request, pk)
+    else:
+        # Blank clears a scheduled follow-up.
+        appointment.next_follow_up_at = None
+
+    status = (request.POST.get('follow_up_status') or '').strip()
+    valid_statuses = {choice[0] for choice in Appointment._meta.get_field('follow_up_status').choices}
+    if status in valid_statuses:
+        appointment.follow_up_status = status
+
+    appointment.save(update_fields=['next_follow_up_at', 'follow_up_status'])
+    messages.success(request, 'Upcoming follow-up updated.')
+    return _followup_redirect(request, pk)
+
+
 @staff_required
 @require_POST
 def pause_chatbot(request, pk):

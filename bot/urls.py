@@ -136,6 +136,8 @@ urlpatterns = [
 
     # Manual vs Automatic Follow-up Management
     path('appointments/<int:pk>/send-followup/', views.send_followup, name='send_followup'),
+    path('appointments/<int:pk>/edit-followup-log/', views.edit_followup_log, name='edit_followup_log'),
+    path('appointments/<int:pk>/update-followup-schedule/', views.update_followup_schedule, name='update_followup_schedule'),
     path('appointments/<int:pk>/pause-bot/', pause_chatbot, name='pause_chatbot'),
     path('appointments/<int:pk>/resume-bot/', resume_chatbot, name='resume_chatbot'),
     path('appointments/<int:pk>/pause-auto-followup/', views.pause_auto_followup, name='pause_auto_followup'),

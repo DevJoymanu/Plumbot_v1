@@ -81,6 +81,17 @@
   }
   .fd-row-time.urgent { color: #ef4444; font-weight: 700; }
   .fd-row-time.normal { color: #9ca3af; }
+  .fd-row-date { font-size: 10px; color: #9ca3af; margin-top: 2px; font-weight: 500; }
+
+  /* Channel stamp on each row (last follow-up channel) */
+  .fd-chan {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .3px; padding: 1px 7px; border-radius: 20px;
+    margin-top: 5px; margin-right: 6px;
+  }
+  .fd-chan--whatsapp { background: #dcf8c6; color: #075e54; }
+  .fd-chan--email    { background: #dbeafe; color: #1e40af; }
 
   .fd-empty {
     padding: 32px 16px; text-align: center;
@@ -191,12 +202,20 @@
         <div class="fd-row-main">
           <div class="fd-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
           <div class="fd-row-note">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
-          <span class="fd-row-badge">Needs attention</span>
+          <div>
+            <span class="fd-row-badge">Needs attention</span>
+            {% with ev=lead.last_followup_event %}{% if ev %}
+            <span class="fd-chan fd-chan--{{ ev.channel }}">
+              {% if ev.channel == 'email' %}<i class="fas fa-envelope"></i>{% else %}<i class="fab fa-whatsapp"></i>{% endif %}{{ ev.channel_label }}
+            </span>
+            {% endif %}{% endwith %}
+          </div>
         </div>
-        <div class="fd-row-time urgent">
+        <div class="fd-row-time urgent" style="text-align:right;">
           {% if lead.get_days_since_last_contact == 0 %}Today
           {% elif lead.get_days_since_last_contact == 1 %}1d ago
           {% else %}{{ lead.get_days_since_last_contact }}d ago{% endif %}
+          {% with ev=lead.last_followup_event %}{% if ev.timestamp %}<div class="fd-row-date">Last: {{ ev.timestamp|date:"j M, H:i" }}</div>{% endif %}{% endwith %}
         </div>
       </a>
       {% endfor %}
@@ -214,8 +233,16 @@
         <div class="fd-row-main">
           <div class="fd-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
           <div class="fd-row-note">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
+          {% with ev=lead.last_followup_event %}{% if ev %}
+          <span class="fd-chan fd-chan--{{ ev.channel }}">
+            {% if ev.channel == 'email' %}<i class="fas fa-envelope"></i>{% else %}<i class="fab fa-whatsapp"></i>{% endif %}{{ ev.channel_label }}
+          </span>
+          {% endif %}{% endwith %}
         </div>
-        <div class="fd-row-time normal">{{ lead.last_customer_response|timesince|truncatewords:2 }} ago</div>
+        <div class="fd-row-time normal" style="text-align:right;">
+          {{ lead.last_customer_response|timesince|truncatewords:2 }} ago
+          {% if lead.last_customer_response %}<div class="fd-row-date">{{ lead.last_customer_response|date:"j M, H:i" }}</div>{% endif %}
+        </div>
       </a>
       {% endfor %}
       {% endif %}
@@ -232,8 +259,16 @@
         <div class="fd-row-main">
           <div class="fd-row-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
           <div class="fd-row-note">{{ lead.scheduled_datetime|date:"j M Y"|default:lead.updated_at|date:"j M Y" }} · {{ lead.admin_notes|default:lead.project_description|default:"No notes"|truncatechars:60 }}</div>
+          {% with ev=lead.last_followup_event %}{% if ev %}
+          <span class="fd-chan fd-chan--{{ ev.channel }}">
+            {% if ev.channel == 'email' %}<i class="fas fa-envelope"></i>{% else %}<i class="fab fa-whatsapp"></i>{% endif %}{{ ev.channel_label }}
+          </span>
+          {% endif %}{% endwith %}
         </div>
-        <div class="fd-row-time normal">{{ lead.lead_marked_inactive_at|timesince|truncatewords:2 }} ago</div>
+        <div class="fd-row-time normal" style="text-align:right;">
+          {{ lead.lead_marked_inactive_at|timesince|truncatewords:2 }} ago
+          {% if lead.lead_marked_inactive_at %}<div class="fd-row-date">{{ lead.lead_marked_inactive_at|date:"j M, H:i" }}</div>{% endif %}
+        </div>
       </a>
       {% endfor %}
       {% endif %}

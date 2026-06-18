@@ -1271,6 +1271,82 @@ class Appointment(models.Model):
             return delta.days
         return 0
     
+    # Marker prefix → (human label, channel) for follow-ups logged into
+    # conversation_history. Drives the follow-up log's per-channel stamps and
+    # kind labels. Channel is 'whatsapp' or 'email'. Order matters: more
+    # specific prefixes (e.g. BULK) must precede their shorter relatives.
+    FOLLOWUP_MARKERS = (
+        ('[BULK MANUAL FOLLOW-UP]', 'Bulk',            'whatsapp'),
+        ('[MANUAL FOLLOW-UP]',      'Manual',          'whatsapp'),
+        ('[AUTO FOLLOW-UP]',        'Automatic',       'whatsapp'),
+        ('[DELAY NUDGE',            'Delay nudge',     'whatsapp'),
+        ('[PARKED NUDGE',           'Parked nudge',    'whatsapp'),
+        ('[DELAY REACTIVATION]',    'Reactivation',    'whatsapp'),
+        ('[DELAY ACCESS CHECK-IN]', 'Access check-in', 'whatsapp'),
+        ('[DELAY LAST CHECK]',      'Last-check',      'email'),
+        ('[EMAIL FOLLOW-UP]',       'Email',           'email'),
+        ('[IMAGE SENT]',            'Image',           'whatsapp'),
+        ('[PDF SENT]',              'PDF',             'whatsapp'),
+    )
+
+    def get_followup_log(self):
+        """Structured follow-up events parsed from conversation_history.
+
+        Returns a list (newest first) of dicts:
+          {index, channel, channel_label, kind, text, timestamp, edited}
+        `index` is the position in conversation_history, used to edit the entry
+        in place. `timestamp` is an aware datetime or None. `text` has the
+        ``[MARKER]`` prefix stripped for display; the marker is preserved on
+        save so channel/kind detection keeps working.
+        """
+        history = self.conversation_history if isinstance(self.conversation_history, list) else []
+        events = []
+        for idx, entry in enumerate(history):
+            if not isinstance(entry, dict) or entry.get('role') != 'assistant':
+                continue
+            content = (entry.get('content') or '').strip()
+            matched = None
+            for prefix, label, channel in self.FOLLOWUP_MARKERS:
+                if content.startswith(prefix):
+                    matched = (label, channel)
+                    break
+            if not matched:
+                continue
+            label, channel = matched
+            # Strip the full bracketed marker (handles e.g. "[DELAY NUDGE 2]").
+            close = content.find(']')
+            body = content[close + 1:].strip() if close != -1 else content
+            ts = entry.get('timestamp')
+            dt = None
+            if ts:
+                try:
+                    dt = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    dt = None
+            events.append({
+                'index': idx,
+                'channel': channel,
+                'channel_label': 'Email' if channel == 'email' else 'WhatsApp',
+                'kind': label,
+                'text': body,
+                'timestamp': dt,
+                'edited': bool(entry.get('edited_at')),
+            })
+        events.reverse()  # newest first
+        return events
+
+    @property
+    def last_followup_event(self):
+        """Most recent follow-up event (dict) or None — for list-row stamps."""
+        log = self.get_followup_log()
+        return log[0] if log else None
+
+    @property
+    def last_followup_channel(self):
+        """'whatsapp' | 'email' | None — channel of the most recent follow-up."""
+        event = self.last_followup_event
+        return event['channel'] if event else None
+
     def get_followup_status_display_verbose(self):
         """Get detailed follow-up status for admin"""
         if not self.is_lead_active:

@@ -714,9 +714,59 @@
 
   /* Details / quotes pane: scroll its own content */
   #tab-details.is-active,
-  #tab-quotes.is-active {
+  #tab-quotes.is-active,
+  #tab-followups.is-active {
     overflow-y: auto;
   }
+
+  /* ── Follow-up history ── */
+  .fu-count { font-size: 12px; font-weight: 600; color: #6b7280; }
+  .fu-hint  { font-size: 12px; color: #9ca3af; align-self: center; }
+
+  .fu-entry {
+    border: 1px solid #eef2f7; border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 10px; background: #fff;
+  }
+  .fu-entry:last-child { margin-bottom: 0; }
+
+  .fu-entry-head {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+
+  .fu-stamp {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .4px; padding: 3px 9px; border-radius: 20px;
+  }
+  .fu-stamp--whatsapp { background: #dcf8c6; color: #075e54; }
+  .fu-stamp--email    { background: #dbeafe; color: #1e40af; }
+
+  .fu-kind { font-size: 13px; font-weight: 600; color: #374151; }
+  .fu-time { font-size: 12px; color: #9ca3af; }
+  .fu-edited {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    color: #b45309; background: #fef3c7; padding: 2px 7px; border-radius: 20px;
+  }
+
+  .fu-edit-btn {
+    margin-left: auto; border: none; background: #f3f5f8; cursor: pointer;
+    width: 28px; height: 28px; border-radius: 8px; color: #6b7280;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background .15s, color .15s;
+  }
+  .fu-edit-btn:hover { background: var(--color-teal); color: #fff; }
+
+  .fu-text {
+    font-size: 14px; color: #1f2937; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word;
+  }
+
+  .fu-edit-input {
+    width: 100%; border: 1px solid #dbe2e8; border-radius: 10px;
+    padding: 10px 12px; font-family: inherit; font-size: 14px; resize: vertical;
+  }
+  .fu-edit-actions { display: flex; gap: 8px; margin-top: 8px; }
 
   .appt-chat-pane {
     display: flex;
@@ -1329,6 +1379,7 @@
         <button class="appt-tab-btn is-active" type="button" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
         <button class="appt-tab-btn" type="button" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
         <button class="appt-tab-btn" type="button" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
+        <button class="appt-tab-btn" type="button" data-tab="followups"><i class="far fa-paper-plane"></i> Follow-ups</button>
       </div>
 
       <div class="appt-tab-pane is-active" id="tab-chat">
@@ -1677,6 +1728,87 @@
           </div>
         </div>
       </div>
+
+      <div class="appt-tab-pane" id="tab-followups">
+        <div class="appt-detail-content">
+
+          {# ── Upcoming (scheduled) follow-up ── #}
+          <div class="detail-card">
+            <div class="detail-card-header">Upcoming Follow-up</div>
+            <div class="detail-card-body">
+              <form method="post" action="{% url 'update_followup_schedule' appointment.pk %}?{{ request.GET.urlencode }}">
+                {% csrf_token %}
+                <div class="detail-form-grid">
+                  <div class="detail-field">
+                    <label for="fu_next_at">Next follow-up</label>
+                    <input type="datetime-local" id="fu_next_at" name="next_follow_up_at"
+                           value="{{ appointment.next_follow_up_at|date:'Y-m-d\\TH:i' }}">
+                  </div>
+                  <div class="detail-field">
+                    <label for="fu_status">Status</label>
+                    <select id="fu_status" name="follow_up_status">
+                      <option value="pending" {% if appointment.follow_up_status == 'pending' %}selected{% endif %}>Pending</option>
+                      <option value="in_progress" {% if appointment.follow_up_status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                      <option value="waiting_customer" {% if appointment.follow_up_status == 'waiting_customer' %}selected{% endif %}>Waiting Customer</option>
+                      <option value="completed" {% if appointment.follow_up_status == 'completed' %}selected{% endif %}>Completed</option>
+                      <option value="closed_lost" {% if appointment.follow_up_status == 'closed_lost' %}selected{% endif %}>Closed Lost</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="detail-actions">
+                  <button type="submit" class="action-btn primary"><i class="fas fa-save"></i> Save schedule</button>
+                  <span class="fu-hint">Leave the date blank to clear the scheduled follow-up.</span>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {# ── Follow-up history log ── #}
+          <div class="detail-card">
+            <div class="detail-card-header">
+              <span>Follow-up History</span>
+              <span class="fu-count">{{ appointment.get_followup_log|length }} sent</span>
+            </div>
+            <div class="detail-card-body">
+              {% for ev in appointment.get_followup_log %}
+              <div class="fu-entry">
+                <div class="fu-entry-head">
+                  <span class="fu-stamp fu-stamp--{{ ev.channel }}">
+                    {% if ev.channel == 'email' %}<i class="fas fa-envelope"></i>{% else %}<i class="fab fa-whatsapp"></i>{% endif %}
+                    {{ ev.channel_label }}
+                  </span>
+                  <span class="fu-kind">{{ ev.kind }}</span>
+                  <span class="fu-time">
+                    {% if ev.timestamp %}{{ ev.timestamp|date:"j M Y, H:i" }}{% else %}No timestamp{% endif %}
+                  </span>
+                  {% if ev.edited %}<span class="fu-edited">edited</span>{% endif %}
+                  <button type="button" class="fu-edit-btn" onclick="toggleFollowupEdit({{ ev.index }})" aria-label="Edit follow-up">
+                    <i class="fas fa-pen"></i>
+                  </button>
+                </div>
+                <div class="fu-text" id="fu-text-{{ ev.index }}">{{ ev.text|default:"(no message text)"|linebreaksbr }}</div>
+                <form method="post" action="{% url 'edit_followup_log' appointment.pk %}?{{ request.GET.urlencode }}"
+                      class="fu-edit-form" id="fu-form-{{ ev.index }}" style="display:none;">
+                  {% csrf_token %}
+                  <input type="hidden" name="index" value="{{ ev.index }}">
+                  <textarea name="text" rows="3" class="fu-edit-input">{{ ev.text }}</textarea>
+                  <div class="fu-edit-actions">
+                    <button type="submit" class="action-btn primary"><i class="fas fa-check"></i> Save</button>
+                    <button type="button" class="action-btn ghost" onclick="toggleFollowupEdit({{ ev.index }})">Cancel</button>
+                  </div>
+                </form>
+              </div>
+              {% empty %}
+              <div class="empty-block">
+                <i class="far fa-paper-plane" style="font-size:30px; opacity:.25; display:block; margin-bottom:10px;"></i>
+                No follow-ups have been sent yet.
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+        </div>
+      </div>
     </section>
   </div>
 </div>
@@ -1701,6 +1833,21 @@
       showAppointmentTab(btn.getAttribute('data-tab'));
     });
   });
+
+  // Toggle inline edit of a logged follow-up message.
+  function toggleFollowupEdit(index) {
+    var text = document.getElementById('fu-text-' + index);
+    var form = document.getElementById('fu-form-' + index);
+    if (!text || !form) return;
+    var editing = form.style.display === 'none' || !form.style.display;
+    form.style.display = editing ? 'block' : 'none';
+    text.style.display = editing ? 'none' : 'block';
+    if (editing) {
+      var input = form.querySelector('textarea');
+      if (input) { input.focus(); }
+    }
+  }
+  window.toggleFollowupEdit = toggleFollowupEdit;
 
   function scrollChatBottom() {
     var chat = document.getElementById('chatScroll');
