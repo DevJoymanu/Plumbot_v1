@@ -165,10 +165,18 @@ SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
 EMAIL_REPLY_TO = os.environ.get('EMAIL_REPLY_TO', _from_address)
 EMAIL_DOMAIN = os.environ.get('EMAIL_DOMAIN', 'homebaseplumbers.co.zw')
 
-# SendGrid HTTP API (port 443) — used as the primary email transport when
-# SENDGRID_API_KEY is set. Railway blocks all outbound SMTP egress, so the
-# HTTPS API is the only path that delivers from this host; SMTP above is the
-# fallback for environments that permit it. See bot/plumber_notifications.py.
+# Email transport over HTTP (port 443). Railway blocks all outbound SMTP egress,
+# so an HTTPS send API is the only path that delivers from this host; the SMTP
+# block above is a fallback for environments that permit it. Transport
+# precedence (see bot/plumber_notifications.py): Brevo → SendGrid → SMTP.
+#
+# Brevo (ex-Sendinblue) — primary transport. 300 emails/day on the free-forever
+# plan; replaced SendGrid after its time-limited trial ended.
+BREVO_API_KEY = os.environ.get('BREVO_API_KEY', '')
+BREVO_FROM_EMAIL = os.environ.get('BREVO_FROM_EMAIL', '') or _from_address
+
+# SendGrid HTTP API — legacy transport, kept as a fallback when BREVO_API_KEY
+# is unset but SENDGRID_API_KEY is still configured.
 SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
 SENDGRID_FROM_EMAIL = os.environ.get('SENDGRID_FROM_EMAIL', '') or _from_address
 

@@ -55,9 +55,18 @@ def send_email_to_recipients(
         )
         return True
 
-    # Primary transport: SendGrid HTTP API (port 443). Railway blocks all
-    # outbound SMTP, so this is the only path that delivers from production.
-    # Falls through to Django SMTP below when no API key is configured.
+    # Primary transport: Brevo HTTP API (port 443). Railway blocks all outbound
+    # SMTP, so an HTTPS API is the only path that delivers from production.
+    # Precedence: Brevo → SendGrid (legacy fallback) → Django SMTP.
+    brevo_api_key = getattr(settings, "BREVO_API_KEY", "")
+    if brevo_api_key:
+        return _send_via_brevo(
+            brevo_api_key, recipients, subject, message,
+            html_message=html_message, attachment=attachment,
+            attachment_name=attachment_name, from_name=from_name,
+            message_id=message_id,
+        )
+
     sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
     if sendgrid_api_key:
         return _send_via_sendgrid(
@@ -179,6 +188,98 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
         f"{when_line}{sched_line}\n"
     )
     return send_plumber_notification_email(subject, message, dry_run=dry_run)
+
+
+def _send_via_brevo(
+    api_key, recipients, subject, message, *, html_message=None,
+    attachment=None, attachment_name="attachment.pdf", from_name=None,
+    message_id=None,
+):
+    """
+    Send via the Brevo (ex-Sendinblue) transactional API over HTTPS (port 443).
+
+    Carries the same deliverability signals as the SendGrid/SMTP paths — Reply-To
+    (DMARC alignment / real reply inbox) and X-Entity-Ref-ID (stable
+    per-appointment identity so Gmail reads it as transactional) — so routing to
+    Primary is unchanged regardless of transport.
+
+    Brevo has no global tracking toggle in the send payload like SendGrid; its
+    free plan does not rewrite links for click-tracking, so tel:/wa.me links stay
+    clean without extra settings.
+    """
+    from_raw = (
+        getattr(settings, "BREVO_FROM_EMAIL", None)
+        or getattr(settings, "DEFAULT_FROM_EMAIL", None)
+        or ""
+    )
+    parsed_name, parsed_email = parseaddr(from_raw)
+    sender = {"email": parsed_email or from_raw}
+    display_name = from_name or parsed_name or None
+    if display_name:
+        sender["name"] = display_name
+
+    payload = {
+        "sender": sender,
+        "to": [{"email": email} for email in recipients],
+        "subject": subject,
+    }
+    if html_message:
+        payload["htmlContent"] = html_message
+    if message:
+        payload["textContent"] = message
+    if not html_message and not message:
+        payload["textContent"] = "(no content)"
+
+    # Reply-To: route replies to a real inbox and align DMARC. Mirrors the
+    # SendGrid/SMTP EMAIL_REPLY_TO → from-address fallback.
+    reply_to_raw = (
+        getattr(settings, "EMAIL_REPLY_TO", None)
+        or parsed_email
+        or from_raw
+    )
+    if reply_to_raw:
+        _, reply_to_addr = parseaddr(reply_to_raw)
+        if reply_to_addr:
+            payload["replyTo"] = {"email": reply_to_addr}
+
+    headers = {}
+    if message_id:
+        headers["Message-ID"] = message_id
+        m = re.search(r"<apt-(\d+)\.", message_id)
+        if m:
+            headers["X-Entity-Ref-ID"] = f"apt-{m.group(1)}"
+    if headers:
+        payload["headers"] = headers
+
+    if attachment:
+        payload["attachment"] = [{
+            "content": base64.b64encode(attachment).decode(),
+            "name":    attachment_name,
+        }]
+
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json=payload,
+            timeout=getattr(settings, "EMAIL_TIMEOUT", 20),
+        )
+        if 200 <= response.status_code < 300:
+            return True
+        logger.error(
+            "Brevo email send failed for '%s' to %s: %s %s",
+            subject, ", ".join(recipients), response.status_code, response.text,
+        )
+        return False
+    except Exception:
+        logger.exception(
+            "Failed to send Brevo email '%s' to %s", subject, ", ".join(recipients)
+        )
+        return False
 
 
 def _send_via_sendgrid(
