@@ -301,11 +301,17 @@ def _followups_workspace_data(response_age='1w_minus'):
     sent_whatsapp = sent_whatsapp[:40]
     sent_email = sent_email[:40]
 
-    # Split queued items into Overdue (due time already passed) vs Upcoming.
-    overdue_whatsapp = [sf for sf in scheduled_whatsapp if sf.scheduled_for and sf.scheduled_for < now]
-    upcoming_whatsapp = [sf for sf in scheduled_whatsapp if not (sf.scheduled_for and sf.scheduled_for < now)]
-    overdue_email = [e for e in upcoming_email if e['scheduled_for'] and e['scheduled_for'] < now]
-    upcoming_email_list = [e for e in upcoming_email if not (e['scheduled_for'] and e['scheduled_for'] < now)]
+    # Split queued items into Overdue vs Upcoming. Overdue is limited to the
+    # last 7 days — older missed items are dropped rather than piling up forever.
+    overdue_since = now - timedelta(days=7)
+
+    def _is_overdue(when):
+        return bool(when) and overdue_since <= when < now
+
+    overdue_whatsapp = [sf for sf in scheduled_whatsapp if _is_overdue(sf.scheduled_for)]
+    upcoming_whatsapp = [sf for sf in scheduled_whatsapp if sf.scheduled_for and sf.scheduled_for >= now]
+    overdue_email = [e for e in upcoming_email if _is_overdue(e['scheduled_for'])]
+    upcoming_email_list = [e for e in upcoming_email if e['scheduled_for'] and e['scheduled_for'] >= now]
 
     return {
         'selected_response_age': response_age,
