@@ -935,6 +935,13 @@ class ResponseMixin:
                             # Lead is describing their project, not asking a price —
                             # let the booking flow acknowledge & progress instead.
                             print(f"⏭️ Skipping service inquiry — lead describing project, no price asked ({intent})")
+                        elif self._is_carryover_pricing(intent, incoming_message,
+                                                        price_requested, PRICING_AUTO_REPLY_INTENTS):
+                            # Priceable intent carried over from the running topic onto a
+                            # bare booking-field reply (e.g. area answer "avondale" →
+                            # shower_cubicle). Never volunteer a price on it — let the
+                            # booking flow capture the answer and progress.
+                            print(f"⏭️ Skipping service inquiry — '{incoming_message}' names no product, no price asked ({intent})")
                         elif intent in sent:
                             print(f"⏭️ Skipping already-sent service inquiry: {intent}")
                         else:
@@ -2275,6 +2282,20 @@ class ResponseMixin:
             if 'geyser' in message_lower:
                 return {"intent": "geyser", "confidence": confidence}
             return {"intent": "none", "confidence": "LOW"}
+
+        @staticmethod
+        def _is_carryover_pricing(intent, message, price_requested, pricing_auto_reply_intents):
+            """True when a priceable intent was carried over from the running topic
+            onto a reply that names no product and asks no price (e.g. the area
+            answer "avondale" classified as shower_cubicle). Delegates to the single
+            shared resolver in whatsapp_webhook so the webhook gate and this in-flow
+            handler stay in lock-step. Function-local import avoids the circular
+            import at module load (same pattern as _keyword_product_intent use below).
+            """
+            from bot.whatsapp_webhook import _is_unprompted_carryover_pricing
+            return _is_unprompted_carryover_pricing(
+                intent, message, price_requested, pricing_auto_reply_intents
+            )
 
 
         @staticmethod
