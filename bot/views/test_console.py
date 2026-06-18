@@ -8,15 +8,26 @@ replies are read back from the appointment's `conversation_history`, which every
 reply path writes to before sending.
 """
 import json
+import os
 import uuid
 
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import render, redirect
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from ..decorators import staff_required
 from ..models import Appointment, WhatsAppInboundEvent
 from ..test_console import DEFAULT_TEST_NUMBER, is_test_sender
+
+# Extra password gate on top of staff login (the console is no longer linked in
+# the nav — reachable by URL only, then unlocked with this password per session).
+TEST_CONSOLE_PASSWORD = os.environ.get('TEST_CONSOLE_PASSWORD', 'jones007**')
+_CONSOLE_SESSION_KEY = 'test_console_unlocked'
+
+
+def _console_unlocked(request) -> bool:
+    return request.session.get(_CONSOLE_SESSION_KEY) is True
 
 
 def _sanitize_test_number(raw) -> str:
@@ -48,7 +59,20 @@ def _serialize_history(appointment):
 
 @staff_required
 def test_console_view(request):
-    """Render the chat console page."""
+    """Render the chat console page, behind a per-session password gate."""
+    # Password submission.
+    if request.method == "POST" and "console_password" in request.POST:
+        if request.POST.get("console_password") == TEST_CONSOLE_PASSWORD:
+            request.session[_CONSOLE_SESSION_KEY] = True
+            qs = request.GET.urlencode()
+            return redirect(f"{reverse('test_console')}?{qs}" if qs else reverse('test_console'))
+        return render(request, "bot/pages/test_console_gate.html",
+                      {"error": "Incorrect password. Try again."})
+
+    # Locked until the password is entered this session.
+    if not _console_unlocked(request):
+        return render(request, "bot/pages/test_console_gate.html", {})
+
     sender = _sanitize_test_number(request.GET.get("number"))
     appointment = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}").first()
     history = _serialize_history(appointment) if appointment else []
@@ -63,6 +87,8 @@ def test_console_view(request):
 @require_http_methods(["POST"])
 def test_console_send(request):
     """Feed one customer message into the production pipeline and reply."""
+    if not _console_unlocked(request):
+        return JsonResponse({"ok": False, "error": "Console locked"}, status=403)
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
@@ -93,6 +119,8 @@ def test_console_send(request):
 @require_http_methods(["GET"])
 def test_console_poll(request):
     """Return conversation history (optionally only entries after an index)."""
+    if not _console_unlocked(request):
+        return JsonResponse({"ok": False, "error": "Console locked"}, status=403)
     sender = _sanitize_test_number(request.GET.get("number"))
     try:
         after = max(0, int(request.GET.get("after", 0)))
@@ -112,6 +140,8 @@ def test_console_poll(request):
 @require_http_methods(["POST"])
 def test_console_reset(request):
     """Wipe the test conversation so the next message starts a fresh lead."""
+    if not _console_unlocked(request):
+        return JsonResponse({"ok": False, "error": "Console locked"}, status=403)
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
