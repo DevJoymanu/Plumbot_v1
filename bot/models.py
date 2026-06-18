@@ -1284,6 +1284,8 @@ class Appointment(models.Model):
         ('[DELAY REACTIVATION]',    'Reactivation',    'whatsapp'),
         ('[DELAY ACCESS CHECK-IN]', 'Access check-in', 'whatsapp'),
         ('[DELAY LAST CHECK]',      'Last-check',      'email'),
+        ('[SCHEDULED FOLLOW-UP]',   'Scheduled',       'whatsapp'),
+        ('[SCHEDULED EMAIL]',       'Scheduled',       'email'),
         ('[EMAIL FOLLOW-UP]',       'Email',           'email'),
         ('[IMAGE SENT]',            'Image',           'whatsapp'),
         ('[PDF SENT]',              'PDF',             'whatsapp'),
@@ -1370,6 +1372,18 @@ class Appointment(models.Model):
     def get_email_followups(self):
         """Email follow-up events only (newest first)."""
         return [e for e in self.get_followup_log() if e['channel'] == 'email']
+
+    def scheduled_whatsapp_followups(self):
+        """Staff-queued WhatsApp follow-ups still to go out (pending/failed)."""
+        return self.scheduled_followups.filter(
+            channel='whatsapp', status__in=['pending', 'failed']
+        ).order_by('scheduled_for')
+
+    def scheduled_email_followups(self):
+        """Staff-queued email follow-ups still to go out (pending/failed)."""
+        return self.scheduled_followups.filter(
+            channel='email', status__in=['pending', 'failed']
+        ).order_by('scheduled_for')
 
     def get_upcoming_emails(self):
         """Scheduled customer-facing emails for this lead, with send dates/times.
@@ -1616,7 +1630,50 @@ class ConversationMessage(models.Model):
         ordering = ['timestamp']
     
     def __str__(self):
-        return f"{self.get_role_display()} message at {self.timestamp}"        
+        return f"{self.get_role_display()} message at {self.timestamp}"
+
+
+class ScheduledFollowup(models.Model):
+    """A staff-queued follow-up to be sent at a chosen date/time.
+
+    Dispatched by the ``send_scheduled_followups`` management command (also
+    invoked at the start of ``send_followups``), which sends due pending rows
+    via WhatsApp or email and logs them onto the appointment's conversation
+    history so they appear in the follow-up tabs.
+    """
+    CHANNEL_CHOICES = [
+        ('whatsapp', 'WhatsApp'),
+        ('email', 'Email'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('sent', 'Sent'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    appointment = models.ForeignKey(
+        Appointment, on_delete=models.CASCADE, related_name='scheduled_followups'
+    )
+    channel = models.CharField(max_length=10, choices=CHANNEL_CHOICES, db_index=True)
+    scheduled_for = models.DateTimeField(db_index=True)
+    subject = models.CharField(max_length=255, blank=True, default='', help_text="Email subject (email only)")
+    message = models.TextField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    error = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['scheduled_for']
+        indexes = [
+            models.Index(fields=['status', 'scheduled_for']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_channel_display()} follow-up for apt {self.appointment_id} @ {self.scheduled_for}"
+
 
 class AppointmentNote(models.Model):
     """Additional notes for appointments"""

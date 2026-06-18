@@ -1770,9 +1770,61 @@
       <div class="appt-tab-pane" id="tab-wa-followups">
         <div class="appt-detail-content">
 
-          {# ── Upcoming (scheduled) WhatsApp follow-up ── #}
+          {# ── Schedule a WhatsApp follow-up (real send queue) ── #}
           <div class="detail-card">
-            <div class="detail-card-header">Upcoming WhatsApp Follow-up</div>
+            <div class="detail-card-header">Schedule a WhatsApp Follow-up</div>
+            <div class="detail-card-body">
+              <form method="post" action="{% url 'schedule_followup' appointment.pk %}?{{ request.GET.urlencode }}">
+                {% csrf_token %}
+                <input type="hidden" name="channel" value="whatsapp">
+                <div class="detail-form-grid">
+                  <div class="detail-field">
+                    <label for="wa_sched_at">Send at</label>
+                    <input type="datetime-local" id="wa_sched_at" name="scheduled_for" required>
+                  </div>
+                </div>
+                <div class="detail-field full" style="margin-top:10px;">
+                  <label for="wa_sched_msg">Message</label>
+                  <textarea id="wa_sched_msg" name="message" rows="3" class="fu-edit-input" placeholder="Hi {name}, just checking in…" required></textarea>
+                </div>
+                <div class="detail-actions">
+                  <button type="submit" class="action-btn primary"><i class="far fa-clock"></i> Schedule</button>
+                  <span class="fu-hint">Use {name} to insert the customer's name. Sent automatically at the chosen time.</span>
+                </div>
+              </form>
+
+              {% for sf in appointment.scheduled_whatsapp_followups %}
+              <div class="fu-sched" style="margin-top:12px;">
+                <div class="fu-sched-main">
+                  <div class="fu-sched-label"><i class="far fa-clock"></i> {{ sf.scheduled_for|date:"D j M Y, H:i" }}</div>
+                  <div class="fu-sched-note">{{ sf.message|truncatechars:160 }}</div>
+                  {% if sf.status == 'failed' %}<div class="fu-sched-note" style="color:#991b1b;">Failed: {{ sf.error|truncatechars:120 }}</div>{% endif %}
+                  <form method="post" action="{% url 'edit_scheduled_followup' sf.id %}?{{ request.GET.urlencode }}" id="sched-form-{{ sf.id }}" style="display:none; margin-top:8px;">
+                    {% csrf_token %}
+                    <input type="datetime-local" name="scheduled_for" value="{{ sf.scheduled_for|date:'Y-m-d\\TH:i' }}" class="fu-edit-input" style="margin-bottom:8px;">
+                    <textarea name="message" rows="3" class="fu-edit-input">{{ sf.message }}</textarea>
+                    <div class="fu-edit-actions">
+                      <button type="submit" class="action-btn primary"><i class="fas fa-check"></i> Save</button>
+                      <button type="button" class="action-btn ghost" onclick="toggleSchedEdit({{ sf.id }})">Cancel</button>
+                    </div>
+                  </form>
+                </div>
+                <span class="fu-pill fu-pill--{{ sf.status }}">{{ sf.status }}</span>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" class="fu-edit-btn" onclick="toggleSchedEdit({{ sf.id }})" aria-label="Edit"><i class="fas fa-pen"></i></button>
+                  <form method="post" action="{% url 'cancel_scheduled_followup' sf.id %}?{{ request.GET.urlencode }}" onsubmit="return confirm('Cancel this scheduled follow-up?');">
+                    {% csrf_token %}
+                    <button type="submit" class="fu-edit-btn" aria-label="Cancel" title="Cancel"><i class="fas fa-trash"></i></button>
+                  </form>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          {# ── Follow-up status / next-touch marker ── #}
+          <div class="detail-card">
+            <div class="detail-card-header">Follow-up Status</div>
             <div class="detail-card-body">
               <form method="post" action="{% url 'update_followup_schedule' appointment.pk %}?{{ request.GET.urlencode }}">
                 {% csrf_token %}
@@ -1853,6 +1905,68 @@
       {# ── Email follow-ups tab ── #}
       <div class="appt-tab-pane" id="tab-email-followups">
         <div class="appt-detail-content">
+
+          {# ── Schedule an email follow-up (real send queue) ── #}
+          <div class="detail-card">
+            <div class="detail-card-header">Schedule an Email Follow-up</div>
+            <div class="detail-card-body">
+              {% if not appointment.customer_email %}
+              <div class="fu-hint" style="margin-bottom:10px; color:#b45309;">
+                This lead has no email on file — add one in the Details tab before scheduling.
+              </div>
+              {% endif %}
+              <form method="post" action="{% url 'schedule_followup' appointment.pk %}?{{ request.GET.urlencode }}">
+                {% csrf_token %}
+                <input type="hidden" name="channel" value="email">
+                <div class="detail-form-grid">
+                  <div class="detail-field">
+                    <label for="em_sched_at">Send at</label>
+                    <input type="datetime-local" id="em_sched_at" name="scheduled_for" required>
+                  </div>
+                  <div class="detail-field">
+                    <label for="em_sched_subject">Subject</label>
+                    <input type="text" id="em_sched_subject" name="subject" maxlength="255" placeholder="Following up">
+                  </div>
+                </div>
+                <div class="detail-field full" style="margin-top:10px;">
+                  <label for="em_sched_msg">Message</label>
+                  <textarea id="em_sched_msg" name="message" rows="4" class="fu-edit-input" placeholder="Hi {name}, …" required></textarea>
+                </div>
+                <div class="detail-actions">
+                  <button type="submit" class="action-btn primary" {% if not appointment.customer_email %}disabled{% endif %}><i class="far fa-clock"></i> Schedule</button>
+                  <span class="fu-hint">Use {name} to insert the customer's name. Sent by email at the chosen time.</span>
+                </div>
+              </form>
+
+              {% for sf in appointment.scheduled_email_followups %}
+              <div class="fu-sched" style="margin-top:12px;">
+                <div class="fu-sched-main">
+                  <div class="fu-sched-label"><i class="far fa-clock"></i> {{ sf.scheduled_for|date:"D j M Y, H:i" }}{% if sf.subject %} · {{ sf.subject }}{% endif %}</div>
+                  <div class="fu-sched-note">{{ sf.message|truncatechars:160 }}</div>
+                  {% if sf.status == 'failed' %}<div class="fu-sched-note" style="color:#991b1b;">Failed: {{ sf.error|truncatechars:120 }}</div>{% endif %}
+                  <form method="post" action="{% url 'edit_scheduled_followup' sf.id %}?{{ request.GET.urlencode }}" id="sched-form-{{ sf.id }}" style="display:none; margin-top:8px;">
+                    {% csrf_token %}
+                    <input type="datetime-local" name="scheduled_for" value="{{ sf.scheduled_for|date:'Y-m-d\\TH:i' }}" class="fu-edit-input" style="margin-bottom:8px;">
+                    <input type="text" name="subject" value="{{ sf.subject }}" maxlength="255" class="fu-edit-input" placeholder="Subject" style="margin-bottom:8px;">
+                    <textarea name="message" rows="4" class="fu-edit-input">{{ sf.message }}</textarea>
+                    <div class="fu-edit-actions">
+                      <button type="submit" class="action-btn primary"><i class="fas fa-check"></i> Save</button>
+                      <button type="button" class="action-btn ghost" onclick="toggleSchedEdit({{ sf.id }})">Cancel</button>
+                    </div>
+                  </form>
+                </div>
+                <span class="fu-pill fu-pill--{{ sf.status }}">{{ sf.status }}</span>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" class="fu-edit-btn" onclick="toggleSchedEdit({{ sf.id }})" aria-label="Edit"><i class="fas fa-pen"></i></button>
+                  <form method="post" action="{% url 'cancel_scheduled_followup' sf.id %}?{{ request.GET.urlencode }}" onsubmit="return confirm('Cancel this scheduled email?');">
+                    {% csrf_token %}
+                    <button type="submit" class="fu-edit-btn" aria-label="Cancel" title="Cancel"><i class="fas fa-trash"></i></button>
+                  </form>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
 
           {# ── Upcoming / scheduled emails ── #}
           <div class="detail-card">
@@ -1971,6 +2085,14 @@
     }
   }
   window.toggleFollowupEdit = toggleFollowupEdit;
+
+  // Toggle inline edit of a queued (scheduled) follow-up.
+  function toggleSchedEdit(id) {
+    var form = document.getElementById('sched-form-' + id);
+    if (!form) return;
+    form.style.display = (form.style.display === 'none' || !form.style.display) ? 'block' : 'none';
+  }
+  window.toggleSchedEdit = toggleSchedEdit;
 
   function scrollChatBottom() {
     var chat = document.getElementById('chatScroll');

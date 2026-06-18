@@ -96,6 +96,9 @@ from .followups import (
     send_bulk_followup,
     edit_followup_log,
     update_followup_schedule,
+    schedule_followup,
+    edit_scheduled_followup,
+    cancel_scheduled_followup,
 )
 
 from .plumbot import Plumbot

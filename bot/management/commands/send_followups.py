@@ -82,6 +82,23 @@ class Command(BaseCommand):
 
         now_local = timezone.now().astimezone(SA_TIMEZONE)
 
+        # Dispatch any staff-scheduled follow-ups that are now due. These run
+        # regardless of the contact-window gate below — staff chose these exact
+        # times deliberately — so do it before the early return.
+        try:
+            from bot.management.commands.send_scheduled_followups import (
+                dispatch_due_scheduled_followups,
+            )
+            sres = dispatch_due_scheduled_followups(
+                dry_run=dry_run, log=lambda m: self.stdout.write(m)
+            )
+            if sres['sent'] or sres['failed']:
+                self.stdout.write(self.style.SUCCESS(
+                    f"📅 Scheduled follow-ups → sent={sres['sent']} failed={sres['failed']}"
+                ))
+        except Exception as exc:  # noqa: BLE001 — never let this block normal follow-ups
+            logger.warning('Scheduled follow-up dispatch failed: %s', exc)
+
         if not force and not self._in_contact_window(now_local):
             self.stdout.write(
                 self.style.WARNING(

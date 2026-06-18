@@ -613,6 +613,115 @@ def edit_followup_log(request, pk):
     return _followup_redirect(request, pk)
 
 
+def _parse_sa_datetime(raw):
+    """Parse a datetime-local string into an Africa/Johannesburg-aware datetime.
+
+    Returns (datetime, None) on success or (None, error_message).
+    """
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None, 'Could not read the date and time.'
+    sa_timezone = pytz.timezone('Africa/Johannesburg')
+    if dt.tzinfo is None:
+        dt = sa_timezone.localize(dt)
+    return dt, None
+
+
+@staff_required
+@require_POST
+def schedule_followup(request, pk):
+    """Queue a WhatsApp or email follow-up to be sent at a chosen date/time."""
+    from ..models import ScheduledFollowup
+
+    appointment = get_object_or_404(Appointment, pk=pk)
+    channel = (request.POST.get('channel') or '').strip()
+    raw = (request.POST.get('scheduled_for') or '').strip()
+    message = (request.POST.get('message') or '').strip()
+    subject = (request.POST.get('subject') or '').strip()
+
+    if channel not in ('whatsapp', 'email'):
+        messages.error(request, 'Invalid follow-up channel.')
+        return _followup_redirect(request, pk)
+    if not raw:
+        messages.error(request, 'Choose a date and time for the follow-up.')
+        return _followup_redirect(request, pk)
+    if not message:
+        messages.error(request, 'Enter the follow-up message.')
+        return _followup_redirect(request, pk)
+
+    dt, err = _parse_sa_datetime(raw)
+    if err:
+        messages.error(request, err)
+        return _followup_redirect(request, pk)
+    if dt <= timezone.now():
+        messages.error(request, 'Pick a time in the future.')
+        return _followup_redirect(request, pk)
+    if channel == 'email' and not appointment.customer_email:
+        messages.error(request, 'This lead has no email address — add one in the Details tab first.')
+        return _followup_redirect(request, pk)
+
+    ScheduledFollowup.objects.create(
+        appointment=appointment,
+        channel=channel,
+        scheduled_for=dt,
+        subject=subject,
+        message=message,
+        created_by=request.user,
+    )
+    messages.success(
+        request,
+        f'{channel.title()} follow-up scheduled for {dt.strftime("%d %b %Y, %H:%M")}.'
+    )
+    return _followup_redirect(request, pk)
+
+
+@staff_required
+@require_POST
+def edit_scheduled_followup(request, sf_id):
+    """Reschedule / reword a queued follow-up (pending or failed only)."""
+    from ..models import ScheduledFollowup
+
+    sf = get_object_or_404(ScheduledFollowup, pk=sf_id)
+    if sf.status not in ('pending', 'failed'):
+        messages.error(request, 'Only pending follow-ups can be edited.')
+        return _followup_redirect(request, sf.appointment_id)
+
+    raw = (request.POST.get('scheduled_for') or '').strip()
+    message = (request.POST.get('message') or '').strip()
+    subject = (request.POST.get('subject') or '').strip()
+
+    if raw:
+        dt, err = _parse_sa_datetime(raw)
+        if err:
+            messages.error(request, err)
+            return _followup_redirect(request, sf.appointment_id)
+        sf.scheduled_for = dt
+    if message:
+        sf.message = message
+    sf.subject = subject
+    if sf.status == 'failed':
+        # Re-queue a previously failed send after the staff member fixes it.
+        sf.status = 'pending'
+        sf.error = ''
+    sf.save()
+    messages.success(request, 'Scheduled follow-up updated.')
+    return _followup_redirect(request, sf.appointment_id)
+
+
+@staff_required
+@require_POST
+def cancel_scheduled_followup(request, sf_id):
+    """Cancel a queued follow-up so it is never sent."""
+    from ..models import ScheduledFollowup
+
+    sf = get_object_or_404(ScheduledFollowup, pk=sf_id)
+    sf.status = 'cancelled'
+    sf.save(update_fields=['status'])
+    messages.success(request, 'Scheduled follow-up cancelled.')
+    return _followup_redirect(request, sf.appointment_id)
+
+
 @staff_required
 @require_POST
 def update_followup_schedule(request, pk):
