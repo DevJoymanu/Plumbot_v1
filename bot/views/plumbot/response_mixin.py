@@ -2222,17 +2222,11 @@ class ResponseMixin:
                 ai_response = ai_response.replace('```json', '').replace('```', '').strip()
                 result = json.loads(ai_response)
 
-                message_lower = (message or '').lower()
-                tub_terms = ('tub', 'bathtub', 'bath', 'freestanding tub', 'free-standing tub')
-                if result.get('intent') == 'bathtub_installation' and not any(term in message_lower for term in tub_terms):
-                    if 'shower' in message_lower:
-                        result = {"intent": "shower_cubicle", "confidence": result.get('confidence', 'HIGH')}
-                    elif 'chamber' in message_lower:
-                        result = {"intent": "chamber", "confidence": result.get('confidence', 'HIGH')}
-                    elif 'toilet' in message_lower:
-                        result = {"intent": "toilet", "confidence": result.get('confidence', 'HIGH')}
-                    else:
-                        result = {"intent": "none", "confidence": "LOW"}
+                result = self._correct_service_intent(
+                    message,
+                    result.get('intent'),
+                    result.get('confidence', 'HIGH'),
+                )
 
                 print(f"🤖 Service inquiry detection: '{message}' → {result}")
                 return result
@@ -2240,6 +2234,47 @@ class ResponseMixin:
             except Exception as e:
                 print(f"❌ Service inquiry detection error: {str(e)}")
                 return {"intent": "none", "confidence": "LOW"}
+
+        @staticmethod
+        def _correct_service_intent(message, intent, confidence='HIGH'):
+            """Deterministically correct an LLM service-intent guess using the
+            customer's own product words.
+
+            The DeepSeek classifier is unstable on short product questions — the
+            same message can come back 'shower_cubicle' on one call and 'tub_sales'
+            on the next (e.g. "Did you sell bathroom cubicles" → tub_sales → wrong
+            bathtub spiel). CLAUDE.md is explicit: prefer deterministic resolvers
+            over LLM round-trips for short/fuzzy strings.
+
+            We only override tub-family intents that contain NO genuine tub word —
+            the misfires actually seen in production. Anything else passes through
+            untouched. Pure function (no API) so it can be regression-tested without
+            hitting DeepSeek.
+            """
+            tub_intents = ('tub_sales', 'standalone_tub', 'bathtub_installation')
+            message_lower = (message or '').lower()
+            # Word-boundary match so "bathroom" does NOT read as the tub word "bath".
+            has_tub_word = bool(re.search(
+                r'\b(tub|tubs|bathtub|bathtubs|bath|baths|'
+                r'freestanding|free[\s-]?standing|standalone|stand[\s-]?alone)\b',
+                message_lower,
+            ))
+            if intent not in tub_intents or has_tub_word:
+                return {"intent": intent, "confidence": confidence}
+
+            # Tub intent but no tub word — re-map to whatever product IS named,
+            # else drop to none rather than pitch a tub the customer never asked for.
+            if re.search(r'\bcubicles?\b', message_lower) or 'shower' in message_lower:
+                return {"intent": "shower_cubicle", "confidence": confidence}
+            if 'chamber' in message_lower:
+                return {"intent": "chamber", "confidence": confidence}
+            if 'toilet' in message_lower:
+                return {"intent": "toilet", "confidence": confidence}
+            if any(w in message_lower for w in ('vanity', 'vanitie', 'vanitys')):
+                return {"intent": "vanity", "confidence": confidence}
+            if 'geyser' in message_lower:
+                return {"intent": "geyser", "confidence": confidence}
+            return {"intent": "none", "confidence": "LOW"}
 
 
         @staticmethod

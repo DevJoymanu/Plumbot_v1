@@ -168,6 +168,52 @@ def get_bot(appt):
 
 
 # ============================================================
+# TEST 0: Deterministic Intent Correction (no API)
+# ------------------------------------------------------------
+# Locks the guard that overrides an unstable LLM guess using the
+# customer's own product words. API-free on purpose: the DeepSeek
+# classifier is flaky on short product questions, so the regression
+# we care about ("Did you sell bathroom cubicles" coming back as
+# tub_sales → wrong bathtub spiel) must be pinned at the deterministic
+# layer, not left to a live model call.
+# ============================================================
+
+print("\n" + "="*60)
+print("TEST 0: DETERMINISTIC INTENT CORRECTION")
+print("="*60)
+
+from bot.views.plumbot.response_mixin import ResponseMixin
+
+# (message, intent the LLM returned, expected intent after correction)
+INTENT_CORRECTION_CASES = [
+    # The production bug: a "cubicle" message misclassified as a tub.
+    ("Did you sell bathroom cubicles", "tub_sales", "shower_cubicle"),
+    ("shower cubicle price",           "tub_sales", "shower_cubicle"),
+    # Genuine tub words must pass through untouched.
+    ("how much tub",                   "tub_sales",      "tub_sales"),
+    ("do you sell baths",              "tub_sales",      "tub_sales"),
+    ("I want a freestanding tub",      "standalone_tub", "standalone_tub"),
+    # "bathroom" must NOT be read as the tub word "bath".
+    ("bathroom renovation, no plan",   "tub_sales", "none"),
+    ("do you do toilets",              "tub_sales", "toilet"),
+    # Non-tub intents are never touched.
+    ("shower cubicle price",           "shower_cubicle", "shower_cubicle"),
+]
+
+for msg, llm_intent, expected in INTENT_CORRECTION_CASES:
+    try:
+        got = ResponseMixin._correct_service_intent(msg, llm_intent).get('intent')
+        results.log(
+            f"_correct_service_intent: '{msg[:38]}' [{llm_intent}]",
+            got == expected,
+            f"corrected to {got}",
+            expected=expected,
+            got=got,
+        )
+    except Exception as e:
+        results.log(f"_correct_service_intent: '{msg[:38]}'", False, got=str(e))
+
+# ============================================================
 # TEST 1: Service Inquiry Detection
 # ============================================================
 
