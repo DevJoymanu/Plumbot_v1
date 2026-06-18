@@ -109,6 +109,13 @@ from .followups import (
 
 from .plumbot import Plumbot
 
+from .test_console import (
+    test_console_view,
+    test_console_send,
+    test_console_poll,
+    test_console_reset,
+)
+
 # Auth views
 from ..auth_views import login_view, logout_view, profile_view, change_password_view
 

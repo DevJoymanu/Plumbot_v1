@@ -41,6 +41,10 @@
             <i class="fas fa-file-invoice-dollar nav-icon"></i>
             New Quotation
         </a>
+        <a href="{% url 'test_console' %}" class="pb-sidenav__item {% if active_nav == 'test_console' %}active{% endif %}">
+            <i class="fas fa-comments nav-icon"></i>
+            Test Console
+        </a>
     </div>
 
     <div class="pb-sidenav__secondary">

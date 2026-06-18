@@ -54,6 +54,9 @@ class NotificationMixin:
             apt = self.appointment
             if not apt or not apt.scheduled_datetime:
                 return
+            from ...test_console import is_test_sender
+            if is_test_sender(self.phone_number):
+                return
             notes = apt.internal_notes or ''
             if '[DATE_NO_TIME_ALERTED]' in notes:
                 return
@@ -73,6 +76,10 @@ class NotificationMixin:
 
         def notify_plumber_about_plan(self):
             """Send plan details to plumber via WhatsApp"""
+            from ...test_console import is_test_sender
+            if is_test_sender(self.phone_number):
+                print("🧪 Test lead — plan-received plumber alert muted")
+                return
             try:
                 base_url = os.getenv("SITE_URL", "http://127.0.0.1:8000")
 
@@ -158,6 +165,10 @@ class NotificationMixin:
 
         def notify_team(self, appointment_info, appointment_datetime):
                 """Notify team about new appointment booking via WhatsApp."""
+                from ...test_console import is_test_sender
+                if is_test_sender(self.phone_number):
+                    print("🧪 Test lead — team booking alert muted")
+                    return
                 try:
                     import os
 

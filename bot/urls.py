@@ -117,6 +117,12 @@ urlpatterns = [
     path('test-whatsapp/', test_whatsapp, name='test_whatsapp'),
     path('export-appointments/', export_appointments, name='export_appointments'),
 
+    # Web message-testing console (chat with the bot without a real device)
+    path('test-console/', views.test_console_view, name='test_console'),
+    path('test-console/send/', views.test_console_send, name='test_console_send'),
+    path('test-console/poll/', views.test_console_poll, name='test_console_poll'),
+    path('test-console/reset/', views.test_console_reset, name='test_console_reset'),
+
     path('calendar/', CalendarView.as_view(), name='calendar'),
     path('media/', handle_whatsapp_media, name='whatsapp_media'),
 

@@ -236,6 +236,10 @@ def is_chatbot_paused_for_sender(sender: str) -> bool:
 
 
 def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
+    from .test_console import is_test_sender
+    if is_test_sender(sender):
+        print(f"🧪 Test lead +{sender} — priority-lead alert muted")
+        return
     if appointment.lead_status not in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
         return
 
@@ -399,6 +403,13 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         except Exception:
             was_confirmed_at_start = False
 
+        # Web test console: deliver instantly so the browser sees the reply in
+        # seconds rather than minutes, and never call Meta's read-receipt endpoint
+        # with a fake WAMID.
+        from .test_console import is_test_sender
+        if is_test_sender(sender):
+            delay_seconds = 0
+
         # Sleep in short chunks so a cancel_event can interrupt the wait quickly.
         _POLL = 5  # seconds between cancellation checks
         slept = 0
@@ -432,7 +443,7 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         except Exception:
             pass  # DB unavailable — proceed with send rather than silently drop
 
-        if message_id:
+        if message_id and not is_test_sender(sender):
             try:
                 whatsapp_api.mark_message_as_read(message_id)
             except Exception as e:
@@ -1263,7 +1274,8 @@ def send_previous_work_photos(sender, appointment=None):
     intro = "Here are some examples of our previous plumbing work!"
     def send_images_with_delay():
         try:
-            delay_seconds = get_random_delay()
+            from .test_console import is_test_sender
+            delay_seconds = 0 if is_test_sender(sender) else get_random_delay()
             print(f"Waiting {delay_seconds // 60} minute(s) before sending images to {sender}")
             time.sleep(delay_seconds)
             whatsapp_api.send_text_message(sender, intro)
@@ -1835,6 +1847,18 @@ def _enqueue_for_response(sender: str, message_body: str, message_id, quoted_tex
         if old_event is not None:
             old_event.set()
             print(f"🚫 Pending send cancelled for {sender} — will be handled in next batch")
+
+    # Web test console: bypass the debounce window and generate the reply inline,
+    # so the HTTP "send" request returns only once the bot's reply is in history.
+    from .test_console import is_test_sender
+    if is_test_sender(sender):
+        with _pending_batch_lock:
+            existing = _pending_batch_timers.pop(sender, None)
+            if existing is not None:
+                existing.cancel()
+            _pending_batches[sender] = [(message_body, message_id, quoted_text)]
+        _flush_text_batch(sender)
+        return
 
     with _pending_batch_lock:
         if sender not in _pending_batches:

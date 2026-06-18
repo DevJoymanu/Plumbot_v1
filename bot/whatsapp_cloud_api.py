@@ -138,6 +138,9 @@ class WhatsAppCloudAPI:
 
     def send_text_message(self, to: str, message: str) -> Dict:
         """Send a plain text message."""
+        from .test_console import is_test_sender, record_outbound
+        if is_test_sender(to):
+            return record_outbound(to, 'text', text=message)
         try:
             payload = {
                 'messaging_product': 'whatsapp',
@@ -178,6 +181,11 @@ class WhatsAppCloudAPI:
         Send media using a publicly accessible URL.
         media_type: 'image' | 'video' | 'audio' | 'document'
         """
+        from .test_console import is_test_sender, record_outbound
+        if is_test_sender(to):
+            return record_outbound(
+                to, media_type, media_url=media_url, caption=caption, filename=filename
+            )
         try:
             media_object = {'link': media_url}
             if caption and media_type in ('image', 'video', 'document'):
@@ -249,6 +257,11 @@ class WhatsAppCloudAPI:
         filename: str = None,
     ) -> Dict:
         """Send media using a previously uploaded media ID."""
+        from .test_console import is_test_sender, record_outbound
+        if is_test_sender(to):
+            return record_outbound(
+                to, media_type, media_id=media_id, caption=caption, filename=filename
+            )
         try:
             media_object = {'id': media_id}
             if caption and media_type in ('image', 'video', 'document'):
@@ -343,11 +356,17 @@ class WhatsAppCloudAPI:
 
     def send_local_image(self, to: str, image_path: str, caption: str = None) -> Dict:
         """Upload a local image file then send it."""
+        from .test_console import is_test_sender, record_outbound
+        if is_test_sender(to):
+            return record_outbound(to, 'image', media_path=image_path, caption=caption)
         media_id = self.upload_media(image_path)
         return self.send_media_by_id(to, media_id, media_type='image', caption=caption)
 
     def send_local_video(self, to: str, video_path: str, caption: str = None) -> Dict:
         """Upload a local video file then send it."""
+        from .test_console import is_test_sender, record_outbound
+        if is_test_sender(to):
+            return record_outbound(to, 'video', media_path=video_path, caption=caption)
         media_id = self.upload_media(video_path)
         return self.send_media_by_id(to, media_id, media_type='video', caption=caption)
 
@@ -355,6 +374,12 @@ class WhatsAppCloudAPI:
         self, to: str, doc_path: str, caption: str = None, filename: str = None
     ) -> Dict:
         """Upload a local document then send it."""
+        from .test_console import is_test_sender, record_outbound
+        if is_test_sender(to):
+            return record_outbound(
+                to, 'document', media_path=doc_path, caption=caption,
+                filename=filename or os.path.basename(doc_path),
+            )
         media_id = self.upload_media(doc_path)
         return self.send_media_by_id(
             to, media_id, media_type='document',

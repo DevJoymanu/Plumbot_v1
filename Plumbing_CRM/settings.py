@@ -158,7 +158,7 @@ elif EMAIL_PORT == 587:
 # Keep SMTP failures short. Customer-facing WhatsApp replies are no longer
 # blocked by delay emails, but a dropped SMTP port should still fail quickly.
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '5'))
-_from_address = os.environ.get('EMAIL_FROM_ADDRESS', EMAIL_HOST_USER or 'team@homebaseplumbers.co.zw')
+_from_address = os.environ.get('EMAIL_FROM_ADDRESS', EMAIL_HOST_USER or 'info@homebaseplumbers.co.zw')
 _from_name    = os.environ.get('EMAIL_FROM_NAME', 'HomeBase Plumbers')
 DEFAULT_FROM_EMAIL = f"{_from_name} <{_from_address}>"
 SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)

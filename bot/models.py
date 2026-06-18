@@ -1458,6 +1458,14 @@ class Appointment(models.Model):
                     'source': 'reminder',
                 })
 
+        # Limit overdue items to the last 7 days — drop ones that have been
+        # missed for longer so stale follow-ups don't pile up indefinitely.
+        overdue_floor = now - timedelta(days=7)
+        items = [
+            it for it in items
+            if it['status'] != 'overdue' or it['scheduled_for'] >= overdue_floor
+        ]
+
         items.sort(key=lambda x: x['scheduled_for'])
         return {'has_email': bool(self.customer_email), 'items': items}
 
