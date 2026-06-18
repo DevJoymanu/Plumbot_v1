@@ -1657,8 +1657,13 @@ class ScheduledFollowup(models.Model):
     )
     channel = models.CharField(max_length=10, choices=CHANNEL_CHOICES, db_index=True)
     scheduled_for = models.DateTimeField(db_index=True)
+    template_key = models.CharField(
+        max_length=50, blank=True, default='',
+        help_text="email_catalog key — when set, the dispatcher renders that "
+                  "template fresh at send time instead of using subject/message.",
+    )
     subject = models.CharField(max_length=255, blank=True, default='', help_text="Email subject (email only)")
-    message = models.TextField()
+    message = models.TextField(blank=True, default='')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)

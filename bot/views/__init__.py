@@ -102,6 +102,7 @@ from .followups import (
     lead_email_preview,
     lead_email_edit_data,
     lead_send_catalog_emails,
+    lead_schedule_catalog_emails,
     lead_send_email_now,
     update_lead_email,
 )

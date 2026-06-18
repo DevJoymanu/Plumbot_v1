@@ -854,6 +854,63 @@ def lead_send_catalog_emails(request, pk):
 
 @staff_required
 @require_POST
+def lead_schedule_catalog_emails(request, pk):
+    """Schedule one or more catalogue emails, each at its own chosen date/time.
+
+    Each ticked email must carry a future ``schedule_at_<key>`` value (enforced
+    here and in the UI). The template key is stored so the dispatcher renders the
+    real template fresh when it sends.
+    """
+    from ..email_catalog import EMAIL_CATALOG
+    from ..models import ScheduledFollowup
+
+    appointment = get_object_or_404(Appointment, pk=pk)
+    keys = [k for k in request.POST.getlist('email_keys') if k in EMAIL_CATALOG]
+
+    if not appointment.customer_email:
+        messages.error(request, 'This lead has no email address — add one in the Customer Email box first.')
+        return _followup_redirect(request, pk)
+    if not keys:
+        messages.error(request, 'Select at least one email to schedule.')
+        return _followup_redirect(request, pk)
+
+    to_create, errors = [], []
+    for key in keys:
+        label = EMAIL_CATALOG[key]['label']
+        raw = (request.POST.get(f'schedule_at_{key}') or '').strip()
+        if not raw:
+            errors.append(f'{label}: choose a date and time.')
+            continue
+        dt, err = _parse_sa_datetime(raw)
+        if err:
+            errors.append(f'{label}: {err}')
+        elif dt <= timezone.now():
+            errors.append(f'{label}: pick a time in the future.')
+        else:
+            to_create.append((key, dt))
+
+    if errors:
+        for e in errors:
+            messages.error(request, e)
+        return _followup_redirect(request, pk)
+
+    for key, dt in to_create:
+        entry = EMAIL_CATALOG[key]
+        ScheduledFollowup.objects.create(
+            appointment=appointment,
+            channel='email',
+            template_key=key,
+            subject=entry['label'],
+            message=entry['description'],
+            scheduled_for=dt,
+            created_by=request.user,
+        )
+    messages.success(request, f'{len(to_create)} email(s) scheduled.')
+    return _followup_redirect(request, pk)
+
+
+@staff_required
+@require_POST
 def lead_send_email_now(request, pk):
     """Send an edited (custom) email to this lead immediately."""
     from ..customer_emails import _wrap, _send

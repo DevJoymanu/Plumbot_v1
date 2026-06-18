@@ -62,19 +62,36 @@ def dispatch_due_scheduled_followups(now=None, dry_run=False, log=None):
             else:  # email
                 if not apt.customer_email:
                     raise ValueError('no customer_email on appointment')
-                body = (sf.message or '').replace('{name}', name)
-                subject = sf.subject or 'Following up'
-                if dry_run:
-                    _emit(f'[dry-run] Email → {apt.customer_email}: {subject}')
+
+                if sf.template_key:
+                    # Render the catalogue template fresh at send time so dates
+                    # and conversation context are current.
+                    from bot.email_catalog import EMAIL_CATALOG
+                    entry = EMAIL_CATALOG.get(sf.template_key)
+                    if not entry:
+                        raise ValueError(f'unknown email template {sf.template_key!r}')
+                    label = entry['label']
+                    if dry_run:
+                        _emit(f'[dry-run] Email (template {sf.template_key}) → {apt.customer_email}')
+                    else:
+                        ok = entry['send'](apt)
+                        if not ok:
+                            raise RuntimeError('templated email send returned False')
+                        apt.add_conversation_message('assistant', f'[SCHEDULED EMAIL] {label} sent to customer')
                 else:
-                    from bot.customer_emails import _wrap, _send
-                    paragraphs = ''.join(
-                        f'<p>{line.strip()}</p>' for line in body.split('\n') if line.strip()
-                    )
-                    ok = _send(apt, subject, _wrap(paragraphs))
-                    if not ok:
-                        raise RuntimeError('email send returned False')
-                    apt.add_conversation_message('assistant', f'[SCHEDULED EMAIL] {subject}: {body}')
+                    body = (sf.message or '').replace('{name}', name)
+                    subject = sf.subject or 'Following up'
+                    if dry_run:
+                        _emit(f'[dry-run] Email → {apt.customer_email}: {subject}')
+                    else:
+                        from bot.customer_emails import _wrap, _send
+                        paragraphs = ''.join(
+                            f'<p>{line.strip()}</p>' for line in body.split('\n') if line.strip()
+                        )
+                        ok = _send(apt, subject, _wrap(paragraphs))
+                        if not ok:
+                            raise RuntimeError('email send returned False')
+                        apt.add_conversation_message('assistant', f'[SCHEDULED EMAIL] {subject}: {body}')
 
             if not dry_run:
                 sf.status = 'sent'

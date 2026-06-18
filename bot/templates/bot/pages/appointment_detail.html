@@ -806,16 +806,23 @@
 
   /* Templated-email catalogue rows */
   .em-cat-row {
-    display: flex; align-items: flex-start; gap: 12px;
     padding: 10px 0; border-bottom: 1px solid #f0f0f0;
   }
   .em-cat-row:last-of-type { border-bottom: none; }
+  .em-cat-line { display: flex; align-items: flex-start; gap: 12px; }
   .em-cat-check { display: flex; gap: 10px; flex: 1; cursor: pointer; min-width: 0; }
   .em-cat-check input { margin-top: 3px; flex-shrink: 0; }
   .em-cat-main { display: flex; flex-direction: column; min-width: 0; }
   .em-cat-label { font-size: 14px; font-weight: 600; color: #1f2937; }
   .em-cat-desc  { font-size: 12px; color: #6b7280; margin-top: 2px; }
   .em-cat-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .em-cat-when {
+    display: flex; align-items: center; gap: 8px;
+    margin: 10px 0 4px 28px; padding: 8px 10px;
+    background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px;
+  }
+  .em-cat-when label { font-size: 12px; font-weight: 600; color: #374151; }
+  .em-cat-when .em-when-input { max-width: 240px; }
 
   /* Modal (preview + edit) */
   .em-modal {
@@ -2037,30 +2044,35 @@
                 This lead has no email on file — add one in the Customer Email box above to send.
               </div>
               {% endif %}
-              <form method="post" action="{% url 'lead_send_catalog_emails' appointment.pk %}?{{ request.GET.urlencode }}">
+              <form method="post" action="{% url 'lead_schedule_catalog_emails' appointment.pk %}?{{ request.GET.urlencode }}">
                 {% csrf_token %}
                 {% for key, label, desc in email_catalog %}
                 <div class="em-cat-row">
-                  <label class="em-cat-check">
-                    <input type="checkbox" name="email_keys" value="{{ key }}">
-                    <span class="em-cat-main">
-                      <span class="em-cat-label">{{ label }}</span>
-                      <span class="em-cat-desc">{{ desc }}</span>
-                    </span>
-                  </label>
-                  <div class="em-cat-actions">
-                    <button type="button" class="action-btn ghost" onclick="previewLeadEmail('{{ key }}')"><i class="far fa-eye"></i> Preview</button>
-                    <button type="button" class="action-btn ghost" onclick="editLeadEmail('{{ key }}', '{{ label|escapejs }}')"><i class="fas fa-pen"></i> Edit</button>
+                  <div class="em-cat-line">
+                    <label class="em-cat-check">
+                      <input type="checkbox" name="email_keys" value="{{ key }}" onchange="toggleEmSchedule(this, '{{ key }}')">
+                      <span class="em-cat-main">
+                        <span class="em-cat-label">{{ label }}</span>
+                        <span class="em-cat-desc">{{ desc }}</span>
+                      </span>
+                    </label>
+                    <div class="em-cat-actions">
+                      <button type="button" class="action-btn ghost" onclick="previewLeadEmail('{{ key }}')"><i class="far fa-eye"></i> Preview</button>
+                      <button type="button" class="action-btn ghost" onclick="editLeadEmail('{{ key }}', '{{ label|escapejs }}')"><i class="fas fa-pen"></i> Edit</button>
+                    </div>
+                  </div>
+                  <div class="em-cat-when" id="em-when-{{ key }}" style="display:none;">
+                    <label for="em-when-input-{{ key }}">Send at</label>
+                    <input type="datetime-local" id="em-when-input-{{ key }}" name="schedule_at_{{ key }}" class="fu-edit-input em-when-input">
                   </div>
                 </div>
                 {% endfor %}
                 <div class="detail-actions" style="margin-top:12px;">
                   <button type="submit" class="action-btn primary"
-                          {% if not appointment.customer_email %}disabled{% endif %}
-                          onclick="return confirm('Send the selected email(s) to this lead now?');">
-                    <i class="fas fa-paper-plane"></i> Send selected
+                          {% if not appointment.customer_email %}disabled{% endif %}>
+                    <i class="far fa-clock"></i> Schedule selected
                   </button>
-                  <span class="fu-hint">Sends the ticked emails to the customer immediately. Use Edit to tweak one first.</span>
+                  <span class="fu-hint">Tick an email, choose when to send it, then schedule. Use Edit to tweak a copy first.</span>
                 </div>
               </form>
             </div>
@@ -2246,6 +2258,24 @@
   function openEmModal(id)  { var m = document.getElementById(id); if (m) m.style.display = 'flex'; }
   function closeEmModal(id) { var m = document.getElementById(id); if (m) m.style.display = 'none'; }
   window.closeEmModal = closeEmModal;
+
+  // Reveal a required date/time for an email as soon as it's ticked.
+  function toggleEmSchedule(checkbox, key) {
+    var when = document.getElementById('em-when-' + key);
+    var input = document.getElementById('em-when-input-' + key);
+    if (!when || !input) return;
+    when.style.display = checkbox.checked ? 'flex' : 'none';
+    input.required = checkbox.checked;          // not-null only while selected
+    if (checkbox.checked) {
+      // Default the minimum to now so past times can't be picked.
+      var now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+      input.min = now.toISOString().slice(0, 16);
+      input.focus();
+    } else {
+      input.value = '';
+    }
+  }
+  window.toggleEmSchedule = toggleEmSchedule;
 
   function previewLeadEmail(key) {
     var frame = document.getElementById('emPreviewFrame');
