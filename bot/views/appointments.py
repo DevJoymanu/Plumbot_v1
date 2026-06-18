@@ -38,6 +38,7 @@ from ..models import (
     Appointment, Quotation, QuotationItem,
     QuotationTemplate, QuotationTemplateItem, ConversationMessage,
 )
+from ..email_catalog import catalog_for_template as _email_catalog_for_template
 from ..forms import (
     AppointmentForm, SettingsForm, CalendarSettingsForm, AISettingsForm,
     QuotationForm, QuotationItemFormSet,
@@ -527,6 +528,7 @@ class AppointmentDetailView(DetailView):
             'source_workspace': source_workspace,
             'source_back_url': source_back_url,
             'source_title': source_title,
+            'email_catalog': _email_catalog_for_template(),
             **sidebar_context,
         })
         return context

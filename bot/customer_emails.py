@@ -567,22 +567,27 @@ def _get_photo_paths():
 
 # ── Public send functions ─────────────────────────────────────────────────────
 
+def build_booking_confirmation_email(apt):
+    """Return (subject, html) for the booking-confirmation email."""
+    name    = getattr(apt, "customer_name", "") or "there"
+    subject = f"Confirmed — {_service(apt)} on {_fmt_date(apt)}"
+    body    = (
+        f'<p>Hi {name},</p>'
+        f'<p>Your appointment is confirmed. Here are the details:</p>'
+        f'{_apt_card(apt)}'
+        '<p>Our plumber will call you 30 minutes before arrival. '
+        'Please ensure someone is home and the work area is accessible.</p>'
+        f'{_wa_nudge()}'
+        '<p>See you then! <br><strong>HomeBase Plumbers</strong></p>'
+    )
+    return subject, _wrap(body)
+
+
 def send_booking_confirmation_email(apt):
     """Send HTML booking confirmation to the customer immediately after booking."""
     try:
-        name    = getattr(apt, "customer_name", "") or "there"
-        subject = f"Confirmed — {_service(apt)} on {_fmt_date(apt)}"
-        body    = (
-            f'<p>Hi {name},</p>'
-            f'<p>Your appointment is confirmed. Here are the details:</p>'
-            f'{_apt_card(apt)}'
-            '<p>Our plumber will call you 30 minutes before arrival. '
-            'Please ensure someone is home and the work area is accessible.</p>'
-            f'{_wa_nudge()}'
-            '<p>See you then! <br><strong>HomeBase Plumbers</strong></p>'
-        )
-        html = _wrap(body)
-        ok   = _send(apt, subject, html)
+        subject, html = build_booking_confirmation_email(apt)
+        ok = _send(apt, subject, html)
         if ok:
             logger.info("Booking confirmation email sent — apt %s", apt.pk)
         return ok
@@ -591,10 +596,13 @@ def send_booking_confirmation_email(apt):
         return False
 
 
-def send_delay_quote_email(apt, follow_up_date_str=None):
+def send_delay_quote_email(apt, follow_up_date_str=None, preview_only=False):
     """
     Send quote + portfolio email to a delayed lead.
     Attaches a PDF portfolio with project photos and pricing.
+
+    When preview_only=True, returns (subject, html) for on-screen preview and
+    does not generate the PDF or send anything.
 
     Deliverability: personal subject, two outlined CTA buttons (Call +
     WhatsApp), SendGrid link/open tracking disabled so links stay clean.
@@ -637,6 +645,14 @@ def send_delay_quote_email(apt, follow_up_date_str=None):
             f'{body}'
             '</body></html>'
         )
+        if preview_only:
+            preview_html = (
+                '<!DOCTYPE html><html><body>'
+                f'{body}'
+                '<p style="color:#888;font-size:13px;">[A portfolio PDF is attached when this email is sent.]</p>'
+                '</body></html>'
+            )
+            return subject, preview_html
 
         pdf = generate_portfolio_pdf()
         if pdf is None:
@@ -734,27 +750,32 @@ _REMINDER_CONFIGS = {
 }
 
 
+def build_customer_reminder_email(apt, reminder_type):
+    """Return (subject, html) for a customer reminder email of the given type."""
+    cfg  = _REMINDER_CONFIGS.get(reminder_type, _REMINDER_CONFIGS['one_day'])
+    name = getattr(apt, "customer_name", "") or "there"
+    t    = _fmt_time(apt)
+    d    = _fmt_date(apt)
+    svc  = _service(apt)
+
+    subject = cfg['subject'].format(service=svc, date=d, time=t)
+    intro   = cfg['intro'].format(time=t, date=d, name=name)
+    footer  = cfg['footer'].format(time=t, date=d, name=name)
+    body    = (
+        f'<p>Hi {name},</p>'
+        f'<p>{intro}</p>'
+        f'{_apt_card(apt)}'
+        f'<p>{footer}</p>'
+        f'{_wa_nudge()}'
+    )
+    return subject, _wrap(body)
+
+
 def send_customer_reminder_email(apt, reminder_type):
     """Send HTML reminder email to the customer."""
     try:
-        cfg  = _REMINDER_CONFIGS.get(reminder_type, _REMINDER_CONFIGS['one_day'])
-        name = getattr(apt, "customer_name", "") or "there"
-        t    = _fmt_time(apt)
-        d    = _fmt_date(apt)
-        svc  = _service(apt)
-
-        subject = cfg['subject'].format(service=svc, date=d, time=t)
-        intro   = cfg['intro'].format(time=t, date=d, name=name)
-        footer  = cfg['footer'].format(time=t, date=d, name=name)
-        body    = (
-            f'<p>Hi {name},</p>'
-            f'<p>{intro}</p>'
-            f'{_apt_card(apt)}'
-            f'<p>{footer}</p>'
-            f'{_wa_nudge()}'
-        )
-        html = _wrap(body)
-        ok   = _send(apt, subject, html)
+        subject, html = build_customer_reminder_email(apt, reminder_type)
+        ok = _send(apt, subject, html)
         if ok:
             logger.info("Customer reminder email (%s) sent — apt %s", reminder_type, apt.pk)
         return ok
@@ -798,9 +819,10 @@ def _extract_conversation_context(apt):
     return items
 
 
-def send_delay_followup_email(apt):
+def build_delay_followup_email(apt):
     """
-    Contextual re-engagement email sent on the agreed follow-up date.
+    Return (subject, html) for the contextual re-engagement email sent on the
+    agreed follow-up date.
 
     Deliverability design:
     - Subject is personal, no company name, no promotional language
@@ -855,13 +877,16 @@ def send_delay_followup_email(apt):
             f'{_contact_buttons(call)}'
             f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
         )
+        return subject, ('<!DOCTYPE html><html><body>' + body + '</body></html>')
+    except Exception:
+        logger.exception("build_delay_followup_email failed — apt %s", apt.pk)
+        return ('Still on for your plumbing work?', '<p>(could not build preview)</p>')
 
-        html = (
-            '<!DOCTYPE html><html><body>'
-            f'{body}'
-            '</body></html>'
-        )
 
+def send_delay_followup_email(apt):
+    """Send the contextual re-engagement email (see build_delay_followup_email)."""
+    try:
+        subject, html = build_delay_followup_email(apt)
         ok = _send(apt, subject, html)
         if ok:
             logger.info("Delay follow-up email sent — apt %s", apt.pk)
@@ -871,19 +896,14 @@ def send_delay_followup_email(apt):
         return False
 
 
-def send_delay_last_check_email(apt):
+def build_delay_last_check_email(apt):
     """
-    Second (final) re-engagement email — sent a few days after
-    send_delay_followup_email when the lead still hasn't responded.
+    Return (subject, html) for the second (final) re-engagement email — sent a
+    few days after the first when the lead still hasn't responded.
 
     Copy intentionally short, different from the first touch, and explicitly
     leaves the door open (reply "later" to be closed out quietly). This is
     the last email we send to a delayed lead.
-
-    Deliverability rules (same as the first touch):
-    - Personal subject, no company name, no promotional language
-    - Two outlined CTA buttons (Call + WhatsApp); SendGrid tracking disabled
-    - Minimal HTML, signed off by Takudzwa with direct number
     """
     try:
         name    = getattr(apt, 'customer_name', '') or ''
@@ -904,13 +924,16 @@ def send_delay_last_check_email(apt):
             f'{_contact_buttons(call)}'
             f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
         )
+        return subject, ('<!DOCTYPE html><html><body>' + body + '</body></html>')
+    except Exception:
+        logger.exception("build_delay_last_check_email failed — apt %s", apt.pk)
+        return ('Quick last check', '<p>(could not build preview)</p>')
 
-        html = (
-            '<!DOCTYPE html><html><body>'
-            f'{body}'
-            '</body></html>'
-        )
 
+def send_delay_last_check_email(apt):
+    """Send the final re-engagement email (see build_delay_last_check_email)."""
+    try:
+        subject, html = build_delay_last_check_email(apt)
         ok = _send(apt, subject, html)
         if ok:
             logger.info("Delay last-check email sent — apt %s", apt.pk)

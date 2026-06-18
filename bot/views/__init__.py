@@ -99,6 +99,10 @@ from .followups import (
     schedule_followup,
     edit_scheduled_followup,
     cancel_scheduled_followup,
+    lead_email_preview,
+    lead_email_edit_data,
+    lead_send_catalog_emails,
+    lead_send_email_now,
 )
 
 from .plumbot import Plumbot

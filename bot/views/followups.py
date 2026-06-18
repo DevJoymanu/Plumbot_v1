@@ -722,6 +722,146 @@ def cancel_scheduled_followup(request, sf_id):
     return _followup_redirect(request, sf.appointment_id)
 
 
+def _email_body_to_text(html):
+    """Plain-text rendition of an email body for the inline editor."""
+    from django.utils.html import strip_tags
+    import html as _html
+    text = re.sub(r'(?i)</p\s*>', '\n\n', html or '')
+    text = re.sub(r'(?i)<br\s*/?>', '\n', text)
+    text = strip_tags(text)
+    text = _html.unescape(text)
+    # Collapse the runs of blank lines strip_tags leaves behind.
+    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    return text
+
+
+@staff_required
+@require_GET
+def lead_email_preview(request, pk):
+    """Render a catalogue email for THIS lead, for on-screen preview."""
+    from ..email_catalog import EMAIL_CATALOG
+
+    appointment = get_object_or_404(Appointment, pk=pk)
+    key = (request.GET.get('key') or '').strip()
+    entry = EMAIL_CATALOG.get(key)
+    if not entry:
+        return HttpResponse('<p style="font-family:Arial;padding:20px;">Unknown email.</p>', status=404)
+
+    try:
+        subject, html = entry['build'](appointment)
+    except Exception as exc:
+        return HttpResponse(
+            f'<p style="font-family:Arial;padding:20px;color:#b91c1c;">Could not render preview: {exc}</p>',
+            status=500,
+        )
+
+    banner = (
+        '<div style="padding:10px 14px;background:#f3f4f6;border-bottom:1px solid #e5e7eb;'
+        'font-family:Arial,sans-serif;font-size:13px;color:#374151;">'
+        f'<strong>Subject:</strong> {subject}</div>'
+    )
+    return HttpResponse(banner + (html or ''))
+
+
+@staff_required
+@require_GET
+def lead_email_edit_data(request, pk):
+    """Return {subject, text} for a catalogue email so staff can edit a copy."""
+    from ..email_catalog import EMAIL_CATALOG
+
+    appointment = get_object_or_404(Appointment, pk=pk)
+    key = (request.GET.get('key') or '').strip()
+    entry = EMAIL_CATALOG.get(key)
+    if not entry:
+        return JsonResponse({'error': 'unknown email'}, status=404)
+    try:
+        subject, html = entry['build'](appointment)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+    return JsonResponse({
+        'key': key,
+        'label': entry['label'],
+        'subject': subject,
+        'text': _email_body_to_text(html),
+    })
+
+
+@staff_required
+@require_POST
+def lead_send_catalog_emails(request, pk):
+    """Send one or more catalogue emails (checkbox selection) to this lead now."""
+    from ..email_catalog import EMAIL_CATALOG
+
+    appointment = get_object_or_404(Appointment, pk=pk)
+    keys = request.POST.getlist('email_keys')
+
+    if not appointment.customer_email:
+        messages.error(request, 'This lead has no email address — add one in the Details tab first.')
+        return _followup_redirect(request, pk)
+    keys = [k for k in keys if k in EMAIL_CATALOG]
+    if not keys:
+        messages.error(request, 'Select at least one email to send.')
+        return _followup_redirect(request, pk)
+
+    sent, failed = 0, 0
+    for key in keys:
+        entry = EMAIL_CATALOG[key]
+        try:
+            ok = entry['send'](appointment)
+        except Exception as exc:
+            ok = False
+            logger.warning('Catalog email %s failed for apt %s: %s', key, pk, exc)
+        if ok:
+            sent += 1
+            appointment.add_conversation_message(
+                'assistant', f"[SCHEDULED EMAIL] {entry['label']} sent to customer"
+            )
+        else:
+            failed += 1
+
+    if sent:
+        messages.success(request, f'{sent} email(s) sent to {appointment.customer_email}.')
+    if failed:
+        messages.warning(request, f'{failed} email(s) failed to send — check logs.')
+    return _followup_redirect(request, pk)
+
+
+@staff_required
+@require_POST
+def lead_send_email_now(request, pk):
+    """Send an edited (custom) email to this lead immediately."""
+    from ..customer_emails import _wrap, _send
+
+    appointment = get_object_or_404(Appointment, pk=pk)
+    subject = (request.POST.get('subject') or '').strip()
+    message = (request.POST.get('message') or '').strip()
+
+    if not appointment.customer_email:
+        messages.error(request, 'This lead has no email address — add one in the Details tab first.')
+        return _followup_redirect(request, pk)
+    if not message:
+        messages.error(request, 'Enter the email message.')
+        return _followup_redirect(request, pk)
+
+    name = appointment.customer_name or 'there'
+    body = message.replace('{name}', name)
+    paragraphs = ''.join(f'<p>{line.strip()}</p>' for line in body.split('\n') if line.strip())
+    try:
+        ok = _send(appointment, subject or 'Following up', _wrap(paragraphs))
+    except Exception as exc:
+        ok = False
+        logger.warning('Custom email send failed for apt %s: %s', pk, exc)
+
+    if ok:
+        appointment.add_conversation_message(
+            'assistant', f"[SCHEDULED EMAIL] {subject or 'Following up'}: {body}"
+        )
+        messages.success(request, f'Email sent to {appointment.customer_email}.')
+    else:
+        messages.error(request, 'Email failed to send — check logs.')
+    return _followup_redirect(request, pk)
+
+
 @staff_required
 @require_POST
 def update_followup_schedule(request, pk):

@@ -804,6 +804,38 @@
   .fu-pill--pending { background: #dbeafe; color: #1e40af; }
   .fu-pill--overdue { background: #fee2e2; color: #991b1b; }
 
+  /* Templated-email catalogue rows */
+  .em-cat-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid #f0f0f0;
+  }
+  .em-cat-row:last-of-type { border-bottom: none; }
+  .em-cat-check { display: flex; gap: 10px; flex: 1; cursor: pointer; min-width: 0; }
+  .em-cat-check input { margin-top: 3px; flex-shrink: 0; }
+  .em-cat-main { display: flex; flex-direction: column; min-width: 0; }
+  .em-cat-label { font-size: 14px; font-weight: 600; color: #1f2937; }
+  .em-cat-desc  { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .em-cat-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+  /* Modal (preview + edit) */
+  .em-modal {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(15, 23, 42, 0.55);
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .em-modal-box {
+    background: #fff; border-radius: 14px; overflow: hidden;
+    width: 100%; max-width: 680px; max-height: 86vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+  }
+  .em-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid #eef2f7;
+    font-weight: 700; color: #111827;
+  }
+  .em-modal-frame { width: 100%; height: 70vh; border: none; }
+
   .appt-chat-pane {
     display: flex;
     flex-direction: column;
@@ -1968,6 +2000,91 @@
             </div>
           </div>
 
+          {# ── Templated emails: pick, preview, edit, send ── #}
+          <div class="detail-card">
+            <div class="detail-card-header">Send a Templated Email</div>
+            <div class="detail-card-body">
+              {% if not appointment.customer_email %}
+              <div class="fu-hint" style="margin-bottom:10px; color:#b45309;">
+                This lead has no email on file — add one in the Details tab to send.
+              </div>
+              {% endif %}
+              <form method="post" action="{% url 'lead_send_catalog_emails' appointment.pk %}?{{ request.GET.urlencode }}">
+                {% csrf_token %}
+                {% for key, label, desc in email_catalog %}
+                <div class="em-cat-row">
+                  <label class="em-cat-check">
+                    <input type="checkbox" name="email_keys" value="{{ key }}">
+                    <span class="em-cat-main">
+                      <span class="em-cat-label">{{ label }}</span>
+                      <span class="em-cat-desc">{{ desc }}</span>
+                    </span>
+                  </label>
+                  <div class="em-cat-actions">
+                    <button type="button" class="action-btn ghost" onclick="previewLeadEmail('{{ key }}')"><i class="far fa-eye"></i> Preview</button>
+                    <button type="button" class="action-btn ghost" onclick="editLeadEmail('{{ key }}', '{{ label|escapejs }}')"><i class="fas fa-pen"></i> Edit</button>
+                  </div>
+                </div>
+                {% endfor %}
+                <div class="detail-actions" style="margin-top:12px;">
+                  <button type="submit" class="action-btn primary"
+                          {% if not appointment.customer_email %}disabled{% endif %}
+                          onclick="return confirm('Send the selected email(s) to this lead now?');">
+                    <i class="fas fa-paper-plane"></i> Send selected
+                  </button>
+                  <span class="fu-hint">Sends the ticked emails to the customer immediately. Use Edit to tweak one first.</span>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {# Preview modal #}
+          <div id="emPreviewModal" class="em-modal" style="display:none;">
+            <div class="em-modal-box">
+              <div class="em-modal-head">
+                <span>Email preview</span>
+                <button type="button" class="fu-edit-btn" onclick="closeEmModal('emPreviewModal')"><i class="fas fa-times"></i></button>
+              </div>
+              <iframe id="emPreviewFrame" class="em-modal-frame" title="Email preview"></iframe>
+            </div>
+          </div>
+
+          {# Edit modal #}
+          <div id="emEditModal" class="em-modal" style="display:none;">
+            <div class="em-modal-box">
+              <div class="em-modal-head">
+                <span id="emEditTitle">Edit email</span>
+                <button type="button" class="fu-edit-btn" onclick="closeEmModal('emEditModal')"><i class="fas fa-times"></i></button>
+              </div>
+              <form method="post" id="emEditForm" style="padding:14px; overflow:auto;">
+                {% csrf_token %}
+                <input type="hidden" name="channel" value="email">
+                <div class="detail-field" style="margin-bottom:10px;">
+                  <label for="emEditSubject">Subject</label>
+                  <input type="text" id="emEditSubject" name="subject" class="fu-edit-input">
+                </div>
+                <div class="detail-field">
+                  <label for="emEditBody">Message</label>
+                  <textarea id="emEditBody" name="message" rows="12" class="fu-edit-input"></textarea>
+                </div>
+                <div class="fu-edit-actions" style="margin-top:12px; flex-wrap:wrap;">
+                  <button type="submit" class="action-btn primary"
+                          {% if not appointment.customer_email %}disabled{% endif %}
+                          formaction="{% url 'lead_send_email_now' appointment.pk %}?{{ request.GET.urlencode }}">
+                    <i class="fas fa-paper-plane"></i> Send now
+                  </button>
+                  <span style="display:inline-flex; gap:6px; align-items:center;">
+                    <input type="datetime-local" name="scheduled_for" class="fu-edit-input" style="width:auto;">
+                    <button type="submit" class="action-btn ghost"
+                            formaction="{% url 'schedule_followup' appointment.pk %}?{{ request.GET.urlencode }}">
+                      <i class="far fa-clock"></i> Schedule
+                    </button>
+                  </span>
+                </div>
+              </form>
+            </div>
+          </div>
+
           {# ── Upcoming / scheduled emails ── #}
           <div class="detail-card">
             <div class="detail-card-header">
@@ -2093,6 +2210,42 @@
     form.style.display = (form.style.display === 'none' || !form.style.display) ? 'block' : 'none';
   }
   window.toggleSchedEdit = toggleSchedEdit;
+
+  // ── Templated-email preview / edit ──
+  var EM_PREVIEW_URL = "{% url 'lead_email_preview' appointment.pk %}";
+  var EM_EDITDATA_URL = "{% url 'lead_email_edit_data' appointment.pk %}";
+
+  function openEmModal(id)  { var m = document.getElementById(id); if (m) m.style.display = 'flex'; }
+  function closeEmModal(id) { var m = document.getElementById(id); if (m) m.style.display = 'none'; }
+  window.closeEmModal = closeEmModal;
+
+  function previewLeadEmail(key) {
+    var frame = document.getElementById('emPreviewFrame');
+    if (frame) frame.src = EM_PREVIEW_URL + '?key=' + encodeURIComponent(key);
+    openEmModal('emPreviewModal');
+  }
+  window.previewLeadEmail = previewLeadEmail;
+
+  function editLeadEmail(key, label) {
+    fetch(EM_EDITDATA_URL + '?key=' + encodeURIComponent(key), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { alert('Could not load email: ' + data.error); return; }
+        document.getElementById('emEditTitle').textContent = 'Edit: ' + (label || data.label || 'email');
+        document.getElementById('emEditSubject').value = data.subject || '';
+        document.getElementById('emEditBody').value = data.text || '';
+        openEmModal('emEditModal');
+      })
+      .catch(function (e) { alert('Could not load email: ' + e); });
+  }
+  window.editLeadEmail = editLeadEmail;
+
+  // Close a modal when its dark backdrop (not the box) is clicked.
+  document.querySelectorAll('.em-modal').forEach(function (m) {
+    m.addEventListener('click', function (e) {
+      if (e.target === m) m.style.display = 'none';
+    });
+  });
 
   function scrollChatBottom() {
     var chat = document.getElementById('chatScroll');
