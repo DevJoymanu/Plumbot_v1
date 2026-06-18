@@ -817,12 +817,19 @@
   .em-cat-desc  { font-size: 12px; color: #6b7280; margin-top: 2px; }
   .em-cat-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .em-cat-when {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     margin: 10px 0 4px 28px; padding: 8px 10px;
     background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px;
   }
   .em-cat-when label { font-size: 12px; font-weight: 600; color: #374151; }
   .em-cat-when .em-when-input { max-width: 240px; }
+  .em-quick { display: flex; gap: 6px; flex-wrap: wrap; }
+  .em-quick-btn {
+    border: 1px solid #cbd5e1; background: #fff; color: #334155;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    padding: 5px 10px; border-radius: 20px; transition: all .15s;
+  }
+  .em-quick-btn:hover { background: var(--color-teal); color: #fff; border-color: var(--color-teal); }
 
   /* Modal (preview + edit) */
   .em-modal {
@@ -2064,6 +2071,12 @@
                   <div class="em-cat-when" id="em-when-{{ key }}" style="display:none;">
                     <label for="em-when-input-{{ key }}">Send at</label>
                     <input type="datetime-local" id="em-when-input-{{ key }}" name="schedule_at_{{ key }}" class="fu-edit-input em-when-input">
+                    <span class="em-quick">
+                      <button type="button" class="em-quick-btn" onclick="setEmWeeks('{{ key }}', 1)">1 week</button>
+                      <button type="button" class="em-quick-btn" onclick="setEmWeeks('{{ key }}', 2)">2 weeks</button>
+                      <button type="button" class="em-quick-btn" onclick="setEmWeeks('{{ key }}', 3)">3 weeks</button>
+                      <button type="button" class="em-quick-btn" onclick="setEmWeeks('{{ key }}', 4)">4 weeks</button>
+                    </span>
                   </div>
                 </div>
                 {% endfor %}
@@ -2276,6 +2289,17 @@
     }
   }
   window.toggleEmSchedule = toggleEmSchedule;
+
+  // Quick presets: set an email's send time to now + N weeks.
+  function setEmWeeks(key, weeks) {
+    var input = document.getElementById('em-when-input-' + key);
+    if (!input) return;
+    var d = new Date(Date.now() + weeks * 7 * 24 * 60 * 60 * 1000);
+    var local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    input.value = local.toISOString().slice(0, 16);
+    input.required = true;
+  }
+  window.setEmWeeks = setEmWeeks;
 
   function previewLeadEmail(key) {
     var frame = document.getElementById('emPreviewFrame');
