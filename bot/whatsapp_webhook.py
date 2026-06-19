@@ -668,6 +668,30 @@ def _is_unprompted_carryover_pricing(intent, message, price_requested,
     )
 
 
+def _is_quoted_item_reference(message: str) -> bool:
+    """True for a short demonstrative reply that points at a quoted item —
+    "this one?", "and this one?", "how about this", "what about that one".
+
+    When the customer is replying to (quoting) a portfolio photo, such a message
+    is an elliptical price ask on the quoted item ("how much for this one?"), so
+    it must be treated as a price request — otherwise it lacks an explicit price
+    word, gets read as a project description, and the price is skipped (it then
+    only survives if the standalone-question handler happens to rescue it).
+
+    Kept deliberately tight (≤5 words) so genuine project descriptions that
+    merely contain "this"/"that" are not swept in. Deterministic on purpose.
+    """
+    msg = (message or '').lower().strip().rstrip('?.! ')
+    if not msg or len(msg.split()) > 5:
+        return False
+    patterns = (
+        'this one', 'that one', 'this here', 'and this', 'and that',
+        'how about this', 'how about that', 'what about this', 'what about that',
+        'how about', 'what about',
+    )
+    return any(p in msg for p in patterns)
+
+
 # Weekday tokens (full names + common abbreviations), most ambiguous handled by
 # word-boundary matching so "wed" matches "Wed" but not "wedding", "sun" not
 # "sunny", etc. Order matches Python's weekday() index (Monday=0).
@@ -2236,6 +2260,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         }
         intent = inquiry.get('intent')
         price_requested = _explicitly_requests_price(message_body)
+        # A demonstrative reply to a quoted portfolio photo ("this one?", "and
+        # this one?") is an elliptical price ask on the quoted item — treat it as
+        # a price request so STEP 2 prices the quoted item directly instead of
+        # skipping it as a project description and leaning on the standalone-Q rescue.
+        if quoted_text and _is_quoted_item_reference(message_body):
+            price_requested = True
 
         _is_specific_product_inquiry = (
             intent in PRICING_AUTO_REPLY_INTENTS and

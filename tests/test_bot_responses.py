@@ -273,6 +273,34 @@ for msg, expected in DELAY_BREAKOUT_CASES:
     except Exception as e:
         results.log(f"_delay_breakout_inquiry: '{msg[:30]}'", False, got=str(e))
 
+# A demonstrative reply to a quoted portfolio photo ("this one?", "and this
+# one?") must be treated as a price ask on the quoted item — otherwise it has no
+# explicit price word, reads as a project description, and the price is skipped.
+from bot.whatsapp_webhook import _is_quoted_item_reference
+QUOTED_REF_CASES = [
+    ("And this one?",            True),   # the production case
+    ("this one",                 True),
+    ("And this one how much",    True),
+    ("how about this",           True),
+    ("what about that one",      True),
+    ("I want a full bathroom with this and a new toilet for the house", False),  # real desc
+    ("avondale",                 False),
+    ("next week",                False),
+    ("yes",                      False),
+]
+for msg, expected in QUOTED_REF_CASES:
+    try:
+        got = _is_quoted_item_reference(msg)
+        results.log(
+            f"_is_quoted_item_reference: '{msg[:30]}'",
+            got == expected,
+            f"ref={got}",
+            expected=f"ref={expected}",
+            got=f"ref={got}",
+        )
+    except Exception as e:
+        results.log(f"_is_quoted_item_reference: '{msg[:30]}'", False, got=str(e))
+
 # ============================================================
 # TEST 1: Service Inquiry Detection
 # ============================================================
