@@ -244,6 +244,35 @@ for msg, intent, price_req, expected in CARRYOVER_PRICING_CASES:
     except Exception as e:
         results.log(f"_is_unprompted_carryover_pricing: '{msg[:30]}'", False, got=str(e))
 
+# A genuine question must break a delay holding pattern, not be force-fit as a
+# timeframe answer. The production bug: "This one how much" (on a quoted tub
+# photo) got re-asked "when are you hoping to get this sorted?" instead of priced.
+from bot.out_of_scope_handler import _delay_breakout_inquiry
+# (message, expected: should it BREAK OUT of the delay flow?)
+DELAY_BREAKOUT_CASES = [
+    ("This one how much",      True),   # the bug
+    ("how much",               True),
+    ("freestanding tub price", True),
+    ("do you sell tubs",       True),
+    ("next week",              False),  # real timeframe — stay in flow
+    ("end of the month",       False),
+    ("Thursday",               False),
+    ("ok thanks",              False),
+    ("jones86xi@gmail.com",    False),  # email capture, not a breakout
+]
+for msg, expected in DELAY_BREAKOUT_CASES:
+    try:
+        got = _delay_breakout_inquiry(msg)
+        results.log(
+            f"_delay_breakout_inquiry: '{msg[:30]}'",
+            got == expected,
+            f"breakout={got}",
+            expected=f"breakout={expected}",
+            got=f"breakout={got}",
+        )
+    except Exception as e:
+        results.log(f"_delay_breakout_inquiry: '{msg[:30]}'", False, got=str(e))
+
 # ============================================================
 # TEST 1: Service Inquiry Detection
 # ============================================================

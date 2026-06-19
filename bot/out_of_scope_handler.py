@@ -894,6 +894,35 @@ def _message_has_timeframe(message: str) -> bool:
     return bool(_TIMEFRAME_RE.search(message))
 
 
+def _delay_breakout_inquiry(message: str) -> bool:
+    """True when a message arriving while we're parked in a delay holding state
+    is actually a fresh question (a price ask or a named product) rather than the
+    timeframe/answer we're waiting for.
+
+    Such a message must break the holding pattern and be handled by the normal
+    flow — otherwise a clear "This one how much" on a quoted tub photo gets
+    force-fit as a (failed) timeframe answer and the bot just re-asks "when are
+    you hoping to get this sorted?". Real intent takes priority over flow-stage
+    state, the same way exit-signal detection runs before flow logic.
+
+    Deterministic on purpose (CLAUDE.md: prefer deterministic resolvers for
+    short/fuzzy strings; reserve the LLM for genuinely ambiguous language).
+    """
+    msg = (message or '').lower().strip()
+    if not msg:
+        return False
+    # A real timeframe IS the answer we're waiting for — stay in the flow.
+    if _message_has_timeframe(message):
+        return False
+    price_words = ('how much', 'price', 'pricing', 'cost', 'quote', 'quotation',
+                   'marii', 'imarii', 'mari', 'how mch', 'hw much')
+    if any(w in msg for w in price_words):
+        return True
+    # Named a product (function-local import avoids the circular import at load).
+    from bot.whatsapp_webhook import _keyword_product_intent
+    return _keyword_product_intent(message) is not None
+
+
 def _message_has_timeframe_ai(message: str) -> bool:
     """
     Ask DeepSeek whether the message already contains a time reference the customer
@@ -1762,6 +1791,17 @@ def handle_out_of_scope(
     pending = _read_pending(appointment)
     if pending:
         pending_cat = pending.get("category", "")
+
+        # A genuine question must break a delay/scheduling holding pattern instead
+        # of being force-fit as the timeframe/confirm/check-in answer we're waiting
+        # for (e.g. "This one how much" on a quoted tub photo). Clear the wait and
+        # let the normal flow answer it. Email capture is excluded so an actual
+        # address is never mistaken for a breakout.
+        if pending_cat in ("delay_timeframe", "delay_confirm", "delay_checkin") \
+                and _delay_breakout_inquiry(message):
+            logger.info("Delay flow — live inquiry breaks holding pattern: '%s'", message[:60])
+            _clear_pending(appointment)
+            return None
 
         if pending_cat == "delay_timeframe":
             logger.info("Delay flow step 2 — timeframe answer: '%s'", message[:60])
