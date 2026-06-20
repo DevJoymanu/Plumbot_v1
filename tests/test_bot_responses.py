@@ -338,6 +338,14 @@ try:
         bool(_tt) and "toilet" in _tt.lower() and "US$160" in _tt,
         got=str(_tt)[:100],
     )
+    # The toilet-and-basin photo prices the standalone basin too (US$70), not the
+    # toilet alone — every item shown carries a price.
+    _tb = _pc.build_item_price_guide("Classic Toilet & Basin Suite")
+    results.log(
+        "build_item_price_guide: prices the basin in the toilet-and-basin shot",
+        bool(_tb) and "basin" in _tb.lower() and "US$70" in _tb,
+        got=str(_tb)[:100],
+    )
     # The production redundancy bug: a single-product photo must NOT get a second
     # price line repeating what the targeted reply already said.
     results.log(

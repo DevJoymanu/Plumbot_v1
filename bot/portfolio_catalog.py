@@ -151,7 +151,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'classic-toilet-basin',
         'filename': 'chamber_and_sink.jpg',
         'title': 'Classic Toilet & Basin Suite',
-        'price': 'toilet & cistern from US$70',
+        'price': 'toilet & cistern from US$70 + pedestal basin from US$70',
         'description': 'Clean close-coupled toilet with a matching pedestal basin on neutral floor tiles.',
         'story': (
             'A landlord needed a reliable, smart-looking bathroom for a rental without overspending. '
@@ -168,7 +168,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'clawfoot-tub-feature-wall',
         'filename': 'full_bathroom_renovation.jpg',
         'title': 'Vintage Clawfoot Tub Bathroom',
-        'price': 'freestanding tub from US$670 + wall-hung toilet from US$160; full bathroom renovation from US$600',
+        'price': 'freestanding tub from US$670 + wall-hung toilet from US$160 + corner basin from US$70; full bathroom renovation from US$600',
         'description': 'White roll-top clawfoot tub, brick-effect feature tiling, wall-hung toilet and corner basin.',
         'story': (
             'The owner loved old-world charm but in a newly built home. '
