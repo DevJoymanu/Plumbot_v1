@@ -2264,7 +2264,10 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # this one?") is an elliptical price ask on the quoted item — treat it as
         # a price request so STEP 2 prices the quoted item directly instead of
         # skipping it as a project description and leaning on the standalone-Q rescue.
-        if quoted_text and _is_quoted_item_reference(message_body):
+        quoted_photo_price_ref = bool(
+            quoted_text and _is_quoted_item_reference(message_body)
+        )
+        if quoted_photo_price_ref:
             price_requested = True
 
         _is_specific_product_inquiry = (
@@ -2314,12 +2317,20 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 print(f"Skipping priced service inquiry for intent: {intent} - no explicit price request")
             else:
                 already_sent = _has_sent_pricing_for_intent(appointment, intent)
-                if already_sent and intent != 'combined_pricing':
+                # The customer's own words override the already-sent gate: when
+                # they point at a SPECIFIC photo and ask its price ("this one how
+                # much", "what about this one"), that's an explicit price ask on
+                # the quoted piece — answer it even if we've priced that intent
+                # before, otherwise distinct photo asks fall through to the
+                # generic Facebook-package line or the repeat-question handler.
+                if already_sent and intent != 'combined_pricing' and not quoted_photo_price_ref:
                     print(f"Skipping already-sent service inquiry: {intent}")
                 else:
                     if not already_sent:
                         print(f"Service inquiry matched (first time): {intent}")
                         _mark_pricing_intent_sent(appointment, intent)
+                    elif quoted_photo_price_ref:
+                        print(f"Re-pricing quoted photo despite already-sent: {intent}")
                     else:
                         print(f"Re-sending combined pricing reply for: {intent}")
                     reply = plumbot.handle_service_inquiry(intent, message_body)
@@ -2333,7 +2344,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     # gallery. The quoted title is the resolved quote; prices come
                     # verbatim from the catalogue. Quote stays out of the rule
                     # engine — this is a post-reply append keyed off the quote.
-                    if reply and quoted_text and _is_quoted_item_reference(message_body):
+                    if reply and quoted_photo_price_ref:
                         try:
                             from bot import portfolio_catalog
                             _item_guide = portfolio_catalog.build_item_price_guide(

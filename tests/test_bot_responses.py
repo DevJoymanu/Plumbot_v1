@@ -281,6 +281,8 @@ QUOTED_REF_CASES = [
     ("And this one?",            True),   # the production case
     ("this one",                 True),
     ("And this one how much",    True),
+    ("what about this one",      True),   # quoting a 2nd photo — must beat already-sent gate
+    ("how much is this one",     True),   # quoting a 3rd photo — same
     ("how about this",           True),
     ("what about that one",      True),
     ("I want a full bathroom with this and a new toilet for the house", False),  # real desc
