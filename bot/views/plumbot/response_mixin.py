@@ -664,6 +664,47 @@ class ResponseMixin:
             return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
 
 
+        # Central pricing-gate policy. Every entry point that could volunteer a
+        # price (the webhook service-inquiry check, generate_response, and the
+        # standalone-question branch) should defer to this so they all behave the
+        # same. Intents priced only when explicitly asked.
+        PRICING_AUTO_REPLY_INTENTS = {
+            'geyser', 'shower_cubicle', 'vanity', 'toilet', 'chamber',
+            'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
+            'facebook_package',
+        }
+        # Info intents that answer regardless of a price ask (never gated here).
+        NON_PRICING_AUTO_REPLY_INTENTS = {
+            'location_ask', 'location_visit', 'previous_quotation', 'pictures',
+            'combined_pricing', 'standalone_tub', 'tub_sales', 'bathtub_installation',
+        }
+
+        def _should_volunteer_pricing(self, intent, message, price_requested=None):
+            """
+            Should a detected intent trigger a PRICED auto-reply for THIS message
+            right now? The rule, in plain terms: only volunteer a price when the
+            lead actually asked for one. A buying or project statement ("I want to
+            purchase 2x shower cubicles", "replace my toilet") is a commitment
+            signal, not a price request — acknowledge it and progress the sale
+            rather than dropping a price block. Non-priced info intents (location,
+            pictures, previous quotation, combined pricing) answer regardless.
+
+            price_requested may be precomputed by the caller to avoid a second
+            classifier round-trip (and to keep this unit-testable without the API).
+            """
+            if intent in self.NON_PRICING_AUTO_REPLY_INTENTS:
+                return True
+            if intent not in self.PRICING_AUTO_REPLY_INTENTS:
+                return False
+            if price_requested is None:
+                price_requested = self._explicitly_requests_price(message)
+            if price_requested:
+                return True
+            # Priceable product named with no explicit price ask → only volunteer
+            # a price when it isn't a buying / project statement.
+            return not self._looks_like_project_description_reply(message)
+
+
         def _is_product_availability_question(self, message: str) -> bool:
             """
             Return True when the customer is asking whether we HAVE or SELL a product,
@@ -1189,9 +1230,23 @@ class ResponseMixin:
                         direct_answer = None
                         _from_service_inquiry = False
                         _already_sent = _intent in (getattr(self.appointment, 'sent_pricing_intents', None) or [])
-                        if _intent in PRODUCT_INTENTS and _inquiry.get('confidence') == 'HIGH' and not _already_sent:
+                        # Only volunteer a priced product reply when the lead
+                        # actually asked a price. A buying / project statement
+                        # ("I want to purchase 2x shower cubicles") is a commitment
+                        # signal, not a price ask — fall through to a plain answer
+                        # that acknowledges it and progresses the sale, never a
+                        # price block. Info intents (location, pictures…) are
+                        # unaffected. Shared policy: _should_volunteer_pricing.
+                        _price_requested = self._explicitly_requests_price(incoming_message)
+                        _volunteer = self._should_volunteer_pricing(
+                            _intent, incoming_message, price_requested=_price_requested
+                        )
+                        if (_intent in PRODUCT_INTENTS and _inquiry.get('confidence') == 'HIGH'
+                                and not _already_sent and _volunteer):
                             direct_answer = self.handle_service_inquiry(_intent, _q_msg)
                             _from_service_inquiry = bool(direct_answer)
+                        elif _intent in PRODUCT_INTENTS and not _volunteer:
+                            print(f"⏭️ Standalone: not volunteering price for {_intent} — no price asked")
                         if not direct_answer:
                             direct_answer = self._answer_standalone_question(_q_msg)
                             _from_service_inquiry = False

@@ -405,6 +405,67 @@ try:
 except Exception as e:
     results.log("compose_quoted_photo_price_reply", False, got=str(e))
 
+# A bare month name ("August") is a valid timeframe answer and must resolve to a
+# concrete follow-up date deterministically — not fall through to the LLM
+# fallback, which returned an empty string and crashed the parse, leaving the bot
+# re-asking the same question forever (production: appt 465).
+from bot.out_of_scope_handler import _compute_followup_date
+from datetime import date as _date_t
+MONTH_TIMEFRAME_CASES = [
+    "August", "in august", "around July", "Sept", "by December", "maybe October",
+]
+for msg in MONTH_TIMEFRAME_CASES:
+    try:
+        iso, friendly = _compute_followup_date(msg)
+        ok = bool(iso) and bool(friendly)
+        # Must be a valid future ISO date, never None/empty.
+        if ok:
+            ok = _date_t.fromisoformat(iso) >= _date_t.today()
+        results.log(
+            f"_compute_followup_date (month): '{msg[:20]}'",
+            ok,
+            f"iso={iso} friendly={friendly}",
+            expected="a valid future date",
+            got=f"iso={iso}",
+        )
+    except Exception as e:
+        results.log(f"_compute_followup_date (month): '{msg[:20]}'", False, got=str(e))
+
+# Central pricing-gate policy: a buying / project statement ("I want to purchase
+# 2x shower cubicles") must NOT trigger a priced auto-reply — only an explicit
+# price ask should. The production bug: the standalone-question branch priced a
+# purchase statement because it skipped this gate (appt 470). API-free: we pass
+# price_requested explicitly and use a fake self carrying the real pure helper.
+class _FakeSelfPricing:
+    PRICING_AUTO_REPLY_INTENTS = ResponseMixin.PRICING_AUTO_REPLY_INTENTS
+    NON_PRICING_AUTO_REPLY_INTENTS = ResponseMixin.NON_PRICING_AUTO_REPLY_INTENTS
+    _looks_like_project_description_reply = ResponseMixin._looks_like_project_description_reply
+    _should_volunteer_pricing = ResponseMixin._should_volunteer_pricing
+_fp = _FakeSelfPricing()
+# (intent, message, price_requested, expected: should we volunteer a price?)
+VOLUNTEER_PRICING_CASES = [
+    ("shower_cubicle", "I want to purchase 2x shower cubicles and accessories", False, False),  # the bug
+    ("shower_cubicle", "how much for a shower cubicle",  True,  True),   # explicit price ask
+    ("geyser",         "replace my geyser",              False, False),  # project statement
+    ("shower_cubicle", "shower cubicle",                 False, False),  # bare name, no ask
+    ("toilet",         "I need to install a new toilet", False, False),  # commitment, no ask
+    ("location_ask",   "where are you based",            False, True),   # info intent always answers
+    ("pictures",       "send me some photos",            False, True),   # info intent always answers
+    ("none",           "hello there",                    False, False),  # no priceable intent
+]
+for intent, msg, price_req, expected in VOLUNTEER_PRICING_CASES:
+    try:
+        got = _fp._should_volunteer_pricing(intent, msg, price_requested=price_req)
+        results.log(
+            f"_should_volunteer_pricing: '{msg[:30]}' [{intent}]",
+            got == expected,
+            f"volunteer={got}",
+            expected=f"volunteer={expected}",
+            got=f"volunteer={got}",
+        )
+    except Exception as e:
+        results.log(f"_should_volunteer_pricing: '{msg[:30]}'", False, got=str(e))
+
 # A delay-signal lead who was offered the portfolio and replies "send it on
 # WhatsApp / to this number" must be routed to the lead-magnet PDF, not the
 # photo gallery. The webhook gates the gallery handlers on this deterministic

@@ -845,6 +845,28 @@ def _compute_followup_date(timeframe_message: str):
             target = end_candidate
         return target.isoformat(), target.strftime('%A %d %B')
 
+    # ── 11b. Explicit month name ("August", "in August", "around July") ──────
+    # A bare month is a common timeframe answer; resolve it deterministically to
+    # the 15th of its next occurrence rather than leaning on the LLM fallback
+    # (which has returned empty strings and crashed on date.fromisoformat).
+    _months = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5,
+        'june': 6, 'july': 7, 'august': 8, 'september': 9, 'october': 10,
+        'november': 11, 'december': 12,
+        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7,
+        'aug': 8, 'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+    }
+    _month_alt = '|'.join(sorted(_months, key=len, reverse=True))
+    m = re.search(r'\b(' + _month_alt + r')\b', msg)
+    if m:
+        month = _months[m.group(1)]
+        year  = today.year
+        # Roll to next year if that month's mid-point is already behind us.
+        if month < today.month or (month == today.month and today.day >= 15):
+            year += 1
+        target = _safe(year, month, 15)
+        return target.isoformat(), target.strftime('%A %d %B')
+
     # ── 12. DeepSeek fallback ────────────────────────────────────────────────
     if _deepseek:
         try:
@@ -871,8 +893,9 @@ def _compute_followup_date(timeframe_message: str):
                 max_tokens=15,
             )
             raw = response.choices[0].message.content.strip()[:10]
-            parsed = _date.fromisoformat(raw)
-            return parsed.isoformat(), parsed.strftime('%A %d %B')
+            if raw:
+                parsed = _date.fromisoformat(raw)
+                return parsed.isoformat(), parsed.strftime('%A %d %B')
         except Exception as exc:
             logger.warning("_compute_followup_date DeepSeek failed: %s", exc)
 
