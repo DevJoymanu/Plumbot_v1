@@ -301,44 +301,38 @@ for msg, expected in QUOTED_REF_CASES:
     except Exception as e:
         results.log(f"_is_quoted_item_reference: '{msg[:30]}'", False, got=str(e))
 
-# When a customer asks the price of ONE photo they were sent, the bot answers
-# that piece and then lists the other pieces from the same gallery so they can
-# compare and choose. The list must: cover only images actually sent (by title),
-# drop the piece just priced, dedupe shared prices, and quote catalogue prices
-# verbatim. API-free: it's a deterministic lookup over the recorded media index.
+# When a customer asks the price of ONE photo they were sent ("this one how
+# much" on a quoted image), the bot prices that photo and EVERY item shown in
+# it — not the whole gallery. A vanity-and-tub shot must price both, the guide
+# must quote the catalogue price verbatim, and an uncatalogued shot yields no
+# guide. API-free: a deterministic title lookup over the catalogue.
 from bot import portfolio_catalog as _pc
-_CLAWFOOT = "Vintage Clawfoot Tub Bathroom"      # freestanding-tub priced piece
-_VANITY = "Gold-Tap Double Vanity"               # another catalogued piece
-_SENT_TITLES = [_CLAWFOOT, _VANITY, "Walk-In Rain Shower", "one of our previous work photos"]
+_BUNDLE = "Black Granite Vanity & Designer Tub"  # quoted photo: vanity + tub
 try:
-    _guide = _pc.build_sent_prices_list(_SENT_TITLES, exclude_title=_CLAWFOOT)
+    _guide = _pc.build_item_price_guide(_BUNDLE)
     _ok = bool(_guide)
-    results.log("build_sent_prices_list: returns a guide", _ok, got=str(_guide)[:60])
-    # The priced piece is excluded; the others are listed by title.
+    results.log("build_item_price_guide: returns a guide", _ok, got=str(_guide)[:60])
+    # Both items in the shot are priced (the classifier-derived intent alone
+    # would have priced only one of them).
     results.log(
-        "build_sent_prices_list: excludes the priced piece",
-        _ok and _CLAWFOOT not in _guide,
-        got=("present" if (_guide and _CLAWFOOT in _guide) else "excluded"),
+        "build_item_price_guide: prices every item in the photo",
+        _ok and "tub" in _guide.lower() and "vanity" in _guide.lower(),
+        got=str(_guide)[:90],
     )
+    # Verbatim catalogue price — never invent figures.
     results.log(
-        "build_sent_prices_list: lists the other sent pieces",
-        _ok and _VANITY in _guide and "Walk-In Rain Shower" in _guide,
-        got=str(_guide)[:80],
+        "build_item_price_guide: quotes catalogue price verbatim",
+        _ok and _pc.get_item_by_title(_BUNDLE)['price'] in _guide,
+        got=str(_guide)[:90],
     )
-    # Uncatalogued shots (no matching title) carry no price → never listed.
+    # Uncatalogued shots (tidied filename, no matching title) carry no price.
     results.log(
-        "build_sent_prices_list: skips uncatalogued shots",
-        _ok and "previous work photos" not in _guide,
-        got=str(_guide)[:80],
-    )
-    # Nothing else priceable left → None (don't append an empty guide).
-    results.log(
-        "build_sent_prices_list: None when nothing else to list",
-        _pc.build_sent_prices_list([_CLAWFOOT], exclude_title=_CLAWFOOT) is None,
-        got=str(_pc.build_sent_prices_list([_CLAWFOOT], exclude_title=_CLAWFOOT)),
+        "build_item_price_guide: None for uncatalogued shot",
+        _pc.build_item_price_guide("one of our previous work photos") is None,
+        got=str(_pc.build_item_price_guide("one of our previous work photos")),
     )
 except Exception as e:
-    results.log("build_sent_prices_list", False, got=str(e))
+    results.log("build_item_price_guide", False, got=str(e))
 
 # ============================================================
 # TEST 1: Service Inquiry Detection

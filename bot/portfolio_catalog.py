@@ -375,43 +375,27 @@ def get_item_by_title(title: str) -> Optional[dict]:
     return None
 
 
-def build_sent_prices_list(
-    titles, exclude_title: Optional[str] = None, language: str = 'english'
-) -> Optional[str]:
-    """A compact price guide for the catalogued pieces a customer was sent.
+def build_item_price_guide(title: str, language: str = 'english') -> Optional[str]:
+    """Price guide for the ONE piece a customer pointed at — the photo they
+    quoted — covering every item shown in that shot.
 
-    Given the descriptions/titles of the images actually delivered in this
-    conversation, return a short list of those pieces and their 'from' prices so
-    a customer who asks about one photo can still compare the rest and choose.
+    Catalogue ``price`` strings already enumerate a piece's contents, so a
+    vanity-and-tub photo prices both (e.g. "freestanding tub from US$670 +
+    vanity from US$180"), not just the single intent the classifier landed on.
+    Prices are verbatim from the catalogue (source of truth); we never invent
+    figures. No emojis (house rule).
 
-    - ``exclude_title`` (the piece just answered in detail) is dropped to avoid
-      repeating it.
-    - Lines are deduped by price string, so multiple shots that share the same
-      'from' rate collapse to one line.
-    - Prices are verbatim from the catalogue (source of truth); we never invent
-      figures. No emojis (house rule).
-
-    Returns None when nothing priceable is left to list.
+    Returns None when the title isn't a catalogued piece (an uncatalogued shot
+    carries no price), so the caller appends nothing.
     """
-    exclude = (exclude_title or '').strip().lower()
-    seen_prices: set[str] = set()
-    lines: list[str] = []
-    for title in (titles or []):
-        item = get_item_by_title(title)
-        if item is None or item['title'].lower() == exclude:
-            continue
-        price = item['price']
-        if price in seen_prices:
-            continue
-        seen_prices.add(price)
-        lines.append(f"- {item['title']}: {price}")
-    if not lines:
+    item = get_item_by_title(title)
+    if item is None:
         return None
     if language == 'shona':
-        header = "Hezvino mitengo yezvimwe zvandakutumira, kuti ukwanise kuenzanisa:"
+        header = "Hezvino mutengo wakazara wechikamu ichi, nezvese zviri mupicture:"
     else:
-        header = "Here's a quick price guide on the other pieces I sent, so you can compare:"
-    return header + "\n" + "\n".join(lines)
+        header = "Here's the full pricing for that piece, including everything in the photo:"
+    return f"{header}\n- {item['price']}"
 
 
 def catalogue_overview() -> Optional[str]:
