@@ -710,30 +710,35 @@ class ResponseMixin:
             msg = (message or '').lower().strip()
             if not msg:
                 return False
+            # Word-boundary patterns so short tokens (e.g. 'fit', 'tab') don't
+            # match inside other words ('benefit', 'table').
             labour_markers = (
-                'fit ', 'fitting', 'install', 'instal ', 'renovat', 'remodel',
-                're-do', 'redo', 'set up', 'setup', 'put in', 'replace', 'upgrade',
-                'rip out', 'tear out', 'do my', 'do the', 'do a ', 'do up',
+                r'\bfit\b', r'\bfitting\b', r'\binstal', r'\brenovat', r'\bremodel',
+                r'\bre-?do\b', r'\bset\s*up\b', r'\bput\s+in\b', r'\breplace',
+                r'\bupgrade', r'\brip\s+out\b', r'\btear\s+out\b',
+                r'\bdo\s+(?:my|the|a|up)\b',
             )
-            if any(m in msg for m in labour_markers):
+            if any(re.search(p, msg) for p in labour_markers):
                 return True
             # Two or more DISTINCT product families named → a job, not one product.
+            # 'tab' is a frequent typo for tub/tap — treat it as a fixture so
+            # "tab and shower" reads as the multi-item request it is.
             product_families = {
-                'tub':    ('tub', 'bath'),          # 'bathtub' contains both — one family
-                'shower': ('shower', 'cubicle'),
-                'toilet': ('toilet', 'loo', ' wc'),
-                'geyser': ('geyser',),
-                'vanity': ('vanity', 'vanit'),
-                'basin':  ('basin', 'sink'),
-                'chamber':('chamber',),
-                'tap':    ('tap', 'mixer', 'faucet'),
-                'tile':   ('tile', 'tiling'),
-                'drain':  ('drain',),
-                'pipe':   ('pipe',),
+                'tub':    (r'\btubs?\b', r'\bbath(?:tub)?s?\b', r'\btab\b'),
+                'shower': (r'\bshowers?\b', r'\bcubicles?\b'),
+                'toilet': (r'\btoilets?\b', r'\bloo\b', r'\bwc\b'),
+                'geyser': (r'\bgeysers?\b',),
+                'vanity': (r'\bvanit\w*\b',),
+                'basin':  (r'\bbasins?\b', r'\bsinks?\b'),
+                'chamber':(r'\bchambers?\b',),
+                'tap':    (r'\btaps?\b', r'\bmixers?\b', r'\bfaucets?\b'),
+                'tile':   (r'\btiles?\b', r'\btiling\b'),
+                'drain':  (r'\bdrains?\b',),
+                'pipe':   (r'\bpipes?\b',),
             }
             fams = {
-                fam for fam, words in product_families.items()
-                if any(w in msg for w in words)
+                fam for fam, pats in product_families.items()
+                if any(re.search(p, msg) for p in pats)
             }
             return len(fams) >= 2
 

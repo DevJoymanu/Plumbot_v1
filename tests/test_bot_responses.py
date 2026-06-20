@@ -484,11 +484,15 @@ JOB_QUOTE_CASES = [
     ("quote to install a geyser",            True),   # labour verb
     ("can you renovate my bathroom",         True),   # labour verb
     ("how much for a tub and a toilet",      True),   # 2 product families
+    ("How much tab and shower",              True),   # 'tab' typo for tub/tap → 2 items
+    ("How Tab and shower",                   True),   # same, no price word
     ("redo my bathroom",                     True),
     ("how much is a shower cubicle",         False),  # single product → still prices
     ("shower cubicle price",                 False),  # single product
     ("do you sell geysers",                  False),  # single product availability
     ("how much for a vanity",                False),  # single product
+    ("benefit of a shower",                  False),  # 'fit' inside 'benefit' must NOT match
+    ("is the table included",                False),  # 'tab' inside 'table' must NOT match
 ]
 for msg, expected in JOB_QUOTE_CASES:
     try:
