@@ -2333,29 +2333,27 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                         print(f"Re-pricing quoted photo despite already-sent: {intent}")
                     else:
                         print(f"Re-sending combined pricing reply for: {intent}")
-                    reply = plumbot.handle_service_inquiry(intent, message_body)
 
-                    # When the customer is asking the price of a SPECIFIC photo
-                    # they were sent ("this one how much" on a quoted image), the
-                    # single-intent reply above can miss other items in that shot
-                    # (a vanity-and-tub photo prices only the vanity). Append the
-                    # quoted piece's full catalogue price so every item in THAT
-                    # photo is covered — and only that photo, not the whole
-                    # gallery. The quoted title is the resolved quote; prices come
-                    # verbatim from the catalogue. Quote stays out of the rule
-                    # engine — this is a post-reply append keyed off the quote.
-                    if reply and quoted_photo_price_ref:
+                    # A price ask on a SPECIFIC quoted photo gets a purpose-built
+                    # reply: lead with the full pricing for that piece (every item
+                    # in the shot, verbatim from the catalogue), then a
+                    # visit-capture close — instead of the generic service-inquiry
+                    # composition, which can open with an affirm/custom-build
+                    # preamble and bury the price. Uncatalogued shots return None
+                    # and fall back to the normal reply.
+                    reply = None
+                    if quoted_photo_price_ref:
                         try:
-                            from bot import portfolio_catalog
-                            _item_guide = portfolio_catalog.build_item_price_guide(
+                            reply = plumbot.compose_quoted_photo_price_reply(
                                 quoted_text,
                                 language=detect_language_simple(message_body),
                             )
-                            if _item_guide:
-                                reply = f"{reply}\n\n{_item_guide}"
-                                print(f"🧾 Appended quoted-item price guide for '{quoted_text}'")
+                            if reply:
+                                print(f"🧾 Photo-led price reply for '{quoted_text}'")
                         except Exception as _ppl_exc:
-                            print(f"⚠️ Could not build quoted-item price guide: {_ppl_exc}")
+                            print(f"⚠️ Could not build photo-led price reply: {_ppl_exc}")
+                    if reply is None:
+                        reply = plumbot.handle_service_inquiry(intent, message_body)
 
         # -- STEP 3: Full pricing overview --------------------------------------
         if reply is None:

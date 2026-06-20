@@ -375,34 +375,20 @@ def get_item_by_title(title: str) -> Optional[dict]:
     return None
 
 
-def _bundles_multiple_priced_items(price: str) -> bool:
-    """True when a catalogue ``price`` lists two or more distinct priced items
-    in its primary segment (e.g. "freestanding tub from US$670 + vanity from
-    US$180"), as opposed to a single product plus the standard renovation upsell
-    ("vanity unit from US$180; full bathroom renovation from US$600").
-
-    The renovation upsell is always tacked on after a ';', so we count the
-    "from US$…" figures in the part BEFORE the first ';' only.
-    """
-    primary = (price or '').split(';', 1)[0]
-    return len(re.findall(r'from\s+US\$', primary, re.IGNORECASE)) >= 2
-
-
 def build_item_price_guide(title: str, language: str = 'english') -> Optional[str]:
-    """Price guide for a MULTI-ITEM photo a customer pointed at — the shot they
-    quoted that bundles more than one priced item (e.g. a vanity-and-tub photo).
+    """Full pricing for the ONE catalogued photo a customer pointed at, covering
+    every item shown in that shot.
 
-    The single-intent reply the classifier produces prices only one of those
-    items, so this fills in the rest from the catalogue ``price`` string, which
-    enumerates the piece's contents. Prices are verbatim from the catalogue
-    (source of truth); we never invent figures. No emojis (house rule).
+    Catalogue ``price`` strings enumerate a piece's contents, so a vanity-and-tub
+    photo prices both (e.g. "freestanding tub from US$670 + vanity from US$180").
+    Prices are verbatim from the catalogue (source of truth); we never invent
+    figures. No emojis (house rule).
 
-    Returns None when the title isn't a catalogued piece, OR when the piece is a
-    single product — in that case the targeted reply already covers it and a
-    second price line would just repeat it.
+    Returns None when the title isn't a catalogued piece (an uncatalogued shot
+    carries no price), so the caller falls back to the generic reply.
     """
     item = get_item_by_title(title)
-    if item is None or not _bundles_multiple_priced_items(item['price']):
+    if item is None:
         return None
     if language == 'shona':
         header = "Hezvino mutengo wakazara wechikamu ichi, nezvese zviri mupicture:"

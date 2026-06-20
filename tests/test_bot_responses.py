@@ -304,11 +304,10 @@ for msg, expected in QUOTED_REF_CASES:
         results.log(f"_is_quoted_item_reference: '{msg[:30]}'", False, got=str(e))
 
 # When a customer asks the price of ONE photo they were sent ("this one how
-# much" on a quoted image), the bot adds a full-item price line ONLY when that
-# photo bundles more than one priced item (e.g. a vanity-and-tub shot) — there
-# the single-intent reply prices just one item. For a single-product photo the
-# targeted reply already covers it, so no redundant second line is appended.
-# API-free: a deterministic title + price-string lookup over the catalogue.
+# much" on a quoted image), the bot replies with the full pricing for that piece
+# — every item in the shot, verbatim from the catalogue. Single- and multi-item
+# photos alike get a guide; only uncatalogued shots return None.
+# API-free: a deterministic title lookup over the catalogue.
 from bot import portfolio_catalog as _pc
 _BUNDLE = "Black Granite Vanity & Designer Tub"  # quoted photo: vanity + tub
 _SINGLE = "Walk-In Rain Shower"                  # single priced item + upsell
@@ -346,12 +345,12 @@ try:
         bool(_tb) and "basin" in _tb.lower() and "US$70" in _tb,
         got=str(_tb)[:100],
     )
-    # The production redundancy bug: a single-product photo must NOT get a second
-    # price line repeating what the targeted reply already said.
+    # A single-product photo still gets its own full-pricing guide (we now lead
+    # with it, so there's no redundant block to suppress).
     results.log(
-        "build_item_price_guide: None for single-product photo",
-        _pc.build_item_price_guide(_SINGLE) is None,
-        got=str(_pc.build_item_price_guide(_SINGLE)),
+        "build_item_price_guide: guide for a single-product photo",
+        bool(_pc.build_item_price_guide(_SINGLE)),
+        got=str(_pc.build_item_price_guide(_SINGLE))[:90],
     )
     # Uncatalogued shots (tidied filename, no matching title) carry no price.
     results.log(
@@ -361,6 +360,50 @@ try:
     )
 except Exception as e:
     results.log("build_item_price_guide", False, got=str(e))
+
+# The quoted-photo reply leads with the full price and closes with a
+# visit-capture line — it must NOT open with the generic "we supply both..."
+# affirm preamble, and it must not re-ask for the area once we have it.
+# API-free: build_item_price_guide + attribute checks, no model calls.
+class _FakeAppt:
+    def __init__(self, area=None, has_plan=None):
+        self.customer_area = area
+        self.has_plan = has_plan
+class _FakeSelf:
+    def __init__(self, appt):
+        self.appointment = appt
+try:
+    _r = ResponseMixin.compose_quoted_photo_price_reply(_FakeSelf(_FakeAppt()), _BUNDLE, "english")
+    results.log(
+        "compose_quoted_photo_price_reply: leads with the full pricing",
+        bool(_r) and _r.startswith("Here's the full pricing for that piece"),
+        got=str(_r)[:60],
+    )
+    results.log(
+        "compose_quoted_photo_price_reply: no affirm preamble",
+        bool(_r) and "we supply both" not in _r.lower(),
+        got=str(_r)[:60],
+    )
+    results.log(
+        "compose_quoted_photo_price_reply: asks area with accurate-free-quote close",
+        bool(_r) and "accurate free quote" in _r.lower(),
+        got=str(_r)[-80:],
+    )
+    # Area already known → don't re-ask for it (no bot loop).
+    _rc = ResponseMixin.compose_quoted_photo_price_reply(_FakeSelf(_FakeAppt(area="Avondale")), _BUNDLE, "english")
+    results.log(
+        "compose_quoted_photo_price_reply: no area re-ask once committed",
+        bool(_rc) and "what area are you in" not in _rc.lower(),
+        got=str(_rc)[-80:],
+    )
+    # Uncatalogued quoted shot → None so the caller falls back.
+    results.log(
+        "compose_quoted_photo_price_reply: None for uncatalogued shot",
+        ResponseMixin.compose_quoted_photo_price_reply(_FakeSelf(_FakeAppt()), "mystery photo", "english") is None,
+        got="ok",
+    )
+except Exception as e:
+    results.log("compose_quoted_photo_price_reply", False, got=str(e))
 
 # ============================================================
 # TEST 1: Service Inquiry Detection

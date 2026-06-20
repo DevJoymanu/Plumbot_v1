@@ -2758,6 +2758,43 @@ class ResponseMixin:
                 return '\n\n'.join(parts)
             return f"{reply}\n\n{disclaimer}"
 
+        def compose_quoted_photo_price_reply(self, quoted_title, language='english'):
+            """Reply for a price ask on a SPECIFIC quoted portfolio photo.
+
+            Leads with the full pricing for that piece — every item in the shot,
+            verbatim from the catalogue — then a visit-capture close. This
+            replaces the generic service-inquiry composition for quoted photos,
+            which could open with an affirm/custom-build preamble and bury the
+            price under it.
+
+            The close doesn't re-ask for the area when we already have it (avoids
+            a bot loop). Returns None when the photo isn't catalogued, so the
+            caller falls back to the normal service-inquiry reply.
+            """
+            from bot import portfolio_catalog
+            guide = portfolio_catalog.build_item_price_guide(quoted_title, language=language)
+            if not guide:
+                return None
+            # Visit already committed if we have their area, or they've opted for
+            # the on-site visit (no plan to upload).
+            visit_committed = (
+                bool(self.appointment.customer_area)
+                or self.appointment.has_plan is False
+            )
+            if language == 'shona':
+                close = (
+                    "Plumber wedu achasimbisa mutengo chaiwo pamahara paachauya."
+                    if visit_committed else
+                    "Munogara kunzvimbo ipi kuti tironge visit toita free quote yakarurama?"
+                )
+            else:
+                close = (
+                    "Our plumber will confirm the exact figures free when they come out to you."
+                    if visit_committed else
+                    "What area are you in so we can plan the visit properly and get you your accurate free quote?"
+                )
+            return f"{guide}\n\n{close}"
+
         def handle_service_inquiry(self, intent, message):
             """Public entry: build the priced reply, then guarantee the approximate-
             price disclaimer is attached (protected price-clarity behaviour)."""
