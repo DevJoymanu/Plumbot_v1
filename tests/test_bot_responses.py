@@ -405,6 +405,36 @@ try:
 except Exception as e:
     results.log("compose_quoted_photo_price_reply", False, got=str(e))
 
+# A delay-signal lead who was offered the portfolio and replies "send it on
+# WhatsApp / to this number" must be routed to the lead-magnet PDF, not the
+# photo gallery. The webhook gates the gallery handlers on this deterministic
+# delivery-channel check; an email reply (they chose email) must NOT trip it.
+from bot.out_of_scope_handler import wants_whatsapp_delivery
+# (message, expected: is this a "send it here on WhatsApp" delivery request?)
+WA_DELIVERY_CASES = [
+    ("You can send a pdf on this number", True),   # the production case
+    ("send it on whatsapp",               True),
+    ("just send it here",                 True),
+    ("send through this app",             True),
+    ("yes send them over",                True),
+    ("jones86xi@gmail.com",               False),  # chose email, not WhatsApp
+    ("email it to me at a@b.com",         False),  # email address present
+    ("next week",                         False),  # timeframe, not a delivery ask
+    ("no thanks",                         False),
+]
+for msg, expected in WA_DELIVERY_CASES:
+    try:
+        got = wants_whatsapp_delivery(msg)
+        results.log(
+            f"wants_whatsapp_delivery: '{msg[:30]}'",
+            got == expected,
+            f"wa={got}",
+            expected=f"wa={expected}",
+            got=f"wa={got}",
+        )
+    except Exception as e:
+        results.log(f"wants_whatsapp_delivery: '{msg[:30]}'", False, got=str(e))
+
 # ============================================================
 # TEST 1: Service Inquiry Detection
 # ============================================================

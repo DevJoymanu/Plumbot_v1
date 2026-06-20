@@ -2074,6 +2074,25 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         )
         _has_pricing_signal = any(p in message_body.lower() for p in _pricing_signals)
 
+        # When a delay-signal lead was just offered the portfolio and is replying
+        # to receive it HERE on WhatsApp (we're in the delay_email pending state),
+        # that "send it on WhatsApp / to this number" reply must reach the delay
+        # handler (STEP 1b) so it sends the lead-magnet PDF — the same document
+        # we'd have emailed — not the image gallery. The photo handlers below
+        # would otherwise intercept it and send loose photos instead. Only skip
+        # them when the reply is actually a delivery-channel ask, so a genuine
+        # fresh photo request still works.
+        _delay_email_wants_wa = False
+        try:
+            from .out_of_scope_handler import _read_pending, wants_whatsapp_delivery
+            _pending = _read_pending(appointment)
+            _delay_email_wants_wa = bool(
+                _pending and _pending.get('category') == 'delay_email'
+                and wants_whatsapp_delivery(message_body)
+            )
+        except Exception as _pend_exc:
+            print(f"⚠️ delay_email pending check failed: {_pend_exc}")
+
         # -- STEP 0: Multi-intent compose (2+ questions in one message) ---------
         # e.g. "where are you based and how much" → answer both in one reply.
         # Only fires for 2+ answerable INFO intents; booking-related messages
@@ -2108,7 +2127,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # matched piece here. Exception: an explicit "products AND prices" ask
         # falls through to STEP 0d so the price list still goes out alongside.
         if (_explicitly_requests_photos(message_body)
-                and not _explicitly_requests_catalogue(message_body)):
+                and not _explicitly_requests_catalogue(message_body)
+                and not _delay_email_wants_wa):
             print("Catalogue/pictures request → sending full previous-work gallery")
             if send_previous_work_photos(sender, appointment):
                 return
@@ -2186,9 +2206,9 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # must send photos even when products are named (which would otherwise
         # flag it as a product inquiry and suppress the photo path).
         _explicit_photo = _explicitly_requests_photos(message_body)
-        if _explicit_photo or (
+        if not _delay_email_wants_wa and (_explicit_photo or (
             uc_is_photo_request(_uclass) and not _is_clear_product_inquiry and not _has_pricing_signal
-        ):
+        )):
             print(f"Photo request detected (explicit={_explicit_photo})")
             photos_queued = send_previous_work_photos(sender, appointment)
             if photos_queued:

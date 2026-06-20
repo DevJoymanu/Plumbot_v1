@@ -107,6 +107,22 @@ def _clear_pending_from_text(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+# Phrases that mean "send it to me HERE on WhatsApp" rather than by email.
+_WA_DELIVERY_SIGNALS = ('whatsapp', 'this number', 'this platform', 'this chat',
+                        'this app', 'use this', 'on here', 'over here',
+                        'send it here', 'send it', 'send them', 'send through',
+                        'just send', 'right here', 'send here')
+
+
+def wants_whatsapp_delivery(message: str) -> bool:
+    """
+    True when a lead is asking to receive the portfolio HERE on WhatsApp rather
+    than by email (an email address present means they chose email, not WhatsApp).
+    """
+    msg = (message or '').strip()
+    return ('@' not in msg) and any(s in msg.lower() for s in _WA_DELIVERY_SIGNALS)
+
+
 def has_delay_signal(appointment) -> bool:
     return _DELAY_SIGNAL_TAG in (appointment.internal_notes or "")
 
@@ -1586,11 +1602,7 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     # First: did they ask to receive it HERE on WhatsApp rather than by email?
     # That's a positive "send it to me on this number" — honour it by sending the
     # lead magnet PDF directly, instead of treating it as a flat decline.
-    wa_delivery_signals = ('whatsapp', 'this number', 'this platform', 'this chat',
-                           'this app', 'use this', 'on here', 'over here',
-                           'send it here', 'send it', 'send them', 'send through',
-                           'just send', 'right here', 'send here')
-    wants_whatsapp = ('@' not in msg) and any(s in msg_lower for s in wa_delivery_signals)
+    wants_whatsapp = wants_whatsapp_delivery(msg)
 
     if wants_whatsapp:
         sent_ok = send_lead_magnet_on_whatsapp(appointment)
