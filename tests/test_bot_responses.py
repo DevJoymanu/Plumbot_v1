@@ -441,6 +441,7 @@ class _FakeSelfPricing:
     PRICING_AUTO_REPLY_INTENTS = ResponseMixin.PRICING_AUTO_REPLY_INTENTS
     NON_PRICING_AUTO_REPLY_INTENTS = ResponseMixin.NON_PRICING_AUTO_REPLY_INTENTS
     _looks_like_project_description_reply = ResponseMixin._looks_like_project_description_reply
+    _is_job_quote_request = ResponseMixin._is_job_quote_request
     _should_volunteer_pricing = ResponseMixin._should_volunteer_pricing
 _fp = _FakeSelfPricing()
 # (intent, message, price_requested, expected: should we volunteer a price?)
@@ -473,7 +474,34 @@ for intent, msg, price_req, expected in VOLUNTEER_PRICING_CASES:
 # (appt 473). API-free: pure regex helper on a fake self.
 class _FakeSelfBuy:
     _is_purchase_commitment = ResponseMixin._is_purchase_commitment
+    _is_job_quote_request = ResponseMixin._is_job_quote_request
 _fb = _FakeSelfBuy()
+# Job / multi-item quotes route to the free on-site quote (no chat price block);
+# single-product price questions still price. Production bug: "Need a quote to fit
+# tub and shower" dumped a shower-cubicle price block (appt 475). API-free regex.
+JOB_QUOTE_CASES = [
+    ("Need a quote to fit tub and shower",   True),   # the bug: labour + 2 items
+    ("quote to install a geyser",            True),   # labour verb
+    ("can you renovate my bathroom",         True),   # labour verb
+    ("how much for a tub and a toilet",      True),   # 2 product families
+    ("redo my bathroom",                     True),
+    ("how much is a shower cubicle",         False),  # single product → still prices
+    ("shower cubicle price",                 False),  # single product
+    ("do you sell geysers",                  False),  # single product availability
+    ("how much for a vanity",                False),  # single product
+]
+for msg, expected in JOB_QUOTE_CASES:
+    try:
+        got = _fb._is_job_quote_request(msg)
+        results.log(
+            f"_is_job_quote_request: '{msg[:30]}'",
+            got == expected,
+            f"job={got}",
+            expected=f"job={expected}",
+            got=f"job={got}",
+        )
+    except Exception as e:
+        results.log(f"_is_job_quote_request: '{msg[:30]}'", False, got=str(e))
 PURCHASE_COMMITMENT_CASES = [
     ("I want to purchase 2x shower cubicles and asseries", True),   # the bug
     ("I want to buy a geyser",        True),

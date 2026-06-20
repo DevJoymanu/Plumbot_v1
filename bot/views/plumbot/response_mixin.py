@@ -693,6 +693,71 @@ class ResponseMixin:
             return any(re.search(p, msg) for p in patterns)
 
 
+        def _is_job_quote_request(self, message: str) -> bool:
+            """
+            True when the customer wants a quote for WORK to be done — a
+            fit/install/renovate job, or a request spanning multiple items
+            ("need a quote to fit tub and shower") — rather than the price of a
+            single named product ("how much is a shower cubicle").
+
+            Business policy: job / multi-item quotes route to the FREE on-site
+            quote (exact pricing happens there), not a chat price block. A direct
+            single-product price question still gets the approximate range.
+
+            Deterministic (CLAUDE.md: prefer deterministic resolvers for short
+            strings). 'fit'/'install' etc. mean labour, so they signal a job.
+            """
+            msg = (message or '').lower().strip()
+            if not msg:
+                return False
+            labour_markers = (
+                'fit ', 'fitting', 'install', 'instal ', 'renovat', 'remodel',
+                're-do', 'redo', 'set up', 'setup', 'put in', 'replace', 'upgrade',
+                'rip out', 'tear out', 'do my', 'do the', 'do a ', 'do up',
+            )
+            if any(m in msg for m in labour_markers):
+                return True
+            # Two or more DISTINCT product families named → a job, not one product.
+            product_families = {
+                'tub':    ('tub', 'bath'),          # 'bathtub' contains both — one family
+                'shower': ('shower', 'cubicle'),
+                'toilet': ('toilet', 'loo', ' wc'),
+                'geyser': ('geyser',),
+                'vanity': ('vanity', 'vanit'),
+                'basin':  ('basin', 'sink'),
+                'chamber':('chamber',),
+                'tap':    ('tap', 'mixer', 'faucet'),
+                'tile':   ('tile', 'tiling'),
+                'drain':  ('drain',),
+                'pipe':   ('pipe',),
+            }
+            fams = {
+                fam for fam, words in product_families.items()
+                if any(w in msg for w in words)
+            }
+            return len(fams) >= 2
+
+
+        def _build_job_quote_reply(self, language: str = "english") -> str:
+            """
+            Acknowledge a job / multi-item quote request and route it to the free
+            on-site quote (where exact pricing happens), instead of a chat price
+            block. The follow-up is the next booking question via
+            _get_pricing_followup_prompt, so we never loop or re-ask a field we
+            already have.
+            """
+            is_shona = language == "shona"
+            lead = (
+                "Tinokwanisa kukubatsira nazvo. Tinokupai quote chaiyo, yese-yese, "
+                "mahara patinouya kuzoona pamba — hapana zvinozomuka pashure."
+                if is_shona else
+                "Happy to sort that out for you. We give you an exact, all-in quote "
+                "free on a quick on-site visit, so there are no surprises later."
+            )
+            followup = self._get_pricing_followup_prompt("shona" if is_shona else "english")
+            return f"{lead}\n\n{followup}"
+
+
         # Central pricing-gate policy. Every entry point that could volunteer a
         # price (the webhook service-inquiry check, generate_response, and the
         # standalone-question branch) should defer to this so they all behave the
@@ -724,6 +789,11 @@ class ResponseMixin:
             if intent in self.NON_PRICING_AUTO_REPLY_INTENTS:
                 return True
             if intent not in self.PRICING_AUTO_REPLY_INTENTS:
+                return False
+            # Job / multi-item quote → route to the free on-site quote, never a
+            # chat price block, even when they say "quote"/"price". A single-
+            # product price question is not a job quote, so it still prices.
+            if self._is_job_quote_request(message):
                 return False
             if price_requested is None:
                 price_requested = self._explicitly_requests_price(message)
@@ -1249,6 +1319,16 @@ class ResponseMixin:
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
                         )
+                    elif self._is_job_quote_request(incoming_message):
+                        # A job / multi-item quote ("quote to fit tub and shower")
+                        # routes to the free on-site quote, not a chat price block.
+                        print("🧰 Job/multi-item quote — routing to free on-site quote, no price block")
+                        try:
+                            from bot.whatsapp_webhook import detect_language_simple as _dls
+                            _job_lang = _dls(incoming_message)
+                        except Exception:
+                            _job_lang = 'english'
+                        reply = self._build_job_quote_reply(language=_job_lang)
                     elif self._is_standalone_question(incoming_message):
                         PRODUCT_INTENTS = {
                             'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
