@@ -254,6 +254,7 @@ DELAY_BREAKOUT_CASES = [
     ("how much",               True),
     ("freestanding tub price", True),
     ("do you sell tubs",       True),
+    ("I want to purchase 2x shower cubicles and asseries", True),  # buying signal breaks email step (appt 472)
     ("next week",              False),  # real timeframe — stay in flow
     ("end of the month",       False),
     ("Thursday",               False),

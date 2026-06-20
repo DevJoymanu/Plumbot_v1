@@ -1841,6 +1841,18 @@ def handle_out_of_scope(
             _clear_pending(appointment)
             return None
 
+        # Email capture (step 4) breaks out on the same signal, but only when the
+        # message isn't itself an email — so a buying/price signal like "I want 2x
+        # shower cubicles" re-engages the sale instead of being force-fit as a
+        # malformed email ("that doesn't look quite right…"), while a real address
+        # still flows to the email handler. The '@' guard is why this is a separate
+        # branch from the states above.
+        if pending_cat == "delay_email" and '@' not in (message or '') \
+                and _delay_breakout_inquiry(message):
+            logger.info("Delay email step — live inquiry breaks holding pattern: '%s'", message[:60])
+            _clear_pending(appointment)
+            return None
+
         if pending_cat == "delay_timeframe":
             logger.info("Delay flow step 2 — timeframe answer: '%s'", message[:60])
             return _handle_delay_timeframe_answer(message, pending, appointment)
