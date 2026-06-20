@@ -664,6 +664,35 @@ class ResponseMixin:
             return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
 
 
+        def _is_purchase_commitment(self, message: str) -> bool:
+            """
+            True when the message is an explicit intent to BUY / commission work —
+            a commitment signal ("I want to purchase 2x shower cubicles", "I'd
+            like to buy a geyser", "can I order a vanity"), as opposed to a
+            QUESTION about the product. A commitment should be acknowledged and
+            moved forward in the booking flow — never answered with prices, sizes,
+            or product spiel the lead never asked for. A price ask is handled
+            elsewhere; a commitment is about acquiring, not cost.
+
+            Deterministic on purpose (CLAUDE.md: prefer deterministic resolvers
+            for short/fuzzy strings). 'get'/'acquire' are intentionally excluded
+            as buy-verbs because "I want to get more information" is not a buy.
+            """
+            msg = (message or '').lower().strip()
+            if not msg:
+                return False
+            buy_verbs = r'(?:buy|purchase|order|install|fit|put\s+in)'
+            patterns = (
+                rf'\bi\s+(?:want|need|would\s+like|wanna|wish|like)\s+to\s+{buy_verbs}\b',
+                rf"\bi'?d\s+like\s+to\s+{buy_verbs}\b",
+                rf'\bcan\s+i\s+{buy_verbs}\b',
+                rf'\bi\s+(?:want|need)\s+(?:\d|two|three|four|a\s+couple|some)\b',  # "I want 2x …"
+                rf"\bi'?ll\s+take\b",
+                rf'\blooking\s+to\s+{buy_verbs}\b',
+            )
+            return any(re.search(p, msg) for p in patterns)
+
+
         # Central pricing-gate policy. Every entry point that could volunteer a
         # price (the webhook service-inquiry check, generate_response, and the
         # standalone-question branch) should defer to this so they all behave the
@@ -1207,7 +1236,20 @@ class ResponseMixin:
                                 f"{alt_text}\n\nWhich works better for you?"
                             )
                 else:
-                    if self._is_standalone_question(incoming_message):
+                    # An explicit buying statement ("I want to purchase 2x shower
+                    # cubicles") is a commitment, not a question — even when the
+                    # standalone-question classifier flags it as one. Acknowledge
+                    # it and advance the booking flow; never route it to the Q&A
+                    # answerer, which would volunteer prices/sizes/spiel the lead
+                    # never asked for. A price ask still falls through to pricing.
+                    if (self._is_purchase_commitment(incoming_message)
+                            and not self._explicitly_requests_price(incoming_message)):
+                        print("🛒 Purchase commitment — acknowledge & progress, no price/spiel")
+                        reply = self.generate_contextual_response(
+                            incoming_message, next_question, updated_fields,
+                            quoted_context=quoted_context,
+                        )
+                    elif self._is_standalone_question(incoming_message):
                         PRODUCT_INTENTS = {
                             'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
                             'vanity', 'bathtub_installation', 'toilet', 'chamber',
@@ -3966,9 +4008,9 @@ class ResponseMixin:
         CUSTOMER'S QUESTION: "{message}"
 
         If this is NOT a generic opener, answer directly and honestly.
-        - If we can do it: confirm clearly, briefly explain what's involved.
+        - If we can do it: confirm clearly and briefly, then move toward a site visit.
         - If we cannot (electrical, roofing, painting): say so and redirect to what we can help with.
-        - If it's a pricing question: give the relevant range from the guide above.
+        - ONLY give prices, sizes, or measurements if the customer EXPLICITLY asked about price or size. If they did not ask, do NOT mention any prices, sizes, or specifications — just acknowledge what they want and keep it moving. The pricing guide above is for reference only; never volunteer it unprompted.
         - Zimbabwean English. No bold, no bullets. Do NOT end with a question."""
 
                 response = deepseek_client.chat.completions.create(

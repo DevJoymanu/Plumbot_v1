@@ -467,6 +467,39 @@ for intent, msg, price_req, expected in VOLUNTEER_PRICING_CASES:
     except Exception as e:
         results.log(f"_should_volunteer_pricing: '{msg[:30]}'", False, got=str(e))
 
+# A buying statement must be recognised as a commitment (→ acknowledge & progress
+# the booking flow), NOT routed to the Q&A answerer that volunteers prices/sizes.
+# Production bug: "I want to purchase 2x shower cubicles" got a price+size spiel
+# (appt 473). API-free: pure regex helper on a fake self.
+class _FakeSelfBuy:
+    _is_purchase_commitment = ResponseMixin._is_purchase_commitment
+_fb = _FakeSelfBuy()
+PURCHASE_COMMITMENT_CASES = [
+    ("I want to purchase 2x shower cubicles and asseries", True),   # the bug
+    ("I want to buy a geyser",        True),
+    ("I'd like to order a vanity",    True),
+    ("can I buy two toilets",         True),
+    ("I want 3 shower cubicles",      True),
+    ("looking to install a new tub",  True),
+    ("I'll take it",                  True),
+    ("do you install geysers in garages", False),  # a QUESTION, must still be answered
+    ("how much for a shower cubicle", False),       # price ask, not a commitment route
+    ("I want to get more information", False),       # 'get' is not a buy verb
+    ("where are you based",           False),
+]
+for msg, expected in PURCHASE_COMMITMENT_CASES:
+    try:
+        got = _fb._is_purchase_commitment(msg)
+        results.log(
+            f"_is_purchase_commitment: '{msg[:30]}'",
+            got == expected,
+            f"commit={got}",
+            expected=f"commit={expected}",
+            got=f"commit={got}",
+        )
+    except Exception as e:
+        results.log(f"_is_purchase_commitment: '{msg[:30]}'", False, got=str(e))
+
 # A delay-signal lead who was offered the portfolio and replies "send it on
 # WhatsApp / to this number" must be routed to the lead-magnet PDF, not the
 # photo gallery. The webhook gates the gallery handlers on this deterministic
