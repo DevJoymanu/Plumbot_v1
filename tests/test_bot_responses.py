@@ -440,7 +440,10 @@ for msg in MONTH_TIMEFRAME_CASES:
 class _FakeSelfPricing:
     PRICING_AUTO_REPLY_INTENTS = ResponseMixin.PRICING_AUTO_REPLY_INTENTS
     NON_PRICING_AUTO_REPLY_INTENTS = ResponseMixin.NON_PRICING_AUTO_REPLY_INTENTS
+    _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
     _looks_like_project_description_reply = ResponseMixin._looks_like_project_description_reply
+    _product_families_in = ResponseMixin._product_families_in
+    _names_multiple_products = ResponseMixin._names_multiple_products
     _is_job_quote_request = ResponseMixin._is_job_quote_request
     _should_volunteer_pricing = ResponseMixin._should_volunteer_pricing
 _fp = _FakeSelfPricing()
@@ -477,7 +480,58 @@ for intent, msg, price_req, expected in VOLUNTEER_PRICING_CASES:
 class _FakeSelfBuy:
     _is_purchase_commitment = ResponseMixin._is_purchase_commitment
     _is_job_quote_request = ResponseMixin._is_job_quote_request
+    _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
+    _product_families_in = ResponseMixin._product_families_in
+    _names_multiple_products = ResponseMixin._names_multiple_products
 _fb = _FakeSelfBuy()
+# A multi-item price ask must price EVERY named item, not just one. Production
+# bug: "How much tab and shower" / "quote to fit tub and shower" priced only the
+# shower (appt 477). API-free: count distinct product families named.
+MULTI_PRODUCT_CASES = [
+    ("How much tab and shower",              True),   # tab(typo)+shower
+    ("Need a quote to fit tub and shower",   True),   # tub+shower
+    ("how much for a tub and a toilet",      True),   # tub+toilet
+    ("shower and vanity price",              True),   # shower+vanity
+    ("how much is a shower cubicle",         False),  # single (shower+cubicle = 1 family)
+    ("how much for a geyser",                False),  # single
+    ("is the table included",                False),  # 'tab' in 'table' must NOT count
+]
+for msg, expected in MULTI_PRODUCT_CASES:
+    try:
+        got = _fb._names_multiple_products(msg)
+        results.log(
+            f"_names_multiple_products: '{msg[:30]}'",
+            got == expected,
+            f"multi={got}",
+            expected=f"multi={expected}",
+            got=f"multi={got}",
+        )
+    except Exception as e:
+        results.log(f"_names_multiple_products: '{msg[:30]}'", False, got=str(e))
+
+# The combined reply prices each named item (tub AND shower), carries the
+# approximate-price disclaimer, and never invents figures.
+class _FakeSelfCombined:
+    _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
+    _FAMILY_ROUGH_PRICE = ResponseMixin._FAMILY_ROUGH_PRICE
+    _product_families_in = ResponseMixin._product_families_in
+    _build_combined_price_reply = ResponseMixin._build_combined_price_reply
+    def _get_pricing_followup_prompt(self, language="english"):
+        return "What area are you in so we can plan the visit properly?"
+try:
+    _cr = _FakeSelfCombined()._build_combined_price_reply("How much tab and shower", "english")
+    results.log(
+        "_build_combined_price_reply: prices BOTH tub and shower",
+        "tub from US$160" in _cr and "shower cubicle from US$170" in _cr,
+        got=_cr[:90],
+    )
+    results.log(
+        "_build_combined_price_reply: carries approximate-price disclaimer",
+        "approximate starting prices" in _cr and "free at the on-site visit" in _cr,
+        got=_cr[-90:],
+    )
+except Exception as e:
+    results.log("_build_combined_price_reply", False, got=str(e))
 # Job / multi-item quotes route to the free on-site quote (no chat price block);
 # single-product price questions still price. Production bug: "Need a quote to fit
 # tub and shower" dumped a shower-cubicle price block (appt 475). API-free regex.

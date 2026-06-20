@@ -693,6 +693,45 @@ class ResponseMixin:
             return any(re.search(p, msg) for p in patterns)
 
 
+        # Product-family detection (word-boundary so short tokens like 'fit'/'tab'
+        # don't match inside 'benefit'/'table'). 'tab' is a frequent typo for
+        # tub/tap, so it counts as a fixture. Shared by every multi-item check.
+        _PRODUCT_FAMILY_PATTERNS = {
+            'tub':    (r'\btubs?\b', r'\bbath(?:tub)?s?\b', r'\btab\b'),
+            'shower': (r'\bshowers?\b', r'\bcubicles?\b'),
+            'toilet': (r'\btoilets?\b', r'\bloo\b', r'\bwc\b'),
+            'geyser': (r'\bgeysers?\b',),
+            'vanity': (r'\bvanit\w*\b',),
+            'basin':  (r'\bbasins?\b', r'\bsinks?\b'),
+            'chamber':(r'\bchambers?\b',),
+            'tap':    (r'\btaps?\b', r'\bmixers?\b', r'\bfaucets?\b'),
+            'tile':   (r'\btiles?\b', r'\btiling\b'),
+            'drain':  (r'\bdrains?\b',),
+            'pipe':   (r'\bpipes?\b',),
+        }
+        # Rough all-in (supply + install) starting prices, from the business's own
+        # figures in sales_profiles/homebase.md — keep in sync, never invent.
+        _FAMILY_ROUGH_PRICE = {
+            'shower':  'shower cubicle from US$170',
+            'tub':     'tub from US$160',
+            'geyser':  'geyser from US$160',
+            'vanity':  'vanity from US$180',
+            'toilet':  'toilet from US$70',
+            'chamber': 'side chamber from US$160',
+        }
+
+        def _product_families_in(self, message: str) -> set:
+            """The set of distinct product families named in the message."""
+            msg = (message or '').lower()
+            return {
+                fam for fam, pats in self._PRODUCT_FAMILY_PATTERNS.items()
+                if any(re.search(p, msg) for p in pats)
+            }
+
+        def _names_multiple_products(self, message: str) -> bool:
+            """True when the message names 2+ distinct product families."""
+            return len(self._product_families_in(message)) >= 2
+
         def _is_job_quote_request(self, message: str) -> bool:
             """
             True when the customer wants a quote for WORK to be done — a
@@ -700,9 +739,9 @@ class ResponseMixin:
             ("need a quote to fit tub and shower") — rather than the price of a
             single named product ("how much is a shower cubicle").
 
-            Business policy: job / multi-item quotes route to the FREE on-site
-            quote (exact pricing happens there), not a chat price block. A direct
-            single-product price question still gets the approximate range.
+            Business policy: a job / multi-item request with NO explicit price ask
+            routes to the FREE on-site quote. (An explicit price ask is priced by
+            the caller before this is consulted.)
 
             Deterministic (CLAUDE.md: prefer deterministic resolvers for short
             strings). 'fit'/'install' etc. mean labour, so they signal a job.
@@ -710,8 +749,6 @@ class ResponseMixin:
             msg = (message or '').lower().strip()
             if not msg:
                 return False
-            # Word-boundary patterns so short tokens (e.g. 'fit', 'tab') don't
-            # match inside other words ('benefit', 'table').
             labour_markers = (
                 r'\bfit\b', r'\bfitting\b', r'\binstal', r'\brenovat', r'\bremodel',
                 r'\bre-?do\b', r'\bset\s*up\b', r'\bput\s+in\b', r'\breplace',
@@ -720,27 +757,35 @@ class ResponseMixin:
             )
             if any(re.search(p, msg) for p in labour_markers):
                 return True
-            # Two or more DISTINCT product families named → a job, not one product.
-            # 'tab' is a frequent typo for tub/tap — treat it as a fixture so
-            # "tab and shower" reads as the multi-item request it is.
-            product_families = {
-                'tub':    (r'\btubs?\b', r'\bbath(?:tub)?s?\b', r'\btab\b'),
-                'shower': (r'\bshowers?\b', r'\bcubicles?\b'),
-                'toilet': (r'\btoilets?\b', r'\bloo\b', r'\bwc\b'),
-                'geyser': (r'\bgeysers?\b',),
-                'vanity': (r'\bvanit\w*\b',),
-                'basin':  (r'\bbasins?\b', r'\bsinks?\b'),
-                'chamber':(r'\bchambers?\b',),
-                'tap':    (r'\btaps?\b', r'\bmixers?\b', r'\bfaucets?\b'),
-                'tile':   (r'\btiles?\b', r'\btiling\b'),
-                'drain':  (r'\bdrains?\b',),
-                'pipe':   (r'\bpipes?\b',),
-            }
-            fams = {
-                fam for fam, pats in product_families.items()
-                if any(re.search(p, msg) for p in pats)
-            }
-            return len(fams) >= 2
+            return self._names_multiple_products(msg)
+
+
+        def _build_combined_price_reply(self, message: str, language: str = "english") -> str:
+            """
+            Approximate all-in prices for a MULTI-ITEM price ask ("how much tab
+            and shower") — lists every named item's rough price, not just one.
+            Falls back to the full rough list if fewer than two named families
+            have a known price, so the lead always gets multiple figures. Ends
+            with the approximate-price disclaimer and the next booking question.
+            """
+            fams = self._product_families_in(message)
+            order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
+            priced = [self._FAMILY_ROUGH_PRICE[f] for f in order
+                      if f in fams and f in self._FAMILY_ROUGH_PRICE]
+            if len(priced) < 2:
+                priced = [self._FAMILY_ROUGH_PRICE[f] for f in order]
+            is_shona = language == "shona"
+            intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
+                     if is_shona else
+                     "Rough all-in prices (supply + install): ")
+            disclaimer = (
+                "Mutengo chaiwo unosimbiswa pa on-site visit yemahara."
+                if is_shona else
+                "These are approximate starting prices — your exact quote is "
+                "confirmed free at the on-site visit."
+            )
+            followup = self._get_pricing_followup_prompt("shona" if is_shona else "english")
+            return f"{intro}{', '.join(priced)}.\n\n{disclaimer}\n\n{followup}"
 
 
         def _build_job_quote_reply(self, language: str = "english") -> str:
@@ -1312,13 +1357,26 @@ class ResponseMixin:
                                 f"{alt_text}\n\nWhich works better for you?"
                             )
                 else:
+                    # Explicit price ask naming MULTIPLE items ("how much tab and
+                    # shower") → give every named item's approximate price, not
+                    # just the one a single-intent classifier picks. (Defense; the
+                    # webhook usually catches this first.)
+                    if (self._explicitly_requests_price(incoming_message)
+                            and self._names_multiple_products(incoming_message)):
+                        print("🧾 Multi-item price ask — combined approximate prices for each item")
+                        try:
+                            from bot.whatsapp_webhook import detect_language_simple as _dlsm
+                            _mi_lang = _dlsm(incoming_message)
+                        except Exception:
+                            _mi_lang = 'english'
+                        reply = self._build_combined_price_reply(incoming_message, language=_mi_lang)
                     # An explicit buying statement ("I want to purchase 2x shower
                     # cubicles") is a commitment, not a question — even when the
                     # standalone-question classifier flags it as one. Acknowledge
                     # it and advance the booking flow; never route it to the Q&A
                     # answerer, which would volunteer prices/sizes/spiel the lead
                     # never asked for. A price ask still falls through to pricing.
-                    if (self._is_purchase_commitment(incoming_message)
+                    elif (self._is_purchase_commitment(incoming_message)
                             and not self._explicitly_requests_price(incoming_message)):
                         print("🛒 Purchase commitment — acknowledge & progress, no price/spiel")
                         reply = self.generate_contextual_response(
@@ -3664,6 +3722,17 @@ class ResponseMixin:
             Anchors on the Facebook bathroom package, then shows individual item prices,
             then pushes to booking.
             """
+            # Multi-item price ask ("how much tab and shower") — give each named
+            # item's approximate price rather than narrowing to a single one (the
+            # hand-off / recent-context logic below would otherwise price just one).
+            if self._names_multiple_products(message):
+                from bot.whatsapp_webhook import detect_language_simple as _dls2
+                try:
+                    _lang2 = _dls2(message)
+                except Exception:
+                    _lang2 = 'english'
+                return self._build_combined_price_reply(message, language=_lang2)
+
             # Try to detect a specific service first — if HIGH confidence, hand off
             inquiry = self.detect_service_inquiry(message)
             if inquiry.get('intent') not in ('none', 'combined_pricing') and inquiry.get('confidence') == 'HIGH':

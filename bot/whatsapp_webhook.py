@@ -2345,6 +2345,14 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             # through and gets the approximate prices below.
             print("Job/multi-item request (no price asked) -> routing to free on-site quote")
             reply = plumbot._build_job_quote_reply(language=detect_language_simple(message_body))
+        elif price_requested and plumbot._names_multiple_products(message_body):
+            # Explicit price ask naming MULTIPLE items ("how much tab and shower")
+            # -> price every item named, not just the one a single-intent classifier
+            # or keyword override happened to pick.
+            print("Multi-item price ask -> combined approximate prices for each item")
+            reply = plumbot._build_combined_price_reply(
+                message_body, language=detect_language_simple(message_body)
+            )
         elif intent != 'none' and (
             inquiry.get('confidence') == 'HIGH' or intent in PRODUCT_INTENTS
         ):
