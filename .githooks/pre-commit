@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Plumbot commit gate — runs the deterministic regression suite (TEST 0) before
+# every commit and blocks the commit if anything fails. Fast (no network: a
+# mocked DeepSeek is used) and meaningful (no flaky live-LLM tests).
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# Skip in an emergency:    git commit --no-verify   (avoid; fix the test instead)
+#
+# Every change to intent classification, the pricing gates, or flow routing must
+# add/extend an API-free case in tests/test_bot_responses.py TEST 0 — this hook
+# is what makes that rule mechanical instead of hopeful.
+
+set -u
+
+# Resolve repo root regardless of where git invokes the hook from.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$ROOT" || exit 1
+
+# Pick an interpreter: project venv first, then PATH.
+if [ -x "$ROOT/.venv/Scripts/python.exe" ]; then
+    PY="$ROOT/.venv/Scripts/python.exe"      # Windows venv
+elif [ -x "$ROOT/.venv/bin/python" ]; then
+    PY="$ROOT/.venv/bin/python"              # POSIX venv
+elif command -v python >/dev/null 2>&1; then
+    PY="python"
+else
+    PY="python3"
+fi
+
+echo "🔒 Plumbot commit gate — running deterministic regression suite…"
+PYTHONIOENCODING=utf-8 PLUMBOT_GATE=1 "$PY" tests/test_bot_responses.py
+status=$?
+
+if [ "$status" -ne 0 ]; then
+    echo ""
+    echo "❌ Commit blocked: the deterministic regression suite (TEST 0) failed."
+    echo "   Fix the failure, or if you changed gating/pricing/flow logic, add the"
+    echo "   matching TEST 0 case. To bypass in a true emergency: git commit --no-verify"
+    exit 1
+fi
+
+echo "✅ Commit gate passed."
+exit 0

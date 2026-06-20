@@ -18,6 +18,19 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Plumbing_CRM.settings')
 django.setup()
 
+# ── Run modes ────────────────────────────────────────────────────────────────
+# PLUMBOT_GATE=1        → run ONLY the deterministic TEST 0 regression block and
+#                         exit non-zero on any failure. This is the commit gate:
+#                         fast, offline, and meaningful (no flaky live-LLM tests).
+# PLUMBOT_MOCK_DEEPSEEK=1 → replace the DeepSeek client with a deterministic stub
+#                         so the FULL suite runs offline without flaky live calls.
+# Gate mode implies the mock so it never touches the network.
+GATE_ONLY = os.environ.get('PLUMBOT_GATE') == '1' or '--gate' in sys.argv
+if GATE_ONLY or os.environ.get('PLUMBOT_MOCK_DEEPSEEK') == '1':
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from deepseek_mock import install as _install_ds_mock
+    _install_ds_mock()
+
 from bot.models import Appointment
 from bot.views import Plumbot
 # ============================================================
@@ -129,6 +142,24 @@ class TestResult:
                 print(f"  → {message}")
 
 results = TestResult()
+
+
+def _finish():
+    """Print the summary and exit non-zero on any failure, so this script can
+    gate a commit / CI run. Without an exit code a 'failing' suite still returns
+    0 and nothing stops a regression from shipping."""
+    print("\n" + "=" * 60)
+    print("TEST SUMMARY" + ("  (GATE — deterministic only)" if GATE_ONLY else ""))
+    print("=" * 60)
+    total = results.passed + results.failed
+    print(f"✅ Passed: {results.passed}/{total}")
+    print(f"❌ Failed: {results.failed}/{total}")
+    if results.errors:
+        print("\nFailed Tests:")
+        for err in results.errors:
+            print(f"  • {err}")
+    print("=" * 60)
+    sys.exit(1 if results.failed else 0)
 
 
 def get_test_appointment():
@@ -617,6 +648,13 @@ for msg, expected in WA_DELIVERY_CASES:
         )
     except Exception as e:
         results.log(f"wants_whatsapp_delivery: '{msg[:30]}'", False, got=str(e))
+
+# In gate mode we stop here: TEST 0 above is the API-free deterministic
+# regression block (every production bug we've fixed is pinned there). The
+# TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality
+# signal, but inherently fuzzy, so they are NOT a commit gate.
+if GATE_ONLY:
+    _finish()
 
 # ============================================================
 # TEST 1: Service Inquiry Detection
@@ -1282,16 +1320,4 @@ results.log(
 # SUMMARY
 # ============================================================
 
-print("\n" + "="*60)
-print("TEST SUMMARY")
-print("="*60)
-total = results.passed + results.failed
-print(f"✅ Passed: {results.passed}/{total}")
-print(f"❌ Failed: {results.failed}/{total}")
-
-if results.errors:
-    print("\nFailed Tests:")
-    for err in results.errors:
-        print(f"  • {err}")
-
-print("="*60)
+_finish()
