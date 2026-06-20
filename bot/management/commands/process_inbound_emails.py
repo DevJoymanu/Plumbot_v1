@@ -258,7 +258,7 @@ Qualification framework (Hormozi order):
 - Close: offer the free on-site assessment as a presumptive close
 
 Pricing reference (starting rates, USD):
-- Full bathroom renovation: from US$600 (supply and labour)
+- Full bathroom renovation: from US$900 (supply and labour)
 - Toilet: supply from US$50 + install from US$20
 - Shower cubicle: supply from US$130 + install from US$40
 - Vanity unit: supply from US$150 + install from US$30

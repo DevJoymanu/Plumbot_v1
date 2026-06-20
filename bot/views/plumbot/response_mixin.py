@@ -2575,7 +2575,7 @@ class ResponseMixin:
             'vanity':          "Vanities from US$180 all-in — supply and install.",
             'toilet':          "Toilet replacement from US$70 all-in — supply and install.",
             'chamber':         "Side chambers from US$160 all-in — supply and install.",
-            'facebook_package': "Our Facebook package is US$600 — freestanding tub and side chamber.",
+            'facebook_package': "Our Facebook package is US$800 — freestanding tub and side chamber.",
             'location':        "We're based in Hatfield, Harare",
             'hours':           "We're open Sunday to Friday, 8 AM–6 PM",
         }
@@ -2703,7 +2703,7 @@ class ResponseMixin:
                     "HomeBase Plumbers, Hatfield Harare. Open Sun–Fri 8am–6pm (closed Sat). "
                     "Free on-site assessment. Services: bathroom/kitchen renovations, geysers, "
                     "shower cubicles, vanities, toilets, tubs, drains, pipe & geyser repairs. "
-                    "Facebook package US$600 (freestanding tub + side chamber)."
+                    "Facebook package US$800 (freestanding tub + side chamber)."
                 )
                 return deepseek_call(
                     messages=[
@@ -2949,7 +2949,7 @@ class ResponseMixin:
                                 "Tub: Supply from US$80, Install from US$80",
                                 "Freestanding tub: supply from US$400, mixer from US$150, install US$120",
                             ],
-                            "total_line": "The Facebook package is US$600 — freestanding tub and side chamber.",
+                            "total_line": "The Facebook package is US$800 — freestanding tub and side chamber.",
                             "cheapest_line": "We'll give you the exact price once we've seen the space.",
                             "sn_breakdown_lines": [
                                 "Shower cubicle: Supply kubva US$130, Install kubva US$40",
@@ -2959,8 +2959,8 @@ class ResponseMixin:
                                 "Tub: Supply kubva US$80, Install kubva US$80",
                                 "Free-standing tub mixer: Supply kubva US$150, Install kubva US$120",
                             ],
-                            "sn_total_line": "Facebook package inosvika US$600 — freestanding tub ne side chamber.",
-                            "sn_cheapest_line": "Cheapest option i basic package inotangira paUS$600 zvinhu zvekuwedzera zvisati zvaiswa.",
+                            "sn_total_line": "Facebook package inosvika US$800 — freestanding tub ne side chamber.",
+                            "sn_cheapest_line": "Cheapest option i basic package inotangira paUS$800 zvinhu zvekuwedzera zvisati zvaiswa.",
                         },
                         "drain_unblocking": {
                             "breakdown_lines": [
@@ -3042,11 +3042,11 @@ class ResponseMixin:
                     if intent == 'facebook_package':
                         if language == 'shona':
                             return (
-                                "Facebook package yedu inosvika US$600.\n\n"
+                                "Facebook package yedu inosvika US$800.\n\n"
                                 f"{self._get_pricing_followup_prompt('shona')}"
                             )
                         return (
-                            "Our Facebook package is US$600.\n\n"
+                            "Our Facebook package is US$800.\n\n"
                             f"{self._get_pricing_followup_prompt('english')}"
                         )
 
@@ -3317,24 +3317,24 @@ class ResponseMixin:
 
                         "facebook_package": {
                             "en": (
-                                "The bathroom package from our Facebook ad starts from US$600. \n\n"
+                                "The bathroom package from our Facebook ad starts from US$800. \n\n"
                                 "That covers the core fit-out — exact price depends on the size of your bathroom "
                                 "and fixtures you choose.\n\n"
                                 "Want us to come do a free on-site assessment so we can lock in your exact number?"
                             ),
                             "en_v": (
-                                "The bathroom package from our Facebook ad starts from US$600. \n\n"
+                                "The bathroom package from our Facebook ad starts from US$800. \n\n"
                                 "Exact price depends on your bathroom size and fixtures. "
                                 "Our plumber will lock in your exact price when they come out."
                             ),
                             "sn": (
-                                "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. \n\n"
+                                "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$800. \n\n"
                                 "Iyo inofukidza basa guru — mutengo wakakwana unoenderana nekukura kwebathroom "
                                 "nemhando yezvinhu zvaunosarudza.\n\n"
                                 "Unoda here kuti tiuye tiite free assessment tikupe mutengo wakajika?"
                             ),
                             "sn_v": (
-                                "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$600. \n\n"
+                                "Package yebathroom yatakaiswa pa Facebook inotangira kuUS$800. \n\n"
                                 "Plumber wedu achakupa mutengo wakajika paauya."
                             ),
                         },
@@ -3460,13 +3460,13 @@ class ResponseMixin:
 
             if language == "shona":
                 return (
-                    "Facebook package yedu inosvika US$600 — ine freestanding tub ne side chamber.\n\n"
+                    "Facebook package yedu inosvika US$800 — ine freestanding tub ne side chamber.\n\n"
                     "Final price inoenderana nesetup, saka tinozoconfirm kana tauya tangoona space.\n\n"
                     f"{self._get_pricing_followup_prompt('shona')}"
                 )
 
             return (
-                "Our Facebook package is US$600 — that's a freestanding tub and side chamber.\n\n"
+                "Our Facebook package is US$800 — that's a freestanding tub and side chamber.\n\n"
                 "Final price depends on the setup, so we confirm after a quick site check.\n\n"
                 f"{self._get_pricing_followup_prompt('english')}"
             )
@@ -3553,7 +3553,7 @@ class ResponseMixin:
             if language == 'shona':
                 reply = (
                     f"{project_context}"
-                    "Facebook package yedu inosvika US$600. Ine freestanding tub ne side chamber.\n\n"
+                    "Facebook package yedu inosvika US$800. Ine freestanding tub ne side chamber.\n\n"
                     "Kana muri kuda tub chete — freestanding tubs dzinotangira paUS$670 all-in, "
                     "standard built-in tubs kubva US$160 all-in.\n\n"
                     "Munoda chii chaizvo?"
@@ -3561,7 +3561,7 @@ class ResponseMixin:
             else:
                 reply = (
                     f"{project_context}"
-                    "Our Facebook package is US$600. That's a freestanding tub and side chamber.\n\n"
+                    "Our Facebook package is US$800. That's a freestanding tub and side chamber.\n\n"
                     "If you're looking at just a tub — freestanding tubs start from US$670 all-in, "
                     "standard built-in tubs from US$160 all-in.\n\n"
                     "What did you have in mind?"
@@ -3888,7 +3888,7 @@ class ResponseMixin:
         - Bathtub (ordinary/built-in): supply from US$80, install from US$80 → from US$160 all-in
         - Freestanding tub: supply from US$400, mixer from US$150, install US$120 → from US$670 all-in
         - Side chamber: supply from US$130, install from US$30 → from US$160 all-in
-        - Full bathroom package: from US$600+
+        - Full bathroom package: from US$800+
         - Site assessment / visit: FREE
 
         COMPANY INFO:

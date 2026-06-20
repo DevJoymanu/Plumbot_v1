@@ -41,9 +41,10 @@ final price confirmed on site.
 ### Full Renovations
 | Service | Includes | Price |
 |---|---|---|
-| Bathroom Renovation | All fixtures + pipework | from US$600 |
+| Bathroom Renovation | All fixtures + pipework | from US$900 |
 | Kitchen Renovation | Sink, pipes, drainage, connections | from US$600 |
-| Full Bathroom Package | Shower cubicle + vanity + toilet + chamber + tub | from US$600 |
+| Full Bathroom Package | Shower cubicle + vanity + toilet + chamber + tub | from US$800 |
+| Facebook Package | Freestanding tub + side chamber | from US$800 |
 
 ### Individual Bathroom Fittings (all-in from)
 | Item | All-In |

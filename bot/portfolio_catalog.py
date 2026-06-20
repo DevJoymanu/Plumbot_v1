@@ -84,7 +84,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'freestanding-tub-hex',
         'filename': 'standalone_freestanding_tub(2).jpg',
         'title': 'Freestanding Tub & Wall-Hung Toilet',
-        'price': 'freestanding tub from US$670 + wall-hung toilet from US$160; full bathroom renovation from US$600',
+        'price': 'freestanding tub from US$670 + wall-hung toilet from US$160; full bathroom renovation from US$900',
         'description': 'Oval freestanding tub, black wall-mounted mixer, hexagon mosaic border, wall-hung toilet.',
         'story': (
             'A couple in Mount Pleasant wanted a hotel-style soak after long days. '
@@ -101,7 +101,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'gold-tap-double-vanity',
         'filename': 'custom_double_vanity.jpg',
         'title': 'Gold-Tap Double Vanity',
-        'price': 'vanity unit from US$180; full bathroom renovation from US$600',
+        'price': 'vanity unit from US$180; full bathroom renovation from US$900',
         'description': 'Twin white vessel basins on black granite, brushed-gold square mixers, marble-look walls.',
         'story': (
             'This was the en-suite of a busy professional couple who were tired of fighting over one basin. '
@@ -118,7 +118,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'black-granite-vanity-tub',
         'filename': 'standalone_freestanding_tub.jpg',
         'title': 'Black Granite Vanity & Designer Tub',
-        'price': 'freestanding tub from US$670 + vanity from US$180; full renovation from US$600',
+        'price': 'freestanding tub from US$670 + vanity from US$180; full renovation from US$900',
         'description': 'Floating black granite vanity, twin white vessel basins, black wall taps, sculpted black freestanding tub.',
         'story': (
             'The client wanted something dramatic and one-of-a-kind for the master bathroom. '
@@ -168,7 +168,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'clawfoot-tub-feature-wall',
         'filename': 'full_bathroom_renovation.jpg',
         'title': 'Vintage Clawfoot Tub Bathroom',
-        'price': 'freestanding tub from US$670 + wall-hung toilet from US$160 + corner basin from US$70; full bathroom renovation from US$600',
+        'price': 'freestanding tub from US$670 + wall-hung toilet from US$160 + corner basin from US$70; full bathroom renovation from US$900',
         'description': 'White roll-top clawfoot tub, brick-effect feature tiling, wall-hung toilet and corner basin.',
         'story': (
             'The owner loved old-world charm but in a newly built home. '
@@ -185,7 +185,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'walk-in-rain-shower',
         'filename': 'Cubicle.jpg',
         'title': 'Walk-In Rain Shower',
-        'price': 'shower cubicle from US$170; full bathroom renovation from US$600',
+        'price': 'shower cubicle from US$170; full bathroom renovation from US$900',
         'description': 'Frameless glass walk-in shower, overhead rain head, mosaic feature stripe, level drainage.',
         'story': (
             'A client with a small second bathroom wanted to drop the old tub for an easy walk-in shower. '
@@ -201,7 +201,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'marble-builtin-tub',
         'filename': 'ordinar_tub(built-in)_2.jpg',
         'title': 'Marble Built-In Bathtub',
-        'price': 'standard bathtub from US$160; full bathroom renovation from US$600',
+        'price': 'standard bathtub from US$160; full bathroom renovation from US$900',
         'description': 'Built-in bathtub clad in marble-look tile, chrome telephone mixer, bright airy finish.',
         'story': (
             'A family bathroom that needed to work hard for both kids and adults. '
@@ -217,7 +217,7 @@ PORTFOLIO_ITEMS: list[dict] = [
         'id': 'marble-tub-black-tap-vanity',
         'filename': 'odinary_tub(built-in).jpg',
         'title': 'Marble Bathtub & Black-Tap Vanity',
-        'price': 'standard bathtub from US$160 + vanity from US$180; full renovation from US$600',
+        'price': 'standard bathtub from US$160 + vanity from US$180; full renovation from US$900',
         'description': 'Built-in marble-look bathtub beside a white vanity with a matte-black vessel mixer.',
         'story': (
             'The owner wanted a calm, bright bathroom but with one bold detail. '

@@ -417,13 +417,13 @@ def _generate_portfolio_pdf_reportlab():
             [Paragraph(x, th) for x in ["Service", "What's Included", "Supply", "Labour"]],
             [Paragraph("Bathroom Renovation", td),
              Paragraph("All fixtures: tub/shower, vanity, toilet, chamber, all pipework", td_mid),
-             Paragraph("Included", td_mid), Paragraph("From US$600", td)],
+             Paragraph("Included", td_mid), Paragraph("From US$900", td)],
             [Paragraph("Kitchen Renovation", td),
              Paragraph("All kitchen plumbing: sink, pipes, drainage, connections", td_mid),
              Paragraph("Included", td_mid), Paragraph("From US$600", td)],
             [Paragraph("Full Bathroom Package", td),
              Paragraph("Shower cubicle + vanity + toilet + chamber + tub (fixtures of your choice)", td_mid),
-             Paragraph("Included", td_mid), Paragraph("From US$600", td)],
+             Paragraph("Included", td_mid), Paragraph("From US$800", td)],
         ]
         elems.append(tbl(reno_data, [c1, c2, c3, c4]))
         elems.append(Spacer(1, 0.2 * cm))

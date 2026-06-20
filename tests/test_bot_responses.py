@@ -541,9 +541,9 @@ results.log("pricing: toilet contains US$50 + US$20 + disclaimer", passed, got=r
 
 # Facebook package
 resp = bot.handle_service_inquiry('facebook_package', "bathroom on facebook ad")
-checks = ['600', 'US$', 'approximate']
+checks = ['800', 'US$', 'approximate']
 passed = check_response_quality('facebook_package', resp, checks)
-results.log("pricing: facebook_package contains US$600 + disclaimer", passed, got=resp[:100])
+results.log("pricing: facebook_package contains US$800 + disclaimer", passed, got=resp[:100])
 
 # Location
 resp = bot.handle_service_inquiry('location_visit', "where are you located")

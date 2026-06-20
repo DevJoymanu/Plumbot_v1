@@ -1372,8 +1372,8 @@ def handle_pricing_objection(appointment) -> str:
         # pricing source of truth). Quote "from" and defer the exact figure to
         # the free site visit — never invent prices beyond the profile table.
         service_from = {
-            'bathroom_renovation':       'from US$600',
-            'bathroom_installation':     'from US$600',
+            'bathroom_renovation':       'from US$900',
+            'bathroom_installation':     'from US$900',
             'kitchen_renovation':        'from US$600',
             'kitchen_installation':      'from US$600',
             'new_plumbing_installation': None,  # not in the price table → defer
@@ -2390,7 +2390,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 appointment.save(update_fields=['pricing_overview_sent'])
             elif reply is None and objection_type == 'pricing' and getattr(appointment, 'pricing_overview_sent', False):
                 reply = (
-                    "Our Facebook package is US$600 — freestanding tub and side chamber. "
+                    "Our Facebook package is US$800 — freestanding tub and side chamber. "
                     "We'll give you a fixed price once we've seen the space. "
                     f"{plumbot._get_pricing_followup_prompt('english')}"
                 )
