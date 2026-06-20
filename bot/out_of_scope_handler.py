@@ -132,7 +132,7 @@ def send_lead_magnet_on_whatsapp(appointment) -> bool:
     try:
         import os as _os, tempfile as _tempfile
         from bot.whatsapp_cloud_api import whatsapp_api
-        from bot.plumber_notifications import PORTFOLIO_PDF_PATH
+        from bot.customer_emails import PORTFOLIO_PDF_PATH
 
         to = (getattr(appointment, 'phone_number', '') or '').replace('whatsapp:', '').strip()
         if not to:
@@ -1593,7 +1593,12 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     wants_whatsapp = ('@' not in msg) and any(s in msg_lower for s in wa_delivery_signals)
 
     if wants_whatsapp:
-        send_lead_magnet_on_whatsapp(appointment)
+        sent_ok = send_lead_magnet_on_whatsapp(appointment)
+        sent_line = (
+            "Done — I've sent our portfolio and pricing guide straight to you here on WhatsApp."
+            if sent_ok else
+            "I'm getting our portfolio and pricing guide over to you here on WhatsApp now."
+        )
         # Keep the lead in the reactivation queue so we still check back on the
         # agreed date. Restore the delay signal (cleared before the OOS handler ran).
         notes = appointment.internal_notes or ''
@@ -1609,14 +1614,12 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
         _alert_plumber_no_email(appointment, iso_date)
         if iso_date:
             return (
-                "Done — I've sent our portfolio and pricing guide straight to you "
-                f"here on WhatsApp. We'll also check back in around {_friendly_iso(iso_date)}. "
+                f"{sent_line} We'll also check back in around {_friendly_iso(iso_date)}. "
                 "If anything changes just send us a message."
             )
         _write_pending(appointment, 'delay_timeframe', '')
         return (
-            "Done — I've sent our portfolio and pricing guide straight to you here "
-            "on WhatsApp.\n\nSo we check back at the right time — roughly when are "
+            f"{sent_line}\n\nSo we check back at the right time — roughly when are "
             "you hoping to get this sorted? Even a rough idea like next week or end "
             "of the month is perfect."
         )

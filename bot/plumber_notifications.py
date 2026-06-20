@@ -153,6 +153,8 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
     the lead in one tap. Reuses the same delivery path as every other plumber
     notification.
     """
+    from bot.customer_emails import _clean_phone, _fmt_date, _service
+
     name    = getattr(appointment, "customer_name", "") or "Unknown"
     phone   = _clean_phone(getattr(appointment, "phone_number", ""))
     service = _service(appointment)
