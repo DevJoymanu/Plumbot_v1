@@ -357,6 +357,63 @@ def build_gallery_caption(filename: str) -> Optional[str]:
     return None
 
 
+def get_item_by_title(title: str) -> Optional[dict]:
+    """Map a sent-image description back to its catalogue item, or None.
+
+    The whole-gallery / portfolio sends record each image under its curated
+    catalogue title (see ``_describe_work_image``), so an exact title match
+    recovers the piece — and therefore its 'from' price — for an item the
+    customer was actually sent. Uncatalogued shots (tidied filenames) match
+    nothing and return None.
+    """
+    if not title:
+        return None
+    t = title.strip().lower()
+    for item in PORTFOLIO_ITEMS:
+        if item['title'].lower() == t:
+            return item
+    return None
+
+
+def build_sent_prices_list(
+    titles, exclude_title: Optional[str] = None, language: str = 'english'
+) -> Optional[str]:
+    """A compact price guide for the catalogued pieces a customer was sent.
+
+    Given the descriptions/titles of the images actually delivered in this
+    conversation, return a short list of those pieces and their 'from' prices so
+    a customer who asks about one photo can still compare the rest and choose.
+
+    - ``exclude_title`` (the piece just answered in detail) is dropped to avoid
+      repeating it.
+    - Lines are deduped by price string, so multiple shots that share the same
+      'from' rate collapse to one line.
+    - Prices are verbatim from the catalogue (source of truth); we never invent
+      figures. No emojis (house rule).
+
+    Returns None when nothing priceable is left to list.
+    """
+    exclude = (exclude_title or '').strip().lower()
+    seen_prices: set[str] = set()
+    lines: list[str] = []
+    for title in (titles or []):
+        item = get_item_by_title(title)
+        if item is None or item['title'].lower() == exclude:
+            continue
+        price = item['price']
+        if price in seen_prices:
+            continue
+        seen_prices.add(price)
+        lines.append(f"- {item['title']}: {price}")
+    if not lines:
+        return None
+    if language == 'shona':
+        header = "Hezvino mitengo yezvimwe zvandakutumira, kuti ukwanise kuenzanisa:"
+    else:
+        header = "Here's a quick price guide on the other pieces I sent, so you can compare:"
+    return header + "\n" + "\n".join(lines)
+
+
 def catalogue_overview() -> Optional[str]:
     """Short text menu of the pieces we can send, for 'what can you show me?'.
 

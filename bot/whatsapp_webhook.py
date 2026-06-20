@@ -65,7 +65,7 @@ TEXT_DEDUPE_WINDOW_SECONDS = 20
 _pending_batches: dict = {}         # sender -> list of (message_body, message_id)
 _pending_batch_timers: dict = {}    # sender -> threading.Timer
 _pending_batch_lock = threading.Lock()
-MESSAGE_BATCH_WINDOW_SECONDS = 45   # wait this long after the LAST message before generating a reply
+MESSAGE_BATCH_WINDOW_SECONDS = 1   # wait this long after the LAST message before generating a reply
 
 # Per-sender cancel events for delayed sends still in their sleep window.
 # When a new message arrives, the event is set so the sleeping thread aborts
@@ -382,7 +382,7 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
 
 def get_random_delay() -> int:
     minutes = random.randint(1, 5)
-    seconds = minutes * 60
+    seconds = minutes * 1
     print(f"?? Random delay: {minutes} minute(s)")
     return seconds
 
@@ -1095,6 +1095,23 @@ def _describe_work_image(filename: str) -> str:
     if len(cleaned) < 3:
         return "one of our previous work photos"
     return cleaned
+
+
+def _collect_sent_image_titles(appointment) -> list:
+    """Titles/descriptions of every image already sent in this conversation.
+
+    Walks the recorded media-index entries (one per image batch) and flattens
+    their wamid→description maps. Used to price the full set a customer was sent
+    when they ask about one photo, so only images actually delivered are listed.
+    """
+    titles = []
+    for entry in (getattr(appointment, 'conversation_history', None) or []):
+        if not isinstance(entry, dict):
+            continue
+        media_index = entry.get('media_index')
+        if isinstance(media_index, dict):
+            titles.extend(media_index.values())
+    return titles
 
 
 def get_catalogue_images() -> list:
@@ -2323,6 +2340,33 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     else:
                         print(f"Re-sending combined pricing reply for: {intent}")
                     reply = plumbot.handle_service_inquiry(intent, message_body)
+
+                    # When the customer is asking the price of a SPECIFIC photo
+                    # they were sent ("this one how much" on a quoted image),
+                    # follow the targeted answer with a price guide for the other
+                    # pieces in that gallery so they can compare and choose — they
+                    # asked to "choose", and pricing one piece at a time stalls
+                    # that. Only images actually sent are listed (resolved from the
+                    # recorded media index); prices come verbatim from the
+                    # catalogue. Quote stays out of the rule engine — this is a
+                    # post-reply append keyed off the already-resolved quote.
+                    if reply and quoted_text and _is_quoted_item_reference(message_body):
+                        try:
+                            from bot import portfolio_catalog
+                            _sent_titles = _collect_sent_image_titles(appointment)
+                            _others = portfolio_catalog.build_sent_prices_list(
+                                _sent_titles,
+                                exclude_title=quoted_text,
+                                language=detect_language_simple(message_body),
+                            )
+                            if _others:
+                                reply = f"{reply}\n\n{_others}"
+                                print(
+                                    f"🧾 Appended sent-image price guide "
+                                    f"({_others.count(chr(10))} line(s))"
+                                )
+                        except Exception as _ppl_exc:
+                            print(f"⚠️ Could not build sent-image price guide: {_ppl_exc}")
 
         # -- STEP 3: Full pricing overview --------------------------------------
         if reply is None:
