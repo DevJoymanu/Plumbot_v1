@@ -476,6 +476,8 @@ class _FakeSelfPricing:
     _product_families_in = ResponseMixin._product_families_in
     _names_multiple_products = ResponseMixin._names_multiple_products
     _is_job_quote_request = ResponseMixin._is_job_quote_request
+    _asks_price_figure = ResponseMixin._asks_price_figure
+    _asks_for_quote = ResponseMixin._asks_for_quote
     _should_volunteer_pricing = ResponseMixin._should_volunteer_pricing
 _fp = _FakeSelfPricing()
 # (intent, message, price_requested, expected: should we volunteer a price?)
@@ -514,7 +516,35 @@ class _FakeSelfBuy:
     _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
     _product_families_in = ResponseMixin._product_families_in
     _names_multiple_products = ResponseMixin._names_multiple_products
+    _asks_price_figure = ResponseMixin._asks_price_figure
+    _asks_for_quote = ResponseMixin._asks_for_quote
 _fb = _FakeSelfBuy()
+# "quote" is NOT a price-figure ask — it leans to the free site visit; only
+# how-much/price/cost gets chat prices. Production: "Need a quote to fit tub and
+# shower" should set up the visit, not dump prices (appt 479).
+PRICE_FIGURE_CASES = [
+    # (message, asks_figure, asks_quote)
+    ("Need a quote to fit tub and shower", False, True),   # the bug → site visit
+    ("can I get a quotation",              False, True),
+    ("How much tab and shower",            True,  False),  # how-much → price
+    ("how much is a shower cubicle",       True,  False),
+    ("price of a geyser",                  True,  False),
+    ("what does a vanity cost",            True,  False),
+    ("marii yeshower",                     True,  False),  # Shona 'how much'
+    ("I want to fit a tub and shower",     False, False),  # neither → booking flow
+]
+for msg, ef, eq in PRICE_FIGURE_CASES:
+    try:
+        gf, gq = _fb._asks_price_figure(msg), _fb._asks_for_quote(msg)
+        results.log(
+            f"_asks_price_figure/quote: '{msg[:30]}'",
+            gf == ef and gq == eq,
+            f"figure={gf} quote={gq}",
+            expected=f"figure={ef} quote={eq}",
+            got=f"figure={gf} quote={gq}",
+        )
+    except Exception as e:
+        results.log(f"_asks_price_figure/quote: '{msg[:30]}'", False, got=str(e))
 # A multi-item price ask must price EVERY named item, not just one. Production
 # bug: "How much tab and shower" / "quote to fit tub and shower" priced only the
 # shower (appt 477). API-free: count distinct product families named.
@@ -546,6 +576,7 @@ class _FakeSelfCombined:
     _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
     _FAMILY_ROUGH_PRICE = ResponseMixin._FAMILY_ROUGH_PRICE
     _product_families_in = ResponseMixin._product_families_in
+    _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
     _build_combined_price_reply = ResponseMixin._build_combined_price_reply
     def _get_pricing_followup_prompt(self, language="english"):
         return "What area are you in so we can plan the visit properly?"
@@ -563,6 +594,40 @@ try:
     )
 except Exception as e:
     results.log("_build_combined_price_reply", False, got=str(e))
+
+# When the lead names the items, record them as the project_description so the
+# follow-up advances to the next step (area/visit) instead of re-asking "what are
+# you targeting?". Production: "Need a quote to fit tub and shower" then re-asked
+# what they wanted. API-free: a tiny fake appointment.
+class _FakeApptDesc:
+    def __init__(self, desc=None):
+        self.project_description = desc
+        self._saved = None
+    def save(self, update_fields=None):
+        self._saved = update_fields
+class _FakeSelfCapture:
+    _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
+    _product_families_in = ResponseMixin._product_families_in
+    _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
+    def __init__(self, appt):
+        self.appointment = appt
+try:
+    _ap = _FakeApptDesc(desc=None)
+    _FakeSelfCapture(_ap)._capture_named_products_as_description("Need a quote to fit tub and shower")
+    results.log(
+        "capture: records named items as the description when empty",
+        _ap.project_description == "shower and tub",
+        got=str(_ap.project_description),
+    )
+    _ap2 = _FakeApptDesc(desc="full bathroom redo")
+    _FakeSelfCapture(_ap2)._capture_named_products_as_description("How much tab and shower")
+    results.log(
+        "capture: leaves an existing description untouched",
+        _ap2.project_description == "full bathroom redo",
+        got=str(_ap2.project_description),
+    )
+except Exception as e:
+    results.log("_capture_named_products_as_description", False, got=str(e))
 # Job / multi-item quotes route to the free on-site quote (no chat price block);
 # single-product price questions still price. Production bug: "Need a quote to fit
 # tub and shower" dumped a shower-cubicle price block (appt 475). API-free regex.

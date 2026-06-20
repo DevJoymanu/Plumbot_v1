@@ -629,6 +629,39 @@ class ResponseMixin:
             return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
 
 
+        def _asks_price_figure(self, message: str) -> bool:
+            """
+            Narrow, deterministic: did the customer ask for a PRICE FIGURE right now
+            — "how much / price / cost / rate" (incl. Shona 'marii'/'mutengo')?
+
+            Deliberately EXCLUDES "quote"/"quotation": asking for *a quote* is a
+            request for the quote itself, which Homebase gives free on the on-site
+            visit — not a request to be told a number in chat. So a quote request
+            leans toward the visit, while a how-much/price/cost question gets the
+            approximate figures. (See _asks_for_quote.)
+            """
+            msg = (message or '').strip().lower()
+            if not msg:
+                return False
+            figure_markers = (
+                'how much', 'how much is', 'how much are', 'price', 'pricing',
+                'cost', 'costs', 'charge', 'charges', 'rate', 'rates',
+                'hw much', 'hw mch', 'hwmuch', 'how mch', 'howmuch',
+                'marii', 'mari', 'mutengo', 'zvinodhura', 'inodhura',
+            )
+            if any(m in msg for m in figure_markers):
+                return True
+            return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
+
+
+        def _asks_for_quote(self, message: str) -> bool:
+            """True when the customer asks for *a quote* ("need a quote", "can I get
+            a quotation") — which we deliver free at the on-site visit, not as a
+            chat price. Distinct from _asks_price_figure (an actual how-much)."""
+            msg = (message or '').strip().lower()
+            return 'quote' in msg or 'quotation' in msg
+
+
         def _looks_like_project_description_reply(self, message: str) -> bool:
             """
             Return True when the message looks like a meaningful description of work
@@ -760,6 +793,31 @@ class ResponseMixin:
             return self._names_multiple_products(msg)
 
 
+        def _capture_named_products_as_description(self, message: str) -> None:
+            """
+            When the lead names the items they want ("tub and shower"), record that
+            as the project_description if we don't have one yet — so the follow-up
+            advances to the next real step (area / visit) instead of re-asking
+            "what are you targeting?" about something they just told us.
+
+            No-op when there's no appointment (e.g. unit tests) or a description is
+            already captured.
+            """
+            appt = getattr(self, 'appointment', None)
+            if appt is None:
+                return
+            existing = (getattr(appt, 'project_description', None) or '').strip()
+            if existing:
+                return
+            named = sorted(self._product_families_in(message))
+            if not named:
+                return
+            try:
+                appt.project_description = " and ".join(named)
+                appt.save(update_fields=['project_description'])
+            except Exception:
+                pass
+
         def _build_combined_price_reply(self, message: str, language: str = "english") -> str:
             """
             Approximate all-in prices for a MULTI-ITEM price ask ("how much tab
@@ -784,17 +842,19 @@ class ResponseMixin:
                 "These are approximate starting prices — your exact quote is "
                 "confirmed free at the on-site visit."
             )
+            # They named the items → don't re-ask what they want; advance the flow.
+            self._capture_named_products_as_description(message)
             followup = self._get_pricing_followup_prompt("shona" if is_shona else "english")
             return f"{intro}{', '.join(priced)}.\n\n{disclaimer}\n\n{followup}"
 
 
-        def _build_job_quote_reply(self, language: str = "english") -> str:
+        def _build_job_quote_reply(self, language: str = "english", message: str = None) -> str:
             """
             Acknowledge a job / multi-item quote request and route it to the free
             on-site quote (where exact pricing happens), instead of a chat price
             block. The follow-up is the next booking question via
             _get_pricing_followup_prompt, so we never loop or re-ask a field we
-            already have.
+            already have — including the description, when `message` named the items.
             """
             is_shona = language == "shona"
             lead = (
@@ -804,6 +864,8 @@ class ResponseMixin:
                 "Happy to sort that out for you. We give you an exact, all-in quote "
                 "free on a quick on-site visit, so there are no surprises later."
             )
+            if message:
+                self._capture_named_products_as_description(message)
             followup = self._get_pricing_followup_prompt("shona" if is_shona else "english")
             return f"{lead}\n\n{followup}"
 
@@ -833,22 +895,24 @@ class ResponseMixin:
             rather than dropping a price block. Non-priced info intents (location,
             pictures, previous quotation, combined pricing) answer regardless.
 
-            price_requested may be precomputed by the caller to avoid a second
-            classifier round-trip (and to keep this unit-testable without the API).
+            price_requested is the "asks for a price FIGURE" signal (how much /
+            price / cost — NOT 'quote'); the caller may precompute it. A request
+            for *a quote* is not a price-figure ask: it leans to the site visit.
             """
             if intent in self.NON_PRICING_AUTO_REPLY_INTENTS:
                 return True
             if intent not in self.PRICING_AUTO_REPLY_INTENTS:
                 return False
             if price_requested is None:
-                price_requested = self._explicitly_requests_price(message)
-            # An explicit price ask wins: give the approximate prices even for a
-            # job / multi-item request ("how much to fit tub and shower").
+                price_requested = self._asks_price_figure(message)
+            # An explicit how-much/price/cost wins: give the approximate prices even
+            # for a job / multi-item ("how much to fit tub and shower").
             if price_requested:
                 return True
-            # No explicit price ask: a job / multi-item description routes to the
-            # free on-site quote, never an unprompted chat price block.
-            if self._is_job_quote_request(message):
+            # No price-figure ask: a quote request, or a job / multi-item
+            # description, routes to the free on-site quote — never an unprompted
+            # chat price block.
+            if self._asks_for_quote(message) or self._is_job_quote_request(message):
                 return False
             # Priceable product named with no explicit price ask → only volunteer
             # a price when it isn't a buying / project statement.
@@ -1357,12 +1421,13 @@ class ResponseMixin:
                                 f"{alt_text}\n\nWhich works better for you?"
                             )
                 else:
-                    # Explicit price ask naming MULTIPLE items ("how much tab and
+                    # How-much/price naming MULTIPLE items ("how much tab and
                     # shower") → give every named item's approximate price, not
                     # just the one a single-intent classifier picks. (Defense; the
-                    # webhook usually catches this first.)
-                    if (self._explicitly_requests_price(incoming_message)
-                            and self._names_multiple_products(incoming_message)):
+                    # webhook usually catches this first.) 'quote' does NOT count
+                    # as a how-much — that leans to the visit (handled below).
+                    _asks_figure = self._asks_price_figure(incoming_message)
+                    if _asks_figure and self._names_multiple_products(incoming_message):
                         print("🧾 Multi-item price ask — combined approximate prices for each item")
                         try:
                             from bot.whatsapp_webhook import detect_language_simple as _dlsm
@@ -1375,26 +1440,26 @@ class ResponseMixin:
                     # standalone-question classifier flags it as one. Acknowledge
                     # it and advance the booking flow; never route it to the Q&A
                     # answerer, which would volunteer prices/sizes/spiel the lead
-                    # never asked for. A price ask still falls through to pricing.
-                    elif (self._is_purchase_commitment(incoming_message)
-                            and not self._explicitly_requests_price(incoming_message)):
+                    # never asked for. A price-figure ask still falls through to pricing.
+                    elif (self._is_purchase_commitment(incoming_message) and not _asks_figure):
                         print("🛒 Purchase commitment — acknowledge & progress, no price/spiel")
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
                         )
-                    elif (self._is_job_quote_request(incoming_message)
-                            and not self._explicitly_requests_price(incoming_message)):
-                        # A job / multi-item request with NO explicit price ask
-                        # routes to the free on-site quote. An explicit price ask
-                        # falls through and gets the approximate prices.
-                        print("🧰 Job/multi-item request (no price asked) — routing to free on-site quote")
+                    elif ((self._asks_for_quote(incoming_message)
+                            or self._is_job_quote_request(incoming_message))
+                            and not _asks_figure):
+                        # A quote request, or a job / multi-item request, with no
+                        # how-much/price ask routes to the free on-site quote (the
+                        # quote is delivered there). An actual how-much is priced above.
+                        print("🧰 Quote / job request (no price figure) — routing to free on-site quote")
                         try:
                             from bot.whatsapp_webhook import detect_language_simple as _dls
                             _job_lang = _dls(incoming_message)
                         except Exception:
                             _job_lang = 'english'
-                        reply = self._build_job_quote_reply(language=_job_lang)
+                        reply = self._build_job_quote_reply(language=_job_lang, message=incoming_message)
                     elif self._is_standalone_question(incoming_message):
                         PRODUCT_INTENTS = {
                             'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
@@ -1425,7 +1490,7 @@ class ResponseMixin:
                         # that acknowledges it and progresses the sale, never a
                         # price block. Info intents (location, pictures…) are
                         # unaffected. Shared policy: _should_volunteer_pricing.
-                        _price_requested = self._explicitly_requests_price(incoming_message)
+                        _price_requested = _asks_figure  # how-much/price, not 'quote'
                         _volunteer = self._should_volunteer_pricing(
                             _intent, incoming_message, price_requested=_price_requested
                         )

@@ -2299,6 +2299,13 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if quoted_photo_price_ref:
             price_requested = True
 
+        # Split the price signal: asking for a FIGURE (how much / price / cost)
+        # gets approximate prices; asking for *a quote* leans to the free site
+        # visit (the quote is delivered there), per business policy. A quoted-
+        # photo "this one?" is treated as a figure ask.
+        asks_figure = plumbot._asks_price_figure(message_body) or quoted_photo_price_ref
+        asks_quote = plumbot._asks_for_quote(message_body)
+
         _is_specific_product_inquiry = (
             intent in PRICING_AUTO_REPLY_INTENTS and
             inquiry.get('confidence') == 'HIGH'
@@ -2337,18 +2344,21 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             )
         elif mid_conversation and not should_bypass_mid_conversation_gate:
             print("Skipping service inquiry reply - mid-conversation and no explicit info/price request")
-        elif (intent in PRICING_AUTO_REPLY_INTENTS and not price_requested
-                and plumbot._is_job_quote_request(message_body)):
-            # A job / multi-item request with NO explicit price ask ("fit tub and
-            # shower") routes to the free on-site quote, not a chat price block.
-            # An explicit price ask ("how much to fit tub and shower") falls
-            # through and gets the approximate prices below.
-            print("Job/multi-item request (no price asked) -> routing to free on-site quote")
-            reply = plumbot._build_job_quote_reply(language=detect_language_simple(message_body))
-        elif price_requested and plumbot._names_multiple_products(message_body):
-            # Explicit price ask naming MULTIPLE items ("how much tab and shower")
-            # -> price every item named, not just the one a single-intent classifier
-            # or keyword override happened to pick.
+        elif (intent in PRICING_AUTO_REPLY_INTENTS and not asks_figure
+                and (asks_quote or plumbot._is_job_quote_request(message_body))):
+            # A QUOTE request ("need a quote to fit tub and shower"), or a job /
+            # multi-item request, with NO explicit how-much/price ask routes to the
+            # free on-site quote — not a chat price block. The quote is delivered
+            # at the visit, so lean toward setting it up. An actual how-much/price
+            # ("how much to fit tub and shower") falls through and gets priced below.
+            print("Quote / job request (no price figure asked) -> routing to free on-site quote")
+            reply = plumbot._build_job_quote_reply(
+                language=detect_language_simple(message_body), message=message_body
+            )
+        elif asks_figure and plumbot._names_multiple_products(message_body):
+            # Explicit how-much/price naming MULTIPLE items ("how much tab and
+            # shower") -> price every item named, not just the one a single-intent
+            # classifier or keyword override happened to pick.
             print("Multi-item price ask -> combined approximate prices for each item")
             reply = plumbot._build_combined_price_reply(
                 message_body, language=detect_language_simple(message_body)
