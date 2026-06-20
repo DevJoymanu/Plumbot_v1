@@ -451,6 +451,8 @@ VOLUNTEER_PRICING_CASES = [
     ("geyser",         "replace my geyser",              False, False),  # project statement
     ("shower_cubicle", "shower cubicle",                 False, False),  # bare name, no ask
     ("toilet",         "I need to install a new toilet", False, False),  # commitment, no ask
+    ("shower_cubicle", "how much to fit a shower",       True,  True),   # explicit price ask on a JOB → still price
+    ("shower_cubicle", "fit tub and shower",             False, False),  # job, no price ask → site visit
     ("location_ask",   "where are you based",            False, True),   # info intent always answers
     ("pictures",       "send me some photos",            False, True),   # info intent always answers
     ("none",           "hello there",                    False, False),  # no priceable intent

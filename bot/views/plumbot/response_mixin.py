@@ -795,15 +795,16 @@ class ResponseMixin:
                 return True
             if intent not in self.PRICING_AUTO_REPLY_INTENTS:
                 return False
-            # Job / multi-item quote → route to the free on-site quote, never a
-            # chat price block, even when they say "quote"/"price". A single-
-            # product price question is not a job quote, so it still prices.
-            if self._is_job_quote_request(message):
-                return False
             if price_requested is None:
                 price_requested = self._explicitly_requests_price(message)
+            # An explicit price ask wins: give the approximate prices even for a
+            # job / multi-item request ("how much to fit tub and shower").
             if price_requested:
                 return True
+            # No explicit price ask: a job / multi-item description routes to the
+            # free on-site quote, never an unprompted chat price block.
+            if self._is_job_quote_request(message):
+                return False
             # Priceable product named with no explicit price ask → only volunteer
             # a price when it isn't a buying / project statement.
             return not self._looks_like_project_description_reply(message)
@@ -1324,10 +1325,12 @@ class ResponseMixin:
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
                         )
-                    elif self._is_job_quote_request(incoming_message):
-                        # A job / multi-item quote ("quote to fit tub and shower")
-                        # routes to the free on-site quote, not a chat price block.
-                        print("🧰 Job/multi-item quote — routing to free on-site quote, no price block")
+                    elif (self._is_job_quote_request(incoming_message)
+                            and not self._explicitly_requests_price(incoming_message)):
+                        # A job / multi-item request with NO explicit price ask
+                        # routes to the free on-site quote. An explicit price ask
+                        # falls through and gets the approximate prices.
+                        print("🧰 Job/multi-item request (no price asked) — routing to free on-site quote")
                         try:
                             from bot.whatsapp_webhook import detect_language_simple as _dls
                             _job_lang = _dls(incoming_message)

@@ -65,7 +65,7 @@ TEXT_DEDUPE_WINDOW_SECONDS = 20
 _pending_batches: dict = {}         # sender -> list of (message_body, message_id)
 _pending_batch_timers: dict = {}    # sender -> threading.Timer
 _pending_batch_lock = threading.Lock()
-MESSAGE_BATCH_WINDOW_SECONDS = 1   # wait this long after the LAST message before generating a reply
+MESSAGE_BATCH_WINDOW_SECONDS = 45   # wait this long after the LAST message before generating a reply
 
 # Per-sender cancel events for delayed sends still in their sleep window.
 # When a new message arrives, the event is set so the sleeping thread aborts
@@ -382,7 +382,7 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
 
 def get_random_delay() -> int:
     minutes = random.randint(1, 5)
-    seconds = minutes * 1
+    seconds = minutes * 60
     print(f"?? Random delay: {minutes} minute(s)")
     return seconds
 
@@ -2033,7 +2033,16 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # case (family(none)=None ≠ any product) and the LOW-confidence case. A
         # SAME-family disagreement (tub_sales vs standalone_tub) keeps the LLM's
         # more specific choice. Quoted-message handling stays separate below.
-        if not quoted_text:
+        # Don't let a single product keyword override the LLM's combined_pricing
+        # on a genuine MULTI-ITEM message ("how much tab and shower") — that
+        # collapsed a two-item price ask down to one item and priced only the
+        # shower. When the LLM saw combined_pricing and the message names a job /
+        # multiple items, trust it so the customer gets prices for everything.
+        _multi_item_combined = (
+            _quick_service_check.get('intent') == 'combined_pricing'
+            and plumbot._is_job_quote_request(message_body)
+        )
+        if not quoted_text and not _multi_item_combined:
             _kw_intent = _keyword_product_intent(message_body)
             if (_kw_intent
                     and _product_family(_kw_intent)
@@ -2328,11 +2337,13 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             )
         elif mid_conversation and not should_bypass_mid_conversation_gate:
             print("Skipping service inquiry reply - mid-conversation and no explicit info/price request")
-        elif intent in PRICING_AUTO_REPLY_INTENTS and plumbot._is_job_quote_request(message_body):
-            # A job / multi-item quote ("need a quote to fit tub and shower")
-            # routes to the free on-site quote, not a chat price block — even
-            # though it says "quote". Single-product price asks still price below.
-            print("Job/multi-item quote -> routing to free on-site quote (no chat price block)")
+        elif (intent in PRICING_AUTO_REPLY_INTENTS and not price_requested
+                and plumbot._is_job_quote_request(message_body)):
+            # A job / multi-item request with NO explicit price ask ("fit tub and
+            # shower") routes to the free on-site quote, not a chat price block.
+            # An explicit price ask ("how much to fit tub and shower") falls
+            # through and gets the approximate prices below.
+            print("Job/multi-item request (no price asked) -> routing to free on-site quote")
             reply = plumbot._build_job_quote_reply(language=detect_language_simple(message_body))
         elif intent != 'none' and (
             inquiry.get('confidence') == 'HIGH' or intent in PRODUCT_INTENTS
