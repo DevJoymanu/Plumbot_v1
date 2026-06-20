@@ -302,20 +302,23 @@ for msg, expected in QUOTED_REF_CASES:
         results.log(f"_is_quoted_item_reference: '{msg[:30]}'", False, got=str(e))
 
 # When a customer asks the price of ONE photo they were sent ("this one how
-# much" on a quoted image), the bot prices that photo and EVERY item shown in
-# it — not the whole gallery. A vanity-and-tub shot must price both, the guide
-# must quote the catalogue price verbatim, and an uncatalogued shot yields no
-# guide. API-free: a deterministic title lookup over the catalogue.
+# much" on a quoted image), the bot adds a full-item price line ONLY when that
+# photo bundles more than one priced item (e.g. a vanity-and-tub shot) — there
+# the single-intent reply prices just one item. For a single-product photo the
+# targeted reply already covers it, so no redundant second line is appended.
+# API-free: a deterministic title + price-string lookup over the catalogue.
 from bot import portfolio_catalog as _pc
 _BUNDLE = "Black Granite Vanity & Designer Tub"  # quoted photo: vanity + tub
+_SINGLE = "Walk-In Rain Shower"                  # single priced item + upsell
+_TUB_TOILET = "Freestanding Tub & Wall-Hung Toilet"  # tub + wall-hung toilet
 try:
     _guide = _pc.build_item_price_guide(_BUNDLE)
     _ok = bool(_guide)
-    results.log("build_item_price_guide: returns a guide", _ok, got=str(_guide)[:60])
-    # Both items in the shot are priced (the classifier-derived intent alone
-    # would have priced only one of them).
+    results.log("build_item_price_guide: guide for a multi-item photo", _ok, got=str(_guide)[:60])
+    # Both items in the bundled shot are priced (the classifier-derived intent
+    # alone would have priced only one of them).
     results.log(
-        "build_item_price_guide: prices every item in the photo",
+        "build_item_price_guide: prices every item in the bundle",
         _ok and "tub" in _guide.lower() and "vanity" in _guide.lower(),
         got=str(_guide)[:90],
     )
@@ -324,6 +327,21 @@ try:
         "build_item_price_guide: quotes catalogue price verbatim",
         _ok and _pc.get_item_by_title(_BUNDLE)['price'] in _guide,
         got=str(_guide)[:90],
+    )
+    # Every item shown must be priced: the tub-and-wall-hung-toilet photo prices
+    # the toilet too (at the side-chamber rate, US$160), not the tub alone.
+    _tt = _pc.build_item_price_guide(_TUB_TOILET)
+    results.log(
+        "build_item_price_guide: prices the wall-hung toilet in the shot",
+        bool(_tt) and "toilet" in _tt.lower() and "US$160" in _tt,
+        got=str(_tt)[:100],
+    )
+    # The production redundancy bug: a single-product photo must NOT get a second
+    # price line repeating what the targeted reply already said.
+    results.log(
+        "build_item_price_guide: None for single-product photo",
+        _pc.build_item_price_guide(_SINGLE) is None,
+        got=str(_pc.build_item_price_guide(_SINGLE)),
     )
     # Uncatalogued shots (tidied filename, no matching title) carry no price.
     results.log(
