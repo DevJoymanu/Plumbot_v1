@@ -694,6 +694,19 @@ def complete_lead_appointment(request, pk):
 
 
 @staff_required
+def unbook_appointment(request, pk):
+    """Reverse an accidental confirm: send the appointment back to pending so the
+    chatbot resumes the conversation with the lead. The inverse of confirm_appointment."""
+    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment.status = 'pending'
+    appointment.chatbot_paused = False
+    appointment.is_lead_active = True
+    appointment.save(update_fields=['status', 'chatbot_paused', 'is_lead_active', 'updated_at'])
+    messages.success(request, 'Appointment unbooked - back to pending and the chatbot will keep talking to this lead.')
+    return redirect('appointment_detail', pk=appointment.pk)
+
+
+@staff_required
 def cancel_appointment(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
     appointment.status = 'cancelled'

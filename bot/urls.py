@@ -6,7 +6,7 @@ from .views import (
     settings_view, calendar_settings_view, ai_settings_view,
     update_appointment, send_followup, confirm_appointment,
     complete_lead_appointment,
-    cancel_appointment, test_whatsapp, export_appointments, CalendarView, handle_whatsapp_media,
+    cancel_appointment, unbook_appointment, test_whatsapp, export_appointments, CalendarView, handle_whatsapp_media,
     # Import the new document views
     AppointmentDocumentsView, download_document,
     # Import the new quotation views
@@ -57,6 +57,7 @@ urlpatterns = [
     path('appointments/<int:pk>/confirm/', confirm_appointment, name='confirm_appointment'),
     path('appointments/<int:pk>/complete-lead/', complete_lead_appointment, name='complete_lead_appointment'),
     path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),
+    path('appointments/<int:pk>/unbook/', unbook_appointment, name='unbook_appointment'),
     path('appointments/<int:pk>/send-image/', views.send_image_to_lead, name='send_image_to_lead'),
     path('appointments/<int:pk>/send-portfolio/',views.send_portfolio_to_lead,name='send_portfolio_to_lead'),
     path('appointments/<int:pk>/send-pdf/', views.send_pdf_to_lead, name='send_pdf_to_lead'),
