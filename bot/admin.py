@@ -45,6 +45,7 @@ class AppointmentAdmin(admin.ModelAdmin):
         'scheduled_datetime_display',
         'created_at_display',
         'conversation_count',
+        'ctwa_window_display',
         'actions_column'
     ]
     
@@ -227,6 +228,25 @@ class AppointmentAdmin(admin.ModelAdmin):
         )
     completion_percentage.short_description = 'Complete'
     
+    def ctwa_window_display(self, obj):
+        """Show CTWA ad attribution + whether the 72h free-form window is still open."""
+        if not obj.ctwa_entry_at:
+            return format_html('<span style="color: #999;">-</span>')
+        expires = obj.ctwa_window_expires_at
+        if obj.ctwa_window_open:
+            return format_html(
+                '<span style="background-color: #1877f2; color: white; padding: 2px 6px; '
+                'border-radius: 3px; font-size: 11px;" title="Ad source {}">AD - closes {}</span>',
+                obj.ctwa_source_id or '?',
+                expires.strftime('%b %d %H:%M')
+            )
+        return format_html(
+            '<span style="background-color: #6c757d; color: white; padding: 2px 6px; '
+            'border-radius: 3px; font-size: 11px;" title="Ad source {}">AD - window closed</span>',
+            obj.ctwa_source_id or '?'
+        )
+    ctwa_window_display.short_description = 'Ad window'
+
     def conversation_count(self, obj):
         """Display conversation message count"""
         try:

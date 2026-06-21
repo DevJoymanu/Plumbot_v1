@@ -179,6 +179,14 @@ class Appointment(models.Model):
     conversation_history = models.JSONField(default=list, blank=True, help_text="WhatsApp conversation history")
     internal_notes = models.TextField(blank=True, null=True, help_text="Internal team notes")
     
+    # Click-to-WhatsApp (CTWA) ad attribution. Set when the lead's first message
+    # carries a referral object (source_type == 'ad'). ctwa_entry_at marks the start
+    # of the 72-hour free-form messaging window; ctwa_referral keeps the ad headline/
+    # body/source for reference.
+    ctwa_source_id = models.CharField(max_length=64, blank=True, default='', help_text="Meta ad source_id for a CTWA lead")
+    ctwa_entry_at = models.DateTimeField(blank=True, null=True, help_text="Start of the 72h CTWA messaging window")
+    ctwa_referral = models.JSONField(blank=True, null=True, help_text="Full CTWA referral object from the ad click")
+
     # External Integration IDs
     google_calendar_event_id = models.CharField(max_length=200, blank=True, null=True)
     twilio_conversation_sid = models.CharField(max_length=100, blank=True, null=True)
@@ -1231,6 +1239,36 @@ class Appointment(models.Model):
         self.is_lead_active = True
         self.retry_count = 0  # ADD THIS LINE
         self.save()
+
+    # ----- Click-to-WhatsApp (CTWA) ad window ---------------------------------
+    CTWA_WINDOW_HOURS = 72
+
+    def record_ctwa_referral(self, referral):
+        """Mark this lead as originating from a CTWA ad and (re)start the 72h window.
+
+        A new ad click is a fresh free-entry point, so the window restarts each time
+        a referral with source_type == 'ad' arrives. Returns True if recorded.
+        """
+        if not referral or referral.get('source_type') != 'ad':
+            return False
+        self.ctwa_source_id = str(referral.get('source_id') or '')[:64]
+        self.ctwa_referral = referral
+        self.ctwa_entry_at = timezone.now()
+        self.save(update_fields=['ctwa_source_id', 'ctwa_referral', 'ctwa_entry_at'])
+        return True
+
+    @property
+    def ctwa_window_expires_at(self):
+        """When the 72h free-form messaging window closes (None if not a CTWA lead)."""
+        if not self.ctwa_entry_at:
+            return None
+        return self.ctwa_entry_at + timedelta(hours=self.CTWA_WINDOW_HOURS)
+
+    @property
+    def ctwa_window_open(self):
+        """True while the lead is still inside its 72h CTWA window."""
+        expires = self.ctwa_window_expires_at
+        return bool(expires and expires > timezone.now())
 
     def recalculate_lead_scoring(self, persist=True):
         """Recalculate lead score and status from collected qualification fields."""

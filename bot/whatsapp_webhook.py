@@ -1538,6 +1538,7 @@ def process_message_change(value):
                 handle_text_message(
                     sender, message.get('text', {}),
                     message_id=message_id, quoted_id=quoted_id,
+                    referral=referral,
                 )
 
             elif message_type == 'image':
@@ -1814,7 +1815,7 @@ def _is_duplicate_text_event(sender: str, message_body: str) -> bool:
         return False
 
 
-def handle_text_message(sender, text_data, message_id=None, quoted_id=None):
+def handle_text_message(sender, text_data, message_id=None, quoted_id=None, referral=None):
     try:
         message_body = text_data.get('body', '').strip()
         if not message_body:
@@ -1835,6 +1836,13 @@ def handle_text_message(sender, text_data, message_id=None, quoted_id=None):
             phone_number=phone_number,
             defaults={'status': 'pending'}
         )
+
+        # CTWA ad lead — record the referral and (re)start the 72h free-form window.
+        if referral and appointment.record_ctwa_referral(referral):
+            print(
+                f"📣 CTWA window started for {sender}: "
+                f"closes {appointment.ctwa_window_expires_at:%Y-%m-%d %H:%M %Z}"
+            )
 
         # Resolve a WhatsApp reply-to ("highlighted message") into its text so the
         # bot knows which earlier message the customer is responding to.
