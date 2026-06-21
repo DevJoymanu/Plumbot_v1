@@ -16,6 +16,7 @@
   <button type="button" class="appt-filter-tab" data-filter="pending">Pending <span>{{ appointment_status_counts.pending }}</span></button>
   <button type="button" class="appt-filter-tab" data-filter="cancelled">Cancelled <span>{{ appointment_status_counts.cancelled }}</span></button>
   <button type="button" class="appt-filter-tab" data-filter="delayed">Delayed <span>{{ appointment_status_counts.delayed }}</span></button>
+  <button type="button" class="appt-filter-tab" data-filter="ad">Ad <span>{{ appointment_status_counts.ad }}</span></button>
 </div>
 
 <div class="appt-list-scroll" id="appointmentList">
@@ -24,12 +25,13 @@
      data-base-href="{% url 'appointment_detail' item.pk %}?source=appointments"
      class="appt-list-row {% if item.pk == appointment.pk %}is-current{% endif %}"
      data-status="{% if item.is_delayed %}delayed{% else %}{{ item.status }}{% endif %}"
+     data-ad="{% if item.ctwa_window_open %}1{% else %}0{% endif %}"
      data-search="{{ item.customer_name|default:''|lower }} {{ item.phone_number|default:''|lower }} {{ item.project_type|default:''|lower }} {{ item.customer_area|default:''|lower }}">
     <div class="appt-list-avatar" data-name="{% firstof item.customer_name item.phone_number 'Appointment' %}">
       {{ item.customer_name|default:item.phone_number|default:"AP"|slice:":2"|upper }}
     </div>
     <div class="appt-list-main">
-      <div class="appt-list-name">{% firstof item.customer_name item.phone_number "Appointment" %}</div>
+      <div class="appt-list-name">{% firstof item.customer_name item.phone_number "Appointment" %}{% if item.ctwa_entry_at %} <span title="Click-to-WhatsApp ad lead" style="font-size:10px;font-weight:700;color:#fff;background:{% if item.ctwa_window_open %}#1877f2{% else %}#94a3b8{% endif %};padding:1px 5px;border-radius:3px;vertical-align:middle;">AD</span>{% endif %}</div>
       <div class="appt-list-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
       <div class="appt-list-preview">{{ item.project_description|default:"No recent note available"|truncatewords:10 }}</div>
     </div>

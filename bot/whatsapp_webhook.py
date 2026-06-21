@@ -246,6 +246,14 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
     plumber_number = (appointment.plumber_contact_number or '263774819901')
     plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
     customer_name = appointment.customer_name or 'Unknown customer'
+
+    # CTWA ad lead: tell the plumber they can reply free-form until the 72h window
+    # closes (after that a customer reply or template is needed).
+    ad_line = ""
+    if appointment.ctwa_window_open:
+        local_close = timezone.localtime(appointment.ctwa_window_expires_at)
+        ad_line = f"Ad lead: free reply window until {local_close.strftime('%a %d %b %H:%M')}\n"
+
     message = (
         f"Priority lead update\n"
         f"Lead status: {appointment.get_lead_status_display()}\n"
@@ -256,6 +264,7 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
         f"Area: {appointment.customer_area or 'Not specified'}\n"
         f"Timeline: {appointment.timeline or 'Not specified'}\n"
         f"Site visit: {appointment.scheduled_datetime or 'Not set'}\n"
+        f"{ad_line}"
         f"Lead: https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"
     )
     try:

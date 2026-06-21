@@ -172,8 +172,13 @@ class AppointmentsListView(ListView):
                 status='pending',
                 internal_notes__contains='[DELAY_SIGNAL]'
             )
+        elif status_filter == 'ad':
+            # CTWA ad leads still inside their 72h free-form window.
+            queryset = queryset.filter(
+                ctwa_entry_at__gt=timezone.now() - timedelta(hours=Appointment.CTWA_WINDOW_HOURS)
+            )
 
-        return queryset        
+        return queryset
         
     #
     def get_context_data(self, **kwargs):
@@ -240,6 +245,9 @@ class AppointmentsListView(ListView):
             'confirmed': base_qs.filter(status='confirmed').count(),
             'cancelled': base_qs.filter(status='cancelled').count(),
             'delayed': delayed_qs.count(),
+            'ad': base_qs.filter(
+                ctwa_entry_at__gt=timezone.now() - timedelta(hours=Appointment.CTWA_WINDOW_HOURS)
+            ).count(),
             'todays_confirmed_appointments': todays_confirmed_appointments,
         }
         context['delayed_leads_with_countdown'] = delayed_leads_with_countdown

@@ -232,7 +232,7 @@ class AppointmentAdmin(admin.ModelAdmin):
         """Show CTWA ad attribution + whether the 72h free-form window is still open."""
         if not obj.ctwa_entry_at:
             return format_html('<span style="color: #999;">-</span>')
-        expires = obj.ctwa_window_expires_at
+        expires = timezone.localtime(obj.ctwa_window_expires_at)
         if obj.ctwa_window_open:
             return format_html(
                 '<span style="background-color: #1877f2; color: white; padding: 2px 6px; '

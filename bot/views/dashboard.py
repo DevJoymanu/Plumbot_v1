@@ -348,6 +348,10 @@ def _appointments_sidebar_context(sidebar_filter='all'):
                 status='pending',
                 internal_notes__contains='[DELAY_SIGNAL]',
             ).count(),
+            # Click-to-WhatsApp ad leads still inside their 72h free-form window.
+            'ad': Appointment.objects.filter(
+                ctwa_entry_at__gt=timezone.now() - timedelta(hours=Appointment.CTWA_WINDOW_HOURS),
+            ).count(),
         },
     }
 

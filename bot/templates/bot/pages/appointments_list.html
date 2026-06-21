@@ -559,6 +559,7 @@
         <a href="?status_filter=pending" class="inbox-filter-link {% if selected_status_filter == 'pending' %}active{% endif %}">Pending <span>{{ status_counts.pending }}</span></a>
         <a href="?status_filter=cancelled" class="inbox-filter-link {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled <span>{{ status_counts.cancelled }}</span></a>
         <a href="?status_filter=delayed" class="inbox-filter-link {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed <span>{{ status_counts.delayed }}</span></a>
+        <a href="?status_filter=ad" class="inbox-filter-link {% if selected_status_filter == 'ad' %}active{% endif %}">Ad <span>{{ status_counts.ad }}</span></a>
       </div>
 
       {# ── Per-tab time window selector ── #}
@@ -606,7 +607,7 @@
             {{ appointment.customer_name|default:appointment.phone_number|default:"AP"|slice:":2"|upper }}
           </div>
           <div class="inbox-main">
-            <div class="inbox-name">{% firstof appointment.customer_name appointment.phone_number "Appointment" %}</div>
+            <div class="inbox-name">{% firstof appointment.customer_name appointment.phone_number "Appointment" %}{% if appointment.ctwa_entry_at %} <span title="Click-to-WhatsApp ad lead" style="font-size:10px;font-weight:700;color:#fff;background:{% if appointment.ctwa_window_open %}#1877f2{% else %}#94a3b8{% endif %};padding:1px 5px;border-radius:3px;vertical-align:middle;">AD</span>{% endif %}</div>
             <div class="inbox-meta">{{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }} · {{ appointment.customer_area|default:"No area" }}</div>
             <div class="inbox-preview">{{ appointment.project_description|default:"No notes yet"|truncatewords:10 }}</div>
           </div>
@@ -715,7 +716,7 @@
 
     // ── Persist active tab into sessionStorage so appointment_detail sidebar restores it ──
     // Map appointments_list status_filter values → appointment_detail data-filter values
-    var TAB_MAP = { all: 'all', booked: 'confirmed', pending: 'pending', cancelled: 'cancelled', delayed: 'delayed' };
+    var TAB_MAP = { all: 'all', booked: 'confirmed', pending: 'pending', cancelled: 'cancelled', delayed: 'delayed', ad: 'ad' };
     var currentFilter = '{{ selected_status_filter|default:"all" }}';
     var sidebarFilter = TAB_MAP[currentFilter] || 'all';
 
@@ -734,7 +735,7 @@
     var workspace = document.getElementById('appointmentWorkspace');
     var emptyState = document.getElementById('appointmentEmptyState');
     var openers = Array.from(document.querySelectorAll('[data-open-appointment]'));
-    var TAB_MAP = { all: 'all', booked: 'confirmed', pending: 'pending', cancelled: 'cancelled', delayed: 'delayed' };
+    var TAB_MAP = { all: 'all', booked: 'confirmed', pending: 'pending', cancelled: 'cancelled', delayed: 'delayed', ad: 'ad' };
     var currentFilter = '{{ selected_status_filter|default:"all" }}';
     var sidebarFilter = TAB_MAP[currentFilter] || 'all';
     var state = {
