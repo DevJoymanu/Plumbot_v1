@@ -542,6 +542,9 @@ class AppointmentDetailView(DetailView):
             appointment.project_type = request.POST.get('project_type', appointment.project_type)
             appointment.property_type = request.POST.get('property_type', appointment.property_type)
             appointment.customer_area = request.POST.get('customer_area', appointment.customer_area)
+            # Project Description is editable from the detail form (it was being
+            # dropped on save because the POST handler never read this field).
+            appointment.project_description = request.POST.get('project_description', appointment.project_description)
             # Email is editable from the detail form; blank string clears it (field is null/blank-able)
             appointment.customer_email = (request.POST.get('customer_email', appointment.customer_email or '') or '').strip() or None
             appointment.timeline = request.POST.get('timeline', appointment.timeline)

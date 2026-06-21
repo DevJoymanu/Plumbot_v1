@@ -510,6 +510,36 @@ for intent, msg, price_req, expected in VOLUNTEER_PRICING_CASES:
 # the booking flow), NOT routed to the Q&A answerer that volunteers prices/sizes.
 # Production bug: "I want to purchase 2x shower cubicles" got a price+size spiel
 # (appt 473). API-free: pure regex helper on a fake self.
+# A short fixture-type answer ("free standing" / "built in", answering "built-in
+# or freestanding?") must read as a project description so the booking flow
+# captures it and advances — not loop re-asking. Production: customer said "Free
+# standing" twice and the bot kept re-asking what they wanted.
+class _FakeSelfDesc:
+    _looks_like_project_description_reply = ResponseMixin._looks_like_project_description_reply
+_fd = _FakeSelfDesc()
+DESC_REPLY_CASES = [
+    ("Free standing",   True),    # the bug
+    ("free-standing",   True),
+    ("built in",        True),
+    ("standalone",      True),
+    ("I want a new toilet and basin", True),  # normal description still True
+    ("ok",              False),   # acks still excluded
+    ("yes",             False),
+    ("noted",           False),
+]
+for msg, expected in DESC_REPLY_CASES:
+    try:
+        got = _fd._looks_like_project_description_reply(msg)
+        results.log(
+            f"_looks_like_project_description_reply: '{msg[:30]}'",
+            got == expected,
+            f"desc={got}",
+            expected=f"desc={expected}",
+            got=f"desc={got}",
+        )
+    except Exception as e:
+        results.log(f"_looks_like_project_description_reply: '{msg[:30]}'", False, got=str(e))
+
 class _FakeSelfBuy:
     _is_purchase_commitment = ResponseMixin._is_purchase_commitment
     _is_job_quote_request = ResponseMixin._is_job_quote_request

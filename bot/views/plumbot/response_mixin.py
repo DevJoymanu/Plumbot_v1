@@ -693,6 +693,14 @@ class ResponseMixin:
                 'chamber', 'shower', 'toilet', 'geyser', 'basin', 'sink',
                 'bath', 'bathtub', 'tub', 'pipe', 'drain', 'tile',
                 'vanity', 'vanities', 'vanitys', 'cubicle', 'cubicles',
+                # Fixture-type refinements: a short reply like "free standing" or
+                # "built in" (answering "built-in or freestanding?") is a real
+                # description of what they want — capture it and progress, don't
+                # loop re-asking. (Caught here because they carry no other marker
+                # and are under 3 words.)
+                'freestanding', 'free standing', 'free-standing',
+                'standalone', 'stand alone', 'stand-alone',
+                'built-in', 'built in', 'builtin', 'inbuilt', 'in-built',
             )
             return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
 
