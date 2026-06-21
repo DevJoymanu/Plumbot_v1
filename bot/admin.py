@@ -461,7 +461,7 @@ class AppointmentAdmin(admin.ModelAdmin):
         confirmed_appointments = Appointment.objects.filter(status='confirmed').count()
         completed_appointments = Appointment.objects.filter(status='completed').count()
         
-        today = timezone.now().date()
+        today = timezone.localdate()
         today_appointments = Appointment.objects.filter(
             scheduled_datetime__date=today
         ).count()

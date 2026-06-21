@@ -775,8 +775,11 @@ class Appointment(models.Model):
     
     @property
     def is_today(self):
-        """Check if appointment is today"""
-        return self.scheduled_datetime and self.scheduled_datetime.date() == timezone.now().date()
+        """Check if appointment is today (compared in the configured TIME_ZONE)."""
+        return bool(
+            self.scheduled_datetime
+            and timezone.localtime(self.scheduled_datetime).date() == timezone.localdate()
+        )
     
     @property
     def is_upcoming(self):
@@ -1877,7 +1880,7 @@ class Quotation(models.Model):
 
         # Generate quotation number if not exists
         if not self.quotation_number:
-            today = timezone.now().date()
+            today = timezone.localdate()
             quote_count = Quotation.objects.filter(
                 created_at__date=today
             ).count() + 1

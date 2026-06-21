@@ -230,7 +230,7 @@ class AppointmentsListView(ListView):
                 'overdue': overdue,
             })
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         todays_confirmed_appointments = base_qs.filter(
             status='confirmed',
             scheduled_datetime__date=today

@@ -56,7 +56,9 @@ logger = logging.getLogger(__name__)
 def _dashboard_workspace_data(response_age='1w_minus'):
     from bot.models import Job
 
-    today = timezone.now().date()
+    # Use the date in the configured TIME_ZONE (Africa/Johannesburg), not the UTC
+    # date — timezone.now().date() rolls over 2h early and shows "yesterday" at night.
+    today = timezone.localdate()
     tomorrow = today + timedelta(days=1)
     day_after_tomorrow = today + timedelta(days=2)
     week_end = today + timedelta(days=(6 - today.weekday()))
