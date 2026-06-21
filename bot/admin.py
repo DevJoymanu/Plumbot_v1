@@ -466,6 +466,35 @@ class AppointmentAdmin(admin.ModelAdmin):
 
 @admin.register(WhatsAppInboundEvent)
 class WhatsAppInboundEventAdmin(admin.ModelAdmin):
-    list_display = ('message_id', 'sender', 'created_at')
+    list_display = ('message_id', 'sender', 'message_type', 'ad_attribution', 'created_at')
+    list_filter = ('message_type',)
     search_fields = ('message_id', 'sender')
     ordering = ('-created_at',)
+    readonly_fields = ('referral_display', 'raw_payload_display')
+    exclude = ('referral', 'raw_payload')
+
+    def ad_attribution(self, obj):
+        """Show at a glance whether this chat came from a CTWA ad."""
+        if obj.referral:
+            source_id = obj.referral.get('source_id', '')
+            return format_html(
+                '<span style="background-color: #1877f2; color: white; padding: 2px 6px; '
+                'border-radius: 3px; font-size: 11px;">AD {}</span>',
+                source_id
+            )
+        return format_html('<span style="color: #999;">organic</span>')
+    ad_attribution.short_description = 'Source'
+
+    def referral_display(self, obj):
+        if not obj.referral:
+            return format_html('<em>No referral (organic chat)</em>')
+        return format_html('<pre style="white-space: pre-wrap;">{}</pre>',
+                           json.dumps(obj.referral, indent=2, ensure_ascii=False))
+    referral_display.short_description = 'Referral (CTWA ad)'
+
+    def raw_payload_display(self, obj):
+        if not obj.raw_payload:
+            return format_html('<em>Not captured</em>')
+        return format_html('<pre style="white-space: pre-wrap;">{}</pre>',
+                           json.dumps(obj.raw_payload, indent=2, ensure_ascii=False))
+    raw_payload_display.short_description = 'Raw inbound message'

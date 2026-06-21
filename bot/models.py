@@ -1733,6 +1733,12 @@ class WhatsAppInboundEvent(models.Model):
     message_id = models.CharField(max_length=128, unique=True)
     sender = models.CharField(max_length=50, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    # Inspection / CTWA-ad attribution. message_type and referral let us see at a
+    # glance whether a chat originated from a Click-to-WhatsApp ad (referral.source_type
+    # == 'ad'); raw_payload keeps the full inbound message object for debugging.
+    message_type = models.CharField(max_length=32, blank=True)
+    referral = models.JSONField(null=True, blank=True)
+    raw_payload = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

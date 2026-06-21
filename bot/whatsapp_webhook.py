@@ -1438,6 +1438,11 @@ def handle_webhook_event(request):
     try:
         body = json.loads(request.body.decode('utf-8'))
 
+        # Live inspection: set WEBHOOK_LOG_RAW=1 (e.g. on Railway while testing a
+        # CTWA ad) to dump the full inbound payload to the log stream. Off by default
+        # to keep production logs clean.
+        if os.environ.get('WEBHOOK_LOG_RAW') == '1':
+            print(f"[webhook] RAW {json.dumps(body)}")
 
         if body.get('object') != 'whatsapp_business_account':
             return HttpResponse(status=200)
@@ -1495,15 +1500,32 @@ def process_message_change(value):
                 print("⚠️ Skipping message with no sender")
                 continue
 
+            # CTWA "Click to WhatsApp" ad attribution. When a chat starts from a
+            # linked ad, the Meta Cloud API attaches a `referral` object to the first
+            # message (referral.source_type == 'ad', plus source_id/headline/body).
+            # We persist it on the inbound event so it's visible in the admin and so
+            # downstream code can tell ad-originated leads from organic ones.
+            referral = message.get('referral')
+
             if message_id:
                 try:
                     WhatsAppInboundEvent.objects.create(
                         message_id=message_id,
-                        sender=sender
+                        sender=sender,
+                        message_type=message_type or '',
+                        referral=referral,
+                        raw_payload=message,
                     )
                 except IntegrityError:
                     print(f"Duplicate inbound message ignored: {message_id}")
                     continue
+
+            if referral:
+                print(
+                    f"📣 CTWA ad referral on {message_id}: "
+                    f"source_type={referral.get('source_type')} "
+                    f"source_id={referral.get('source_id')}"
+                )
 
             print(f"📩 Processing message from {sender}, type: {message_type}")
 
