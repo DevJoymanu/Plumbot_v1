@@ -240,6 +240,20 @@ def _followups_workspace_data(response_age='1w_minus'):
         lead_marked_inactive_at__gte=now - timedelta(days=30)
     ).order_by('-lead_marked_inactive_at')[:10]
 
+    # Annotate each lead with its next automatic follow-up (attempt, due time,
+    # and whether it's on the 72h CTWA ad cadence) so the dashboard can show it.
+    # Uses the cron's own timing core, so the displayed time matches what sends.
+    from bot.management.commands.send_followups import Command as _FollowupCmd
+    _fu_cmd = _FollowupCmd()
+    ready_for_followup = list(ready_for_followup)
+    recent_responses = list(recent_responses)
+    recent_inactive = list(recent_inactive)
+    for _lead in (*ready_for_followup, *recent_responses, *recent_inactive):
+        try:
+            _lead.fu_info = _fu_cmd.next_followup_due_at(_lead)
+        except Exception:
+            _lead.fu_info = None
+
     # ── Per-channel follow-up views (WhatsApp / Emails tabs) ──
     from ..models import ScheduledFollowup
     scheduled_whatsapp = list(

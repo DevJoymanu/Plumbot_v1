@@ -744,6 +744,112 @@ for msg, expected in WA_DELIVERY_CASES:
     except Exception as e:
         results.log(f"wants_whatsapp_delivery: '{msg[:30]}'", False, got=str(e))
 
+# CTWA (Click-to-WhatsApp ad) follow-up cadence. Ad leads must use the longer
+# 72h schedule — absolute offsets from the lead's last response: FU1 4h, FU2 8h,
+# FU3 24h, FU4 48h (2 in 0-24h, 1 in 24-48h, 1 in 48-72h) — while non-ad leads
+# keep the original tier cadence. Pinned API-free with a stub lead.
+from datetime import timedelta as _td
+from django.utils import timezone as _tz
+from bot.management.commands.send_followups import (
+    Command as _FollowupCmd, CTWA_FOLLOWUP_OFFSETS as _CTWA_OFFS,
+)
+from bot.models import LeadStatus as _LS
+
+class _StubLead:
+    """Minimal duck-typed lead for the follow-up timing helpers (no DB)."""
+    def __init__(self, ctwa, followup_count, hours_since_resp,
+                 is_lead_active=True, status='pending', followup_stage=None):
+        self.id = 4242  # stable id -> deterministic jitter
+        self.lead_status = _LS.COLD
+        self.followup_count = followup_count
+        self.is_lead_active = is_lead_active
+        self.status = status
+        self.followup_stage = followup_stage
+        ref = _tz.now() - _td(hours=hours_since_resp)
+        self.last_customer_response = ref
+        self.last_followup_sent = ref
+        self.created_at = ref
+        self.ctwa_entry_at = ref if ctwa else None
+
+_fu = _FollowupCmd()
+
+# (label, ctwa, followup_count, hours_since_resp, expected_ready)
+# Use ±1.5h margins so deterministic jitter (3-57 min) never flips the result.
+_CTWA_CADENCE_CASES = [
+    ("CTWA FU1 before 4h",  True, 0, 2.0,  False),
+    ("CTWA FU1 after 4h",   True, 0, 6.0,  True),
+    ("CTWA FU2 before 8h",  True, 1, 6.0,  False),
+    ("CTWA FU2 after 8h",   True, 1, 10.0, True),
+    ("CTWA FU3 before 24h", True, 2, 22.0, False),
+    ("CTWA FU3 after 24h",  True, 2, 26.0, True),
+    ("CTWA FU4 before 48h", True, 3, 46.0, False),
+    ("CTWA FU4 after 48h",  True, 3, 50.0, True),
+    # Non-ad COLD lead must NOT use the 72h offsets: at 26h with 2 prior sends
+    # it'd be "after 24h" under CTWA, but the tier path measures from the last
+    # send (here = last response) with a 6h step, so it IS ready — proving the
+    # branch only changes ad leads. The discriminating case is FU1 timing:
+    ("non-CTWA FU1 before 4h", False, 0, 2.0, False),  # COLD tier[0]=4h
+    ("non-CTWA FU1 after 4h",  False, 0, 6.0, True),
+]
+for label, ctwa, cnt, hrs, expected in _CTWA_CADENCE_CASES:
+    try:
+        got, _reason = _fu._is_ready_for_followup(_StubLead(ctwa, cnt, hrs), None, force=True)
+        results.log(
+            f"followup cadence: {label}",
+            got == expected,
+            f"ready={got}",
+            expected=f"ready={expected}",
+            got=f"ready={got}",
+        )
+    except Exception as e:
+        results.log(f"followup cadence: {label}", False, got=str(e))
+
+# Offsets themselves are the contract — pin them so a refactor can't silently
+# change the schedule.
+results.log(
+    "followup cadence: CTWA offsets are (4, 8, 24, 48)",
+    _CTWA_OFFS == (4, 8, 24, 48),
+    f"offsets={_CTWA_OFFS}",
+    expected="(4, 8, 24, 48)",
+    got=str(_CTWA_OFFS),
+)
+
+# next_followup_due_at powers the UI "next follow-up" chip. It must agree with the
+# cron's timing core and return None when the lead is not in the auto flow.
+def _due(lead):
+    return _fu.next_followup_due_at(lead)
+
+# CTWA lead, no follow-ups yet → attempt 1, due ~4h after last response, ad flag set.
+_info = _due(_StubLead(True, 0, 0.0))
+results.log(
+    "next_followup_due_at: CTWA FU1 attempt+flag",
+    bool(_info) and _info['attempt'] == 1 and _info['max'] == 4 and _info['is_ctwa'] is True,
+    got=str(_info),
+)
+# Due time matches the 4h CTWA offset (within the jitter band, 4.0-5.0h out).
+_hrs = ((_info['due_at'] - _tz.now()).total_seconds() / 3600) if _info else None
+results.log(
+    "next_followup_due_at: CTWA FU1 due ~4h out",
+    _hrs is not None and 4.0 <= _hrs <= 5.0,
+    got=f"{_hrs:.2f}h" if _hrs is not None else "None",
+)
+# Non-CTWA COLD lead, no follow-ups → attempt 1, ad flag false.
+_info2 = _due(_StubLead(False, 0, 0.0))
+results.log(
+    "next_followup_due_at: non-CTWA flag false",
+    bool(_info2) and _info2['is_ctwa'] is False,
+    got=str(_info2),
+)
+# Retired / not-in-flow leads return None.
+results.log("next_followup_due_at: None when count>=max",
+            _due(_StubLead(True, 4, 0.0)) is None, got=str(_due(_StubLead(True, 4, 0.0))))
+results.log("next_followup_due_at: None when inactive",
+            _due(_StubLead(True, 0, 0.0, is_lead_active=False)) is None)
+results.log("next_followup_due_at: None when booked",
+            _due(_StubLead(True, 0, 0.0, status='confirmed')) is None)
+results.log("next_followup_due_at: None when stage completed",
+            _due(_StubLead(True, 0, 0.0, followup_stage='completed')) is None)
+
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The
 # TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality

@@ -9,6 +9,10 @@
 #   Attempt 4 → 18h after attempt 1
 #
 # Total spread: 18 hours, all 4 messages land within a single day.
+#
+# CTWA (Click-to-WhatsApp ad) leads use a longer 72-hour cadence instead — see
+# CTWA_FOLLOWUP_OFFSETS below: FU1 4h, FU2 8h, FU3 24h, FU4 48h (absolute offsets
+# from the lead's last response), matching the 72h ad messaging window.
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -55,6 +59,16 @@ MAX_FOLLOWUPS_PER_STATUS = {
     LeadStatus.WARM:     4,
     LeadStatus.COLD:     4,
 }
+
+# ─── CTWA (Click-to-WhatsApp ad) cadence ──────────────────────────────────────
+# Ad leads get a longer 72h follow-up window to match the ad messaging window.
+# Unlike the tier intervals above (step deltas from the previous send), these are
+# ABSOLUTE offsets measured from the lead's last response, so each touch lands at
+# a fixed point in the window no matter when the earlier ones actually went out:
+#   FU1 → 4h, FU2 → 8h   (0–24h: 2 sends)
+#   FU3 → 24h            (24–48h: 1 send)
+#   FU4 → 48h            (48–72h: 1 send)
+CTWA_FOLLOWUP_OFFSETS = (4, 8, 24, 48)
 
 # Hours between the first delay re-engagement email (sent on the agreed
 # follow-up date) and the second/final "last check" email. Keep this on the
@@ -849,20 +863,51 @@ class Command(BaseCommand):
           - Before any follow-up was sent: reference = last_customer_response or created_at
           - After a follow-up was sent:    reference = last_followup_sent
         """
-        attempt_index = min(lead.followup_count, 3)
-        intervals = TIER_INTERVALS.get(lead.lead_status, TIER_INTERVALS[LeadStatus.COLD])
-        wait_hours = intervals[attempt_index]
+        attempt_index, wait_hours, reference = self._followup_wait_and_reference(lead)
+        if reference is None:
+            return False, 'no reference time'
 
-        # After the first follow-up, measure from when the LAST follow-up was sent.
-        # Before any follow-up, measure from when the customer last responded (or created_at).
-        if lead.followup_count > 0 and lead.last_followup_sent:
-            reference = lead.last_followup_sent
-        else:
+        elapsed = (timezone.now() - reference).total_seconds() / 3600
+
+        if elapsed < wait_hours:
+            return False, f'{elapsed:.1f}h elapsed, need {wait_hours:.1f}h (attempt #{attempt_index + 1})'
+        return True, ''
+
+    def _followup_wait_and_reference(self, lead):
+        """Shared timing core — returns (attempt_index, wait_hours, reference) for
+        the next follow-up. Single source of truth for both the cron's readiness
+        check and the UI's "next follow-up" display, so they can never disagree.
+
+        wait_hours already includes the deterministic jitter; reference is the
+        datetime the wait is measured from (None only if the lead has no usable
+        timestamps).
+        """
+        attempt_index = min(lead.followup_count or 0, 3)
+
+        if self._is_ctwa_lead(lead):
+            # Ad leads: absolute offsets from the lead's last response (the
+            # reference does NOT shift to the last follow-up), so FU3/FU4 land at
+            # a fixed 24h/48h into the 72h window regardless of earlier timing.
+            wait_hours = CTWA_FOLLOWUP_OFFSETS[attempt_index]
             reference = (
                 lead.last_customer_response
                 or lead.last_followup_sent
                 or lead.created_at
             )
+        else:
+            intervals = TIER_INTERVALS.get(lead.lead_status, TIER_INTERVALS[LeadStatus.COLD])
+            wait_hours = intervals[attempt_index]
+
+            # After the first follow-up, measure from when the LAST follow-up was sent.
+            # Before any follow-up, measure from when the customer last responded (or created_at).
+            if (lead.followup_count or 0) > 0 and lead.last_followup_sent:
+                reference = lead.last_followup_sent
+            else:
+                reference = (
+                    lead.last_customer_response
+                    or lead.last_followup_sent
+                    or lead.created_at
+                )
 
         # Human-timing jitter: shift the due moment by a stable per-lead,
         # per-attempt offset (3–57 min) so follow-ups land at natural minutes
@@ -870,13 +915,42 @@ class Command(BaseCommand):
         # sharing a reference time don't all fire together. Deterministic, so a
         # lead's due moment doesn't jump around between minute-by-minute checks.
         jitter_hours = self._send_jitter_minutes(lead, attempt_index) / 60.0
-        wait_hours += jitter_hours
+        return attempt_index, wait_hours + jitter_hours, reference
 
-        elapsed = (timezone.now() - reference).total_seconds() / 3600
+    def next_followup_due_at(self, lead):
+        """Schedule info for the NEXT automatic follow-up, for UI display.
 
-        if elapsed < wait_hours:
-            return False, f'{elapsed:.1f}h elapsed, need {wait_hours:.1f}h (attempt #{attempt_index + 1})'
-        return True, ''
+        Returns a dict {attempt, max, due_at, is_ctwa} or None when the lead is
+        not in the auto follow-up flow (retired, completed, booked, or paused).
+        Uses the same timing core as the cron, so the displayed time matches what
+        will actually be sent.
+        """
+        if not lead.is_lead_active or lead.status != 'pending':
+            return None
+        if lead.followup_stage == 'completed':
+            return None
+        max_fu = MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 4)
+        if (lead.followup_count or 0) >= max_fu:
+            return None
+
+        attempt_index, wait_hours, reference = self._followup_wait_and_reference(lead)
+        if reference is None:
+            return None
+
+        due_at = reference + timedelta(hours=wait_hours)
+        return {
+            'attempt': attempt_index + 1,
+            'max': max_fu,
+            'due_at': due_at,
+            'overdue': due_at <= timezone.now(),  # due now / awaiting next cron + window
+            'is_ctwa': self._is_ctwa_lead(lead),
+        }
+
+    @staticmethod
+    def _is_ctwa_lead(lead):
+        """True if the lead originated from a Click-to-WhatsApp ad (has a referral
+        entry time). These get the longer 72h CTWA follow-up cadence."""
+        return bool(getattr(lead, 'ctwa_entry_at', None))
 
     @staticmethod
     def _send_jitter_minutes(lead, attempt_index):
@@ -1044,7 +1118,7 @@ LEAD CONTEXT:
 - Interest: {service}
 - Area: {area or 'not yet shared'}
 - Last heard from them: {time_ref}
-- This is follow-up attempt #{attempt} of 4 (all within 24 hours)
+- This is follow-up attempt #{attempt} of 4 (all within {'72 hours' if self._is_ctwa_lead(lead) else '24 hours'})
 
 ALREADY COLLECTED (do NOT ask for any of these again):
 {already_collected}

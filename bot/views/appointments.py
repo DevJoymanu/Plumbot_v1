@@ -481,6 +481,16 @@ class AppointmentDetailView(DetailView):
     model = Appointment
     context_object_name = 'appointment'
     #
+    @staticmethod
+    def _followup_info_for(appointment):
+        """Next automatic follow-up (attempt, due time, ad-cadence flag) for the
+        detail page. Uses the cron's timing core so the shown time matches sends."""
+        try:
+            from bot.management.commands.send_followups import Command as _FollowupCmd
+            return _FollowupCmd().next_followup_due_at(appointment)
+        except Exception:
+            return None
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         appointment = self.get_object()
@@ -532,6 +542,7 @@ class AppointmentDetailView(DetailView):
             'computed_lead_score': computed_score,
             'computed_lead_status': computed_status,
             'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
+            'followup_info': self._followup_info_for(appointment),
             'detail_source': detail_source,
             'source_workspace': source_workspace,
             'source_back_url': source_back_url,

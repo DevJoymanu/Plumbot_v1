@@ -1476,6 +1476,12 @@
           </span>
           {% endif %}
         {% endif %}
+        {% if followup_info %}
+        <span class="appt-pill" style="background:#0f766e;color:#fff;"
+              title="Next automatic follow-up{% if followup_info.is_ctwa %} (72h ad cadence){% endif %}">
+          <i class="far fa-clock"></i> Follow-up {{ followup_info.attempt }} of {{ followup_info.max }} · {% if followup_info.overdue %}due now{% else %}next {{ followup_info.due_at|date:"j M, H:i" }}{% endif %}{% if followup_info.is_ctwa %} · Ad cadence 72h{% endif %}
+        </span>
+        {% endif %}
       </div>
 
       <div class="appt-tabbar">
