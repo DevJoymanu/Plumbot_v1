@@ -31,7 +31,7 @@
       {{ item.customer_name|default:item.phone_number|default:"AP"|slice:":2"|upper }}
     </div>
     <div class="appt-list-main">
-      <div class="appt-list-name">{% firstof item.customer_name item.phone_number "Appointment" %}{% if item.ctwa_entry_at %} <span title="Click-to-WhatsApp ad lead" style="font-size:10px;font-weight:700;color:#fff;background:{% if item.ctwa_window_open %}#1877f2{% else %}#94a3b8{% endif %};padding:1px 5px;border-radius:3px;vertical-align:middle;">AD</span>{% endif %}</div>
+      <div class="appt-list-name">{% firstof item.customer_name item.phone_number "Appointment" %} <span title="{{ item.messaging_window_kind }} messaging window{% if not item.messaging_window_open %} — closed{% endif %}" style="font-size:10px;font-weight:700;color:#fff;background:{% if not item.messaging_window_open %}#94a3b8{% elif item.messaging_window_kind == '72h' %}#1877f2{% else %}#0f766e{% endif %};padding:1px 5px;border-radius:3px;vertical-align:middle;">{{ item.messaging_window_kind }}</span></div>
       <div class="appt-list-meta">{{ item.get_project_type_display|default:item.project_type|default:"No service" }} · {{ item.customer_area|default:"No area" }}</div>
       <div class="appt-list-preview">{{ item.project_description|default:"No recent note available"|truncatewords:10 }}</div>
     </div>

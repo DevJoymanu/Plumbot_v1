@@ -1273,6 +1273,35 @@ class Appointment(models.Model):
         expires = self.ctwa_window_expires_at
         return bool(expires and expires > timezone.now())
 
+    # ----- WhatsApp free-form messaging window (24h standard / 72h for ads) ----
+    @property
+    def messaging_window_kind(self):
+        """'72h' for CTWA ad leads (extended free-form window), else the
+        standard '24h' WhatsApp customer-service window."""
+        return '72h' if self.ctwa_entry_at else '24h'
+
+    @property
+    def messaging_window_closes_at(self):
+        """When the free-form (no-template) messaging window closes.
+
+        Standard rule: 24h from the customer's last message. For CTWA ad leads it
+        is extended to the 72h window from the ad entry point — whichever is
+        later. Anchored to the lead's last message so it reflects re-engagement.
+        """
+        candidates = []
+        last_msg = self.last_inbound_at or self.last_customer_response
+        if last_msg:
+            candidates.append(last_msg + timedelta(hours=24))
+        if self.ctwa_entry_at:
+            candidates.append(self.ctwa_entry_at + timedelta(hours=self.CTWA_WINDOW_HOURS))
+        return max(candidates) if candidates else None
+
+    @property
+    def messaging_window_open(self):
+        """True while free-form replies (no template) are still allowed."""
+        closes = self.messaging_window_closes_at
+        return bool(closes and closes > timezone.now())
+
     def recalculate_lead_scoring(self, persist=True):
         """Recalculate lead score and status from collected qualification fields."""
         from .services.lead_scoring import calculate_lead_score

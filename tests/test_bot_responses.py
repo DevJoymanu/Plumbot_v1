@@ -850,6 +850,51 @@ results.log("next_followup_due_at: None when booked",
 results.log("next_followup_due_at: None when stage completed",
             _due(_StubLead(True, 0, 0.0, followup_stage='completed')) is None)
 
+# Messaging-window tags: 24h standard (reset by last message) vs 72h CTWA ad
+# window (from ad entry, extended by later messages — whichever is later).
+from bot.models import Appointment as _Appt
+
+def _mk_appt(ctwa_hours_ago=None, last_msg_hours_ago=None):
+    a = _Appt()
+    if last_msg_hours_ago is not None:
+        a.last_inbound_at = _tz.now() - _td(hours=last_msg_hours_ago)
+    if ctwa_hours_ago is not None:
+        a.ctwa_entry_at = _tz.now() - _td(hours=ctwa_hours_ago)
+    return a
+
+# Organic lead, messaged 1h ago → 24h window, open, closes ~23h out.
+_o = _mk_appt(last_msg_hours_ago=1)
+results.log("messaging window: organic kind=24h",
+            _o.messaging_window_kind == '24h', got=_o.messaging_window_kind)
+results.log("messaging window: organic open within 24h",
+            _o.messaging_window_open is True)
+_o_h = (_o.messaging_window_closes_at - _tz.now()).total_seconds() / 3600
+results.log("messaging window: organic closes ~23h out",
+            22.5 <= _o_h <= 23.5, got=f"{_o_h:.2f}h")
+
+# Organic lead, messaged 25h ago → closed.
+results.log("messaging window: organic closed after 25h",
+            _mk_appt(last_msg_hours_ago=25).messaging_window_open is False)
+
+# Fresh ad lead (entry 1h ago) → 72h window, closes ~71h out (entry+72h wins).
+_ad = _mk_appt(ctwa_hours_ago=1, last_msg_hours_ago=1)
+results.log("messaging window: ad kind=72h",
+            _ad.messaging_window_kind == '72h', got=_ad.messaging_window_kind)
+_ad_h = (_ad.messaging_window_closes_at - _tz.now()).total_seconds() / 3600
+results.log("messaging window: ad closes ~71h out (72h from entry)",
+            70.5 <= _ad_h <= 71.5, got=f"{_ad_h:.2f}h")
+
+# Ad lead 80h past entry but messaged 1h ago → 24h rule keeps it open (max wins).
+_ad2 = _mk_appt(ctwa_hours_ago=80, last_msg_hours_ago=1)
+results.log("messaging window: ad past 72h but recent msg stays open",
+            _ad2.messaging_window_open is True)
+results.log("messaging window: still tagged 72h (lead type)",
+            _ad2.messaging_window_kind == '72h')
+
+# Ad lead 80h past entry and last message 30h ago → fully closed.
+results.log("messaging window: ad fully closed",
+            _mk_appt(ctwa_hours_ago=80, last_msg_hours_ago=30).messaging_window_open is False)
+
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The
 # TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality

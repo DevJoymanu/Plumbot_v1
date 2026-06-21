@@ -1463,16 +1463,22 @@
         {% if appointment.chatbot_paused %}
         <span class="appt-pill pending">Bot paused</span>
         {% endif %}
-        {% if appointment.ctwa_entry_at %}
-          {% if appointment.ctwa_window_open %}
-          <span class="appt-pill" style="background:#1877f2;color:#fff;"
-                title="From a Click-to-WhatsApp ad{% if appointment.ctwa_source_id %} (source {{ appointment.ctwa_source_id }}){% endif %}. You can reply free-form (no template) until this time.">
-            <i class="fab fa-facebook"></i> Ad lead · free reply until {{ appointment.ctwa_window_expires_at|date:"j M, H:i" }}
+        {# Messaging-window type tag: differentiates 72h ad leads from 24h leads. #}
+        <span class="appt-pill" style="background:{% if appointment.messaging_window_kind == '72h' %}#1877f2{% else %}#475569{% endif %};color:#fff;"
+              title="{% if appointment.messaging_window_kind == '72h' %}Click-to-WhatsApp ad lead{% if appointment.ctwa_source_id %} (ad source {{ appointment.ctwa_source_id }}){% endif %} — extended 72h free-form window{% else %}Standard 24h free-form messaging window, reset by each customer message{% endif %}">
+          <i class="far fa-clock"></i> {{ appointment.messaging_window_kind }} window
+        </span>
+        {# Window close tag: when free-form messaging ends, per the lead's last message. #}
+        {% if appointment.messaging_window_closes_at %}
+          {% if appointment.messaging_window_open %}
+          <span class="appt-pill" style="background:#16a34a;color:#fff;"
+                title="Free-form replies (no template) allowed until this time — based on the lead's last message.">
+            <i class="far fa-paper-plane"></i> closes {{ appointment.messaging_window_closes_at|date:"D j M, H:i" }}
           </span>
           {% else %}
           <span class="appt-pill" style="background:#6c757d;color:#fff;"
-                title="Click-to-WhatsApp ad lead. The 72h free-form window has closed; a customer reply or a template is needed to message.">
-            <i class="fab fa-facebook"></i> Ad lead · window closed
+                title="Free-form window closed — a customer reply or an approved template is needed to message.">
+            <i class="far fa-paper-plane"></i> window closed
           </span>
           {% endif %}
         {% endif %}
