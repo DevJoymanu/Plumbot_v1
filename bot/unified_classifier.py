@@ -105,8 +105,15 @@ area              Suburb, neighbourhood, or city name.
                   ⚠ When next_question is "area", treat short unknown words
                   as suburb names — NOT customer names.
 availability      Date+time → YYYY-MM-DDTHH:MM  |  Date only → YYYY-MM-DDT00:00
-                  A bare weekday ("Wed", "Wednesday", "neChina") → the NEXT
+                  A bare weekday ("Wed", "Wednesday", "neChitatu") → the NEXT
                   future date with that weekday relative to TODAY.
+                  Shona weekdays — map exactly, do NOT guess:
+                    Svondo=Sunday, Muvhuro=Monday, Chipiri=Tuesday,
+                    Chitatu=Wednesday, China=Thursday, Chishanu=Friday,
+                    Mugovera=Saturday. The "ne" prefix means "on"
+                    (neChina = on Thursday, neChipiri = on Tuesday).
+                  Shona times: mangwanani=morning, masikati=afternoon,
+                    manheru=evening. "mangwana"=tomorrow, "nhasi"=today.
                   "available all day" / "anytime" / "whole day" → null.
 customer_name     Only if explicitly given: "my name is X", "I'm X", "call me X".
 project_description  Verbatim project detail (max 120 chars).
