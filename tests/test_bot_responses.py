@@ -826,13 +826,27 @@ results.log(
     bool(_info) and _info['attempt'] == 1 and _info['max'] == 4 and _info['is_ctwa'] is True,
     got=str(_info),
 )
-# Due time matches the 4h CTWA offset (within the jitter band, 4.0-5.0h out).
-_hrs = ((_info['due_at'] - _tz.now()).total_seconds() / 3600) if _info else None
+# The displayed due time is clamped to the daily contact window (it only sends
+# when the window is open), so it must always land inside a CONTACT_WINDOW.
+_due_local = _tz.localtime(_info['due_at']) if _info else None
 results.log(
-    "next_followup_due_at: CTWA FU1 due ~4h out",
-    _hrs is not None and 4.0 <= _hrs <= 5.0,
-    got=f"{_hrs:.2f}h" if _hrs is not None else "None",
+    "next_followup_due_at: due time lands inside the contact window",
+    _due_local is not None and _fu._in_contact_window(_due_local),
+    got=_due_local.strftime('%H:%M') if _due_local else 'None',
 )
+
+# _next_window_open: a due moment outside 08:21-20:53 rolls to the next opening.
+import pytz as _pytz
+_sast = _pytz.timezone('Africa/Johannesburg')
+def _win(h, m):
+    dt = _sast.localize(__import__('datetime').datetime(2026, 6, 23, h, m))
+    return _tz.localtime(_fu._next_window_open(dt)).strftime('%Y-%m-%d %H:%M')
+results.log("next_window_open: 01:52 -> same-day 08:21",
+            _win(1, 52) == '2026-06-23 08:21', got=_win(1, 52))
+results.log("next_window_open: 12:00 stays 12:00 (in window)",
+            _win(12, 0) == '2026-06-23 12:00', got=_win(12, 0))
+results.log("next_window_open: 21:30 -> next-day 08:21",
+            _win(21, 30) == '2026-06-24 08:21', got=_win(21, 30))
 # Non-CTWA COLD lead, no follow-ups → attempt 1, ad flag false.
 _info2 = _due(_StubLead(False, 0, 0.0))
 results.log(

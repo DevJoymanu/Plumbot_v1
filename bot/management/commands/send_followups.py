@@ -937,14 +937,47 @@ class Command(BaseCommand):
         if reference is None:
             return None
 
-        due_at = reference + timedelta(hours=wait_hours)
+        now = timezone.now()
+        raw_due = reference + timedelta(hours=wait_hours)
+        # Follow-ups only send inside the daily contact window, so roll the due
+        # moment forward to when it can actually go out (e.g. a 01:52 due time
+        # shows as 08:21). Clamp against now too — can't send in the past.
+        send_at = self._next_window_open(max(raw_due, now))
         return {
             'attempt': attempt_index + 1,
             'max': max_fu,
-            'due_at': due_at,
-            'overdue': due_at <= timezone.now(),  # due now / awaiting next cron + window
+            'due_at': send_at,
+            'overdue': send_at <= now,  # in-window and due → sends this cron cycle
             'is_ctwa': self._is_ctwa_lead(lead),
         }
+
+    def _next_window_open(self, dt):
+        """Earliest moment >= dt that falls inside a contact window (SAST).
+
+        The UI's "next send" time must reflect that follow-ups only go out during
+        CONTACT_WINDOWS — a due moment outside the window rolls forward to the next
+        opening.
+        """
+        if not CONTACT_WINDOWS:
+            return dt
+        local = dt.astimezone(SA_TIMEZONE)
+        for _ in range(8):  # safety bound: at most a week of day rolls
+            mins = local.hour * 60 + local.minute
+            opens_today = []
+            for oh, om, ch, cm in CONTACT_WINDOWS:
+                if (oh * 60 + om) <= mins < (ch * 60 + cm):
+                    return local  # already inside a window
+                if mins < (oh * 60 + om):
+                    opens_today.append(
+                        local.replace(hour=oh, minute=om, second=0, microsecond=0)
+                    )
+            if opens_today:
+                return min(opens_today)
+            # Past every window today → jump to the start of the next day and retry.
+            local = (local + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+        return local
 
     @staticmethod
     def _is_ctwa_lead(lead):
