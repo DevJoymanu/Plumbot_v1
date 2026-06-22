@@ -332,11 +332,26 @@ class ResponseMixin:
             )
 
         def _format_day(self, date_obj) -> str:
-            """Return e.g. 'Monday the 7th' or 'Tuesday the 8th'."""
+            """Return a warm, human day label relative to today, e.g.
+            'tomorrow' or 'this Wednesday (the day after tomorrow)'. Falls back
+            to 'Monday the 7th' for dates more than a few days out."""
+            import pytz
+            sa_tz = pytz.timezone('Africa/Johannesburg')
+            today = timezone.now().astimezone(sa_tz).date()
+            day   = date_obj.date() if hasattr(date_obj, 'date') else date_obj
+
             day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            day_name  = day_names[date_obj.weekday()]
-            day_num   = date_obj.day
+            day_name  = day_names[day.weekday()]
+            day_num   = day.day
             suffix    = 'th' if 11 <= day_num <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day_num % 10, 'th')
+
+            delta = (day - today).days
+            if delta == 1:
+                return "tomorrow"
+            if delta == 2:
+                return f"this {day_name}"
+            if 3 <= delta <= 6:
+                return f"this {day_name}"
             return f"{day_name} the {day_num}{suffix}"
 
 
@@ -1781,7 +1796,7 @@ class ResponseMixin:
                 day_b = self._format_day(days[1]) if len(days) > 1 else "the day after"
                 visit_desc = self._describe_project_context()
                 return (
-                    f"Great, what works better for you — {day_a} or {day_b} — "
+                    f"Great, what works better for you, {day_a} or {day_b}, "
                     f"for us to come through and {visit_desc}?"
                 )
 
@@ -3980,7 +3995,7 @@ class ResponseMixin:
                         day_b      = self._format_day(days[1]) if len(days) > 1 else "the day after"
                         visit_desc = self._describe_project_context()
                         return (
-                            f"Great, what works better for you — {day_a} or {day_b} — "
+                            f"Great, what works better for you, {day_a} or {day_b}, "
                             f"for us to come through and {visit_desc}?"
                         )
 
