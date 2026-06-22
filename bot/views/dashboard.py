@@ -349,23 +349,39 @@ def _followups_workspace_data(response_age='1w_minus'):
     }
 
 
-def _appointments_sidebar_context(sidebar_filter='all'):
+# Date-window options for the appointments sidebar (matches the main list page).
+_SIDEBAR_AGE_MAP = {
+    '1w_minus': timedelta(weeks=1),
+    '3w_minus': timedelta(weeks=3),
+    '4w_minus': timedelta(weeks=4),
+}
+
+
+def _appointments_sidebar_context(sidebar_filter='all', response_age='all'):
+    # Apply the same last-response date window the main list uses, so the sidebar
+    # can be filtered by 7 days / 21 days / 30 days / All time.
+    base = Appointment.objects.all()
+    if response_age in _SIDEBAR_AGE_MAP:
+        cutoff = timezone.now() - _SIDEBAR_AGE_MAP[response_age]
+        base = base.filter(last_customer_response__gte=cutoff)
+
     return {
         'sidebar_filter': sidebar_filter,
-        'sidebar_appointments': Appointment.objects.order_by('-updated_at')[:20],
+        'selected_response_age': response_age,
+        'sidebar_appointments': base.order_by('-updated_at')[:30],
         'appointment_status_counts': {
-            'total': Appointment.objects.count(),
-            'booked': Appointment.objects.filter(status='confirmed').count(),
-            'pending': Appointment.objects.filter(status='pending').exclude(
+            'total': base.count(),
+            'booked': base.filter(status='confirmed').count(),
+            'pending': base.filter(status='pending').exclude(
                 internal_notes__contains='[DELAY_SIGNAL]'
             ).count(),
-            'cancelled': Appointment.objects.filter(status='cancelled').count(),
-            'delayed': Appointment.objects.filter(
+            'cancelled': base.filter(status='cancelled').count(),
+            'delayed': base.filter(
                 status='pending',
                 internal_notes__contains='[DELAY_SIGNAL]',
             ).count(),
             # Click-to-WhatsApp ad leads still inside their 72h free-form window.
-            'ad': Appointment.objects.filter(
+            'ad': base.filter(
                 ctwa_entry_at__gt=timezone.now() - timedelta(hours=Appointment.CTWA_WINDOW_HOURS),
             ).count(),
         },

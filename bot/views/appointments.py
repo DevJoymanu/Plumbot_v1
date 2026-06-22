@@ -75,6 +75,9 @@ class AppointmentsListView(ListView):
         'pending':   '1w_minus',
         'cancelled': '1w_minus',
         'delayed':   '3w_minus',
+        # Ad leads are already bounded by the 72h CTWA window, so don't also clip
+        # them by last-response age — show all in-window ad leads by default.
+        'ad':        'all',
     }
     TAB_AGE_MAP = {
         '1w_minus': timedelta(weeks=1),
@@ -526,7 +529,8 @@ class AppointmentDetailView(DetailView):
             source_title = 'Follow-ups'
 
         sidebar_filter = self.request.GET.get('sidebar_filter', 'all')
-        sidebar_context = _appointments_sidebar_context(sidebar_filter)
+        sidebar_response_age = self.request.GET.get('sidebar_response_age', 'all')
+        sidebar_context = _appointments_sidebar_context(sidebar_filter, sidebar_response_age)
 
         context.update({
             'active_nav': active_nav,
