@@ -1,6 +1,6 @@
 from django.db.utils import OperationalError, ProgrammingError
 
-from .models import Appointment, LeadFollowUpStatus, LeadStatus
+from .models import Appointment, LeadFollowUpStatus
 
 
 NAV_MAP = {
@@ -41,12 +41,13 @@ def plumbot_shell(request):
     }
 
     try:
-        active_leads = Appointment.objects.filter(is_lead_active=True)
-        counts["hot_lead_count"] = active_leads.filter(
-            lead_status__in=[LeadStatus.HOT, LeadStatus.VERY_HOT]
-        ).count()
-        counts["pending_followup_count"] = active_leads.filter(
-            follow_up_status=LeadFollowUpStatus.PENDING
+        # Use the same canonical priority-leads definition as the dashboard and
+        # the priority-leads page (computed status), so the nav badge matches them.
+        from .views.dashboard import priority_lead_count
+        counts["hot_lead_count"] = priority_lead_count()
+        counts["pending_followup_count"] = Appointment.objects.filter(
+            is_lead_active=True,
+            follow_up_status=LeadFollowUpStatus.PENDING,
         ).count()
     except (OperationalError, ProgrammingError):
         pass

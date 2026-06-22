@@ -313,7 +313,9 @@ class PriorityLeadsView(TemplateView):
         context = super().get_context_data(**kwargs)
         response_age = self.request.GET.get('response_age', '').strip()
         if not response_age:
-            response_age = '1w_minus'
+            # Default to all-time so the page total matches the nav badge / dashboard
+            # priority count (both all-time). Users can still narrow via the Window.
+            response_age = 'all'
         workspace = _priority_leads_workspace_data(response_age)
         very_hot_leads = workspace['very_hot_leads']
         hot_leads = workspace['hot_leads']
@@ -516,7 +518,7 @@ class AppointmentDetailView(DetailView):
             source_back_url = reverse('dashboard')
             source_title = 'Dashboard'
         elif detail_source == 'priority_leads':
-            source_workspace = _priority_leads_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            source_workspace = _priority_leads_workspace_data(self.request.GET.get('response_age', 'all'))
             active_nav = 'leads'
             source_back_url = reverse('priority_leads')
             source_title = 'Priority Leads'

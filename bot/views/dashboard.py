@@ -82,10 +82,9 @@ def _dashboard_workspace_data(response_age='1w_minus'):
     week_jobs = Job.objects.filter(
         scheduled_datetime__date__range=(today, week_end),
     ).select_related('site_visit').order_by('scheduled_datetime')
-    hot_lead_count = Appointment.objects.filter(
-        is_lead_active=True,
-        lead_status__in=['very_hot', 'hot'],
-    ).exclude(status__in=['completed', 'cancelled']).count()
+    # Same definition as the priority-leads page + nav badge (computed status),
+    # so all three surfaces show the same number.
+    hot_lead_count = priority_lead_count()
 
     return {
         'selected_response_age': response_age,
@@ -105,43 +104,49 @@ def _dashboard_workspace_data(response_age='1w_minus'):
     }
 
 
-def _priority_leads_workspace_data(response_age='1w_minus'):
+_PRIORITY_AGE_MAP = {
+    '1w_minus': timedelta(weeks=1),
+    '2w_minus': timedelta(weeks=2),
+    '3w_minus': timedelta(weeks=3),
+    '4w_minus': timedelta(weeks=4),
+}
+
+
+def priority_leads_qs():
+    """Canonical priority-leads queryset — the single source of truth for every
+    'priority / hot lead' stat (nav badge, dashboard, priority-leads page + sidebar).
+
+    Active leads (excluding completed/cancelled), annotated with a computed score
+    and status derived from how complete their qualification is. Previously the nav
+    badge and dashboard counted the stored ``lead_status`` field while the priority
+    page computed status on the fly — so the three numbers never agreed. Everything
+    now derives from this one queryset.
+    """
     from django.db.models import Case, F, IntegerField, Q, Value, When
     from django.db.models.functions import Coalesce
 
     has_project_type = Case(
         When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
-        default=Value(0),
-        output_field=IntegerField(),
+        default=Value(0), output_field=IntegerField(),
     )
     has_property_type = Case(
         When(Q(property_type__isnull=False) & ~Q(property_type=''), then=Value(1)),
-        default=Value(0),
-        output_field=IntegerField(),
+        default=Value(0), output_field=IntegerField(),
     )
     has_area = Case(
         When(Q(customer_area__isnull=False) & ~Q(customer_area=''), then=Value(1)),
-        default=Value(0),
-        output_field=IntegerField(),
+        default=Value(0), output_field=IntegerField(),
     )
     has_timeline = Case(
         When(Q(timeline__isnull=False) & ~Q(timeline=''), then=Value(1)),
-        default=Value(0),
-        output_field=IntegerField(),
+        default=Value(0), output_field=IntegerField(),
     )
     has_site_visit = Case(
         When(scheduled_datetime__isnull=False, then=Value(1)),
-        default=Value(0),
-        output_field=IntegerField(),
+        default=Value(0), output_field=IntegerField(),
     )
-    age_map_minus = {
-        '1w_minus': timedelta(weeks=1),
-        '2w_minus': timedelta(weeks=2),
-        '3w_minus': timedelta(weeks=3),
-        '4w_minus': timedelta(weeks=4),
-    }
 
-    leads = (
+    return (
         Appointment.objects.annotate(
             completed_fields=has_project_type + has_property_type + has_area + has_timeline + has_site_visit,
             computed_score=Case(
@@ -165,6 +170,19 @@ def _priority_leads_workspace_data(response_age='1w_minus'):
         .order_by(F('computed_score').desc(), F('recent_activity').desc(nulls_last=True))
     )
 
+
+def priority_lead_count():
+    """The number of high-priority leads (computed very-hot + hot). Used by the nav
+    badge and the dashboard so both match the priority-leads page."""
+    return priority_leads_qs().filter(computed_status__in=['very_hot', 'hot']).count()
+
+
+def _priority_leads_workspace_data(response_age='all'):
+    from django.db.models import F  # noqa: F401 — kept for parity with callers
+
+    age_map_minus = _PRIORITY_AGE_MAP
+
+    leads = priority_leads_qs()
     if response_age != 'all' and response_age in age_map_minus:
         cutoff = timezone.now() - age_map_minus[response_age]
         leads = leads.filter(last_response_at__gte=cutoff)
