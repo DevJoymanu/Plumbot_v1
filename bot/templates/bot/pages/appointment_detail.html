@@ -1914,6 +1914,80 @@
             </div>
           </div>
 
+          {# ── Schedule a reminder (customer or plumber/team) ── #}
+          <div class="detail-card">
+            <div class="detail-card-header">Schedule a Reminder</div>
+            <div class="detail-card-body">
+              <form method="post" action="{% url 'schedule_reminder' appointment.pk %}?{{ request.GET.urlencode }}">
+                {% csrf_token %}
+                <div class="detail-form-grid">
+                  <div class="detail-field">
+                    <label for="rem_target">Remind</label>
+                    <select id="rem_target" name="target" required>
+                      <option value="plumber">Plumber / team</option>
+                      <option value="customer">Customer</option>
+                    </select>
+                  </div>
+                  <div class="detail-field">
+                    <label for="rem_channel">Channel</label>
+                    <select id="rem_channel" name="channel" required>
+                      <option value="email">Email</option>
+                      <option value="whatsapp">WhatsApp</option>
+                    </select>
+                  </div>
+                  <div class="detail-field">
+                    <label for="rem_sched_at">Send at</label>
+                    <input type="datetime-local" id="rem_sched_at" name="scheduled_for" required>
+                  </div>
+                  <div class="detail-field">
+                    <label for="rem_subject">Subject (email only)</label>
+                    <input type="text" id="rem_subject" name="subject" placeholder="Reminder">
+                  </div>
+                </div>
+                <div class="detail-field full" style="margin-top:10px;">
+                  <label for="rem_msg">Message</label>
+                  <textarea id="rem_msg" name="message" rows="3" class="fu-edit-input" placeholder="Bring the geyser fittings for {name}'s job…" required></textarea>
+                </div>
+                <div class="detail-actions">
+                  <button type="submit" class="action-btn primary"><i class="far fa-bell"></i> Schedule reminder</button>
+                  <span class="fu-hint">Use {name} for the customer's name. Plumber emails go to the team inboxes; plumber WhatsApp needs PLUMBER_PHONE_NUMBER set.</span>
+                </div>
+              </form>
+
+              {% for r in appointment.pending_reminders %}
+              <div class="fu-sched" style="margin-top:12px;">
+                <div class="fu-sched-main">
+                  <div class="fu-sched-label">
+                    <i class="far fa-bell"></i> {{ r.scheduled_for|date:"D j M Y, H:i" }}
+                    <span class="fu-pill" style="background:#e0e7ff;color:#3730a3;">{{ r.get_target_display }}</span>
+                    <span class="fu-pill" style="background:#dcfce7;color:#166534;">{{ r.get_channel_display }}</span>
+                  </div>
+                  <div class="fu-sched-note">{{ r.message|truncatechars:160 }}</div>
+                  {% if r.status == 'failed' %}<div class="fu-sched-note" style="color:#991b1b;">Failed: {{ r.error|truncatechars:120 }}</div>{% endif %}
+                  <form method="post" action="{% url 'edit_scheduled_reminder' r.id %}?{{ request.GET.urlencode }}" id="rem-form-{{ r.id }}" style="display:none; margin-top:8px;">
+                    {% csrf_token %}
+                    <input type="datetime-local" name="scheduled_for" value="{{ r.scheduled_for|date:'Y-m-d\\TH:i' }}" class="fu-edit-input" style="margin-bottom:8px;">
+                    <input type="text" name="subject" value="{{ r.subject }}" placeholder="Subject (email only)" class="fu-edit-input" style="margin-bottom:8px;">
+                    <textarea name="message" rows="3" class="fu-edit-input">{{ r.message }}</textarea>
+                    <div class="fu-edit-actions">
+                      <button type="submit" class="action-btn primary"><i class="fas fa-check"></i> Save</button>
+                      <button type="button" class="action-btn ghost" onclick="var f=document.getElementById('rem-form-{{ r.id }}'); f.style.display='none';">Cancel</button>
+                    </div>
+                  </form>
+                </div>
+                <span class="fu-pill fu-pill--{{ r.status }}">{{ r.status }}</span>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" class="fu-edit-btn" onclick="var f=document.getElementById('rem-form-{{ r.id }}'); f.style.display = f.style.display==='none'?'block':'none';" aria-label="Edit"><i class="fas fa-pen"></i></button>
+                  <form method="post" action="{% url 'cancel_scheduled_reminder' r.id %}?{{ request.GET.urlencode }}" onsubmit="return confirm('Cancel this scheduled reminder?');">
+                    {% csrf_token %}
+                    <button type="submit" class="fu-edit-btn" aria-label="Cancel" title="Cancel"><i class="fas fa-trash"></i></button>
+                  </form>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
           {# ── Follow-up status / next-touch marker ── #}
           <div class="detail-card">
             <div class="detail-card-header">Follow-up Status</div>

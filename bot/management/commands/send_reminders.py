@@ -522,6 +522,22 @@ class Command(BaseCommand):
             f"{'=' * 60}\n"
         )
 
+        # Dispatch any staff-scheduled reminders that are now due, on this cron's
+        # cadence (mirrors how send_followups dispatches scheduled follow-ups).
+        try:
+            from bot.management.commands.send_scheduled_reminders import (
+                dispatch_due_scheduled_reminders,
+            )
+            rres = dispatch_due_scheduled_reminders(
+                dry_run=dry_run, log=lambda m: self.stdout.write(m)
+            )
+            if rres["sent"] or rres["failed"]:
+                self.stdout.write(self.style.SUCCESS(
+                    f"  📌 Scheduled reminders → sent={rres['sent']} failed={rres['failed']}"
+                ))
+        except Exception as exc:  # noqa: BLE001 — never let this block the rest
+            logger.warning("Scheduled reminder dispatch failed: %s", exc)
+
         # ── Fetch ALL confirmed future appointments (no WhatsApp window filter) ──
         base_qs = Appointment.objects.filter(
             Q(status__in=["confirmed", "scheduled", "booked"]),

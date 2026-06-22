@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.utils import timezone
-from .models import Appointment, WhatsAppInboundEvent
+from .models import Appointment, WhatsAppInboundEvent, ScheduledReminder
 import json
 from datetime import timedelta
 
@@ -482,6 +482,15 @@ class AppointmentAdmin(admin.ModelAdmin):
             'all': ('admin/custom_admin.css',)
         }
         js = ('admin/custom_admin.js',)
+
+
+@admin.register(ScheduledReminder)
+class ScheduledReminderAdmin(admin.ModelAdmin):
+    list_display = ('id', 'appointment', 'target', 'channel', 'scheduled_for', 'status', 'sent_at')
+    list_filter = ('status', 'target', 'channel')
+    search_fields = ('appointment__customer_name', 'appointment__phone_number', 'subject', 'message')
+    ordering = ('scheduled_for',)
+    autocomplete_fields = ()
 
 
 @admin.register(WhatsAppInboundEvent)

@@ -1455,6 +1455,12 @@ class Appointment(models.Model):
             channel='email', status__in=['pending', 'failed']
         ).order_by('scheduled_for')
 
+    def pending_reminders(self):
+        """Staff-queued reminders still to go out (pending/failed), any target/channel."""
+        return self.scheduled_reminders.filter(
+            status__in=['pending', 'failed']
+        ).order_by('scheduled_for')
+
     def get_upcoming_emails(self):
         """Scheduled customer-facing emails for this lead, with send dates/times.
 
@@ -1759,6 +1765,58 @@ class ScheduledFollowup(models.Model):
 
     def __str__(self):
         return f"{self.get_channel_display()} follow-up for apt {self.appointment_id} @ {self.scheduled_for}"
+
+
+class ScheduledReminder(models.Model):
+    """A staff-queued one-off reminder to be sent at a chosen date/time.
+
+    Mirrors ScheduledFollowup, but the recipient is selectable per reminder:
+      • target='customer' → sends to the lead (WhatsApp/email), like a follow-up.
+      • target='plumber'  → sends to the plumber team (notification emails, or
+        WhatsApp to PLUMBER_PHONE_NUMBER).
+    Dispatched by ``send_scheduled_reminders`` (also invoked at the start of
+    ``send_reminders``).
+    """
+    TARGET_CHOICES = [
+        ('customer', 'Customer'),
+        ('plumber', 'Plumber / team'),
+    ]
+    CHANNEL_CHOICES = [
+        ('whatsapp', 'WhatsApp'),
+        ('email', 'Email'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('sent', 'Sent'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    appointment = models.ForeignKey(
+        Appointment, on_delete=models.CASCADE, related_name='scheduled_reminders'
+    )
+    target = models.CharField(max_length=10, choices=TARGET_CHOICES, default='plumber', db_index=True)
+    channel = models.CharField(max_length=10, choices=CHANNEL_CHOICES, db_index=True)
+    scheduled_for = models.DateTimeField(db_index=True)
+    subject = models.CharField(max_length=255, blank=True, default='', help_text="Email subject (email only)")
+    message = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    error = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['scheduled_for']
+        indexes = [
+            models.Index(fields=['status', 'scheduled_for']),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.get_target_display()} {self.get_channel_display()} reminder "
+            f"for apt {self.appointment_id} @ {self.scheduled_for}"
+        )
 
 
 class AppointmentNote(models.Model):

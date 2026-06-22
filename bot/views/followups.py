@@ -722,6 +722,107 @@ def cancel_scheduled_followup(request, sf_id):
     return _followup_redirect(request, sf.appointment_id)
 
 
+# ── Scheduled reminders (mirror of scheduled follow-ups, recipient selectable) ──
+
+@staff_required
+@require_POST
+def schedule_reminder(request, pk):
+    """Queue a reminder to the customer or the plumber/team at a chosen date/time."""
+    from ..models import ScheduledReminder
+
+    appointment = get_object_or_404(Appointment, pk=pk)
+    target  = (request.POST.get('target') or '').strip()
+    channel = (request.POST.get('channel') or '').strip()
+    raw     = (request.POST.get('scheduled_for') or '').strip()
+    message = (request.POST.get('message') or '').strip()
+    subject = (request.POST.get('subject') or '').strip()
+
+    if target not in ('customer', 'plumber'):
+        messages.error(request, 'Choose who the reminder is for.')
+        return _followup_redirect(request, pk)
+    if channel not in ('whatsapp', 'email'):
+        messages.error(request, 'Invalid reminder channel.')
+        return _followup_redirect(request, pk)
+    if not raw:
+        messages.error(request, 'Choose a date and time for the reminder.')
+        return _followup_redirect(request, pk)
+    if not message:
+        messages.error(request, 'Enter the reminder message.')
+        return _followup_redirect(request, pk)
+
+    dt, err = _parse_sa_datetime(raw)
+    if err:
+        messages.error(request, err)
+        return _followup_redirect(request, pk)
+    if dt <= timezone.now():
+        messages.error(request, 'Pick a time in the future.')
+        return _followup_redirect(request, pk)
+    if target == 'customer' and channel == 'email' and not appointment.customer_email:
+        messages.error(request, 'This lead has no email address — add one in the Details tab first.')
+        return _followup_redirect(request, pk)
+
+    ScheduledReminder.objects.create(
+        appointment=appointment,
+        target=target,
+        channel=channel,
+        scheduled_for=dt,
+        subject=subject,
+        message=message,
+        created_by=request.user,
+    )
+    who = 'customer' if target == 'customer' else 'plumber/team'
+    messages.success(
+        request,
+        f'{channel.title()} reminder to {who} scheduled for {dt.strftime("%d %b %Y, %H:%M")}.'
+    )
+    return _followup_redirect(request, pk)
+
+
+@staff_required
+@require_POST
+def edit_scheduled_reminder(request, r_id):
+    """Reschedule / reword a queued reminder (pending or failed only)."""
+    from ..models import ScheduledReminder
+
+    r = get_object_or_404(ScheduledReminder, pk=r_id)
+    if r.status not in ('pending', 'failed'):
+        messages.error(request, 'Only pending reminders can be edited.')
+        return _followup_redirect(request, r.appointment_id)
+
+    raw     = (request.POST.get('scheduled_for') or '').strip()
+    message = (request.POST.get('message') or '').strip()
+    subject = (request.POST.get('subject') or '').strip()
+
+    if raw:
+        dt, err = _parse_sa_datetime(raw)
+        if err:
+            messages.error(request, err)
+            return _followup_redirect(request, r.appointment_id)
+        r.scheduled_for = dt
+    if message:
+        r.message = message
+    r.subject = subject
+    if r.status == 'failed':
+        r.status = 'pending'
+        r.error = ''
+    r.save()
+    messages.success(request, 'Scheduled reminder updated.')
+    return _followup_redirect(request, r.appointment_id)
+
+
+@staff_required
+@require_POST
+def cancel_scheduled_reminder(request, r_id):
+    """Cancel a queued reminder so it is never sent."""
+    from ..models import ScheduledReminder
+
+    r = get_object_or_404(ScheduledReminder, pk=r_id)
+    r.status = 'cancelled'
+    r.save(update_fields=['status'])
+    messages.success(request, 'Scheduled reminder cancelled.')
+    return _followup_redirect(request, r.appointment_id)
+
+
 @staff_required
 @require_POST
 def update_lead_email(request, pk):
