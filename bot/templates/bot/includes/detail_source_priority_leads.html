@@ -3,6 +3,15 @@
   <div class="appt-list-subtitle">{{ source_workspace.total_leads }} active leads</div>
 </div>
 
+{# Date window — reloads the priority-leads sidebar filtered by the lead's last response. #}
+<div class="appt-age-bar">
+  <span class="appt-age-label">Window:</span>
+  <a href="{% url 'appointment_detail' appointment.pk %}?source=priority_leads&response_age=1w_minus" class="appt-age-pill {% if source_workspace.selected_response_age == '1w_minus' %}is-active{% endif %}">7 days</a>
+  <a href="{% url 'appointment_detail' appointment.pk %}?source=priority_leads&response_age=3w_minus" class="appt-age-pill {% if source_workspace.selected_response_age == '3w_minus' %}is-active{% endif %}">21 days</a>
+  <a href="{% url 'appointment_detail' appointment.pk %}?source=priority_leads&response_age=4w_minus" class="appt-age-pill {% if source_workspace.selected_response_age == '4w_minus' %}is-active{% endif %}">30 days</a>
+  <a href="{% url 'appointment_detail' appointment.pk %}?source=priority_leads&response_age=all" class="appt-age-pill {% if source_workspace.selected_response_age == 'all' %}is-active{% endif %}">All time</a>
+</div>
+
 <div class="workspace-search">
   <div class="workspace-search-wrap">
     <i class="fas fa-search"></i>

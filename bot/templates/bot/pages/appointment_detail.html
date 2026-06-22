@@ -116,6 +116,16 @@
     font-weight: 700;
   }
 
+  /* Date-window pill bar — shared by all detail-source sidebars. */
+  .appt-age-bar { display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+    padding:8px 12px; border-bottom:1px solid #eef2f7; }
+  .appt-age-label { font-size:11px; font-weight:600; color:#94a3b8;
+    text-transform:uppercase; letter-spacing:.4px; }
+  .appt-age-pill { font-size:12px; color:#475569; text-decoration:none;
+    padding:3px 9px; border-radius:999px; background:#f1f5f9; border:1px solid transparent; }
+  .appt-age-pill:hover { background:#e2e8f0; }
+  .appt-age-pill.is-active { background:#0f766e; color:#fff; }
+
   .appt-filter-tab.is-active::after {
     content: "";
     position: absolute;
