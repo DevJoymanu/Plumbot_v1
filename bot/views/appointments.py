@@ -677,6 +677,17 @@ def update_appointment(request, pk):
     })
 
 
+def _detail_redirect(request, pk):
+    """Redirect to the appointment detail, preserving the current frame/source/
+    sidebar query string. Without this, an action triggered from an in-frame
+    (tabbed) detail view redirects to the bare detail URL, which renders the FULL
+    page layout (nav + appointment list) nested inside the frame — duplicating the
+    whole list side by side. Mirrors AppointmentDetailView.post."""
+    base_url = reverse('appointment_detail', kwargs={'pk': pk})
+    qs = request.GET.urlencode()
+    return redirect(f"{base_url}?{qs}" if qs else base_url)
+
+
 @staff_required
 def confirm_appointment(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
@@ -690,7 +701,7 @@ def confirm_appointment(request, pk):
     except Exception as exc:
         print(f"Failed to send confirmation message for appointment {appointment.pk}: {exc}")
     messages.success(request, 'Appointment confirmed successfully')
-    return redirect('appointment_detail', pk=appointment.pk)
+    return _detail_redirect(request, appointment.pk)
 
 
 @staff_required
@@ -714,7 +725,7 @@ def complete_lead_appointment(request, pk):
     )
     _append_admin_note(appointment, f"{request.user.username}: lead marked complete from appointment detail.")
     messages.success(request, 'Lead marked as complete and removed from Priority Leads.')
-    return redirect('appointment_detail', pk=appointment.pk)
+    return _detail_redirect(request, appointment.pk)
 
 
 @staff_required
@@ -727,7 +738,7 @@ def unbook_appointment(request, pk):
     appointment.is_lead_active = True
     appointment.save(update_fields=['status', 'chatbot_paused', 'is_lead_active', 'updated_at'])
     messages.success(request, 'Appointment unbooked - back to pending and the chatbot will keep talking to this lead.')
-    return redirect('appointment_detail', pk=appointment.pk)
+    return _detail_redirect(request, appointment.pk)
 
 
 @staff_required
@@ -736,7 +747,7 @@ def cancel_appointment(request, pk):
     appointment.status = 'cancelled'
     appointment.save()
     messages.success(request, 'Appointment cancelled')
-    return redirect('appointment_detail', pk=appointment.pk)
+    return _detail_redirect(request, appointment.pk)
 
 
 @staff_required

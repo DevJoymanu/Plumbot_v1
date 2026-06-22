@@ -1651,14 +1651,14 @@
                   <div class="detail-actions">
                     <button type="submit" class="action-btn primary"><i class="fas fa-save"></i> Save Changes</button>
                     {% if appointment.status == 'pending' %}
-                    <a href="{% url 'confirm_appointment' appointment.pk %}" class="action-btn success"><i class="fas fa-check"></i> Confirm</a>
+                    <a href="{% url 'confirm_appointment' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn success"><i class="fas fa-check"></i> Confirm</a>
                     {% endif %}
                     {% if appointment.status == 'confirmed' %}
-                    <a href="{% url 'unbook_appointment' appointment.pk %}" class="action-btn ghost" onclick="return confirm('Unbook this appointment? It goes back to pending and the chatbot keeps talking to this lead.');"><i class="fas fa-rotate-left"></i> Unbook</a>
+                    <a href="{% url 'unbook_appointment' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn ghost" onclick="return confirm('Unbook this appointment? It goes back to pending and the chatbot keeps talking to this lead.');"><i class="fas fa-rotate-left"></i> Unbook</a>
                     {% endif %}
                     {% if appointment.status != 'completed' %}
                     <button type="submit"
-                            formaction="{% url 'complete_lead_appointment' appointment.pk %}"
+                            formaction="{% url 'complete_lead_appointment' appointment.pk %}?{{ request.GET.urlencode }}"
                             formmethod="post"
                             onclick="return confirm('Mark this lead as completed and remove it from Priority Leads?');"
                             class="action-btn primary">
@@ -1666,7 +1666,7 @@
                     </button>
                     {% endif %}
                     {% if appointment.status != 'cancelled' %}
-                    <a href="{% url 'cancel_appointment' appointment.pk %}" class="action-btn danger"><i class="fas fa-times"></i> Cancel</a>
+                    <a href="{% url 'cancel_appointment' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn danger"><i class="fas fa-times"></i> Cancel</a>
                     {% endif %}
                   </div>
                 </form>
