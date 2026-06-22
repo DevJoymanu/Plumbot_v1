@@ -75,9 +75,7 @@ class AppointmentsListView(ListView):
         'pending':   '1w_minus',
         'cancelled': '1w_minus',
         'delayed':   '3w_minus',
-        # Ad leads are already bounded by the 72h CTWA window, so don't also clip
-        # them by last-response age — show all in-window ad leads by default.
-        'ad':        'all',
+        'ad':        '1w_minus',
     }
     TAB_AGE_MAP = {
         '1w_minus': timedelta(weeks=1),
