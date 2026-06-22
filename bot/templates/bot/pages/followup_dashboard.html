@@ -265,7 +265,7 @@
             {% if lead.fu_info %}
             <span class="fd-chan" style="background:#0f766e;color:#fff;"
                   title="Next automatic follow-up{% if lead.fu_info.is_ctwa %} (72h ad cadence){% endif %}">
-              <i class="far fa-clock"></i> FU {{ lead.fu_info.attempt }}/{{ lead.fu_info.max }} · {% if lead.fu_info.overdue %}due now{% else %}{{ lead.fu_info.due_at|date:"j M, H:i" }}{% endif %}{% if lead.fu_info.is_ctwa %} · Ad 72h{% endif %}
+              <i class="far fa-clock"></i> FU {{ lead.fu_info.attempt }}/{{ lead.fu_info.max }} · {% if lead.fu_info.overdue %}due now · {% else %}next {% endif %}{{ lead.fu_info.due_at|date:"D j M, H:i" }}
             </span>
             {% endif %}
           </div>
@@ -300,7 +300,7 @@
           {% if lead.fu_info %}
           <span class="fd-chan" style="background:#0f766e;color:#fff;"
                 title="Next automatic follow-up{% if lead.fu_info.is_ctwa %} (72h ad cadence){% endif %}">
-            <i class="far fa-clock"></i> FU {{ lead.fu_info.attempt }}/{{ lead.fu_info.max }} · {{ lead.fu_info.due_at|date:"j M, H:i" }}{% if lead.fu_info.is_ctwa %} · Ad 72h{% endif %}
+            <i class="far fa-clock"></i> FU {{ lead.fu_info.attempt }}/{{ lead.fu_info.max }} · {% if lead.fu_info.overdue %}due now · {% else %}next {% endif %}{{ lead.fu_info.due_at|date:"D j M, H:i" }}
           </span>
           {% endif %}
         </div>
