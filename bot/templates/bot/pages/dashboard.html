@@ -45,6 +45,7 @@
         padding: 12px 16px 4px;
     }
     .pb-stat-cell {
+        display: block;
         background: #fff;
         border: 1px solid var(--color-border-solid);
         border-radius: var(--radius-lg);
@@ -52,7 +53,9 @@
         text-align: center;
         box-shadow: var(--shadow-xs);
         transition: transform var(--transition), box-shadow var(--transition);
-        cursor: default;
+        cursor: pointer;
+        text-decoration: none;
+        color: inherit;
     }
     .pb-stat-cell:hover {
         transform: translateY(-2px);
@@ -370,26 +373,26 @@
 
 {# ── Stats grid ── #}
 <div class="pb-stats-grid">
-    <div class="pb-stat-cell pb-stat-cell--teal">
+    <a href="{% url 'appointments_list' %}" class="pb-stat-cell pb-stat-cell--teal">
         <div class="pb-stat-cell__num">{{ todays_confirmed_appointments|length }}</div>
         <div class="pb-stat-cell__label">Today's Appts</div>
-    </div>
-    <div class="pb-stat-cell pb-stat-cell--blue">
+    </a>
+    <a href="{% url 'job_appointments_list' %}" class="pb-stat-cell pb-stat-cell--blue">
         <div class="pb-stat-cell__num">{{ week_jobs|length }}</div>
         <div class="pb-stat-cell__label">Jobs This Week</div>
-    </div>
-    <div class="pb-stat-cell pb-stat-cell--red">
+    </a>
+    <a href="{% url 'priority_leads' %}" class="pb-stat-cell pb-stat-cell--red">
         <div class="pb-stat-cell__num">{{ hot_lead_count|default:0 }}</div>
         <div class="pb-stat-cell__label">Hot Leads</div>
-    </div>
-    <div class="pb-stat-cell pb-stat-cell--amber">
+    </a>
+    <a href="{% url 'followup_dashboard' %}" class="pb-stat-cell pb-stat-cell--amber">
         <div class="pb-stat-cell__num">{{ followups_due_count|default:0 }}</div>
         <div class="pb-stat-cell__label">Follow-ups Due</div>
-    </div>
-    <div class="pb-stat-cell pb-stat-cell--sky">
+    </a>
+    <a href="{% url 'appointments_list' %}" class="pb-stat-cell pb-stat-cell--sky">
         <div class="pb-stat-cell__num">{{ this_week_appointments|length }}</div>
         <div class="pb-stat-cell__label">This Week</div>
-    </div>
+    </a>
 </div>
 
 {# ── Schedule: Today ── #}
