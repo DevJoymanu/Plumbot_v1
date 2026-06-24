@@ -335,6 +335,52 @@ for msg, expected in QUOTED_REF_CASES:
     except Exception as e:
         results.log(f"_is_quoted_item_reference: '{msg[:30]}'", False, got=str(e))
 
+# Service-area gate: the business is MOBILE and travels Zimbabwe-wide; it
+# declines only a short list of far cities (Gweru, Bulawayo, Mutare, Masvingo,
+# Victoria Falls, Hwange, Beitbridge, Plumtree). Everywhere else — including
+# Hurungwe/Magunje, Kariba, Chinhoyi — is serviceable. This pins the
+# deterministic keyword fallback (AI is the primary path live). The negation
+# fix still matters: a bare 'harare' in "not in Harare …" must not trip the
+# shortcut, but a non-declined town there is serviceable, not declined.
+# True = declined / out of service area.
+from bot.views.plumbot.state_mixin import StateMixin
+EXCLUDED_CITY_CASES = [
+    # Decline list → out of area.
+    ("Bulawayo",                   True),
+    ("I'm in Gweru",               True),
+    ("Mutare",                     True),
+    ("Masvingo",                   True),
+    ("Victoria Falls",             True),
+    ("not in harare, in bulawayo", True),   # negated Harare + a declined city
+    # Mobile coverage → serviceable (the Magunje correction).
+    ("Not in Harare but in Hurungwe (Magunje) to be precise.", False),
+    ("Hurungwe",                   False),
+    ("Magunje",                    False),
+    ("Kariba",                     False),
+    ("Chinhoyi",                   False),
+    ("outside Harare, in Chinhoyi", False),
+    # Harare areas, unchanged.
+    ("Avondale",                   False),
+    ("Hatfield",                   False),
+    ("Harare",                     False),
+    ("Borrowdale, Harare",         False),
+    ("Bulawayo Road",              False),  # a street in Harare, not the city
+    ("Harare Mutare Road",         False),
+]
+for area, expected_excluded in EXCLUDED_CITY_CASES:
+    try:
+        got = StateMixin._is_excluded_city_keywords(area)
+        is_excluded = got is not None
+        results.log(
+            f"_is_excluded_city_keywords: '{area[:38]}'",
+            is_excluded == expected_excluded,
+            f"-> {got!r}",
+            expected=f"excluded={expected_excluded}",
+            got=f"excluded={is_excluded} ({got!r})",
+        )
+    except Exception as e:
+        results.log(f"_is_excluded_city_keywords: '{area[:38]}'", False, got=str(e))
+
 # When a customer asks the price of ONE photo they were sent ("this one how
 # much" on a quoted image), the bot replies with the full pricing for that piece
 # — every item in the shot, verbatim from the catalogue. Single- and multi-item
@@ -437,31 +483,209 @@ try:
 except Exception as e:
     results.log("compose_quoted_photo_price_reply", False, got=str(e))
 
-# A bare month name ("August") is a valid timeframe answer and must resolve to a
-# concrete follow-up date deterministically — not fall through to the LLM
-# fallback, which returned an empty string and crashed the parse, leaving the bot
-# re-asking the same question forever (production: appt 465).
-from bot.out_of_scope_handler import _compute_followup_date
+# Timeframe extraction is AI-first live (_extract_followup_date_ai, guided by a
+# system prompt), with _compute_followup_date_keywords as the deterministic
+# fallback that keeps the bot working when the API is down — and which powers
+# this offline gate (the mock returns "{}", so the AI layer yields None and the
+# wrapper falls through to the parser). These cases pin that safety net.
+#
+# A bare month name ("August") must resolve to a concrete future date — not
+# crash the parse and leave the bot re-asking forever (production: appt 465).
+from bot.out_of_scope_handler import (
+    _compute_followup_date, _compute_followup_date_keywords, _message_has_timeframe,
+)
 from datetime import date as _date_t
 MONTH_TIMEFRAME_CASES = [
     "August", "in august", "around July", "Sept", "by December", "maybe October",
 ]
 for msg in MONTH_TIMEFRAME_CASES:
     try:
-        iso, friendly = _compute_followup_date(msg)
+        iso, friendly = _compute_followup_date_keywords(msg)
         ok = bool(iso) and bool(friendly)
         # Must be a valid future ISO date, never None/empty.
         if ok:
             ok = _date_t.fromisoformat(iso) >= _date_t.today()
         results.log(
-            f"_compute_followup_date (month): '{msg[:20]}'",
+            f"_compute_followup_date_keywords (month): '{msg[:20]}'",
             ok,
             f"iso={iso} friendly={friendly}",
             expected="a valid future date",
             got=f"iso={iso}",
         )
     except Exception as e:
-        results.log(f"_compute_followup_date (month): '{msg[:20]}'", False, got=str(e))
+        results.log(f"_compute_followup_date_keywords (month): '{msg[:20]}'", False, got=str(e))
+
+# "weekend" must resolve to the upcoming Saturday in the deterministic fallback
+# too — not loop the same re-ask. Production (Graylands park lead): "Most
+# probably during the weekend" failed to parse, the bot repeated "roughly when?"
+# twice, and a human had to step in.
+WEEKEND_TIMEFRAME_CASES = [
+    "Most probably during the weekend, l will get in touch.",
+    "this weekend", "over the weekend", "on the weekend", "next weekend",
+]
+for msg in WEEKEND_TIMEFRAME_CASES:
+    try:
+        iso, friendly = _compute_followup_date_keywords(msg)
+        ok = bool(iso) and bool(friendly)
+        if ok:
+            d = _date_t.fromisoformat(iso)
+            ok = d >= _date_t.today() and d.weekday() == 5  # a future Saturday
+        # _message_has_timeframe must also flag it (skips the re-ask entirely).
+        ok = ok and _message_has_timeframe(msg)
+        results.log(
+            f"_compute_followup_date_keywords (weekend): '{msg[:24]}'",
+            ok,
+            f"iso={iso} friendly={friendly}",
+            expected="a future Saturday + has_timeframe=True",
+            got=f"iso={iso}",
+        )
+    except Exception as e:
+        results.log(f"_compute_followup_date_keywords (weekend): '{msg[:24]}'", False, got=str(e))
+
+# The AI-first wrapper must still yield a date offline by falling through to the
+# deterministic parser (proves the fallback is wired, not just the AI path).
+for msg in ("next week", "August", "this weekend"):
+    try:
+        iso, _f = _compute_followup_date(msg)
+        ok = bool(iso) and _date_t.fromisoformat(iso) >= _date_t.today()
+        results.log(
+            f"_compute_followup_date wrapper falls back offline: '{msg}'",
+            ok, f"iso={iso}", expected="a valid future date", got=f"iso={iso}",
+        )
+    except Exception as e:
+        results.log(f"_compute_followup_date wrapper falls back offline: '{msg}'", False, got=str(e))
+
+# Vague-deferral flow ("will call you"): when no timeframe is given we auto-set a
+# 2-week follow-up date, and after sending the PDF on WhatsApp we schedule a
+# near-term afternoon check-in ONLY if the messaging window is still open ~2 days
+# out (72h ad leads) — organic 24h leads keep the longer date. Plus the AI-first
+# email-step intent classifier's deterministic fallback contract.
+import types as _types
+import pytz as _pytz
+from datetime import datetime as _dt_t, timedelta as _td_t
+from bot.out_of_scope_handler import (
+    _default_followup_iso, _compute_afternoon_checkin,
+    _email_step_intent_keywords, _classify_email_step_reply,
+)
+_sast = _pytz.timezone('Africa/Johannesburg')
+_now_fixed = _sast.localize(_dt_t(2026, 6, 24, 10, 0))
+try:
+    _iso2w = _default_followup_iso(now=_now_fixed)
+    results.log("_default_followup_iso: 2 weeks out",
+                _iso2w == '2026-07-08', got=_iso2w, expected='2026-07-08')
+except Exception as e:
+    results.log("_default_followup_iso: 2 weeks out", False, got=str(e))
+
+try:
+    _organic = _types.SimpleNamespace(messaging_window_closes_at=_now_fixed + _td_t(hours=24))
+    _ad      = _types.SimpleNamespace(messaging_window_closes_at=_now_fixed + _td_t(hours=72))
+    _ci_org  = _compute_afternoon_checkin(_organic, now=_now_fixed)
+    _ci_ad   = _compute_afternoon_checkin(_ad, now=_now_fixed)
+    results.log("_compute_afternoon_checkin: organic 24h → skip (None)",
+                _ci_org is None, got=str(_ci_org), expected="None")
+    results.log("_compute_afternoon_checkin: ad 72h → 2pm check-in",
+                _ci_ad is not None and _ci_ad.hour == 14,
+                got=str(_ci_ad), expected="a 14:00 datetime")
+except Exception as e:
+    results.log("_compute_afternoon_checkin", False, got=str(e))
+
+EMAIL_STEP_KW_CASES = [
+    ("jones86xi@gmail.com",            "email"),
+    ("just send it here on whatsapp",  "whatsapp"),
+    ("send it here",                   "whatsapp"),
+    ("no thanks",                      "decline"),
+    ("skip",                           "decline"),
+    ("I'd rather not",                 "decline"),
+    ("maybe",                          "unclear"),
+]
+for msg, exp in EMAIL_STEP_KW_CASES:
+    try:
+        got = _email_step_intent_keywords(msg)
+        results.log(f"_email_step_intent_keywords: '{msg[:24]}'",
+                    got == exp, got=got, expected=exp)
+    except Exception as e:
+        results.log(f"_email_step_intent_keywords: '{msg[:24]}'", False, got=str(e))
+
+# An actual address must classify as 'email' deterministically (never an API call);
+# a decline falls back to keywords offline.
+try:
+    results.log("_classify_email_step_reply: address → email",
+                _classify_email_step_reply("jones86xi@gmail.com") == "email", got="ok")
+    results.log("_classify_email_step_reply: 'skip' → decline (kw fallback)",
+                _classify_email_step_reply("skip") == "decline", got="ok")
+except Exception as e:
+    results.log("_classify_email_step_reply", False, got=str(e))
+
+# A malformed email reply is routed to DeepSeek for a contextual reply / salvage
+# instead of a canned line. Offline (gate), the helper must still return a
+# tuple with NO bad email and a NON-empty reply (the bot must never go silent),
+# and any salvaged email it does return must be a valid address.
+from bot.out_of_scope_handler import _resolve_email_attempt_ai
+try:
+    _salv, _reply = _resolve_email_attempt_ai("jon at gmail dot com")
+    ok = (_salv is None and isinstance(_reply, str) and len(_reply.strip()) > 0)
+    if _salv is not None:  # if a live model salvaged one, it must be valid
+        import re as _re_t
+        ok = bool(_re_t.fullmatch(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', _salv))
+    results.log("_resolve_email_attempt_ai: offline → non-empty reply, no bad email",
+                ok, got=f"email={_salv!r} reply_len={len(_reply or '')}")
+except Exception as e:
+    results.log("_resolve_email_attempt_ai", False, got=str(e))
+
+# Yes/no reply classification (delay confirm / check-in) is AI-primary live; this
+# pins the deterministic keyword fallback. Affirmation is checked before the 'no'
+# substring so "no problem" (agreement) isn't mis-read as a refusal.
+from bot.out_of_scope_handler import _classify_affirmation_keywords
+AFFIRM_CASES = [
+    ("yes",             "yes"),
+    ("ok that works",   "yes"),
+    ("hongu",           "yes"),
+    ("please do",       "yes"),
+    ("no problem",      "yes"),     # agreement, not a refusal
+    ("no",              "no"),
+    ("nope",            "no"),
+    ("kwete",           "no"),
+    ("I'd rather not",  "no"),
+    ("let you know",    "no"),
+    ("maybe next week", "unclear"),
+    ("hmm",             "unclear"),
+]
+for msg, exp in AFFIRM_CASES:
+    try:
+        got = _classify_affirmation_keywords(msg)
+        results.log(f"_classify_affirmation_keywords: '{msg[:22]}'",
+                    got == exp, got=got, expected=exp)
+    except Exception as e:
+        results.log(f"_classify_affirmation_keywords: '{msg[:22]}'", False, got=str(e))
+
+# Meta's 131047 ("Re-engagement message") is authoritative: a CTWA lead's 72h
+# window is only our local assumption. Once the closed flag is set, the free-form
+# window must read closed regardless of ctwa_entry_at, so the follow-up cron stops
+# firing doomed sends (no paid template fallback). It reopens when the customer
+# replies (mark_customer_response clears the flag).
+from bot.models import Appointment as _Appt
+from django.utils import timezone as _dj_tz
+try:
+    _open_ctwa = _Appt(ctwa_entry_at=_dj_tz.now() - _td_t(hours=1))
+    results.log("messaging_window_open: fresh CTWA lead (72h) → open",
+                _open_ctwa.messaging_window_open is True,
+                got=str(_open_ctwa.messaging_window_open), expected="True")
+
+    _closed = _Appt(ctwa_entry_at=_dj_tz.now() - _td_t(hours=1),
+                    internal_notes='[FREEFORM_WINDOW_CLOSED]')
+    results.log("messaging_window_open: 131047 flag overrides 72h → closed",
+                _closed.messaging_window_open is False,
+                got=str(_closed.messaging_window_open), expected="False")
+
+    _appt  = _Appt(internal_notes='x')
+    first  = _appt.mark_freeform_window_closed(save=False)
+    second = _appt.mark_freeform_window_closed(save=False)
+    results.log("mark_freeform_window_closed: adds tag once (idempotent)",
+                first is True and second is False
+                and _Appt.FREEFORM_CLOSED_TAG in _appt.internal_notes,
+                got=f"first={first} second={second}")
+except Exception as e:
+    results.log("messaging_window_open / mark_freeform_window_closed", False, got=str(e))
 
 # Central pricing-gate policy: a buying / project statement ("I want to purchase
 # 2x shower cubicles") must NOT trigger a priced auto-reply — only an explicit

@@ -1241,6 +1241,13 @@ class Appointment(models.Model):
         self.followup_stage = 'responded'
         self.is_lead_active = True
         self.retry_count = 0  # ADD THIS LINE
+        # A fresh inbound reopens the WhatsApp free-form window on Meta's side, so
+        # clear any earlier "window closed" flag (set when a send hit 131047).
+        notes = self.internal_notes or ''
+        if self.FREEFORM_CLOSED_TAG in notes:
+            self.internal_notes = '\n'.join(
+                l for l in notes.splitlines() if self.FREEFORM_CLOSED_TAG not in l
+            ).strip()
         self.save()
 
     # ----- Click-to-WhatsApp (CTWA) ad window ---------------------------------
@@ -1296,9 +1303,33 @@ class Appointment(models.Model):
             candidates.append(self.ctwa_entry_at + timedelta(hours=self.CTWA_WINDOW_HOURS))
         return max(candidates) if candidates else None
 
+    # Set when a send is rejected with Meta error 131047 ("Re-engagement
+    # message"): the free-form window is closed on Meta's side regardless of our
+    # computed 24h/72h window. Cleared in mark_customer_response when the
+    # customer messages again (which reopens the window).
+    FREEFORM_CLOSED_TAG = '[FREEFORM_WINDOW_CLOSED]'
+
+    def mark_freeform_window_closed(self, save=True):
+        """Record Meta's authoritative 131047 verdict so we stop attempting
+        free-form sends (which would keep bouncing) until the customer replies.
+        We deliberately do NOT fall back to a paid template."""
+        notes = (self.internal_notes or '').strip()
+        if self.FREEFORM_CLOSED_TAG in notes:
+            return False
+        self.internal_notes = f"{notes}\n{self.FREEFORM_CLOSED_TAG}".strip()
+        if save:
+            self.save(update_fields=['internal_notes'])
+        return True
+
     @property
     def messaging_window_open(self):
-        """True while free-form replies (no template) are still allowed."""
+        """True while free-form replies (no template) are still allowed.
+
+        Meta is authoritative: a prior 131047 (recorded via the closed flag)
+        overrides our computed window — our 72h CTWA window is only a local
+        assumption and Meta may grant just the standard 24h."""
+        if self.FREEFORM_CLOSED_TAG in (self.internal_notes or ''):
+            return False
         closes = self.messaging_window_closes_at
         return bool(closes and closes > timezone.now())
 

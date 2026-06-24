@@ -74,7 +74,20 @@ def _dashboard_workspace_data(response_age='1w_minus'):
         cutoff = now - age_map_minus[response_age]
         appointments = appointments.filter(last_customer_response__gte=cutoff)
 
-    followups = list(Appointment.objects.filter(follow_up_status='pending').order_by('-updated_at')[:3])
+    # Follow-ups: only leads that are actually DUE to be contacted now (not merely
+    # follow_up_status='pending'). should_send_followup_now() already excludes
+    # booked/inactive leads and enforces the timing, so it's the "due" definition.
+    week_ago = now - timedelta(weeks=1)
+    _followup_candidates = (
+        Appointment.objects
+        .filter(is_lead_active=True, status='pending')
+        .exclude(followup_stage__in=['completed', 'responded'])
+        .order_by('-updated_at')
+    )
+    due_followups = [a for a in _followup_candidates if a.should_send_followup_now()]
+    followups = due_followups[:3]
+    followups_due_count = len(due_followups)
+
     this_week_appointments = appointments.filter(
         status__in=['confirmed', 'pending'],
         scheduled_datetime__date__range=(day_after_tomorrow, week_end),
@@ -82,9 +95,15 @@ def _dashboard_workspace_data(response_age='1w_minus'):
     week_jobs = Job.objects.filter(
         scheduled_datetime__date__range=(today, week_end),
     ).select_related('site_visit').order_by('scheduled_datetime')
-    # Same definition as the priority-leads page + nav badge (computed status),
-    # so all three surfaces show the same number.
-    hot_lead_count = priority_lead_count()
+    # Hot leads: priority (very-hot + hot) leads from the last week that haven't
+    # booked yet — the ones actually worth chasing on the dashboard.
+    hot_lead_count = (
+        priority_leads_qs()
+        .filter(computed_status__in=['very_hot', 'hot'])
+        .filter(last_response_at__gte=week_ago)
+        .exclude(status='confirmed')
+        .count()
+    )
 
     return {
         'selected_response_age': response_age,
@@ -101,6 +120,7 @@ def _dashboard_workspace_data(response_age='1w_minus'):
         'this_week_appointments': this_week_appointments,
         'week_jobs': week_jobs,
         'followups': followups,
+        'followups_due_count': followups_due_count,
     }
 
 

@@ -728,17 +728,108 @@ def _extract_future_weekday(message: str):
     return None
 
 
+def _extract_followup_date_ai(message: str):
+    """
+    DeepSeek-first timeframe extraction. Given the customer's deferral message and
+    today's date, classify whether it carries a usable timeframe and, if so,
+    resolve it to ONE concrete future follow-up date — no keyword/regex
+    enumeration. Reads fuzzy, partial, mixed and Shona phrasings ("most probably
+    during the weekend", "svondo rinouya", "after the holidays", a bare day name)
+    the way a keyword list cannot.
+
+    Returns (iso_date, friendly_str) on a confident extraction, or None when the
+    API is unavailable, the answer is unusable, or there is genuinely no timeframe
+    (caller then falls back to the deterministic parser / re-asks).
+    """
+    from datetime import date as _date
+    text = (message or '').strip()
+    if not _DEEPSEEK_KEY or not text:
+        return None
+
+    tz    = pytz.timezone('Africa/Johannesburg')
+    today = datetime.now(tz).date()
+
+    try:
+        from bot.services.clients import deepseek_call
+        import json as _json
+        raw = deepseek_call(
+            messages=[
+                {"role": "system", "content": (
+                    "You read a plumbing customer's WhatsApp message in which they are "
+                    "deferring a booking, and extract a single follow-up date. "
+                    f"Today is {today.isoformat()} ({today.strftime('%A')}); timezone "
+                    "Africa/Harare.\n\n"
+                    "Resolve relative and fuzzy timeframes to ONE concrete future date:\n"
+                    "- 'tomorrow'; a weekday name -> its next occurrence\n"
+                    "- 'this/next weekend', 'over/during the weekend' -> the coming Saturday\n"
+                    "- 'next week' -> the middle of next week; 'in a week' -> +7 days\n"
+                    "- 'end of the month' / 'end of next month'; a bare month name -> "
+                    "the 15th of that month's next occurrence\n"
+                    "- 'in X days/weeks/months'; an ordinal day ('the 26th')\n"
+                    "- Shona: 'mangwana'=tomorrow, 'svondo rinouya'=next week, "
+                    "'mwedzi unotevera'=next month, 'mugovera'=Saturday\n\n"
+                    "The date MUST be today or later — never in the past.\n"
+                    "If the message has NO usable timeframe — e.g. 'I'll get in touch', "
+                    "'not sure yet', 'soon', 'will let you know', a bare '...' or another "
+                    "vague reply — set has_timeframe to false and follow_up_date to "
+                    "null. Do NOT guess a date in that case.\n\n"
+                    "Reply with strict JSON only, no prose."
+                )},
+                {"role": "user", "content": (
+                    f'Customer message: "{text}"\n\n'
+                    'Respond ONLY as JSON: '
+                    '{"has_timeframe": true, "follow_up_date": "YYYY-MM-DD"} or '
+                    '{"has_timeframe": false, "follow_up_date": null}.'
+                )},
+            ],
+            temperature=0,
+            max_tokens=40,
+            json_response=True,
+            retries=1,
+            timeout=8,
+        )
+        data = _json.loads(raw)
+        if not data.get('has_timeframe'):
+            return None
+        iso = (data.get('follow_up_date') or '').strip()[:10]
+        if not iso:
+            return None
+        parsed = _date.fromisoformat(iso)
+        if parsed < today:
+            return None  # never schedule a follow-up in the past
+        logger.info("AI timeframe extracted: '%s' -> %s", text[:60], iso)
+        return parsed.isoformat(), parsed.strftime('%A %d %B')
+    except Exception as exc:
+        logger.warning("_extract_followup_date_ai failed (%s) — falling back to parser", exc)
+        return None
+
+
 def _compute_followup_date(timeframe_message: str):
     """
-    Parse a customer's timeframe text and return (iso_date, friendly_str).
-    Falls back to DeepSeek for unusual phrasings, then defaults to 2 weeks.
+    Resolve a customer's deferral message to (iso_date, friendly_str).
 
-    Fixed bugs vs previous version:
-    - "in a month" now gives today+30 days (was first-of-next-month+7)
-    - "next month"  now gives 15th of next month
-    - "end of month" now handles being at the end of the month already
-    - "end of next month" now matched explicitly
-    - Ordinal day ("the 26th") now parsed before DeepSeek fallback
+    AI-first: DeepSeek classifies the timeframe intent and extracts a concrete
+    date (handles fuzzy/partial/Shona phrasings without keyword enumeration).
+    The deterministic parser below is the fallback that keeps the bot working
+    when the API is unavailable (and powers the offline regression gate).
+    Returns (None, None) when there is no usable timeframe — the caller re-asks
+    rather than fabricating a date.
+    """
+    ai = _extract_followup_date_ai(timeframe_message)
+    if ai and ai[0]:
+        return ai
+    return _compute_followup_date_keywords(timeframe_message)
+
+
+def _compute_followup_date_keywords(timeframe_message: str):
+    """
+    Deterministic timeframe parser — the offline fallback for
+    _compute_followup_date. Returns (iso_date, friendly_str) or (None, None).
+
+    Notes on the date math:
+    - "in a month" gives today+30 days; "next month" gives the 15th of next month
+    - "end of month" handles already being at month-end; "end of next month" too
+    - ordinal day ("the 26th") and bare month names resolve to concrete dates
     - "next week" always produces a future date
     """
     import calendar as _cal
@@ -759,6 +850,18 @@ def _compute_followup_date(timeframe_message: str):
     # ── 0. Tomorrow / mangwana ────────────────────────────────────────────────
     if re.search(r'\btomorrow\b|\bmangwana\b', msg, re.IGNORECASE):
         target = today + timedelta(days=1)
+        return target.isoformat(), target.strftime('%A %d %B')
+
+    # ── 0b. Weekend ("this/over/during/on the weekend", "next weekend") ──────
+    # Common timeframe answer (production: appt for Graylands park — "Most
+    # probably during the weekend" failed to parse and the bot looped). Resolve
+    # to the upcoming Saturday. Must run BEFORE the week branches below so
+    # "next weekend" isn't swallowed by the "next week" substring check.
+    if re.search(r'\bweekend\b|\bmugovera\b|\bvhiki\s*end\b', msg):
+        days_to_sat = (5 - today.weekday()) % 7  # Mon=0 … Sat=5
+        target = today + timedelta(days=days_to_sat)
+        if target <= today:            # already Saturday → roll to next Saturday
+            target = today + timedelta(days=7)
         return target.isoformat(), target.strftime('%A %d %B')
 
     # ── 1. Specific weekday ("on a Tuesday", "next Friday") ──────────────────
@@ -867,41 +970,10 @@ def _compute_followup_date(timeframe_message: str):
         target = _safe(year, month, 15)
         return target.isoformat(), target.strftime('%A %d %B')
 
-    # ── 12. DeepSeek fallback ────────────────────────────────────────────────
-    if _deepseek:
-        try:
-            response = _deepseek.chat.completions.create(
-                model=settings.DEEPSEEK_MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Return ONLY a date in YYYY-MM-DD format. "
-                            "No explanation, no other text."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Today is {today.isoformat()}. "
-                            f"A customer said: '{timeframe_message}'. "
-                            "Return one specific follow-up date within their stated timeframe."
-                        ),
-                    },
-                ],
-                temperature=0.1,
-                max_tokens=15,
-            )
-            raw = response.choices[0].message.content.strip()[:10]
-            if raw:
-                parsed = _date.fromisoformat(raw)
-                return parsed.isoformat(), parsed.strftime('%A %d %B')
-        except Exception as exc:
-            logger.warning("_compute_followup_date DeepSeek failed: %s", exc)
-
-    # ── 13. No timeframe could be determined ─────────────────────────────────
-    # Do NOT fabricate a date. The caller re-asks the customer for a rough
-    # timeframe rather than silently scheduling an arbitrary follow-up.
+    # ── 12. No timeframe could be determined ─────────────────────────────────
+    # DeepSeek already ran first (see _compute_followup_date). Do NOT fabricate a
+    # date here — the caller re-asks rather than silently scheduling an arbitrary
+    # follow-up.
     logger.info(
         "No timeframe parseable from '%s' — returning None",
         (timeframe_message or '')[:60],
@@ -920,6 +992,7 @@ _TIMEFRAME_RE = re.compile(
     r'|in\s+a\s+month'                  # "in a month"
     r'|in\s+two\s+weeks'                # "in two weeks"
     r'|fortnight'                       # "fortnight"
+    r'|weekend'                         # "this weekend", "over the weekend"
     r'|tomorrow'                        # "tomorrow", "call you tomorrow"
     r'|monday|tuesday|wednesday|thursday|friday|saturday|sunday'  # day names
     r'|mangwana'                        # Shona: tomorrow
@@ -964,10 +1037,12 @@ def _delay_breakout_inquiry(message: str) -> bool:
 
 def _message_has_timeframe_ai(message: str) -> bool:
     """
-    Ask DeepSeek whether the message already contains a time reference the customer
-    will be available (day name, date, relative week/month expression, etc.).
-    Falls back to the regex if the API call fails.
+    AI-primary: ask DeepSeek whether the message already contains a time reference
+    the customer will be available (day name, date, relative week/month
+    expression, etc.). Falls back to the regex when DeepSeek is unavailable.
     """
+    if not _DEEPSEEK_KEY or not (message or '').strip():
+        return _message_has_timeframe(message)
     from bot.services.clients import deepseek_call
     try:
         result = deepseek_call(
@@ -997,6 +1072,76 @@ def _message_has_timeframe_ai(message: str) -> bool:
     except Exception as exc:
         logger.warning("_message_has_timeframe_ai failed (%s) — falling back to regex", exc)
         return _message_has_timeframe(message)
+
+
+# ── Affirmation / refusal classifier (AI-primary) ────────────────────────────
+_AFFIRM_NO_KW = (
+    'no', 'nope', "don't", 'do not', 'not necessary', 'no need', 'kwete',
+    'please don', 'leave it', "i'll message", 'i will message',
+    "i'll let you know", 'let you know', 'rather not', 'not really',
+)
+_AFFIRM_YES_TOKENS = {
+    'yes', 'yep', 'yeah', 'yup', 'sure', 'ok', 'okay', 'okey', 'perfect',
+    'fine', 'great', 'cool', 'that works', 'sounds good', 'hongu', 'ehe',
+    'zvakanaka', 'no problem', 'works', 'please do',
+}
+
+
+def _classify_affirmation_keywords(message: str) -> str:
+    """Keyword fallback for _classify_affirmation: 'yes' | 'no' | 'unclear'.
+    Checks affirmation first so a phrase like 'no problem' (agreement) isn't
+    caught by the 'no' substring."""
+    msg = (message or '').strip().lower()
+    if not msg:
+        return 'unclear'
+    if (msg in _AFFIRM_YES_TOKENS
+            or (len(msg.split()) <= 4
+                and any(t in msg.split() for t in
+                        ('yes', 'ok', 'okay', 'sure', 'perfect', 'fine', 'great', 'cool')))):
+        return 'yes'
+    if any(s in msg for s in _AFFIRM_NO_KW):
+        return 'no'
+    return 'unclear'
+
+
+def _classify_affirmation(message: str) -> str:
+    """
+    AI-primary classification of a yes/no-style reply: 'yes' | 'no' | 'unclear'.
+    Used for the delay confirm / check-in answers. Keyword matching is the
+    fallback when DeepSeek is unavailable or returns nothing usable.
+    """
+    kw = _classify_affirmation_keywords(message)
+    if not _DEEPSEEK_KEY or not (message or '').strip():
+        return kw
+    try:
+        from bot.services.clients import deepseek_call
+        import json as _json
+        raw = deepseek_call(
+            messages=[
+                {"role": "system", "content": (
+                    "Classify a customer's short reply to a yes/no question as ONE of:\n"
+                    "- yes: agreement / confirmation (incl. Shona 'hongu', 'ehe', "
+                    "'zvakanaka', 'no problem', 'that works', 'please do')\n"
+                    "- no: refusal / declining (incl. Shona 'kwete', 'leave it', "
+                    "'I'll message you', 'rather not')\n"
+                    "- unclear: neither a clear yes nor a clear no\n"
+                    "Reply with strict JSON only."
+                )},
+                {"role": "user", "content": (
+                    f'Reply: "{message}"\n\n{{"answer": "yes|no|unclear"}}'
+                )},
+            ],
+            temperature=0,
+            max_tokens=12,
+            json_response=True,
+            retries=1,
+            timeout=8,
+        )
+        ans = (_json.loads(raw).get('answer') or '').strip().lower()
+        return ans if ans in ('yes', 'no', 'unclear') else kw
+    except Exception as exc:
+        logger.warning("_classify_affirmation failed (%s) — using keywords", exc)
+        return kw
 
 
 def _has_travel_negation(message: str) -> bool:
@@ -1372,31 +1517,15 @@ def _handle_delay_checkin_answer(message: str, pending: dict, appointment) -> st
     _clear_pending(appointment)
 
     iso_dt    = pending.get('original', '') or ''
-    msg_lower = (message or '').strip().lower()
 
-    no_signals = ('no', 'nope', "don't", 'do not', 'not necessary', 'no need',
-                  'kwete', 'please don', 'leave it', "i'll message", 'i will message',
-                  "i'll let you know", 'let you know', 'rather not')
-    is_no = any(s in msg_lower for s in no_signals)
-
-    _YES_TOKENS = {
-        'yes', 'yep', 'yeah', 'yup', 'sure', 'ok', 'okay', 'okey', 'perfect',
-        'fine', 'great', 'cool', 'that works', 'sounds good', 'hongu', 'ehe',
-        'zvakanaka', 'no problem', 'works', 'please do',
-    }
-    is_affirmation = (
-        msg_lower in _YES_TOKENS
-        or (len(msg_lower.split()) <= 4
-            and any(t in msg_lower.split() for t in
-                    ('yes', 'ok', 'okay', 'sure', 'perfect', 'fine', 'great', 'cool')))
-    )
+    # AI-primary intent (yes/no) + timeframe detection; both fall back to keywords.
+    _affirm        = _classify_affirmation(message)
+    is_no          = _affirm == 'no'
+    is_affirmation = _affirm == 'yes'
 
     # A different time / day ("make it tomorrow", "after 7", "Friday") → recompute
     # through the standard timeframe handler so we honour their preference.
-    _TF_WORDS = ('tomorrow', 'week', 'month', 'monday', 'tuesday', 'wednesday',
-                 'thursday', 'friday', 'saturday', 'sunday', 'later', 'tonight',
-                 "o'clock", 'around', 'pm', 'am')
-    has_tf = any(w in msg_lower for w in _TF_WORDS)
+    has_tf = _message_has_timeframe_ai(message)
 
     if is_no and not has_tf:
         appointment.clear_delayed(save=True)
@@ -1421,10 +1550,45 @@ def _handle_delay_checkin_answer(message: str, pending: dict, appointment) -> st
     )
 
 
-# Number of times we re-ask for a timeframe in-session before leaving the door
-# open (the within-window nudges keep gently asking after that).
+# How many times we ask for a rough timeframe before pivoting to the email/catalog
+# offer. Kept at 1 so the customer never sees the identical question twice.
 _DELAY_TF_REASK_TAG = '[DELAY_TF_REASK]'
-_DELAY_TF_MAX_REASKS = 2
+_DELAY_TF_ASKS_BEFORE_EMAIL_PIVOT = 1
+
+# When a lead won't give a concrete timeframe, auto-schedule the reactivation
+# this far out (decision: 2 weeks from the conversation date).
+_DEFAULT_DELAY_WEEKS = 2
+# Near-term check-in clock — 2pm SAST, two days out — used after we've sent the
+# PDF on WhatsApp, but ONLY when the lead's free-form window is still open then
+# (true for 72h ad leads; organic 24h leads keep the longer reactivation date).
+_CHECKIN_AFTERNOON_HOUR = 14
+_CHECKIN_AFTER_PDF_DAYS = 2
+
+
+def _default_followup_iso(weeks: int = _DEFAULT_DELAY_WEEKS, now=None) -> str:
+    """ISO date `weeks` out from today (SAST). Used as the auto follow-up date
+    when the customer gives no usable timeframe."""
+    tz = pytz.timezone('Africa/Johannesburg')
+    base = (now or datetime.now(tz)).date()
+    return (base + timedelta(weeks=weeks)).isoformat()
+
+
+def _compute_afternoon_checkin(appointment, days: int = _CHECKIN_AFTER_PDF_DAYS, now=None):
+    """A 2pm-SAST check-in ~`days` out, returned ONLY if the lead's free-form
+    messaging window is still open at that time; otherwise None so the caller
+    keeps the longer reactivation date. Lets us check back inside the 72h ad
+    window without scheduling an undeliverable touch for 24h organic leads."""
+    tz = pytz.timezone('Africa/Johannesburg')
+    now = now or datetime.now(tz)
+    if now.tzinfo is None:
+        now = tz.localize(now)
+    target  = (now + timedelta(days=days)).date()
+    checkin = tz.localize(datetime(target.year, target.month, target.day,
+                                   _CHECKIN_AFTERNOON_HOUR, 0))
+    closes = getattr(appointment, 'messaging_window_closes_at', None)
+    if not closes:
+        return None
+    return checkin if checkin < closes else None
 
 
 def _read_delay_reask(appointment) -> int:
@@ -1442,30 +1606,62 @@ def _clear_delay_reask(appointment) -> None:
 
 def _reask_delay_timeframe(message: str, appointment) -> str:
     """
-    The customer deferred but gave no usable timeframe. Ask for a rough one
-    instead of fabricating a date. After _DELAY_TF_MAX_REASKS attempts, leave the
-    door open without scheduling anything (no arbitrary follow-up date).
+    The customer deferred but gave no usable timeframe. Ask ONCE for a rough one;
+    on the next miss (or a noise reply like "…"), don't repeat the identical
+    question — pivot to the move a human makes: offer the catalog + pricing by
+    email and set a reminder, capturing the email. Never fabricate a date, never
+    loop the same message. (Production: appt for Graylands park looped the
+    identical "roughly when?" twice and forced a manual takeover.)
     """
     count = _read_delay_reask(appointment)
 
-    if count >= _DELAY_TF_MAX_REASKS:
-        # Asked enough — don't loop or invent a date. Park the lead so it gets
-        # gentle re-engagement rather than sitting in delay limbo with no date.
-        _clear_pending(appointment)
+    if count >= _DELAY_TF_ASKS_BEFORE_EMAIL_PIVOT:
         _clear_delay_reask(appointment)
-        try:
-            appointment.clear_delayed(save=True)
-            appointment.mark_parked(save=True)
-        except Exception:
-            logger.exception("Failed to park lead after timeframe re-asks — apt %s",
-                             getattr(appointment, 'pk', None))
+
+        # Still no concrete timeframe after a re-ask (e.g. "will call you"). Stop
+        # looping: auto-set a default 2-week follow-up date so the reactivation
+        # cron still checks back, then pivot to the email/catalog offer. The date
+        # is carried into the email step so the email reply (or PDF-on-WhatsApp
+        # fallback) keeps it.
+        iso_default = _default_followup_iso()
+        mark_delay_signal(appointment, message)
+        _store_delay_followup_date(appointment, iso_default)
+        logger.info("No timeframe after re-ask — auto follow-up %s, pivoting to email",
+                    iso_default)
+
+        # Email already on file → send the catalog now and stop looping.
+        if getattr(appointment, 'customer_email', None):
+            _clear_pending(appointment)
+            try:
+                if '[DELAY_QUOTE_SENT]' not in (appointment.internal_notes or ''):
+                    from bot.customer_emails import send_delay_quote_email_async
+                    send_delay_quote_email_async(appointment)
+                    notes = appointment.internal_notes or ''
+                    appointment.internal_notes = f'{notes}\n[DELAY_QUOTE_SENT]'.strip()
+                    appointment.save(update_fields=['internal_notes'])
+            except Exception:
+                logger.exception("reask catalog email failed — apt %s",
+                                 getattr(appointment, 'pk', None))
+            return (
+                "No problem at all — I've emailed you our catalog with the full "
+                "pricing so you've got everything to look over, and I'll check back "
+                "in with you. Whenever you're ready, just send a message."
+            )
+
+        # No email yet → ask for it, framed as the reason (catalog + reminder). The
+        # reply funnels into the existing delay_email step, which captures it (or,
+        # if they decline, sends the portfolio/pricing PDF here on WhatsApp).
+        _write_pending(appointment, 'delay_email', iso_default)
+        logger.info("Delay timeframe pivot to email offer (no timeframe in '%s')",
+                    message[:60])
         return (
-            "No problem at all — I'll leave this with you. Whenever you have a "
-            "rough idea of timing, just send us a message and we'll pick up right "
-            "where we left off."
+            "No problem at all. Let me email you our catalog with the full pricing "
+            "structure so you've got something to look over while you decide, and "
+            "I'll set a reminder to check back in. What's the best email to reach "
+            "you on?"
         )
 
-    # Record the attempt, keep the timeframe step pending, and ask more concretely.
+    # First miss — ask once for a rough timeframe.
     notes = re.sub(r'\n?\[DELAY_TF_REASK\] \d+', '', appointment.internal_notes or '').strip()
     appointment.internal_notes = f"{notes}\n{_DELAY_TF_REASK_TAG} {count + 1}".strip()
     appointment.save(update_fields=['internal_notes'])
@@ -1543,20 +1739,13 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
     parts         = original_info.split('|')
     iso_date      = parts[-1].strip() if len(parts) > 1 else None
 
-    msg_lower  = (message or '').strip().lower()
-    no_signals = ('no', 'nope', "don't", 'not necessary', 'no need', 'kwete', 'please don')
-    is_no      = any(s in msg_lower for s in no_signals)
-
-    # Detect whether the customer is also providing a corrected timeframe.
-    # "No, I'll be back end of next month" → date correction, not a flat refusal.
-    _TIMEFRAME_WORDS = (
-        'week', 'month', 'day', 'next', 'around', 'end of', 'beginning',
-        'january', 'february', 'march', 'april', 'may', 'june', 'july',
-        'august', 'september', 'october', 'november', 'december',
-        'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-        'soon', 'later', 'after', 'back', 'return',
-    )
-    has_timeframe = any(word in msg_lower for word in _TIMEFRAME_WORDS)
+    # AI-primary intent (yes/no) + timeframe detection; both fall back to keywords.
+    # "No, I'll be back end of next month" → date correction, not a flat refusal,
+    # so the timeframe check below routes it to the step-2 handler.
+    _affirm       = _classify_affirmation(message)
+    is_no         = _affirm == 'no'
+    is_simple_yes = _affirm == 'yes'
+    has_timeframe = _message_has_timeframe_ai(message)
 
     mark_delay_signal(appointment, message)
 
@@ -1567,18 +1756,9 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
             "we'll be happy to help."
         )
 
-    # If the message contains a timeframe but is not a plain confirmation ("yes", "ok", etc.),
-    # treat it as a step-2 timeframe answer and recompute the follow-up date.
-    # This handles "Reach out in a month" arriving at step 3 instead of a confirmation.
-    _YES_TOKENS = {
-        'yes', 'yep', 'yeah', 'yup', 'sure', 'ok', 'okay', 'perfect', 'fine',
-        'great', 'that works', 'sounds good', 'hongu', 'ehe', 'zvakanaka',
-    }
-    is_simple_yes = (
-        msg_lower.strip() in _YES_TOKENS
-        or (len(msg_lower.split()) <= 3
-            and any(tok in msg_lower.split() for tok in ('yes', 'ok', 'okay', 'sure', 'perfect')))
-    )
+    # If the message contains a timeframe but is not a plain confirmation ("yes",
+    # "ok", etc.), treat it as a step-2 timeframe answer and recompute the date.
+    # This handles "Reach out in a month" arriving at step 3 instead of a confirm.
     if has_timeframe and not is_simple_yes:
         logger.info(
             "Delay confirm: timeframe without clear confirmation — re-running step 2: '%s'",
@@ -1611,97 +1791,230 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
     )
 
 
+# ── Email-step reply intent (AI-primary) ─────────────────────────────────────
+_EMAIL_STEP_DECLINE_KW = (
+    'skip', 'no', 'nope', 'nah', 'dont have', "don't have", 'prefer not',
+    'rather not', 'na', 'message me', 'text me', 'not interested',
+)
+
+
+def _email_step_intent_keywords(message: str) -> str:
+    """Keyword fallback for the email-step classifier when DeepSeek is down."""
+    msg = (message or '').lower().strip()
+    if '@' in (message or ''):
+        return 'email'
+    if wants_whatsapp_delivery(message):
+        return 'whatsapp'
+    if any(s in msg for s in _EMAIL_STEP_DECLINE_KW):
+        return 'decline'
+    return 'unclear'
+
+
+def _classify_email_step_reply(message: str, appointment=None) -> str:
+    """
+    AI-primary classification of a reply to "what's your email?": one of
+    'email' | 'whatsapp' | 'decline' | 'unclear'. An actual address ('@' present)
+    is always 'email' (deterministic, authoritative). DeepSeek handles fuzzy
+    declines / "just send it here" wording; keywords are the fallback.
+    """
+    if '@' in (message or ''):
+        return 'email'
+    kw = _email_step_intent_keywords(message)
+    if not _DEEPSEEK_KEY or not (message or '').strip():
+        return kw
+    try:
+        from bot.services.clients import deepseek_call
+        import json as _json
+        raw = deepseek_call(
+            messages=[
+                {"role": "system", "content": (
+                    "A plumbing bot asked the customer for their email to send a "
+                    "catalog/quote. Classify the customer's reply as ONE of:\n"
+                    "- email: they are giving an email address\n"
+                    "- whatsapp: they want it sent here on WhatsApp instead of by "
+                    "email ('just send it here', 'on this number', 'whatsapp is fine')\n"
+                    "- decline: they don't want to share an email / not keen on the "
+                    "email ('no', 'skip', 'I'd rather not', \"don't have one\")\n"
+                    "- unclear: none of the above is clear\n"
+                    "Reply with strict JSON only."
+                )},
+                {"role": "user", "content": (
+                    f'Reply: "{message}"\n\n{{"intent": "email|whatsapp|decline|unclear"}}'
+                )},
+            ],
+            temperature=0,
+            max_tokens=20,
+            json_response=True,
+            retries=1,
+            timeout=8,
+        )
+        intent = (_json.loads(raw).get('intent') or '').strip().lower()
+        return intent if intent in ('email', 'whatsapp', 'decline', 'unclear') else kw
+    except Exception as exc:
+        logger.warning("_classify_email_step_reply failed (%s) — using keywords", exc)
+        return kw
+
+
+def _deliver_pdf_and_schedule_checkin(appointment, iso_date) -> bool:
+    """
+    Email declined / "send it here": push the portfolio + pricing PDF over
+    WhatsApp, keep the lead delayed on its follow-up date, and — only when the
+    free-form window is still open ~2 days out (72h ad leads) — bring the next
+    touch forward to a 2pm check-in. Organic 24h leads keep the longer date.
+    Alerts the plumber since we captured no email. Returns whether the PDF sent.
+    """
+    sent_ok = send_lead_magnet_on_whatsapp(appointment)
+
+    notes = appointment.internal_notes or ''
+    if _DELAY_SIGNAL_TAG not in notes:
+        notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
+    appointment.internal_notes = notes
+    appointment.is_delayed = True
+    appointment.save(update_fields=['internal_notes', 'is_delayed'])
+
+    if iso_date:
+        _store_delay_followup_date(appointment, iso_date)
+
+    checkin = _compute_afternoon_checkin(appointment)
+    if checkin is not None:
+        appointment.delay_followup_due_at = checkin
+        notes = appointment.internal_notes or ''
+        if '[DELAY_KIND] pdf_checkin' not in notes:
+            notes = f'{notes}\n[DELAY_KIND] pdf_checkin'.strip()
+        appointment.internal_notes = notes
+        appointment.save(update_fields=['delay_followup_due_at', 'internal_notes'])
+        logger.info("PDF check-in scheduled %s — apt %s",
+                    checkin.isoformat(), getattr(appointment, 'id', None))
+    elif not iso_date:
+        # No reactivation date and the window is too short for a 2-day check-in →
+        # park for the gentle parked-nudge cadence.
+        try:
+            appointment.mark_parked(save=True)
+        except Exception:
+            logger.exception("Failed to park lead after PDF send — apt %s",
+                             getattr(appointment, 'pk', None))
+
+    _alert_plumber_no_email(appointment, iso_date)
+    return sent_ok
+
+
+def _resolve_email_attempt_ai(message: str, appointment=None):
+    """
+    The customer was asked for their email and replied, but no well-formed address
+    parsed. Ask DeepSeek to EITHER reconstruct the address they intended (spoken
+    forms like "john at gmail dot com", stray spaces, obvious typos) OR compose a
+    short contextual reply that actually answers what they said — a canned
+    "that doesn't look right" line gets mis-routed and ignores the customer.
+
+    Returns (email_or_None, reply). The reply is only meaningful when no email is
+    salvaged. Falls back to a brief reply when DeepSeek is unavailable so the bot
+    never goes silent.
+    """
+    fallback = (
+        "Sorry, I didn't quite catch the email there — mind sending it again? "
+        "Or I can send everything to you right here on WhatsApp instead."
+    )
+    text = (message or '').strip()
+    if not _DEEPSEEK_KEY or not text:
+        return None, fallback
+    try:
+        from bot.services.clients import deepseek_call
+        import json as _json
+        raw = deepseek_call(
+            messages=[
+                {"role": "system", "content": (
+                    "A plumbing bot asked the customer for their email to send a "
+                    "catalog/quote. The customer replied, but no clearly valid email "
+                    "address was detected. Do TWO things:\n"
+                    "1) If you can confidently reconstruct the email they intended "
+                    "(e.g. spoken 'john at gmail dot com' -> john@gmail.com, or stray "
+                    "spaces/typos in a domain), put it in \"email\".\n"
+                    "2) Otherwise set \"email\" to null and write a short, warm "
+                    "WhatsApp \"reply\" that responds to what they actually said and "
+                    "either asks them to re-send the email or offers to send it here "
+                    "on WhatsApp. Match their language (English or Shona). No emojis; "
+                    "one or two sentences.\n"
+                    "Reply with strict JSON only."
+                )},
+                {"role": "user", "content": (
+                    f'Customer reply: "{text}"\n\n'
+                    '{"email": "<address or null>", "reply": "<reply if no email>"}'
+                )},
+            ],
+            temperature=0.3,
+            max_tokens=120,
+            json_response=True,
+            retries=1,
+            timeout=8,
+        )
+        data  = _json.loads(raw)
+        email = (data.get('email') or '').strip()
+        if email and re.fullmatch(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', email):
+            logger.info("Salvaged fuzzy email '%s' -> %s", text[:40], email.lower())
+            return email.lower(), ''
+        reply = (data.get('reply') or '').strip()
+        return None, (reply or fallback)
+    except Exception as exc:
+        logger.warning("_resolve_email_attempt_ai failed (%s) — using fallback", exc)
+        return None, fallback
+
+
 def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     """
     Step 4: customer provided (or declined) their email after the delay flow.
-    Save email, send quote email, return closing message.
+    Intent is classified AI-first (email / whatsapp / decline / unclear). A
+    declined email is not a dead end — we steer to sending the PDF here on
+    WhatsApp and schedule a near-term check-in.
     """
     _clear_pending(appointment)
 
     iso_date  = pending.get('original', '') or None
     msg       = (message or '').strip()
-    msg_lower = msg.lower()
 
-    # First: did they ask to receive it HERE on WhatsApp rather than by email?
-    # That's a positive "send it to me on this number" — honour it by sending the
-    # lead magnet PDF directly, instead of treating it as a flat decline.
-    wants_whatsapp = wants_whatsapp_delivery(msg)
+    intent = _classify_email_step_reply(msg, appointment)
 
-    if wants_whatsapp:
-        sent_ok = send_lead_magnet_on_whatsapp(appointment)
+    # Asked for it on WhatsApp, OR declined the email → send the PDF here either
+    # way and keep them in the reactivation queue (new flow: a declined email
+    # steers to the PDF rather than ending the conversation).
+    if intent in ('whatsapp', 'decline'):
+        sent_ok = _deliver_pdf_and_schedule_checkin(appointment, iso_date)
         sent_line = (
-            "Done — I've sent our portfolio and pricing guide straight to you here on WhatsApp."
+            "Done — I've sent our portfolio and full pricing guide straight to you "
+            "here on WhatsApp."
             if sent_ok else
-            "I'm getting our portfolio and pricing guide over to you here on WhatsApp now."
+            "I'm sending our portfolio and full pricing guide to you here on WhatsApp now."
         )
-        # Keep the lead in the reactivation queue so we still check back on the
-        # agreed date. Restore the delay signal (cleared before the OOS handler ran).
-        notes = appointment.internal_notes or ''
-        if _DELAY_SIGNAL_TAG not in notes:
-            notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
-        appointment.internal_notes = notes
-        appointment.is_delayed = True
-        appointment.save(update_fields=['internal_notes', 'is_delayed'])
-        if iso_date:
-            _store_delay_followup_date(appointment, iso_date)
-        # No email captured but a follow-up is needed → hand it to the plumber now;
-        # the cron alerts again on the agreed date (no-email branch).
-        _alert_plumber_no_email(appointment, iso_date)
-        if iso_date:
-            return (
-                f"{sent_line} We'll also check back in around {_friendly_iso(iso_date)}. "
-                "If anything changes just send us a message."
-            )
-        _write_pending(appointment, 'delay_timeframe', '')
+        when = _friendly_iso(iso_date)
+        tail = (f" We'll also check back in with you around {when}." if when
+                else " We'll check back in with you soon.")
         return (
-            f"{sent_line}\n\nSo we check back at the right time — roughly when are "
-            "you hoping to get this sorted? Even a rough idea like next week or end "
-            "of the month is perfect."
+            f"No problem — no email needed. {sent_line}{tail}\n\n"
+            "Have a look whenever suits, and if anything changes just send a message."
         )
 
-    # Detect skip / refusal — a flat decline of email (not a request to receive
-    # it on WhatsApp, handled above).
-    skip_signals = ('skip', 'no', 'nope', 'nah', 'dont have', "don't have",
-                    'prefer not', 'rather not', 'na',
-                    'message me', 'text me')
-    is_skip = any(s in msg_lower for s in skip_signals) and '@' not in msg
-
-    if is_skip:
-        # They'd rather not share an email. Respect it. If they agreed a follow-up
-        # date, keep the lead in the reactivation queue so the plumber is alerted
-        # on that date; otherwise park for gentle re-engagement.
-        if iso_date:
-            notes = appointment.internal_notes or ''
-            if _DELAY_SIGNAL_TAG not in notes:
-                notes = f'{notes}\n{_DELAY_SIGNAL_TAG}'.strip()
-            appointment.internal_notes = notes
-            appointment.is_delayed = True
-            appointment.save(update_fields=['internal_notes', 'is_delayed'])
-            _store_delay_followup_date(appointment, iso_date)
-        else:
-            try:
-                appointment.clear_delayed(save=False)
-                appointment.mark_parked(save=True)
-            except Exception:
-                logger.exception("Failed to park lead after email skip — apt %s",
-                                 getattr(appointment, 'pk', None))
-        # Requires a follow-up but no email → alert the plumber to chase on WhatsApp.
-        _alert_plumber_no_email(appointment, iso_date)
-        return (
-            "No problem at all. Whenever you're ready, just send us a message."
-        )
-
-    # Try to extract a valid email address
-    import re as _re
-    m = _re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', msg)
-    if not m:
+    # Unclear → offer the choice explicitly rather than guessing.
+    if intent == 'unclear':
         _write_pending(appointment, 'delay_email', iso_date or '')
         return (
-            "That doesn't look quite right — could you double-check the email? "
-            "Or just say 'skip' if you'd prefer not to share."
+            "No problem — would you like our catalog by email, or sent right here on "
+            "WhatsApp? Either works — just share your email, or say 'WhatsApp'."
         )
 
-    email = m.group(0).lower()
+    # intent == 'email' → extract a valid address. The regex is authoritative for
+    # a well-formed address; if it doesn't match, DeepSeek either reconstructs a
+    # fuzzy/spoken one or composes a contextual reply that answers what the
+    # customer actually said.
+    import re as _re
+    m = _re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', msg)
+    email = m.group(0).lower() if m else None
+    if not email:
+        salvaged, contextual = _resolve_email_attempt_ai(msg, appointment)
+        if salvaged:
+            email = salvaged
+        else:
+            _write_pending(appointment, 'delay_email', iso_date or '')
+            return contextual
+
     appointment.customer_email = email
     appointment.save(update_fields=['customer_email'])
     logger.info("Delay email captured: %s for appointment=%s", email,

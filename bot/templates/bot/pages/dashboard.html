@@ -383,8 +383,8 @@
         <div class="pb-stat-cell__label">Hot Leads</div>
     </div>
     <div class="pb-stat-cell pb-stat-cell--amber">
-        <div class="pb-stat-cell__num">{{ followups|length }}</div>
-        <div class="pb-stat-cell__label">Follow-ups</div>
+        <div class="pb-stat-cell__num">{{ followups_due_count|default:0 }}</div>
+        <div class="pb-stat-cell__label">Follow-ups Due</div>
     </div>
     <div class="pb-stat-cell pb-stat-cell--sky">
         <div class="pb-stat-cell__num">{{ this_week_appointments|length }}</div>
@@ -510,10 +510,10 @@
     </div>
 </div>
 
-{# ── Pending Follow-ups ── #}
+{# ── Follow-ups Due ── #}
 <div class="pb-section-card">
     <div class="pb-section-card__header">
-        <span class="pb-section-card__title">Pending Follow-ups</span>
+        <span class="pb-section-card__title">Follow-ups Due</span>
         <a href="{% url 'followup_dashboard' %}" class="pb-section-card__link">See all</a>
     </div>
     {% for appt in followups %}
@@ -528,7 +528,7 @@
         <div class="pb-time-ago">{{ appt.scheduled_datetime|date:"j M"|default:appt.updated_at|date:"j M" }}</div>
     </a>
     {% empty %}
-    <div class="pb-empty-inline">No pending follow-ups 🎉</div>
+    <div class="pb-empty-inline">No follow-ups due 🎉</div>
     {% endfor %}
 </div>
 

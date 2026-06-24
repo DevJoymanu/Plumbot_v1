@@ -792,6 +792,15 @@ class Command(BaseCommand):
             logger.debug(f'Lead {lead.id} skipped: {reason}')
             return {'status': 'skipped'}
 
+        # Don't fire a free-form send when the WhatsApp window is closed — it would
+        # bounce with 131047 and we don't use paid templates. This honours both our
+        # computed 24h/72h window AND Meta's authoritative verdict (a prior 131047
+        # sets the closed flag; it reopens when the customer replies). CTWA leads
+        # stay open for 72h here, so FU3/FU4 still go out as intended.
+        if not force and not lead.messaging_window_open:
+            logger.debug(f'Lead {lead.id} skipped: WhatsApp free-form window closed')
+            return {'status': 'skipped', 'reason': 'window_closed'}
+
         max_followups = MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 4)
         if lead.followup_count >= max_followups:
             if not dry_run:

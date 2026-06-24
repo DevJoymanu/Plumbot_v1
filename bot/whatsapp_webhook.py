@@ -1672,6 +1672,20 @@ def process_status_updates(statuses):
                 appointment.internal_notes = f"{note}\n{existing}".strip()
                 appointment.save(update_fields=['internal_notes'])
 
+                # 131047 ("Re-engagement message") = the free-form window is closed
+                # on Meta's side, even though our 24h/72h calc may say otherwise.
+                # Meta is authoritative: stop proactive free-form sends to this lead
+                # until they message again (no paid template fallback). Reopens via
+                # mark_customer_response on the next inbound.
+                if any((e.get('code') == 131047)
+                       or ('re-engagement' in (e.get('title') or '').lower())
+                       for e in errors):
+                    appointment.mark_freeform_window_closed()
+                    print(
+                        f"🚫 Free-form window closed for appointment {appointment.id} "
+                        f"(131047) — pausing proactive sends until the customer replies"
+                    )
+
         except Exception as status_err:
             print(f"? Failed to process status update: {status_err}")
 

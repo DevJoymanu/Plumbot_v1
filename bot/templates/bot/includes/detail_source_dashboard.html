@@ -35,8 +35,8 @@
     <div class="workspace-stat-label">Hot Leads</div>
   </div>
   <div class="workspace-stat">
-    <div class="workspace-stat-value">{{ source_workspace.followups|length }}</div>
-    <div class="workspace-stat-label">Follow-ups</div>
+    <div class="workspace-stat-value">{{ source_workspace.followups_due_count|default:0 }}</div>
+    <div class="workspace-stat-label">Follow-ups Due</div>
   </div>
   <div class="workspace-stat">
     <div class="workspace-stat-value">{{ source_workspace.this_week_appointments|length }}</div>

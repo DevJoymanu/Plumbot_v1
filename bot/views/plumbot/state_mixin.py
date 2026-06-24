@@ -133,33 +133,128 @@ class StateMixin:
         @staticmethod
         def _is_excluded_city(area_text: str):
             """
-            Return the canonical city name if the area is outside our service zone,
-            or None if it's a valid Harare area.
+            Return the out-of-zone place name if the area is outside our Harare
+            service zone, or None if it's a serviceable area.
+
+            Primary path is a DeepSeek classifier so we correctly read negation
+            ("Not in Harare but in Hurungwe"), misspellings, and place names no
+            keyword list enumerates — the keyword check alone mis-read "Not in
+            Harare …" as a Harare match because the word 'harare' was present.
+            Deterministic keyword matching is the fallback when the API is
+            unavailable or returns nothing usable.
+            """
+            area_text = (area_text or '').strip()
+            if not area_text:
+                return None
+            ai = StateMixin._classify_service_area_ai(area_text)
+            if ai is not None:
+                # 'IN_AREA' → serviceable; any other string is the out-of-zone place.
+                return None if ai == 'IN_AREA' else ai
+            return StateMixin._is_excluded_city_keywords(area_text)
+
+        @staticmethod
+        def _classify_service_area_ai(area_text: str):
+            """
+            DeepSeek-backed service-area check. Returns 'IN_AREA' when serviceable,
+            the out-of-zone place name when not, or None when DeepSeek is
+            unavailable / the answer is unusable (caller falls back to keywords).
+            """
+            if not DEEPSEEK_API_KEY or not (area_text or '').strip():
+                return None
+            try:
+                from ...services.clients import deepseek_call
+                import json as _json
+                raw = deepseek_call(
+                    messages=[
+                        {"role": "system", "content": (
+                            "You classify whether a plumbing customer's stated location "
+                            "is one the company will travel to. Homebase Plumbers is "
+                            "mobile and comes to the customer across Zimbabwe, including "
+                            "far areas like Hurungwe/Magunje, Kariba, Chinhoyi, Karoi, "
+                            "Kadoma, Kwekwe and rural districts — those are all IN area. "
+                            "They DECLINE only these specific far cities/towns: Gweru, "
+                            "Bulawayo, Mutare, Masvingo, Victoria Falls, Hwange, "
+                            "Beitbridge, Plumtree. Everywhere else is in area. Read "
+                            "negation carefully: 'not in Harare but in Hurungwe' is IN "
+                            "area (Hurungwe is fine); 'not in Harare, in Bulawayo' is "
+                            "OUT. A Harare street or suburb that merely contains a "
+                            "declined city's name (e.g. 'Bulawayo Road, Harare') is IN "
+                            "area. Reply with strict JSON only, no prose."
+                        )},
+                        {"role": "user", "content": (
+                            f'Customer location: "{area_text}"\n\n'
+                            'Respond ONLY as JSON: {"in_service_area": true} if it is in '
+                            'or around Harare, or {"in_service_area": false, "place": '
+                            '"<out-of-area place name>"} if it is outside Harare.'
+                        )},
+                    ],
+                    temperature=0,
+                    max_tokens=40,
+                    json_response=True,
+                    retries=1,
+                    timeout=8,
+                )
+                data = _json.loads(raw)
+                if 'in_service_area' not in data:
+                    return None
+                if data.get('in_service_area'):
+                    return 'IN_AREA'
+                place = (data.get('place') or area_text).strip()
+                return place or area_text
+            except Exception as exc:
+                logger.warning(
+                    "_classify_service_area_ai failed (%s) — falling back to keywords", exc)
+                return None
+
+        @staticmethod
+        def _is_excluded_city_keywords(area_text: str):
+            """
+            Deterministic fallback for _is_excluded_city when DeepSeek is down.
+            Returns the out-of-zone place name, or None for a serviceable area.
+
+            The business is mobile and travels Zimbabwe-wide; only a short list of
+            far cities/towns is declined. Everywhere else (Hurungwe/Magunje,
+            Kariba, Chinhoyi, …) is serviceable.
 
             Handles edge cases:
-            - "Bulawayo Road"  → None  (street in Harare — continue booking)
-            - "Bulawayo"       → "Bulawayo" (the city — dismiss)
-            - "Gweru"          → "Gweru"
-            - "Harare Mutare Road" → None (Harare mentioned — continue)
+            - "Bulawayo Road"        → None  (street in Harare — continue booking)
+            - "Bulawayo"             → "Bulawayo" (a declined city — dismiss)
+            - "Harare Mutare Road"   → None  (Harare mentioned — continue)
+            - "Not in Harare but in Hurungwe" → None (Hurungwe is serviceable)
+            - "Not in Harare, in Bulawayo"    → "Bulawayo" (declined city)
             """
-            _EXCLUDED = {'gweru', 'bulawayo', 'mutare', 'masvingo'}
+            _EXCLUDED = {
+                'gweru', 'bulawayo', 'mutare', 'masvingo',
+                'victoria falls', 'vic falls', 'hwange', 'beitbridge', 'plumtree',
+            }
             _STREET_WORDS = {
                 'road', 'rd', 'avenue', 'ave', 'crescent', 'drive', 'dr',
                 'street', 'st', 'close', 'lane', 'way', 'park', 'gardens',
                 'heights', 'view', 'court', 'ct', 'place', 'grove', 'row',
                 'terrace', 'boulevard', 'blvd', 'circle', 'extension', 'ext',
             }
-            words = set(area_text.lower().split())
-            # Explicit Harare mention → always valid
-            if 'harare' in words:
+            text_l = area_text.lower()
+            words = set(re.findall(r'[a-z]+', text_l))
+
+            # Out-of-area declared explicitly ("not in Harare", "outside Harare") →
+            # don't let the bare 'harare' token mark it serviceable.
+            negated_harare = bool(re.search(
+                r'\b(not|outside|away\s+from|nowhere\s+near)\b[^.]*\bharare\b', text_l))
+
+            # Explicit positive Harare mention → valid (unless negated).
+            if 'harare' in words and not negated_harare:
                 return None
-            # Street/road suffix alongside city name → it's a Harare address
+
             has_street = bool(words & _STREET_WORDS)
-            for city in _EXCLUDED:
-                if city in words:
-                    if has_street:
+            for city in sorted(_EXCLUDED):
+                matched = (city in text_l) if ' ' in city else (city in words)
+                if matched:
+                    if has_street and not negated_harare:
                         return None
-                    return city.capitalize()
+                    return city.title()
+
+            # No declined city named → serviceable, even if they said they're not
+            # in Harare (the business travels Zimbabwe-wide).
             return None
 
 

@@ -1391,9 +1391,11 @@ class ResponseMixin:
                                        self.appointment.internal_notes or '')
                     _city = _m.group(1) if _m else 'that area'
                     reply = (
-                        f"Thank you for reaching out! Unfortunately we currently only "
-                        f"service the *Harare* area and don't cover *{_city}* at the moment.\n\n"
-                        "If you ever have any plumbing work in Harare, we'd love to help!"
+                        f"Thanks for reaching out! Unfortunately *{_city}* is a bit too "
+                        f"far for us to travel to at the moment, so we wouldn't be able "
+                        f"to take this one on.\n\n"
+                        "If you've got plumbing work closer to Harare though, we'd be "
+                        "glad to help!"
                     )
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
