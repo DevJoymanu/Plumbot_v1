@@ -77,7 +77,6 @@ def _dashboard_workspace_data(response_age='1w_minus'):
     # Follow-ups: only leads that are actually DUE to be contacted now (not merely
     # follow_up_status='pending'). should_send_followup_now() already excludes
     # booked/inactive leads and enforces the timing, so it's the "due" definition.
-    week_ago = now - timedelta(weeks=1)
     _followup_candidates = (
         Appointment.objects
         .filter(is_lead_active=True, status='pending')
@@ -96,14 +95,9 @@ def _dashboard_workspace_data(response_age='1w_minus'):
         scheduled_datetime__date__range=(today, week_end),
     ).select_related('site_visit').order_by('scheduled_datetime')
     # Hot leads: priority (very-hot + hot) leads from the last week that haven't
-    # booked yet — the ones actually worth chasing on the dashboard.
-    hot_lead_count = (
-        priority_leads_qs()
-        .filter(computed_status__in=['very_hot', 'hot'])
-        .filter(last_response_at__gte=week_ago)
-        .exclude(status='confirmed')
-        .count()
-    )
+    # booked yet. Shared with the nav badge + context processor via this helper,
+    # so the dashboard, its sidebar, and the global badge always agree.
+    hot_lead_count = priority_lead_count()
 
     return {
         'selected_response_age': response_age,
@@ -192,9 +186,18 @@ def priority_leads_qs():
 
 
 def priority_lead_count():
-    """The number of high-priority leads (computed very-hot + hot). Used by the nav
-    badge and the dashboard so both match the priority-leads page."""
-    return priority_leads_qs().filter(computed_status__in=['very_hot', 'hot']).count()
+    """Count of actionable hot leads: very-hot + hot, from the last week, that
+    haven't booked yet. Single source of truth for the nav badge, the global
+    context processor, and the dashboard 'Hot Leads' figure, so every surface
+    shows the same number."""
+    week_ago = timezone.now() - timedelta(weeks=1)
+    return (
+        priority_leads_qs()
+        .filter(computed_status__in=['very_hot', 'hot'])
+        .filter(last_response_at__gte=week_ago)
+        .exclude(status='confirmed')
+        .count()
+    )
 
 
 def _priority_leads_workspace_data(response_age='all'):
