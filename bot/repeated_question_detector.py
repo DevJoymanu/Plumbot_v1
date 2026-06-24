@@ -520,3 +520,65 @@ def detect_language_simple(message: str) -> str:
     if shona_count == 1 and english_words > 2:
         return 'mixed'
     return 'english'
+
+
+import os as _os
+
+_VALID_LANGS = ('shona', 'mixed', 'english')
+_LANG_CACHE = {}            # message-text -> detected language (successful only)
+_LANG_CACHE_MAX = 1024
+
+
+def _detect_language_ai(text: str):
+    """DeepSeek language detection for a single message. Returns
+    'shona'|'mixed'|'english', or None when DeepSeek is unavailable / unparseable
+    (caller falls back to the keyword detector). Successful detections are cached
+    per message text so the several detect_language() calls per turn cost at most
+    one API round-trip; failures are NOT cached, so a transient error retries."""
+    if not _os.environ.get('DEEPSEEK_API_KEY') or not text:
+        return None
+    key = text.lower()[:300]
+    cached = _LANG_CACHE.get(key)
+    if cached:
+        return cached
+    try:
+        from bot.services.clients import deepseek_call
+        raw = deepseek_call(
+            messages=[
+                {"role": "system", "content": (
+                    "Detect the language of a WhatsApp message from a Zimbabwean "
+                    "plumbing customer. Reply with ONLY one word: shona, english, or "
+                    "mixed. Use 'mixed' only when the message blends Shona and English. "
+                    "Even a single Shona word (e.g. 'marii', 'hongu', 'mangwana') "
+                    "means shona, not english."
+                )},
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+            max_tokens=4,
+            retries=1,
+            timeout=8,
+        )
+        ans = (raw or '').strip().lower()
+        for cand in _VALID_LANGS:
+            if cand in ans:
+                if len(_LANG_CACHE) >= _LANG_CACHE_MAX:
+                    _LANG_CACHE.clear()
+                _LANG_CACHE[key] = cand
+                return cand
+        return None
+    except Exception as exc:
+        logger.warning("_detect_language_ai failed (%s) — keyword fallback", exc)
+        return None
+
+
+def detect_language(message: str) -> str:
+    """AI-primary language detection: 'shona' | 'mixed' | 'english'.
+
+    Single source of truth so every surface answers in the customer's language —
+    DeepSeek catches short/one-word Shona the keyword detector's >=2-marker rule
+    misses. Falls back to detect_language_simple when DeepSeek is unavailable."""
+    text = (message or '').strip()
+    if not text:
+        return 'english'
+    return _detect_language_ai(text) or detect_language_simple(message)

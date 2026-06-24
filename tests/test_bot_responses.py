@@ -687,6 +687,28 @@ try:
 except Exception as e:
     results.log("messaging_window_open / mark_freeform_window_closed", False, got=str(e))
 
+# Language detection is AI-primary live (detect_language → DeepSeek), with the
+# keyword detector as the deterministic fallback. Pin the fallback contract and
+# that the shared entry point always returns a valid language.
+from bot.repeated_question_detector import detect_language_simple, detect_language
+LANG_KEYWORD_CASES = [
+    ("Can I get a quote for my bathroom",      "english"),
+    ("mhoro ndinoda kugadzirisa chimbuzi changu", "shona"),  # 2+ Shona markers
+    ("hongu zvakanaka",                        "shona"),
+]
+for msg, exp in LANG_KEYWORD_CASES:
+    try:
+        got = detect_language_simple(msg)
+        results.log(f"detect_language_simple: '{msg[:26]}'", got == exp, got=got, expected=exp)
+    except Exception as e:
+        results.log(f"detect_language_simple: '{msg[:26]}'", False, got=str(e))
+try:
+    dl = detect_language("Hello there")
+    results.log("detect_language: returns a valid language",
+                dl in ('shona', 'mixed', 'english'), got=dl)
+except Exception as e:
+    results.log("detect_language: returns a valid language", False, got=str(e))
+
 # Central pricing-gate policy: a buying / project statement ("I want to purchase
 # 2x shower cubicles") must NOT trigger a priced auto-reply — only an explicit
 # price ask should. The production bug: the standalone-question branch priced a

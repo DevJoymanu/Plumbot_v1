@@ -1482,7 +1482,7 @@ class ResponseMixin:
                     if _asks_figure and self._names_multiple_products(incoming_message):
                         print("🧾 Multi-item price ask — combined approximate prices for each item")
                         try:
-                            from bot.whatsapp_webhook import detect_language_simple as _dlsm
+                            from bot.repeated_question_detector import detect_language as _dlsm
                             _mi_lang = _dlsm(incoming_message)
                         except Exception:
                             _mi_lang = 'english'
@@ -1507,7 +1507,7 @@ class ResponseMixin:
                         # quote is delivered there). An actual how-much is priced above.
                         print("🧰 Quote / job request (no price figure) — routing to free on-site quote")
                         try:
-                            from bot.whatsapp_webhook import detect_language_simple as _dls
+                            from bot.repeated_question_detector import detect_language as _dls
                             _job_lang = _dls(incoming_message)
                         except Exception:
                             _job_lang = 'english'
@@ -3164,23 +3164,9 @@ class ResponseMixin:
         def _handle_service_inquiry_impl(self, intent, message):
                 """Generate response for product/service/pricing inquiries in English or Shona."""
                 try:
-                    # Detect language
-                    lang_response = deepseek_client.chat.completions.create(
-                        model=settings.DEEPSEEK_MODEL,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "Detect the language of this message. Reply with ONLY 'shona', 'english', or 'mixed'."
-                            },
-                            {
-                                "role": "user",
-                                "content": message
-                            }
-                        ],
-                        temperature=0.1,
-                        max_tokens=5
-                    )
-                    language = lang_response.choices[0].message.content.strip().lower()
+                    # Detect language (AI-primary shared detector, keyword fallback)
+                    from bot.repeated_question_detector import detect_language
+                    language = detect_language(message)
                     print(f"🌍 Detected language: {language}")
 
                     plumber_number = self.appointment.plumber_contact_number or '+263774819901'

@@ -36,6 +36,7 @@ from .repeated_question_detector import (
     detect_repeated_question,
     generate_repeat_clarification,
     detect_language_simple,
+    detect_language,
 )
 
 PREVIOUS_WORK_IMAGE_URLS = [
@@ -2406,7 +2407,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             # ("how much to fit tub and shower") falls through and gets priced below.
             print("Quote / job request (no price figure asked) -> routing to free on-site quote")
             reply = plumbot._build_job_quote_reply(
-                language=detect_language_simple(message_body), message=message_body
+                language=detect_language(message_body), message=message_body
             )
         elif asks_figure and plumbot._names_multiple_products(message_body):
             # Explicit how-much/price naming MULTIPLE items ("how much tab and
@@ -2414,7 +2415,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             # classifier or keyword override happened to pick.
             print("Multi-item price ask -> combined approximate prices for each item")
             reply = plumbot._build_combined_price_reply(
-                message_body, language=detect_language_simple(message_body)
+                message_body, language=detect_language(message_body)
             )
         elif intent != 'none' and (
             inquiry.get('confidence') == 'HIGH' or intent in PRODUCT_INTENTS
@@ -2454,7 +2455,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                         try:
                             reply = plumbot.compose_quoted_photo_price_reply(
                                 quoted_text,
-                                language=detect_language_simple(message_body),
+                                language=detect_language(message_body),
                             )
                             if reply:
                                 print(f"🧾 Photo-led price reply for '{quoted_text}'")
@@ -2511,7 +2512,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             )
             if repeat_info:
                 print(f"Repeated question detected — matched: '{repeat_info['matched_question'][:60]}'")
-                lang = detect_language_simple(message_body)
+                lang = detect_language(message_body)
                 plumber_contact = (
                     getattr(appointment, 'plumber_contact_number', None)
                     or '+263774819901'
