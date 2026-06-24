@@ -220,7 +220,7 @@ def priority_lead_count():
     )
 
 
-def _priority_leads_workspace_data(response_age='all'):
+def _priority_leads_workspace_data(response_age='1w_minus'):
     from django.db.models import F  # noqa: F401 — kept for parity with callers
 
     age_map_minus = _PRIORITY_AGE_MAP
