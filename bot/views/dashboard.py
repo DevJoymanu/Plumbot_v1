@@ -53,6 +53,32 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
+def _due_followup_leads(now=None):
+    """Leads a follow-up would ACTUALLY be sent to right now.
+
+    Single source of truth for "follow-ups due" on the dashboard and the
+    follow-ups workspace. Mirrors the send_followups cron exactly: its
+    eligibility filter (excludes delayed / parked / handed-off / chatbot-paused /
+    scheduled-reactivation / quotation-only leads), its per-lead timing
+    readiness, the max-follow-ups cap, AND the open free-form messaging window.
+    This is why a plain should_send_followup_now() count over-reports — it skips
+    all of those suppressions.
+    """
+    from bot.management.commands.send_followups import (
+        Command as _FollowupCmd, MAX_FOLLOWUPS_PER_STATUS,
+    )
+    now = now or timezone.now()
+    cmd = _FollowupCmd()
+    due = []
+    for lead in cmd._get_eligible_leads(now, force=False):
+        if lead.followup_count >= MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 4):
+            continue
+        ready, _reason = cmd._is_ready_for_followup(lead, now, force=False)
+        if ready and lead.messaging_window_open:
+            due.append(lead)
+    return due
+
+
 def _dashboard_workspace_data(response_age='1w_minus'):
     from bot.models import Job
 
@@ -74,16 +100,10 @@ def _dashboard_workspace_data(response_age='1w_minus'):
         cutoff = now - age_map_minus[response_age]
         appointments = appointments.filter(last_customer_response__gte=cutoff)
 
-    # Follow-ups: only leads that are actually DUE to be contacted now (not merely
-    # follow_up_status='pending'). should_send_followup_now() already excludes
-    # booked/inactive leads and enforces the timing, so it's the "due" definition.
-    _followup_candidates = (
-        Appointment.objects
-        .filter(is_lead_active=True, status='pending')
-        .exclude(followup_stage__in=['completed', 'responded'])
-        .order_by('-updated_at')
-    )
-    due_followups = [a for a in _followup_candidates if a.should_send_followup_now()]
+    # Follow-ups: only leads a follow-up would ACTUALLY be sent to now — mirrors
+    # the send_followups cron (eligibility + timing + open messaging window), so
+    # the figure reflects reality instead of counting suppressed/ineligible leads.
+    due_followups = _due_followup_leads(now)
     followups = due_followups[:3]
     followups_due_count = len(due_followups)
 
@@ -267,7 +287,17 @@ def _followups_workspace_data(response_age='1w_minus'):
     if cutoff:
         leads_needing_followup = leads_needing_followup.filter(last_customer_response__gte=cutoff)
 
-    ready_for_followup = [lead for lead in leads_needing_followup if lead.should_send_followup_now()]
+    # Use the shared "would actually send now" definition (same as the dashboard
+    # + the cron), then apply the workspace's date-window filter so the list and
+    # its count agree with reality rather than the looser should_send_followup_now.
+    due_leads = _due_followup_leads(now)
+    if cutoff:
+        ready_for_followup = [
+            l for l in due_leads
+            if l.last_customer_response and l.last_customer_response >= cutoff
+        ]
+    else:
+        ready_for_followup = due_leads
     recent_responses = Appointment.objects.filter(
         last_customer_response__isnull=False,
         is_lead_active=True
