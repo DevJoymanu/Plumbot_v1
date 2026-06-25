@@ -1977,20 +1977,11 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     # way and keep them in the reactivation queue (new flow: a declined email
     # steers to the PDF rather than ending the conversation).
     if intent in ('whatsapp', 'decline'):
-        sent_ok = _deliver_pdf_and_schedule_checkin(appointment, iso_date)
-        sent_line = (
-            "Done — I've sent our portfolio and full pricing guide straight to you "
-            "here on WhatsApp."
-            if sent_ok else
-            "I'm sending our portfolio and full pricing guide to you here on WhatsApp now."
-        )
-        when = _friendly_iso(iso_date)
-        tail = (f" We'll also check back in with you around {when}." if when
-                else " We'll check back in with you soon.")
-        return (
-            f"No problem — no email needed. {sent_line}{tail}\n\n"
-            "Have a look whenever suits, and if anything changes just send a message."
-        )
+        # Send the PDF and schedule a proactive check-in (before the window closes
+        # for ad/72h leads). Keep the reply light — don't narrate the send or the
+        # check-in date; we'll follow up about the portfolio ourselves.
+        _deliver_pdf_and_schedule_checkin(appointment, iso_date)
+        return "Have a look whenever suits, and if anything changes just send a message."
 
     # Unclear → offer the choice explicitly rather than guessing.
     if intent == 'unclear':

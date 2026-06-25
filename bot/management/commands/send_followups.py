@@ -531,12 +531,22 @@ class Command(BaseCommand):
                 # 2-touch sequence).
                 is_access_checkin = '[DELAY_KIND] access_checkin' in (lead.internal_notes or '')
 
+                # Portfolio check-in: we sent the catalog/pricing PDF on WhatsApp and
+                # scheduled this touch to land before the (72h) window closes.
+                is_pdf_checkin = '[DELAY_KIND] pdf_checkin' in (lead.internal_notes or '')
+
                 # ── Build the WhatsApp message (touch 1 only) ───────────────────
                 if is_access_checkin:
                     message = (
                         f"{hi}, just checking in — were you able to sort out access "
                         f"on your side? Happy to lock in a time to come through "
                         f"whenever suits you."
+                    )
+                elif is_pdf_checkin:
+                    message = (
+                        f"{hi}, did you get a chance to look through the portfolio and "
+                        f"pricing we sent? See anything you like, or any questions I can "
+                        f"help with?"
                     )
                 else:
                     message = (
@@ -547,6 +557,7 @@ class Command(BaseCommand):
 
                 if dry_run:
                     label = ('access check-in' if is_access_checkin
+                             else 'portfolio check-in' if is_pdf_checkin
                              else 'last-check email' if is_second_touch
                              else 'reactivation')
                     self.stdout.write(
@@ -561,36 +572,37 @@ class Command(BaseCommand):
                 wa_ok    = False
                 email_ok = False
 
-                if is_access_checkin:
-                    # ── Access check-in: single WhatsApp shot ───────────────
+                if is_access_checkin or is_pdf_checkin:
+                    # ── Near-term check-in: single WhatsApp shot ────────────
+                    kind = 'portfolio' if is_pdf_checkin else 'access'
                     try:
                         whatsapp_api.send_text_message(clean, message)
                         wa_ok = True
                     except Exception as wa_exc:
                         logger.warning(
-                            'Access check-in WhatsApp failed for lead %s: %s',
-                            lead.id, wa_exc,
+                            '%s check-in WhatsApp failed for lead %s: %s',
+                            kind, lead.id, wa_exc,
                         )
                     if wa_ok:
                         notes = lead.internal_notes or ''
                         notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes)
-                        notes = _re.sub(r'\[DELAY_KIND\] access_checkin\n?', '', notes)
+                        notes = _re.sub(r'\[DELAY_KIND\] (?:access_checkin|pdf_checkin)\n?', '', notes)
                         notes = _re.sub(r'\[OOS_PENDING\][^\n]*\n?', '', notes).strip()
                         lead.is_delayed     = False
                         lead.internal_notes = notes
                         lead.save(update_fields=['is_delayed', 'internal_notes'])
                         lead.add_conversation_message(
-                            'assistant', f'[DELAY ACCESS CHECK-IN] {message}'
+                            'assistant', f'[DELAY {kind.upper()} CHECK-IN] {message}'
                         )
                         self.stdout.write(self.style.SUCCESS(
-                            f'✅ Access check-in sent for lead {lead.id} — delay queue cleared'
+                            f'✅ {kind.title()} check-in sent for lead {lead.id} — delay queue cleared'
                         ))
                     else:
                         # Retry tomorrow rather than spamming.
                         lead.delay_followup_due_at = timezone.now() + timedelta(hours=24)
                         lead.save(update_fields=['delay_followup_due_at'])
                         self.stdout.write(self.style.WARNING(
-                            f'  ⚠️  Access check-in failed for lead {lead.id} — retry in 24h'
+                            f'  ⚠️  {kind.title()} check-in failed for lead {lead.id} — retry in 24h'
                         ))
                     continue
 

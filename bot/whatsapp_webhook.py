@@ -2409,10 +2409,17 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             reply = plumbot._build_job_quote_reply(
                 language=detect_language(message_body), message=message_body
             )
-        elif asks_figure and plumbot._names_multiple_products(message_body):
+        elif asks_figure and (
+            plumbot._names_multiple_products(message_body)
+            or (plumbot._asks_about_labour(message_body)
+                and len(plumbot._context_product_families(message_body)) >= 2)
+        ):
             # Explicit how-much/price naming MULTIPLE items ("how much tab and
             # shower") -> price every item named, not just the one a single-intent
-            # classifier or keyword override happened to pick.
+            # classifier or keyword override happened to pick. A context-free
+            # labour follow-up ("how much is labour") after a multi-item ask is
+            # routed here too, so it covers every item the lead mentioned (from
+            # project_description) with a supply + labour split — not just one.
             print("Multi-item price ask -> combined approximate prices for each item")
             reply = plumbot._build_combined_price_reply(
                 message_body, language=detect_language(message_body)

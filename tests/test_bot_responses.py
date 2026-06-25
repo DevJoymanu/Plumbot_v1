@@ -851,11 +851,16 @@ for msg, expected in MULTI_PRODUCT_CASES:
 class _FakeSelfCombined:
     _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
     _FAMILY_ROUGH_PRICE = ResponseMixin._FAMILY_ROUGH_PRICE
+    _FAMILY_LABOUR_BREAKDOWN = ResponseMixin._FAMILY_LABOUR_BREAKDOWN
     _product_families_in = ResponseMixin._product_families_in
+    _context_product_families = ResponseMixin._context_product_families
+    _asks_about_labour = ResponseMixin._asks_about_labour
     _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
     _build_combined_price_reply = ResponseMixin._build_combined_price_reply
+    def __init__(self, appointment=None):
+        self.appointment = appointment
     def _get_pricing_followup_prompt(self, language="english"):
-        return "What area are you in so we can plan the visit properly?"
+        return "Whereabouts are you based? That helps me line up the assessment."
 try:
     _cr = _FakeSelfCombined()._build_combined_price_reply("How much tab and shower", "english")
     results.log(
@@ -868,8 +873,60 @@ try:
         "approximate starting prices" in _cr and "free at the on-site visit" in _cr,
         got=_cr[-90:],
     )
+    # A plain multi-item price ask must NOT dump the supply/labour split.
+    results.log(
+        "_build_combined_price_reply: no labour split unless asked",
+        "item by item" not in _cr,
+        got=_cr[:120],
+    )
 except Exception as e:
     results.log("_build_combined_price_reply", False, got=str(e))
+
+# Labour follow-up after a multi-item ask: the current message names no product
+# ("how much is labour"), so the reply must fall back to the captured
+# project_description ("shower and tub") and cover BOTH items with a supply +
+# labour split — not collapse to one carried-over intent (the shower-only bug).
+class _FakeApptCtx:
+    project_description = "shower and tub"
+    def save(self, update_fields=None):
+        pass
+try:
+    _lab = _FakeSelfCombined(appointment=_FakeApptCtx())._build_combined_price_reply(
+        "How much is labour", "english"
+    )
+    results.log(
+        "labour follow-up: covers BOTH tub and shower from context",
+        "tub from US$160" in _lab and "shower cubicle from US$170" in _lab,
+        got=_lab[:90],
+    )
+    results.log(
+        "labour follow-up: shows supply + labour split for each item",
+        ("supply from US$130, labour from US$40" in _lab
+         and "supply from US$80, labour from US$80" in _lab),
+        got=_lab,
+    )
+except Exception as e:
+    results.log("_build_combined_price_reply labour", False, got=str(e))
+
+# _asks_about_labour fires on labour/install/fit questions, not plain how-much.
+LABOUR_ASK_CASES = [
+    ("How much is labour",          True),
+    ("how much for installation",   True),
+    ("whats the fitting cost",      True),
+    ("How much tub and shower",     False),
+    ("price of a geyser",           False),
+]
+for msg, expected in LABOUR_ASK_CASES:
+    try:
+        got = _FakeSelfCombined()._asks_about_labour(msg)
+        results.log(
+            f"_asks_about_labour: '{msg[:28]}'",
+            got == expected,
+            expected=str(expected),
+            got=str(got),
+        )
+    except Exception as e:
+        results.log(f"_asks_about_labour: '{msg[:28]}'", False, got=str(e))
 
 # When the lead names the items, record them as the project_description so the
 # follow-up advances to the next step (area/visit) instead of re-asking "what are

@@ -356,7 +356,15 @@ class ResponseMixin:
 
 
         def _get_pricing_followup_prompt(self, language: str = "english") -> str:
-            """Return the next booking question in a natural sales tone."""
+            """
+            Return the next booking question as a yes-seeking close that fits the
+            stage the lead is at — NOT a repeated "free on-site assessment first"
+            pitch. The missing field drives which close we use: still gathering the
+            service/scope → confirm intent; area unknown → ask where they are
+            (which quietly assumes the visit); ready to schedule → offer a day; all
+            set → an assumptive single-step close. The visit is mentioned softly,
+            once, where it's natural, instead of leading every reply.
+            """
             next_question = self.get_next_question_to_ask()
             is_shona = language == "shona"
 
@@ -371,28 +379,29 @@ class ResponseMixin:
                 if len(days) >= 2:
                     if is_shona:
                         return (
-                            f"Kana muchida, tinogona kutanga nefree on-site assessment. "
-                            f"{self._format_day(days[0])} kana {self._format_day(days[1])}, nderipi zuva rinokukodzerai?"
+                            f"{self._format_day(days[0])} kana {self._format_day(days[1])}, "
+                            f"nderipi zuva rinokukodzerai?"
                         )
                     return (
-                        f"If you'd like, we can do a free on-site assessment first. "
-                        f"Would {self._format_day(days[0])} or {self._format_day(days[1])} work better for you?"
+                        f"Would {self._format_day(days[0])} or {self._format_day(days[1])} "
+                        f"work better for you?"
                     )
                 return (
-                    "Kana muchida, tinogona kutanga nefree on-site assessment. Nderipi zuva rinokukodzerai?"
+                    "Nderipi zuva rinokukodzerai?"
                     if is_shona else
-                    "If you'd like, we can do a free on-site assessment first. Which day would suit you best?"
+                    "Which day would suit you best?"
                 )
             if next_question == "availability_time":
-                return "Nguva ipi ingakukodzerai ye free on-site assessment?" if is_shona else "What time would suit you best for the free on-site assessment?"
+                return "Nguva ipi ingakukodzerai?" if is_shona else "What time works best for you?"
             if next_question == "area":
-                return "Muri munzvimbo ipi kuti tironge kuuya zvakanaka?" if is_shona else "What area are you in so we can plan the visit properly?"
+                return ("Muri munzvimbo ipi, kuti ndironge kuuya?" if is_shona
+                        else "Whereabouts are you based? That helps me line up the assessment.")
             if next_question == "name":
                 return "Tingaisa zita ripi pabhooking?" if is_shona else "What name should we put on the booking?"
             return (
-                "Kana muchida, ndinogona kukubatsirai kubhuka free on-site assessment kubva pano."
+                "Ndokubhukirai free on-site assessment here?"
                 if is_shona else
-                "If you'd like, I can help you book the free on-site assessment from here."
+                "Want me to set up the free on-site assessment?"
             )
 
 
@@ -802,6 +811,17 @@ class ResponseMixin:
             'toilet':  'toilet from US$70',
             'chamber': 'side chamber from US$160',
         }
+        # Supply + labour split behind each rough all-in figure above (same
+        # homebase.md source — keep the two maps in sync, never invent figures).
+        # Used when the customer asks specifically about labour/install cost.
+        _FAMILY_LABOUR_BREAKDOWN = {
+            'shower':  'Shower cubicle: supply from US$130, labour from US$40',
+            'tub':     'Tub: supply from US$80, labour from US$80',
+            'geyser':  'Geyser: supply from US$80, labour from US$80',
+            'vanity':  'Vanity unit: supply from US$150, labour from US$30',
+            'toilet':  'Toilet seat: supply from US$50, labour from US$20',
+            'chamber': 'Side chamber: supply from US$130, labour from US$30',
+        }
 
         def _product_families_in(self, message: str) -> set:
             """The set of distinct product families named in the message."""
@@ -814,6 +834,30 @@ class ResponseMixin:
         def _names_multiple_products(self, message: str) -> bool:
             """True when the message names 2+ distinct product families."""
             return len(self._product_families_in(message)) >= 2
+
+        def _context_product_families(self, message: str) -> set:
+            """
+            The product families in play for THIS turn: those named in the current
+            message, or — when the message names none (e.g. a follow-up "how much is
+            labour") — those we already captured in project_description. Lets a
+            context-free price ask still cover everything the lead said earlier
+            ("tub and shower") instead of collapsing to a single carried-over intent.
+            """
+            fams = self._product_families_in(message)
+            if fams:
+                return fams
+            appt = getattr(self, 'appointment', None)
+            desc = (getattr(appt, 'project_description', None) or '') if appt else ''
+            return self._product_families_in(desc)
+
+        def _asks_about_labour(self, message: str) -> bool:
+            """True when the customer is asking specifically about labour / install
+            (fitting) cost — so a price reply should break out supply vs labour."""
+            msg = (message or '').lower()
+            return bool(re.search(
+                r'\b(labou?r|install(?:ation|ing)?|fitting|to\s+fit|fit\s*(?:only|cost))\b',
+                msg,
+            ))
 
         def _is_job_quote_request(self, message: str) -> bool:
             """
@@ -868,19 +912,31 @@ class ResponseMixin:
             except Exception:
                 pass
 
-        def _build_combined_price_reply(self, message: str, language: str = "english") -> str:
+        def _build_combined_price_reply(self, message: str, language: str = "english",
+                                        labour_breakdown=None) -> str:
             """
             Approximate all-in prices for a MULTI-ITEM price ask ("how much tab
             and shower") — lists every named item's rough price, not just one.
-            Falls back to the full rough list if fewer than two named families
-            have a known price, so the lead always gets multiple figures. Ends
-            with the approximate-price disclaimer and the next booking question.
+            Uses the families in play this turn (current message, else the captured
+            project_description) so a context-free follow-up like "how much is
+            labour" still covers every item the lead mentioned. Falls back to the
+            full rough list if fewer than two families have a known price, so the
+            lead always gets multiple figures.
+
+            When the customer asked about labour/install (auto-detected, or forced
+            via `labour_breakdown`), each item's supply + labour split is added
+            under the all-in line. Ends with the approximate-price disclaimer and
+            the next booking question.
             """
-            fams = self._product_families_in(message)
+            if labour_breakdown is None:
+                labour_breakdown = self._asks_about_labour(message)
+            fams = self._context_product_families(message)
             order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
-            priced = [self._FAMILY_ROUGH_PRICE[f] for f in order
-                      if f in fams and f in self._FAMILY_ROUGH_PRICE]
+            named = [f for f in order if f in fams]
+            priced = [self._FAMILY_ROUGH_PRICE[f] for f in named
+                      if f in self._FAMILY_ROUGH_PRICE]
             if len(priced) < 2:
+                named = list(order)
                 priced = [self._FAMILY_ROUGH_PRICE[f] for f in order]
             is_shona = language == "shona"
             intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
@@ -892,10 +948,19 @@ class ResponseMixin:
                 "These are approximate starting prices — your exact quote is "
                 "confirmed free at the on-site visit."
             )
+            sections = [f"{intro}{', '.join(priced)}."]
+            if labour_breakdown:
+                lines = [self._FAMILY_LABOUR_BREAKDOWN[f] for f in named
+                         if f in self._FAMILY_LABOUR_BREAKDOWN]
+                if lines:
+                    heading = ("Supply uye labour, chinhu nechinhu:" if is_shona
+                               else "Supply and labour, item by item:")
+                    sections.append(heading + "\n" + "\n".join(f"• {ln}" for ln in lines))
+            sections.append(disclaimer)
             # They named the items → don't re-ask what they want; advance the flow.
             self._capture_named_products_as_description(message)
-            followup = self._get_pricing_followup_prompt("shona" if is_shona else "english")
-            return f"{intro}{', '.join(priced)}.\n\n{disclaimer}\n\n{followup}"
+            sections.append(self._get_pricing_followup_prompt("shona" if is_shona else "english"))
+            return "\n\n".join(sections)
 
 
         def _build_job_quote_reply(self, language: str = "english", message: str = None) -> str:
