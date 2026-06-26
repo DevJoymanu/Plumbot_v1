@@ -355,22 +355,38 @@ class ResponseMixin:
             return f"{day_name} the {day_num}{suffix}"
 
 
-        def _get_pricing_followup_prompt(self, language: str = "english") -> str:
+        def _get_pricing_followup_prompt(self, language: str = "english", items=None) -> str:
             """
             Return the next booking question as a yes-seeking close that fits the
             stage the lead is at — NOT a repeated "free on-site assessment first"
             pitch. The missing field drives which close we use: still gathering the
-            service/scope → confirm intent; area unknown → ask where they are
-            (which quietly assumes the visit); ready to schedule → offer a day; all
-            set → an assumptive single-step close. The visit is mentioned softly,
-            once, where it's natural, instead of leading every reply.
+            service/scope → confirm intent (naming `items` when known); area unknown
+            → ask where they are (which quietly assumes the visit); ready to
+            schedule → offer a day; all set → an assumptive single-step close. The
+            visit is mentioned softly, once, where it's natural, not leading every
+            reply.
+
+            One override sits above the stage ladder: a lead who has already
+            deflected (`appointment.is_delayed`) gets a soft timeline anchor at the
+            scheduling stages instead of being pushed a specific day they'll brush
+            off again.
             """
             next_question = self.get_next_question_to_ask()
             is_shona = language == "shona"
 
+            appt = getattr(self, 'appointment', None)
+            if (getattr(appt, 'is_delayed', False)
+                    and next_question in ("availability_date", "availability_time", "complete")):
+                return ("Muri kuda kuzviita munguva pfupi, kana muchiri kungoronga zvenyu?"
+                        if is_shona else
+                        "Are you hoping to get this sorted soon, or still planning it out?")
+
             if next_question == "service_type":
                 return "Uri kuda service ipi chaizvo?" if is_shona else "Which service are you looking at exactly?"
             if next_question == "project_description":
+                confirm = self._confirm_intent_question(items, is_shona)
+                if confirm:
+                    return confirm
                 if is_shona:
                     return "Parizvino, ungandiudza zvishoma kuti chii chaizvo chamunoda kuti chiitwe?"
                 return self._get_contextual_description_question()
@@ -394,8 +410,8 @@ class ResponseMixin:
             if next_question == "availability_time":
                 return "Nguva ipi ingakukodzerai?" if is_shona else "What time works best for you?"
             if next_question == "area":
-                return ("Muri munzvimbo ipi, kuti ndironge kuuya?" if is_shona
-                        else "Whereabouts are you based? That helps me line up the assessment.")
+                return ("Muri munzvimbo ipi?" if is_shona
+                        else "Whereabouts are you based?")
             if next_question == "name":
                 return "Tingaisa zita ripi pabhooking?" if is_shona else "What name should we put on the booking?"
             return (
@@ -822,6 +838,50 @@ class ResponseMixin:
             'toilet':  'Toilet seat: supply from US$50, labour from US$20',
             'chamber': 'Side chamber: supply from US$130, labour from US$30',
         }
+        # Human label for each family, used when we name the items back to the
+        # customer (e.g. the confirm-intent close "both the tub and shower").
+        _FAMILY_DISPLAY = {
+            'shower':  'shower',
+            'tub':     'tub',
+            'geyser':  'geyser',
+            'vanity':  'vanity',
+            'toilet':  'toilet',
+            'chamber': 'side chamber',
+        }
+        # Noun used when pricing a fixture in a sentence ("shower cubicle from
+        # US$170") and a short form for the per-unit labour line ("per cubicle").
+        _SCOPE_LABEL = {
+            'shower':  'shower cubicle',
+            'tub':     'tub',
+            'geyser':  'geyser',
+            'vanity':  'vanity',
+            'toilet':  'toilet',
+            'chamber': 'side chamber',
+        }
+        _SCOPE_SHORT = {
+            'shower':  'cubicle',
+            'tub':     'tub',
+            'geyser':  'geyser',
+            'vanity':  'vanity',
+            'toilet':  'toilet',
+            'chamber': 'side chamber',
+        }
+        # (supply, labour) behind each rough all-in figure — same homebase.md
+        # source as _FAMILY_ROUGH_PRICE / _FAMILY_LABOUR_BREAKDOWN. Numeric so we
+        # can multiply by quantity and show a line total. Keep in sync.
+        _FAMILY_PRICE_COMPONENTS = {
+            'shower':  (130, 40),
+            'tub':     (80, 80),
+            'geyser':  (80, 80),
+            'vanity':  (150, 30),
+            'toilet':  (50, 20),
+            'chamber': (130, 30),
+        }
+        _QTY_WORDS = {
+            'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6,
+            'pair': 2, 'couple': 2, 'double': 2,
+        }
+        _NUM_WORDS = {1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six'}
 
         def _product_families_in(self, message: str) -> set:
             """The set of distinct product families named in the message."""
@@ -850,6 +910,28 @@ class ResponseMixin:
             desc = (getattr(appt, 'project_description', None) or '') if appt else ''
             return self._product_families_in(desc)
 
+        def _confirm_intent_question(self, items, is_shona: bool = False):
+            """
+            Softest qualifying close: name the items the lead mentioned back to
+            them and confirm scope before booking ("Are you looking to do both the
+            tub and shower, or starting with one?"). Returns None when fewer than
+            two items are known, so the caller falls back to a generic prompt.
+            """
+            if not items:
+                return None
+            order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
+            names = [self._FAMILY_DISPLAY.get(f, f) for f in order if f in items]
+            if len(names) < 2:
+                return None
+            if is_shona:
+                joined = ", ".join(names[:-1]) + f" ne {names[-1]}"
+                return f"Muri kuda kuita zvese — {joined} — kana kutanga nechimwe chete?"
+            if len(names) == 2:
+                return (f"Are you looking to do both the {names[0]} and {names[1]}, "
+                        f"or starting with one?")
+            joined = ", ".join(names[:-1]) + f" and {names[-1]}"
+            return f"Are you looking to do all of them — {joined} — or starting with one?"
+
         def _asks_about_labour(self, message: str) -> bool:
             """True when the customer is asking specifically about labour / install
             (fitting) cost — so a price reply should break out supply vs labour."""
@@ -858,6 +940,201 @@ class ResponseMixin:
                 r'\b(labou?r|install(?:ation|ing)?|fitting|to\s+fit|fit\s*(?:only|cost))\b',
                 msg,
             ))
+
+        def _quantity_for_family(self, text: str, family: str) -> int:
+            """How many of `family` the text asks for — reads a number sitting just
+            before the fixture word ("2x shower cubicles", "two tubs"). Defaults to 1."""
+            msg = (text or '').lower()
+            for p in self._PRODUCT_FAMILY_PATTERNS.get(family, ()):
+                m = re.search(p, msg)
+                if not m:
+                    continue
+                pre = msg[max(0, m.start() - 16):m.start()]
+                digit = re.search(r'(\d+)\s*(?:x|times)?\s*$', pre)
+                if digit:
+                    return max(1, int(digit.group(1)))
+                word = re.search(r'\b(' + '|'.join(self._QTY_WORDS) + r')\b\s*$', pre)
+                if word:
+                    return self._QTY_WORDS.get(word.group(1), 1)
+            return 1
+
+        def _active_scope(self, message: str):
+            """
+            The fixtures currently in play, as an ordered [(family, qty), ...] list,
+            plus whether accessories were mentioned. Scope is the LATEST the customer
+            named: the current message if it names anything, else the most recent
+            prior customer turn that did, else the captured project_description. This
+            drops fixtures the customer has moved away from — opening with "tub and
+            shower" then narrowing to "2x shower cubicles" leaves cubicles only.
+            """
+            source = message if self._product_families_in(message) else ''
+            appt = getattr(self, 'appointment', None)
+            if not source and appt is not None:
+                history = getattr(appt, 'conversation_history', None) or []
+                for m in reversed(history):
+                    if m.get('role') != 'user':
+                        continue
+                    content = (m.get('content') or '')
+                    if content.strip().startswith('[') or content == message:
+                        continue
+                    if self._product_families_in(content):
+                        source = content
+                        break
+            if not source and appt is not None:
+                source = getattr(appt, 'project_description', None) or ''
+
+            fams = self._product_families_in(source)
+            order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
+            scope = [(f, self._quantity_for_family(source, f)) for f in order if f in fams]
+            has_accessories = bool(re.search(
+                r'\b(accessor\w*|asseri\w*|screens?|rails?|fittings?)\b', source.lower()
+            ))
+            return scope, has_accessories
+
+        def _num_word(self, n: int) -> str:
+            return self._NUM_WORDS.get(n, str(n))
+
+        def _scope_allin_phrase(self, family: str, qty: int) -> str:
+            """All-in ballpark for one fixture, e.g. 'shower cubicle from US$170'
+            (or '... US$170 each (×2 ≈ US$340)' when more than one)."""
+            supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
+            allin = supply + labour
+            label = self._SCOPE_LABEL[family]
+            if qty > 1:
+                return f"{label} from US${allin} each (×{qty} ≈ US${allin * qty})"
+            return f"{label} from US${allin}"
+
+        def _format_labour_scope(self, scope, has_accessories: bool) -> str:
+            """Supply + labour broken out per fixture (the customer asked about
+            labour, so the labour figure must be visible), with the line total when
+            quantity > 1. One flowing line for a single fixture, a bullet list for
+            several."""
+            acc_sentence = (" Accessories on top depending on what you go for."
+                            if has_accessories else "")
+            if len(scope) == 1:
+                family, qty = scope[0]
+                supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
+                allin = supply + labour
+                short = self._SCOPE_SHORT[family]
+                each = " fitted each" if qty > 1 else " fitted"
+                line = (f"Rough starting prices per {short}: supply from US${supply}, "
+                        f"labour from US${labour} — about US${allin}{each}.")
+                if qty > 1:
+                    line += f" For {self._num_word(qty)} that's around US${allin * qty} all-in"
+                    line += (", accessories on top depending on what you go for."
+                             if has_accessories else ".")
+                    return line
+                return line + acc_sentence
+            lines = []
+            for family, qty in scope:
+                supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
+                allin = supply + labour
+                label = self._SCOPE_LABEL[family].capitalize()
+                seg = f"{label}"
+                if qty > 1:
+                    seg += f" (x{qty})"
+                seg += f": supply from US${supply}, labour from US${labour} — about US${allin} fitted"
+                if qty > 1:
+                    seg += f" each, {self._num_word(qty)} ≈ US${allin * qty} all-in"
+                lines.append("• " + seg)
+            return "Rough starting prices (supply + labour):\n" + "\n".join(lines) + acc_sentence
+
+        # Forward-question bank, one stage per booking step. Each entry is
+        # (text, signature) — the signature is a stable fragment used to detect
+        # whether that phrasing has already gone out, so we never repeat wording.
+        _FORWARD_BANK = {
+            'service': [
+                ("What's the setup you're working with — full bathroom or just the one fixture?",
+                 "the setup you're working"),
+                ("Is this a fresh install or replacing something that's already there?",
+                 "fresh install"),
+            ],
+            'detail': [
+                ("What accessories are you after with the {fixture} — screens, rails, mixers?",
+                 "accessories are you after"),
+                ("Any particular brand or finish in mind, or should we quote our standard range?",
+                 "brand or finish"),
+            ],
+            'area': [
+                ("Whereabouts are you based?", "whereabouts"),
+                ("What part of town are you in?", "part of town"),
+            ],
+            # Timeframe FIRST, with no site-visit pitch — getting the timeframe is
+            # the set-up; the visit is raised later, only once a near date lands
+            # (see the near/far split in out_of_scope_handler). Over-mentioning the
+            # visit reads pushy, so it is kept out of this question entirely.
+            'booking': [
+                ("When were you hoping to get this done?", "hoping to get this done"),
+                ("Are you looking to start soon, or still planning it out?", "start soon"),
+            ],
+        }
+
+        def _next_forward_question(self, language: str = "english",
+                                   scope=None, has_accessories: bool = False) -> str:
+            """
+            One forward question that moves the sale to the next OPEN stage, tracked
+            off conversation state so we never re-ask a stage already asked or
+            answered, and never reuse wording already sent. Stage order:
+            Service -> Project detail -> Area -> Booking (timeline-qualified).
+
+            A stage counts as covered when the relevant appointment field is filled
+            OR a question for it has already gone out in this thread. Within the
+            chosen stage, the first bank phrasing not yet used is picked.
+            """
+            if language == "shona":
+                # Shona keeps the existing translated stage logic.
+                return self._get_pricing_followup_prompt("shona")
+
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            asked = "\n".join(
+                (m.get('content') or '').lower()
+                for m in history if m.get('role') == 'assistant'
+            )
+            scope = scope or []
+
+            def asked_any(fragments):
+                return any(f in asked for f in fragments)
+
+            service_covered = (
+                bool(getattr(appt, 'project_type', None)) or bool(scope)
+                or asked_any(["the setup you're working", "full bathroom or just",
+                              "fresh install", "replacing something"])
+            )
+            detail_covered = has_accessories or asked_any(
+                ["accessories are you after", "brand or finish", "standard range"]
+            )
+            area_covered = (
+                bool(getattr(appt, 'customer_area', None))
+                or asked_any(["area are you in", "whereabouts", "part of town",
+                              "where are you based", "line up the assessment"])
+            )
+            booking_covered = (
+                bool(getattr(appt, 'scheduled_datetime', None))
+                or asked_any(["hoping to get this done", "start soon",
+                              "set up the free assessment", "would this week",
+                              "work better for you", "which day", "what day suits"])
+            )
+
+            has_shower = any(f == 'shower' for f, _ in scope)
+
+            def pick(bank):
+                for text, sig in bank:
+                    if sig not in asked:
+                        return text.format(fixture="cubicles")
+                return bank[-1][0].format(fixture="cubicles")
+
+            if not service_covered:
+                return pick(self._FORWARD_BANK['service'])
+            if not detail_covered:
+                # The "screens, rails, mixers" prompt only fits a shower/cubicle
+                # scope; for anything else go straight to brand/finish.
+                detail_bank = self._FORWARD_BANK['detail'] if has_shower \
+                    else self._FORWARD_BANK['detail'][1:]
+                return pick(detail_bank)
+            if not area_covered:
+                return pick(self._FORWARD_BANK['area'])
+            return pick(self._FORWARD_BANK['booking'])
 
         def _is_job_quote_request(self, message: str) -> bool:
             """
@@ -930,37 +1207,39 @@ class ResponseMixin:
             """
             if labour_breakdown is None:
                 labour_breakdown = self._asks_about_labour(message)
-            fams = self._context_product_families(message)
-            order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
-            named = [f for f in order if f in fams]
-            priced = [self._FAMILY_ROUGH_PRICE[f] for f in named
-                      if f in self._FAMILY_ROUGH_PRICE]
-            if len(priced) < 2:
-                named = list(order)
-                priced = [self._FAMILY_ROUGH_PRICE[f] for f in order]
             is_shona = language == "shona"
-            intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
-                     if is_shona else
-                     "Rough all-in prices (supply + install): ")
+            scope, has_accessories = self._active_scope(message)
+
+            # No concrete scope to work from → fall back to the rough menu so the
+            # lead still gets figures.
+            if not scope:
+                order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
+                priced = ", ".join(self._FAMILY_ROUGH_PRICE[f] for f in order)
+                intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
+                         if is_shona else "Rough all-in prices (supply + install): ")
+                body = f"{intro}{priced}."
+            elif labour_breakdown:
+                body = self._format_labour_scope(scope, has_accessories)
+            else:
+                priced = ", ".join(self._scope_allin_phrase(f, q) for f, q in scope)
+                intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
+                         if is_shona else "Rough all-in prices (supply + install): ")
+                body = f"{intro}{priced}."
+
             disclaimer = (
-                "Mutengo chaiwo unosimbiswa pa on-site visit yemahara."
+                "Idzi ipfungidziro chete; mutengo chaiwo unosimbiswa mahara pamba."
                 if is_shona else
-                "These are approximate starting prices — your exact quote is "
-                "confirmed free at the on-site visit."
+                "These are ballpark; the exact figure is confirmed free on-site."
             )
-            sections = [f"{intro}{', '.join(priced)}."]
-            if labour_breakdown:
-                lines = [self._FAMILY_LABOUR_BREAKDOWN[f] for f in named
-                         if f in self._FAMILY_LABOUR_BREAKDOWN]
-                if lines:
-                    heading = ("Supply uye labour, chinhu nechinhu:" if is_shona
-                               else "Supply and labour, item by item:")
-                    sections.append(heading + "\n" + "\n".join(f"• {ln}" for ln in lines))
-            sections.append(disclaimer)
-            # They named the items → don't re-ask what they want; advance the flow.
+            # Forward question off the CURRENT scope/state — skips stages already
+            # asked or answered, rotates wording. Computed before we record the
+            # description so the scope stage can still confirm intent if needed.
+            followup = self._next_forward_question(
+                "shona" if is_shona else "english",
+                scope=scope, has_accessories=has_accessories,
+            )
             self._capture_named_products_as_description(message)
-            sections.append(self._get_pricing_followup_prompt("shona" if is_shona else "english"))
-            return "\n\n".join(sections)
+            return "\n\n".join([body, disclaimer, followup])
 
 
         def _build_job_quote_reply(self, language: str = "english", message: str = None) -> str:
@@ -973,15 +1252,18 @@ class ResponseMixin:
             """
             is_shona = language == "shona"
             lead = (
-                "Tinokwanisa kukubatsira nazvo. Tinokupai quote chaiyo, yese-yese, "
-                "mahara patinouya kuzoona pamba — hapana zvinozomuka pashure."
+                "Tinokupai quote chaiyo, yese-yese, mahara patinouya kuzoona pamba."
                 if is_shona else
-                "Happy to sort that out for you. We give you an exact, all-in quote "
-                "free on a quick on-site visit, so there are no surprises later."
+                "We'll get you an exact, all-in figure free on a quick on-site visit."
             )
+            scope, has_accessories = ([], False)
             if message:
+                scope, has_accessories = self._active_scope(message)
                 self._capture_named_products_as_description(message)
-            followup = self._get_pricing_followup_prompt("shona" if is_shona else "english")
+            followup = self._next_forward_question(
+                "shona" if is_shona else "english",
+                scope=scope, has_accessories=has_accessories,
+            )
             return f"{lead}\n\n{followup}"
 
 

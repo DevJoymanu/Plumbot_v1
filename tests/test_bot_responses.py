@@ -542,6 +542,81 @@ for msg in WEEKEND_TIMEFRAME_CASES:
     except Exception as e:
         results.log(f"_compute_followup_date_keywords (weekend): '{msg[:24]}'", False, got=str(e))
 
+# A NEAR timeframe (<= 7 days) is readiness, not a deferral: it must steer to
+# booking the visit, while anything further out keeps the parked-lead workflow.
+from bot.out_of_scope_handler import _timeframe_is_near
+from datetime import timedelta as _td_t
+NEAR_FAR_CASES = [
+    ((_date_t.today()).isoformat(),                    True),   # today
+    ((_date_t.today() + _td_t(days=1)).isoformat(),    True),   # tomorrow
+    ((_date_t.today() + _td_t(days=7)).isoformat(),    True),   # one week — boundary
+    ((_date_t.today() + _td_t(days=8)).isoformat(),    False),  # just over a week
+    ((_date_t.today() + _td_t(days=30)).isoformat(),   False),  # next month
+    ((_date_t.today() - _td_t(days=2)).isoformat(),    False),  # past date — not near
+    ("not-a-date",                                     False),  # unparseable
+]
+for iso, expected in NEAR_FAR_CASES:
+    try:
+        got = _timeframe_is_near(iso)
+        results.log(
+            f"_timeframe_is_near: '{iso}'",
+            got == expected,
+            expected=str(expected),
+            got=str(got),
+        )
+    except Exception as e:
+        results.log(f"_timeframe_is_near: '{iso}'", False, got=str(e))
+
+# End to end: a deflected lead who answers the timeframe with a NEAR date must be
+# pivoted to booking the visit (asks day/time, mentions the assessment) — NOT
+# parked with a "check back on …" reminder.
+# A specific day must NOT be re-asked (only the time); a vague near range still
+# pins the day. Specific-day detection is deterministic.
+from bot.out_of_scope_handler import _timeframe_names_specific_day
+SPECIFIC_DAY_CASES = [
+    ("tomorrow", True), ("today", True), ("this Friday", True),
+    ("next Monday", True), ("the 26th", True), ("on 26/6", True),
+    ("this week", False), ("this weekend", False), ("next weekend", False),
+    ("soon", False), ("in a few days", False),
+]
+for msg, expected in SPECIFIC_DAY_CASES:
+    try:
+        got = _timeframe_names_specific_day(msg)
+        results.log(
+            f"_timeframe_names_specific_day: '{msg}'",
+            got == expected, expected=str(expected), got=str(got),
+        )
+    except Exception as e:
+        results.log(f"_timeframe_names_specific_day: '{msg}'", False, got=str(e))
+
+# End to end: NEAR date pivots to booking (casual 20-min look, not parked).
+# A named day asks only the time; a vague weekend still asks the day.
+from bot.out_of_scope_handler import _handle_delay_timeframe_answer
+class _FakeApptTf:
+    internal_notes = ''
+    customer_email = None
+    project_type = 'bathroom_renovation'
+    def save(self, update_fields=None):
+        pass
+try:
+    _specific = _handle_delay_timeframe_answer("tomorrow", {}, _FakeApptTf())
+    results.log(
+        "delay timeframe: NEAR specific day -> asks time only, casual visit, not parked",
+        ("What time suits you" in _specific and "20 minutes" in _specific
+         and "quick look at the bathroom" in _specific
+         and "day and time" not in _specific and "check back on" not in _specific),
+        got=_specific,
+    )
+    _vague = _handle_delay_timeframe_answer("this weekend", {}, _FakeApptTf())
+    results.log(
+        "delay timeframe: NEAR vague range -> still asks the day, casual visit",
+        ("day and time" in _vague and "20 minutes" in _vague
+         and "check back on" not in _vague),
+        got=_vague,
+    )
+except Exception as e:
+    results.log("delay timeframe NEAR pivot", False, got=str(e))
+
 # The AI-first wrapper must still yield a date offline by falling through to the
 # deterministic parser (proves the fallback is wired, not just the AI path).
 for msg in ("next week", "August", "this weekend"):
@@ -846,21 +921,29 @@ for msg, expected in MULTI_PRODUCT_CASES:
     except Exception as e:
         results.log(f"_names_multiple_products: '{msg[:30]}'", False, got=str(e))
 
-# The combined reply prices each named item (tub AND shower), carries the
-# approximate-price disclaimer, and never invents figures.
+# The combined reply prices the CURRENT scope, carries the ballpark disclaimer,
+# and never invents figures. Wires every helper the rewritten method now uses.
 class _FakeSelfCombined:
     _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
     _FAMILY_ROUGH_PRICE = ResponseMixin._FAMILY_ROUGH_PRICE
-    _FAMILY_LABOUR_BREAKDOWN = ResponseMixin._FAMILY_LABOUR_BREAKDOWN
+    _FAMILY_PRICE_COMPONENTS = ResponseMixin._FAMILY_PRICE_COMPONENTS
+    _SCOPE_LABEL = ResponseMixin._SCOPE_LABEL
+    _SCOPE_SHORT = ResponseMixin._SCOPE_SHORT
+    _QTY_WORDS = ResponseMixin._QTY_WORDS
+    _NUM_WORDS = ResponseMixin._NUM_WORDS
     _product_families_in = ResponseMixin._product_families_in
-    _context_product_families = ResponseMixin._context_product_families
+    _quantity_for_family = ResponseMixin._quantity_for_family
+    _active_scope = ResponseMixin._active_scope
+    _num_word = ResponseMixin._num_word
+    _scope_allin_phrase = ResponseMixin._scope_allin_phrase
+    _format_labour_scope = ResponseMixin._format_labour_scope
     _asks_about_labour = ResponseMixin._asks_about_labour
     _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
     _build_combined_price_reply = ResponseMixin._build_combined_price_reply
     def __init__(self, appointment=None):
         self.appointment = appointment
-    def _get_pricing_followup_prompt(self, language="english"):
-        return "Whereabouts are you based? That helps me line up the assessment."
+    def _next_forward_question(self, language="english", scope=None, has_accessories=False):
+        return "Whereabouts are you based?"
 try:
     _cr = _FakeSelfCombined()._build_combined_price_reply("How much tab and shower", "english")
     results.log(
@@ -869,44 +952,58 @@ try:
         got=_cr[:90],
     )
     results.log(
-        "_build_combined_price_reply: carries approximate-price disclaimer",
-        "approximate starting prices" in _cr and "free at the on-site visit" in _cr,
+        "_build_combined_price_reply: ballpark disclaimer, not visit-gated",
+        "ballpark" in _cr and "free on-site" in _cr and "approximate starting" not in _cr,
         got=_cr[-90:],
     )
     # A plain multi-item price ask must NOT dump the supply/labour split.
     results.log(
         "_build_combined_price_reply: no labour split unless asked",
-        "item by item" not in _cr,
+        "fitted" not in _cr and "labour from" not in _cr,
         got=_cr[:120],
     )
 except Exception as e:
     results.log("_build_combined_price_reply", False, got=str(e))
 
-# Labour follow-up after a multi-item ask: the current message names no product
-# ("how much is labour"), so the reply must fall back to the captured
-# project_description ("shower and tub") and cover BOTH items with a supply +
-# labour split — not collapse to one carried-over intent (the shower-only bug).
-class _FakeApptCtx:
-    project_description = "shower and tub"
+# BUG 2 — scope is the LATEST the customer named. Opening with "tub and shower"
+# then narrowing to "2x shower cubicles and accessories" must price cubicles
+# only (tub dropped), with quantity multiplied and the line total shown.
+class _FakeApptScope:
+    project_description = "shower and tub"   # stale earlier scope — must NOT win
+    customer_area = "Greendale"
+    project_type = "bathroom_renovation"
+    scheduled_datetime = None
+    conversation_history = [
+        {'role': 'user', 'content': 'Need a quote to fit tub and shower'},
+        {'role': 'assistant', 'content': 'Great, what area are you in?'},
+        {'role': 'user', 'content': 'I want to purchase 2x shower cubicles and asseries'},
+        {'role': 'user', 'content': 'Greendale'},
+        {'role': 'user', 'content': 'How much is labour'},
+    ]
     def save(self, update_fields=None):
         pass
 try:
-    _lab = _FakeSelfCombined(appointment=_FakeApptCtx())._build_combined_price_reply(
+    _lab = _FakeSelfCombined(appointment=_FakeApptScope())._build_combined_price_reply(
         "How much is labour", "english"
     )
     results.log(
-        "labour follow-up: covers BOTH tub and shower from context",
-        "tub from US$160" in _lab and "shower cubicle from US$170" in _lab,
-        got=_lab[:90],
+        "labour scope: prices the cubicle (current scope), drops the tub",
+        ("supply from US$130, labour from US$40" in _lab
+         and "tub" not in _lab.lower() and "US$160" not in _lab and "US$80" not in _lab),
+        got=_lab,
     )
     results.log(
-        "labour follow-up: shows supply + labour split for each item",
-        ("supply from US$130, labour from US$40" in _lab
-         and "supply from US$80, labour from US$80" in _lab),
+        "labour scope: quantity multiplied with a line total",
+        "about US$170 fitted each" in _lab and "For two that's around US$340 all-in" in _lab,
+        got=_lab,
+    )
+    results.log(
+        "labour scope: accessories noted, ballpark, not gated behind visit",
+        ("accessories on top" in _lab and "ballpark" in _lab and "free on-site" in _lab),
         got=_lab,
     )
 except Exception as e:
-    results.log("_build_combined_price_reply labour", False, got=str(e))
+    results.log("_build_combined_price_reply labour scope", False, got=str(e))
 
 # _asks_about_labour fires on labour/install/fit questions, not plain how-much.
 LABOUR_ASK_CASES = [
@@ -927,6 +1024,136 @@ for msg, expected in LABOUR_ASK_CASES:
         )
     except Exception as e:
         results.log(f"_asks_about_labour: '{msg[:28]}'", False, got=str(e))
+
+# BUG 1 — the forward question advances to the next OPEN stage, never re-asking a
+# stage already asked/answered, and never reusing wording. Driven off conversation
+# state (appointment fields + assistant turns), stage order Service->Detail->Area->Booking.
+class _FakeApptFwd:
+    def __init__(self, project_type=None, customer_area=None, scheduled_datetime=None,
+                 history=None):
+        self.project_type = project_type
+        self.customer_area = customer_area
+        self.scheduled_datetime = scheduled_datetime
+        self.conversation_history = history or []
+class _FakeSelfForward:
+    _FORWARD_BANK = ResponseMixin._FORWARD_BANK
+    _SCOPE_LABEL = ResponseMixin._SCOPE_LABEL
+    _next_forward_question = ResponseMixin._next_forward_question
+    def __init__(self, appt):
+        self.appointment = appt
+def _bot(*contents):
+    return [{'role': 'assistant', 'content': c} for c in contents]
+try:
+    # Transcript case: area answered (Greendale) AND a day already offered
+    # ("work better for you"); scope known, accessories mentioned -> every earlier
+    # stage covered, so it lands on a FRESH booking question (not a repeat day push).
+    _fq = _FakeSelfForward(_FakeApptFwd(
+        customer_area="Greendale",
+        history=_bot("Would tomorrow or this Friday work better for you?"),
+    ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
+    results.log(
+        "forward Q: all stages covered -> timeframe question, no visit pitch, area not re-asked",
+        _fq == "When were you hoping to get this done?"
+        and "assessment" not in _fq and "visit" not in _fq,
+        got=str(_fq),
+    )
+    # Area genuinely open (not asked, not answered) -> ask it.
+    _fq2 = _FakeSelfForward(_FakeApptFwd(
+        history=_bot("Shower cubicles start from US$170."),
+    ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
+    results.log(
+        "forward Q: open area stage -> asks area",
+        _fq2 == "Whereabouts are you based?",
+        got=str(_fq2),
+    )
+    # Booking is the terminal stage that recurs across turns: a second booking
+    # nudge must use FRESH wording, never the phrasing already sent — and still
+    # never pitches the visit.
+    _fq3 = _FakeSelfForward(_FakeApptFwd(
+        customer_area="Greendale",
+        history=_bot("When were you hoping to get this done?"),
+    ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
+    results.log(
+        "forward Q: booking nudge rotates wording, no repeat, no visit pitch",
+        _fq3 == "Are you looking to start soon, or still planning it out?"
+        and "assessment" not in _fq3,
+        got=str(_fq3),
+    )
+except Exception as e:
+    results.log("_next_forward_question", False, got=str(e))
+
+# Confirm-intent close: name the items back and confirm scope before booking.
+# Two items -> "both the tub and shower, or starting with one?"; one item -> None
+# (caller falls back to a generic scope question).
+class _FakeSelfConfirm:
+    _FAMILY_DISPLAY = ResponseMixin._FAMILY_DISPLAY
+    _confirm_intent_question = ResponseMixin._confirm_intent_question
+try:
+    _c2 = _FakeSelfConfirm()._confirm_intent_question({'shower', 'tub'})
+    results.log(
+        "_confirm_intent_question: two items names both, asks both-or-one",
+        _c2 == "Are you looking to do both the shower and tub, or starting with one?",
+        got=str(_c2),
+    )
+    _c3 = _FakeSelfConfirm()._confirm_intent_question({'shower', 'tub', 'toilet'})
+    results.log(
+        "_confirm_intent_question: three items lists all of them",
+        ("all of them" in _c3 and "shower" in _c3 and "tub" in _c3 and "toilet" in _c3),
+        got=str(_c3),
+    )
+    _c1 = _FakeSelfConfirm()._confirm_intent_question({'shower'})
+    results.log(
+        "_confirm_intent_question: single item returns None (generic fallback)",
+        _c1 is None,
+        got=str(_c1),
+    )
+except Exception as e:
+    results.log("_confirm_intent_question", False, got=str(e))
+
+# The pricing close is stage-driven, with a deflection override on top. Build a
+# fake that controls the stage + is_delayed and otherwise reuses the real method.
+class _FakeApptStage:
+    def __init__(self, is_delayed=False):
+        self.is_delayed = is_delayed
+class _FakeSelfFollowup:
+    _FAMILY_DISPLAY = ResponseMixin._FAMILY_DISPLAY
+    _confirm_intent_question = ResponseMixin._confirm_intent_question
+    _get_pricing_followup_prompt = ResponseMixin._get_pricing_followup_prompt
+    def __init__(self, stage, is_delayed=False):
+        self._stage = stage
+        self.appointment = _FakeApptStage(is_delayed=is_delayed)
+    def get_next_question_to_ask(self):
+        return self._stage
+    def _get_contextual_description_question(self):
+        return "What specifically needs doing?"
+    def _get_next_two_available_days(self):
+        return []
+try:
+    # Scope stage + known items -> confirm-intent names the items.
+    _ci = _FakeSelfFollowup("project_description")._get_pricing_followup_prompt(
+        "english", items={'shower', 'tub'}
+    )
+    results.log(
+        "pricing close: scope stage with items -> confirm-intent",
+        _ci == "Are you looking to do both the shower and tub, or starting with one?",
+        got=str(_ci),
+    )
+    # Deflected lead at the scheduling stage -> timeline anchor, NOT a day push.
+    _ta = _FakeSelfFollowup("availability_date", is_delayed=True)._get_pricing_followup_prompt("english")
+    results.log(
+        "pricing close: deflected lead -> timeline anchor (no day push)",
+        _ta == "Are you hoping to get this sorted soon, or still planning it out?",
+        got=str(_ta),
+    )
+    # Engaged lead at the scheduling stage -> still asks the day (no override).
+    _day = _FakeSelfFollowup("availability_date", is_delayed=False)._get_pricing_followup_prompt("english")
+    results.log(
+        "pricing close: engaged lead at scheduling -> day question (no anchor)",
+        "planning it out" not in _day,
+        got=str(_day),
+    )
+except Exception as e:
+    results.log("pricing close stage/deflection", False, got=str(e))
 
 # When the lead names the items, record them as the project_description so the
 # follow-up advances to the next step (area/visit) instead of re-asking "what are

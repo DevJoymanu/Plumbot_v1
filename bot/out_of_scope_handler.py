@@ -804,6 +804,52 @@ def _extract_followup_date_ai(message: str):
         return None
 
 
+def _timeframe_names_specific_day(message: str) -> bool:
+    """
+    True when the customer named an actual day (tomorrow, Friday, the 26th) — so
+    we already have the date and only need a time. Vague ranges ("this week",
+    "this weekend", "soon") return False: we still have to pin the day.
+    """
+    msg = (message or '').lower()
+    if re.search(r'\b(this|next)\s+week\b', msg) or 'weekend' in msg:
+        return False
+    specific = (
+        r'\btoday\b', r'\btonight\b', r'\btomorrow\b', r'\bday after tomorrow\b',
+        r'\b(mon|tues|wednes|thurs|fri|satur|sun)day\b',
+        r'\b\d{1,2}\s*(st|nd|rd|th)\b',                       # the 26th
+        r'\b\d{1,2}[/-]\d{1,2}\b',                            # 26/6
+        r'\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)',
+        r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}\b',
+    )
+    return any(re.search(p, msg) for p in specific)
+
+
+def _service_space_label(appointment) -> str:
+    """Casual name for the space we'd come look at, for visit copy."""
+    svc = (getattr(appointment, 'project_type', '') or '').lower()
+    if 'kitchen' in svc and 'bathroom' in svc:
+        return 'the space'
+    if 'kitchen' in svc:
+        return 'the kitchen'
+    if 'bathroom' in svc:
+        return 'the bathroom'
+    return 'the space'
+
+
+def _timeframe_is_near(iso_date: str, within_days: int = 7) -> bool:
+    """
+    True when a parsed follow-up date is soon (today .. +within_days). A near
+    timeframe is a buying signal, not a deferral, so the lead is steered into
+    booking the visit rather than parked. Anything further out keeps the parked
+    (delayed-lead) workflow.
+    """
+    from datetime import date
+    try:
+        return 0 <= (date.fromisoformat(iso_date[:10]) - date.today()).days <= within_days
+    except Exception:
+        return False
+
+
 def _compute_followup_date(timeframe_message: str):
     """
     Resolve a customer's deferral message to (iso_date, friendly_str).
@@ -1693,6 +1739,25 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     _clear_pending(appointment)
     _clear_delay_reask(appointment)
     logger.info("Delay timeframe parsed: '%s' → follow-up %s", message[:60], iso_date)
+
+    # A NEAR timeframe (tomorrow / within a week) is readiness, not a deferral —
+    # don't park it. Pivot to booking: now is the moment to bring up the visit and
+    # collect a day/time for the free on-site assessment. Anything further out
+    # falls through to the parked (delayed-lead) workflow below.
+    if _timeframe_is_near(iso_date):
+        logger.info("Near-term timeframe — booking the visit instead of parking")
+        look = f"a quick look at {_service_space_label(appointment)} — 20 minutes or so"
+        if _timeframe_names_specific_day(message):
+            # We already have the day — ask only for a time.
+            return (
+                f"Nice one — {friendly_date} works. What time suits you? "
+                f"We'll pop round for {look} and confirm the exact figure on the spot."
+            )
+        # Vague near range ("this weekend") — pin the actual day too.
+        return (
+            "Nice one — let's get you in this side. What day and time works for you? "
+            f"We'll pop round for {look} and confirm the exact figure on the spot."
+        )
 
     # Presumptively commit: mark the lead delayed and store the agreed date now,
     # rather than gating on a separate confirmation step.
