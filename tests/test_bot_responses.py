@@ -1046,17 +1046,37 @@ class _FakeSelfForward:
     _FORWARD_BANK = ResponseMixin._FORWARD_BANK
     _SCOPE_LABEL = ResponseMixin._SCOPE_LABEL
     _next_forward_question = ResponseMixin._next_forward_question
+    # Tie-down helpers — "ask for a yes first" leads every answer; the forward
+    # question is only reached once our last turn was already a tie-down.
+    _TIEDOWN_VALUE_CHECK = ResponseMixin._TIEDOWN_VALUE_CHECK
+    _tiedown_signatures = ResponseMixin._tiedown_signatures
+    _assistant_history_text = ResponseMixin._assistant_history_text
+    _yes_tiedown = ResponseMixin._yes_tiedown
+    _last_assistant_was_tiedown = ResponseMixin._last_assistant_was_tiedown
     def __init__(self, appt):
         self.appointment = appt
 def _bot(*contents):
     return [{'role': 'assistant', 'content': c} for c in contents]
+# Canonical value-check tie-down — seeded as the last turn to reach the forward
+# question (the "proceed" branch).
+_TD = "Makes sense to get that sorted properly the first time, right?"
 try:
+    # No prior tie-down -> ask for a yes first (value-check), not the field question.
+    _fq_td = _FakeSelfForward(_FakeApptFwd(
+        history=_bot("Shower cubicles start from US$170."),
+    ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
+    results.log(
+        "forward Q: no prior tie-down -> asks for a yes first (value-check)",
+        "sorted properly the first time" in _fq_td or "once and done well" in _fq_td,
+        got=str(_fq_td),
+    )
     # Transcript case: area answered (Greendale) AND a day already offered
     # ("work better for you"); scope known, accessories mentioned -> every earlier
     # stage covered, so it lands on a FRESH booking question (not a repeat day push).
+    # Tie-down already sent last turn -> proceed to the forward question.
     _fq = _FakeSelfForward(_FakeApptFwd(
         customer_area="Greendale",
-        history=_bot("Would tomorrow or this Friday work better for you?"),
+        history=_bot("Would tomorrow or this Friday work better for you?", _TD),
     ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
     results.log(
         "forward Q: all stages covered -> timeframe question, no visit pitch, area not re-asked",
@@ -1064,9 +1084,9 @@ try:
         and "assessment" not in _fq and "visit" not in _fq,
         got=str(_fq),
     )
-    # Area genuinely open (not asked, not answered) -> ask it.
+    # Area genuinely open (not asked, not answered) -> ask it (after the tie-down).
     _fq2 = _FakeSelfForward(_FakeApptFwd(
-        history=_bot("Shower cubicles start from US$170."),
+        history=_bot("Shower cubicles start from US$170.", _TD),
     ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
     results.log(
         "forward Q: open area stage -> asks area",
@@ -1078,7 +1098,7 @@ try:
     # never pitches the visit.
     _fq3 = _FakeSelfForward(_FakeApptFwd(
         customer_area="Greendale",
-        history=_bot("When were you hoping to get this done?"),
+        history=_bot("When were you hoping to get this done?", _TD),
     ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
     results.log(
         "forward Q: booking nudge rotates wording, no repeat, no visit pitch",
@@ -1120,15 +1140,22 @@ except Exception as e:
 # The pricing close is stage-driven, with a deflection override on top. Build a
 # fake that controls the stage + is_delayed and otherwise reuses the real method.
 class _FakeApptStage:
-    def __init__(self, is_delayed=False):
+    def __init__(self, is_delayed=False, history=None):
         self.is_delayed = is_delayed
+        self.conversation_history = history or []
 class _FakeSelfFollowup:
     _FAMILY_DISPLAY = ResponseMixin._FAMILY_DISPLAY
     _confirm_intent_question = ResponseMixin._confirm_intent_question
     _get_pricing_followup_prompt = ResponseMixin._get_pricing_followup_prompt
-    def __init__(self, stage, is_delayed=False):
+    _TIEDOWN_VALUE_CHECK = ResponseMixin._TIEDOWN_VALUE_CHECK
+    _tiedown_signatures = ResponseMixin._tiedown_signatures
+    _assistant_history_text = ResponseMixin._assistant_history_text
+    _yes_tiedown = ResponseMixin._yes_tiedown
+    _last_assistant_was_tiedown = ResponseMixin._last_assistant_was_tiedown
+    _append_tiedown = ResponseMixin._append_tiedown
+    def __init__(self, stage, is_delayed=False, history=None):
         self._stage = stage
-        self.appointment = _FakeApptStage(is_delayed=is_delayed)
+        self.appointment = _FakeApptStage(is_delayed=is_delayed, history=history)
     def get_next_question_to_ask(self):
         return self._stage
     def _get_contextual_description_question(self):
@@ -1136,31 +1163,100 @@ class _FakeSelfFollowup:
     def _get_next_two_available_days(self):
         return []
 try:
-    # Scope stage + known items -> confirm-intent names the items.
-    _ci = _FakeSelfFollowup("project_description")._get_pricing_followup_prompt(
+    # No prior tie-down -> ask for a yes first (value-check), not the field question.
+    _td1 = _FakeSelfFollowup("project_description")._get_pricing_followup_prompt(
         "english", items={'shower', 'tub'}
     )
     results.log(
-        "pricing close: scope stage with items -> confirm-intent",
+        "pricing close: no prior tie-down -> value-check yes first",
+        "sorted properly the first time" in _td1,
+        got=str(_td1),
+    )
+    # Scope stage + known items, tie-down already sent -> confirm-intent names items.
+    _ci = _FakeSelfFollowup("project_description", history=_bot(_TD))._get_pricing_followup_prompt(
+        "english", items={'shower', 'tub'}
+    )
+    results.log(
+        "pricing close: scope stage with items -> confirm-intent (after tie-down)",
         _ci == "Are you looking to do both the shower and tub, or starting with one?",
         got=str(_ci),
     )
     # Deflected lead at the scheduling stage -> timeline anchor, NOT a day push.
+    # The deflection override sits ABOVE the tie-down gate, so no history needed.
     _ta = _FakeSelfFollowup("availability_date", is_delayed=True)._get_pricing_followup_prompt("english")
     results.log(
         "pricing close: deflected lead -> timeline anchor (no day push)",
         _ta == "Are you hoping to get this sorted soon, or still planning it out?",
         got=str(_ta),
     )
-    # Engaged lead at the scheduling stage -> still asks the day (no override).
-    _day = _FakeSelfFollowup("availability_date", is_delayed=False)._get_pricing_followup_prompt("english")
+    # Engaged lead at scheduling, tie-down already sent -> asks the day (no anchor).
+    _day = _FakeSelfFollowup(
+        "availability_date", is_delayed=False, history=_bot(_TD)
+    )._get_pricing_followup_prompt("english")
     results.log(
         "pricing close: engaged lead at scheduling -> day question (no anchor)",
-        "planning it out" not in _day,
+        "planning it out" not in _day and "sorted properly the first time" not in _day,
         got=str(_day),
     )
 except Exception as e:
     results.log("pricing close stage/deflection", False, got=str(e))
+
+# Tie-down helpers: rotate so the same value-check never repeats, and detect when
+# our last turn was already a tie-down (so the field question proceeds).
+try:
+    # First call with no history -> first bank line.
+    _t0 = _FakeSelfFollowup("service_type")._yes_tiedown("english")
+    results.log(
+        "tie-down: first call -> first value-check line",
+        _t0 == "Makes sense to get that sorted properly the first time, right?",
+        got=str(_t0),
+    )
+    # First line already used -> rotates to the next, unused one.
+    _t1 = _FakeSelfFollowup("service_type", history=_bot(_TD))._yes_tiedown("english")
+    results.log(
+        "tie-down: rotates to a fresh line when the first was used",
+        _t1 == "Worth getting it done once and done well, don't you think?",
+        got=str(_t1),
+    )
+    # Shona path returns a Shona tie-down.
+    _ts = _FakeSelfFollowup("service_type")._yes_tiedown("shona")
+    results.log(
+        "tie-down: shona language -> shona line",
+        "handiti" in _ts,
+        got=str(_ts),
+    )
+    # Detection: last assistant turn is a tie-down -> True; a price line -> False.
+    _d_yes = _FakeSelfFollowup("service_type", history=_bot("Geysers from US$X.", _TD))
+    _d_no = _FakeSelfFollowup("service_type", history=_bot(_TD, "Geysers from US$X."))
+    results.log(
+        "tie-down: detects last turn was a tie-down",
+        _d_yes._last_assistant_was_tiedown() is True
+        and _d_no._last_assistant_was_tiedown() is False,
+        got=f"yes={_d_yes._last_assistant_was_tiedown()} no={_d_no._last_assistant_was_tiedown()}",
+    )
+    # _append_tiedown (LLM / semantic-rescue answer paths): append a value-check
+    # unless our last turn was already one or the reply is empty.
+    _ans = "A small repair takes a couple of hours."
+    _ap1 = _FakeSelfFollowup("service_type")._append_tiedown(_ans, "english")
+    results.log(
+        "append tie-down: free-form answer gets a value-check appended",
+        _ap1.startswith(_ans) and "sorted properly the first time" in _ap1,
+        got=str(_ap1),
+    )
+    _ap2 = _FakeSelfFollowup("service_type", history=_bot(_TD))._append_tiedown(_ans, "english")
+    results.log(
+        "append tie-down: no stacking when last turn was already a tie-down",
+        _ap2 == _ans,
+        got=str(_ap2),
+    )
+    _ap3 = _FakeSelfFollowup("service_type")._append_tiedown("", "english")
+    results.log(
+        "append tie-down: empty reply unchanged",
+        _ap3 == "",
+        got=repr(_ap3),
+    )
+except Exception as e:
+    results.log("tie-down helpers", False, got=str(e))
 
 # When the lead names the items, record them as the project_description so the
 # follow-up advances to the next step (area/visit) instead of re-asking "what are

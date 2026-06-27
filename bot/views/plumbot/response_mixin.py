@@ -355,6 +355,76 @@ class ResponseMixin:
             return f"{day_name} the {day_num}{suffix}"
 
 
+        # ── "Ask for a yes first" — soft value-check tie-downs ────────────────────
+        # After answering a lead's question we ask for a small yes BEFORE the next
+        # booking field (Hormozi micro-yes ladder). The field is asked only once the
+        # lead engages — the booking flow handles that on the following turn. Rotated
+        # off conversation history so the same tie-down never repeats and we never
+        # send two tie-downs back to back.
+        _TIEDOWN_VALUE_CHECK = {
+            'english': [
+                ("Makes sense to get that sorted properly the first time, right?",
+                 "sorted properly the first time"),
+                ("Worth getting it done once and done well, don't you think?",
+                 "once and done well"),
+                ("That's the kind of thing you'd want handled right, yeah?",
+                 "want handled right"),
+            ],
+            'shona': [
+                ("Zvine musoro kuti zviitwe nemazvo kekutanga, handiti?",
+                 "nemazvo kekutanga"),
+                ("Zviri nani kuzviita kamwe chete zvakanaka, handiti?",
+                 "kamwe chete zvakanaka"),
+            ],
+        }
+
+        def _tiedown_signatures(self):
+            return tuple(
+                sig for bank in self._TIEDOWN_VALUE_CHECK.values() for _, sig in bank
+            )
+
+        def _assistant_history_text(self) -> str:
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            return "\n".join(
+                (m.get('content') or '').lower()
+                for m in history if m.get('role') == 'assistant'
+            )
+
+        def _yes_tiedown(self, language: str = "english") -> str:
+            """First unused value-check tie-down for the language, rotating off the
+            assistant transcript so we never repeat one."""
+            bank = self._TIEDOWN_VALUE_CHECK.get(
+                'shona' if language == 'shona' else 'english',
+                self._TIEDOWN_VALUE_CHECK['english'],
+            )
+            asked = self._assistant_history_text()
+            for text, sig in bank:
+                if sig not in asked:
+                    return text
+            return bank[-1][0]
+
+        def _last_assistant_was_tiedown(self) -> bool:
+            """True when the most recent assistant turn was a value-check tie-down —
+            so we proceed to the field question instead of stacking a second one."""
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            last = next(
+                (m.get('content', '') for m in reversed(history)
+                 if m.get('role') == 'assistant'),
+                '',
+            ).lower()
+            return any(sig in last for sig in self._tiedown_signatures())
+
+        def _append_tiedown(self, reply: str, language: str = "english") -> str:
+            """Close a free-form answer (LLM / semantic-rescue) with a value-check
+            tie-down. No-op when there's no reply or our last turn was already a
+            tie-down (so we never stack two)."""
+            if not reply or self._last_assistant_was_tiedown():
+                return reply
+            return f"{reply.rstrip()}\n\n{self._yes_tiedown(language)}"
+
+
         def _get_pricing_followup_prompt(self, language: str = "english", items=None) -> str:
             """
             Return the next booking question as a yes-seeking close that fits the
@@ -380,6 +450,14 @@ class ResponseMixin:
                 return ("Muri kuda kuzviita munguva pfupi, kana muchiri kungoronga zvenyu?"
                         if is_shona else
                         "Are you hoping to get this sorted soon, or still planning it out?")
+
+            # Ask for a yes first: lead with a soft value-check tie-down instead of
+            # the next field question. Only once the lead has engaged with the
+            # tie-down (it was our last turn) do we proceed to the field below — so
+            # we never stack two tie-downs in a row. A delayed lead (handled above)
+            # skips this and gets the timeline anchor.
+            if not self._last_assistant_was_tiedown():
+                return self._yes_tiedown(language)
 
             if next_question == "service_type":
                 return "Uri kuda service ipi chaizvo?" if is_shona else "Which service are you looking at exactly?"
@@ -1082,8 +1160,14 @@ class ResponseMixin:
             chosen stage, the first bank phrasing not yet used is picked.
             """
             if language == "shona":
-                # Shona keeps the existing translated stage logic.
+                # Shona keeps the existing translated stage logic (which itself
+                # applies the tie-down gate).
                 return self._get_pricing_followup_prompt("shona")
+
+            # Ask for a yes first — lead with a value-check tie-down unless our last
+            # turn was already one (then fall through to the forward question).
+            if not self._last_assistant_was_tiedown():
+                return self._yes_tiedown(language)
 
             appt = getattr(self, 'appointment', None)
             history = (getattr(appt, 'conversation_history', None) or []) if appt else []
@@ -2509,6 +2593,17 @@ class ResponseMixin:
                     )
 
                 logger.info("semantic_rescue: returning rescue reply for input_type=%s", input_type)
+
+                # Ask for a yes first: close the free-form answer with a soft
+                # value-check tie-down (signed so the next turn detects it and won't
+                # stack a second). Skip if our last turn was already a tie-down.
+                if reply and not self._last_assistant_was_tiedown():
+                    try:
+                        from bot.repeated_question_detector import detect_language
+                        _lang = detect_language(message)
+                    except Exception:
+                        _lang = 'english'
+                    reply = self._append_tiedown(reply, _lang)
                 return reply
 
             except Exception as exc:
@@ -2542,12 +2637,13 @@ class ResponseMixin:
             if asks_plumber:
                 return (
                     f"You'll be looked after by Tinashe, our lead plumber at Homebase Plumbers — "
-                    f"he handles the visit personally. You can reach him directly on {number}."
+                    f"he handles the visit personally. You can reach him directly on {number}.\n\n"
+                    "Worth getting it done once and done well, don't you think?"
                 )
             return (
                 "You're chatting with Plumbot, the assistant for Homebase Plumbers here in Harare"
-                f"Our plumber Tinashe handles the hands-on work (reach him on {number}). "
-                "What can we help you get sorted?"
+                f"Our plumber Tinashe handles the hands-on work (reach him on {number}).\n\n"
+                "Makes sense to get that sorted properly the first time, right?"
             )
 
         def _build_human_handoff_reply(self) -> str:

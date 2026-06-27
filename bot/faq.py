@@ -4,42 +4,51 @@ logger = logging.getLogger(__name__)
 
 # ── Business facts ─────────────────────────────────────────────────────────────
 # Plain strings — no LLM, no API call, always correct.
+# Each answer closes with a soft "value-check" tie-down (a micro-yes) rather than
+# the next booking question — we ask for the small yes first and let the booking
+# flow ask the field once the lead engages. The closing phrases carry the same
+# signatures the bot uses to detect a tie-down ("sorted properly the first time" /
+# "once and done well"), so it never stacks a second one on the following turn.
 _FACTS = {
     'location': (
         "We're in Hatfield, Harare \n\n"
-        "We come to you though — just let us know which area you're in "
-        "and we'll get the visit sorted."
+        "We come to you though, wherever you are.\n\n"
+        "Makes sense to get that sorted properly the first time, right?"
     ),
     'hours': (
         "We're available Sunday to Friday, 8am–6pm.\n\n"
-        "Send us a message anytime and we'll get you booked in."
+        "Easy to find a slot that fits you. "
+        "Makes sense to get that sorted properly the first time, right?"
     ),
     'contact': (
         "You can reach Takudzwa directly on +263774819901 if you'd like to "
-        "chat about the job first."
+        "chat about the job first.\n\n"
+        "Worth getting it done once and done well, don't you think?"
     ),
     'services': (
         "Yes, we handle all plumbing work — vanities, tubs, geysers, showers, toilets, "
         "renovations, repairs, new installations, you name it.\n\n"
-        "What are you looking for?"
+        "Worth getting it done once and done well, don't you think?"
     ),
     'payment': (
         "Cash, EcoCash, and bank transfer — all good \n\n"
-        "You'll get the full price before anything starts, no surprises."
+        "You'll get the full price before anything starts, no surprises. "
+        "Makes sense to get that sorted properly the first time, right?"
     ),
     'free_quote': (
         "Yes, the site visit and quote are completely free \n\n"
         "We come to you, have a look, and give you a fixed price on the spot "
-        "before any work starts."
+        "before any work starts.\n\n"
+        "Makes sense to get that sorted properly the first time, right?"
     ),
     'job_duration': (
         "It depends on the scope of work — a small repair can be done in a few hours, "
         "while a full bathroom renovation typically takes a few days.\n\n"
-        "We'll give you a clearer timeline once we've seen the space."
+        "Worth getting it done once and done well, don't you think?"
     ),
     'licensed': (
         "Yes, we're fully licensed and registered \n\n"
-        "Happy to share our credentials — just ask."
+        "Worth getting it done once and done well, don't you think?"
     ),
 }
 
