@@ -960,7 +960,7 @@ try:
     )
     results.log(
         "_build_combined_price_reply: ballpark disclaimer, not visit-gated",
-        "ballpark" in _cr and "free on-site" in _cr and "approximate starting" not in _cr,
+        "ballpark" in _cr and "sees the space" in _cr and "approximate starting" not in _cr,
         got=_cr[-90:],
     )
     # A plain multi-item price ask must NOT dump the supply/labour split.
@@ -1006,7 +1006,7 @@ try:
     )
     results.log(
         "labour scope: accessories noted, ballpark, not gated behind visit",
-        ("accessories on top" in _lab and "ballpark" in _lab and "free on-site" in _lab),
+        ("accessories on top" in _lab and "ballpark" in _lab and "sees the space" in _lab),
         got=_lab,
     )
 except Exception as e:
@@ -1049,9 +1049,11 @@ class _FakeSelfForward:
     # Tie-down helpers — "ask for a yes first" leads every answer; the forward
     # question is only reached once our last turn was already a tie-down.
     _TIEDOWN_VALUE_CHECK = ResponseMixin._TIEDOWN_VALUE_CHECK
+    _EXTRA_TIEDOWN_SIGNATURES = ResponseMixin._EXTRA_TIEDOWN_SIGNATURES
     _tiedown_signatures = ResponseMixin._tiedown_signatures
     _assistant_history_text = ResponseMixin._assistant_history_text
     _yes_tiedown = ResponseMixin._yes_tiedown
+    _price_tiedown = ResponseMixin._price_tiedown
     _last_assistant_was_tiedown = ResponseMixin._last_assistant_was_tiedown
     def __init__(self, appt):
         self.appointment = appt
@@ -1066,8 +1068,8 @@ try:
         history=_bot("Shower cubicles start from US$170."),
     ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
     results.log(
-        "forward Q: no prior tie-down -> asks for a yes first (value-check)",
-        "sorted properly the first time" in _fq_td or "once and done well" in _fq_td,
+        "forward Q: no prior tie-down -> asks for a yes first (budget tie-down)",
+        "with your budget" in _fq_td.lower(),
         got=str(_fq_td),
     )
     # Transcript case: area answered (Greendale) AND a day already offered
@@ -1151,8 +1153,13 @@ class _FakeSelfFollowup:
     _tiedown_signatures = ResponseMixin._tiedown_signatures
     _assistant_history_text = ResponseMixin._assistant_history_text
     _yes_tiedown = ResponseMixin._yes_tiedown
+    _price_tiedown = ResponseMixin._price_tiedown
     _last_assistant_was_tiedown = ResponseMixin._last_assistant_was_tiedown
     _append_tiedown = ResponseMixin._append_tiedown
+    _EXTRA_TIEDOWN_SIGNATURES = ResponseMixin._EXTRA_TIEDOWN_SIGNATURES
+    _product_price_close = ResponseMixin._product_price_close
+    _ensure_price_disclaimer = ResponseMixin._ensure_price_disclaimer
+    _PRICED_INTENTS = ResponseMixin._PRICED_INTENTS
     def __init__(self, stage, is_delayed=False, history=None):
         self._stage = stage
         self.appointment = _FakeApptStage(is_delayed=is_delayed, history=history)
@@ -1168,8 +1175,8 @@ try:
         "english", items={'shower', 'tub'}
     )
     results.log(
-        "pricing close: no prior tie-down -> value-check yes first",
-        "sorted properly the first time" in _td1,
+        "pricing close: no prior tie-down -> budget tie-down first",
+        "with your budget" in _td1.lower(),
         got=str(_td1),
     )
     # Scope stage + known items, tie-down already sent -> confirm-intent names items.
@@ -1255,8 +1262,74 @@ try:
         _ap3 == "",
         got=repr(_ap3),
     )
+    # _product_price_close (tub / Facebook-package replies): value-check first,
+    # then the open "which one?" question once a tie-down has gone out.
+    _pc1 = _FakeSelfFollowup("project_description")._product_price_close("english")
+    results.log(
+        "product price close: no prior tie-down -> budget tie-down first",
+        "with your budget" in _pc1.lower(),
+        got=str(_pc1),
+    )
+    _pc2 = _FakeSelfFollowup(
+        "project_description", history=_bot(_TD)
+    )._product_price_close("english")
+    results.log(
+        "product price close: after a tie-down -> open 'which one?' question",
+        _pc2 == "What did you have in mind?",
+        got=str(_pc2),
+    )
+    # A budget-fit close ("looking to invest") counts as a tie-down, so the next
+    # product close does NOT stack a second yes.
+    _bf = "Is that around what you were looking to invest to get it sorted properly?"
+    _pc3 = _FakeSelfFollowup(
+        "project_description", history=_bot(_bf)
+    )._product_price_close("english")
+    results.log(
+        "product price close: budget-fit close counts as a tie-down (no stack)",
+        _pc3 == "What did you have in mind?",
+        got=str(_pc3),
+    )
+    # Price replies close on the budget tie-down (business preference), EN + Shona.
+    _pt_en = _FakeSelfFollowup("service_type")._price_tiedown("english")
+    _pt_sn = _FakeSelfFollowup("service_type")._price_tiedown("shona")
+    results.log(
+        "price tie-down: budget-fit close (EN + Shona)",
+        _pt_en == "That sit alright with your budget?" and "budget" in _pt_sn.lower(),
+        got=f"en={_pt_en!r} sn={_pt_sn!r}",
+    )
+    # The budget tie-down counts as a tie-down for stacking purposes.
+    results.log(
+        "price tie-down: registered as a tie-down signature",
+        _FakeSelfFollowup("service_type", history=_bot(_pt_en))._last_assistant_was_tiedown() is True,
+        got="ok",
+    )
 except Exception as e:
     results.log("tie-down helpers", False, got=str(e))
+
+# Pricing copy: compose snippets break down supply + install, and the price
+# disclaimer is reworded to "once the plumber sees the space" (no "on-site visit").
+try:
+    _snips = ResponseMixin._COMPOSE_SNIPPETS
+    results.log(
+        "compose snippets: shower breaks down supply + install",
+        "supply from US$130 + install from US$40" in _snips['shower_cubicle'],
+        got=_snips['shower_cubicle'],
+    )
+    results.log(
+        "compose snippets: vanity breaks down supply + install",
+        "supply from US$150 + install from US$30" in _snips['vanity'],
+        got=_snips['vanity'],
+    )
+    _disc = _FakeSelfFollowup("service_type")._ensure_price_disclaimer(
+        'geyser', "Geysers from US$160 all-in.\n\nWhat day suits you?"
+    )
+    results.log(
+        "price disclaimer: reworded to 'sees the space', no 'on-site visit'",
+        "once the plumber sees the space" in _disc and "on-site visit" not in _disc,
+        got=_disc,
+    )
+except Exception as e:
+    results.log("pricing copy (snippets/disclaimer)", False, got=str(e))
 
 # When the lead names the items, record them as the project_description so the
 # follow-up advances to the next step (area/visit) instead of re-asking "what are

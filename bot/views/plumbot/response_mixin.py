@@ -160,17 +160,18 @@ class ResponseMixin:
                     "Standard built-in tubs from US$160 all-in (tub US$80 + install US$80).\n\n"
                     f"{self._budget_fit_close('english')}"
                 )
-            # Unspecified — they haven't told us which tub yet, so ask which one.
+            # Unspecified — ask for a yes first (value-check), then narrow down
+            # which tub on the next turn (via _product_price_close).
             if language == 'shona':
                 return (
                     "Freestanding tubs dzinotangira paUS$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
                     "Standard built-in tubs kubva paUS$160 all-in (tub US$80 + install US$80).\n\n"
-                    "Munoda chii chaizvo?"
+                    f"{self._product_price_close('shona')}"
                 )
             return (
                 "Freestanding tubs start from US$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
                 "Standard built-in tubs from US$160 all-in (tub US$80 + install US$80).\n\n"
-                "What did you have in mind?"
+                f"{self._product_price_close('english')}"
             )
 
         def _parse_name_from_reply(self, message: str):
@@ -378,10 +379,32 @@ class ResponseMixin:
             ],
         }
 
+        # Other yes-seeking closes that also count as a tie-down for stacking
+        # purposes (so we never follow one with a value-check next turn).
+        # "with your budget" / "ne budget" = the price-reply tie-down (_price_tiedown).
+        _EXTRA_TIEDOWN_SIGNATURES = (
+            "looking to invest", "yamaitarisira", "with your budget", "ne budget",
+        )
+
+        def _price_tiedown(self, language: str = "english") -> str:
+            """Closing tie-down for PRICE replies — a budget-fit yes (per business
+            preference) rather than the generic value-check used elsewhere."""
+            if language == "shona":
+                return "Izvozvo zvirikuenderana ne budget yenyu here?"
+            return "That sit alright with your budget?"
+
         def _tiedown_signatures(self):
             return tuple(
                 sig for bank in self._TIEDOWN_VALUE_CHECK.values() for _, sig in bank
-            )
+            ) + self._EXTRA_TIEDOWN_SIGNATURES
+
+        def _product_price_close(self, language: str = "english") -> str:
+            """Closer for a single-product price reply (tub, Facebook package, etc.).
+            Ask for a yes first (budget-fit price tie-down); once that's gone out,
+            fall through to the open 'which one?' question so the lead can narrow down."""
+            if not self._last_assistant_was_tiedown():
+                return self._price_tiedown(language)
+            return "Munoda chii chaizvo?" if language == "shona" else "What did you have in mind?"
 
         def _assistant_history_text(self) -> str:
             appt = getattr(self, 'appointment', None)
@@ -451,13 +474,13 @@ class ResponseMixin:
                         if is_shona else
                         "Are you hoping to get this sorted soon, or still planning it out?")
 
-            # Ask for a yes first: lead with a soft value-check tie-down instead of
-            # the next field question. Only once the lead has engaged with the
+            # Ask for a yes first: lead with the budget-fit price tie-down instead
+            # of the next field question. Only once the lead has engaged with the
             # tie-down (it was our last turn) do we proceed to the field below — so
             # we never stack two tie-downs in a row. A delayed lead (handled above)
             # skips this and gets the timeline anchor.
             if not self._last_assistant_was_tiedown():
-                return self._yes_tiedown(language)
+                return self._price_tiedown(language)
 
             if next_question == "service_type":
                 return "Uri kuda service ipi chaizvo?" if is_shona else "Which service are you looking at exactly?"
@@ -1164,10 +1187,10 @@ class ResponseMixin:
                 # applies the tie-down gate).
                 return self._get_pricing_followup_prompt("shona")
 
-            # Ask for a yes first — lead with a value-check tie-down unless our last
-            # turn was already one (then fall through to the forward question).
+            # Ask for a yes first — lead with the budget-fit price tie-down unless
+            # our last turn was already one (then fall through to the forward question).
             if not self._last_assistant_was_tiedown():
-                return self._yes_tiedown(language)
+                return self._price_tiedown(language)
 
             appt = getattr(self, 'appointment', None)
             history = (getattr(appt, 'conversation_history', None) or []) if appt else []
@@ -1311,9 +1334,9 @@ class ResponseMixin:
                 body = f"{intro}{priced}."
 
             disclaimer = (
-                "Idzi ipfungidziro chete; mutengo chaiwo unosimbiswa mahara pamba."
+                "Idzi ipfungidziro chete; mutengo chaiwo unosimbiswa kana muplumber aona nzvimbo."
                 if is_shona else
-                "These are ballpark; the exact figure is confirmed free on-site."
+                "These are ballpark; the exact figure is confirmed once the plumber sees the space."
             )
             # Forward question off the CURRENT scope/state — skips stages already
             # asked or answered, rotates wording. Computed before we record the
@@ -3373,11 +3396,11 @@ class ResponseMixin:
             'standalone_tub':  "Freestanding (standalone) tubs: full setup from US$670 all-in (tub US$400 + mixer US$150 + install US$120).",
             'tub_sales':       "Freestanding tubs from US$670 all-in (tub US$400 + mixer US$150 + install US$120). Standard built-in tubs from US$160 all-in.",
             'bathtub_installation': "Standard built-in tub from US$160 all-in; freestanding setup from US$670 all-in.",
-            'geyser':          "Geysers from US$160 all-in — supply and install.",
-            'shower_cubicle':  "Shower cubicles from US$170 all-in — supply and install.",
-            'vanity':          "Vanities from US$180 all-in — supply and install.",
-            'toilet':          "Toilet replacement from US$70 all-in — supply and install.",
-            'chamber':         "Side chambers from US$160 all-in — supply and install.",
+            'geyser':          "Geysers from US$160 all-in (supply from US$80 + install from US$80).",
+            'shower_cubicle':  "Shower cubicles from US$170 all-in (supply from US$130 + install from US$40).",
+            'vanity':          "Vanities from US$180 all-in (supply from US$150 + install from US$30).",
+            'toilet':          "Toilet replacement from US$70 all-in (supply from US$50 + install from US$20).",
+            'chamber':         "Side chambers from US$160 all-in (supply from US$130 + install from US$30).",
             'facebook_package': "Our Facebook package is US$800 — freestanding tub and side chamber.",
             'location':        "We're based in Hatfield, Harare",
             'hours':           "We're open Sunday to Friday, 8 AM–6 PM",
@@ -3495,7 +3518,12 @@ class ResponseMixin:
             try:
                 reply += "\n\n" + self._get_pricing_followup_prompt('english')
             except Exception:
-                reply += "\n\nWould you like us to come take a look and lock in a fixed price?"
+                reply += "\n\nThat sit alright with your budget?"
+            # Carry the approximate-price disclaimer on any priced combo, inserted
+            # before the closing tie-down (idempotent, only when a figure is present).
+            priced = [i for i in answerable if i in self._PRICED_INTENTS]
+            if priced:
+                reply = self._ensure_price_disclaimer(priced[0], reply)
             return {"reply": reply, "send_photos": send_photos, "intents": answerable}
 
         def _concise_ai_answer(self, question: str):
@@ -3534,7 +3562,7 @@ class ResponseMixin:
 
         def _ensure_price_disclaimer(self, intent, reply):
             """Make sure every priced reply states the price is approximate and the
-            exact quote is confirmed free at the on-site visit. Idempotent and
+            exact quote is confirmed once the plumber sees the space. Idempotent and
             inserted before the closing question so the reply still ends on the CTA."""
             if not reply or intent not in self._PRICED_INTENTS:
                 return reply
@@ -3551,9 +3579,9 @@ class ResponseMixin:
                 'kubva', 'inotangira', 'munoda', 'uri kuda', 'tiuye', 'zvichienda', 'ne install',
             ))
             disclaimer = (
-                "Aya mamapurice ekutanga anenge — mutengo chaiwo unosimbiswa pa on-site visit yemahara."
+                "Aya mamapurice ekutanga anenge — mutengo chaiwo unosimbiswa kana muplumber aona nzvimbo."
                 if is_shona else
-                "These are approximate starting prices — your exact quote is confirmed free at the on-site visit."
+                "These are approximate starting prices — your exact quote is confirmed once the plumber sees the space."
             )
             parts = reply.split('\n\n')
             if len(parts) >= 2:
@@ -4347,16 +4375,13 @@ class ResponseMixin:
                         "For a new bathroom build, pricing covers both rough plumbing and fixtures. "
                     )
 
-            followup = self._get_pricing_followup_prompt(language)
-
-            #
             if language == 'shona':
                 reply = (
                     f"{project_context}"
                     "Facebook package yedu inosvika US$800. Ine freestanding tub ne side chamber.\n\n"
                     "Kana muri kuda tub chete — freestanding tubs dzinotangira paUS$670 all-in, "
                     "standard built-in tubs kubva US$160 all-in.\n\n"
-                    "Munoda chii chaizvo?"
+                    f"{self._product_price_close('shona')}"
                 )
             else:
                 reply = (
@@ -4364,7 +4389,7 @@ class ResponseMixin:
                     "Our Facebook package is US$800. That's a freestanding tub and side chamber.\n\n"
                     "If you're looking at just a tub — freestanding tubs start from US$670 all-in, "
                     "standard built-in tubs from US$160 all-in.\n\n"
-                    "What did you have in mind?"
+                    f"{self._product_price_close('english')}"
                 )
             return reply
 
@@ -4716,6 +4741,7 @@ class ResponseMixin:
         - If we can do it: confirm clearly and briefly, then move toward a site visit.
         - If we cannot (electrical, roofing, painting): say so and redirect to what we can help with.
         - ONLY give prices, sizes, or measurements if the customer EXPLICITLY asked about price or size. If they did not ask, do NOT mention any prices, sizes, or specifications — just acknowledge what they want and keep it moving. The pricing guide above is for reference only; never volunteer it unprompted.
+        - When you DO quote a price, always show the supply + install split using ONLY the figures in the pricing guide above — e.g. "Shower cubicles from US$170 all-in (supply from US$130 + install from US$40)". Never invent figures.
         - Zimbabwean English. No bold, no bullets. Do NOT end with a question."""
 
                 response = deepseek_client.chat.completions.create(
@@ -4739,6 +4765,17 @@ class ResponseMixin:
                 )
                 answer = response.choices[0].message.content.strip().replace("**", "").replace("__", "")
                 print(f"🤖 Dynamic answer for: '{message[:60]}'")
+                # A free-form answer that quotes a price must still carry the
+                # approximate-price disclaimer and close on the budget tie-down
+                # (the structured paths do this; the LLM here often forgets).
+                if answer and '$' in answer:
+                    answer = self._ensure_price_disclaimer('pricing', answer)
+                    if not self._last_assistant_was_tiedown() and 'budget' not in answer.lower():
+                        _low = answer.lower()
+                        _is_shona = any(t in _low for t in (
+                            'kubva', 'inotangira', 'munoda', 'tiuye', 'ne install',
+                        ))
+                        answer = f"{answer.rstrip()}\n\n{self._price_tiedown('shona' if _is_shona else 'english')}"
                 return answer
 
             except Exception as exc:
