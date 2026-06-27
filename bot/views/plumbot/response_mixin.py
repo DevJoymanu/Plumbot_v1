@@ -405,9 +405,9 @@ class ResponseMixin:
             ).lower()
             return 'with your budget' in last or 'ne budget' in last
 
-        def _is_budget_decline(self, message: str) -> bool:
-            """Negative / 'too expensive' reply to the budget tie-down. Deterministic
-            (only consulted right after we asked, so short negatives count)."""
+        def _is_budget_decline_keywords(self, message: str) -> bool:
+            """Keyword fallback for _is_budget_decline (only consulted right after we
+            asked, so short negatives count)."""
             m = (message or '').lower().strip()
             if not m:
                 return False
@@ -420,6 +420,44 @@ class ResponseMixin:
                 'out of budget', 'over budget', 'over my budget', 'expensive',
                 'pricey', 'inodhura',
             ))
+
+        def _is_budget_decline(self, message: str) -> bool:
+            """AI-primary: was this a budget objection (price too high / doesn't fit)
+            in reply to 'That sit alright with your budget?'. Keyword fallback when
+            DeepSeek is unavailable or fails."""
+            kw = self._is_budget_decline_keywords(message)
+            if not DEEPSEEK_API_KEY or not (message or '').strip():
+                return kw
+            try:
+                from ...services.clients import deepseek_call
+                import json as _json
+                raw = deepseek_call(
+                    messages=[
+                        {"role": "system", "content": (
+                            "We just asked a plumbing customer 'Does that price sit "
+                            "alright with your budget?'. Classify their reply as ONE of:\n"
+                            "- decline: the price is too high or doesn't fit their "
+                            "budget (e.g. 'not really', 'too much', 'a bit steep', "
+                            "Shona 'kwete', 'inodhura')\n"
+                            "- other: anything else — a yes, a budget figure, a "
+                            "question, or an unrelated message\n"
+                            "Reply with strict JSON only."
+                        )},
+                        {"role": "user", "content": (
+                            f'Reply: "{message}"\n\n{{"answer": "decline|other"}}'
+                        )},
+                    ],
+                    temperature=0, max_tokens=12, json_response=True, retries=1, timeout=8,
+                )
+                ans = (_json.loads(raw).get('answer') or '').strip().lower()
+                if ans == 'decline':
+                    return True
+                if ans == 'other':
+                    return False
+                return kw
+            except Exception as exc:
+                logger.warning("_is_budget_decline AI failed (%s) — using keywords", exc)
+                return kw
 
         def _handle_budget_objection(self, language: str = "english") -> str:
             """Lead pushed back on price after the budget tie-down. Keep the sale
@@ -451,9 +489,9 @@ class ResponseMixin:
             ).lower()
             return 'hoping to spend' in last or 'kushandisa marii' in last
 
-        def _extract_budget_amount(self, message: str):
-            """Pull a budget figure from a reply like 'about 400' / '$500' / '2k'.
-            Returns a display string ('US$400') or None."""
+        def _extract_budget_amount_regex(self, message: str):
+            """Regex fallback for _extract_budget_amount: 'about 400'/'$500'/'2k'
+            → 'US$400'/'US$500'/'US$2k', else None."""
             import re
             m = re.search(r'\$?\s*(\d[\d,]*)\s*(k\b)?', (message or '').lower())
             if not m:
@@ -461,11 +499,50 @@ class ResponseMixin:
             num = m.group(1).replace(',', '')
             return f"US${num}k" if m.group(2) else f"US${num}"
 
-        def _is_budget_figure_reply(self, message: str) -> bool:
-            """Reply carries a money figure (only consulted right after we asked for
-            the budget, so any number counts — incl. the 'k' shorthand)."""
+        def _extract_budget_amount(self, message: str):
+            """AI-primary: pull the budget figure as a display string ('US$400'),
+            handling word amounts ('two grand', 'couple hundred', '2k'). Regex
+            fallback when DeepSeek is unavailable or fails."""
+            rx = self._extract_budget_amount_regex(message)
+            if not DEEPSEEK_API_KEY or not (message or '').strip():
+                return rx
+            try:
+                from ...services.clients import deepseek_call
+                import json as _json
+                raw = deepseek_call(
+                    messages=[
+                        {"role": "system", "content": (
+                            "Extract the budget amount in US dollars from a plumbing "
+                            "customer's reply. Handle words and shorthand ('two grand'"
+                            "=2000, 'couple hundred'=200, '2k'=2000) as well as digits. "
+                            "If there is no money amount, use null. Strict JSON only."
+                        )},
+                        {"role": "user", "content": f'Reply: "{message}"\n\n{{"usd": 400}}'},
+                    ],
+                    temperature=0, max_tokens=12, json_response=True, retries=1, timeout=8,
+                )
+                val = _json.loads(raw).get('usd')
+                if val in (None, '', 0, '0'):
+                    return rx
+                return f"US${int(float(val))}"
+            except Exception as exc:
+                logger.warning("_extract_budget_amount AI failed (%s) — using regex", exc)
+                return rx
+
+        def _is_budget_figure_reply_keywords(self, message: str) -> bool:
+            """Regex fallback for _is_budget_figure_reply (digits incl. 'k' shorthand)."""
             import re
             return bool(re.search(r'\d{2,6}|\d\s*k\b', (message or '').lower()))
+
+        def _is_budget_figure_reply(self, message: str) -> bool:
+            """AI-primary: did the reply state a money amount / budget (incl. word
+            amounts like 'two grand')? Falls back to the digit regex. A digit match
+            is unambiguous, so we short-circuit it to avoid a needless AI call."""
+            if self._is_budget_figure_reply_keywords(message):
+                return True
+            if not DEEPSEEK_API_KEY or not (message or '').strip():
+                return False
+            return self._extract_budget_amount(message) is not None
 
         def _handle_budget_figure_reply(self, message: str, language: str = "english") -> str:
             """Lead gave their budget after we asked. Acknowledge the number, promise

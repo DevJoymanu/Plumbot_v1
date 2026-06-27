@@ -1162,10 +1162,13 @@ class _FakeSelfFollowup:
     _PRICED_INTENTS = ResponseMixin._PRICED_INTENTS
     _last_assistant_was_price_tiedown = ResponseMixin._last_assistant_was_price_tiedown
     _is_budget_decline = ResponseMixin._is_budget_decline
+    _is_budget_decline_keywords = ResponseMixin._is_budget_decline_keywords
     _handle_budget_objection = ResponseMixin._handle_budget_objection
     _last_assistant_asked_budget = ResponseMixin._last_assistant_asked_budget
     _extract_budget_amount = ResponseMixin._extract_budget_amount
+    _extract_budget_amount_regex = ResponseMixin._extract_budget_amount_regex
     _is_budget_figure_reply = ResponseMixin._is_budget_figure_reply
+    _is_budget_figure_reply_keywords = ResponseMixin._is_budget_figure_reply_keywords
     _handle_budget_figure_reply = ResponseMixin._handle_budget_figure_reply
     def __init__(self, stage, is_delayed=False, history=None):
         self._stage = stage
@@ -1366,9 +1369,11 @@ try:
         ("around $300", False), ("what about cheaper options", False),
     ]
     _bfake = _FakeSelfFollowup("project_description")
+    # _is_budget_decline is AI-primary; the deterministic gate tests the keyword
+    # fallback (same convention as _classify_affirmation_keywords).
     for _msg, _exp in BUDGET_DECLINE_CASES:
-        _g = _bfake._is_budget_decline(_msg)
-        results.log(f"_is_budget_decline: '{_msg[:24]}'", _g == _exp,
+        _g = _bfake._is_budget_decline_keywords(_msg)
+        results.log(f"_is_budget_decline_keywords: '{_msg[:24]}'", _g == _exp,
                     expected=str(_exp), got=str(_g))
     # Only fires when the last bot turn was the budget tie-down.
     _bt = _FakeSelfFollowup("project_description", history=_bot("That sit alright with your budget?"))
@@ -1403,24 +1408,26 @@ try:
         got=f"after_ask={_ab._last_assistant_asked_budget()} after_other={_nab._last_assistant_asked_budget()}",
     )
     _fk = _FakeSelfFollowup("project_description")
+    # Extraction is AI-primary (handles "two grand"); gate tests the regex fallback.
     AMOUNT_CASES = [
         ("about 400", "US$400"), ("$500", "US$500"), ("around 1,200", "US$1200"),
         ("2k", "US$2k"), ("no idea", None),
     ]
     for _msg, _exp in AMOUNT_CASES:
-        _g = _fk._extract_budget_amount(_msg)
-        results.log(f"_extract_budget_amount: '{_msg}'", _g == _exp,
+        _g = _fk._extract_budget_amount_regex(_msg)
+        results.log(f"_extract_budget_amount_regex: '{_msg}'", _g == _exp,
                     expected=str(_exp), got=str(_g))
     results.log(
-        "_is_budget_figure_reply: number vs none",
-        _fk._is_budget_figure_reply("about 400") is True
-        and _fk._is_budget_figure_reply("no idea really") is False,
+        "_is_budget_figure_reply_keywords: number vs none",
+        _fk._is_budget_figure_reply_keywords("about 400") is True
+        and _fk._is_budget_figure_reply_keywords("no idea really") is False,
         got="ok",
     )
+    # Handler copy is stable regardless of how the amount was parsed.
     _bfr = _fk._handle_budget_figure_reply("about 400", "english")
     results.log(
-        "budget figure reply: echoes amount + tailors + visit close",
-        ("US$400" in _bfr and "tailors the spec to your budget" in _bfr
+        "budget figure reply: acknowledges + tailors + visit close",
+        ("we can work with that" in _bfr and "tailors the spec to your budget" in _bfr
          and "line that up" in _bfr),
         got=_bfr,
     )
