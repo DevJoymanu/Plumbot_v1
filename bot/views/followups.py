@@ -96,7 +96,7 @@ def reactivate_lead(request, pk):
         appointment.save()
         
         messages.success(request, f'Lead reactivated for {appointment.customer_name or appointment.phone_number}')
-        return redirect('appointment_detail', pk=appointment.pk)
+        return _followup_redirect(request, appointment.pk)
     
     return render(request, 'bot/pages/confirm_reactivate.html', {
         'appointment': appointment
@@ -125,7 +125,7 @@ def test_followup_message(request, pk):
         whatsapp_api.send_text_message(clean_phone, message)
         
         messages.success(request, f'Test {stage} follow-up sent to {appointment.phone_number}')
-        return redirect('appointment_detail', pk=appointment.pk)
+        return _followup_redirect(request, appointment.pk)
     
     return render(request, 'bot/pages/test_followup.html', {
         'appointment': appointment,
@@ -1089,7 +1089,7 @@ def pause_chatbot(request, pk):
         appointment.save(update_fields=['internal_notes'])
     _append_admin_note(appointment, f"{request.user.username}: chatbot paused — follow-ups also paused.")
     messages.success(request, 'Chatbot paused. Automated follow-ups also stopped.')
-    return redirect('appointment_detail', pk=pk)
+    return _followup_redirect(request, pk)
 
 
 @staff_required
@@ -1108,7 +1108,7 @@ def resume_chatbot(request, pk):
         appointment.save(update_fields=['internal_notes'])
     _append_admin_note(appointment, f"{request.user.username}: chatbot resumed — follow-ups also resumed.")
     messages.success(request, 'Chatbot resumed. Automated follow-ups also restarted.')
-    return redirect('appointment_detail', pk=pk)
+    return _followup_redirect(request, pk)
 
 
 @staff_required
@@ -1148,7 +1148,7 @@ def pause_auto_followup(request, pk):
     messages.success(request, f'⏸️ Automatic follow-ups paused {pause_msg}')
     logger.info(f"Auto follow-ups paused {pause_msg} for appointment {pk} by {request.user.username}")
     
-    return redirect('appointment_detail', pk=pk)
+    return _followup_redirect(request, pk)
 
 
 @staff_required
@@ -1164,7 +1164,7 @@ def resume_auto_followup(request, pk):
     messages.success(request, '▶️ Automatic follow-ups resumed')
     logger.info(f"Auto follow-ups resumed for appointment {pk} by {request.user.username}")
     
-    return redirect('appointment_detail', pk=pk)
+    return _followup_redirect(request, pk)
 
 
 @staff_required
@@ -1176,14 +1176,14 @@ def send_followup(request, pk):
     appointment = get_object_or_404(Appointment, pk=pk)
 
     if request.method != 'POST':
-        return redirect('appointment_detail', pk=appointment.pk)
+        return _followup_redirect(request, appointment.pk)
 
     message = request.POST.get('message', '').strip()
     if not message:
         if is_ajax:
             return _JsonResponse({'ok': False, 'error': 'Message cannot be empty.'}, status=400)
         messages.error(request, 'Message cannot be empty')
-        return redirect('appointment_detail', pk=appointment.pk)
+        return _followup_redirect(request, appointment.pk)
 
     try:
         customer_name = appointment.customer_name or "there"
@@ -1211,7 +1211,7 @@ def send_followup(request, pk):
             return _JsonResponse({'ok': False, 'error': f'Failed to send: {error_msg}'}, status=500)
         messages.error(request, f'Failed to send message: {error_msg}')
 
-    return redirect('appointment_detail', pk=appointment.pk)
+    return _followup_redirect(request, appointment.pk)
 
 
 @staff_required
@@ -1224,7 +1224,7 @@ def send_portfolio_to_lead(request, pk):
         messages.success(request, 'Portfolio photos queued for sending.')
     else:
         messages.warning(request, 'No portfolio photos configured.')
-    return redirect('appointment_detail', pk=pk)
+    return _followup_redirect(request, pk)
 
 
 @staff_required
@@ -1236,7 +1236,7 @@ def send_image_to_lead(request, pk):
 
     if not image_url:
         messages.error(request, 'No image URL provided.')
-        return redirect('appointment_detail', pk=pk)
+        return _followup_redirect(request, pk)
 
     try:
         clean_phone = clean_phone_number(appointment.phone_number)
@@ -1256,7 +1256,7 @@ def send_image_to_lead(request, pk):
     except Exception as e:
         messages.error(request, f'Failed to send image: {str(e)}')
 
-    return redirect('appointment_detail', pk=pk)
+    return _followup_redirect(request, pk)
 
 
 @staff_required
@@ -1269,17 +1269,17 @@ def send_pdf_to_lead(request, pk):
 
     if not uploaded:
         messages.error(request, 'Please choose a PDF file to send.')
-        return redirect('appointment_detail', pk=pk)
+        return _followup_redirect(request, pk)
 
     # Validate file type and size (WhatsApp documents max 100 MB)
     name_lower = (uploaded.name or '').lower()
     is_pdf = name_lower.endswith('.pdf') or uploaded.content_type == 'application/pdf'
     if not is_pdf:
         messages.error(request, 'Only PDF files can be sent. Please select a .pdf document.')
-        return redirect('appointment_detail', pk=pk)
+        return _followup_redirect(request, pk)
     if uploaded.size and uploaded.size > 100 * 1024 * 1024:
         messages.error(request, 'PDF is too large to send (100 MB max).')
-        return redirect('appointment_detail', pk=pk)
+        return _followup_redirect(request, pk)
 
     # Keep the original filename so it shows correctly in WhatsApp
     safe_filename = os.path.basename(uploaded.name) or f'document_{appointment.pk}.pdf'
@@ -1317,7 +1317,7 @@ def send_pdf_to_lead(request, pk):
             except Exception:
                 pass
 
-    return redirect('appointment_detail', pk=pk)
+    return _followup_redirect(request, pk)
 
 
 @staff_required

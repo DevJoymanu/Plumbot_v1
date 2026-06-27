@@ -1345,23 +1345,35 @@ def _build_delay_reply(message: str, appointment) -> str:
                 appointment.internal_notes = f'{notes}\n[DELAY_QUOTE_SENT]'.strip()
                 appointment.save(update_fields=['internal_notes'])
             _write_pending(appointment, 'delay_timeframe', '')
+            # Isolate the real objection once before conceding — if they answer
+            # "the price", _delay_breakout_inquiry catches it and routes to the
+            # price tie-down handler; a timeframe is captured here; anything vague
+            # re-asks. Either way we still add value (portfolio) and keep a date.
             return (
-                "No worries at all — we'll leave it with you.\n\n"
-                "I've just emailed you our portfolio of past projects with photos, "
-                "plus a more detailed pricing guide, so you've got everything to look "
-                "over.\n\n"
-                "So we check back in at the right time — roughly when are you hoping "
-                "to get this sorted? Even a rough idea like next week or end of the "
-                "month is perfect."
+                "Totally fair — before you do, can I ask: is it the price, the "
+                "timing, or something else that's making you want to sit on it? "
+                "I'd rather sort it now than leave you guessing.\n\n"
+                "No pressure either way — I've just emailed our portfolio of past "
+                "projects plus a more detailed pricing guide, so you've got "
+                "everything to weigh up.\n\n"
+                "And the free on-site visit is the no-commitment way to get a real "
+                "number — roughly when are you hoping to get this sorted? Even "
+                "'next week' or 'end of the month' is enough for me to hold you a "
+                "slot you can move later."
             )
         # Otherwise ask for their email; the reply funnels into the existing
         # delay_email step, which captures it and sends the portfolio PDF.
         _write_pending(appointment, 'delay_email', '')
+        # Same isolate-first move; pending is delay_email here, so the concrete
+        # ask is the email. A "price"/product reply (no '@') still breaks out to
+        # the right handler via _delay_breakout_inquiry.
         return (
-            "No worries at all — we'll leave it with you.\n\n"
-            "Before you go — we've got a portfolio of past projects with photos, plus "
-            "a more detailed pricing guide, that's worth a look while you decide. Want "
-            "me to email it over? Just share your email and I'll send it across."
+            "Totally fair — before you do, can I ask: is it the price, the timing, "
+            "or something else that's making you want to sit on it? I'd rather help "
+            "you weigh it up properly than leave you to it.\n\n"
+            "Either way, we've got a portfolio of past projects plus a more "
+            "detailed pricing guide that's worth a look while you decide. Want me "
+            "to email it over? Just share your email and I'll send it across."
         )
 
     if subtype == 'comparison_shopping':
@@ -2133,21 +2145,28 @@ def _build_complaint_reply(message: str, appointment) -> str:
     msg_lower = (message or "").lower()
 
     # Price-specific complaint
+    # Don't just answer and move to the next question. Isolate the objection
+    # with a tie-down yes first ("if the price worked, is this something you'd
+    # want done?"), then handle the price, then close — never end an objection
+    # turn by asking a fresh qualification question. (Hormozi: isolate → handle
+    # → presumptive close.)
     if any(w in msg_lower for w in (
         "ridiculous", "expensive", "too much", "overpriced", "rip off",
         "rip-off", "never seen", "such prices", "inodhura", "pricey",
     )):
         return (
-            "Thanks for your message, and that's a totally fair point to raise. "
-            "The prices in our earlier message were general guides — "
-            "every job is different and the actual cost depends heavily on your "
-            "specific setup, the fixtures you choose, and the scope of work.\n\n"
-            "Labour on its own can start from as little as US$20 for a simple fitting. "
-            "The best way to get a fair, fixed price is a free on-site visit "
-            "where the plumber sees the space and gives you a number on the spot "
-            "— no surprises.\n\n"
-            f"If you'd like to speak directly with the plumber about the costs, "
-            f"you can reach Tinashe on +{plumber_number}."
+            "Totally fair point to raise. Quick one though — if the price came "
+            "back at a number that felt right to you, is getting this sorted "
+            "something you'd want to go ahead with?\n\n"
+            "I ask because those figures were just general guides — every job is "
+            "different, and the real cost comes down to your specific setup, the "
+            "fixtures you choose, and the scope. Labour on its own can start from "
+            "as little as US$20 for a simple fitting.\n\n"
+            "The way we land a fair, fixed price is a free on-site visit — the "
+            "plumber sees the space and gives you a number on the spot, no "
+            "surprises. Shall I set that up for you?\n\n"
+            f"(Prefer to talk it through first? You can reach Tinashe on "
+            f"+{plumber_number}.)"
         )
 
     # Legitimacy / "are you real" complaint
@@ -2156,12 +2175,15 @@ def _build_complaint_reply(message: str, appointment) -> str:
         "fake", "scam", "legitimate", "trust",
     )):
         return (
-            "That's a completely fair question — and yes, we're a real plumbing "
-            "company based in Harare.\n\n"
-            "I'm the booking assistant handling initial enquiries. For anything "
-            "technical or to speak directly with the team, you can reach Takudzwa on "
-            f"+{plumber_number}.\n\n"
-            "He'll be able to answer any questions you have about the work."
+            "Completely fair question — and let me ask you one back: if you're "
+            "happy we're the real deal, is this a job you're looking to get "
+            "moving on soon?\n\n"
+            "We're a real plumbing company based in Harare, mobile across "
+            "Zimbabwe. I'm the booking assistant handling initial enquiries, and "
+            "the quickest way to put any doubt to rest is a free on-site visit — "
+            "you meet the plumber and see how we work, no obligation.\n\n"
+            f"Want me to line that up? Or to speak to the team directly first, you "
+            f"can reach Takudzwa on +{plumber_number}."
         )
 
     # Generic frustration / complaint

@@ -1397,7 +1397,11 @@ def handle_pricing_objection(appointment) -> str:
             f"Pricing for {service_label} depends on the scope, and we confirm "
             f"the exact figure on site."
         )
+        # Isolate the objection with a tie-down yes before walking through the
+        # price, then close — don't answer and drop into the next field question.
         return (
+            f"Quick one before I break it down — if the number lands somewhere "
+            f"fair for you, is this something you'd want to get moving on?\n\n"
             f"{price_line}\n\nThe exact cost depends on:\n"
             f"• The specific fixtures and materials you choose\n"
             f"• The size and complexity of the work\n"
@@ -1405,7 +1409,7 @@ def handle_pricing_objection(appointment) -> str:
             f"The site visit and quote are completely free — our plumber will "
             f"{'review your plan' if appointment.has_plan else 'do a free site visit'} "
             f"and give you a fixed price before any work starts.\n\n"
-            f"Would you like to proceed with booking?"
+            f"Shall I lock in that free visit for you?"
         )
 
     missing_str = ' and '.join(missing) if len(missing) <= 2 else f"{', '.join(missing[:-1])}, and {missing[-1]}"

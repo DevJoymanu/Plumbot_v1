@@ -1535,12 +1535,12 @@
           <div class="appt-chat-compose">
             <div class="appt-quick-actions">
               {% if appointment.chatbot_paused %}
-              <form method="post" action="{% url 'resume_chatbot' appointment.pk %}">
+              <form method="post" action="{% url 'resume_chatbot' appointment.pk %}?{{ request.GET.urlencode }}">
                 {% csrf_token %}
                 <button type="submit"><i class="fas fa-play"></i> Resume chatbot</button>
               </form>
               {% else %}
-              <form method="post" action="{% url 'pause_chatbot' appointment.pk %}">
+              <form method="post" action="{% url 'pause_chatbot' appointment.pk %}?{{ request.GET.urlencode }}">
                 {% csrf_token %}
                 <button type="submit"><i class="fas fa-pause"></i> Pause chatbot</button>
               </form>
@@ -1548,13 +1548,13 @@
               <button type="button" onclick="insertTemplate('greeting')"><i class="fas fa-hand-sparkles"></i> Greeting</button>
               <button type="button" onclick="insertTemplate('check_in')"><i class="fas fa-bell"></i> Check-in</button>
               <button type="button" onclick="insertTemplate('reminder')"><i class="fas fa-clock"></i> Reminder</button>
-              <form method="post" action="{% url 'send_portfolio_to_lead' appointment.pk %}">
+              <form method="post" action="{% url 'send_portfolio_to_lead' appointment.pk %}?{{ request.GET.urlencode }}">
                 {% csrf_token %}
                 <button type="submit"><i class="fas fa-images"></i> Send portfolio</button>
               </form>
             </div>
 
-            <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfChatForm">
+            <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}?{{ request.GET.urlencode }}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfChatForm">
               {% csrf_token %}
               <input type="file" id="pdf_document_chat" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" onchange="updatePdfSendState(this.form)" required>
               <label class="appt-pdf-picker" for="pdf_document_chat">
@@ -1751,7 +1751,7 @@
               <div class="detail-card">
                 <div class="detail-card-header">Documents & Images</div>
                 <div class="detail-card-body">
-                  <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfDetailsForm">
+                  <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}?{{ request.GET.urlencode }}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfDetailsForm">
                     {% csrf_token %}
                     <input type="file" id="pdf_document_details" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" onchange="updatePdfSendState(this.form)" required>
                     <label class="appt-pdf-picker" for="pdf_document_details">

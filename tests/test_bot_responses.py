@@ -286,6 +286,13 @@ DELAY_BREAKOUT_CASES = [
     ("freestanding tub price", True),
     ("do you sell tubs",       True),
     ("I want to purchase 2x shower cubicles and asseries", True),  # buying signal breaks email step (appt 472)
+    # Brush-off isolate question ("is it the price, timing, or something else?")
+    # answers: a price answer must break out to the price tie-down handler;
+    # a timing/other answer stays in the delay flow.
+    ("it's the price",         True),
+    ("the price",              True),
+    ("the timing",             False),
+    ("something else",         False),
     ("next week",              False),  # real timeframe — stay in flow
     ("end of the month",       False),
     ("Thursday",               False),
