@@ -356,26 +356,26 @@ class ResponseMixin:
             return f"{day_name} the {day_num}{suffix}"
 
 
-        # ── "Ask for a yes first" — soft value-check tie-downs ────────────────────
-        # After answering a lead's question we ask for a small yes BEFORE the next
-        # booking field (Hormozi micro-yes ladder). The field is asked only once the
-        # lead engages — the booking flow handles that on the following turn. Rotated
-        # off conversation history so the same tie-down never repeats and we never
-        # send two tie-downs back to back.
+        # ── Non-price qualifying close ────────────────────────────────────────────
+        # After answering a NON-price question we ask what else on the property needs
+        # looking at — a discovery question that surfaces more scope and leads
+        # naturally to the on-site visit. (Price replies use _price_tiedown instead.)
+        # Rotated off the transcript so the same line never repeats and we never send
+        # two of these back to back.
         _TIEDOWN_VALUE_CHECK = {
             'english': [
-                ("Makes sense to get that sorted properly the first time, right?",
-                 "sorted properly the first time"),
-                ("Worth getting it done once and done well, don't you think?",
-                 "once and done well"),
-                ("That's the kind of thing you'd want handled right, yeah?",
-                 "want handled right"),
+                ("Anything else on the property that needs looking at?",
+                 "else on the property"),
+                ("Any other work around the place you'd want sorted while we're there?",
+                 "around the place"),
+                ("Any other jobs on the property you'd like us to take a look at?",
+                 "other jobs on the property"),
             ],
             'shona': [
-                ("Zvine musoro kuti zviitwe nemazvo kekutanga, handiti?",
-                 "nemazvo kekutanga"),
-                ("Zviri nani kuzviita kamwe chete zvakanaka, handiti?",
-                 "kamwe chete zvakanaka"),
+                ("Pane chimwe here pamba chinoda kutariswawo?",
+                 "chinoda kutariswawo"),
+                ("Pane rimwe basa here pamba ramungada kuti tiritarisewo?",
+                 "rimwe basa"),
             ],
         }
 
@@ -586,8 +586,9 @@ class ResponseMixin:
             )
 
         def _yes_tiedown(self, language: str = "english") -> str:
-            """First unused value-check tie-down for the language, rotating off the
-            assistant transcript so we never repeat one."""
+            """First unused non-price qualifying close ("anything else on the
+            property?") for the language, rotating off the transcript so we never
+            repeat one."""
             bank = self._TIEDOWN_VALUE_CHECK.get(
                 'shona' if language == 'shona' else 'english',
                 self._TIEDOWN_VALUE_CHECK['english'],
@@ -2868,12 +2869,12 @@ class ResponseMixin:
                 return (
                     f"You'll be looked after by Tinashe, our lead plumber at Homebase Plumbers — "
                     f"he handles the visit personally. You can reach him directly on {number}.\n\n"
-                    "Worth getting it done once and done well, don't you think?"
+                    "Any other work around the place you'd want sorted while we're there?"
                 )
             return (
                 "You're chatting with Plumbot, the assistant for Homebase Plumbers here in Harare"
                 f"Our plumber Tinashe handles the hands-on work (reach him on {number}).\n\n"
-                "Makes sense to get that sorted properly the first time, right?"
+                "Anything else on the property that needs looking at?"
             )
 
         def _build_human_handoff_reply(self) -> str:

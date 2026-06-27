@@ -1061,7 +1061,7 @@ def _bot(*contents):
     return [{'role': 'assistant', 'content': c} for c in contents]
 # Canonical value-check tie-down — seeded as the last turn to reach the forward
 # question (the "proceed" branch).
-_TD = "Makes sense to get that sorted properly the first time, right?"
+_TD = "Anything else on the property that needs looking at?"
 try:
     # No prior tie-down -> ask for a yes first (value-check), not the field question.
     _fq_td = _FakeSelfForward(_FakeApptFwd(
@@ -1212,7 +1212,7 @@ try:
     )._get_pricing_followup_prompt("english")
     results.log(
         "pricing close: engaged lead at scheduling -> day question (no anchor)",
-        "planning it out" not in _day and "sorted properly the first time" not in _day,
+        "planning it out" not in _day and "else on the property" not in _day,
         got=str(_day),
     )
 except Exception as e:
@@ -1224,22 +1224,22 @@ try:
     # First call with no history -> first bank line.
     _t0 = _FakeSelfFollowup("service_type")._yes_tiedown("english")
     results.log(
-        "tie-down: first call -> first value-check line",
-        _t0 == "Makes sense to get that sorted properly the first time, right?",
+        "tie-down: first call -> first qualifying line",
+        _t0 == "Anything else on the property that needs looking at?",
         got=str(_t0),
     )
     # First line already used -> rotates to the next, unused one.
     _t1 = _FakeSelfFollowup("service_type", history=_bot(_TD))._yes_tiedown("english")
     results.log(
         "tie-down: rotates to a fresh line when the first was used",
-        _t1 == "Worth getting it done once and done well, don't you think?",
+        _t1 == "Any other work around the place you'd want sorted while we're there?",
         got=str(_t1),
     )
     # Shona path returns a Shona tie-down.
     _ts = _FakeSelfFollowup("service_type")._yes_tiedown("shona")
     results.log(
         "tie-down: shona language -> shona line",
-        "handiti" in _ts,
+        "pamba" in _ts,
         got=str(_ts),
     )
     # Detection: last assistant turn is a tie-down -> True; a price line -> False.
@@ -1251,13 +1251,13 @@ try:
         and _d_no._last_assistant_was_tiedown() is False,
         got=f"yes={_d_yes._last_assistant_was_tiedown()} no={_d_no._last_assistant_was_tiedown()}",
     )
-    # _append_tiedown (LLM / semantic-rescue answer paths): append a value-check
-    # unless our last turn was already one or the reply is empty.
+    # _append_tiedown (LLM / semantic-rescue answer paths): append the non-price
+    # qualifying close unless our last turn was already one or the reply is empty.
     _ans = "A small repair takes a couple of hours."
     _ap1 = _FakeSelfFollowup("service_type")._append_tiedown(_ans, "english")
     results.log(
-        "append tie-down: free-form answer gets a value-check appended",
-        _ap1.startswith(_ans) and "sorted properly the first time" in _ap1,
+        "append tie-down: free-form answer gets the qualifying close appended",
+        _ap1.startswith(_ans) and "else on the property" in _ap1,
         got=str(_ap1),
     )
     _ap2 = _FakeSelfFollowup("service_type", history=_bot(_TD))._append_tiedown(_ans, "english")
