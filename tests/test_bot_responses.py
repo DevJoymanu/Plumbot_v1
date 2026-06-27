@@ -1163,6 +1163,10 @@ class _FakeSelfFollowup:
     _last_assistant_was_price_tiedown = ResponseMixin._last_assistant_was_price_tiedown
     _is_budget_decline = ResponseMixin._is_budget_decline
     _handle_budget_objection = ResponseMixin._handle_budget_objection
+    _last_assistant_asked_budget = ResponseMixin._last_assistant_asked_budget
+    _extract_budget_amount = ResponseMixin._extract_budget_amount
+    _is_budget_figure_reply = ResponseMixin._is_budget_figure_reply
+    _handle_budget_figure_reply = ResponseMixin._handle_budget_figure_reply
     def __init__(self, stage, is_delayed=False, history=None):
         self._stage = stage
         self.appointment = _FakeApptStage(is_delayed=is_delayed, history=history)
@@ -1384,6 +1388,44 @@ try:
     )
 except Exception as e:
     results.log("budget objection", False, got=str(e))
+
+# Budget FIGURE reply ("about 400") after we asked for the budget must be captured
+# and answered (tailor + visit close), NOT misread as a complaint (prod bug).
+try:
+    # Detect that our last turn asked for the budget.
+    _ab = _FakeSelfFollowup("project_description",
+                            history=_bot("Roughly what were you hoping to spend?"))
+    _nab = _FakeSelfFollowup("project_description", history=_bot("Whereabouts are you based?"))
+    results.log(
+        "budget figure: detects the preceding budget ask",
+        _ab._last_assistant_asked_budget() is True
+        and _nab._last_assistant_asked_budget() is False,
+        got=f"after_ask={_ab._last_assistant_asked_budget()} after_other={_nab._last_assistant_asked_budget()}",
+    )
+    _fk = _FakeSelfFollowup("project_description")
+    AMOUNT_CASES = [
+        ("about 400", "US$400"), ("$500", "US$500"), ("around 1,200", "US$1200"),
+        ("2k", "US$2k"), ("no idea", None),
+    ]
+    for _msg, _exp in AMOUNT_CASES:
+        _g = _fk._extract_budget_amount(_msg)
+        results.log(f"_extract_budget_amount: '{_msg}'", _g == _exp,
+                    expected=str(_exp), got=str(_g))
+    results.log(
+        "_is_budget_figure_reply: number vs none",
+        _fk._is_budget_figure_reply("about 400") is True
+        and _fk._is_budget_figure_reply("no idea really") is False,
+        got="ok",
+    )
+    _bfr = _fk._handle_budget_figure_reply("about 400", "english")
+    results.log(
+        "budget figure reply: echoes amount + tailors + visit close",
+        ("US$400" in _bfr and "tailors the spec to your budget" in _bfr
+         and "line that up" in _bfr),
+        got=_bfr,
+    )
+except Exception as e:
+    results.log("budget figure reply", False, got=str(e))
 
 # When the lead names the items, record them as the project_description so the
 # follow-up advances to the next step (area/visit) instead of re-asking "what are
