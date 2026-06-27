@@ -2034,13 +2034,21 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # "what products do you have" before they reach the photo / catalogue
         # send paths below.
         from bot.faq import lookup_faq
-        _faq_reply = (
+        _faq_fact = (
             None
             if (_explicitly_requests_photos(message_body)
                 or _explicitly_requests_catalogue(message_body))
             else lookup_faq(message_body)
         )
-        if _faq_reply is not None:
+        if _faq_fact is not None:
+            # AI-primary: answer contextually, grounded in the fact so it stays
+            # accurate but never sounds copy-pasted; canned fact (+ qualifying close)
+            # is the fallback. The close is appended either way.
+            _faq_lang = detect_language_simple(message_body)
+            _faq_reply = (
+                plumbot.ai_answer_faq(message_body, _faq_fact, _faq_lang)
+                or plumbot._append_tiedown(_faq_fact, _faq_lang)
+            )
             appointment.add_conversation_message("assistant", _faq_reply)
             delay = get_random_delay()
             threading.Thread(

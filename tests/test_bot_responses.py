@@ -1434,6 +1434,27 @@ try:
 except Exception as e:
     results.log("budget figure reply", False, got=str(e))
 
+# FAQ is answered AI-primary (ai_answer_faq, grounded in the fact) so it doesn't
+# sound copy-pasted; the canned fact is the fallback. Facts are now PURE (no baked
+# close); the qualifying close is appended by the caller. AI is non-deterministic,
+# so the gate pins the fact + fallback shape only.
+try:
+    from bot.faq import lookup_faq as _lookup_faq
+    _loc = _lookup_faq("where are you based")
+    results.log(
+        "faq fact: pure fact, no baked-in qualifying close",
+        _loc is not None and "Hatfield" in _loc and "else on the property" not in _loc,
+        got=str(_loc),
+    )
+    _faq_fallback = _FakeSelfFollowup("service_type")._append_tiedown(_loc, "english")
+    results.log(
+        "faq fallback: canned fact gets the qualifying close appended",
+        _faq_fallback.startswith(_loc) and "else on the property" in _faq_fallback,
+        got=_faq_fallback[-80:],
+    )
+except Exception as e:
+    results.log("faq ai-primary fallback", False, got=str(e))
+
 # When the lead names the items, record them as the project_description so the
 # follow-up advances to the next step (area/visit) instead of re-asking "what are
 # you targeting?". Production: "Need a quote to fit tub and shower" then re-asked

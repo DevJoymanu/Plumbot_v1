@@ -612,12 +612,45 @@ class ResponseMixin:
             return any(sig in last for sig in self._tiedown_signatures())
 
         def _append_tiedown(self, reply: str, language: str = "english") -> str:
-            """Close a free-form answer (LLM / semantic-rescue) with a value-check
-            tie-down. No-op when there's no reply or our last turn was already a
-            tie-down (so we never stack two)."""
+            """Close a free-form answer (LLM / semantic-rescue) with the non-price
+            qualifying question. No-op when there's no reply or our last turn was
+            already a tie-down (so we never stack two)."""
             if not reply or self._last_assistant_was_tiedown():
                 return reply
             return f"{reply.rstrip()}\n\n{self._yes_tiedown(language)}"
+
+        def ai_answer_faq(self, message: str, fact: str, language: str = "english"):
+            """AI-primary, contextual answer to a business FAQ, GROUNDED in `fact`
+            (the source of truth) so it stays accurate but sounds natural and fits the
+            customer's exact wording — instead of a copy-pasted canned line. The
+            non-price qualifying close is appended deterministically. Returns None on
+            failure so the caller falls back to the canned fact."""
+            if not DEEPSEEK_API_KEY or not (message or '').strip() or not (fact or '').strip():
+                return None
+            try:
+                from ...services.clients import deepseek_call
+                sys = (
+                    "You are Plumbot for Homebase Plumbers in Harare, replying on "
+                    "WhatsApp. Answer the customer's question in 1-2 short, warm "
+                    "sentences using ONLY the reference fact as the source of truth — "
+                    "rephrase it naturally to fit their exact wording so it never "
+                    "sounds copy-pasted, and address any nuance in what they asked. "
+                    "Zimbabwean English. No emojis, no markdown. Invent nothing — no "
+                    "prices or details not in the reference. Do NOT add a follow-up "
+                    "question."
+                    + (" Reply in Shona." if language == 'shona' else "")
+                )
+                ans = deepseek_call(
+                    messages=[
+                        {"role": "system", "content": sys},
+                        {"role": "user", "content": f'Reference fact: "{fact}"\n\nCustomer: "{message}"'},
+                    ],
+                    temperature=0.4, max_tokens=120, retries=1, timeout=8,
+                ).strip().replace('**', '').replace('__', '')
+                return self._append_tiedown(ans, language) if ans else None
+            except Exception as exc:
+                logger.warning("ai_answer_faq failed (%s) — canned fallback", exc)
+                return None
 
 
         def _get_pricing_followup_prompt(self, language: str = "english", items=None) -> str:

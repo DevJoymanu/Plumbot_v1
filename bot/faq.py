@@ -1,54 +1,47 @@
+from __future__ import annotations
+
 import logging
 
 logger = logging.getLogger(__name__)
 
 # ── Business facts ─────────────────────────────────────────────────────────────
-# Plain strings — no LLM, no API call, always correct.
-# Each answer closes with the non-price qualifying question — "anything else on
-# the property?" — a discovery nudge that surfaces more scope and leads to the
-# visit. The closing phrases carry the same signatures the bot uses to detect a
-# tie-down ("else on the property" / "around the place"), so it never stacks a
-# second one on the following turn.
+# Plain strings — the SOURCE OF TRUTH for these facts. At the call site they are
+# answered AI-primary (ai_answer_faq grounds on the fact and rephrases naturally
+# so replies don't sound copy-pasted); this canned text is the fallback. The
+# non-price qualifying close ("anything else on the property?") is appended by the
+# caller, not baked in here.
 _FACTS = {
     'location': (
-        "We're in Hatfield, Harare \n\n"
-        "We come to you though, wherever you are.\n\n"
-        "Anything else on the property that needs looking at?"
+        "We're in Hatfield, Harare\n\n"
+        "We come to you though, wherever you are."
     ),
     'hours': (
         "We're available Sunday to Friday, 8am–6pm.\n\n"
-        "Easy to find a slot that fits you. "
-        "Anything else on the property that needs looking at?"
+        "Easy to find a slot that fits you."
     ),
     'contact': (
         "You can reach Takudzwa directly on +263774819901 if you'd like to "
-        "chat about the job first.\n\n"
-        "Any other work around the place you'd want sorted while we're there?"
+        "chat about the job first."
     ),
     'services': (
         "Yes, we handle all plumbing work — vanities, tubs, geysers, showers, toilets, "
-        "renovations, repairs, new installations, you name it.\n\n"
-        "Any other work around the place you'd want sorted while we're there?"
+        "renovations, repairs, new installations, you name it."
     ),
     'payment': (
-        "Cash, EcoCash, and bank transfer — all good \n\n"
-        "You'll get the full price before anything starts, no surprises. "
-        "Anything else on the property that needs looking at?"
+        "Cash, EcoCash, and bank transfer — all good.\n\n"
+        "You'll get the full price before anything starts, no surprises."
     ),
     'free_quote': (
-        "Yes, the site visit and quote are completely free \n\n"
+        "Yes, the site visit and quote are completely free.\n\n"
         "We come to you, have a look, and give you a fixed price on the spot "
-        "before any work starts.\n\n"
-        "Anything else on the property that needs looking at?"
+        "before any work starts."
     ),
     'job_duration': (
         "It depends on the scope of work — a small repair can be done in a few hours, "
-        "while a full bathroom renovation typically takes a few days.\n\n"
-        "Any other work around the place you'd want sorted while we're there?"
+        "while a full bathroom renovation typically takes a few days."
     ),
     'licensed': (
-        "Yes, we're fully licensed and registered \n\n"
-        "Any other work around the place you'd want sorted while we're there?"
+        "Yes, we're fully licensed and registered."
     ),
 }
 
