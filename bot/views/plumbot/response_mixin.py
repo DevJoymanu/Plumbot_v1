@@ -4378,20 +4378,23 @@ class ResponseMixin:
             if language == 'shona':
                 reply = (
                     f"{project_context}"
-                    "Facebook package yedu inosvika US$800. Ine freestanding tub ne side chamber.\n\n"
-                    "Kana muri kuda tub chete — freestanding tubs dzinotangira paUS$670 all-in, "
-                    "standard built-in tubs kubva US$160 all-in.\n\n"
+                    "Facebook package yedu inosvika US$800 — ine freestanding tub ne side chamber.\n\n"
+                    "Kana muri kuda tub chete — freestanding tubs kubva US$670 all-in "
+                    "(tub US$400 + mixer US$150 + install US$120), uye standard built-in tubs "
+                    "kubva US$160 all-in (tub US$80 + install US$80).\n\n"
                     f"{self._product_price_close('shona')}"
                 )
             else:
                 reply = (
                     f"{project_context}"
-                    "Our Facebook package is US$800. That's a freestanding tub and side chamber.\n\n"
-                    "If you're looking at just a tub — freestanding tubs start from US$670 all-in, "
-                    "standard built-in tubs from US$160 all-in.\n\n"
+                    "Our Facebook package is US$800 — a freestanding tub and side chamber.\n\n"
+                    "If you're looking at just a tub — freestanding tubs from US$670 all-in "
+                    "(tub US$400 + mixer US$150 + install US$120), and standard built-in tubs "
+                    "from US$160 all-in (tub US$80 + install US$80).\n\n"
                     f"{self._product_price_close('english')}"
                 )
-            return reply
+            # Carry the approximate-price disclaimer (before the closing tie-down).
+            return self._ensure_price_disclaimer('facebook_package', reply)
 
 
         def _generate_contextual_response_legacy(self, incoming_message, next_question, updated_fields):

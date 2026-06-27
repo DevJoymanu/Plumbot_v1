@@ -1328,6 +1328,23 @@ try:
         "once the plumber sees the space" in _disc and "on-site visit" not in _disc,
         got=_disc,
     )
+    # Facebook/tub overview reply: supply+install breakdown kept, disclaimer
+    # inserted BEFORE the closing budget tie-down (the bug: it had neither).
+    _fbrep = (
+        "Our Facebook package is US$800 — a freestanding tub and side chamber.\n\n"
+        "If you're looking at just a tub — freestanding tubs from US$670 all-in "
+        "(tub US$400 + mixer US$150 + install US$120), and standard built-in tubs "
+        "from US$160 all-in (tub US$80 + install US$80).\n\n"
+        "That sit alright with your budget?"
+    )
+    _fbd = _FakeSelfFollowup("project_description")._ensure_price_disclaimer('facebook_package', _fbrep)
+    results.log(
+        "facebook overview: breakdown kept + disclaimer before the budget tie-down",
+        ("tub US$400 + mixer US$150 + install US$120" in _fbd
+         and "once the plumber sees the space" in _fbd
+         and _fbd.rstrip().endswith("That sit alright with your budget?")),
+        got=_fbd[-140:],
+    )
 except Exception as e:
     results.log("pricing copy (snippets/disclaimer)", False, got=str(e))
 
