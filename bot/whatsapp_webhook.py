@@ -2289,6 +2289,35 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), daemon=True).start()
             return
 
+        # -- STEP 1a: Budget reply after a price tie-down -----------------------
+        # Must run BEFORE the OOS/complaint step: it otherwise mis-flags a bare
+        # budget figure ("about 400") as a complaint and deflects to the plumber.
+        # A budget FIGURE answers "what were you hoping to spend?"; a budget
+        # DECLINE answers "That sit alright with your budget?".
+        _budget_reply = None
+        if (plumbot._last_assistant_asked_budget()
+                and plumbot._is_budget_figure_reply(message_body)):
+            _budget_reply = plumbot._handle_budget_figure_reply(
+                message_body, detect_language_simple(message_body)
+            )
+            print(f"💸 Budget figure captured (webhook): '{message_body[:60]}'")
+        elif (plumbot._last_assistant_was_price_tiedown()
+                and plumbot._is_budget_decline(message_body)):
+            _budget_reply = plumbot._handle_budget_objection(
+                detect_language_simple(message_body)
+            )
+            print(f"💸 Budget objection (webhook): '{message_body[:60]}'")
+        if _budget_reply is not None:
+            appointment.add_conversation_message("assistant", _budget_reply)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+            delay = get_random_delay()
+            threading.Thread(
+                target=delayed_response, args=(sender, _budget_reply, delay, message_id), daemon=True
+            ).start()
+            return
+
         # -- STEP 1b: Out-of-scope / delay / complaint --------------------------
         from .out_of_scope_handler import handle_out_of_scope
         oos_reply = handle_out_of_scope(
