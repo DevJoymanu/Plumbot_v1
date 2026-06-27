@@ -393,6 +393,51 @@ class ResponseMixin:
                 return "Izvozvo zvirikuenderana ne budget yenyu here?"
             return "That sit alright with your budget?"
 
+        def _last_assistant_was_price_tiedown(self) -> bool:
+            """True when our most recent turn was the budget tie-down — so a 'no'
+            this turn is a budget objection, not a booking-stage answer."""
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            last = next(
+                (m.get('content', '') for m in reversed(history)
+                 if m.get('role') == 'assistant'),
+                '',
+            ).lower()
+            return 'with your budget' in last or 'ne budget' in last
+
+        def _is_budget_decline(self, message: str) -> bool:
+            """Negative / 'too expensive' reply to the budget tie-down. Deterministic
+            (only consulted right after we asked, so short negatives count)."""
+            m = (message or '').lower().strip()
+            if not m:
+                return False
+            if m in ('no', 'nope', 'nah', 'naah', 'not really', 'not quite',
+                     'no not really', 'aiwa', 'kwete', 'no thanks', 'no thank you'):
+                return True
+            return any(k in m for k in (
+                'too much', 'too expensive', 'too pricey', 'too high', 'bit much',
+                'way too', "can't afford", 'cant afford', 'cannot afford',
+                'out of budget', 'over budget', 'over my budget', 'expensive',
+                'pricey', 'inodhura',
+            ))
+
+        def _handle_budget_objection(self, language: str = "english") -> str:
+            """Lead pushed back on price after the budget tie-down. Keep the sale
+            alive: acknowledge, ask their budget, reassure we tailor the spec and the
+            free visit pins the exact figure."""
+            if language == "shona":
+                return (
+                    "Hapana dambudziko — tinogona kushanda nemabhajeti akasiyana.\n\n"
+                    "Manga makatarisira kushandisa marii yakadii? Tinogadzirisa "
+                    "zvinoenderana nayo, uye on-site visit yemahara inosimbisa mutengo "
+                    "chaiwo tisati tatanga."
+                )
+            return (
+                "No problem at all — we can usually work to most budgets.\n\n"
+                "Roughly what were you hoping to spend? We'll tailor the spec to fit, "
+                "and the free visit pins the exact figure before anything starts."
+            )
+
         def _tiedown_signatures(self):
             return tuple(
                 sig for bank in self._TIEDOWN_VALUE_CHECK.values() for _, sig in bank
@@ -1559,6 +1604,25 @@ class ResponseMixin:
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", _identity_reply)
                     return _identity_reply
+
+                # ── BUDGET OBJECTION (a 'no' to our budget tie-down) ─────────────────
+                # We just asked "That sit alright with your budget?" and they pushed
+                # back ("not really", "too much"). Handle it as an objection — don't
+                # let the booking flow swallow it as a stage answer. Acknowledge, ask
+                # their budget, reassure we tailor the spec + the free visit pins the
+                # exact figure. (Customer's words override the flow — see CLAUDE.md.)
+                if (self._last_assistant_was_price_tiedown()
+                        and self._is_budget_decline(incoming_message)):
+                    from bot.whatsapp_webhook import detect_language_simple as _dls_b
+                    try:
+                        _blang = _dls_b(incoming_message)
+                    except Exception:
+                        _blang = 'english'
+                    reply = self._handle_budget_objection(_blang)
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    self.appointment.add_conversation_message("assistant", reply)
+                    print(f"💸 Budget objection after price tie-down: '{incoming_message[:60]}'")
+                    return reply
 
                 current_question = self.get_next_question_to_ask()
 

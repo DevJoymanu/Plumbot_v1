@@ -1160,6 +1160,9 @@ class _FakeSelfFollowup:
     _product_price_close = ResponseMixin._product_price_close
     _ensure_price_disclaimer = ResponseMixin._ensure_price_disclaimer
     _PRICED_INTENTS = ResponseMixin._PRICED_INTENTS
+    _last_assistant_was_price_tiedown = ResponseMixin._last_assistant_was_price_tiedown
+    _is_budget_decline = ResponseMixin._is_budget_decline
+    _handle_budget_objection = ResponseMixin._handle_budget_objection
     def __init__(self, stage, is_delayed=False, history=None):
         self._stage = stage
         self.appointment = _FakeApptStage(is_delayed=is_delayed, history=history)
@@ -1347,6 +1350,40 @@ try:
     )
 except Exception as e:
     results.log("pricing copy (snippets/disclaimer)", False, got=str(e))
+
+# Budget objection: a 'no' to "That sit alright with your budget?" must be handled
+# (ask their budget + tailor), not swallowed by the booking flow as a stage answer.
+try:
+    BUDGET_DECLINE_CASES = [
+        ("not really", True), ("no", True), ("nah", True), ("too much", True),
+        ("that's too expensive", True), ("a bit much honestly", True),
+        ("kwete", True), ("inodhura", True),
+        ("yes", False), ("sure that works", False), ("no problem", False),
+        ("around $300", False), ("what about cheaper options", False),
+    ]
+    _bfake = _FakeSelfFollowup("project_description")
+    for _msg, _exp in BUDGET_DECLINE_CASES:
+        _g = _bfake._is_budget_decline(_msg)
+        results.log(f"_is_budget_decline: '{_msg[:24]}'", _g == _exp,
+                    expected=str(_exp), got=str(_g))
+    # Only fires when the last bot turn was the budget tie-down.
+    _bt = _FakeSelfFollowup("project_description", history=_bot("That sit alright with your budget?"))
+    _nt = _FakeSelfFollowup("project_description", history=_bot("Whereabouts are you based?"))
+    results.log(
+        "budget objection: detects the preceding budget tie-down",
+        _bt._last_assistant_was_price_tiedown() is True
+        and _nt._last_assistant_was_price_tiedown() is False,
+        got=f"after_budget={_bt._last_assistant_was_price_tiedown()} after_other={_nt._last_assistant_was_price_tiedown()}",
+    )
+    _bo = _bfake._handle_budget_objection("english")
+    results.log(
+        "budget objection: acknowledges + asks their budget + tailors",
+        ("most budgets" in _bo and "hoping to spend" in _bo
+         and "tailor" in _bo and "free visit" in _bo),
+        got=_bo,
+    )
+except Exception as e:
+    results.log("budget objection", False, got=str(e))
 
 # When the lead names the items, record them as the project_description so the
 # follow-up advances to the next step (area/visit) instead of re-asking "what are
