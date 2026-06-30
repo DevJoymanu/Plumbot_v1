@@ -12,8 +12,7 @@ logger = logging.getLogger(__name__)
 # caller, not baked in here.
 _FACTS = {
     'location': (
-        "We're in Hatfield, Harare\n\n"
-        "We come to you though, wherever you are."
+        "We're in Hatfield, Harare."
     ),
     'hours': (
         "We're available Sunday to Friday, 8am–6pm.\n\n"
