@@ -475,94 +475,6 @@ class ResponseMixin:
                 "Want me to sort you the exact number for your space?"
             )
 
-        def _last_assistant_asked_budget(self) -> bool:
-            """True when our last turn asked the lead for their budget (the
-            _handle_budget_objection question) — so a number this turn is their
-            budget answer, not a complaint or a booking-stage reply."""
-            appt = getattr(self, 'appointment', None)
-            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
-            last = next(
-                (m.get('content', '') for m in reversed(history)
-                 if m.get('role') == 'assistant'),
-                '',
-            ).lower()
-            return 'hoping to spend' in last or 'kushandisa marii' in last
-
-        def _extract_budget_amount_regex(self, message: str):
-            """Regex fallback for _extract_budget_amount: 'about 400'/'$500'/'2k'
-            → 'US$400'/'US$500'/'US$2k', else None."""
-            import re
-            m = re.search(r'\$?\s*(\d[\d,]*)\s*(k\b)?', (message or '').lower())
-            if not m:
-                return None
-            num = m.group(1).replace(',', '')
-            return f"US${num}k" if m.group(2) else f"US${num}"
-
-        def _extract_budget_amount(self, message: str):
-            """AI-primary: pull the budget figure as a display string ('US$400'),
-            handling word amounts ('two grand', 'couple hundred', '2k'). Regex
-            fallback when DeepSeek is unavailable or fails."""
-            rx = self._extract_budget_amount_regex(message)
-            if not DEEPSEEK_API_KEY or not (message or '').strip():
-                return rx
-            try:
-                from ...services.clients import deepseek_call
-                import json as _json
-                raw = deepseek_call(
-                    messages=[
-                        {"role": "system", "content": (
-                            "Extract the budget amount in US dollars from a plumbing "
-                            "customer's reply. Handle words and shorthand ('two grand'"
-                            "=2000, 'couple hundred'=200, '2k'=2000) as well as digits. "
-                            "If there is no money amount, use null. Strict JSON only."
-                        )},
-                        {"role": "user", "content": f'Reply: "{message}"\n\n{{"usd": 400}}'},
-                    ],
-                    temperature=0, max_tokens=12, json_response=True, retries=1, timeout=8,
-                )
-                val = _json.loads(raw).get('usd')
-                if val in (None, '', 0, '0'):
-                    return rx
-                return f"US${int(float(val))}"
-            except Exception as exc:
-                logger.warning("_extract_budget_amount AI failed (%s) — using regex", exc)
-                return rx
-
-        def _is_budget_figure_reply_keywords(self, message: str) -> bool:
-            """Regex fallback for _is_budget_figure_reply (digits incl. 'k' shorthand)."""
-            import re
-            return bool(re.search(r'\d{2,6}|\d\s*k\b', (message or '').lower()))
-
-        def _is_budget_figure_reply(self, message: str) -> bool:
-            """AI-primary: did the reply state a money amount / budget (incl. word
-            amounts like 'two grand')? Falls back to the digit regex. A digit match
-            is unambiguous, so we short-circuit it to avoid a needless AI call."""
-            if self._is_budget_figure_reply_keywords(message):
-                return True
-            if not DEEPSEEK_API_KEY or not (message or '').strip():
-                return False
-            return self._extract_budget_amount(message) is not None
-
-        def _handle_budget_figure_reply(self, message: str, language: str = "english") -> str:
-            """Lead gave their budget after we asked. Acknowledge the number, promise
-            to tailor on the free visit with a fixed price, and close to the visit."""
-            amt = self._extract_budget_amount(message)
-            amt_str = amt if amt else "That"
-            if language == "shona":
-                lead = f"{amt_str} — tinogona kushanda nayo." if amt else "Zvakanaka — tinogona kushanda nazvo."
-                return (
-                    f"{lead}\n\n"
-                    "Paon-site visit yemahara, muplumber anogadzirisa zvinoenderana ne "
-                    "budget yenyu okupai mutengo wakasimba, pasina zvinotyisa. "
-                    "Ndokurongerai here?"
-                )
-            lead = f"{amt_str} — we can work with that." if amt else "Got it — we can work with that."
-            return (
-                f"{lead}\n\n"
-                "On the free visit the plumber tailors the spec to your budget and "
-                "gives you a fixed price, no surprises. Want me to line that up?"
-            )
-
         def _tiedown_signatures(self):
             return tuple(
                 sig for bank in self._TIEDOWN_VALUE_CHECK.values() for _, sig in bank
@@ -1781,23 +1693,6 @@ class ResponseMixin:
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
                     print(f"💸 Budget objection after price tie-down: '{incoming_message[:60]}'")
-                    return reply
-
-                # ── BUDGET FIGURE (their answer to "what were you hoping to spend?") ──
-                # We just asked for their budget; a number now is the answer. Handle it
-                # before the OOS/complaint classifier mistakes it for a complaint
-                # (prod: "about 400" came back as a complaint deflection).
-                if (self._last_assistant_asked_budget()
-                        and self._is_budget_figure_reply(incoming_message)):
-                    from bot.whatsapp_webhook import detect_language_simple as _dls_bf
-                    try:
-                        _bflang = _dls_bf(incoming_message)
-                    except Exception:
-                        _bflang = 'english'
-                    reply = self._handle_budget_figure_reply(incoming_message, _bflang)
-                    self.appointment.add_conversation_message("user", incoming_message)
-                    self.appointment.add_conversation_message("assistant", reply)
-                    print(f"💸 Budget figure captured: '{incoming_message[:60]}'")
                     return reply
 
                 current_question = self.get_next_question_to_ask()

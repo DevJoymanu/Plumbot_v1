@@ -2297,19 +2297,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), daemon=True).start()
             return
 
-        # -- STEP 1a: Budget reply after a price tie-down -----------------------
-        # Must run BEFORE the OOS/complaint step: it otherwise mis-flags a bare
-        # budget figure ("about 400") as a complaint and deflects to the plumber.
-        # A budget FIGURE answers "what were you hoping to spend?"; a budget
-        # DECLINE answers "That sit alright with your budget?".
+        # -- STEP 1a: Budget objection after a price tie-down -------------------
+        # Must run BEFORE the OOS/complaint step: a soft decline ("not really") to
+        # "That sit alright with your budget?" otherwise gets mis-flagged as a
+        # complaint and deflected to the plumber.
         _budget_reply = None
-        if (plumbot._last_assistant_asked_budget()
-                and plumbot._is_budget_figure_reply(message_body)):
-            _budget_reply = plumbot._handle_budget_figure_reply(
-                message_body, detect_language_simple(message_body)
-            )
-            print(f"💸 Budget figure captured (webhook): '{message_body[:60]}'")
-        elif (plumbot._last_assistant_was_price_tiedown()
+        if (plumbot._last_assistant_was_price_tiedown()
                 and plumbot._is_budget_decline(message_body)):
             _budget_reply = plumbot._handle_budget_objection(
                 detect_language_simple(message_body)

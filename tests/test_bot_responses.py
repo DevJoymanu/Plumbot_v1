@@ -1164,12 +1164,6 @@ class _FakeSelfFollowup:
     _is_budget_decline = ResponseMixin._is_budget_decline
     _is_budget_decline_keywords = ResponseMixin._is_budget_decline_keywords
     _handle_budget_objection = ResponseMixin._handle_budget_objection
-    _last_assistant_asked_budget = ResponseMixin._last_assistant_asked_budget
-    _extract_budget_amount = ResponseMixin._extract_budget_amount
-    _extract_budget_amount_regex = ResponseMixin._extract_budget_amount_regex
-    _is_budget_figure_reply = ResponseMixin._is_budget_figure_reply
-    _is_budget_figure_reply_keywords = ResponseMixin._is_budget_figure_reply_keywords
-    _handle_budget_figure_reply = ResponseMixin._handle_budget_figure_reply
     def __init__(self, stage, is_delayed=False, history=None):
         self._stage = stage
         self.appointment = _FakeApptStage(is_delayed=is_delayed, history=history)
@@ -1393,46 +1387,6 @@ try:
     )
 except Exception as e:
     results.log("budget objection", False, got=str(e))
-
-# Budget FIGURE reply ("about 400") after we asked for the budget must be captured
-# and answered (tailor + visit close), NOT misread as a complaint (prod bug).
-try:
-    # Detect that our last turn asked for the budget.
-    _ab = _FakeSelfFollowup("project_description",
-                            history=_bot("Roughly what were you hoping to spend?"))
-    _nab = _FakeSelfFollowup("project_description", history=_bot("Whereabouts are you based?"))
-    results.log(
-        "budget figure: detects the preceding budget ask",
-        _ab._last_assistant_asked_budget() is True
-        and _nab._last_assistant_asked_budget() is False,
-        got=f"after_ask={_ab._last_assistant_asked_budget()} after_other={_nab._last_assistant_asked_budget()}",
-    )
-    _fk = _FakeSelfFollowup("project_description")
-    # Extraction is AI-primary (handles "two grand"); gate tests the regex fallback.
-    AMOUNT_CASES = [
-        ("about 400", "US$400"), ("$500", "US$500"), ("around 1,200", "US$1200"),
-        ("2k", "US$2k"), ("no idea", None),
-    ]
-    for _msg, _exp in AMOUNT_CASES:
-        _g = _fk._extract_budget_amount_regex(_msg)
-        results.log(f"_extract_budget_amount_regex: '{_msg}'", _g == _exp,
-                    expected=str(_exp), got=str(_g))
-    results.log(
-        "_is_budget_figure_reply_keywords: number vs none",
-        _fk._is_budget_figure_reply_keywords("about 400") is True
-        and _fk._is_budget_figure_reply_keywords("no idea really") is False,
-        got="ok",
-    )
-    # Handler copy is stable regardless of how the amount was parsed.
-    _bfr = _fk._handle_budget_figure_reply("about 400", "english")
-    results.log(
-        "budget figure reply: acknowledges + tailors + visit close",
-        ("we can work with that" in _bfr and "tailors the spec to your budget" in _bfr
-         and "line that up" in _bfr),
-        got=_bfr,
-    )
-except Exception as e:
-    results.log("budget figure reply", False, got=str(e))
 
 # FAQ is answered AI-primary (ai_answer_faq, grounded in the fact) so it doesn't
 # sound copy-pasted; the canned fact is the fallback. Facts are now PURE (no baked
