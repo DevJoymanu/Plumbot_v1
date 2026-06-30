@@ -460,20 +460,19 @@ class ResponseMixin:
                 return kw
 
         def _handle_budget_objection(self, language: str = "english") -> str:
-            """Lead pushed back on price after the budget tie-down. Keep the sale
-            alive: acknowledge, ask their budget, reassure we tailor the spec and the
-            free visit pins the exact figure."""
+            """Lead pushed back on price after the budget tie-down. Don't negotiate —
+            reframe the figure as fully all-in (no surprises on the day) and offer to
+            get them the exact number for their space (i.e. the free visit)."""
             if language == "shona":
                 return (
-                    "Hapana dambudziko — tinogona kushanda nemabhajeti akasiyana.\n\n"
-                    "Manga makatarisira kushandisa marii yakadii? Tinogadzirisa "
-                    "zvinoenderana nayo, uye on-site visit yemahara inosimbisa mutengo "
-                    "chaiwo tisati tatanga."
+                    "Mutengo iwoyo wakasanganisa zvese — zvigadzirwa, kuiswa, basa "
+                    "rese rapera, pasina zvimwe zvinowedzerwa pazuva racho.\n\n"
+                    "Ndokutorerai mutengo chaiwo wenzvimbo yenyu here?"
                 )
             return (
-                "No problem at all — we can usually work to most budgets.\n\n"
-                "Roughly what were you hoping to spend? We'll tailor the spec to fit, "
-                "and the free visit pins the exact figure before anything starts."
+                "That's everything in — supply, install, fully fitted, no extras on "
+                "the day.\n\n"
+                "Want me to sort you the exact number for your space?"
             )
 
         def _last_assistant_asked_budget(self) -> bool:

@@ -1386,9 +1386,9 @@ try:
     )
     _bo = _bfake._handle_budget_objection("english")
     results.log(
-        "budget objection: acknowledges + asks their budget + tailors",
-        ("most budgets" in _bo and "hoping to spend" in _bo
-         and "tailor" in _bo and "free visit" in _bo),
+        "budget objection: reframes all-in value, offers the exact number (no negotiating)",
+        ("everything in" in _bo and "supply, install" in _bo
+         and "no extras on the day" in _bo and "exact number for your space" in _bo),
         got=_bo,
     )
 except Exception as e:
