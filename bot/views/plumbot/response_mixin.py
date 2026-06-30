@@ -524,9 +524,10 @@ class ResponseMixin:
 
         def _append_tiedown(self, reply: str, language: str = "english") -> str:
             """Close a free-form answer (LLM / semantic-rescue) with the non-price
-            qualifying question. No-op when there's no reply or our last turn was
-            already a tie-down (so we never stack two)."""
-            if not reply or self._last_assistant_was_tiedown():
+            qualifying question. No-op when there's no reply, our last turn was
+            already a tie-down (so we never stack two), or the reply already asks a
+            question — a clarifying reply shouldn't get a second question piled on."""
+            if not reply or '?' in reply or self._last_assistant_was_tiedown():
                 return reply
             return f"{reply.rstrip()}\n\n{self._yes_tiedown(language)}"
 
@@ -1589,9 +1590,14 @@ class ResponseMixin:
                 return True
 
             clean = msg.removeprefix('and ').strip().rstrip('?').strip()
-            word_count = len(msg.split())
 
-            if word_count <= 5 and any(clean == p or clean.startswith(p) for p in product_words):
+            # Only a BARE product word is an availability question ("tubs", "and
+            # geysers", "vanitys?"). A product word followed by a descriptor
+            # ("shower room", "vanity unit", "shower installation") is a project
+            # description, not an availability question — startswith() used to flag
+            # those by mistake, which then blocked the description from being saved
+            # and the booking flow looped re-asking what they wanted.
+            if clean in product_words:
                 return True
 
             return False

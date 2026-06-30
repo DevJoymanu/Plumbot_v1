@@ -868,6 +868,33 @@ for msg, expected in DESC_REPLY_CASES:
     except Exception as e:
         results.log(f"_looks_like_project_description_reply: '{msg[:30]}'", False, got=str(e))
 
+# Only a BARE product word is an availability question. A product word + descriptor
+# ("shower room", "vanity unit") is a DESCRIPTION — must not be flagged, or the
+# project_description save is blocked and the booking flow loops re-asking.
+# Production: "Shower room" re-asked 3x because startswith("shower") flagged it.
+class _FakeSelfAvail:
+    _is_product_availability_question = ResponseMixin._is_product_availability_question
+_fa = _FakeSelfAvail()
+PROD_AVAIL_CASES = [
+    ("Shower room",        False),   # the bug
+    ("shower room",        False),
+    ("vanity unit",        False),
+    ("shower installation", False),
+    ("I want to replace my toilet and shower", False),
+    ("tubs",               True),    # bare product word = availability
+    ("and geysers",        True),
+    ("vanitys?",           True),
+    ("do you have tubs",   True),    # explicit availability phrasing
+    ("toilets also?",      True),
+]
+for msg, expected in PROD_AVAIL_CASES:
+    try:
+        got = _fa._is_product_availability_question(msg)
+        results.log(f"_is_product_availability_question: '{msg[:28]}'", got == expected,
+                    expected=str(expected), got=str(got))
+    except Exception as e:
+        results.log(f"_is_product_availability_question: '{msg[:28]}'", False, got=str(e))
+
 class _FakeSelfBuy:
     _is_purchase_commitment = ResponseMixin._is_purchase_commitment
     _is_job_quote_request = ResponseMixin._is_job_quote_request
@@ -1265,6 +1292,14 @@ try:
         "append tie-down: empty reply unchanged",
         _ap3 == "",
         got=repr(_ap3),
+    )
+    # A reply that already asks a question must NOT get a second question stacked on.
+    _apq = "So it's a shower you're after — full reno or just the shower?"
+    _ap4 = _FakeSelfFollowup("service_type")._append_tiedown(_apq, "english")
+    results.log(
+        "append tie-down: no stacking when the reply already asks a question",
+        _ap4 == _apq,
+        got=str(_ap4),
     )
     # _product_price_close (tub / Facebook-package replies): value-check first,
     # then the open "which one?" question once a tie-down has gone out.
