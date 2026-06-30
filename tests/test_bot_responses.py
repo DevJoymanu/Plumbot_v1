@@ -1076,6 +1076,7 @@ class _FakeSelfForward:
     # Tie-down helpers — "ask for a yes first" leads every answer; the forward
     # question is only reached once our last turn was already a tie-down.
     _TIEDOWN_VALUE_CHECK = ResponseMixin._TIEDOWN_VALUE_CHECK
+    _TIEDOWN_OPENER = ResponseMixin._TIEDOWN_OPENER
     _EXTRA_TIEDOWN_SIGNATURES = ResponseMixin._EXTRA_TIEDOWN_SIGNATURES
     _tiedown_signatures = ResponseMixin._tiedown_signatures
     _assistant_history_text = ResponseMixin._assistant_history_text
@@ -1169,14 +1170,20 @@ except Exception as e:
 # The pricing close is stage-driven, with a deflection override on top. Build a
 # fake that controls the stage + is_delayed and otherwise reuses the real method.
 class _FakeApptStage:
-    def __init__(self, is_delayed=False, history=None):
+    # project_type defaults to a known job so the qualifying close is the
+    # property-scope one; pass project_type=None to model a cold opener.
+    def __init__(self, is_delayed=False, history=None,
+                 project_type="bathroom_renovation", project_description=None):
         self.is_delayed = is_delayed
         self.conversation_history = history or []
+        self.project_type = project_type
+        self.project_description = project_description
 class _FakeSelfFollowup:
     _FAMILY_DISPLAY = ResponseMixin._FAMILY_DISPLAY
     _confirm_intent_question = ResponseMixin._confirm_intent_question
     _get_pricing_followup_prompt = ResponseMixin._get_pricing_followup_prompt
     _TIEDOWN_VALUE_CHECK = ResponseMixin._TIEDOWN_VALUE_CHECK
+    _TIEDOWN_OPENER = ResponseMixin._TIEDOWN_OPENER
     _tiedown_signatures = ResponseMixin._tiedown_signatures
     _assistant_history_text = ResponseMixin._assistant_history_text
     _yes_tiedown = ResponseMixin._yes_tiedown
@@ -1191,9 +1198,12 @@ class _FakeSelfFollowup:
     _is_budget_decline = ResponseMixin._is_budget_decline
     _is_budget_decline_keywords = ResponseMixin._is_budget_decline_keywords
     _handle_budget_objection = ResponseMixin._handle_budget_objection
-    def __init__(self, stage, is_delayed=False, history=None):
+    def __init__(self, stage, is_delayed=False, history=None,
+                 project_type="bathroom_renovation"):
         self._stage = stage
-        self.appointment = _FakeApptStage(is_delayed=is_delayed, history=history)
+        self.appointment = _FakeApptStage(
+            is_delayed=is_delayed, history=history, project_type=project_type
+        )
     def get_next_question_to_ask(self):
         return self._stage
     def _get_contextual_description_question(self):
@@ -1262,6 +1272,28 @@ try:
         "tie-down: shona language -> shona line",
         "pamba" in _ts,
         got=str(_ts),
+    )
+    # Cold opener (no job on the table yet) -> softer "what are you looking to get
+    # sorted?" instead of the presumptive "anything ELSE on the property?".
+    _op = _FakeSelfFollowup("service_type", project_type=None)._yes_tiedown("english")
+    results.log(
+        "tie-down: cold opener (no job) -> 'what are you looking to get sorted?'",
+        _op == "What are you looking to get sorted?",
+        got=str(_op),
+    )
+    _ops = _FakeSelfFollowup("service_type", project_type=None)._yes_tiedown("shona")
+    results.log(
+        "tie-down: cold opener -> shona opener line",
+        "kugadziriswa" in _ops,
+        got=str(_ops),
+    )
+    # The opener close still counts as a tie-down (won't stack one next turn).
+    results.log(
+        "tie-down: opener close registered as a tie-down signature",
+        _FakeSelfFollowup(
+            "service_type", history=_bot("What are you looking to get sorted?")
+        )._last_assistant_was_tiedown() is True,
+        got="ok",
     )
     # Detection: last assistant turn is a tie-down -> True; a price line -> False.
     _d_yes = _FakeSelfFollowup("service_type", history=_bot("Geysers from US$X.", _TD))

@@ -379,6 +379,21 @@ class ResponseMixin:
             ],
         }
 
+        # Cold-opener close: used when NO job is on the table yet (no project_type /
+        # description). "Anything ELSE on the property?" presumes a first thing that
+        # doesn't exist on an opening question, so we ask what they want first;
+        # _yes_tiedown switches to _TIEDOWN_VALUE_CHECK once a project is known.
+        _TIEDOWN_OPENER = {
+            'english': [
+                ("What are you looking to get sorted?", "looking to get sorted"),
+                ("What's the job you've got in mind?", "job you've got in mind"),
+            ],
+            'shona': [
+                ("Chii chamuri kuda kugadziriswa?", "kuda kugadziriswa"),
+                ("Nderipi basa ramuri kufunga?", "basa ramuri kufunga"),
+            ],
+        }
+
         # Other yes-seeking closes that also count as a tie-down for stacking
         # purposes (so we never follow one with a value-check next turn).
         # "with your budget" / "ne budget" = the price-reply tie-down (_price_tiedown).
@@ -477,7 +492,10 @@ class ResponseMixin:
 
         def _tiedown_signatures(self):
             return tuple(
-                sig for bank in self._TIEDOWN_VALUE_CHECK.values() for _, sig in bank
+                sig
+                for banks in (self._TIEDOWN_VALUE_CHECK, self._TIEDOWN_OPENER)
+                for bank in banks.values()
+                for _, sig in bank
             ) + self._EXTRA_TIEDOWN_SIGNATURES
 
         def _product_price_close(self, language: str = "english") -> str:
@@ -497,13 +515,17 @@ class ResponseMixin:
             )
 
         def _yes_tiedown(self, language: str = "english") -> str:
-            """First unused non-price qualifying close ("anything else on the
-            property?") for the language, rotating off the transcript so we never
-            repeat one."""
-            bank = self._TIEDOWN_VALUE_CHECK.get(
-                'shona' if language == 'shona' else 'english',
-                self._TIEDOWN_VALUE_CHECK['english'],
+            """First unused non-price qualifying close for the language, rotating off
+            the transcript so we never repeat one. Context-aware: once a job is on the
+            table (project_type / description known) it asks what ELSE on the property
+            needs looking at; on a cold opener it asks what they want sorted first."""
+            appt = getattr(self, 'appointment', None)
+            has_job = bool(
+                getattr(appt, 'project_type', None)
+                or getattr(appt, 'project_description', None)
             )
+            banks = self._TIEDOWN_VALUE_CHECK if has_job else self._TIEDOWN_OPENER
+            bank = banks.get('shona' if language == 'shona' else 'english', banks['english'])
             asked = self._assistant_history_text()
             for text, sig in bank:
                 if sig not in asked:
