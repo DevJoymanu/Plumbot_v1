@@ -126,6 +126,25 @@ is_plan_later     true if customer says they'll send their plan/blueprint/
 is_repeat_question  true if the customer is asking something that has clearly
                   already been answered earlier in the conversation.
 
+─── QUALIFICATION SIGNALS (judged against next_question) ─────────────────────
+answered_current_question  true if the message actually answers next_question
+                  (next_question=area → they name a suburb; =availability_date /
+                  availability_time → they give a day/time). false if they ignored
+                  it or asked something else instead.
+pivoted_to_timeline  true if — INSTEAD of answering — the customer asked about or
+                  raised WHEN / scheduling: "when can you come", "how soon", "are
+                  you free this week", "you free Friday?", or gave a timeframe in
+                  place of the field asked. Shona: "munouya rini", "nguvai",
+                  "mungakwanisa here svondo rino".
+offered_date      If the message implies a specific calendar day, resolve it to an
+                  absolute YYYY-MM-DD relative to TODAY (same weekday / relative
+                  rules as availability). "next Thursday", "the 8th", "this Friday",
+                  "neChina" → the date. A vague timeframe ("next week", "sometime
+                  soon") → null (see offered_timeframe). Date only — no time here.
+offered_timeframe A soft, non-specific timeframe when NO hard date is given, e.g.
+                  "sometime next week", "end of the month", "in a couple of weeks",
+                  "kupera kwemwedzi". Else null.
+
 ─── WORKED EXAMPLES (input → output) ─────────────────────────────────────────
 These show the EXACT reasoning for the cases that get misclassified most often.
 Match the pattern, do not copy values blindly.
@@ -169,6 +188,16 @@ Match the pattern, do not copy values blindly.
 "maita basa"
 {"intent":"ack","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
 
+# Date-stage pivot — soft far-out timeframe, no hard day (TODAY=2026-07-01,
+# next_question=availability_date). offered_date stays null:
+(Appointment: service=bathroom_renovation, area=Hatfield | next_question=availability_date)  "maybe end of the month"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"answered_current_question":false,"pivoted_to_timeline":true,"offered_date":null,"offered_timeframe":"end of the month","extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# Date-stage pivot — near specific day. TODAY=2026-07-01 (Wednesday), "this
+# Friday" → 2026-07-03; recompute against the real TODAY:
+(Appointment: service=bathroom_renovation, area=Hatfield | next_question=availability_date)  "are you free this Friday?"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"answered_current_question":false,"pivoted_to_timeline":true,"offered_date":"2026-07-03","offered_timeframe":null,"extracted":{"area":null,"availability":"2026-07-03T00:00","customer_name":null,"project_description":null}}
+
 ─── OUTPUT FORMAT (return exactly this structure) ────────────────────────────
 {
   "intent": "in_scope",
@@ -178,6 +207,10 @@ Match the pattern, do not copy values blindly.
   "is_photo_request": false,
   "is_plan_later": false,
   "is_repeat_question": false,
+  "answered_current_question": false,
+  "pivoted_to_timeline": false,
+  "offered_date": null,
+  "offered_timeframe": null,
   "extracted": {
     "area": null,
     "availability": null,
@@ -287,6 +320,22 @@ def uc_is_repeat(r: dict | None) -> bool:
 
 def uc_extracted(r: dict | None) -> dict:
     return (r or {}).get("extracted") or {}
+
+# ── Qualification signals (Phase 1: date-stage dispatch) ─────────────────────
+
+def uc_answered_current_question(r: dict | None) -> bool:
+    return bool((r or {}).get("answered_current_question", False))
+
+def uc_pivoted_to_timeline(r: dict | None) -> bool:
+    return bool((r or {}).get("pivoted_to_timeline", False))
+
+def uc_offered_date(r: dict | None) -> str | None:
+    v = (r or {}).get("offered_date")
+    return v or None
+
+def uc_offered_timeframe(r: dict | None) -> str | None:
+    v = (r or {}).get("offered_timeframe")
+    return v or None
 
 def uc_as_service_inquiry(r: dict | None) -> dict:
     """Format the result as the dict that detect_service_inquiry() would return."""

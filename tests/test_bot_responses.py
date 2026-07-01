@@ -1455,6 +1455,79 @@ try:
 except Exception as e:
     results.log("budget objection", False, got=str(e))
 
+# Date-stage timeline-pivot dispatcher (Phase 1): DeepSeek resolves offered_date,
+# code does the math only. >7 days out parks; within a week keeps booking with an
+# assumptive close; a soft timeframe asks them to pin the day. Deterministic.
+class _FakeApptPivot:
+    def __init__(self):
+        self.is_delayed = False
+        self.scheduled_datetime = None
+        self.internal_notes = ''
+        self.delay_followup_due_at = None
+    def mark_delayed(self, source_message='', save=True):
+        self.is_delayed = True
+        return True
+    def unpark(self, save=True):
+        return False
+    def save(self, update_fields=None):
+        pass
+class _FakeSelfPivot:
+    _dispatch_timeline_pivot = ResponseMixin._dispatch_timeline_pivot
+    _park_timeline_lead = ResponseMixin._park_timeline_lead
+    _lock_visit_date = ResponseMixin._lock_visit_date
+    _friendly_visit_date = ResponseMixin._friendly_visit_date
+    def __init__(self):
+        self.appointment = _FakeApptPivot()
+try:
+    _today = "2026-07-01"  # Wednesday
+    _p_none = _FakeSelfPivot()._dispatch_timeline_pivot("area", "2026-07-15", None, _today)
+    results.log("timeline pivot: non-date stage -> None (only fires at date stage)",
+                _p_none is None, got=str(_p_none))
+    # >7 days out -> park + follow-up scheduled, booking flow stops.
+    _sp = _FakeSelfPivot()
+    _p_far = _sp._dispatch_timeline_pivot("availability_date", "2026-07-15", None, _today)
+    results.log("timeline pivot: >7 days out -> park (no date chase)",
+                _p_far is not None and "reach out closer" in _p_far
+                and _sp.appointment.is_delayed is True,
+                got=str(_p_far))
+    # <=7 days hard date -> lock the day, ask an assumptive time slot, not parked.
+    _sn = _FakeSelfPivot()
+    _p_near = _sn._dispatch_timeline_pivot("availability_date", "2026-07-03", None, _today)
+    results.log("timeline pivot: <=7 days -> lock date + assumptive time slot",
+                _p_near is not None and "morning slot" in _p_near
+                and _sn.appointment.scheduled_datetime is not None
+                and _sn.appointment.is_delayed is False,
+                got=str(_p_near))
+    # Soft timeframe only -> pin the day assumptively (echo their timeframe), not parked.
+    _st = _FakeSelfPivot()
+    _p_tf = _st._dispatch_timeline_pivot("availability_date", None, "end of the month", _today)
+    results.log("timeline pivot: soft timeframe -> assumptive pin-the-day, not parked",
+                _p_tf is not None and "end of the month" in _p_tf
+                and "start of that" in _p_tf and _st.appointment.is_delayed is False,
+                got=str(_p_tf))
+    # No date/timeframe -> None (fall through to normal flow).
+    _p_fall = _FakeSelfPivot()._dispatch_timeline_pivot("availability_date", None, None, _today)
+    results.log("timeline pivot: no date/timeframe -> None (fall through)",
+                _p_fall is None, got=str(_p_fall))
+    # Exactly 7 days out is still 'within a week' (boundary) -> continue, not park.
+    _s7 = _FakeSelfPivot()
+    _p7 = _s7._dispatch_timeline_pivot("availability_date", "2026-07-08", None, _today)
+    results.log("timeline pivot: exactly 7 days -> continue (boundary), not park",
+                _p7 is not None and "morning slot" in _p7 and _s7.appointment.is_delayed is False,
+                got=str(_p7))
+    # Accessors return the signals with safe defaults.
+    from bot.unified_classifier import (
+        uc_pivoted_to_timeline as _ucp, uc_offered_date as _ucd,
+        uc_offered_timeframe as _uct,
+    )
+    _uc = {"pivoted_to_timeline": True, "offered_date": "2026-07-03", "offered_timeframe": None}
+    results.log("uc signal accessors: pivot/date/timeframe + safe defaults",
+                _ucp(_uc) is True and _ucd(_uc) == "2026-07-03" and _uct(_uc) is None
+                and _ucp(None) is False and _ucd({}) is None,
+                got="ok")
+except Exception as e:
+    results.log("timeline pivot dispatcher", False, got=str(e))
+
 # FAQ is answered AI-primary (ai_answer_faq, grounded in the fact) so it doesn't
 # sound copy-pasted; the canned fact is the fallback. Facts are now PURE (no baked
 # close); the qualifying close is appended by the caller. AI is non-deterministic,

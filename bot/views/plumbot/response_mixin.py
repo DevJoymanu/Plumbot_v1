@@ -490,6 +490,94 @@ class ResponseMixin:
                 "Want me to sort you the exact number for your space?"
             )
 
+        # ── Date-stage timeline-pivot dispatch (Phase 1: AI-classify → code math) ─
+        def _friendly_visit_date(self, d) -> str:
+            """'Friday 3 July' — cross-platform (avoids %-d)."""
+            return f"{d.strftime('%A')} {d.day} {d.strftime('%B')}"
+
+        def _lock_visit_date(self, d) -> None:
+            """Store a date-only visit day (midnight) so the flow advances to the
+            time question."""
+            try:
+                sa = pytz.timezone('Africa/Johannesburg')
+                self.appointment.scheduled_datetime = sa.localize(
+                    datetime(d.year, d.month, d.day, 0, 0)
+                )
+                self.appointment.save(update_fields=['scheduled_datetime'])
+            except Exception:
+                pass
+
+        def _park_timeline_lead(self, offered_date: str) -> None:
+            """Far-out lead: stop the active booking flow and schedule the follow-up
+            on the offered date (flag for follow-up), rather than chasing a slot now."""
+            try:
+                self.appointment.mark_delayed(source_message='timeline pivot (>7 days out)')
+            except Exception:
+                pass
+            try:
+                from bot.out_of_scope_handler import _store_delay_followup_date
+                _store_delay_followup_date(self.appointment, (offered_date or '')[:10])
+            except Exception:
+                pass
+
+        def _dispatch_timeline_pivot(self, next_question, offered_date,
+                                     offered_timeframe, today_str, language="english"):
+            """Deterministic date-stage dispatcher. Called only when the lead pivoted
+            to timeline at the date/time stage. DeepSeek has already resolved
+            offered_date to an absolute YYYY-MM-DD; here we do date math + a state
+            transition only, and reply in the assumptive-close style. Returns a reply,
+            or None to fall through to the normal flow.
+
+            >7 days out → park + schedule follow-up (don't chase a date).
+            ≤7 days hard date → lock it, ask an assumptive time slot.
+            Soft timeframe (no hard date) → ask them to pin the specific day
+            assumptively; a far date they then give parks on the next turn."""
+            if next_question not in ('availability_date', 'availability_time'):
+                return None
+            is_shona = language == 'shona'
+
+            def _pdate(s):
+                try:
+                    return datetime.strptime((s or '')[:10], '%Y-%m-%d').date()
+                except Exception:
+                    return None
+
+            today = _pdate(today_str)
+            d = _pdate(offered_date)
+            days_out = (d - today).days if (today and d) else None
+
+            # >7 days out — park, don't chase a specific date.
+            if days_out is not None and days_out > 7:
+                self._park_timeline_lead(offered_date)
+                when = self._friendly_visit_date(d)
+                if is_shona:
+                    return (f"Hapana kumhanya — {when} ichiri kure, saka ndichazviisa "
+                            "pasi tozokubatai pedyo nenguva yacho. Zvakanaka here?")
+                return (f"No rush at all — {when} is a way out yet, so I'll make a note "
+                        "and we'll reach out closer to the time to lock it in. Sound good?")
+
+            # Hard date within a week — lock it, ask an assumptive time slot.
+            if days_out is not None and 0 <= days_out <= 7:
+                self._lock_visit_date(d)
+                when = self._friendly_visit_date(d)
+                if is_shona:
+                    return f"Zvakanaka, tozouya {when}. Munoda mangwanani here kana masikati?"
+                return (f"Perfect, let's lock in {when}. Does a morning slot suit you, "
+                        "or is afternoon easier?")
+
+            # Only a soft timeframe — get them to pin the specific day (assumptive
+            # this-or-that, not open-ended). If they then name a far date, the next
+            # turn parks it.
+            if offered_timeframe:
+                tf = offered_timeframe.strip()
+                if is_shona:
+                    return (f"Zvakanaka, {tf} zvakanaka — munoda kutanga kwacho here, "
+                            "kana kunopera?")
+                return (f"Sure, {tf} works — did you want to aim for the start of "
+                        "that, or later on?")
+
+            return None
+
         def _tiedown_signatures(self):
             return tuple(
                 sig
