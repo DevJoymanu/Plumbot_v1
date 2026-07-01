@@ -1588,6 +1588,20 @@ try:
         _aok,
         got="; ".join(f"{_m!r}->{_dai(_m)!r}" for _m, _e in ADD_CASES),
     )
+    # A dynamic answer that opens by echoing the customer's message gets the echo
+    # stripped (prod: bot parroted "Hello! Do you for shower rooms" back).
+    class _FakeSelfEcho:
+        _strip_leading_echo = ResponseMixin._strip_leading_echo
+    _fe = _FakeSelfEcho()
+    _e1 = _fe._strip_leading_echo(
+        "Hello! Do you for shower rooms\n\nYes, we do shower rooms.",
+        "Hello! Do you for shower rooms")
+    _e2 = _fe._strip_leading_echo("Yes, we do shower rooms.", "Hello! Do you for shower rooms")
+    results.log(
+        "strip leading echo: removes a parroted message, leaves a clean answer alone",
+        _e1 == "Yes, we do shower rooms." and _e2 == "Yes, we do shower rooms.",
+        got=f"{_e1!r} | {_e2!r}",
+    )
 except Exception as e:
     results.log("faq ai-primary fallback", False, got=str(e))
 

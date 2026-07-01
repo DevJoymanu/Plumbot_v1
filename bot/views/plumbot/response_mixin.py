@@ -4923,6 +4923,16 @@ class ResponseMixin:
                 return False
 
 
+        def _strip_leading_echo(self, answer: str, message: str) -> str:
+            """Remove a leading verbatim echo of the customer's message from a
+            free-form answer — some models parrot the input back as their opening
+            line (prod: 'Hello! Do you for shower rooms\\n\\nYes, we do…')."""
+            a = (answer or '').strip()
+            m = (message or '').strip()
+            if a and m and a.lower().startswith(m.lower()):
+                return a[len(m):].lstrip(" \n\r\t:-–—?.!").strip()
+            return a
+
         def _answer_standalone_question(self, message: str) -> str:
             if not deepseek_client:
                 return None
@@ -5031,7 +5041,9 @@ class ResponseMixin:
                                 "with no specific question, reply with ONLY this exact text: "
                                 "'Hello,\\nHow may we assist you on plumbing services' — nothing else. "
                                 "For real questions: direct, helpful, human. "
-                                "No bullet points. No markdown. Do not end with a question."
+                                "No bullet points. No markdown. Do not end with a question. "
+                                "Never repeat, quote, or echo the customer's message back — "
+                                "answer directly."
                             ),
                         },
                         {"role": "user", "content": prompt},
@@ -5040,6 +5052,9 @@ class ResponseMixin:
                     max_tokens=100,
                 )
                 answer = response.choices[0].message.content.strip().replace("**", "").replace("__", "")
+                # Some models open by echoing the customer's message verbatim — strip
+                # that leading echo so the reply doesn't parrot them back.
+                answer = self._strip_leading_echo(answer, message)
                 print(f"🤖 Dynamic answer for: '{message[:60]}'")
                 # A free-form answer that quotes a price must still carry the
                 # approximate-price disclaimer and close on the budget tie-down
