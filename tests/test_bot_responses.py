@@ -1574,6 +1574,20 @@ try:
         _dok,
         got="; ".join(f"{_m!r}->{_dsi(_m)!r}" for _m, _e in DERIVE_CASES),
     )
+    # "No, also a toilet" -> the extra item is pulled out and appended to the project.
+    from bot.whatsapp_webhook import _derive_additional_items as _dai
+    ADD_CASES = [
+        ("No, also a toilet", "toilet"),
+        ("and a geyser too", "geyser too"),
+        ("no just add a vanity", "vanity"),
+        ("also a shower", "shower"),
+    ]
+    _aok = all(_dai(_m) == _e for _m, _e in ADD_CASES)
+    results.log(
+        "derive additional items: strips the 'no/also/and' lead-in to the extra item",
+        _aok,
+        got="; ".join(f"{_m!r}->{_dai(_m)!r}" for _m, _e in ADD_CASES),
+    )
 except Exception as e:
     results.log("faq ai-primary fallback", False, got=str(e))
 

@@ -2021,6 +2021,25 @@ def _derive_service_item(message: str) -> str:
     return m.rstrip('?').strip()
 
 
+def _derive_additional_items(message: str) -> str:
+    """Pull the extra item(s) out of a 'No, also a toilet' reply to the service
+    confirm question. Fallback only — the classifier's project_description wins."""
+    m = (message or '').strip().rstrip('?.').strip()
+    ml = m.lower()
+    for p in ('no, also add', 'no also add', 'no, just add', 'no just add',
+              'no, also', 'no also', 'no, add', 'no add', 'also add', 'just add',
+              'and also', 'also', 'and', 'add', 'no,', 'no'):
+        if ml.startswith(p):
+            m = m[len(p):].strip().lstrip(',').strip()
+            ml = m.lower()
+            break
+    for a in ('a ', 'an ', 'the '):
+        if ml.startswith(a):
+            m = m[len(a):].strip()
+            break
+    return m
+
+
 def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None):
     """Generate a bot reply for message_body and schedule it with a 1-5 min send delay."""
     try:
@@ -2080,6 +2099,27 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     _uclass['extracted'] = _ext
                     print(f"📅 Availability keyword backfill: {_kw_date}")
 
+        # ── SERVICE-CONFIRM FOLLOW-UP ─────────────────────────────────────────
+        # We asked "Is a <X> the only thing you're looking to get sorted?" last turn
+        # (project set to <X>). If they now name MORE (not a plain yes), append it to
+        # the project so nothing is lost; a "yes" just falls through to advance. One
+        # shot — the tag is cleared either way. AI decides yes/no + what they named.
+        if '[SERVICE_CONFIRM_PENDING]' in (appointment.internal_notes or ''):
+            appointment._remove_notes_tag('[SERVICE_CONFIRM_PENDING]')
+            from bot.out_of_scope_handler import _classify_affirmation
+            if _classify_affirmation(message_body) != 'yes':
+                _more_ai = uc_extracted(_uclass).get('project_description')
+                _named = uc_product_intent(_uclass) not in ('none', None)
+                if _more_ai or _named:
+                    _more = _more_ai or _derive_additional_items(message_body)
+                    _existing = (appointment.project_description or '').strip()
+                    if _more and _more.lower() not in _existing.lower():
+                        appointment.project_description = (
+                            f"{_existing}, {_more}" if _existing else str(_more)
+                        )[:200]
+                        appointment.save(update_fields=['project_description'])
+                        print(f"📝 Appended to project_description: {_more}")
+
         # ── DATE-STAGE TIMELINE PIVOT (deterministic dispatch) ────────────────
         # At the date/time stage, when the lead pivots to timeline instead of
         # answering, dispatch on offered_date vs today — >7 days out parks the lead;
@@ -2136,6 +2176,9 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 if _item:
                     appointment.project_description = str(_item)[:120]
                     appointment.save(update_fields=['project_description'])
+                    # Await the "is that the only thing?" answer so the next turn can
+                    # append if they name more (see SERVICE-CONFIRM FOLLOW-UP).
+                    appointment._add_notes_tag('[SERVICE_CONFIRM_PENDING]')
                     print(f"📝 Captured service item as project_description: {_item}")
             _faq_reply = (
                 plumbot.ai_answer_faq(message_body, _faq_fact, _faq_lang,
