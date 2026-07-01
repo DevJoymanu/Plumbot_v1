@@ -634,6 +634,41 @@ class ResponseMixin:
             ).lower()
             return any(sig in last for sig in self._tiedown_signatures())
 
+        def _last_assistant_was_value_check(self) -> bool:
+            """True when our last turn was the property-scope value-check close
+            ('Anything else on the property?') — so a bare 'no'/ack this turn means
+            'nothing else, let's proceed', NOT a disengagement. Distinct from the
+            budget tie-down (_last_assistant_was_price_tiedown) and the cold opener,
+            for which a 'no' means something else."""
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            last = next(
+                (m.get('content', '') for m in reversed(history)
+                 if m.get('role') == 'assistant'),
+                '',
+            ).lower()
+            sigs = tuple(
+                sig for bank in self._TIEDOWN_VALUE_CHECK.values() for _, sig in bank
+            )
+            return any(sig in last for sig in sigs)
+
+        @staticmethod
+        def _is_nothing_else_reply(message: str) -> bool:
+            """A bare 'nothing more' answer to a 'what else?' close — a negative or a
+            plain acknowledgement that names no new item. Used only right after the
+            value-check close, so a short 'no'/'ok' safely means 'proceed'."""
+            m = (message or "").strip().lower().strip('.!,')
+            if not m:
+                return False
+            negatives = {
+                'no', 'nope', 'nah', 'naah', 'none', 'nothing', 'nothing else',
+                'no more', 'nothing more', "that's all", 'thats all', "that's it",
+                'thats it', 'no thanks', 'no thank you', "that's all thanks",
+                'thats all thanks', 'all good', "we're good", 'were good',
+                'aiwa', 'kwete', 'hapana', 'hapana chimwe', 'ndizvo chete',
+            }
+            return m in negatives or ResponseMixin._is_bare_ack(m)
+
         def _append_tiedown(self, reply: str, language: str = "english") -> str:
             """Close a free-form answer (LLM / semantic-rescue) with the non-price
             qualifying question. No-op when there's no reply, our last turn was
@@ -4963,6 +4998,33 @@ class ResponseMixin:
                 )
             return None
 
+        # Function words a max_tokens truncation tends to strand at the very end of
+        # a reply ("...come to your property in"). Ending on one of these with no
+        # terminal punctuation is the signature of a cut-off sentence.
+        _TRUNCATION_TAIL_WORDS = frozenset({
+            'in', 'to', 'and', 'or', 'the', 'a', 'an', 'of', 'for', 'with', 'at',
+            'on', 'your', 'our', 'we', 'that', 'this', 'is', 'are', 'was', 'were',
+            'will', 'from', 'by', 'as', 'so', 'but', 'their', 'his', 'her', 'its',
+            'it', 'you', 'they', 'into', 'onto', 'than', 'then', 'if', 'about',
+        })
+
+        @staticmethod
+        def _trim_incomplete_sentence(text: str) -> str:
+            """Drop a trailing partial sentence left by a max_tokens truncation
+            ('...come to your property in' → back to the last complete sentence).
+            Conservative: only trims when the reply lacks terminal punctuation AND
+            ends on a dangling function word, so a complete (if unpunctuated) answer
+            is returned untouched."""
+            t = (text or "").rstrip()
+            if not t or t[-1] in '.!?:)]"\'”’':
+                return t
+            words = t.split()
+            last_word = words[-1].strip('.,;:').lower() if words else ''
+            if last_word not in ResponseMixin._TRUNCATION_TAIL_WORDS:
+                return t
+            cut = max(t.rfind('.'), t.rfind('!'), t.rfind('?'))
+            return t[:cut + 1].rstrip() if cut != -1 else t
+
         def _strip_leading_echo(self, answer: str, message: str) -> str:
             """Remove a leading verbatim echo of the customer's message from a
             free-form answer — some models parrot the input back as their opening
@@ -5065,6 +5127,7 @@ class ResponseMixin:
         CUSTOMER'S QUESTION: "{message}"
 
         If this is NOT a generic opener, answer directly and honestly.
+        - Keep it SHORT — 2 sentences maximum, under 45 words. Do NOT list out every service or fixture; give a brief reassurance and move on. A WhatsApp reply, not an essay.
         - If we can do it: confirm clearly and briefly, then move toward a site visit.
         - If we cannot (electrical, roofing, painting): say so and redirect to what we can help with.
         - ONLY give prices, sizes, or measurements if the customer EXPLICITLY asked about price or size. If they did not ask, do NOT mention any prices, sizes, or specifications — just acknowledge what they want and keep it moving. The pricing guide above is for reference only; never volunteer it unprompted.
@@ -5096,6 +5159,10 @@ class ResponseMixin:
                 # Some models open by echoing the customer's message verbatim — strip
                 # that leading echo so the reply doesn't parrot them back.
                 answer = self._strip_leading_echo(answer, message)
+                # max_tokens can cut the answer off mid-sentence ('...property in');
+                # drop the dangling fragment so a booking nudge doesn't get stapled
+                # onto half a sentence.
+                answer = self._trim_incomplete_sentence(answer)
                 print(f"🤖 Dynamic answer for: '{message[:60]}'")
                 # A free-form answer that quotes a price must still carry the
                 # approximate-price disclaimer and close on the budget tie-down

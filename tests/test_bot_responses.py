@@ -1212,6 +1212,7 @@ class _FakeSelfFollowup:
     _yes_tiedown = ResponseMixin._yes_tiedown
     _price_tiedown = ResponseMixin._price_tiedown
     _last_assistant_was_tiedown = ResponseMixin._last_assistant_was_tiedown
+    _last_assistant_was_value_check = ResponseMixin._last_assistant_was_value_check
     _append_tiedown = ResponseMixin._append_tiedown
     _EXTRA_TIEDOWN_SIGNATURES = ResponseMixin._EXTRA_TIEDOWN_SIGNATURES
     _product_price_close = ResponseMixin._product_price_close
@@ -1520,6 +1521,27 @@ try:
         and _adv_none is None,
         got=f"area={_adv_area!r} none={_adv_none!r}",
     )
+    # "No" to the value-check close ("Anything else on the property?") means
+    # "nothing else, proceed" — NOT a disengagement. Detect the close, and treat a
+    # bare negative/ack as complete so the webhook advances to booking instead of
+    # letting semantic-rescue misread it as declining the whole job.
+    _vc = _FakeSelfFollowup("area", history=_bot(_TD))
+    _not_vc = _FakeSelfFollowup("area", history=_bot("All good, what area are you in?"))
+    results.log(
+        "value-check close: detected as last turn (and not confused with a field question)",
+        _vc._last_assistant_was_value_check() is True
+        and _not_vc._last_assistant_was_value_check() is False,
+        got=f"after_vc={_vc._last_assistant_was_value_check()} after_field={_not_vc._last_assistant_was_value_check()}",
+    )
+    results.log(
+        "value-check close: bare negatives/acks are 'nothing else'; items/questions are not",
+        all(ResponseMixin._is_nothing_else_reply(m) for m in
+            ("No", "nope", "nothing else", "that's all", "Ok", "kwete"))
+        and not any(ResponseMixin._is_nothing_else_reply(m) for m in
+            ("also a toilet", "how much?", "yes a geyser too")),
+        got="; ".join(f"{m}={ResponseMixin._is_nothing_else_reply(m)}" for m in
+                       ("No", "also a toilet", "how much?")),
+    )
 except Exception as e:
     results.log("budget objection", False, got=str(e))
 
@@ -1678,6 +1700,27 @@ try:
         "strip leading echo: removes a parroted message, leaves a clean answer alone",
         _e1 == "Yes, we do shower rooms." and _e2 == "Yes, we do shower rooms.",
         got=f"{_e1!r} | {_e2!r}",
+    )
+    # A dynamic answer cut off by max_tokens mid-sentence ('...property in') must
+    # have the dangling fragment trimmed before a booking nudge is appended —
+    # otherwise the lead sees "...come to your property in\n\nWould tomorrow…?".
+    _tis = ResponseMixin._trim_incomplete_sentence
+    _trunc = ("For a new house we handle the full package. The best way to start "
+              "is for our plumber to come to your property in")
+    _trimmed = _tis(_trunc)
+    results.log(
+        "trim incomplete sentence: drops a max_tokens-truncated dangling fragment",
+        _trimmed == "For a new house we handle the full package."
+        and not _trimmed.endswith(" in"),
+        got=repr(_trimmed),
+    )
+    results.log(
+        "trim incomplete sentence: leaves complete / unpunctuated-but-whole replies untouched",
+        _tis("Yes, we can help with that.") == "Yes, we can help with that."
+        and _tis("Shower cubicles from US$170 all-in (supply + install)")
+            == "Shower cubicles from US$170 all-in (supply + install)"
+        and _tis("Yes we can sort that out") == "Yes we can sort that out",
+        got=f"{_tis('Yes we can sort that out')!r}",
     )
 except Exception as e:
     results.log("faq ai-primary fallback", False, got=str(e))

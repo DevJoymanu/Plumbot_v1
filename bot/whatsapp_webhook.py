@@ -2164,6 +2164,26 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     return
                 # else fall through and advance
 
+        # ── VALUE-CHECK "NOTHING ELSE" → ADVANCE ──────────────────────────────
+        # We closed a free-form answer with the property-scope value-check
+        # ("Anything else on the property?"). A bare 'no'/ack now means "nothing
+        # else, let's proceed" — advance to the next booking field. Without this the
+        # 'no' falls to semantic-rescue, which misreads it as declining the whole job
+        # ("So just to be sure, you're not interested…?") and disengages a warm lead.
+        # Customer's own words win: only a bare negative/ack matches here — a named
+        # item or a new question falls through to the normal flow.
+        if (plumbot._last_assistant_was_value_check()
+                and plumbot._is_nothing_else_reply(message_body)):
+            _adv = plumbot._advance_after_scope(detect_language_simple(message_body))
+            if _adv:
+                appointment.add_conversation_message("assistant", _adv)
+                delay = get_random_delay()
+                threading.Thread(
+                    target=delayed_response, args=(sender, _adv, delay, message_id),
+                    daemon=True,
+                ).start()
+                return
+
         # ── DATE-STAGE TIMELINE PIVOT (deterministic dispatch) ────────────────
         # At the date/time stage, when the lead pivots to timeline instead of
         # answering, dispatch on offered_date vs today — >7 days out parks the lead;
