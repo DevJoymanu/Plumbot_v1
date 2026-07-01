@@ -480,7 +480,12 @@ class ExtractionMixin:
                 elif (
                     next_question == 'project_description' and
                     not self.appointment.project_description and
-                    self.appointment.project_type
+                    self.appointment.project_type and
+                    # Only store the service type AS the description once we've ALREADY
+                    # asked for detail and they gave the same short answer again. On
+                    # the FIRST one-word / service-type answer, don't store — let the
+                    # flow ask the scripted project-description question first.
+                    self._get_question_retry_count('project_description') >= 1
                 ):
                     # Customer repeated the service type (or gave nothing new) —
                     # don't push further; use the service type as the description
@@ -494,7 +499,7 @@ class ExtractionMixin:
                         _desc = self.appointment.project_type.replace('_', ' ')
                         self.appointment.project_description = _desc
                         updated_fields.append('project_description')
-                        print(f"✅ Description skipped — customer repeated service type: {_desc}")
+                        print(f"✅ Description stored from repeated service type: {_desc}")
 
                 # ── Area — capture passively whenever volunteered ─────────────────────
                 if (extracted_data.get('area') and
