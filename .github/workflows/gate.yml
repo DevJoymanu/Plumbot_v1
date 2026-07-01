@@ -16,10 +16,16 @@ jobs:
       PLUMBOT_GATE: "1"
       PYTHONIOENCODING: utf-8
       PYTHONPATH: ${{ github.workspace }}
-      # Django boots at import time; these are dummy values so settings load. The
-      # gate never touches the DB or a real DeepSeek key.
+      # Django + the service clients (OpenAI/DeepSeek, Twilio) are constructed at
+      # import time and need non-empty creds. These are dummies — the gate never
+      # touches the DB and a mocked DeepSeek intercepts every call, so no real
+      # network or key is used.
       SECRET_KEY: ci-dummy-secret-key
       DATABASE_URL: sqlite:///db.sqlite3
+      DEEPSEEK_API_KEY: ci-dummy-deepseek-key
+      OPENAI_API_KEY: ci-dummy-openai-key
+      TWILIO_ACCOUNT_SID: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      TWILIO_AUTH_TOKEN: ci-dummy-twilio-token
     steps:
       - uses: actions/checkout@v4
 
