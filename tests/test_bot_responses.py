@@ -1342,6 +1342,26 @@ try:
         _ap4 == _apq,
         got=str(_ap4),
     )
+    # Job/quote request routes to the free visit and closes on the SCRIPTED next
+    # question — NEVER the budget tie-down (no price was quoted).
+    class _FakeSelfJQ:
+        _build_job_quote_reply = ResponseMixin._build_job_quote_reply
+        _get_first_pass_question = ResponseMixin._get_first_pass_question
+        def __init__(self, nq):
+            self._nq = nq
+        def get_next_question_to_ask(self):
+            return self._nq
+        def _capture_named_products_as_description(self, message):
+            pass
+    _jq = _FakeSelfJQ("area")._build_job_quote_reply(
+        "english", "Need a quote to fit tub and shower")
+    results.log(
+        "job quote reply: free visit + scripted area question, no budget tie-down",
+        "free on a quick on-site visit" in _jq
+        and _jq.strip().endswith("All good, what area are you in?")
+        and "budget" not in _jq.lower(),
+        got=_jq,
+    )
     # _product_price_close (tub / Facebook-package replies): value-check first,
     # then the open "which one?" question once a tie-down has gone out.
     _pc1 = _FakeSelfFollowup("project_description")._product_price_close("english")

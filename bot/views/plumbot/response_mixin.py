@@ -1614,9 +1614,10 @@ class ResponseMixin:
             """
             Acknowledge a job / multi-item quote request and route it to the free
             on-site quote (where exact pricing happens), instead of a chat price
-            block. The follow-up is the next booking question via
-            _get_pricing_followup_prompt, so we never loop or re-ask a field we
-            already have — including the description, when `message` named the items.
+            block. Close on the next SCRIPTED booking question — NOT the budget
+            tie-down: no price was quoted, so "does that sit with your budget?"
+            would be a non-sequitur. Capturing the named items as the description
+            first means we advance (usually to area) rather than re-ask.
             """
             is_shona = language == "shona"
             lead = (
@@ -1624,13 +1625,11 @@ class ResponseMixin:
                 if is_shona else
                 "We'll get you an exact, all-in figure free on a quick on-site visit."
             )
-            scope, has_accessories = ([], False)
             if message:
-                scope, has_accessories = self._active_scope(message)
                 self._capture_named_products_as_description(message)
-            followup = self._next_forward_question(
-                "shona" if is_shona else "english",
-                scope=scope, has_accessories=has_accessories,
+            followup = (
+                self._get_first_pass_question(self.get_next_question_to_ask())
+                or "All good, what area are you in?"
             )
             return f"{lead}\n\n{followup}"
 
