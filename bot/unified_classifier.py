@@ -93,7 +93,8 @@ Use bathroom_renovation / kitchen_renovation when they say "renovate",
 tub_sales        Any message asking about tub price/cost — "how much tub",
                  "tub price", "how much is a tub", "do you sell tubs".
                  ⚠ Prefer tub_sales over combined_pricing whenever "tub" is mentioned.
-standalone_tub   Specifically freestanding/standalone tub.
+standalone_tub   Specifically freestanding/standalone tub. A CORNER tub is NOT
+                 standalone — it's a built-in tub, so use tub_sales, not standalone_tub.
 geyser, shower_cubicle, vanity, bathtub_installation, toilet, chamber,
 drain_unblocking, pipe_repair, geyser_repair, toilet_repair,
 location_ask, location_visit, pictures, combined_pricing, none

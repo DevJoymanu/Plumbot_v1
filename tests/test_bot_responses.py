@@ -899,6 +899,25 @@ for msg, expected in PROD_AVAIL_CASES:
     except Exception as e:
         results.log(f"_is_product_availability_question: '{msg[:28]}'", False, got=str(e))
 
+# A corner tub is a built-in tub (same price, from US$160) — not freestanding.
+class _FakeSelfTubType:
+    _tub_type_in_message = ResponseMixin._tub_type_in_message
+_ftt = _FakeSelfTubType()
+TUB_TYPE_CASES = [
+    ("corner tub how much", "built_in"),
+    ("corner bath", "built_in"),
+    ("built-in tub", "built_in"),
+    ("freestanding tub", "freestanding"),
+    ("how much tub", None),
+]
+for msg, expected in TUB_TYPE_CASES:
+    try:
+        got = _ftt._tub_type_in_message(msg)
+        results.log(f"_tub_type_in_message: '{msg}'", got == expected,
+                    expected=str(expected), got=str(got))
+    except Exception as e:
+        results.log(f"_tub_type_in_message: '{msg}'", False, got=str(e))
+
 class _FakeSelfBuy:
     _is_purchase_commitment = ResponseMixin._is_purchase_commitment
     _is_job_quote_request = ResponseMixin._is_job_quote_request

@@ -109,6 +109,8 @@ class ResponseMixin:
             if any(w in m for w in (
                 'built-in', 'built in', 'builtin', 'inbuilt', 'in-built',
                 'standard tub', 'standard built', 'drop-in', 'drop in', 'alcove', 'set in',
+                # A corner tub is a built-in tub (same price, from US$160).
+                'corner tub', 'corner bath', 'corner bathtub',
             )):
                 return 'built_in'
             if any(w in m for w in (
@@ -5036,8 +5038,9 @@ class ResponseMixin:
         - Shower cubicle (900x900mm): supply from US$130, install from US$40
         - Vanity unit: supply from US$150, install from US$30
         - Geyser: supply from US$80, install from US$80
-        - Bathtub (ordinary/built-in): supply from US$80, install from US$80 → from US$160 all-in
+        - Bathtub (ordinary/built-in, INCLUDING corner tubs): supply from US$80, install from US$80 → from US$160 all-in
         - Freestanding tub: supply from US$400, mixer from US$150, install US$120 → from US$670 all-in
+        - A CORNER tub is a built-in tub → from US$160 all-in, NOT the freestanding price.
         - Side chamber: supply from US$130, install from US$30 → from US$160 all-in
         - Full bathroom package: from US$800+
         - Site assessment / visit: FREE
