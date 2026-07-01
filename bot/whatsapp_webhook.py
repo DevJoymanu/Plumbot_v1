@@ -2101,24 +2101,51 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         # ── SERVICE-CONFIRM FOLLOW-UP ─────────────────────────────────────────
         # We asked "Is a <X> the only thing you're looking to get sorted?" last turn
-        # (project set to <X>). If they now name MORE (not a plain yes), append it to
-        # the project so nothing is lost; a "yes" just falls through to advance. One
-        # shot — the tag is cleared either way. AI decides yes/no + what they named.
-        if '[SERVICE_CONFIRM_PENDING]' in (appointment.internal_notes or ''):
-            appointment._remove_notes_tag('[SERVICE_CONFIRM_PENDING]')
+        # (project set to <X>). Handle their answer without losing anything:
+        #   • plain "yes" → fall through and advance,
+        #   • they name MORE ("also a toilet") → append it to the project,
+        #   • plain "no" with nothing named → ask what else, capture it next turn.
+        # AI decides yes/no + what they named; note tags make it one-shot.
+        _sc_notes = appointment.internal_notes or ''
+        _sc_pending = '[SERVICE_CONFIRM_PENDING]' in _sc_notes
+        _sc_awaiting_more = '[AWAITING_MORE_ITEMS]' in _sc_notes
+        if _sc_pending or _sc_awaiting_more:
             from bot.out_of_scope_handler import _classify_affirmation
-            if _classify_affirmation(message_body) != 'yes':
-                _more_ai = uc_extracted(_uclass).get('project_description')
-                _named = uc_product_intent(_uclass) not in ('none', None)
+            _more_ai = uc_extracted(_uclass).get('project_description')
+            _named = uc_product_intent(_uclass) not in ('none', None)
+
+            def _append_project(item):
+                _existing = (appointment.project_description or '').strip()
+                if item and item.lower() not in _existing.lower():
+                    appointment.project_description = (
+                        f"{_existing}, {item}" if _existing else str(item)
+                    )[:200]
+                    appointment.save(update_fields=['project_description'])
+                    print(f"📝 Appended to project_description: {item}")
+
+            if _sc_pending:
+                appointment._remove_notes_tag('[SERVICE_CONFIRM_PENDING]')
+                _aff = _classify_affirmation(message_body)
+                if _aff != 'yes' and (_more_ai or _named):
+                    _append_project(_more_ai or _derive_additional_items(message_body))
+                elif _aff == 'no':
+                    # "No" with nothing named yet — elicit the rest, capture next turn.
+                    appointment._add_notes_tag('[AWAITING_MORE_ITEMS]')
+                    _reply = ("No problem — what else would you like sorted while "
+                              "we're there?")
+                    appointment.add_conversation_message("assistant", _reply)
+                    delay = get_random_delay()
+                    threading.Thread(
+                        target=delayed_response, args=(sender, _reply, delay, message_id),
+                        daemon=True,
+                    ).start()
+                    return
+                # 'yes' / 'unclear' → fall through and advance
+            else:  # _sc_awaiting_more — we asked "what else?"; capture what they named
+                appointment._remove_notes_tag('[AWAITING_MORE_ITEMS]')
                 if _more_ai or _named:
-                    _more = _more_ai or _derive_additional_items(message_body)
-                    _existing = (appointment.project_description or '').strip()
-                    if _more and _more.lower() not in _existing.lower():
-                        appointment.project_description = (
-                            f"{_existing}, {_more}" if _existing else str(_more)
-                        )[:200]
-                        appointment.save(update_fields=['project_description'])
-                        print(f"📝 Appended to project_description: {_more}")
+                    _append_project(_more_ai or _derive_additional_items(message_body))
+                # fall through and advance
 
         # ── DATE-STAGE TIMELINE PIVOT (deterministic dispatch) ────────────────
         # At the date/time stage, when the lead pivots to timeline instead of
