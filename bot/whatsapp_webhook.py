@@ -2216,6 +2216,10 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             and not uc_answered_current_question(_uclass)
             and not plumbot._asks_price_figure(message_body)
             and _next_question in ('service_type', 'project_description')
+            # Only route an OPENING "do you have X" — once we've asked the
+            # description question, a product mention ("a tub and chamber") is the
+            # ANSWER to it, not a new service question. Don't hijack it.
+            and plumbot._get_question_retry_count('project_description') == 0
         )
         if _ai_service_q and _faq_topic is None:
             _faq_topic = 'services'
@@ -2240,8 +2244,11 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             # label (clean even on typos), then a light message derive.
             _item = None
             if _faq_service_q:
-                _item = (uc_extracted(_uclass).get('project_description')
-                         or _PRODUCT_LABEL.get(uc_product_intent(_uclass))
+                # Prefer the classifier's clean product label ("shower cubicle",
+                # "tub") over the raw message, so the scripted continuation reads
+                # right ("Is a tub the only thing?") — not "Is a A tub and chamber…".
+                _item = (_PRODUCT_LABEL.get(uc_product_intent(_uclass))
+                         or uc_extracted(_uclass).get('project_description')
                          or _derive_service_item(message_body))
                 if _item and not appointment.project_description:
                     appointment.project_description = str(_item)[:120]
