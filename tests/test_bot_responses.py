@@ -820,6 +820,10 @@ VOLUNTEER_PRICING_CASES = [
     ("location_ask",   "where are you based",            False, True),   # info intent always answers
     ("pictures",       "send me some photos",            False, True),   # info intent always answers
     ("none",           "hello there",                    False, False),  # no priceable intent
+    # Tubs are now gated like every other product (no more always-answer):
+    ("standalone_tub", "how much for a tub",             True,  True),   # price ask → price
+    ("standalone_tub", "I want a freestanding tub",      False, False),  # commitment, no ask → no price
+    ("tub_sales",      "a tub and chamber",              False, False),  # scope list → no price
 ]
 for intent, msg, price_req, expected in VOLUNTEER_PRICING_CASES:
     try:

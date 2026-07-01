@@ -1631,11 +1631,14 @@ class ResponseMixin:
             'geyser', 'shower_cubicle', 'vanity', 'toilet', 'chamber',
             'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
             'facebook_package',
+            # Tubs are gated like every other product (2026-07-01): only priced when
+            # the lead actually asks — no more auto-pricing on a bare tub mention.
+            'tub_sales', 'standalone_tub', 'bathtub_installation',
         }
         # Info intents that answer regardless of a price ask (never gated here).
         NON_PRICING_AUTO_REPLY_INTENTS = {
             'location_ask', 'location_visit', 'previous_quotation', 'pictures',
-            'combined_pricing', 'standalone_tub', 'tub_sales', 'bathtub_installation',
+            'combined_pricing',
         }
 
         def _should_volunteer_pricing(self, intent, message, price_requested=None):
@@ -1943,15 +1946,9 @@ class ResponseMixin:
                         'previous_quotation', 'pictures', 'combined_pricing',
                         'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
                     }
-                    NON_PRICING_AUTO_REPLY_INTENTS = {
-                        'location_ask', 'location_visit', 'previous_quotation', 'pictures',
-                        'combined_pricing', 'standalone_tub', 'tub_sales', 'bathtub_installation',
-                    }
-                    PRICING_AUTO_REPLY_INTENTS = {
-                        'geyser', 'shower_cubicle', 'vanity', 'toilet', 'chamber',
-                        'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
-                        'facebook_package',
-                    }
+                    # Mirror the class-level sets (tubs gated like every other product).
+                    NON_PRICING_AUTO_REPLY_INTENTS = self.NON_PRICING_AUTO_REPLY_INTENTS
+                    PRICING_AUTO_REPLY_INTENTS = self.PRICING_AUTO_REPLY_INTENTS
                     if inquiry.get('intent') != 'none' and (
                         inquiry.get('confidence') == 'HIGH' or
                         inquiry.get('intent') in PRODUCT_INTENTS
@@ -3761,11 +3758,14 @@ class ResponseMixin:
                 return None
 
             answerable = [i for i in distinct if i in self._COMPOSE_KNOWN]
-            # Never volunteer price: drop priced product/combined intents unless the
-            # lead actually asked for a price ("how much…"). A bare list of items
-            # ("a tub and chamber", answering "what else?") is scope, not a price ask.
-            if not self._explicitly_requests_price(message):
-                answerable = [i for i in answerable if i not in self._PRICED_INTENTS]
+            # Single source of truth for "should I volunteer a price?": drop any
+            # priced intent the shared gate says not to price for this message (no
+            # price ask, a scope list like "a tub and chamber", a project
+            # description, a quote/job). combined_pricing/info intents pass through.
+            answerable = [
+                i for i in answerable
+                if i not in self._PRICED_INTENTS or self._should_volunteer_pricing(i, message)
+            ]
             if len(answerable) < 2:
                 return None
 
