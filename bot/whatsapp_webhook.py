@@ -2123,11 +2123,26 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     appointment.save(update_fields=['project_description'])
                     print(f"📝 Appended to project_description: {item}")
 
+            def _send_scope_advance():
+                # Scope answer captured — advance to booking, never price the items.
+                _adv = plumbot._advance_after_scope(detect_language_simple(message_body))
+                if _adv:
+                    appointment.add_conversation_message("assistant", _adv)
+                    delay = get_random_delay()
+                    threading.Thread(
+                        target=delayed_response, args=(sender, _adv, delay, message_id),
+                        daemon=True,
+                    ).start()
+                    return True
+                return False
+
             if _sc_pending:
                 appointment._remove_notes_tag('[SERVICE_CONFIRM_PENDING]')
                 _aff = _classify_affirmation(message_body)
                 if _aff != 'yes' and (_more_ai or _named):
                     _append_project(_more_ai or _derive_additional_items(message_body))
+                    if _send_scope_advance():
+                        return
                 elif _aff == 'no':
                     # "No" with nothing named yet — elicit the rest, capture next turn.
                     appointment._add_notes_tag('[AWAITING_MORE_ITEMS]')
@@ -2145,7 +2160,9 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 appointment._remove_notes_tag('[AWAITING_MORE_ITEMS]')
                 if _more_ai or _named:
                     _append_project(_more_ai or _derive_additional_items(message_body))
-                # fall through and advance
+                if _send_scope_advance():
+                    return
+                # else fall through and advance
 
         # ── DATE-STAGE TIMELINE PIVOT (deterministic dispatch) ────────────────
         # At the date/time stage, when the lead pivots to timeline instead of

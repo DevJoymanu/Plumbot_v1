@@ -1198,6 +1198,7 @@ class _FakeSelfFollowup:
     _is_budget_decline = ResponseMixin._is_budget_decline
     _is_budget_decline_keywords = ResponseMixin._is_budget_decline_keywords
     _handle_budget_objection = ResponseMixin._handle_budget_objection
+    _advance_after_scope = ResponseMixin._advance_after_scope
     def __init__(self, stage, is_delayed=False, history=None,
                  project_type="bathroom_renovation"):
         self._stage = stage
@@ -1451,6 +1452,19 @@ try:
         ("everything in" in _bo and "supply, install" in _bo
          and "no extras on the day" in _bo and "exact number for your space" in _bo),
         got=_bo,
+    )
+    # After a scope answer ("a tub and chamber"), advance to the next booking field
+    # — never price the named items. Question depends on next_question.
+    _adv_area = _FakeSelfFollowup("area")._advance_after_scope("english")
+    _adv_day = _FakeSelfFollowup("availability_date")._advance_after_scope("english")
+    _adv_none = _FakeSelfFollowup("project_description")._advance_after_scope("english")
+    results.log(
+        "advance after scope: asks the next booking field (area/day), not a price",
+        _adv_area is not None and "whereabouts are you based" in _adv_area.lower()
+        and "US$" not in _adv_area
+        and _adv_day is not None and "what day" in _adv_day.lower()
+        and _adv_none is None,
+        got=f"area={_adv_area!r} day={_adv_day!r} none={_adv_none!r}",
     )
 except Exception as e:
     results.log("budget objection", False, got=str(e))
