@@ -69,6 +69,14 @@ LANGUAGE — understand the customer's language, then reply in it:
   Mugovera = Saturday. "neChina" = on Thursday, "neChipiri" = on Tuesday, etc."""
 
 
+# Sentinel that splits one composed reply into TWO separate WhatsApp messages
+# (acknowledgement, then the question) so a warm opener followed by a scripted
+# booking line doesn't read as one pre-meditated block. The dispatcher
+# (whatsapp_webhook) sends each piece as its own message with a short human gap.
+# Never reaches the customer — it's always split out before sending.
+MESSAGE_SPLIT_MARKER = "\x1fSPLIT\x1f"
+
+
 class ResponseMixin:
         def _build_retry_context_line(self, updated_fields, next_question) -> str:
             updated_fields = updated_fields or []
@@ -1668,7 +1676,16 @@ class ResponseMixin:
                 self._get_first_pass_question(self.get_next_question_to_ask())
                 or "All good, what area are you in?"
             )
-            return f"{lead}\n\n{followup}"
+            # Two separate messages: the acknowledgement is now the warm lead-in, so
+            # drop a scripted opener ("Great,", "All good,") from the follow-up —
+            # otherwise the second message reads as a second canned opener.
+            followup = re.sub(
+                r'^(great|nice one|nice|perfect|awesome|all good|got it)[,!.]?\s+',
+                '', followup, flags=re.IGNORECASE,
+            )
+            if followup:
+                followup = followup[0].upper() + followup[1:]
+            return f"{lead}{MESSAGE_SPLIT_MARKER}{followup}"
 
 
         # Central pricing-gate policy. Every entry point that could volunteer a

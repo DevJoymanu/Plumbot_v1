@@ -38,6 +38,7 @@ from .repeated_question_detector import (
     detect_language_simple,
     detect_language,
 )
+from .views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
 
 PREVIOUS_WORK_IMAGE_URLS = [
     url.strip()
@@ -458,27 +459,42 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
                 whatsapp_api.mark_message_as_read(message_id)
             except Exception as e:
                 print(f"⚠️ Could not mark as read before reply: {e}")
-        if not reply or not reply.strip():
+
+        # reply may be a single string or a list of parts (a reply split into an
+        # acknowledgement + the question — see MESSAGE_SPLIT_MARKER). Normalise to a
+        # clean list; strip any stray marker so it can never reach the customer.
+        parts = list(reply) if isinstance(reply, (list, tuple)) else [reply]
+        parts = [
+            str(p).replace(MESSAGE_SPLIT_MARKER, ' ').strip()
+            for p in parts if p and str(p).strip()
+        ]
+        if not parts:
             print(f"⚠️ Skipping empty reply to {sender} — no message to send")
             return
-        send_result = whatsapp_api.send_text_message(sender, reply)
-        preview = reply.replace('\n', ' ')[:120]
-        print(f"🤖 Bot → +{sender}: {preview}{'…' if len(reply) > 120 else ''}")
 
-        # Record the outbound WAMID against this reply so that if the customer
-        # later replies to (highlights) it, we can resolve their quote back to
-        # this text. The assistant turn was logged before the send, so we stamp
-        # the now-known WAMID onto it.
-        try:
-            sent_wamid = (send_result or {}).get('messages', [{}])[0].get('id')
-            if sent_wamid:
-                appt = Appointment.objects.filter(
-                    phone_number=f"whatsapp:+{sender}"
-                ).first()
-                if appt:
-                    appt.attach_message_id("assistant", reply, sent_wamid)
-        except Exception as e:
-            print(f"⚠️ Could not record outbound WAMID: {e}")
+        for _i, part in enumerate(parts):
+            if _i > 0:
+                # A short human "typing" gap between the acknowledgement and the
+                # follow-up question so the two messages don't land as one block.
+                time.sleep(random.randint(3, 7))
+            send_result = whatsapp_api.send_text_message(sender, part)
+            preview = part.replace('\n', ' ')[:120]
+            print(f"🤖 Bot → +{sender}: {preview}{'…' if len(part) > 120 else ''}")
+
+            # Record the outbound WAMID against this message so that if the customer
+            # later replies to (highlights) it, we can resolve their quote back to
+            # this text. Each part was logged as its own turn before the send, so we
+            # stamp the now-known WAMID onto the matching entry.
+            try:
+                sent_wamid = (send_result or {}).get('messages', [{}])[0].get('id')
+                if sent_wamid:
+                    appt = Appointment.objects.filter(
+                        phone_number=f"whatsapp:+{sender}"
+                    ).first()
+                    if appt:
+                        appt.attach_message_id("assistant", part, sent_wamid)
+            except Exception as e:
+                print(f"⚠️ Could not record outbound WAMID: {e}")
     except Exception as e:
         print(f"❌ Error in delayed response: {str(e)}")
 
@@ -2801,7 +2817,15 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             print("🔇 Conversation complete — no reply sent")
             return
 
-        appointment.add_conversation_message("assistant", reply)
+        # A reply may be split into two messages (acknowledgement, then the
+        # question) via MESSAGE_SPLIT_MARKER — log each piece as its own turn so
+        # WAMID stamping / quote-resolution line up per message.
+        reply_parts = [
+            p.strip() for p in reply.split(MESSAGE_SPLIT_MARKER)
+        ] if MESSAGE_SPLIT_MARKER in reply else [reply]
+        reply_parts = [p for p in reply_parts if p]
+        for _part in reply_parts:
+            appointment.add_conversation_message("assistant", _part)
         appointment.last_outbound_at = timezone.now()
         appointment.last_contacted_at = appointment.last_outbound_at
         appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
@@ -2814,7 +2838,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         print(f"Random delay: {delay // 60} minute(s)")
         threading.Thread(
             target=delayed_response,
-            args=(sender, reply, delay, message_id, cancel_event),
+            args=(sender, reply_parts, delay, message_id, cancel_event),
             daemon=True,
         ).start()
         print(f"Response scheduled for {delay // 60} minute(s) from now")

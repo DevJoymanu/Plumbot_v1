@@ -1403,7 +1403,11 @@ try:
         got=str(_ap4),
     )
     # Job/quote request routes to the free visit and closes on the SCRIPTED next
-    # question — NEVER the budget tie-down (no price was quoted).
+    # question — NEVER the budget tie-down (no price was quoted). The reply is split
+    # into TWO messages (acknowledgement, then the question) via the split marker,
+    # and the scripted opener ("All good,"/"Great,") is dropped from the 2nd piece
+    # so it doesn't read as a second canned opener.
+    from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER as _SPLIT
     class _FakeSelfJQ:
         _build_job_quote_reply = ResponseMixin._build_job_quote_reply
         _get_first_pass_question = ResponseMixin._get_first_pass_question
@@ -1413,14 +1417,34 @@ try:
             return self._nq
         def _capture_named_products_as_description(self, message):
             pass
+        def _get_next_two_available_days(self):
+            return []
+        def _format_day(self, d):
+            return "tomorrow"
+        def _describe_project_context(self):
+            return "have a quick look at the site for the installation"
     _jq = _FakeSelfJQ("area")._build_job_quote_reply(
         "english", "Need a quote to fit tub and shower")
+    _jq_parts = [p.strip() for p in _jq.split(_SPLIT)]
     results.log(
-        "job quote reply: free visit + scripted area question, no budget tie-down",
-        "free on a quick on-site visit" in _jq
-        and _jq.strip().endswith("All good, what area are you in?")
+        "job quote reply: two messages (ack + question), scripted opener dropped, no budget tie-down",
+        len(_jq_parts) == 2
+        and _jq_parts[0] == "We'll get you an exact, all-in figure free on a quick on-site visit."
+        and _jq_parts[1] == "What area are you in?"
         and "budget" not in _jq.lower(),
-        got=_jq,
+        got=repr(_jq_parts),
+    )
+    # availability_date: the "Great," opener is dropped and the question capitalised,
+    # matching the desired two-message shape from production.
+    _jq_av = _FakeSelfJQ("availability_date")._build_job_quote_reply(
+        "english", "new installation")
+    _jq_av_parts = [p.strip() for p in _jq_av.split(_SPLIT)]
+    results.log(
+        "job quote reply: availability_date second piece starts 'What works better', no 'Great,'",
+        len(_jq_av_parts) == 2
+        and _jq_av_parts[1].startswith("What works better for you")
+        and not _jq_av_parts[1].lower().startswith("great"),
+        got=repr(_jq_av_parts),
     )
     # _product_price_close (tub / Facebook-package replies): value-check first,
     # then the open "which one?" question once a tie-down has gone out.
