@@ -1408,6 +1408,16 @@ try:
         "once the plumber sees the space" in _disc and "on-site visit" not in _disc,
         got=_disc,
     )
+    # Idempotent: a reply that already carries the combined 'ballpark … sees the
+    # space' disclaimer must NOT get a second 'approximate starting prices' one.
+    _bp = ("Tub from US$160.\n\nThese are ballpark; the exact figure is confirmed "
+           "once the plumber sees the space.\n\nThat sit alright with your budget?")
+    _bpd = _FakeSelfFollowup("service_type")._ensure_price_disclaimer('combined_pricing', _bp)
+    results.log(
+        "price disclaimer: idempotent — no double disclaimer on the ballpark reply",
+        _bpd == _bp and "approximate starting prices" not in _bpd,
+        got=_bpd,
+    )
     # Facebook/tub overview reply: supply+install breakdown kept, disclaimer
     # inserted BEFORE the closing budget tie-down (the bug: it had neither).
     _fbrep = (

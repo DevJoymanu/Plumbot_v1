@@ -3863,7 +3863,11 @@ class ResponseMixin:
             # with nothing to qualify.
             if '$' not in reply:
                 return reply
-            if 'approximate' in low or 'may vary' in low:
+            # Idempotent: skip if the reply already carries a price disclaimer in any
+            # of our wordings ("approximate…", the combined reply's "ballpark…", or
+            # the shared "…sees the space" tail) — otherwise we'd stack two.
+            if ('approximate' in low or 'may vary' in low or 'ballpark' in low
+                    or 'sees the space' in low):
                 return reply
             is_shona = any(t in low for t in (
                 'kubva', 'inotangira', 'munoda', 'uri kuda', 'tiuye', 'zvichienda', 'ne install',

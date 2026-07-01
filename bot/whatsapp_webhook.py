@@ -2631,13 +2631,15 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             )
         elif mid_conversation and not should_bypass_mid_conversation_gate:
             print("Skipping service inquiry reply - mid-conversation and no explicit info/price request")
-        elif (intent in PRICING_AUTO_REPLY_INTENTS and not asks_figure
+        elif ((intent in PRICING_AUTO_REPLY_INTENTS or intent == 'combined_pricing')
+                and not asks_figure
                 and (asks_quote or plumbot._is_job_quote_request(message_body))):
             # A QUOTE request ("need a quote to fit tub and shower"), or a job /
             # multi-item request, with NO explicit how-much/price ask routes to the
-            # free on-site quote — not a chat price block. The quote is delivered
-            # at the visit, so lean toward setting it up. An actual how-much/price
-            # ("how much to fit tub and shower") falls through and gets priced below.
+            # free on-site quote — not a chat price block. Applies to combined_pricing
+            # too (a multi-item quote request classifies there). The quote is
+            # delivered at the visit, so lean toward setting it up. An actual
+            # how-much/price ("how much to fit tub and shower") falls through below.
             print("Quote / job request (no price figure asked) -> routing to free on-site quote")
             reply = plumbot._build_job_quote_reply(
                 language=detect_language(message_body), message=message_body
