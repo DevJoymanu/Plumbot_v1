@@ -2238,22 +2238,37 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             # following "Yes" ("is a shower room the only thing?") advances the flow
             # instead of re-asking. AI extraction first, then the classifier's product
             # label (clean even on typos), then a light message derive.
-            if _faq_service_q and not appointment.project_description:
+            _item = None
+            if _faq_service_q:
                 _item = (uc_extracted(_uclass).get('project_description')
                          or _PRODUCT_LABEL.get(uc_product_intent(_uclass))
                          or _derive_service_item(message_body))
-                if _item:
+                if _item and not appointment.project_description:
                     appointment.project_description = str(_item)[:120]
                     appointment.save(update_fields=['project_description'])
                     # Await the "is that the only thing?" answer so the next turn can
                     # append if they name more (see SERVICE-CONFIRM FOLLOW-UP).
                     appointment._add_notes_tag('[SERVICE_CONFIRM_PENDING]')
                     print(f"📝 Captured service item as project_description: {_item}")
-            _faq_reply = (
-                plumbot.ai_answer_faq(message_body, _faq_fact, _faq_lang,
-                                      service_question=_faq_service_q)
-                or plumbot._append_tiedown(_faq_fact, _faq_lang)
-            )
+
+            # FIRST pass = exact scripted reply (consistency); only paraphrase via
+            # ai_answer_faq on a REPEAT of the same topic (so a re-ask isn't
+            # word-for-word identical). Follow the script first, vary on retry.
+            _faq_done_tag = f'[FAQ_DONE:{_faq_topic}]'
+            _faq_repeat = _faq_done_tag in (appointment.internal_notes or '')
+            if _faq_repeat:
+                _faq_reply = (
+                    plumbot.ai_answer_faq(message_body, _faq_fact, _faq_lang,
+                                          service_question=_faq_service_q)
+                    or (plumbot._service_continuation_reply(_item, _faq_lang)
+                        if _faq_service_q else
+                        plumbot._append_tiedown(_faq_fact, _faq_lang))
+                )
+            elif _faq_service_q:
+                _faq_reply = plumbot._service_continuation_reply(_item, _faq_lang)
+            else:
+                _faq_reply = plumbot._append_tiedown(_faq_fact, _faq_lang)
+            appointment._add_notes_tag(_faq_done_tag)
             appointment.add_conversation_message("assistant", _faq_reply)
             delay = get_random_delay()
             threading.Thread(

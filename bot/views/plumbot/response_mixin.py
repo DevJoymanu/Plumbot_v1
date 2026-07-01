@@ -641,6 +641,18 @@ class ResponseMixin:
                 return reply
             return f"{reply.rstrip()}\n\n{self._yes_tiedown(language)}"
 
+        def _service_continuation_reply(self, item: str, language: str = "english") -> str:
+            """Exact scripted first-pass reply to a service-availability question:
+            confirm we handle it, then the assumptive 'only thing?' close. Item is
+            filled in; wording is fixed for consistency. Paraphrasing (ai_answer_faq)
+            is used only on a repeat ask."""
+            it = (item or 'that').strip()
+            if language == 'shona':
+                return (f"Ehe, tinoita {it} pamwe nemamwe mabasa epaipi ese "
+                        f"akabatana nazvo.\n\n{it} chete here chamuri kuda kugadzirisa?")
+            return (f"Yes, we handle {it} and all related plumbing work.\n\n"
+                    f"Is a {it} the only thing you're looking to get sorted?")
+
         def ai_answer_faq(self, message: str, fact: str, language: str = "english",
                           service_question: bool = False):
             """AI-primary, contextual answer to a business FAQ, GROUNDED in `fact`

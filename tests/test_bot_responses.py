@@ -1203,6 +1203,7 @@ class _FakeSelfFollowup:
     _is_budget_decline_keywords = ResponseMixin._is_budget_decline_keywords
     _handle_budget_objection = ResponseMixin._handle_budget_objection
     _advance_after_scope = ResponseMixin._advance_after_scope
+    _service_continuation_reply = ResponseMixin._service_continuation_reply
     def __init__(self, stage, is_delayed=False, history=None,
                  project_type="bathroom_renovation"):
         self._stage = stage
@@ -1575,6 +1576,15 @@ try:
         "faq service-question gate: 'do you have shower rooms' -> services availability",
         _svc_q is True and _contact_q is False,
         got=f"service={_svc_q} contact_as_service={_contact_q}",
+    )
+    # First-pass service continuation is the EXACT script (item filled in); only a
+    # repeat ask paraphrases (ai_answer_faq). Consistency first, vary on retry.
+    _scr = _FakeSelfFollowup("service_type")._service_continuation_reply("shower cubicle", "english")
+    results.log(
+        "service continuation: exact scripted first-pass reply (item filled in)",
+        _scr == ("Yes, we handle shower cubicle and all related plumbing work.\n\n"
+                 "Is a shower cubicle the only thing you're looking to get sorted?"),
+        got=_scr,
     )
     # The service they asked about is captured as the project so a following "Yes"
     # advances instead of re-asking. _derive_service_item pulls the item out.
