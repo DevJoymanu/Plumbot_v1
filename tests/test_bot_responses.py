@@ -1558,6 +1558,22 @@ try:
         _svc_q is True and _contact_q is False,
         got=f"service={_svc_q} contact_as_service={_contact_q}",
     )
+    # The service they asked about is captured as the project so a following "Yes"
+    # advances instead of re-asking. _derive_service_item pulls the item out.
+    from bot.whatsapp_webhook import _derive_service_item as _dsi
+    DERIVE_CASES = [
+        ("do you have shower rooms", "shower rooms"),
+        ("do you do renovations", "renovations"),
+        ("do you install geysers", "geysers"),
+        ("do you sell vanities?", "vanities"),
+        ("shower room", "shower room"),
+    ]
+    _dok = all(_dsi(_m) == _e for _m, _e in DERIVE_CASES)
+    results.log(
+        "derive service item: strips the availability prefix to the project phrase",
+        _dok,
+        got="; ".join(f"{_m!r}->{_dsi(_m)!r}" for _m, _e in DERIVE_CASES),
+    )
 except Exception as e:
     results.log("faq ai-primary fallback", False, got=str(e))
 

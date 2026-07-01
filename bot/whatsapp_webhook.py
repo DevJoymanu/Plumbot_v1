@@ -2007,6 +2007,20 @@ def _flush_text_batch(sender: str):
     _generate_and_schedule_reply(sender, combined, last_message_id, quoted_text)
 
 
+def _derive_service_item(message: str) -> str:
+    """Pull the thing the lead named out of a service-availability question, as a
+    project-description phrase. 'do you have shower rooms' -> 'shower rooms'. Used
+    only as a fallback when the classifier didn't extract a project_description."""
+    m = (message or '').strip()
+    ml = m.lower()
+    for p in ('do you have', 'do you do', 'do you sell', 'do you install',
+              'do you offer', 'do you fix', 'can you do', 'can you install',
+              'what about', 'do you also do', 'do you guys do'):
+        if ml.startswith(p):
+            return m[len(p):].strip().lstrip(':,').strip().rstrip('?').strip()
+    return m.rstrip('?').strip()
+
+
 def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None):
     """Generate a bot reply for message_body and schedule it with a 1-5 min send delay."""
     try:
@@ -2039,6 +2053,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             uc_is_photo_request, uc_is_plan_later, uc_is_repeat,
             uc_as_service_inquiry, uc_as_oos_classification,
             uc_pivoted_to_timeline, uc_offered_date, uc_offered_timeframe,
+            uc_extracted,
         )
         from django.utils import timezone as _tz
         _today_str = _tz.now().strftime('%Y-%m-%d')
@@ -2112,6 +2127,16 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 _faq_topic == 'services'
                 and plumbot._is_product_availability_question(message_body)
             )
+            # The service they asked about IS their project — capture it now so a
+            # following "Yes" ("is a shower room the only thing?") advances the flow
+            # instead of re-asking. AI extraction first, then a light message derive.
+            if _faq_service_q and not appointment.project_description:
+                _item = (uc_extracted(_uclass).get('project_description')
+                         or _derive_service_item(message_body))
+                if _item:
+                    appointment.project_description = str(_item)[:120]
+                    appointment.save(update_fields=['project_description'])
+                    print(f"📝 Captured service item as project_description: {_item}")
             _faq_reply = (
                 plumbot.ai_answer_faq(message_body, _faq_fact, _faq_lang,
                                       service_question=_faq_service_q)
