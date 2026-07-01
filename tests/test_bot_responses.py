@@ -598,13 +598,21 @@ for msg, expected in SPECIFIC_DAY_CASES:
 
 # End to end: NEAR date pivots to booking (casual 20-min look, not parked).
 # A named day asks only the time; a vague weekend still asks the day.
-from bot.out_of_scope_handler import _handle_delay_timeframe_answer
+from bot.out_of_scope_handler import (
+    _handle_delay_timeframe_answer, _is_self_initiated_defer,
+    _is_self_initiated_defer_keywords,
+)
 class _FakeApptTf:
     internal_notes = ''
     customer_email = None
     project_type = 'bathroom_renovation'
+    delay_followup_due_at = None
     def save(self, update_fields=None):
         pass
+    def mark_delayed(self, source_message='', save=True):
+        return True
+    def unpark(self, save=True):
+        return False
 try:
     _specific = _handle_delay_timeframe_answer("tomorrow", {}, _FakeApptTf())
     results.log(
@@ -620,6 +628,38 @@ try:
         ("day and time" in _vague and "20 minutes" in _vague
          and "check back on" not in _vague),
         got=_vague,
+    )
+    # Self-initiated deferral ("I'll get in touch") — even with a NEAR timeframe,
+    # respect it. Park gracefully (check-back date + email offer), do NOT push a
+    # day/time. Production: "Most probably during the weekend, l will get in touch."
+    # This exercises the AI-primary _is_self_initiated_defer via the gate's mock.
+    _defer = _handle_delay_timeframe_answer(
+        "Most probably during the weekend, l will get in touch.", {}, _FakeApptTf())
+    results.log(
+        "delay timeframe: self-initiated defer -> parked, no booking push",
+        ("check back on" in _defer.lower()
+         and "day and time" not in _defer
+         and "what time suits you" not in _defer.lower()),
+        got=_defer,
+    )
+    # The keyword fallback (used when DeepSeek is down) must stand on its own.
+    SELF_DEFER_CASES = [
+        ("Most probably during the weekend, l will get in touch.", True),
+        ("I'll get back to you", True),
+        ("let me get back to you next week", True),
+        ("I'll let you know", True),
+        ("I'll reach out once I'm ready", True),
+        ("I will contact you soon", True),
+        ("this weekend works", False),
+        ("tomorrow at 2pm", False),
+        ("come on Friday", False),
+    ]
+    _sd_ok = all(_is_self_initiated_defer_keywords(m) is e for m, e in SELF_DEFER_CASES)
+    results.log(
+        "self-initiated defer (keyword fallback): 'I'll get in touch' yes, plain timeframe no",
+        _sd_ok,
+        got="; ".join(f"{m[:22]!r}->{_is_self_initiated_defer_keywords(m)}"
+                      for m, e in SELF_DEFER_CASES),
     )
 except Exception as e:
     results.log("delay timeframe NEAR pivot", False, got=str(e))
@@ -2008,6 +2048,48 @@ results.log("messaging window: still tagged 72h (lead type)",
 # Ad lead 80h past entry and last message 30h ago → fully closed.
 results.log("messaging window: ad fully closed",
             _mk_appt(ctwa_hours_ago=80, last_msg_hours_ago=30).messaging_window_open is False)
+
+# Outbound send retry: a transient reset (ECONNRESET, the reported prod error)
+# must be retried, not silently dropped; a permanent 4xx must NOT be retried.
+try:
+    import bot.whatsapp_cloud_api as _wce
+    _api = _wce.WhatsAppCloudAPI()
+    _api._RETRY_BASE_DELAY = 0  # no real backoff sleeps in the test
+
+    class _FakeResp:
+        def __init__(self, status): self.status_code = status
+    _orig_post = _wce.requests.post
+    try:
+        # Reset twice, then succeed → the helper should retry through to the 200.
+        _calls = {'n': 0}
+        def _flaky_post(*a, **k):
+            _calls['n'] += 1
+            if _calls['n'] < 3:
+                raise _wce.requests.exceptions.ConnectionError('reset by peer')
+            return _FakeResp(200)
+        _wce.requests.post = _flaky_post
+        _ok = _api._post_with_retry('http://x', {'m': 1}, label='test')
+        results.log(
+            "send retry: recovers after transient resets (no silent drop)",
+            _ok.status_code == 200 and _calls['n'] == 3,
+            got=f"status={_ok.status_code} attempts={_calls['n']}",
+        )
+        # A 4xx (bad token/payload) is permanent — returned on the first try, no retry.
+        _calls2 = {'n': 0}
+        def _bad_post(*a, **k):
+            _calls2['n'] += 1
+            return _FakeResp(401)
+        _wce.requests.post = _bad_post
+        _r = _api._post_with_retry('http://x', {'m': 1}, label='test')
+        results.log(
+            "send retry: does NOT retry a permanent 4xx",
+            _r.status_code == 401 and _calls2['n'] == 1,
+            got=f"status={_r.status_code} attempts={_calls2['n']}",
+        )
+    finally:
+        _wce.requests.post = _orig_post
+except Exception as e:
+    results.log("send retry", False, got=str(e))
 
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The

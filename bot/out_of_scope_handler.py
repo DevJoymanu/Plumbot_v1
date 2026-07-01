@@ -850,6 +850,76 @@ def _timeframe_is_near(iso_date: str, within_days: int = 7) -> bool:
         return False
 
 
+# Phrases where the customer says THEY will make the next move ("I'll get in
+# touch"). Even with a near timeframe, this is a deferral to respect — not a
+# green light to push for a day/time. Pushing "what day works?" over an explicit
+# "I'll reach out" reads as pressure and burns the warm lead.
+_SELF_DEFER_PATTERNS = (
+    r"\bget(ting)?\s+back\s+to\s+(you|u|yah)\b",
+    r"\bget\s+in\s+touch\b",
+    r"\bbe\s+in\s+touch\b",
+    r"\b(i'?ll|i\s+will|let\s+me)\s+.{0,20}\b(let\s+you\s+know|reach\s+out|contact\s+you|call\s+you|message\s+you|text\s+you|revert|touch\s+base|come\s+back\s+to\s+you)\b",
+    r"\blet\s+you\s+know\b",
+    r"\breach\s+out\b",
+    r"\btouch\s+base\b",
+    r"\bi'?ll\s+revert\b",
+    # Shona: "ndichakubatai/ndichakufonai" (I'll contact/call you),
+    # "ndinokutaurirai" (I'll tell you)
+    r"\bndichaku\w*",
+    r"\bndinokutaurira\w*",
+)
+
+
+def _is_self_initiated_defer_keywords(message: str) -> bool:
+    """Keyword/regex fallback for _is_self_initiated_defer (used when DeepSeek is
+    unavailable)."""
+    msg = (message or '').lower()
+    return any(re.search(p, msg) for p in _SELF_DEFER_PATTERNS)
+
+
+def _is_self_initiated_defer(message: str) -> bool:
+    """AI-primary: does the customer signal that THEY will make the next contact
+    ('I'll get in touch', 'I'll let you know', 'let me get back to you') rather
+    than agreeing to book now? Such a deferral is respected even with a near
+    timeframe — we don't override it with a booking push. Falls back to the
+    keyword patterns when DeepSeek is unavailable."""
+    if not _DEEPSEEK_KEY or not (message or '').strip():
+        return _is_self_initiated_defer_keywords(message)
+    from bot.services.clients import deepseek_call
+    try:
+        result = deepseek_call(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a yes/no classifier. "
+                        "Reply with only the single word 'yes' or 'no'."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "In this message, is the customer saying that THEY will make "
+                        "the next contact / reach out to us later themselves, rather "
+                        "than agreeing to book now or asking us to proceed?\n"
+                        "Counts as yes: \"I'll get in touch\", \"I'll let you know\", "
+                        "\"let me get back to you\", \"I'll reach out when I'm ready\", "
+                        "\"I'll call you\".\n"
+                        "Counts as no: \"this weekend works\", \"tomorrow at 2pm\", "
+                        "\"come on Friday\", \"yes let's book\".\n\n"
+                        f"Message: {message}"
+                    ),
+                },
+            ],
+            temperature=0.0,
+            max_tokens=5,
+        )
+        return result.strip().lower().startswith('yes')
+    except Exception as exc:
+        logger.warning("_is_self_initiated_defer failed (%s) — falling back to keywords", exc)
+        return _is_self_initiated_defer_keywords(message)
+
+
 def _compute_followup_date(timeframe_message: str):
     """
     Resolve a customer's deferral message to (iso_date, friendly_str).
@@ -1756,7 +1826,10 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     # don't park it. Pivot to booking: now is the moment to bring up the visit and
     # collect a day/time for the free on-site assessment. Anything further out
     # falls through to the parked (delayed-lead) workflow below.
-    if _timeframe_is_near(iso_date):
+    # EXCEPTION: if the customer said THEY'll make the next move ("I'll get in
+    # touch"), respect the deferral even when it's near — pushing for a day/time
+    # over an explicit "I'll reach out" reads as pressure. Park gracefully instead.
+    if _timeframe_is_near(iso_date) and not _is_self_initiated_defer(message):
         logger.info("Near-term timeframe — booking the visit instead of parking")
         look = f"a quick look at {_service_space_label(appointment)} — 20 minutes or so"
         if _timeframe_names_specific_day(message):

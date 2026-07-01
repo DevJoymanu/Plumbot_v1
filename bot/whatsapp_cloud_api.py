@@ -6,6 +6,7 @@ Supports text, images, documents, audio, and video
 import requests
 import json
 import os
+import time
 from typing import Dict, Optional, List
 import mimetypes
 from django.core.files.storage import default_storage
@@ -134,6 +135,56 @@ class WhatsAppCloudAPI:
     def _messages_url(self) -> str:
         return f'{self.base_url}/{self.phone_number_id}/messages'
 
+    # Meta statuses worth a quick retry: rate-limited or a transient server-side
+    # failure. The message was NOT accepted, so re-POSTing is safe. A 4xx (bad
+    # token / bad payload) is permanent — retrying it just wastes time.
+    _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+    _RETRY_ATTEMPTS = 3          # total tries (1 initial + 2 retries)
+    _RETRY_BASE_DELAY = 1.0      # seconds; exponential backoff (1s, 2s, …)
+
+    def _post_with_retry(self, url: str, payload: Dict, timeout: int = 30,
+                         label: str = 'send') -> requests.Response:
+        """POST JSON to the Graph API with a short exponential backoff on transient
+        failures — a reset/timeout (ECONNRESET, the reported prod error) or a
+        429/5xx from Meta. Without this a single transient reset silently drops a
+        customer-facing reply, since the caller only logs and the assistant turn is
+        already in history (so it never resends). Permanent 4xx errors are returned
+        as-is (not retried) so the caller's raise_for_status still surfaces them.
+
+        Note: WhatsApp's messages endpoint isn't idempotent, so a retry after a
+        reset that Meta had already accepted can rarely double-send. That's the
+        deliberate trade — a rare duplicate beats silently losing the lead."""
+        last_exc = None
+        for attempt in range(1, self._RETRY_ATTEMPTS + 1):
+            try:
+                response = requests.post(
+                    url, headers=self._headers(), json=payload, timeout=timeout,
+                )
+                if (response.status_code in self._RETRY_STATUSES
+                        and attempt < self._RETRY_ATTEMPTS):
+                    wait = self._RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    print(f"⚠️ {label}: HTTP {response.status_code} — "
+                          f"retry {attempt}/{self._RETRY_ATTEMPTS - 1} in {wait:g}s")
+                    time.sleep(wait)
+                    continue
+                return response
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                    requests.exceptions.ChunkedEncodingError) as e:
+                last_exc = e
+                if attempt < self._RETRY_ATTEMPTS:
+                    wait = self._RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    print(f"⚠️ {label}: {type(e).__name__} — "
+                          f"retry {attempt}/{self._RETRY_ATTEMPTS - 1} in {wait:g}s")
+                    time.sleep(wait)
+                    continue
+                raise
+        # Loop only falls through here if every try was a retryable status; re-raise
+        # the last network error if there was one, else return the final response.
+        if last_exc:
+            raise last_exc
+        return response
+
     # ─── Text ────────────────────────────────────────────────────────────────
 
     def send_text_message(self, to: str, message: str) -> Dict:
@@ -152,11 +203,8 @@ class WhatsAppCloudAPI:
                     'body': message,
                 },
             }
-            response = requests.post(
-                self._messages_url(),
-                headers=self._headers(),
-                json=payload,
-                timeout=30,
+            response = self._post_with_retry(
+                self._messages_url(), payload, timeout=30, label=f'text→{to}',
             )
             response.raise_for_status()
             result = response.json()
@@ -200,11 +248,9 @@ class WhatsAppCloudAPI:
                 'type': media_type,
                 media_type: media_object,
             }
-            response = requests.post(
-                self._messages_url(),
-                headers=self._headers(),
-                json=payload,
-                timeout=60,
+            response = self._post_with_retry(
+                self._messages_url(), payload, timeout=60,
+                label=f'{media_type}-url→{to}',
             )
             response.raise_for_status()
             print(f"✅ {media_type} sent to {to} via URL")
@@ -276,11 +322,9 @@ class WhatsAppCloudAPI:
                 'type': media_type,
                 media_type: media_object,
             }
-            response = requests.post(
-                self._messages_url(),
-                headers=self._headers(),
-                json=payload,
-                timeout=60,
+            response = self._post_with_retry(
+                self._messages_url(), payload, timeout=60,
+                label=f'{media_type}-id→{to}',
             )
             response.raise_for_status()
             print(f"✅ {media_type} sent to {to} via media ID")
@@ -411,11 +455,8 @@ class WhatsAppCloudAPI:
             if components:
                 payload['template']['components'] = components
 
-            response = requests.post(
-                self._messages_url(),
-                headers=self._headers(),
-                json=payload,
-                timeout=30,
+            response = self._post_with_retry(
+                self._messages_url(), payload, timeout=30, label=f'template→{to}',
             )
             response.raise_for_status()
             return response.json()

@@ -55,6 +55,13 @@ _PRICE_HINTS = (
     'how much', 'price', 'cost', 'quote', 'quotation', 'charge', 'rate',
     'hw much', 'hw mch', 'howmuch', 'marii', 'mari', 'mutengo', 'zvinodhura',
 )
+# Phrases signalling the customer will make the next contact themselves — used by
+# the self-initiated-defer classifier gate below.
+_DEFER_HINTS = (
+    'get in touch', 'get back to you', 'get back to u', 'let you know',
+    'reach out', 'touch base', 'contact you', 'call you', 'message you',
+    'text you', 'revert', 'be in touch', 'ndichaku', 'ndinokutaurira',
+)
 
 
 def _last_user(messages):
@@ -85,6 +92,13 @@ def _respond(messages, json_response):
     if 'price_request' in system or 'price_request' in user_l:
         asked = any(h in user_l for h in _PRICE_HINTS)
         return json.dumps({"price_request": asked})
+
+    # ── Self-initiated-defer classifier ("will the customer make the next
+    # contact themselves?"). Look ONLY at the actual message (after the 'Message:'
+    # marker) so the in-prompt examples don't leak into the keyword check.
+    if 'next contact' in user_l:
+        tail = user_l.split('message:')[-1]
+        return 'yes' if any(h in tail for h in _DEFER_HINTS) else 'no'
 
     # ── Yes/No style gates (photo request, standalone-question, exit intent…)
     if re.search(r'reply\s+(only\s+)?(with\s+)?(yes|no)', system) or \
