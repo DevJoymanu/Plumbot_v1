@@ -4942,23 +4942,20 @@ class ResponseMixin:
 
         def _advance_after_scope(self, language: str = "english"):
             """After the lead lists scope items (answering 'what else?'), advance to
-            the next booking field with an assumptive question — never price the
-            items they just named. Returns None (fall through) when the next field
-            isn't one we short-circuit for."""
+            the next booking field using the EXACT approved first-pass script (never
+            price the items). Returns None (fall through) when the next field isn't
+            one we short-circuit for."""
             nq = self.get_next_question_to_ask()
-            is_shona = language == 'shona'
-            if nq == 'area':
-                return ("Zvakanaka, ndazviwana. Muri kunzvimbo ipi kuti tironge kuuya?"
-                        if is_shona else
-                        "Perfect, got all that down. Whereabouts are you based so we "
-                        "can line up the visit?")
-            if nq in ('availability_date', 'availability_time'):
-                return ("Zvakanaka — nderipi zuva ringakunakirai kuti tiuye?"
-                        if is_shona else
-                        "Great — what day works best for us to pop round?")
+            if nq in ('area', 'availability_date', 'availability_time'):
+                scripted = self._get_first_pass_question(nq)
+                if scripted:
+                    self._set_question_retry_count(nq, 1)
+                    return scripted
             if nq == 'name':
-                return ("Nderipi zita rinofanira kuiswa pabhuku?" if is_shona else
-                        "Lovely — and what name should I put the booking under?")
+                return (
+                    "One last thing — what name should we put on the booking? "
+                    "If you'd rather not share it, just say no."
+                )
             return None
 
         def _strip_leading_echo(self, answer: str, message: str) -> str:
