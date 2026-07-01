@@ -1473,6 +1473,18 @@ try:
         _faq_fallback.startswith(_loc) and "else on the property" in _faq_fallback,
         got=_faq_fallback[-80:],
     )
+    # Topic routing + the service-question gate (drives ai_answer_faq's item-naming
+    # continuation): a specific "do you do X" is a SERVICES availability question;
+    # "do you have another number" is a contact question, not a service one.
+    from bot.faq import match_faq_topic as _mft
+    _svc_q = (_mft("do you have shower rooms") == 'services'
+              and _fa._is_product_availability_question("do you have shower rooms"))
+    _contact_q = (_mft("do you have another number") == 'services')
+    results.log(
+        "faq service-question gate: 'do you have shower rooms' -> services availability",
+        _svc_q is True and _contact_q is False,
+        got=f"service={_svc_q} contact_as_service={_contact_q}",
+    )
 except Exception as e:
     results.log("faq ai-primary fallback", False, got=str(e))
 

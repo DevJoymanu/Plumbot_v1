@@ -187,13 +187,9 @@ _TRIGGERS = {
 }
 
 
-def lookup_faq(message: str) -> str | None:
-    """
-    Check whether a message matches a known business FAQ.
-
-    Returns the answer string if matched, or None if the message should
-    continue through the normal flow. No API calls — pure string matching.
-    """
+def match_faq_topic(message: str) -> str | None:
+    """Return the matched FAQ topic (e.g. 'location', 'services'), or None. Same
+    matching as lookup_faq — pure string matching, no API calls."""
     text = message.lower().strip()
 
     # Ignore very short messages — they're almost always booking-flow replies
@@ -204,6 +200,22 @@ def lookup_faq(message: str) -> str | None:
     for topic, triggers in _TRIGGERS.items():
         if any(trigger in text for trigger in triggers):
             logger.info("FAQ match: topic=%s message='%s'", topic, message[:80])
-            return _FACTS[topic]
+            return topic
 
     return None
+
+
+def faq_fact(topic: str) -> str | None:
+    """The canned fact string for a matched topic (or None)."""
+    return _FACTS.get(topic)
+
+
+def lookup_faq(message: str) -> str | None:
+    """
+    Check whether a message matches a known business FAQ.
+
+    Returns the answer string if matched, or None if the message should
+    continue through the normal flow. No API calls — pure string matching.
+    """
+    topic = match_faq_topic(message)
+    return _FACTS[topic] if topic else None

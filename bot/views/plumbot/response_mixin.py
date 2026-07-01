@@ -553,27 +553,46 @@ class ResponseMixin:
                 return reply
             return f"{reply.rstrip()}\n\n{self._yes_tiedown(language)}"
 
-        def ai_answer_faq(self, message: str, fact: str, language: str = "english"):
+        def ai_answer_faq(self, message: str, fact: str, language: str = "english",
+                          service_question: bool = False):
             """AI-primary, contextual answer to a business FAQ, GROUNDED in `fact`
             (the source of truth) so it stays accurate but sounds natural and fits the
             customer's exact wording — instead of a copy-pasted canned line. The
             non-price qualifying close is appended deterministically. Returns None on
-            failure so the caller falls back to the canned fact."""
+            failure so the caller falls back to the canned fact.
+
+            When `service_question` (the lead asked whether we do/offer a specific
+            thing), continue the sale: confirm we handle it, then ask whether that
+            specific thing — named back to them — is the only thing they want sorted."""
             if not DEEPSEEK_API_KEY or not (message or '').strip() or not (fact or '').strip():
                 return None
             try:
                 from ...services.clients import deepseek_call
-                sys = (
-                    "You are Plumbot for Homebase Plumbers in Harare, replying on "
-                    "WhatsApp. Answer the customer's question in 1-2 short, warm "
-                    "sentences using ONLY the reference fact as the source of truth — "
-                    "rephrase it naturally to fit their exact wording so it never "
-                    "sounds copy-pasted, and address any nuance in what they asked. "
-                    "Zimbabwean English. No emojis, no markdown. Invent nothing — no "
-                    "prices or details not in the reference. Do NOT add a follow-up "
-                    "question."
-                    + (" Reply in Shona." if language == 'shona' else "")
-                )
+                if service_question:
+                    sys = (
+                        "You are Plumbot for Homebase Plumbers in Harare, replying on "
+                        "WhatsApp. The customer is asking whether we do/offer a specific "
+                        "thing. Using ONLY the reference fact, confirm warmly in ONE "
+                        "sentence that we handle it plus related plumbing work. Then, on "
+                        "a new line, ask whether that specific thing — named back to them "
+                        "in their own words — is the only thing they're looking to get "
+                        "sorted (e.g. \"Is a shower room the only thing you're looking to "
+                        "get sorted?\"). Zimbabwean English. No emojis, no markdown. "
+                        "Invent nothing — no prices or details not in the reference."
+                    )
+                else:
+                    sys = (
+                        "You are Plumbot for Homebase Plumbers in Harare, replying on "
+                        "WhatsApp. Answer the customer's question in 1-2 short, warm "
+                        "sentences using ONLY the reference fact as the source of truth — "
+                        "rephrase it naturally to fit their exact wording so it never "
+                        "sounds copy-pasted, and address any nuance in what they asked. "
+                        "Zimbabwean English. No emojis, no markdown. Invent nothing — no "
+                        "prices or details not in the reference. Do NOT add a follow-up "
+                        "question."
+                    )
+                if language == 'shona':
+                    sys += " Reply in Shona."
                 ans = deepseek_call(
                     messages=[
                         {"role": "system", "content": sys},
@@ -581,6 +600,9 @@ class ResponseMixin:
                     ],
                     temperature=0.4, max_tokens=120, retries=1, timeout=8,
                 ).strip().replace('**', '').replace('__', '')
+                # For a service question the AI already ends with a '?', so
+                # _append_tiedown is a no-op (its '?' guard); other answers get the
+                # deterministic qualifying close.
                 return self._append_tiedown(ans, language) if ans else None
             except Exception as exc:
                 logger.warning("ai_answer_faq failed (%s) — canned fallback", exc)

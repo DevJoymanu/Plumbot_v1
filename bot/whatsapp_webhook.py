@@ -2033,20 +2033,28 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # "do you have…" must not swallow "do you have pics of your work" or
         # "what products do you have" before they reach the photo / catalogue
         # send paths below.
-        from bot.faq import lookup_faq
-        _faq_fact = (
+        from bot.faq import match_faq_topic, faq_fact
+        _faq_topic = (
             None
             if (_explicitly_requests_photos(message_body)
                 or _explicitly_requests_catalogue(message_body))
-            else lookup_faq(message_body)
+            else match_faq_topic(message_body)
         )
-        if _faq_fact is not None:
+        if _faq_topic is not None:
+            _faq_fact = faq_fact(_faq_topic)
             # AI-primary: answer contextually, grounded in the fact so it stays
             # accurate but never sounds copy-pasted; canned fact (+ qualifying close)
-            # is the fallback. The close is appended either way.
+            # is the fallback. When the lead asked whether we do a SPECIFIC service
+            # ("do you have shower rooms"), continue the sale — name it back and ask
+            # if it's the only thing they want sorted.
             _faq_lang = detect_language_simple(message_body)
+            _faq_service_q = (
+                _faq_topic == 'services'
+                and plumbot._is_product_availability_question(message_body)
+            )
             _faq_reply = (
-                plumbot.ai_answer_faq(message_body, _faq_fact, _faq_lang)
+                plumbot.ai_answer_faq(message_body, _faq_fact, _faq_lang,
+                                      service_question=_faq_service_q)
                 or plumbot._append_tiedown(_faq_fact, _faq_lang)
             )
             appointment.add_conversation_message("assistant", _faq_reply)
