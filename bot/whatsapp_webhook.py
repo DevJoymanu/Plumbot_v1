@@ -2072,7 +2072,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             uc_is_photo_request, uc_is_plan_later, uc_is_repeat,
             uc_as_service_inquiry, uc_as_oos_classification,
             uc_pivoted_to_timeline, uc_offered_date, uc_offered_timeframe,
-            uc_extracted,
+            uc_extracted, uc_answered_current_question,
         )
         from django.utils import timezone as _tz
         _today_str = _tz.now().strftime('%Y-%m-%d')
@@ -2182,6 +2182,29 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             or _explicitly_requests_catalogue(message_body)
         )
         _faq_topic = None if _faq_skip else match_faq_topic(message_body)
+
+        # AI catch: a typo'd / loose service-availability question the keyword
+        # topic-match missed ("Do you for shower rooms") but the classifier read as a
+        # specific product. Route it to the clean services continuation. Gated so it
+        # can't hijack a price ask, a booking answer, or another FAQ topic.
+        _PRODUCT_LABEL = {
+            'shower_cubicle': 'shower cubicle', 'geyser': 'geyser', 'vanity': 'vanity',
+            'toilet': 'toilet', 'chamber': 'side chamber', 'tub_sales': 'tub',
+            'standalone_tub': 'freestanding tub', 'bathtub_installation': 'tub',
+        }
+        _ai_service_q = (
+            not _faq_skip
+            and _faq_topic in (None, 'services')
+            and uc_product_intent(_uclass) in _PRODUCT_LABEL
+            and not uc_answered_current_question(_uclass)
+            and not plumbot._asks_price_figure(message_body)
+            and _next_question in ('service_type', 'project_description')
+        )
+        if _ai_service_q and _faq_topic is None:
+            _faq_topic = 'services'
+            print(f"🤖 AI-routed service question via product_intent="
+                  f"{uc_product_intent(_uclass)}: '{message_body[:60]}'")
+
         if _faq_topic is not None:
             _faq_fact = faq_fact(_faq_topic)
             # AI-primary: answer contextually, grounded in the fact so it stays
@@ -2190,15 +2213,17 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             # ("do you have shower rooms"), continue the sale — name it back and ask
             # if it's the only thing they want sorted.
             _faq_lang = detect_language_simple(message_body)
-            _faq_service_q = (
+            _faq_service_q = _ai_service_q or (
                 _faq_topic == 'services'
                 and plumbot._is_product_availability_question(message_body)
             )
             # The service they asked about IS their project — capture it now so a
             # following "Yes" ("is a shower room the only thing?") advances the flow
-            # instead of re-asking. AI extraction first, then a light message derive.
+            # instead of re-asking. AI extraction first, then the classifier's product
+            # label (clean even on typos), then a light message derive.
             if _faq_service_q and not appointment.project_description:
                 _item = (uc_extracted(_uclass).get('project_description')
+                         or _PRODUCT_LABEL.get(uc_product_intent(_uclass))
                          or _derive_service_item(message_body))
                 if _item:
                     appointment.project_description = str(_item)[:120]
