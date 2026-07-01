@@ -2028,18 +2028,78 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         reply = None
 
-        # ── FAQ LAYER ─────────────────────────────────────────────────────────
-        # Skip FAQ for explicit photo/catalogue requests — a broad trigger like
-        # "do you have…" must not swallow "do you have pics of your work" or
-        # "what products do you have" before they reach the photo / catalogue
-        # send paths below.
-        from bot.faq import match_faq_topic, faq_fact
-        _faq_topic = (
-            None
-            if (_explicitly_requests_photos(message_body)
-                or _explicitly_requests_catalogue(message_body))
-            else match_faq_topic(message_body)
+        # ── UNIFIED DEEPSEEK CLASSIFIER (fires FIRST, on every message) ───────
+        # DeepSeek classifies every inbound BEFORE any keyword short-circuit below,
+        # so an out-of-context message (a delay/complaint/OOS, or a real booking
+        # answer that happens to trip an FAQ keyword) is never swallowed by the
+        # keyword layer. Returns None on failure — callers fall back to keywords.
+        from bot.unified_classifier import (
+            unified_classify,
+            uc_intent, uc_confidence, uc_product_intent,
+            uc_is_photo_request, uc_is_plan_later, uc_is_repeat,
+            uc_as_service_inquiry, uc_as_oos_classification,
+            uc_pivoted_to_timeline, uc_offered_date, uc_offered_timeframe,
         )
+        from django.utils import timezone as _tz
+        _today_str = _tz.now().strftime('%Y-%m-%d')
+        _next_question = plumbot.get_next_question_to_ask()
+        _uclass = unified_classify(
+            message_body,
+            appointment=appointment,
+            conversation_history=appointment.conversation_history,
+            today_date=_today_str,
+            next_question=_next_question,
+        )
+
+        # Deterministic availability backfill: on partial inputs the LLM can miss
+        # or mis-resolve a bare weekday ("out of town but Wed I'm available"). A
+        # day name maps to an exact next-future date with no LLM round-trip, so
+        # fill it in when the classifier left availability empty. The LLM's value
+        # always wins when present (it may carry a specific time).
+        if _uclass is not None:
+            _ext = _uclass.get('extracted') or {}
+            if not _ext.get('availability') or _ext.get('availability') == 'null':
+                _kw_date = _keyword_availability_date(message_body)
+                if _kw_date:
+                    _ext['availability'] = _kw_date
+                    _uclass['extracted'] = _ext
+                    print(f"📅 Availability keyword backfill: {_kw_date}")
+
+        # ── DATE-STAGE TIMELINE PIVOT (deterministic dispatch) ────────────────
+        # At the date/time stage, when the lead pivots to timeline instead of
+        # answering, dispatch on offered_date vs today — >7 days out parks the lead;
+        # within a week keeps booking. DeepSeek already resolved the date; code only
+        # does the math + state transition. No extra API call (reuses _uclass).
+        if _next_question in ('availability_date', 'availability_time') and \
+                uc_pivoted_to_timeline(_uclass):
+            _pivot_reply = plumbot._dispatch_timeline_pivot(
+                _next_question,
+                uc_offered_date(_uclass),
+                uc_offered_timeframe(_uclass),
+                _today_str,
+                detect_language_simple(message_body),
+            )
+            if _pivot_reply is not None:
+                appointment.add_conversation_message("assistant", _pivot_reply)
+                delay = get_random_delay()
+                threading.Thread(
+                    target=delayed_response, args=(sender, _pivot_reply, delay, message_id),
+                    daemon=True,
+                ).start()
+                return
+
+        # ── FAQ LAYER ─────────────────────────────────────────────────────────
+        # Skip FAQ when DeepSeek flagged the message as delay/complaint/out-of-scope
+        # (those go to their own handlers, never a generic FAQ answer), and for
+        # explicit photo/catalogue requests — a broad trigger like "do you have…"
+        # must not swallow "do you have pics of your work".
+        from bot.faq import match_faq_topic, faq_fact
+        _faq_skip = (
+            uc_intent(_uclass) in ('delay_signal', 'complaint', 'out_of_scope')
+            or _explicitly_requests_photos(message_body)
+            or _explicitly_requests_catalogue(message_body)
+        )
+        _faq_topic = None if _faq_skip else match_faq_topic(message_body)
         if _faq_topic is not None:
             _faq_fact = faq_fact(_faq_topic)
             # AI-primary: answer contextually, grounded in the fact so it stays
@@ -2066,61 +2126,6 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             ).start()
             return
 
-        # ── UNIFIED PRE-CLASSIFIER ────────────────────────────────────────────
-        from bot.unified_classifier import (
-            unified_classify,
-            uc_intent, uc_confidence, uc_product_intent,
-            uc_is_photo_request, uc_is_plan_later, uc_is_repeat,
-            uc_as_service_inquiry, uc_as_oos_classification,
-            uc_pivoted_to_timeline, uc_offered_date, uc_offered_timeframe,
-        )
-        from django.utils import timezone as _tz
-        _today_str = _tz.now().strftime('%Y-%m-%d')
-        _next_question = plumbot.get_next_question_to_ask()
-        _uclass = unified_classify(
-            message_body,
-            appointment=appointment,
-            conversation_history=appointment.conversation_history,
-            today_date=_today_str,
-            next_question=_next_question,
-        )
-
-        # ── DATE-STAGE TIMELINE PIVOT (deterministic dispatch) ────────────────
-        # Spec: at the date/time stage, when the lead pivots to timeline instead of
-        # answering, dispatch on offered_date vs today — >7 days out parks the lead;
-        # within a week keeps booking. DeepSeek already resolved the date; code only
-        # does the math + state transition. No extra API call (reuses _uclass).
-        if _next_question in ('availability_date', 'availability_time') and \
-                uc_pivoted_to_timeline(_uclass):
-            _pivot_reply = plumbot._dispatch_timeline_pivot(
-                _next_question,
-                uc_offered_date(_uclass),
-                uc_offered_timeframe(_uclass),
-                _today_str,
-                detect_language_simple(message_body),
-            )
-            if _pivot_reply is not None:
-                appointment.add_conversation_message("assistant", _pivot_reply)
-                delay = get_random_delay()
-                threading.Thread(
-                    target=delayed_response, args=(sender, _pivot_reply, delay, message_id),
-                    daemon=True,
-                ).start()
-                return
-
-        # Deterministic availability backfill: on partial inputs the LLM can miss
-        # or mis-resolve a bare weekday ("out of town but Wed I'm available"). A
-        # day name maps to an exact next-future date with no LLM round-trip, so
-        # fill it in when the classifier left availability empty. The LLM's value
-        # always wins when present (it may carry a specific time).
-        if _uclass is not None:
-            _ext = _uclass.get('extracted') or {}
-            if not _ext.get('availability') or _ext.get('availability') == 'null':
-                _kw_date = _keyword_availability_date(message_body)
-                if _kw_date:
-                    _ext['availability'] = _kw_date
-                    _uclass['extracted'] = _ext
-                    print(f"📅 Availability keyword backfill: {_kw_date}")
 
         _quick_service_check = uc_as_service_inquiry(_uclass)
 
