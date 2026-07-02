@@ -1446,6 +1446,34 @@ try:
         and not _jq_av_parts[1].lower().startswith("great"),
         got=repr(_jq_av_parts),
     )
+    # Tub sizes: a size question with NO specific tub type named must list ALL
+    # measurements (built-in + free-standing + corner); naming a type gives just
+    # that block. Business spec, 2026-07-01.
+    class _FakeSelfTubSize:
+        _TUB_SIZE_BLOCKS = ResponseMixin._TUB_SIZE_BLOCKS
+        _tub_sizes_reply = ResponseMixin._tub_sizes_reply
+    _ts = _FakeSelfTubSize()
+    _all = _ts._tub_sizes_reply("english", "what sizes do your tubs come in?")
+    results.log(
+        "tub sizes: no type named -> all measurements (built-in, free-standing, corner)",
+        all(h in _all for h in
+            ("Built-in bathtubs", "Free-standing bathtubs", "Corner bathtubs"))
+        and "1440 × 570 mm" in _all and "1800 to 1865 × 800 to 890 mm" in _all
+        and "1200 × 1200 mm to 1350 × 1350 mm" in _all,
+        got=_all,
+    )
+    _corner = _ts._tub_sizes_reply("english", "what size are corner tubs?")
+    _free = _ts._tub_sizes_reply("english", "freestanding tub dimensions")
+    _bi = _ts._tub_sizes_reply("english", "how big are built-in tubs")
+    results.log(
+        "tub sizes: a named type gives only that block",
+        ("Corner bathtubs" in _corner and "Built-in bathtubs" not in _corner
+         and "Free-standing bathtubs" not in _corner)
+        and ("Free-standing bathtubs" in _free and "Corner bathtubs" not in _free)
+        and ("Built-in bathtubs" in _bi and "Corner bathtubs" not in _bi
+             and "Free-standing bathtubs" not in _bi),
+        got=f"corner={_corner!r}",
+    )
     # _product_price_close (tub / Facebook-package replies): value-check first,
     # then the open "which one?" question once a tie-down has gone out.
     _pc1 = _FakeSelfFollowup("project_description")._product_price_close("english")

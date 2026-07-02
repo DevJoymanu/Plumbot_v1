@@ -3502,6 +3502,55 @@ class ResponseMixin:
             )
             return any(kw in msg for kw in size_keywords)
 
+        # Full bathtub measurements, by type (business spec, 2026-07-01). Corner is
+        # its own dimension set here — the corner→built-in collapse in
+        # _tub_type_in_message is a PRICING rule only, not a sizing one.
+        _TUB_SIZE_BLOCKS = {
+            'built_in': (
+                "Built-in bathtubs\n"
+                "- Compact / Standard: 1700 × 700 mm\n"
+                "- Large / Luxury: 1800 × 800 mm"
+            ),
+            'freestanding': (
+                "Free-standing bathtubs\n"
+                "- Compact: 1440 × 570 mm\n"
+                "- Standard: 1700 × 700 to 800 mm\n"
+                "- Large / Luxury: 1800 to 1865 × 800 to 890 mm"
+            ),
+            'corner': (
+                "Corner bathtubs\n"
+                "- Compact symmetrical: 1200 × 1200 mm to 1350 × 1350 mm\n"
+                "- Standard symmetrical: 1500 × 1500 mm\n"
+                "- Offset corner: 1500 to 1700 × 900 to 1000 mm"
+            ),
+        }
+
+        def _tub_sizes_reply(self, language: str = "english", message: str = "") -> str:
+            """Answer a tub-size question. When the customer names a specific tub
+            type (built-in / free-standing / corner) give just that block; when NO
+            specific type is mentioned, give ALL the measurements so they can see
+            every option at once (business rule, 2026-07-01)."""
+            is_shona = language == "shona"
+            msg = (message or "").lower()
+            if 'built' in msg or 'inbuilt' in msg or 'in-built' in msg:
+                keys = ['built_in']
+            elif any(w in msg for w in (
+                    'freestanding', 'free-standing', 'free standing',
+                    'standalone', 'stand-alone', 'stand alone')):
+                keys = ['freestanding']
+            elif 'corner' in msg:
+                keys = ['corner']
+            else:
+                keys = ['built_in', 'freestanding', 'corner']
+            body = "\n\n".join(self._TUB_SIZE_BLOCKS[k] for k in keys)
+            if is_shona:
+                header = "Saizi dzemabhavhu edu:"
+                close = "Ndeipi inokwana panzvimbo yenyu?"
+            else:
+                header = "Here are our bathtub sizes:"
+                close = "Which of these fits your space best?"
+            return f"{header}\n\n{body}\n\n{close}"
+
 
         @staticmethod
         def _is_availability_question(message: str) -> bool:
@@ -4218,19 +4267,9 @@ class ResponseMixin:
                     _TUB_INTENTS = {'tub_sales', 'standalone_tub', 'bathtub_installation'}
                     if intent in _TUB_INTENTS:
                         if self._is_asking_for_size(message):
-                            if language == 'shona':
-                                return (
-                                    "Standard built-in tubs dzinouya mu1500×700mm, 1600×700mm ne1700×750mm.\n\n"
-                                    "Freestanding tubs dzinobva ku1500×750mm kusvika 1800×800mm — "
-                                    "inonyanya kusanangurwa i1700mm.\n\n"
-                                    "Unoshanda neipi saizi?"
-                                )
-                            return (
-                                "Standard built-in tubs come in 1500×700mm, 1600×700mm and 1700×750mm.\n\n"
-                                "Freestanding tubs run from 1500×750mm up to 1800×800mm — "
-                                "the most popular is 1700mm.\n\n"
-                                "Which size works for your space?"
-                            )
+                            # No specific tub type named → give every type's sizes;
+                            # a named type gets just that block (business rule).
+                            return self._tub_sizes_reply(language, message)
                         elif not self._is_asking_for_price(message):
                             if language == 'shona':
                                 return (
