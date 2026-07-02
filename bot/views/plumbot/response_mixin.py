@@ -1136,6 +1136,32 @@ class ResponseMixin:
             return 'quote' in msg or 'quotation' in msg
 
 
+        @staticmethod
+        def _is_service_type_only(text: str) -> bool:
+            """True when the text names ONLY service types/categories ("Bathroom
+            and kitchen installations.") with no concrete detail — a service-type
+            answer, not a real project description. Token-based so plural and
+            combined variants match without enumerating every phrasing (the exact
+            _SERVICE_TYPE_LABELS set missed "bathroom and kitchen installations",
+            prod 2026-07-02). Any concrete item (toilet, shower, tub…) or detail
+            word makes it a real description."""
+            tokens = re.findall(r"[a-z]+", (text or '').lower())
+            if not tokens:
+                return False
+            service_core = {
+                'bathroom', 'kitchen', 'plumbing', 'renovation', 'renovations',
+                'installation', 'installations', 'install', 'installs',
+                'installing', 'remodel', 'remodeling', 'renovate', 'reno',
+            }
+            fillers = {
+                'a', 'an', 'the', 'and', 'both', 'new', 'my', 'our', 'for',
+                'of', 'to', 'all', 'general', 'full', 'complete',
+                'service', 'services',
+            }
+            if not any(t in service_core for t in tokens):
+                return False
+            return all(t in service_core or t in fillers for t in tokens)
+
         def _looks_like_project_description_reply(self, message: str) -> bool:
             """
             Return True when the message looks like a meaningful description of work
@@ -1586,10 +1612,21 @@ class ResponseMixin:
             hijacked into the job-quote visit pitch just because it mentions
             'installation' (prod, 2026-07-02). An actual request ("need a quote to
             fit tub and shower", "I want you to fit…") still routes to the pitch."""
-            if not updated_fields:
-                return False
-            if not ({'project_description', 'service_type'} & set(updated_fields)):
-                return False
+            captured = bool(
+                {'project_description', 'service_type'} & set(updated_fields or ())
+            )
+            if not captured:
+                # A service-type-only reply at the description stage is still THE
+                # flow answer even though extraction deliberately does NOT store
+                # it on the first pass — it must reach the scripted description
+                # question, never the quote pitch (its 'installations' would
+                # otherwise match the labour markers).
+                try:
+                    if (self.get_next_question_to_ask() != 'project_description'
+                            or not self._is_service_type_only(message)):
+                        return False
+                except Exception:
+                    return False
             msg = (message or '').strip().lower()
             if '?' in msg:
                 return False

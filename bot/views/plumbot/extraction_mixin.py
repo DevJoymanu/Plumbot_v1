@@ -456,12 +456,18 @@ class ExtractionMixin:
                     'toilet repair', 'toilet_repair', 'fix toilet',
                 }
                 _extracted_desc = (extracted_data.get('project_description') or '').strip()
+                # A service-type-only phrase ("Bathroom and kitchen installations")
+                # is NOT a description on the first pass — ask the scripted
+                # description question first; store it only when the lead repeats
+                # service types AFTER we've specifically asked (retry >= 1).
+                _desc_retry = self._get_question_retry_count('project_description')
                 if (
                     _extracted_desc and
                     _extracted_desc != 'null' and
                     not self.appointment.project_description and
                     not self._is_product_availability_question(incoming_message) and
-                    _extracted_desc.lower() not in _SERVICE_TYPE_LABELS
+                    _extracted_desc.lower() not in _SERVICE_TYPE_LABELS and
+                    not (self._is_service_type_only(_extracted_desc) and _desc_retry == 0)
                 ):
                     self.appointment.project_description = _extracted_desc
                     updated_fields.append('project_description')
@@ -471,7 +477,8 @@ class ExtractionMixin:
                     not self.appointment.project_description and
                     self._looks_like_project_description_reply(incoming_message) and
                     not self._is_product_availability_question(incoming_message) and
-                    (incoming_message or '').strip().lower() not in _SERVICE_TYPE_LABELS
+                    (incoming_message or '').strip().lower() not in _SERVICE_TYPE_LABELS and
+                    not (self._is_service_type_only(incoming_message) and _desc_retry == 0)
                 ):
                     self.appointment.project_description = incoming_message.strip()
                     updated_fields.append('project_description')

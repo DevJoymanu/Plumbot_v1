@@ -1482,6 +1482,11 @@ try:
         _is_captured_flow_answer = ResponseMixin._is_captured_flow_answer
         _asks_for_quote = ResponseMixin._asks_for_quote
         _asks_price_figure = ResponseMixin._asks_price_figure
+        _is_service_type_only = staticmethod(ResponseMixin._is_service_type_only)
+        def __init__(self, nq="area"):
+            self._nq = nq
+        def get_next_question_to_ask(self):
+            return self._nq
     _fca = _FakeSelfFA()
     FLOW_ANSWER_CASES = [
         ("Bathroom and kitchen installations.", ['project_description'], True),
@@ -1492,7 +1497,7 @@ try:
         ("I want you to fit a tub and shower", ['project_description'], False),
         ("Can you install geysers?", ['project_description'], False),
         ("how much to install a tub", ['project_description'], False),
-        # Nothing captured this turn -> not a flow answer:
+        # Nothing captured this turn (not at the description stage) -> not a flow answer:
         ("Bathroom and kitchen installations.", [], False),
         ("Bathroom and kitchen installations.", ['area'], False),
     ]
@@ -1505,6 +1510,39 @@ try:
         got="; ".join(f"{m[:26]!r}/{f}->{_fca._is_captured_flow_answer(m, f)}"
                       for m, f, e in FLOW_ANSWER_CASES if _fca._is_captured_flow_answer(m, f) is not e)
             or "all as expected",
+    )
+    # Service-type-only detector: bare service categories are NOT a description;
+    # anything with a concrete item or real detail is.
+    _sto = ResponseMixin._is_service_type_only
+    STO_CASES = [
+        ("Bathroom and kitchen installations.", True),
+        ("bathroom renovation", True),
+        ("Kitchen installation", True),
+        ("new plumbing installation", True),
+        ("bathroom", True),
+        ("full bathroom and kitchen renovations", True),
+        ("fit tub and shower", False),
+        ("all services needed on a new house", False),
+        ("shower cubicle", False),
+        ("replace my geyser", False),
+        ("new installation in Graylands park", False),
+    ]
+    _sto_ok = all(_sto(m) is e for m, e in STO_CASES)
+    results.log(
+        "service-type-only: categories yes, concrete items/details no",
+        _sto_ok,
+        got="; ".join(f"{m[:24]!r}->{_sto(m)}" for m, e in STO_CASES if _sto(m) is not e)
+            or "all as expected",
+    )
+    # At the description stage, a service-type-only reply is STILL the flow answer
+    # even with nothing stored (extraction skips it on the first pass) — it must
+    # route to the scripted description question, never the quote pitch.
+    _fca_desc = _FakeSelfFA(nq="project_description")
+    results.log(
+        "captured flow answer: service-type-only at description stage -> flow answer (asks description)",
+        _fca_desc._is_captured_flow_answer("Bathroom and kitchen installations.", []) is True
+        and _fca_desc._is_captured_flow_answer("Need a quote to fit tub and shower", []) is False,
+        got=f"svc-only={_fca_desc._is_captured_flow_answer('Bathroom and kitchen installations.', [])}",
     )
     # _product_price_close (tub / Facebook-package replies): value-check first,
     # then the open "which one?" question once a tie-down has gone out.
