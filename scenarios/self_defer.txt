@@ -1,0 +1,14 @@
+# Self-initiated deferral (prod 2026-07-01, Graylands park).
+# After "I will get in touch" the bot must PARK gracefully (check-back +
+# email/portfolio offer) — never push "what day and time works for you?".
+
+> Good evening new installation in Graylands park.
+expect: what works better for you
+reject: US$
+
+> I am not really sure on how plumbing services go but l just need all the services needed on a new house
+reject: US$
+
+> Most probably during the weekend, l will get in touch.
+expect: check back
+reject: what day and time works for you

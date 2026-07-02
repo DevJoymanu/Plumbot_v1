@@ -1537,6 +1537,80 @@ try:
         _dq_ok and "Which drain is blocked" in _dq_drain,
         got=f"generic ok={_dq_ok}; drain={_dq_drain!r}",
     )
+    # Visit-purpose copy: a bathroom+kitchen scope must never be described as a
+    # single room — even when the classifier mislabelled project_type as
+    # kitchen_installation (prod: lead was told "quick look at the kitchen
+    # plumbing" on a bathroom+kitchen job). Customer's own words (the
+    # description) count toward scope.
+    class _FakeApptVP:
+        def __init__(self, pt, desc):
+            self.project_type = pt
+            self.project_description = desc
+    class _FakeSelfVP:
+        _describe_project_context = ResponseMixin._describe_project_context
+        def __init__(self, pt, desc=None):
+            self.appointment = _FakeApptVP(pt, desc)
+    _vp_mis = _FakeSelfVP("kitchen_installation", "Bathroom and kitchen installations")
+    _vp_comb = _FakeSelfVP("bathroom_and_kitchen_renovation", "new installation")
+    _vp_kit = _FakeSelfVP("kitchen_installation", "new installation")
+    _vp_bath = _FakeSelfVP("bathroom_renovation", None)
+    results.log(
+        "visit purpose: bathroom+kitchen scope -> 'the space', single rooms stay specific",
+        _vp_mis._describe_project_context() == 'have a quick look at the space'
+        and _vp_comb._describe_project_context() == 'have a quick look at the space'
+        and _vp_kit._describe_project_context() == 'have a quick look at the kitchen plumbing'
+        and _vp_bath._describe_project_context() == 'have a quick look at the bathroom space',
+        got=f"mislabeled={_vp_mis._describe_project_context()!r}; kitchen={_vp_kit._describe_project_context()!r}",
+    )
+    # Root cause: the service-type classifier itself. Split installation phrasing
+    # ("bathroom and kitchen installations") must detect BOTH rooms, and a
+    # bathroom+kitchen scope maps to the combined project_type — never a single
+    # room. And it must NOT pre-fill project_description (a service-type list is
+    # not a description; pre-filling skipped the scripted description question).
+    from bot.service_type_classifier import classify_service_types_multi, classify_and_save
+    _multi = classify_service_types_multi("Bathroom and kitchen installations.")
+    _multi_norm = " ".join(_multi).lower()
+    results.log(
+        "service classifier: split installations phrase detects both rooms",
+        'bathroom' in _multi_norm and 'kitchen' in _multi_norm,
+        got=str(_multi),
+    )
+    class _FakeLeadST:
+        id = 0
+        project_type = None
+        project_description = None
+        def save(self, update_fields=None):
+            pass
+    _lead = _FakeLeadST()
+    _st = classify_and_save(_lead, "Bathroom and kitchen installations.")
+    results.log(
+        "service classifier: bathroom+kitchen -> combined type, no description pre-fill",
+        _st == 'bathroom_and_kitchen_renovation'
+        and _lead.project_type == 'bathroom_and_kitchen_renovation'
+        and _lead.project_description is None,
+        got=f"type={_st!r} desc={_lead.project_description!r}",
+    )
+    _lead_k = _FakeLeadST()
+    _st_k = classify_and_save(_lead_k, "kitchen installation")
+    results.log(
+        "service classifier: single room stays specific",
+        _st_k == 'kitchen_installation',
+        got=str(_st_k),
+    )
+    # A size/spec ask must never be treated as a service-availability question
+    # (scenario suite caught: "how big are your tubs" got "Yes, we handle tub…
+    # is a tub the only thing?" instead of the measurements).
+    _ssq = ResponseMixin._is_size_spec_question
+    results.log(
+        "size spec question: sizes yes, availability/price no",
+        all(_ssq(m) for m in
+            ("how big are your tubs", "what sizes do tubs come in",
+             "dimensions of the shower cubicle", "what size are corner tubs"))
+        and not any(_ssq(m) for m in
+            ("do you have tubs", "how much tub", "can you fit a tub",
+             "I want a tub")),
+        got=f"how_big={_ssq('how big are your tubs')} do_you_have={_ssq('do you have tubs')}",
+    )
     # Service-type-only detector: bare service categories are NOT a description;
     # anything with a concrete item or real detail is.
     _sto = ResponseMixin._is_service_type_only

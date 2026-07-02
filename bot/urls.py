@@ -124,6 +124,14 @@ urlpatterns = [
     path('test-console/poll/', views.test_console_poll, name='test_console_poll'),
     path('test-console/reset/', views.test_console_reset, name='test_console_reset'),
 
+    # Scenario Lab — run the conversation scenario suite from the browser
+    path('scenario-lab/', views.scenario_lab_view, name='scenario_lab'),
+    path('scenario-lab/run/', views.scenario_lab_run, name='scenario_lab_run'),
+    path('scenario-lab/status/', views.scenario_lab_status, name='scenario_lab_status'),
+    path('scenario-lab/save/', views.scenario_lab_save, name='scenario_lab_save'),
+    path('scenario-lab/delete/', views.scenario_lab_delete, name='scenario_lab_delete'),
+    path('scenario-lab/<int:pk>/', views.scenario_lab_detail, name='scenario_lab_detail'),
+
     path('calendar/', CalendarView.as_view(), name='calendar'),
     path('media/', handle_whatsapp_media, name='whatsapp_media'),
 

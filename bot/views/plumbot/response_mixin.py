@@ -260,24 +260,35 @@ class ResponseMixin:
 
 
         def _describe_project_context(self) -> str:
-            """Build a short, human-readable visit purpose based on project details."""
+            """Build a short, human-readable visit purpose based on project details.
+            Scope is judged on project_type AND the description together — the
+            classifier can mislabel a combined job as a single room ("Bathroom and
+            kitchen installations" → kitchen_installation), and the customer's own
+            words must win (prod: a bathroom+kitchen lead was told we'd look at
+            "the kitchen plumbing")."""
             project = (self.appointment.project_type or '').lower().replace('_', ' ')
             desc    = (self.appointment.project_description or '').lower()
-    
+            scope   = f"{project} {desc}"
+
             # Keyword-based specifics
             if 'drain' in desc or 'pipe' in desc:
                 return 'have a quick look at the drains/pipes'
             if 'toilet' in desc or 'chimbuzi' in desc:
                 return 'have a quick look at the toilet setup'
+            # Multi-room scope outranks any single-room label.
+            if 'bathroom' in scope and 'kitchen' in scope:
+                return 'have a quick look at the space'
             if 'shower' in desc or 'bath' in desc or 'tub' in desc:
                 return 'have a quick look at the bathroom space'
-            if 'kitchen' in project or 'kitchen' in desc:
+            if 'kitchen' in scope:
                 return 'have a quick look at the kitchen plumbing'
+            if 'bathroom' in scope:
+                return 'have a quick look at the bathroom space'
             if 'geyser' in desc:
                 return 'have a quick look at the geyser setup'
             if 'installation' in project:
                 return 'have a quick look at the site for the installation'
-    
+
             # Generic fallback
             return 'have a quick look at the space'
 
@@ -1134,6 +1145,20 @@ class ResponseMixin:
             if not any(t in service_core for t in tokens):
                 return False
             return all(t in service_core or t in fillers for t in tokens)
+
+        @staticmethod
+        def _is_size_spec_question(message: str) -> bool:
+            """Narrow size/spec ask ("how big are your tubs", "what sizes do
+            they come in") — must route to the measurements reply, never the
+            service-availability continuation ("Yes, we handle tub… is a tub the
+            only thing?"), which answers a question the customer didn't ask.
+            Deliberately narrower than _is_asking_for_size (no bare 'size'/'fit'
+            words) so it can safely gate the availability path."""
+            msg = (message or '').lower()
+            return any(t in msg for t in (
+                'how big', 'what size', 'what sizes', 'dimensions', 'how large',
+                'how wide', 'how long', 'measurement',
+            ))
 
         def _looks_like_project_description_reply(self, message: str) -> bool:
             """

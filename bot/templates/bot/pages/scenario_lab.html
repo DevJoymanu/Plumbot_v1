@@ -1,0 +1,296 @@
+{% extends "bot/layouts/base.html" %}
+{% block title %}Scenario Lab — Plumbot{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sl-wrap { max-width: 1000px; margin: 0 auto; }
+    .sl-head { display: flex; align-items: center; justify-content: space-between;
+               gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+    .sl-head h1 { margin: 0; font-size: 1.4rem; }
+    .sl-sub { color: #6b7280; font-size: .85rem; margin: 2px 0 16px; }
+
+    .sl-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .sl-btn { border: none; border-radius: 10px; padding: 9px 16px; cursor: pointer;
+              font-weight: 600; font-size: .88rem; }
+    .sl-run { background: #16a34a; color: #fff; }
+    .sl-run:disabled { opacity: .5; cursor: not-allowed; }
+    .sl-add { background: #2563eb; color: #fff; }
+    .sl-ghost { background: #f3f4f6; color: #374151; }
+    .sl-danger { background: #fee2e2; color: #b91c1c; }
+
+    .sl-progress { display: none; align-items: center; gap: 10px; margin: 14px 0;
+                   background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+                   padding: 10px 14px; font-size: .88rem; color: #1e40af; }
+    .sl-bar { flex: 1; height: 8px; background: #dbeafe; border-radius: 4px; overflow: hidden; }
+    .sl-bar > div { height: 100%; width: 0%; background: #3b82f6; transition: width .4s; }
+
+    .sl-cat { margin-top: 22px; }
+    .sl-cat-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .sl-cat-head h2 { margin: 0; font-size: 1.05rem; color: #111827; }
+    .sl-cat-head .sl-btn { padding: 4px 10px; font-size: .75rem; }
+
+    .sl-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+               margin-bottom: 10px; overflow: hidden; }
+    .sl-card-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+                    cursor: pointer; flex-wrap: wrap; }
+    .sl-card-head:hover { background: #f9fafb; }
+    .sl-name { font-weight: 600; font-size: .95rem; }
+    .sl-desc { color: #6b7280; font-size: .8rem; flex: 1; min-width: 140px; }
+    .sl-chip { border-radius: 999px; padding: 2px 10px; font-size: .72rem; font-weight: 700; }
+    .sl-chip.pass  { background: #dcfce7; color: #15803d; }
+    .sl-chip.fail  { background: #fee2e2; color: #b91c1c; }
+    .sl-chip.never { background: #f3f4f6; color: #6b7280; }
+    .sl-chip.running { background: #dbeafe; color: #1d4ed8; }
+    .sl-when { color: #9ca3af; font-size: .72rem; }
+
+    .sl-body { display: none; border-top: 1px solid #f3f4f6; padding: 12px 16px; }
+    .sl-turn { margin-bottom: 12px; }
+    .sl-msg { font-size: .87rem; padding: 7px 11px; border-radius: 10px; margin: 3px 0;
+              white-space: pre-wrap; word-wrap: break-word; }
+    .sl-msg.cust { background: #dcf8c6; display: inline-block; }
+    .sl-msg.bot  { background: #f3f4f6; }
+    .sl-check { font-size: .8rem; font-family: monospace; margin: 2px 0 2px 8px; }
+    .sl-check.ok { color: #15803d; }
+    .sl-check.bad { color: #b91c1c; font-weight: 700; }
+    .sl-card-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .sl-card-actions .sl-btn { padding: 5px 12px; font-size: .78rem; }
+
+    /* Editor modal */
+    .sl-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+                   z-index: 60; align-items: flex-start; justify-content: center;
+                   overflow-y: auto; padding: 5vh 12px; }
+    .sl-modal { background: #fff; border-radius: 14px; width: 100%; max-width: 640px;
+                padding: 20px; }
+    .sl-modal h3 { margin: 0 0 12px; font-size: 1.1rem; }
+    .sl-field { margin-bottom: 10px; }
+    .sl-field label { display: block; font-size: .78rem; font-weight: 600;
+                      color: #374151; margin-bottom: 3px; }
+    .sl-field input, .sl-field textarea {
+        width: 100%; border: 1px solid #d1d5db; border-radius: 8px;
+        padding: 8px 10px; font-size: .88rem; box-sizing: border-box; }
+    .sl-field textarea { min-height: 220px; font-family: monospace; font-size: .82rem; }
+    .sl-hint { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;
+               padding: 8px 10px; font-size: .75rem; color: #4b5563; font-family: monospace;
+               white-space: pre-wrap; margin-bottom: 10px; }
+    .sl-modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+    .sl-error { color: #b91c1c; font-size: .82rem; margin-top: 8px; display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sl-wrap">
+    <div class="sl-head">
+        <div>
+            <h1>Scenario Lab</h1>
+            <div class="sl-sub">
+                Every scenario replays through the <b>real production pipeline with live
+                DeepSeek</b> on an isolated 999 test number — the browser version of
+                <code>python manage.py run_scenarios</code>. Add each use case you meet
+                (with its desired response) and it becomes a permanent automated check.
+            </div>
+        </div>
+        <div class="sl-toolbar">
+            <button class="sl-btn sl-run" id="run-all">&#9654; Run all ({{ total }})</button>
+            <button class="sl-btn sl-add" id="add-scenario">+ Add scenario</button>
+        </div>
+    </div>
+
+    <div class="sl-progress" id="progress">
+        <span id="progress-label">Running…</span>
+        <div class="sl-bar"><div id="progress-fill"></div></div>
+        <span id="progress-count"></span>
+    </div>
+
+    {% for category, items in categories %}
+    <div class="sl-cat">
+        <div class="sl-cat-head">
+            <h2>{{ category }}</h2>
+            <button class="sl-btn sl-ghost run-cat" data-category="{{ category }}">&#9654; Run category</button>
+        </div>
+        {% for sc in items %}
+        <div class="sl-card" data-id="{{ sc.pk }}" data-name="{{ sc.name }}">
+            <div class="sl-card-head" onclick="toggleCard({{ sc.pk }})">
+                <span class="sl-chip {{ sc.last_status }}" id="chip-{{ sc.pk }}">
+                    {% if sc.last_status == 'pass' %}PASS{% elif sc.last_status == 'fail' %}FAIL{% else %}NOT RUN{% endif %}
+                </span>
+                <span class="sl-name">{{ sc.name }}</span>
+                <span class="sl-desc">{{ sc.description }}</span>
+                <span class="sl-when" id="when-{{ sc.pk }}">
+                    {% if sc.last_run_at %}{{ sc.last_run_at|date:"j M H:i" }}{% endif %}
+                </span>
+            </div>
+            <div class="sl-body" id="body-{{ sc.pk }}"><em style="color:#9ca3af;font-size:.8rem">Loading…</em></div>
+        </div>
+        {% endfor %}
+    </div>
+    {% empty %}
+    <p style="color:#6b7280">No scenarios yet — click <b>+ Add scenario</b> to create your first use case.</p>
+    {% endfor %}
+</div>
+
+<!-- Editor modal -->
+<div class="sl-modal-bg" id="modal-bg">
+    <div class="sl-modal">
+        <h3 id="modal-title">Add scenario</h3>
+        <div class="sl-field"><label>Name</label><input id="f-name" placeholder="e.g. corner tub pricing"></div>
+        <div class="sl-field"><label>Category</label><input id="f-category" placeholder="e.g. Pricing / Booking flow / Objections" value="General"></div>
+        <div class="sl-field"><label>Description (optional)</label><input id="f-description" placeholder="What this use case protects"></div>
+        <div class="sl-hint"># Format — one customer message per turn, then its checks:
+&gt; how much is a corner tub
+expect: US$160
+expect: budget
+reject: US$670</div>
+        <div class="sl-field"><label>Scenario</label><textarea id="f-content" placeholder="> customer message&#10;expect: desired text in the reply&#10;reject: text that must NOT appear"></textarea></div>
+        <div class="sl-error" id="modal-error"></div>
+        <div class="sl-modal-actions">
+            <button class="sl-btn sl-ghost" id="modal-cancel">Cancel</button>
+            <button class="sl-btn sl-add" id="modal-save">Save scenario</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function csrftoken() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : "";
+}
+async function api(url, payload) {
+    const res = await fetch(url, {
+        method: payload === undefined ? "GET" : "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken() },
+        body: payload === undefined ? undefined : JSON.stringify(payload),
+    });
+    return res.json();
+}
+
+/* ── Run + live progress ─────────────────────────────────────────────── */
+let polling = null;
+async function startRun(payload) {
+    const out = await api("{% url 'scenario_lab_run' %}", payload || {});
+    if (!out.ok) { alert(out.error || "Could not start run"); return; }
+    document.querySelectorAll(".sl-run, .run-cat").forEach(b => b.disabled = true);
+    const box = document.getElementById("progress");
+    box.style.display = "flex";
+    poll();
+    polling = setInterval(poll, 2500);
+}
+async function poll() {
+    const st = await api("{% url 'scenario_lab_status' %}");
+    const fill = document.getElementById("progress-fill");
+    const label = document.getElementById("progress-label");
+    const count = document.getElementById("progress-count");
+    const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
+    fill.style.width = pct + "%";
+    count.textContent = st.done + " / " + st.total;
+    label.textContent = st.running
+        ? ("Running: " + (st.current || "…"))
+        : (st.error ? "Run failed: " + st.error : "Run complete");
+    (st.results || []).forEach(r => paintResult(r));
+    if (!st.running) {
+        clearInterval(polling); polling = null;
+        document.querySelectorAll(".sl-run, .run-cat").forEach(b => b.disabled = false);
+        setTimeout(() => { document.getElementById("progress").style.display = "none"; }, 4000);
+    }
+}
+function paintResult(r) {
+    const card = document.querySelector('.sl-card[data-name="' + CSS.escape(r.name) + '"]');
+    if (!card) return;
+    const id = card.dataset.id;
+    const chip = document.getElementById("chip-" + id);
+    const failed = (r.failed || 0) > 0;
+    chip.className = "sl-chip " + (failed ? "fail" : "pass");
+    chip.textContent = failed ? "FAIL" : "PASS";
+    const body = document.getElementById("body-" + id);
+    if (body.style.display === "block") renderBody(id, r);
+}
+
+/* ── Card expand: transcript + checks ────────────────────────────────── */
+async function toggleCard(id) {
+    const body = document.getElementById("body-" + id);
+    if (body.style.display === "block") { body.style.display = "none"; return; }
+    body.style.display = "block";
+    const out = await api("/scenario-lab/" + id + "/");
+    if (out.ok) renderBody(id, out.scenario.last_result, out.scenario);
+}
+function esc(s) {
+    return (s || "").replace(/[&<>"']/g,
+        c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+function renderBody(id, result, scenario) {
+    const body = document.getElementById("body-" + id);
+    let html = "";
+    if (result && result.error) {
+        html += '<div class="sl-check bad">' + esc(result.error) + "</div>";
+    }
+    if (result && result.turns && result.turns.length) {
+        result.turns.forEach(t => {
+            html += '<div class="sl-turn">';
+            html += '<div class="sl-msg cust">' + esc(t.message) + "</div>";
+            (t.replies || []).forEach(r => { html += '<div class="sl-msg bot">' + esc(r) + "</div>"; });
+            (t.checks || []).forEach(c => {
+                html += '<div class="sl-check ' + (c.ok ? "ok" : "bad") + '">'
+                     + (c.ok ? "PASS " : "FAIL ") + esc(c.kind) + ": " + esc(c.text) + "</div>";
+            });
+            html += "</div>";
+        });
+    } else if (!result) {
+        html += '<em style="color:#9ca3af;font-size:.8rem">Never run yet — hit Run to see the transcript and checks here.</em>';
+    }
+    html += '<div class="sl-card-actions">'
+         + '<button class="sl-btn sl-run" onclick="event.stopPropagation(); startRun({id:' + id + '})">&#9654; Run</button>'
+         + '<button class="sl-btn sl-ghost" onclick="event.stopPropagation(); editScenario(' + id + ')">Edit</button>'
+         + '<button class="sl-btn sl-danger" onclick="event.stopPropagation(); deleteScenario(' + id + ')">Delete</button>'
+         + "</div>";
+    body.innerHTML = html;
+}
+
+/* ── Add / edit / delete ─────────────────────────────────────────────── */
+let editingId = null;
+function openModal(title) {
+    document.getElementById("modal-title").textContent = title;
+    document.getElementById("modal-error").style.display = "none";
+    document.getElementById("modal-bg").style.display = "flex";
+}
+document.getElementById("add-scenario").onclick = () => {
+    editingId = null;
+    ["f-name", "f-description", "f-content"].forEach(i => document.getElementById(i).value = "");
+    document.getElementById("f-category").value = "General";
+    openModal("Add scenario");
+};
+async function editScenario(id) {
+    const out = await api("/scenario-lab/" + id + "/");
+    if (!out.ok) return;
+    editingId = id;
+    document.getElementById("f-name").value = out.scenario.name;
+    document.getElementById("f-category").value = out.scenario.category;
+    document.getElementById("f-description").value = out.scenario.description;
+    document.getElementById("f-content").value = out.scenario.content;
+    openModal("Edit scenario");
+}
+async function deleteScenario(id) {
+    if (!confirm("Delete this scenario?")) return;
+    const out = await api("{% url 'scenario_lab_delete' %}", { id: id });
+    if (out.ok) location.reload();
+}
+document.getElementById("modal-cancel").onclick = () =>
+    document.getElementById("modal-bg").style.display = "none";
+document.getElementById("modal-save").onclick = async () => {
+    const out = await api("{% url 'scenario_lab_save' %}", {
+        id: editingId,
+        name: document.getElementById("f-name").value,
+        category: document.getElementById("f-category").value,
+        description: document.getElementById("f-description").value,
+        content: document.getElementById("f-content").value,
+    });
+    if (out.ok) { location.reload(); return; }
+    const err = document.getElementById("modal-error");
+    err.textContent = out.error || "Could not save";
+    err.style.display = "block";
+};
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+document.getElementById("run-all").onclick = () => startRun({});
+document.querySelectorAll(".run-cat").forEach(b =>
+    b.onclick = () => startRun({ category: b.dataset.category }));
+</script>
+{% endblock %}

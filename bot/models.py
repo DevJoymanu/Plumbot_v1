@@ -2141,3 +2141,39 @@ class QuotationTemplateItem(models.Model):
     def get_line_total(self):
         """Calculate line total"""
         return self.quantity * self.unit_price
+
+
+class TestScenario(models.Model):
+    """A conversation test scenario runnable from the Scenario Lab web page
+    (or the run_scenarios CLI). Content uses the scenario text format parsed by
+    bot/scenario_runner.py: '>' customer messages with per-turn 'expect:' /
+    'reject:' assertion lines. Stored in the DB so use cases added from the
+    browser survive Railway redeploys."""
+    name = models.CharField(max_length=120, unique=True)
+    category = models.CharField(
+        max_length=60, default='General',
+        help_text="Grouping shown in the Scenario Lab (e.g. Pricing, Booking flow, Objections)",
+    )
+    description = models.CharField(max_length=300, blank=True, default='')
+    content = models.TextField(
+        help_text="Scenario text: '>' customer lines, 'expect:'/'reject:' assertions",
+    )
+    is_active = models.BooleanField(default=True)
+    # Result of the most recent run: {passed, failed, ran_at, turns: [...]}
+    last_result = models.JSONField(null=True, blank=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['category', 'name']
+
+    def __str__(self):
+        return f"{self.category} / {self.name}"
+
+    @property
+    def last_status(self):
+        """'pass' | 'fail' | 'never'"""
+        if not self.last_result:
+            return 'never'
+        return 'fail' if self.last_result.get('failed') else 'pass'

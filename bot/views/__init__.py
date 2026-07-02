@@ -120,6 +120,15 @@ from .test_console import (
     test_console_reset,
 )
 
+from .scenario_lab import (
+    scenario_lab_view,
+    scenario_lab_run,
+    scenario_lab_status,
+    scenario_lab_save,
+    scenario_lab_delete,
+    scenario_lab_detail,
+)
+
 # Auth views
 from ..auth_views import login_view, logout_view, profile_view, change_password_view
 

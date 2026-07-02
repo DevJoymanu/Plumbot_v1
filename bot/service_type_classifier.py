@@ -286,6 +286,17 @@ def classify_service_types_multi(message: str) -> list[str]:
         if 'kitchen' in norm and KITCHEN_RENOVATION not in earliest:
             earliest[KITCHEN_RENOVATION] = norm.find('kitchen')
 
+    # Same for split installation phrasing ("bathroom and kitchen installations"
+    # — only "kitchen installation" is contiguous, so the bathroom was dropped
+    # and the lead got classified kitchen-only; prod 2026-07-02).
+    if re.search(r'instal', norm):
+        _has_bath_inst = any(t in earliest for t in (BATHROOM_INSTALLATION, BATHROOM_RENOVATION))
+        _has_kit_inst = any(t in earliest for t in (KITCHEN_INSTALLATION, KITCHEN_RENOVATION))
+        if 'bathroom' in norm and not _has_bath_inst:
+            earliest[BATHROOM_INSTALLATION] = norm.find('bathroom')
+        if 'kitchen' in norm and not _has_kit_inst:
+            earliest[KITCHEN_INSTALLATION] = norm.find('kitchen')
+
     return [st for st, _ in sorted(earliest.items(), key=lambda kv: kv[1])]
 
 
@@ -448,21 +459,22 @@ def classify_and_save(lead, message: str) -> str | None:
         # Already classified — don't overwrite
         return lead.project_type
 
-    # Capture ALL services the lead mentioned (keyword pass). If they named more
-    # than one (e.g. "bathroom and kitchen renovation"), set project_type to the
-    # first and record the full scope in project_description so nothing is lost.
+    # Capture ALL services the lead mentioned (keyword pass). A bathroom+kitchen
+    # scope maps to the model's combined type — never a single room (prod: a
+    # "bathroom and kitchen installations" lead got labelled kitchen_installation
+    # and all visit copy read kitchen-only). The full scope is NOT pre-filled
+    # into project_description any more: a service-type list is not a
+    # description, and pre-filling it skipped the scripted "can you tell me a
+    # bit more about the project?" question.
     multi = classify_service_types_multi(message)
     if multi:
-        primary = multi[0]
+        _norm_multi = " ".join(multi).lower()
+        if 'bathroom' in _norm_multi and 'kitchen' in _norm_multi:
+            primary = 'bathroom_and_kitchen_renovation'
+        else:
+            primary = multi[0]
         lead.project_type = primary
-        fields = ['project_type']
-        if len(multi) > 1 and not lead.project_description:
-            lead.project_description = _combined_service_description(multi)
-            fields.append('project_description')
-            logger.info(
-                f'Lead {lead.id} multi-service captured: "{lead.project_description}"'
-            )
-        lead.save(update_fields=fields)
+        lead.save(update_fields=['project_type'])
         logger.info(f'Lead {lead.id} project_type set to "{primary}" from message: {message[:80]!r}')
         return primary
 

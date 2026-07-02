@@ -2251,6 +2251,9 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             and uc_product_intent(_uclass) in _PRODUCT_LABEL
             and not uc_answered_current_question(_uclass)
             and not plumbot._asks_price_figure(message_body)
+            # A size/spec ask ("how big are your tubs") is NOT an availability
+            # question — it must fall through to the measurements reply.
+            and not plumbot._is_size_spec_question(message_body)
             and _next_question in ('service_type', 'project_description')
             # Only route an OPENING "do you have X" — once we've asked the
             # description question, a product mention ("a tub and chamber") is the
@@ -2273,6 +2276,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             _faq_service_q = _ai_service_q or (
                 _faq_topic == 'services'
                 and plumbot._is_product_availability_question(message_body)
+                and not plumbot._is_size_spec_question(message_body)
             )
             # The service they asked about IS their project — capture it now so a
             # following "Yes" ("is a shower room the only thing?") advances the flow

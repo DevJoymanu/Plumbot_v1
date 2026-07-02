@@ -1,0 +1,16 @@
+# Tub pricing + sizes (prod 2026-07-02).
+# Price reply must break down supply+install, carry the approximate-price
+# disclaimer, and close on the budget tie-down. The size question with no tub
+# type named must list ALL three measurement blocks.
+
+> how much tub
+expect: US$
+expect: install
+expect: sees the space
+expect: budget
+
+> how big are your tubs
+expect: Built-in bathtubs
+expect: Free-standing bathtubs
+expect: Corner bathtubs
+expect: 1440

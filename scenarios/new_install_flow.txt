@@ -1,0 +1,22 @@
+# Generic new-install flow (prod 2026-07-02).
+# The script: opener -> description question -> area -> availability. No quote
+# pitch on a flow answer, no volunteered price, no kitchen-only copy on a
+# bathroom+kitchen job.
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> Bathroom and kitchen installations.
+expect: can you tell me a bit more about the project
+reject: on-site visit
+reject: US$
+reject: plumbed fresh
+
+> new installation
+expect: all good, what area are you in?
+reject: US$
+
+> Not in Harare but in Hurungwe (Magunje) to be precise.
+expect: what works better for you
+expect: quick look at the space
+reject: kitchen plumbing
