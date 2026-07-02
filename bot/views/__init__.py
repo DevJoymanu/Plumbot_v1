@@ -118,6 +118,8 @@ from .test_console import (
     test_console_send,
     test_console_poll,
     test_console_reset,
+    test_leads_view,
+    test_leads_purge,
 )
 
 from .scenario_lab import (

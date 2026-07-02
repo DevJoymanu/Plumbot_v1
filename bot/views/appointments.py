@@ -131,8 +131,11 @@ class AppointmentsListView(ListView):
         )
 
         completed_fields = has_project_type + has_property_type + has_area + has_timeline + has_site_visit
+        # Test lines (999-prefixed console/scenario leads) never appear on the
+        # client-facing appointments page — they live on the staff-only
+        # /test-leads/ page instead.
         queryset = (
-            Appointment.objects.annotate(
+            Appointment.objects.real().annotate(
                 computed_score=Case(
                     When(scheduled_datetime__isnull=False, then=Value(100)),
                     default=completed_fields * Value(20),
@@ -190,7 +193,7 @@ class AppointmentsListView(ListView):
         response_age  = getattr(self, '_response_age',  '1w_minus')
         age_map_minus = self.TAB_AGE_MAP
 
-        base_qs = Appointment.objects.all()
+        base_qs = Appointment.objects.real()
         if response_age != 'all' and response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
@@ -767,7 +770,7 @@ def export_appointments(request):
         'Timeline', 'Status', 'Appointment Date', 'Created At'
     ])
     
-    for appointment in Appointment.objects.all().order_by('-created_at'):
+    for appointment in Appointment.objects.real().order_by('-created_at'):
         writer.writerow([
             appointment.customer_name or '',
             appointment.phone_number,

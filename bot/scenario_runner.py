@@ -33,19 +33,34 @@ def reset_lead(sender):
     WhatsAppInboundEvent.objects.filter(sender=sender).delete()
 
 
-def send_message(sender, message):
+def send_message(sender, message, media_wait: float = 60.0):
     """Feed one customer message through the production pipeline; return the
-    assistant replies generated for this turn (synchronous for 999 senders)."""
+    assistant replies generated for this turn (synchronous for 999 senders).
+
+    Media paths (portfolio gallery, catalogue PDF) reply from a background
+    thread even for test senders — when the synchronous call produced nothing,
+    poll history briefly so those turns aren't reported as silent."""
+    import time
+
     from bot.whatsapp_webhook import handle_text_message
+
+    def _new_replies(before_count):
+        entries = history(sender)[before_count:]
+        return [e.get("content", "") for e in entries
+                if isinstance(e, dict) and e.get("role") == "assistant"]
 
     before = len(history(sender))
     handle_text_message(
         sender, {"body": message},
         message_id=f"wamid.TESTIN{uuid.uuid4().hex}",
     )
-    entries = history(sender)[before:]
-    return [e.get("content", "") for e in entries
-            if isinstance(e, dict) and e.get("role") == "assistant"]
+    replies = _new_replies(before)
+    waited = 0.0
+    while not replies and waited < media_wait:
+        time.sleep(2)
+        waited += 2
+        replies = _new_replies(before)
+    return replies
 
 
 def scenario_number(name: str) -> str:

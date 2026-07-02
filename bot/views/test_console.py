@@ -137,6 +137,57 @@ def test_console_poll(request):
 
 
 @staff_required
+def test_leads_view(request):
+    """Staff-only list of console/scenario test leads (999-prefixed).
+
+    These are excluded from the client-facing appointments page; this page is
+    reachable by URL only and sits behind the same per-session password gate as
+    the test console, so client-side dashboard users can't access it."""
+    # Password submission (shared gate with the test console).
+    if request.method == "POST" and "console_password" in request.POST:
+        if request.POST.get("console_password") == TEST_CONSOLE_PASSWORD:
+            request.session[_CONSOLE_SESSION_KEY] = True
+            return redirect(reverse('test_leads'))
+        return render(request, "bot/pages/test_console_gate.html",
+                      {"error": "Incorrect password. Try again."})
+    if not _console_unlocked(request):
+        return render(request, "bot/pages/test_console_gate.html", {})
+
+    leads = (Appointment.objects.test_lines()
+             .order_by('-updated_at')
+             .only('id', 'phone_number', 'status', 'project_type',
+                   'project_description', 'customer_area', 'updated_at',
+                   'conversation_history'))
+    rows = [{
+        "id": a.pk,
+        "number": a.phone_number.replace('whatsapp:+', ''),
+        "status": a.status,
+        "project": (a.project_type or '').replace('_', ' '),
+        "description": a.project_description or '',
+        "area": a.customer_area or '',
+        "turns": len(a.conversation_history or []),
+        "updated_at": a.updated_at,
+    } for a in leads]
+    return render(request, "bot/pages/test_leads.html", {
+        "active_nav": "test_leads",
+        "rows": rows,
+        "total": len(rows),
+    })
+
+
+@staff_required
+@require_http_methods(["POST"])
+def test_leads_purge(request):
+    """Delete ALL test leads (999-prefixed) in one click — safe by construction:
+    the filter can only ever match console/scenario lines, never a real lead."""
+    if not _console_unlocked(request):
+        return JsonResponse({"ok": False, "error": "Console locked"}, status=403)
+    deleted, _ = Appointment.objects.test_lines().delete()
+    WhatsAppInboundEvent.objects.filter(sender__startswith='999').delete()
+    return JsonResponse({"ok": True, "deleted": deleted})
+
+
+@staff_required
 @require_http_methods(["POST"])
 def test_console_reset(request):
     """Wipe the test conversation so the next message starts a fresh lead."""

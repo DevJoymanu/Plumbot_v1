@@ -858,6 +858,11 @@ _SELF_DEFER_PATTERNS = (
     r"\bget(ting)?\s+back\s+to\s+(you|u|yah)\b",
     r"\bget\s+in\s+touch\b",
     r"\bbe\s+in\s+touch\b",
+    # Bare "Will advise." / "Will contact you." (no leading "I'll") — prod 2026-07-02.
+    r"\bwill\s+advise\b",
+    r"\bwill\s+contact\s+(you|u)\b",
+    r"\bwill\s+call\s+(you|u)\b",
+    r"\bwill\s+let\s+(you|u)\s+know\b",
     r"\b(i'?ll|i\s+will|let\s+me)\s+.{0,20}\b(let\s+you\s+know|reach\s+out|contact\s+you|call\s+you|message\s+you|text\s+you|revert|touch\s+base|come\s+back\s+to\s+you)\b",
     r"\blet\s+you\s+know\b",
     r"\breach\s+out\b",
@@ -904,7 +909,7 @@ def _is_self_initiated_defer(message: str) -> bool:
                         "than agreeing to book now or asking us to proceed?\n"
                         "Counts as yes: \"I'll get in touch\", \"I'll let you know\", "
                         "\"let me get back to you\", \"I'll reach out when I'm ready\", "
-                        "\"I'll call you\".\n"
+                        "\"I'll call you\", \"Will advise\", \"Will contact you\".\n"
                         "Counts as no: \"this weekend works\", \"tomorrow at 2pm\", "
                         "\"come on Friday\", \"yes let's book\".\n\n"
                         f"Message: {message}"
@@ -1327,6 +1332,23 @@ _DELAY_SUBTYPE_REPLIES = {
 }
 
 
+# Unambiguous access-arranging phrases — deterministic, so the access check-in
+# can never be lost to a nondeterministic category classification.
+_ACCESS_DEFER_PHRASES = (
+    'no one will be home', 'no one home', 'nobody home', 'nobody will be home',
+    "won't be home", 'wont be home', 'not going to be home', 'no one is home',
+    'need to make arrangements', 'make arrangements', 'arrange access',
+    'need to arrange', 'sort out access', 'arrange for someone',
+)
+
+
+def _is_access_deferral_keywords(message: str) -> bool:
+    """True for an explicit access-arranging deferral ("no one will be home",
+    "need to make arrangements") — routed to the access check-in flow."""
+    msg = (message or '').lower()
+    return any(p in msg for p in _ACCESS_DEFER_PHRASES)
+
+
 def _classify_delay_subtype(message: str, appointment) -> str:
     """
     Split the single delay signal into a specific sub-type so we don't reply to a
@@ -1388,6 +1410,18 @@ def _build_delay_reply(message: str, appointment) -> str:
     """
     if _message_has_timeframe_ai(message):
         return _handle_delay_timeframe_answer(message, {}, appointment)
+
+    # "Will advise." / "Will contact you." — the customer has claimed the next
+    # move and given no timeframe. Don't interrogate for one (prod: two
+    # successive timeframe asks in a row): jump straight to the email/lead-magnet
+    # pivot, which also auto-sets the default 14-day follow-up. An ACCESS
+    # deferral ("no one will be home") outranks this — the access check-in
+    # self-schedules a concrete follow-up, which is stronger than the pivot.
+    if (_is_self_initiated_defer(message)
+            and not _is_access_deferral_keywords(message)):
+        logger.info("Self-initiated defer — email pivot + default follow-up: '%s'",
+                    message[:60])
+        return _reask_delay_timeframe(message, appointment)
 
     subtype = _classify_delay_subtype(message, appointment)
 
@@ -1743,7 +1777,10 @@ def _reask_delay_timeframe(message: str, appointment) -> str:
     """
     count = _read_delay_reask(appointment)
 
-    if count >= _DELAY_TF_ASKS_BEFORE_EMAIL_PIVOT:
+    # A self-initiated defer ("Will advise", "I'll contact you") skips the
+    # timeframe re-ask entirely — respect their claim on the next move, set the
+    # default 14-day follow-up, and go for the email/lead magnet in one step.
+    if count >= _DELAY_TF_ASKS_BEFORE_EMAIL_PIVOT or _is_self_initiated_defer(message):
         _clear_delay_reask(appointment)
 
         # Still no concrete timeframe after a re-ask (e.g. "will call you"). Stop
@@ -2238,7 +2275,7 @@ def _build_complaint_reply(message: str, appointment) -> str:
             "The way we land a fair, fixed price is a free on-site visit — the "
             "plumber sees the space and gives you a number on the spot, no "
             "surprises. Shall I set that up for you?\n\n"
-            f"(Prefer to talk it through first? You can reach Tinashe on "
+            f"(Prefer to talk it through first? You can reach Takudzwa on "
             f"+{plumber_number}.)"
         )
 
@@ -2264,7 +2301,7 @@ def _build_complaint_reply(message: str, appointment) -> str:
         "Thanks for flagging that — I hear you, and I appreciate you being upfront.\n\n"
         "I'm the booking assistant, so if anything I've said doesn't seem right or "
         "you'd like to speak with the plumber directly, that's the best next step.\n\n"
-        f"You can reach Tinashe directly on +{plumber_number} — "
+        f"You can reach Takudzwa directly on +{plumber_number} — "
         "he'll sort it out properly."
     )
 
@@ -2349,6 +2386,16 @@ def handle_out_of_scope(
     category   = classification["category"]
     confidence = classification["confidence"]
     detail     = classification.get("detail", "")
+
+    # Customer's words override a missed classification: an unambiguous
+    # access-arranging phrase ("No one will be home..need to make arrangements")
+    # is a delay signal even when the category classifier read the message as
+    # in-scope (LLM nondeterminism — conv 427 got the booking push instead of
+    # the access check-in on some runs).
+    if category != "delay_signal" and _is_access_deferral_keywords(message):
+        logger.info("Deterministic access-deferral override → delay_signal: '%s'",
+                    message[:60])
+        category, confidence = "delay_signal", "HIGH"
 
     # ── Step 3: in scope — do nothing ─────────────────────────────────────────
     if category == "in_scope":

@@ -1,0 +1,86 @@
+{% extends "bot/layouts/base.html" %}
+{% block title %}Test Leads — Plumbot{% endblock %}
+
+{% block extra_css %}
+<style>
+    .tl-wrap { max-width: 1000px; margin: 0 auto; }
+    .tl-head { display: flex; align-items: center; justify-content: space-between;
+               gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+    .tl-head h1 { margin: 0; font-size: 1.4rem; }
+    .tl-sub { color: #6b7280; font-size: .85rem; margin: 2px 0 16px; }
+    .tl-btn { border: none; border-radius: 10px; padding: 9px 16px; cursor: pointer;
+              font-weight: 600; font-size: .88rem; }
+    .tl-danger { background: #fee2e2; color: #b91c1c; }
+    .tl-table { width: 100%; border-collapse: collapse; background: #fff;
+                border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
+    .tl-table th, .tl-table td { padding: 10px 12px; font-size: .85rem;
+                text-align: left; border-bottom: 1px solid #f3f4f6; }
+    .tl-table th { background: #f9fafb; color: #374151; font-size: .75rem;
+                text-transform: uppercase; letter-spacing: .03em; }
+    .tl-num { font-family: monospace; background: #eef2ff; color: #3730a3;
+              padding: 2px 8px; border-radius: 6px; font-size: .78rem; }
+    .tl-chip { border-radius: 999px; padding: 2px 10px; font-size: .72rem; font-weight: 700; }
+    .tl-chip.pending   { background: #fef3c7; color: #92400e; }
+    .tl-chip.confirmed { background: #dcfce7; color: #15803d; }
+    .tl-chip.cancelled { background: #f3f4f6; color: #6b7280; }
+    .tl-desc { color: #6b7280; max-width: 260px; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+    .tl-empty { color: #9aa0a6; text-align: center; padding: 40px 0; }
+    .tl-table a { color: #2563eb; text-decoration: none; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tl-wrap">
+    <div class="tl-head">
+        <div>
+            <h1>Test Leads</h1>
+            <div class="tl-sub">
+                Console &amp; Scenario Lab lines (999-prefixed) — kept off the
+                client-facing appointments page. Scenario runs reset their own
+                lines automatically; purge clears the rest.
+            </div>
+        </div>
+        <button class="tl-btn tl-danger" id="purge">Delete all test leads ({{ total }})</button>
+    </div>
+
+    <table class="tl-table">
+        <thead>
+            <tr>
+                <th>Number</th><th>Status</th><th>Project</th>
+                <th>Description</th><th>Area</th><th>Turns</th><th>Updated</th><th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            <tr>
+                <td><span class="tl-num">+{{ r.number }}</span></td>
+                <td><span class="tl-chip {{ r.status }}">{{ r.status }}</span></td>
+                <td>{{ r.project }}</td>
+                <td class="tl-desc" title="{{ r.description }}">{{ r.description }}</td>
+                <td>{{ r.area }}</td>
+                <td>{{ r.turns }}</td>
+                <td>{{ r.updated_at|date:"j M H:i" }}</td>
+                <td><a href="{% url 'appointment_detail' r.id %}">open</a></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="tl-empty">No test leads right now.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+document.getElementById("purge").onclick = async () => {
+    if (!confirm("Delete ALL 999-prefixed test leads? Real leads are untouched.")) return;
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    const res = await fetch("{% url 'test_leads_purge' %}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": m ? m[1] : "" },
+        body: "{}",
+    });
+    const out = await res.json();
+    if (out.ok) location.reload(); else alert(out.error || "Purge failed");
+};
+</script>
+{% endblock %}

@@ -650,6 +650,10 @@ try:
         ("I'll let you know", True),
         ("I'll reach out once I'm ready", True),
         ("I will contact you soon", True),
+        # Bare forms with no leading "I'll" (prod 2026-07-02: two successive
+        # timeframe asks instead of the email pivot):
+        ("Will advise.", True),
+        ("Will contact you.", True),
         ("this weekend works", False),
         ("tomorrow at 2pm", False),
         ("come on Friday", False),
@@ -660,6 +664,25 @@ try:
         _sd_ok,
         got="; ".join(f"{m[:22]!r}->{_is_self_initiated_defer_keywords(m)}"
                       for m, e in SELF_DEFER_CASES),
+    )
+    # Access-arranging deferral is detected deterministically (conv 427: "No one
+    # will be home..need to make arrangements" lost the access check-in to a
+    # nondeterministic category classification on some runs).
+    from bot.out_of_scope_handler import _is_access_deferral_keywords
+    ACCESS_CASES = [
+        ("No one will be home..need to make arrangements", True),
+        ("nobody will be home tomorrow", True),
+        ("I need to arrange access with my tenant", True),
+        ("this weekend works", False),
+        ("I'll get back to you", False),
+        ("Bathroom renovation", False),
+    ]
+    results.log(
+        "access deferral keywords: access phrases yes, ordinary messages no",
+        all(_is_access_deferral_keywords(m) is e for m, e in ACCESS_CASES),
+        got="; ".join(f"{m[:24]!r}->{_is_access_deferral_keywords(m)}"
+                      for m, e in ACCESS_CASES if _is_access_deferral_keywords(m) is not e)
+            or "all as expected",
     )
 except Exception as e:
     results.log("delay timeframe NEAR pivot", False, got=str(e))
@@ -1034,9 +1057,14 @@ class _FakeSelfCombined:
     _num_word = ResponseMixin._num_word
     _scope_allin_phrase = ResponseMixin._scope_allin_phrase
     _format_labour_scope = ResponseMixin._format_labour_scope
+    _labour_split_seg = ResponseMixin._labour_split_seg
     _asks_about_labour = ResponseMixin._asks_about_labour
     _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
     _build_combined_price_reply = ResponseMixin._build_combined_price_reply
+    _FAMILY_FLAT_PRICE = ResponseMixin._FAMILY_FLAT_PRICE
+    _FREESTANDING_TUB_ALLIN = ResponseMixin._FREESTANDING_TUB_ALLIN
+    _FREESTANDING_TUB_SPLIT = ResponseMixin._FREESTANDING_TUB_SPLIT
+    _tub_type_in_message = ResponseMixin._tub_type_in_message
     def __init__(self, appointment=None):
         self.appointment = appointment
     def _next_forward_question(self, language="english", scope=None, has_accessories=False):
@@ -1058,6 +1086,30 @@ try:
         "_build_combined_price_reply: no labour split unless asked",
         "fitted" not in _cr and "labour from" not in _cr,
         got=_cr[:120],
+    )
+    # Real-lead corpus (2026-07-02): "How much is it to fit a standalone tab,
+    # chamber and sink in a bathroom." — the tub line must carry FREESTANDING
+    # money (US$670), never built-in (US$160), and the sink/basin must be priced
+    # (US$70 flat, homebase.md), not silently dropped.
+    _fs = _FakeSelfCombined()._build_combined_price_reply(
+        "How much is it to fit a standalone tab, chamber and sink in a bathroom.",
+        "english",
+    )
+    results.log(
+        "combined reply: standalone tub uses freestanding money, sink priced",
+        ("US$670" in _fs and "Freestanding tub" in _fs
+         and "Basin: from US$70" in _fs
+         and "Tub: supply from US$80" not in _fs),
+        got=_fs,
+    )
+    # Without the standalone word the tub stays built-in and basin still shows.
+    _bi = _FakeSelfCombined()._build_combined_price_reply(
+        "how much for a tub and sink", "english",
+    )
+    results.log(
+        "combined reply: plain tub stays built-in; basin flat price shown",
+        "tub from US$160" in _bi and "basin from US$70" in _bi and "US$670" not in _bi,
+        got=_bi,
     )
 except Exception as e:
     results.log("_build_combined_price_reply", False, got=str(e))
@@ -1500,6 +1552,11 @@ try:
         # Nothing captured this turn (not at the description stage) -> not a flow answer:
         ("Bathroom and kitchen installations.", [], False),
         ("Bathroom and kitchen installations.", ['area'], False),
+        # A question WITHOUT the '?' is still a question (conv 427: got the area
+        # script instead of the tub measurements):
+        ("My bathroom  is small....what are the measurements of your tubs ...",
+         ['project_description'], False),
+        ("how big are your tubs", ['project_description'], False),
     ]
     _fca_ok = all(
         _fca._is_captured_flow_answer(m, f) is e for m, f, e in FLOW_ANSWER_CASES
@@ -1610,6 +1667,98 @@ try:
             ("do you have tubs", "how much tub", "can you fit a tub",
              "I want a tub")),
         got=f"how_big={_ssq('how big are your tubs')} do_you_have={_ssq('do you have tubs')}",
+    )
+    # Identity questions (conv 369): "who am I speaking to?" / "name of the
+    # plumber" must be ANSWERED (Plumbot + Takudzwa + the protected number) —
+    # never steamrolled by the next booking question. Takudzwa is the single
+    # plumber identity everywhere (emails are signed Takudzwa).
+    class _FakeSelfIdent:
+        _maybe_answer_identity_question = ResponseMixin._maybe_answer_identity_question
+        def __init__(self):
+            self.appointment = type('A', (), {'plumber_contact_number': None})()
+    _idb = _FakeSelfIdent()._maybe_answer_identity_question("Also who am I speaking to?")
+    _idp = _FakeSelfIdent()._maybe_answer_identity_question(
+        "Also what is the name of plumber visiting the house so I pass details to mum")
+    _idn = _FakeSelfIdent()._maybe_answer_identity_question("I need a geyser installed in Hatfield")
+    results.log(
+        "identity questions: answered with Plumbot/Takudzwa + number; no over-reach",
+        _idb is not None and 'plumbot' in _idb.lower() and 'takudzwa' in _idb.lower()
+        and _idp is not None and 'takudzwa' in _idp.lower() and '263774819901' in _idp
+        and 'tinashe' not in (_idb + _idp).lower()
+        and _idn is None,
+        got=f"bot={_idb!r}",
+    )
+    # Quantity + accessories carried into the named-back item (prod 2026-07-02:
+    # "2x shower cubicles and asseries" came back as "a shower cubicle"), with
+    # plural grammar in the scripted continuation.
+    class _FakeSelfSIP:
+        _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
+        _QTY_WORDS = ResponseMixin._QTY_WORDS
+        _product_families_in = ResponseMixin._product_families_in
+        _quantity_for_family = ResponseMixin._quantity_for_family
+        _scope_item_phrase = ResponseMixin._scope_item_phrase
+        _service_continuation_reply = ResponseMixin._service_continuation_reply
+    _sip = _FakeSelfSIP()
+    _item2 = _sip._scope_item_phrase(
+        "I want to purchase 2x shower cubicles and asseries", "shower cubicle")
+    _cont2 = _sip._service_continuation_reply(_item2, "english")
+    _item1 = _sip._scope_item_phrase("do you have geysers", "geyser")
+    results.log(
+        "scope item: quantity + accessories carried; plural continuation grammar",
+        _item2 == "2 shower cubicles and accessories"
+        and "Are the 2 shower cubicles and accessories everything" in _cont2
+        and "Is a 2" not in _cont2
+        and _item1 == "geyser",
+        got=f"item={_item2!r}; cont={_cont2!r}",
+    )
+    # A captured description satisfies the service question — never bounce a
+    # lead with a known project back to the opener (prod: 'yes' after the
+    # budget tie-down got "How may we assist you on plumbing services").
+    class _FakeApptNQ:
+        project_type = None
+        project_description = "2 shower cubicles and accessories"
+        customer_area = None
+        scheduled_datetime = None
+        customer_name = None
+        status = "pending"
+    from bot.views.plumbot.extraction_mixin import ExtractionMixin as _EM
+    class _FakeSelfNQ:
+        get_next_question_to_ask = _EM.get_next_question_to_ask
+        appointment = _FakeApptNQ()
+        def _time_confirmed(self):
+            return False
+        def _customer_name_declined(self):
+            return False
+    results.log(
+        "next question: captured description satisfies service_type (no opener bounce)",
+        _FakeSelfNQ().get_next_question_to_ask() == "area",
+        got=_FakeSelfNQ().get_next_question_to_ask(),
+    )
+    # "that on facebook" is a price-reference question — confirmed, never
+    # steamrolled (prod: got the area script). Long texts don't trigger.
+    _fbr = ResponseMixin._is_facebook_price_ref
+    results.log(
+        "facebook price ref: short mentions yes, long descriptions no",
+        _fbr("that on facebook") and _fbr("is that the fb price")
+        and not _fbr("I want a bathroom renovation")
+        and not _fbr("I saw a very long post about bathroom renovations on facebook "
+                     "and I want everything done including tiling and a new geyser"),
+        got="ok",
+    )
+    class _FakeSelfFB(_FakeSelfFollowup):
+        _is_facebook_price_ref = staticmethod(ResponseMixin._is_facebook_price_ref)
+        _facebook_price_confirm_reply = ResponseMixin._facebook_price_confirm_reply
+    _fbrep2 = _FakeSelfFB("area")._facebook_price_confirm_reply("english")
+    results.log(
+        "facebook price ref: reply confirms FB pricing + US$800 package contents",
+        "Facebook" in _fbrep2 and "US$800" in _fbrep2
+        and "freestanding tub and side chamber" in _fbrep2,
+        got=_fbrep2,
+    )
+    results.log(
+        "captured flow answer: 'that on facebook' never claimed",
+        _fca._is_captured_flow_answer("that on facebook", ['project_description']) is False,
+        got=str(_fca._is_captured_flow_answer("that on facebook", ['project_description'])),
     )
     # Service-type-only detector: bare service categories are NOT a description;
     # anything with a concrete item or real detail is.
@@ -2886,12 +3035,15 @@ results.log(
     expected="identity answer mentioning Plumbot/Homebase", got=str(_r),
 )
 
-# "Which plumber is coming?" must name/route to Tinashe (protected handoff).
+# "Which plumber is coming?" must name the plumber + protected contact number.
+# Unified on Takudzwa (2026-07-02): emails are signed Takudzwa, the FAQ and the
+# dynamic prompts say Takudzwa — a chat naming a different person than the email
+# signature was the real inconsistency (conv 369 got both names in two turns).
 _r = bot._maybe_answer_identity_question("Which plumber is coming to my house?")
 results.log(
     "direct-q: 'which plumber is coming?' names the plumber (conv 369)",
-    _r is not None and 'tinashe' in _r.lower(),
-    expected="answer naming Tinashe", got=str(_r),
+    _r is not None and 'takudzwa' in _r.lower() and '263774819901' in _r,
+    expected="answer naming Takudzwa + number", got=str(_r),
 )
 
 # A normal booking message must NOT trigger the identity handler (no over-reach).

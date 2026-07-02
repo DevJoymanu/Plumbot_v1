@@ -10,6 +10,16 @@ from decimal import Decimal, InvalidOperation
 
 
 class LeadQuerySet(models.QuerySet):
+    def real(self):
+        """Exclude console/scenario test lines (999-prefixed — the ITU-reserved
+        range used by the test console and Scenario Lab; see bot/test_console).
+        Client-facing pages list only real leads."""
+        return self.exclude(phone_number__startswith='whatsapp:+999')
+
+    def test_lines(self):
+        """Only console/scenario test lines (the staff-only Test Leads page)."""
+        return self.filter(phone_number__startswith='whatsapp:+999')
+
     def with_last_inbound(self):
         return self.exclude(last_inbound_at__isnull=True)
 

@@ -60,7 +60,8 @@ _PRICE_HINTS = (
 _DEFER_HINTS = (
     'get in touch', 'get back to you', 'get back to u', 'let you know',
     'reach out', 'touch base', 'contact you', 'call you', 'message you',
-    'text you', 'revert', 'be in touch', 'ndichaku', 'ndinokutaurira',
+    'text you', 'revert', 'be in touch', 'will advise', 'ndichaku',
+    'ndinokutaurira',
 )
 
 

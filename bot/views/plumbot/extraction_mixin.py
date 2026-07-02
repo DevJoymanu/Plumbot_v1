@@ -377,7 +377,13 @@ class ExtractionMixin:
             The only follow-up question is the customer's name, asked once
             after the booking confirmation is sent.
             """
-            if not self.appointment.project_type:
+            # A captured project description answers the service question too — a
+            # lead who said "2x shower cubicles and accessories" must never be
+            # bounced back to "How may we assist you on plumbing services" just
+            # because the service-type classifier couldn't label it (prod
+            # 2026-07-02: a 'yes' after the budget tie-down got the opener).
+            if (not self.appointment.project_type
+                    and not self.appointment.project_description):
                 return "service_type"
 
             if not self.appointment.project_description:

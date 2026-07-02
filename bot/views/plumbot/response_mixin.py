@@ -670,15 +670,37 @@ class ResponseMixin:
                 return reply
             return f"{reply.rstrip()}\n\n{self._yes_tiedown(language)}"
 
+        def _scope_item_phrase(self, message: str, base_label: str) -> str:
+            """Carry the customer's quantity and accessories into the item we name
+            back to them — "2x shower cubicles and asseries" must come back as
+            "2 shower cubicles and accessories", never just "a shower cubicle"
+            (prod 2026-07-02)."""
+            label = (base_label or '').strip() or 'that'
+            msg = (message or '')
+            fams = self._product_families_in(msg)
+            qty = max((self._quantity_for_family(msg, f) for f in fams), default=1)
+            if qty > 1:
+                label = f"{qty} {label}{'' if label.endswith('s') else 's'}"
+            if re.search(r'\b(accessor\w*|asseri\w*|screens?|rails?|fittings?)\b',
+                         msg.lower()):
+                label = f"{label} and accessories"
+            return label
+
         def _service_continuation_reply(self, item: str, language: str = "english") -> str:
             """Exact scripted first-pass reply to a service-availability question:
             confirm we handle it, then the assumptive 'only thing?' close. Item is
             filled in; wording is fixed for consistency. Paraphrasing (ai_answer_faq)
             is used only on a repeat ask."""
             it = (item or 'that').strip()
+            # Plural / compound items ("2 shower cubicles and accessories") need
+            # plural grammar, not "Is a 2 shower cubicles…".
+            plural = bool(re.match(r'^\d', it)) or ' and ' in it
             if language == 'shona':
                 return (f"Ehe, tinoita {it} pamwe nemamwe mabasa epaipi ese "
                         f"akabatana nazvo.\n\n{it} chete here chamuri kuda kugadzirisa?")
+            if plural:
+                return (f"Yes, we handle {it} and all related plumbing work.\n\n"
+                        f"Are the {it} everything you're looking to get sorted?")
             return (f"Yes, we handle {it} and all related plumbing work.\n\n"
                     f"Is a {it} the only thing you're looking to get sorted?")
 
@@ -1147,6 +1169,32 @@ class ResponseMixin:
             return all(t in service_core or t in fillers for t in tokens)
 
         @staticmethod
+        def _is_facebook_price_ref(message: str) -> bool:
+            """'that on facebook' / 'is that the fb price' — the lead is checking
+            the quoted prices against the ad they clicked. Must be confirmed, never
+            steamrolled by the next booking question (prod 2026-07-02: got
+            'All good, what area are you in?'). Short messages only, so a long
+            project description that merely mentions Facebook doesn't trigger."""
+            msg = (message or '').lower().strip()
+            if len(msg) > 80:
+                return False
+            return 'facebook' in msg or bool(re.search(r'\bfb\b', msg))
+
+        def _facebook_price_confirm_reply(self, language: str = "english") -> str:
+            """Confirm the chat prices match the Facebook ad, restate what the
+            US$800 package covers, and close (no stacked question if the last
+            turn was already a tie-down)."""
+            if language == 'shona':
+                body = ("Ehe — iyi ndiyo mitengo yedu yazvino, yakafanana neya "
+                        "paFacebook page yedu. Facebook package yeUS$800 ine "
+                        "freestanding tub ne side chamber, zvaiswa.")
+            else:
+                body = ("Yes — those are our current prices, the same as on our "
+                        "Facebook page. The US$800 Facebook package specifically "
+                        "covers a freestanding tub and side chamber, fitted.")
+            return self._append_tiedown(body, language)
+
+        @staticmethod
         def _is_size_spec_question(message: str) -> bool:
             """Narrow size/spec ask ("how big are your tubs", "what sizes do
             they come in") — must route to the measurements reply, never the
@@ -1288,6 +1336,7 @@ class ResponseMixin:
             'vanity':  'vanity',
             'toilet':  'toilet',
             'chamber': 'side chamber',
+            'basin':   'basin',
         }
         _SCOPE_SHORT = {
             'shower':  'cubicle',
@@ -1296,6 +1345,7 @@ class ResponseMixin:
             'vanity':  'vanity',
             'toilet':  'toilet',
             'chamber': 'side chamber',
+            'basin':   'basin',
         }
         # (supply, labour) behind each rough all-in figure — same homebase.md
         # source as _FAMILY_ROUGH_PRICE / _FAMILY_LABOUR_BREAKDOWN. Numeric so we
@@ -1308,6 +1358,17 @@ class ResponseMixin:
             'toilet':  (50, 20),
             'chamber': (130, 30),
         }
+        # Flat 'from' prices where homebase.md gives NO supply/labour split
+        # (basin pedestal/corner: US$70). Never invent a split — quote the flat
+        # figure. Real-lead corpus: "fit a standalone tab, chamber and sink"
+        # silently dropped the sink because basin had no price entry.
+        _FAMILY_FLAT_PRICE = {'basin': 70}
+        # Freestanding tub figures (homebase.md): tub US$400 + mixer US$150 +
+        # install US$120 → from US$670 all-in. Used when the customer explicitly
+        # says standalone/freestanding in a multi-item ask, so the combined reply
+        # doesn't quote built-in money for a freestanding job.
+        _FREESTANDING_TUB_ALLIN = 670
+        _FREESTANDING_TUB_SPLIT = "tub from US$400 + mixer US$150, install from US$120"
         _QTY_WORDS = {
             'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6,
             'pair': 2, 'couple': 2, 'double': 2,
@@ -1415,7 +1476,7 @@ class ResponseMixin:
                 source = getattr(appt, 'project_description', None) or ''
 
             fams = self._product_families_in(source)
-            order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
+            order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber', 'basin']
             scope = [(f, self._quantity_for_family(source, f)) for f in order if f in fams]
             has_accessories = bool(re.search(
                 r'\b(accessor\w*|asseri\w*|screens?|rails?|fittings?)\b', source.lower()
@@ -1425,17 +1486,35 @@ class ResponseMixin:
         def _num_word(self, n: int) -> str:
             return self._NUM_WORDS.get(n, str(n))
 
-        def _scope_allin_phrase(self, family: str, qty: int) -> str:
+        def _scope_allin_phrase(self, family: str, qty: int, fs_tub: bool = False) -> str:
             """All-in ballpark for one fixture, e.g. 'shower cubicle from US$170'
-            (or '... US$170 each (×2 ≈ US$340)' when more than one)."""
-            supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
-            allin = supply + labour
-            label = self._SCOPE_LABEL[family]
+            (or '... US$170 each (×2 ≈ US$340)' when more than one). fs_tub means
+            the customer explicitly said standalone/freestanding, so the tub line
+            must use freestanding money, not built-in."""
+            if family == 'tub' and fs_tub:
+                allin, label = self._FREESTANDING_TUB_ALLIN, 'freestanding tub'
+            elif family in self._FAMILY_FLAT_PRICE:
+                allin, label = self._FAMILY_FLAT_PRICE[family], self._SCOPE_LABEL[family]
+            else:
+                supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
+                allin = supply + labour
+                label = self._SCOPE_LABEL[family]
             if qty > 1:
                 return f"{label} from US${allin} each (×{qty} ≈ US${allin * qty})"
             return f"{label} from US${allin}"
 
-        def _format_labour_scope(self, scope, has_accessories: bool) -> str:
+        def _labour_split_seg(self, family: str, fs_tub: bool):
+            """(split_text, allin) for one fixture in the labour breakdown. A flat
+            price (basin) has no split in homebase.md — never invent one."""
+            if family == 'tub' and fs_tub:
+                return self._FREESTANDING_TUB_SPLIT, self._FREESTANDING_TUB_ALLIN
+            if family in self._FAMILY_FLAT_PRICE:
+                return None, self._FAMILY_FLAT_PRICE[family]
+            supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
+            return f"supply from US${supply}, labour from US${labour}", supply + labour
+
+        def _format_labour_scope(self, scope, has_accessories: bool,
+                                 fs_tub: bool = False) -> str:
             """Supply + labour broken out per fixture (the customer asked about
             labour, so the labour figure must be visible), with the line total when
             quantity > 1. One flowing line for a single fixture, a bullet list for
@@ -1444,12 +1523,13 @@ class ResponseMixin:
                             if has_accessories else "")
             if len(scope) == 1:
                 family, qty = scope[0]
-                supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
-                allin = supply + labour
-                short = self._SCOPE_SHORT[family]
+                split, allin = self._labour_split_seg(family, fs_tub)
+                short = ('freestanding tub' if (family == 'tub' and fs_tub)
+                         else self._SCOPE_SHORT[family])
                 each = " fitted each" if qty > 1 else " fitted"
-                line = (f"Rough starting prices per {short}: supply from US${supply}, "
-                        f"labour from US${labour} — about US${allin}{each}.")
+                line = (f"Rough starting prices per {short}: {split} — "
+                        f"about US${allin}{each}." if split else
+                        f"Rough starting price per {short}: from US${allin}.")
                 if qty > 1:
                     line += f" For {self._num_word(qty)} that's around US${allin * qty} all-in"
                     line += (", accessories on top depending on what you go for."
@@ -1458,13 +1538,14 @@ class ResponseMixin:
                 return line + acc_sentence
             lines = []
             for family, qty in scope:
-                supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
-                allin = supply + labour
-                label = self._SCOPE_LABEL[family].capitalize()
+                split, allin = self._labour_split_seg(family, fs_tub)
+                label = ('Freestanding tub' if (family == 'tub' and fs_tub)
+                         else self._SCOPE_LABEL[family].capitalize())
                 seg = f"{label}"
                 if qty > 1:
                     seg += f" (x{qty})"
-                seg += f": supply from US${supply}, labour from US${labour} — about US${allin} fitted"
+                seg += (f": {split} — about US${allin} fitted" if split
+                        else f": from US${allin}")
                 if qty > 1:
                     seg += f" each, {self._num_word(qty)} ≈ US${allin * qty} all-in"
                 lines.append("• " + seg)
@@ -1628,6 +1709,15 @@ class ResponseMixin:
             msg = (message or '').strip().lower()
             if '?' in msg:
                 return False
+            # A question without the '?' is still a question — conv 427: "what are
+            # the measurements of your tubs ..." was claimed as a flow answer and
+            # steamrolled by the area script. Interrogatives never claim.
+            if re.search(r'\b(what|how|when|where|which|why|who)\b', msg):
+                return False
+            # "that on facebook" is the lead checking the quoted price against the
+            # ad — a question, not a flow answer (prod: got the area script).
+            if 'facebook' in msg or re.search(r'\bfb\b', msg):
+                return False
             if self._asks_for_quote(msg) or self._asks_price_figure(msg):
                 return False
             request_markers = (
@@ -1682,6 +1772,10 @@ class ResponseMixin:
                 labour_breakdown = self._asks_about_labour(message)
             is_shona = language == "shona"
             scope, has_accessories = self._active_scope(message)
+            # Customer explicitly said standalone/freestanding → the tub line must
+            # carry freestanding money (US$670), never built-in (US$160). Real
+            # lead: "fit a standalone tab, chamber and sink" was quoted built-in.
+            fs_tub = self._tub_type_in_message(message) == 'freestanding'
 
             # No concrete scope to work from → fall back to the rough menu so the
             # lead still gets figures.
@@ -1692,9 +1786,10 @@ class ResponseMixin:
                          if is_shona else "Rough all-in prices (supply + install): ")
                 body = f"{intro}{priced}."
             elif labour_breakdown:
-                body = self._format_labour_scope(scope, has_accessories)
+                body = self._format_labour_scope(scope, has_accessories, fs_tub=fs_tub)
             else:
-                priced = ", ".join(self._scope_allin_phrase(f, q) for f, q in scope)
+                priced = ", ".join(self._scope_allin_phrase(f, q, fs_tub=fs_tub)
+                                   for f, q in scope)
                 intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
                          if is_shona else "Rough all-in prices (supply + install): ")
                 body = f"{intro}{priced}."
@@ -2016,7 +2111,8 @@ class ResponseMixin:
                     return oos_reply
 
                 # ── PRODUCT SIZE / SPEC QUESTION ─────────────────────────────────────
-                _spec_triggers = ('how big', 'what size', 'what sizes', 'dimensions', 'how large', 'how wide', 'how long')
+                _spec_triggers = ('how big', 'what size', 'what sizes', 'dimensions',
+                                  'how large', 'how wide', 'how long', 'measurement')
                 _tub_words = ('tub', 'tubs', 'bathtub', 'bathtubs', 'free standing', 'freestanding', 'standalone')
                 _msg_lower = incoming_message.lower()
                 if any(t in _msg_lower for t in _spec_triggers) and any(w in _msg_lower for w in _tub_words):
@@ -2348,6 +2444,17 @@ class ResponseMixin:
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
                         )
+                    elif (self._is_facebook_price_ref(incoming_message)
+                            and not _asks_figure):
+                        # "that on facebook" — confirm the quoted prices match the
+                        # ad; never steamroll with the next booking question.
+                        print("📘 Facebook price reference — confirming FB pricing")
+                        try:
+                            from bot.repeated_question_detector import detect_language as _dlf
+                            _fb_lang = _dlf(incoming_message)
+                        except Exception:
+                            _fb_lang = 'english'
+                        reply = self._facebook_price_confirm_reply(_fb_lang)
                     elif (self._is_captured_flow_answer(incoming_message, updated_fields)
                             and not _asks_figure):
                         # The message IS the answer to the flow question we just
@@ -3048,11 +3155,14 @@ class ResponseMixin:
             Answer a direct identity question before advancing the booking flow.
             Returns the answer, or None if the message is not an identity question
             (so the normal flow proceeds untouched). Routes to the protected
-            human contact (Tinashe) for the hands-on plumber.
+            human contact (Takudzwa, +263774819901) for the hands-on plumber.
             """
             m = (message or '').lower()
             asks_plumber = any(p in m for p in (
                 'which plumber', 'who is coming', "who's coming", 'name of the plumber',
+                # conv 369 verbatim: "what is the name of plumber visiting the house"
+                'name of plumber', 'plumber visiting', 'who is visiting',
+                'who will be visiting', 'who will visit',
                 'plumber name', "plumber's name", 'who will come', 'who is the plumber',
                 'who will be coming', 'which technician', 'who am i dealing',
             ))
@@ -3068,13 +3178,13 @@ class ResponseMixin:
             )
             if asks_plumber:
                 return (
-                    f"You'll be looked after by Tinashe, our lead plumber at Homebase Plumbers — "
+                    f"You'll be looked after by Takudzwa, our lead plumber at Homebase Plumbers — "
                     f"he handles the visit personally. You can reach him directly on {number}.\n\n"
                     "Any other work around the place you'd want sorted while we're there?"
                 )
             return (
-                "You're chatting with Plumbot, the assistant for Homebase Plumbers here in Harare"
-                f"Our plumber Tinashe handles the hands-on work (reach him on {number}).\n\n"
+                "You're chatting with Plumbot, the assistant for Homebase Plumbers here in Harare. "
+                f"Our plumber Takudzwa handles the hands-on work (reach him on {number}).\n\n"
                 "Anything else on the property that needs looking at?"
             )
 
@@ -3092,7 +3202,7 @@ class ResponseMixin:
             ).replace("+", "").replace("whatsapp:", "")
             return (
                 f"Let me get the right person to help you directly — "
-                f"you can reach Tinashe on +{number} and he'll sort it from there.\n\n"
+                f"you can reach Takudzwa on +{number} and he'll sort it from there.\n\n"
                 "Or just tell me in a few words what you need and I'll take it from there."
             )
 
@@ -3572,7 +3682,7 @@ class ResponseMixin:
             size_keywords = (
                 'how big', 'what size', 'what sizes', 'dimensions', 'how large',
                 'how wide', 'how long', 'size', 'big', 'length', 'width', 'cm',
-                'mm', 'metre', 'meter', 'fit', 'fits', 'will it fit',
+                'mm', 'metre', 'meter', 'fit', 'fits', 'will it fit', 'measurement',
             )
             return any(kw in msg for kw in size_keywords)
 

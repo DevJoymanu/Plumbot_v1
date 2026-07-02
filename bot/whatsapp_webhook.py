@@ -2074,6 +2074,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         from .views import Plumbot
         plumbot = Plumbot(phone_number)
+        # One Appointment instance per turn: Plumbot.__init__ get_or_creates its
+        # OWN copy, and a later save from that stale copy resurrects state this
+        # handler already changed (prod: [SERVICE_CONFIRM_PENDING] was removed on
+        # the 'yes' turn, then written back by the retry-count save — so the next
+        # message got consumed by the confirm flow instead of being answered).
+        plumbot.appointment = appointment
 
         reply = None
 
@@ -2290,6 +2296,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 _item = (_PRODUCT_LABEL.get(uc_product_intent(_uclass))
                          or uc_extracted(_uclass).get('project_description')
                          or _derive_service_item(message_body))
+                # Carry quantity + accessories from the customer's own words
+                # ("2x shower cubicles and asseries" → "2 shower cubicles and
+                # accessories") so the confirm, the description, and later scope
+                # pricing all reflect what they actually asked for.
+                if _item:
+                    _item = plumbot._scope_item_phrase(message_body, str(_item))
                 if _item and not appointment.project_description:
                     appointment.project_description = str(_item)[:120]
                     appointment.save(update_fields=['project_description'])
@@ -2688,6 +2700,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             plumbot._names_multiple_products(message_body)
             or (plumbot._asks_about_labour(message_body)
                 and len(plumbot._context_product_families(message_body)) >= 2)
+            # A bare "how much" naming nothing, with a captured scope on file
+            # ("2 shower cubicles and accessories") must price THAT scope — not
+            # whichever intent the classifier guessed (prod: got the Facebook
+            # tub package instead of the cubicles the lead named).
+            or (not plumbot._product_families_in(message_body)
+                and plumbot._context_product_families(message_body))
         ):
             # Explicit how-much/price naming MULTIPLE items ("how much tab and
             # shower") -> price every item named, not just the one a single-intent

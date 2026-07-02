@@ -124,6 +124,11 @@ urlpatterns = [
     path('test-console/poll/', views.test_console_poll, name='test_console_poll'),
     path('test-console/reset/', views.test_console_reset, name='test_console_reset'),
 
+    # Test leads (999-prefixed console/scenario lines) — staff-only, URL-only,
+    # behind the test-console password gate; excluded from the appointments page.
+    path('test-leads/', views.test_leads_view, name='test_leads'),
+    path('test-leads/purge/', views.test_leads_purge, name='test_leads_purge'),
+
     # Scenario Lab — run the conversation scenario suite from the browser
     path('scenario-lab/', views.scenario_lab_view, name='scenario_lab'),
     path('scenario-lab/run/', views.scenario_lab_run, name='scenario_lab_run'),
