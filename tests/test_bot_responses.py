@@ -1511,6 +1511,32 @@ try:
                       for m, f, e in FLOW_ANSWER_CASES if _fca._is_captured_flow_answer(m, f) is not e)
             or "all as expected",
     )
+    # The first-pass description question: generic service categories get the
+    # EXACT approved script ("Got it! Can you tell me a bit more about the
+    # project?") — never a multi-part contextual interrogation (prod: "bathroom
+    # and kitchen installations" got a kitchen-only pipework grilling). Only
+    # fault/repair types keep a targeted question.
+    class _FakeApptDQ:
+        def __init__(self, pt):
+            self.project_type = pt
+    class _FakeSelfDQ:
+        _get_contextual_description_question = ResponseMixin._get_contextual_description_question
+        _get_first_pass_question = ResponseMixin._get_first_pass_question
+        def __init__(self, pt):
+            self.appointment = _FakeApptDQ(pt)
+    _DQ_SCRIPT = "Got it! Can you tell me a bit more about the project?"
+    _dq_ok = all(
+        _FakeSelfDQ(pt)._get_first_pass_question("project_description") == _DQ_SCRIPT
+        for pt in ("kitchen_installation", "bathroom_installation",
+                   "bathroom_and_kitchen_renovation", "new_plumbing_installation",
+                   "bathroom_renovation", None)
+    )
+    _dq_drain = _FakeSelfDQ("drain_unblocking")._get_first_pass_question("project_description")
+    results.log(
+        "description question: generic services use the exact script; repairs stay targeted",
+        _dq_ok and "Which drain is blocked" in _dq_drain,
+        got=f"generic ok={_dq_ok}; drain={_dq_drain!r}",
+    )
     # Service-type-only detector: bare service categories are NOT a description;
     # anything with a concrete item or real detail is.
     _sto = ResponseMixin._is_service_type_only

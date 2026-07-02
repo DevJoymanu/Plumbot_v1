@@ -283,35 +283,15 @@ class ResponseMixin:
 
 
         def _get_contextual_description_question(self) -> str:
-            """Return a service-specific, Hormozi-style question to capture project detail."""
+            """First-pass description question. Generic service categories
+            (installations / renovations / unknown) stick to the EXACT approved
+            script — a wordy multi-part interrogation reads as pre-meditated, and
+            a misclassified project_type makes it wrong too (prod: "bathroom and
+            kitchen installations" got a kitchen-only pipework grilling). Only
+            fault/repair services keep a targeted question, where the specifics
+            genuinely change the job."""
             svc = (self.appointment.project_type or '').lower()
 
-            if svc == 'bathroom_installation':
-                return (
-                    "Are we fitting the bathroom from scratch in a new space, "
-                    "or converting an existing room — and which fixtures do you want: "
-                    "toilet, shower, bath, or the full set?"
-                )
-            if svc == 'kitchen_installation':
-                return (
-                    "Is this kitchen being plumbed fresh, or is there existing pipework "
-                    "to work around — and are we talking sink, dishwasher connection, or both?"
-                )
-            if 'bathroom' in svc and 'kitchen' in svc:
-                return (
-                    "Which room is the priority — bathroom, kitchen, or both at once? "
-                    "And is it a full redo or specific fixtures you want sorted?"
-                )
-            if 'bathroom' in svc:
-                return (
-                    "Is this a full bathroom redo — tiling, fittings, the works — "
-                    "or are you targeting specific things like the shower, tub, or toilet?"
-                )
-            if 'kitchen' in svc:
-                return (
-                    "Is this a full kitchen refit or specific work — "
-                    "new sink, countertop plumbing, or drainage?"
-                )
             if 'drain' in svc:
                 return (
                     "Which drain is blocked — kitchen, bathroom, or outside? "
@@ -322,25 +302,18 @@ class ResponseMixin:
                     "Where's the pipe — in a wall, under a sink, or outside? "
                     "And is it dripping or has it fully burst?"
                 )
-            if 'geyser' in svc:
+            if 'geyser' in svc and 'repair' in svc:
                 return (
                     "Is the geyser not heating at all, leaking, or just making noise — "
                     "and how long has it been like that?"
                 )
-            if 'toilet' in svc:
+            if 'toilet' in svc and 'repair' in svc:
                 return (
                     "What's the toilet doing — leaking at the base, not flushing, "
                     "or running continuously?"
                 )
-            if 'installation' in svc:
-                return (
-                    "Is this for a new build or an extension — "
-                    "and which areas need plumbing: bathroom, kitchen, or the full house?"
-                )
-            return (
-                "What specifically needs doing — the more detail, "
-                "the sharper the quote we can give you."
-            )
+            # Generic case — the approved script, verbatim.
+            return "Can you tell me a bit more about the project?"
 
         def _format_day(self, date_obj) -> str:
             """Return a warm, human day label relative to today, e.g.
