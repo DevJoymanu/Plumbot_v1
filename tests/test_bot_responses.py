@@ -1474,6 +1474,38 @@ try:
              and "Free-standing bathtubs" not in _bi),
         got=f"corner={_corner!r}",
     )
+    # A bare flow ANSWER just captured by extraction ("Bathroom and kitchen
+    # installations." answering the opener) must stick to the script — never get
+    # hijacked into the job-quote visit pitch just because it says 'installation'.
+    # An actual request ("need a quote to fit…", "I want you to fit…") still routes.
+    class _FakeSelfFA:
+        _is_captured_flow_answer = ResponseMixin._is_captured_flow_answer
+        _asks_for_quote = ResponseMixin._asks_for_quote
+        _asks_price_figure = ResponseMixin._asks_price_figure
+    _fca = _FakeSelfFA()
+    FLOW_ANSWER_CASES = [
+        ("Bathroom and kitchen installations.", ['project_description'], True),
+        ("new installation in Graylands park", ['project_description', 'area'], True),
+        ("Bathroom renovation", ['service_type'], True),
+        # Requests / asks keep the quote route:
+        ("Need a quote to fit tub and shower", ['project_description'], False),
+        ("I want you to fit a tub and shower", ['project_description'], False),
+        ("Can you install geysers?", ['project_description'], False),
+        ("how much to install a tub", ['project_description'], False),
+        # Nothing captured this turn -> not a flow answer:
+        ("Bathroom and kitchen installations.", [], False),
+        ("Bathroom and kitchen installations.", ['area'], False),
+    ]
+    _fca_ok = all(
+        _fca._is_captured_flow_answer(m, f) is e for m, f, e in FLOW_ANSWER_CASES
+    )
+    results.log(
+        "captured flow answer: bare answer sticks to script; requests keep the quote route",
+        _fca_ok,
+        got="; ".join(f"{m[:26]!r}/{f}->{_fca._is_captured_flow_answer(m, f)}"
+                      for m, f, e in FLOW_ANSWER_CASES if _fca._is_captured_flow_answer(m, f) is not e)
+            or "all as expected",
+    )
     # _product_price_close (tub / Facebook-package replies): value-check first,
     # then the open "which one?" question once a tie-down has gone out.
     _pc1 = _FakeSelfFollowup("project_description")._product_price_close("english")

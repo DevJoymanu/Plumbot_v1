@@ -1576,6 +1576,31 @@ class ResponseMixin:
                 return True
             return self._names_multiple_products(msg)
 
+        def _is_captured_flow_answer(self, message: str, updated_fields) -> bool:
+            """True when THIS message was just consumed as the answer to the flow
+            question we asked — extraction captured service_type / project
+            description from it — and it contains no quote/price ask, no question,
+            and no request phrasing. A bare project statement like "Bathroom and
+            kitchen installations." (answering "How may we assist…?") must stick to
+            the script and advance ("All good, what area are you in?"), NOT get
+            hijacked into the job-quote visit pitch just because it mentions
+            'installation' (prod, 2026-07-02). An actual request ("need a quote to
+            fit tub and shower", "I want you to fit…") still routes to the pitch."""
+            if not updated_fields:
+                return False
+            if not ({'project_description', 'service_type'} & set(updated_fields)):
+                return False
+            msg = (message or '').strip().lower()
+            if '?' in msg:
+                return False
+            if self._asks_for_quote(msg) or self._asks_price_figure(msg):
+                return False
+            request_markers = (
+                'can you', 'could you', 'do you', 'i want', 'i need', 'we want',
+                'we need', 'looking for', 'please', 'help me', 'ndinoda', 'ndoda',
+            )
+            return not any(m in msg for m in request_markers)
+
 
         def _capture_named_products_as_description(self, message: str) -> None:
             """
@@ -2284,6 +2309,20 @@ class ResponseMixin:
                     # never asked for. A price-figure ask still falls through to pricing.
                     elif (self._is_purchase_commitment(incoming_message) and not _asks_figure):
                         print("🛒 Purchase commitment — acknowledge & progress, no price/spiel")
+                        reply = self.generate_contextual_response(
+                            incoming_message, next_question, updated_fields,
+                            quoted_context=quoted_context,
+                        )
+                    elif (self._is_captured_flow_answer(incoming_message, updated_fields)
+                            and not _asks_figure):
+                        # The message IS the answer to the flow question we just
+                        # asked — extraction consumed it ("Bathroom and kitchen
+                        # installations." answering the opener). Stick to the
+                        # script: advance with the exact next scripted question
+                        # ("All good, what area are you in?"). Never hijack it
+                        # into the quote pitch or the standalone-Q answerer just
+                        # because it mentions 'installation' (prod, 2026-07-02).
+                        print("📜 Flow answer captured — sticking to the scripted next question")
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
