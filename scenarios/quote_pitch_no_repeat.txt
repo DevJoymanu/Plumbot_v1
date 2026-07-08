@@ -1,0 +1,29 @@
+# Quote pitch must never repeat (prod 2026-07-08, Patrick Dzvairo / The Pavilion).
+# The lead asked for a quote (pitch sent once), later described the job with
+# "...require installation of all the plumbing requirements on the plan" —
+# the labour markers re-matched and the bot re-sent the IDENTICAL pitch line.
+# Fixed by _already_sent_job_quote_pitch: second job-shaped message gets only
+# the scripted next question. Also guards: quote request never gets chat
+# prices, and the flow still advances to the assumptive time slot.
+
+> Good afternoon
+expect: how may we assist you on plumbing services
+
+> I would like to request a quote for plumbing services
+expect: all-in figure
+expect: what area are you in
+reject: US$
+
+> We are in Chitungwiza
+expect: what works better for you
+reject: all-in figure
+reject: US$
+
+> It's a new building and we require installation of all the plumbing requirements on the plan
+expect: what works better for you
+reject: all-in figure
+reject: US$
+
+> Tomorrow would be great!
+expect: 9am
+reject: all-in figure
