@@ -1463,8 +1463,14 @@ try:
     class _FakeSelfJQ:
         _build_job_quote_reply = ResponseMixin._build_job_quote_reply
         _get_first_pass_question = ResponseMixin._get_first_pass_question
-        def __init__(self, nq):
+        _already_sent_job_quote_pitch = ResponseMixin._already_sent_job_quote_pitch
+        def __init__(self, nq, history=None):
             self._nq = nq
+            if history is not None:
+                class _Appt:
+                    pass
+                self.appointment = _Appt()
+                self.appointment.conversation_history = history
         def get_next_question_to_ask(self):
             return self._nq
         def _capture_named_products_as_description(self, message):
@@ -1497,6 +1503,35 @@ try:
         and _jq_av_parts[1].startswith("What works better for you")
         and not _jq_av_parts[1].lower().startswith("great"),
         got=repr(_jq_av_parts),
+    )
+    # Never re-pitch: once the visit pitch has been sent, a later job-shaped
+    # message ("...require installation of all the plumbing requirements on the
+    # plan") must get ONLY the scripted next question — no pitch line, no split
+    # (prod: pitch sent twice in one conversation, 2026-07-08).
+    _jq_dup = _FakeSelfJQ("availability_date", history=[
+        {"role": "user", "content": "I would like to request a quote for plumbing services"},
+        {"role": "assistant",
+         "content": "We'll get you an exact, all-in figure free on a quick on-site visit."},
+    ])._build_job_quote_reply(
+        "english",
+        "It's a new building and we require installation of all the plumbing "
+        "requirements on the plan")
+    results.log(
+        "job quote reply: pitch never repeats — second job message gets only the scripted question",
+        _SPLIT not in _jq_dup
+        and "all-in figure" not in _jq_dup
+        and "what works better for you" in _jq_dup.lower(),
+        got=repr(_jq_dup),
+    )
+    # Shona pitch in history counts too — the guard is language-agnostic.
+    _jq_dup_sn = _FakeSelfJQ("area", history=[
+        {"role": "assistant",
+         "content": "Tinokupai quote chaiyo, yese-yese, mahara patinouya kuzoona pamba."},
+    ])._build_job_quote_reply("english", "need a quote to fit tub and shower")
+    results.log(
+        "job quote reply: shona pitch in history also blocks a re-pitch",
+        _SPLIT not in _jq_dup_sn and "all-in figure" not in _jq_dup_sn,
+        got=repr(_jq_dup_sn),
     )
     # Tub sizes: a size question with NO specific tub type named must list ALL
     # measurements (built-in + free-standing + corner); naming a type gives just

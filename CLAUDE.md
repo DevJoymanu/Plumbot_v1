@@ -99,7 +99,7 @@ Orientation for the next session: what the system does today, why it's built thi
 - `extraction_mixin` pulls fields (service, area, plan status, name, datetime) and tracks `get_next_question_to_ask`; `availability_mixin` checks business-hours slots and suggests alternatives; `booking_mixin` validates completeness and books; `reschedule_mixin` handles AI-detected reschedules; `plan_upload_mixin` runs "I'll send my plan" flows and plan-status nudges; `notification_mixin` alerts the plumber and optionally Google Calendar.
 
 ### Follow-ups & cron (`bot/management/commands/`)
-- `send_followups` — 4 follow-ups over 18h (0/6/12/18h) for cold leads. Other Railway crons: `send_reminders`, `send_job_reminders`, `notify_priority_leads`, `summarize_unconfirmed_leads`, `process_inbound_emails`.
+- `send_followups` — 4 follow-ups over 18h (0/6/12/18h) for cold leads. Other Railway crons: `send_reminders`, `send_job_reminders`, `summarize_unconfirmed_leads`, `process_inbound_emails`. (`notify_priority_leads` — the daily plumber WhatsApp alert — was removed 2026-07-08; the priority-leads dashboard pages remain.)
 
 ### Email
 - Customer/transactional email goes through the **SendGrid v3 HTTP API (port 443)** in `bot/plumber_notifications.py` (`_send_via_sendgrid`); Railway blocks all outbound SMTP, so the legacy `IPv4SMTPBackend` (`bot/email_backends.py`) is a fallback only. SendGrid click/open tracking is disabled to keep `tel:`/`wa.me` links clean. HTML lives in `bot/customer_emails.py`; subjects carry `[APT-{id}]` so IMAP replies match back to the appointment.

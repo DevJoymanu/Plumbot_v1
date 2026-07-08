@@ -1660,11 +1660,26 @@ class Appointment(models.Model):
             if path in seen_paths:
                 continue
             seen_paths.add(path)
+            # The URL in the note is a snapshot from upload time — on R2 that's
+            # a presigned link that expires (~1h), so stored URLs go dead.
+            # Regenerate from the path at render time; keep the snapshot only
+            # if the storage backend can't produce one.
+            try:
+                url = default_storage.url(path)
+            except Exception:
+                pass
+            ext = path.lower()
+            if kind == 'VIDEO':
+                ftype = 'video'
+            elif any(e in ext for e in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
+                ftype = 'image'
+            else:
+                ftype = 'document'
             files.append({
                 'path': path,
                 'url': url,
                 'label': path.split('/')[-1],
-                'type': 'video' if kind == 'VIDEO' else 'image',
+                'type': ftype,
                 'uploaded_at': None,
             })
 
@@ -1695,9 +1710,19 @@ class Appointment(models.Model):
                 urls.append(default_storage.url(self.plan_file))
             except Exception:
                 urls.append(self.plan_file)
-        pattern = re.compile(r'\[(FILE|VIDEO) UPLOADED\] .+? \| URL: (.+?) \|')
+        seen_paths = {str(self.plan_file)} if self.plan_file else set()
+        pattern = re.compile(r'\[(FILE|VIDEO) UPLOADED\] (.+?) \| URL: (.+?) \|')
         for match in pattern.finditer(self.internal_notes or ''):
-            url = match.group(2).strip()
+            path, url = match.group(2).strip(), match.group(3).strip()
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            # Regenerate from the path — stored URLs are expiring presigned
+            # snapshots (see get_all_uploaded_files).
+            try:
+                url = default_storage.url(path)
+            except Exception:
+                pass
             if url not in urls:
                 urls.append(url)
         return urls

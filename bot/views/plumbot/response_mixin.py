@@ -1810,6 +1810,27 @@ class ResponseMixin:
             return "\n\n".join([body, disclaimer, followup])
 
 
+        def _already_sent_job_quote_pitch(self) -> bool:
+            """True when a previous assistant turn already carried the job-quote
+            visit pitch, in either language. The pitch must never repeat: a later
+            job-shaped message ("...require installation of all the plumbing
+            requirements on the plan") re-matched the labour markers and re-sent
+            the identical lead line (prod, 2026-07-08)."""
+            pitch_markers = (
+                "exact, all-in figure free on a quick on-site visit",
+                "Tinokupai quote chaiyo",
+            )
+            try:
+                history = getattr(self.appointment, 'conversation_history', None) or []
+            except Exception:
+                return False
+            return any(
+                isinstance(entry, dict)
+                and entry.get('role') == 'assistant'
+                and any(m in (entry.get('content') or '') for m in pitch_markers)
+                for entry in history
+            )
+
         def _build_job_quote_reply(self, language: str = "english", message: str = None) -> str:
             """
             Acknowledge a job / multi-item quote request and route it to the free
@@ -1818,6 +1839,8 @@ class ResponseMixin:
             tie-down: no price was quoted, so "does that sit with your budget?"
             would be a non-sequitur. Capturing the named items as the description
             first means we advance (usually to area) rather than re-ask.
+            Once the pitch line has gone out, later calls send only the scripted
+            question (opener intact) — never the pitch again.
             """
             is_shona = language == "shona"
             lead = (
@@ -1831,6 +1854,8 @@ class ResponseMixin:
                 self._get_first_pass_question(self.get_next_question_to_ask())
                 or "All good, what area are you in?"
             )
+            if self._already_sent_job_quote_pitch():
+                return followup
             # Two separate messages: the acknowledgement is now the warm lead-in, so
             # drop a scripted opener ("Great,", "All good,") from the follow-up —
             # otherwise the second message reads as a second canned opener.
