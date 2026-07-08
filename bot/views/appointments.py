@@ -9,7 +9,7 @@ from .dashboard import (
     _followups_workspace_data,
     _appointments_sidebar_context,
 )
-from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
+from django.http import HttpResponse, JsonResponse, HttpResponseRedirect, FileResponse, Http404
 from django.urls import reverse, reverse_lazy
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -25,6 +25,7 @@ from django.core.files.storage import default_storage
 
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+import mimetypes
 import requests
 import pytz
 import os
@@ -652,6 +653,40 @@ def download_document(request, pk, document_type):
     
     messages.error(request, 'Document not found')
     return redirect('appointment_documents', pk=appointment.pk)
+
+
+@staff_required
+def serve_document(request, pk, idx):
+    """
+    Stream uploaded plan/document number `idx` (index into
+    get_all_uploaded_files) through Django. The browser never sees a storage
+    URL: direct links proved unreliable in prod (presigned R2 URLs expire;
+    a mis-set storage env yields a bare relative path that 404s). Reading
+    via default_storage works for any backend and stays staff-gated.
+    ?dl=1 forces a download instead of inline view.
+    """
+    appointment = get_object_or_404(Appointment, pk=pk)
+    files = appointment.get_all_uploaded_files()
+    if idx < 0 or idx >= len(files):
+        raise Http404('Document not found')
+    doc = files[idx]
+    try:
+        file_handle = default_storage.open(doc['path'], 'rb')
+    except Exception:
+        # Not in the current storage backend (e.g. saved to a container's
+        # local disk before R2 was configured). A stored absolute URL is the
+        # only remaining chance of reaching it.
+        url = doc.get('url') or ''
+        if url.startswith('http'):
+            return HttpResponseRedirect(url)
+        raise Http404('File is not available in storage')
+    content_type = mimetypes.guess_type(doc['label'])[0] or 'application/octet-stream'
+    return FileResponse(
+        file_handle,
+        content_type=content_type,
+        as_attachment=request.GET.get('dl') == '1',
+        filename=doc['label'],
+    )
 
 
 @staff_required

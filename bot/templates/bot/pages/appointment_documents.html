@@ -28,7 +28,7 @@
                         
                         <div class="document-icon">
                             {% if doc.type == 'image' %}
-                            <img src="{{ doc.url }}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;">
+                            <img src="{% url 'appointment_document_file' appointment.pk forloop.counter0 %}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #ddd;">
                             {% elif doc.type == 'video' %}
                             <i class="fas fa-file-video fa-2x text-warning"></i>
                             {% else %}
@@ -57,10 +57,10 @@
                         </div>
                     </div>
                     <div class="document-actions">
-                        <a href="{{ doc.url }}" class="btn btn-primary" target="_blank" download>
+                        <a href="{% url 'appointment_document_file' appointment.pk forloop.counter0 %}?dl=1" class="btn btn-primary">
                             <i class="fas fa-download"></i> Download
                         </a>
-                        <a href="{{ doc.url }}" class="btn btn-outline-primary" target="_blank">
+                        <a href="{% url 'appointment_document_file' appointment.pk forloop.counter0 %}" class="btn btn-outline-primary" target="_blank">
                             <i class="fas fa-eye"></i> View
                         </a>
                     </div>

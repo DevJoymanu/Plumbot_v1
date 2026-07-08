@@ -8,7 +8,7 @@ from .views import (
     complete_lead_appointment,
     cancel_appointment, unbook_appointment, test_whatsapp, export_appointments, CalendarView, handle_whatsapp_media,
     # Import the new document views
-    AppointmentDocumentsView, download_document,
+    AppointmentDocumentsView, download_document, serve_document,
     # Import the new quotation views
     CreateQuotationView, ViewQuotationView, EditQuotationView, send_quotation,create_quotation_api,
     QuotationsListView, StandaloneQuotationView, create_standalone_quotation_api, appointment_search_api,
@@ -75,6 +75,7 @@ urlpatterns = [
     
     # Document Routes
     path('appointments/<int:pk>/documents/', AppointmentDocumentsView.as_view(), name='appointment_documents'),
+    path('appointments/<int:pk>/documents/file/<int:idx>/', serve_document, name='appointment_document_file'),
     path('appointments/<int:pk>/download/<str:document_type>/', download_document, name='download_document'),
     
     path('api/quotations/create/', create_quotation_api, name='create_quotation_api'),

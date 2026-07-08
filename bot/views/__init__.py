@@ -43,6 +43,7 @@ from .appointments import (
     AppointmentDetailView,
     AppointmentDocumentsView,
     download_document,
+    serve_document,
     update_appointment,
     confirm_appointment,
     complete_lead_appointment,
