@@ -107,7 +107,55 @@
 
   /* ── Right: appointment record (real appointment-detail panes, tabbed) ── */
   .cw-side { width: 460px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--color-surface-lowest); border-left: var(--glass-border); overflow: hidden; }
-  .cw-side-tabs { flex-shrink: 0; display: flex; gap: 2px; padding: 14px 12px 0; overflow-x: auto; scrollbar-width: none; }
+  /* Lead header (mirrors appointment-detail header) */
+  .cw-lead { flex-shrink: 0; padding: 18px 18px 14px; border-bottom: 1px solid rgba(0,101,145,0.06); }
+  .cw-lead-top { display: flex; align-items: center; gap: 12px; }
+  .cw-lead-av {
+    flex-shrink: 0; width: 48px; height: 48px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-container));
+    color: #fff; font-family: var(--font-label); font-weight: 600; font-size: 16px; text-transform: uppercase;
+  }
+  .cw-lead-id { min-width: 0; }
+  .cw-lead-name { font-size: 17px; font-weight: 700; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cw-lead-meta { margin-top: 1px; font-size: 12.5px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cw-lead-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .cw-lead-btn {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 9px 12px; border-radius: var(--radius-pill); text-decoration: none;
+    font-family: var(--font-label); font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+    transition: opacity var(--transition), background var(--transition);
+  }
+  .cw-lead-btn.call { background: var(--color-surface-mid); color: var(--color-primary); }
+  .cw-lead-btn.call:hover { background: var(--color-surface-high); }
+  .cw-lead-btn.wa { background: #25D366; color: #fff; }
+  .cw-lead-btn.wa:hover { opacity: 0.92; }
+  .cw-lead-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+  .cw-pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--radius-pill);
+    font-family: var(--font-label); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+    background: var(--color-surface-mid); color: var(--color-text-2);
+  }
+  .cw-pill.booked { background: rgba(37,211,102,0.16); color: #0f7a3d; }
+  .cw-pill.pending { background: rgba(245,158,11,0.16); color: #b45309; }
+  .cw-pill.cancelled { background: var(--color-error-container); color: var(--color-on-error-container); }
+  .cw-pill.delayed { background: rgba(0,101,145,0.10); color: var(--color-primary); }
+  .cw-pill.very_hot { background: var(--color-error-container); color: var(--color-on-error-container); }
+  .cw-pill.hot { background: rgba(245,158,11,0.16); color: #b45309; }
+  .cw-pill.warm { background: rgba(37,211,102,0.16); color: #0f7a3d; }
+  .cw-pill.luke_warm { background: rgba(14,165,233,0.14); color: var(--color-primary); }
+  .cw-pill.cold { background: var(--color-surface-highest); color: var(--color-text-2); }
+  .cw-pill.win { background: var(--color-text-2); color: #fff; }
+  .cw-pill.win-open { background: #16a34a; color: #fff; }
+  .cw-pill.win-closed { background: var(--color-muted); color: #fff; }
+  .cw-score {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 24px; padding: 0 8px;
+    border-radius: var(--radius-pill); background: var(--color-primary); color: var(--color-on-primary);
+    font-family: var(--font-label); font-size: 12px; font-weight: 700;
+  }
+  .cw-score-txt { font-size: 12px; color: var(--color-text-2); }
+
+  .cw-side-tabs { flex-shrink: 0; display: flex; gap: 2px; padding: 10px 12px 0; overflow-x: auto; scrollbar-width: none; }
   .cw-side-tabs::-webkit-scrollbar { display: none; }
   .cw-side-tab {
     display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
@@ -217,7 +265,36 @@
 
   <!-- Right: the real appointment record, tabbed -->
   <aside class="cw-side">
+    <div class="cw-lead">
+      <div class="cw-lead-top">
+        <div class="cw-lead-av">{{ appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
+        <div class="cw-lead-id">
+          <div class="cw-lead-name">{{ appointment.customer_name|default:appointment.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+          <div class="cw-lead-meta">{{ appointment.phone_number }}{% if appointment.customer_area %} &middot; {{ appointment.customer_area }}{% endif %}</div>
+        </div>
+      </div>
+      <div class="cw-lead-actions">
+        <a class="cw-lead-btn call" href="tel:{{ appointment.phone_number|cut:'whatsapp:' }}"><i class="fas fa-phone"></i> Call</a>
+        <a class="cw-lead-btn wa" target="_blank" href="https://wa.me/{{ appointment.phone_number|cut:'whatsapp:'|cut:'+'|cut:'-'|cut:' '|cut:'('|cut:')' }}"><i class="fab fa-whatsapp"></i> WhatsApp</a>
+      </div>
+      <div class="cw-lead-pills">
+        <span class="cw-pill {% if appointment.status == 'confirmed' %}booked{% elif appointment.status == 'pending' %}pending{% elif appointment.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">{% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}</span>
+        <span class="cw-pill {{ appointment.lead_status|default:computed_lead_status }}">{{ computed_lead_status_label|default:appointment.get_lead_status_display }}</span>
+        <span class="cw-score">{{ computed_lead_score|default:appointment.lead_score }}</span>
+        <span class="cw-score-txt">Score {{ computed_lead_score|default:appointment.lead_score }}/100</span>
+        {% if appointment.chatbot_paused %}<span class="cw-pill pending">Bot paused</span>{% endif %}
+        <span class="cw-pill win" title="Free-form messaging window"><i class="far fa-clock"></i> {{ appointment.messaging_window_kind }} window</span>
+        {% if appointment.messaging_window_closes_at %}
+          {% if appointment.messaging_window_open %}
+          <span class="cw-pill win-open"><i class="far fa-paper-plane"></i> closes {{ appointment.messaging_window_closes_at|date:"D j M, H:i" }}</span>
+          {% else %}
+          <span class="cw-pill win-closed"><i class="far fa-paper-plane"></i> window closed</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
     <div class="cw-side-tabs" role="tablist">
+      <button type="button" class="cw-side-tab" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
       <button type="button" class="cw-side-tab is-active" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
       <button type="button" class="cw-side-tab" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
       <button type="button" class="cw-side-tab" data-tab="wa-followups"><i class="fab fa-whatsapp"></i> WhatsApp</button>

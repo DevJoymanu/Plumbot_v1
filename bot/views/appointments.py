@@ -293,6 +293,9 @@ class ConversationDetailView(TemplateView):
                 dt = timezone.make_aware(dt)
             local_sched = timezone.localtime(dt)
 
+        computed_score, computed_status = calculate_lead_score(appointment)
+        status_labels = dict(Appointment._meta.get_field('lead_status').choices)
+
         context.update({
             'active_nav': 'conversations',
             'appointment': appointment,
@@ -300,6 +303,9 @@ class ConversationDetailView(TemplateView):
             'conversation_history': appointment.conversation_history or [],
             'sched_date': local_sched.strftime('%Y-%m-%d') if local_sched else '',
             'sched_time': local_sched.strftime('%H:%M') if local_sched else '',
+            'computed_lead_score': computed_score,
+            'computed_lead_status': computed_status,
+            'computed_lead_status_label': status_labels.get(computed_status, 'Cold'),
         })
         return context
 
