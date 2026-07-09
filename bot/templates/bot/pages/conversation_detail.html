@@ -107,13 +107,7 @@
 
   /* ── Right: appointment record (real appointment-detail panes, tabbed) ── */
   .cw-side { width: 460px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--color-surface-lowest); border-left: var(--glass-border); overflow: hidden; }
-  .cw-side-head {
-    flex-shrink: 0; padding: 14px 18px;
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    border-bottom: 1px solid rgba(0,101,145,0.06);
-  }
-  .cw-side-head h4 { margin: 0; font-family: var(--font-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-2); }
-  .cw-side-tabs { flex-shrink: 0; display: flex; gap: 2px; padding: 8px 12px 0; overflow-x: auto; scrollbar-width: none; }
+  .cw-side-tabs { flex-shrink: 0; display: flex; gap: 2px; padding: 14px 12px 0; overflow-x: auto; scrollbar-width: none; }
   .cw-side-tabs::-webkit-scrollbar { display: none; }
   .cw-side-tab {
     display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
@@ -223,10 +217,6 @@
 
   <!-- Right: the real appointment record, tabbed -->
   <aside class="cw-side">
-    <div class="cw-side-head">
-      <h4>Appointment Record</h4>
-      <a class="cw-icon-btn" href="{% url 'appointment_detail' appointment.pk %}?source=conversations" title="Open full page"><i class="fas fa-up-right-from-square" style="font-size:13px;"></i></a>
-    </div>
     <div class="cw-side-tabs" role="tablist">
       <button type="button" class="cw-side-tab is-active" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
       <button type="button" class="cw-side-tab" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
