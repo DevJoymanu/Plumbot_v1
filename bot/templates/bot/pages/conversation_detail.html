@@ -148,6 +148,22 @@
   }
   .cw-quote:hover { transform: translateY(-1px); }
 
+  /* Tabs + panes */
+  .cw-tabs { flex-shrink: 0; display: flex; gap: 4px; padding: 10px 22px 0; }
+  .cw-tab {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 18px; border: none; background: transparent; cursor: pointer;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-label); font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+    color: var(--color-muted); transition: background var(--transition), color var(--transition);
+  }
+  .cw-tab:hover { color: var(--color-primary); }
+  .cw-tab.is-active { background: rgba(0,101,145,0.10); color: var(--color-primary); }
+  .cw-pane { flex: 1; min-height: 0; display: none; }
+  .cw-pane.is-active { display: flex; flex-direction: column; }
+  #recordFrame { flex: 1; width: 100%; border: none; background: var(--color-surface); }
+  .cw-wrap.record-mode .cw-side { display: none; }
+
   @media (max-width: 1180px) { .cw-side { display: none; } }
   @media (max-width: 860px) {
     .cw-list { display: none; }
@@ -204,6 +220,12 @@
       </div>
     </div>
 
+    <div class="cw-tabs">
+      <button type="button" class="cw-tab is-active" data-tab="chat"><i class="far fa-comment-dots"></i> Chat</button>
+      <button type="button" class="cw-tab" data-tab="record"><i class="far fa-folder-open"></i> Full record</button>
+    </div>
+
+    <div class="cw-pane is-active" id="pane-chat">
     {% if conversation_history %}
     <div class="cw-scroll" id="chatScroll">
       {% for message in conversation_history %}
@@ -233,6 +255,12 @@
         </div>
         <button class="cw-send" type="submit" title="Send"><i class="fas fa-paper-plane"></i></button>
       </form>
+    </div>
+    </div><!-- /pane-chat -->
+
+    <div class="cw-pane" id="pane-record">
+      <iframe id="recordFrame" title="Full appointment record"
+              data-src="{% url 'appointment_detail' appointment.pk %}?source=conversations&frame=1"></iframe>
     </div>
   </main>
 
@@ -314,6 +342,25 @@
     }
     var scroll = document.getElementById('chatScroll');
     if (scroll) scroll.scrollTop = scroll.scrollHeight;
+
+    // Tab switching: Chat ⇄ Full record (record frame is lazy-loaded once).
+    var wrap = document.querySelector('.cw-wrap');
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.cw-tab'));
+    var panes = { chat: document.getElementById('pane-chat'), record: document.getElementById('pane-record') };
+    var frame = document.getElementById('recordFrame');
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var name = tab.getAttribute('data-tab');
+        tabs.forEach(function (t) { t.classList.toggle('is-active', t === tab); });
+        Object.keys(panes).forEach(function (k) {
+          if (panes[k]) panes[k].classList.toggle('is-active', k === name);
+        });
+        if (wrap) wrap.classList.toggle('record-mode', name === 'record');
+        if (name === 'record' && frame && !frame.src) {
+          frame.src = frame.getAttribute('data-src');
+        }
+      });
+    });
   });
 </script>
 {% endblock %}
