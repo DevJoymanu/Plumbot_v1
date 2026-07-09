@@ -70,12 +70,12 @@
     font-size: 11px; font-weight: 800;
     border-radius: 10px; padding: 0 5px;
   }
-  .pl-chip.vh  { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+  .pl-chip.vh  { background:#ffdad6; color:#93000a; border-color:#fca5a5; }
   .pl-chip.hot { background:#fef3c7; color:#92400e; border-color:#fcd34d; }
   .pl-chip.warm{ background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
-  .pl-chip.luke{ background:#dbeafe; color:#1e3a8a; border-color:#93c5fd; }
+  .pl-chip.luke{ background:#c9e6ff; color:#1e3a8a; border-color:#93c5fd; }
   .pl-chip.cold{ background:#f3f4f6; color:#374151; border-color:#d1d5db; }
-  .pl-chip.vh   .pl-chip-count { background:#dc262622; color:#991b1b; }
+  .pl-chip.vh   .pl-chip-count { background:#ba1a1a22; color:#93000a; }
   .pl-chip.hot  .pl-chip-count { background:#f59e0b22; color:#92400e; }
   .pl-chip.warm .pl-chip-count { background:#10b98122; color:#065f46; }
   .pl-chip.luke .pl-chip-count { background:#0ea5e922; color:#1e3a8a; }
@@ -116,16 +116,16 @@
   .pl-section.collapsed .pl-sec-body { display: none; }
 
   /* Heat colour sets */
-  .pl-section.vh  .pl-sec-header, .pl-section.vh  .pl-sec-body { border-left-color: #dc2626; }
+  .pl-section.vh  .pl-sec-header, .pl-section.vh  .pl-sec-body { border-left-color: #ba1a1a; }
   .pl-section.hot .pl-sec-header, .pl-section.hot .pl-sec-body { border-left-color: #f59e0b; }
   .pl-section.warm.pl-sec-header, .pl-section.warm .pl-sec-body { border-left-color: #10b981; }
   .pl-section.luke.pl-sec-header, .pl-section.luke .pl-sec-body { border-left-color: #0ea5e9; }
   .pl-section.cold.pl-sec-header, .pl-section.cold .pl-sec-body { border-left-color: #6b7280; }
 
-  .pl-section.vh   .pl-sec-icon { background: #fee2e2; }
+  .pl-section.vh   .pl-sec-icon { background: #ffdad6; }
   .pl-section.hot  .pl-sec-icon { background: #fef3c7; }
   .pl-section.warm .pl-sec-icon { background: #d1fae5; }
-  .pl-section.luke .pl-sec-icon { background: #dbeafe; }
+  .pl-section.luke .pl-sec-icon { background: #c9e6ff; }
   .pl-section.cold .pl-sec-icon { background: #f3f4f6; }
 
   .pl-section.vh   .pl-sec-title { color: #7f1d1d; }
@@ -493,7 +493,7 @@
 <script>
 (function () {
   // Avatar colours
-  var COLORS = ['#006591','#006591','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
+  var COLORS = ['#006591','#006591','#25D366','#0ea5e9','#4648d4','#f59e0b','#ba1a1a'];
   document.querySelectorAll('.pl-avatar[data-name]').forEach(function (el) {
     var n = el.getAttribute('data-name') || '';
     el.style.background = COLORS[n.charCodeAt(0) % COLORS.length];
@@ -502,7 +502,7 @@
   // Score rings
   document.querySelectorAll('.pl-row[data-score]').forEach(function (row) {
     var score = parseInt(row.getAttribute('data-score')) || 0;
-    var color = score >= 80 ? '#ef4444' : score >= 60 ? '#f59e0b' : score >= 40 ? '#22c55e' : '#9ca3af';
+    var color = score >= 80 ? '#ba1a1a' : score >= 60 ? '#f59e0b' : score >= 40 ? '#22c55e' : '#9ca3af';
     var ring = row.querySelector('.pl-score-ring');
     var inner = row.querySelector('.pl-score-inner');
     if (ring) ring.style.background = 'conic-gradient(' + color + ' ' + (score * 3.6) + 'deg, #e5e7eb 0)';

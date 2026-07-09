@@ -30,12 +30,12 @@
 <div class="workspace-scroll">
   <div class="source-section">
     <div class="source-section-header">
-      <span class="accent"><i class="fas fa-fire" style="color:#ef4444;"></i> Very Hot Leads</span>
+      <span class="accent"><i class="fas fa-fire" style="color:#ba1a1a;"></i> Very Hot Leads</span>
       <span class="source-section-count">{{ source_workspace.very_hot_leads|length }}</span>
     </div>
     {% for lead in source_workspace.very_hot_leads %}
     <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ source_workspace.selected_response_age }}" class="source-list-row source-list-row--compact {% if lead.pk == appointment.pk %}is-current{% endif %}">
-      <div class="source-avatar" style="background:{% cycle '#22c55e' '#ef4444' '#f59e0b' '#0f766e' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-avatar" style="background:{% cycle '#22c55e' '#ba1a1a' '#f59e0b' '#0f766e' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
         <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
@@ -61,7 +61,7 @@
     </div>
     {% for lead in source_workspace.hot_leads %}
     <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ source_workspace.selected_response_age }}" class="source-list-row source-list-row--compact {% if lead.pk == appointment.pk %}is-current{% endif %}">
-      <div class="source-avatar" style="background:{% cycle '#ef4444' '#f59e0b' '#0ea5e9' '#8b5cf6' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-avatar" style="background:{% cycle '#ba1a1a' '#f59e0b' '#0ea5e9' '#4648d4' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
         <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>
@@ -87,7 +87,7 @@
     </div>
     {% for lead in source_workspace.warm_leads|slice:":8" %}
     <a href="{% url 'appointment_detail' lead.pk %}?source=priority_leads&response_age={{ source_workspace.selected_response_age }}" class="source-list-row source-list-row--compact {% if lead.pk == appointment.pk %}is-current{% endif %}">
-      <div class="source-avatar" style="background:{% cycle '#22c55e' '#14b8a6' '#0ea5e9' '#8b5cf6' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+      <div class="source-avatar" style="background:{% cycle '#22c55e' '#14b8a6' '#0ea5e9' '#4648d4' %};">{{ lead.customer_name|default:"?"|slice:":2"|upper }}</div>
       <div class="source-main">
         <div class="source-name">{{ lead.customer_name|default:lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
         <div class="source-meta">{{ lead.project_type|default:"No service" }} · {{ lead.customer_area|default:"No area" }} · {{ lead.updated_at|date:"j M" }}</div>

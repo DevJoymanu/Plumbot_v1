@@ -70,7 +70,7 @@
   }
   .fd-row-badge {
     display: inline-block; margin-top: 5px;
-    background: #fee2e2; color: #991b1b;
+    background: #ffdad6; color: #93000a;
     font-size: 10px; font-weight: 700;
     padding: 2px 8px; border-radius: 20px;
   }
@@ -79,7 +79,7 @@
     font-size: 11px; white-space: nowrap; flex-shrink: 0;
     padding-top: 2px;
   }
-  .fd-row-time.urgent { color: #ef4444; font-weight: 700; }
+  .fd-row-time.urgent { color: #ba1a1a; font-weight: 700; }
   .fd-row-time.normal { color: #9ca3af; }
   .fd-row-date { font-size: 10px; color: #9ca3af; margin-top: 2px; font-weight: 500; }
 
@@ -91,7 +91,7 @@
     margin-top: 5px; margin-right: 6px;
   }
   .fd-chan--whatsapp { background: #dcf8c6; color: #075e54; }
-  .fd-chan--email    { background: #dbeafe; color: #1e40af; }
+  .fd-chan--email    { background: #c9e6ff; color: #004c6e; }
 
   .fd-empty {
     padding: 32px 16px; text-align: center;
@@ -149,12 +149,12 @@
     font-size: 10px; font-weight: 700; text-transform: uppercase;
     padding: 2px 8px; border-radius: 20px;
   }
-  .fd-status--pending  { background: #dbeafe; color: #1e40af; }
+  .fd-status--pending  { background: #c9e6ff; color: #004c6e; }
   .fd-status--overdue  { background: #fef3c7; color: #92400e; }
-  .fd-status--failed   { background: #fee2e2; color: #991b1b; }
+  .fd-status--failed   { background: #ffdad6; color: #93000a; }
   .fd-badge-bad {
     display: inline-flex; align-items: center; gap: 4px; margin-top: 5px;
-    font-size: 10px; font-weight: 700; color: #991b1b; background: #fee2e2;
+    font-size: 10px; font-weight: 700; color: #93000a; background: #ffdad6;
     padding: 2px 8px; border-radius: 20px;
   }
 
@@ -458,7 +458,7 @@
 {% block extra_js %}
 <script>
 (function () {
-  var COLORS = ['#006591','#006591','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
+  var COLORS = ['#006591','#006591','#25D366','#0ea5e9','#4648d4','#f59e0b','#ba1a1a'];
   document.querySelectorAll('.fd-avatar[data-name]').forEach(function (el) {
     var n = el.getAttribute('data-name') || '';
     el.style.background = COLORS[n.charCodeAt(0) % COLORS.length];

@@ -6,15 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>Construction Quotation Generator</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #667eea;
-            --primary-dark: #764ba2;
-            --success: #10b981;
-            --danger: #dc2626;
-            --secondary: #6b7280;
-            --light: #f8f9fa;
-            --dark: #2d3748;
+            /* Aetheris Clinical tokens (was the purple generator theme) */
+            --primary: #006591;
+            --primary-dark: #004c6e;
+            --success: #15803d;
+            --danger: #ba1a1a;
+            --secondary: #6e7881;
+            --light: #eff4ff;
+            --dark: #0b1c30;
         }
 
         * {
@@ -25,7 +29,7 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             min-height: 100vh;
             padding: 10px;
@@ -104,7 +108,7 @@
         .form-group textarea:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            box-shadow: 0 0 0 3px rgba(0, 101, 145, 0.1);
         }
 
         .form-group textarea {
@@ -308,8 +312,8 @@
         }
 
         .alert-error {
-            background: #fee2e2;
-            color: #991b1b;
+            background: #ffdad6;
+            color: #93000a;
             border: 1px solid var(--danger);
         }
 
@@ -543,7 +547,7 @@
                         <div class="logo-container" style="text-align: center; margin-bottom: 20px;">
                             <img src="{{ logo_data_uri|default:logo_url }}" alt="HOMEBASE CONSTRUCTION"
                                  style="height: 80px; width: auto; max-width: 200px; margin: 0 auto 15px auto; display: block;">
-                            <h2 style="margin: 0; color: #2d3748; font-size: 1.5rem;">HOMEBASE CONSTRUCTION</h2>
+                            <h2 style="margin: 0; color: #0b1c30; font-size: 1.5rem;">HOMEBASE CONSTRUCTION</h2>
                             <p style="margin: 5px 0 0 0; font-size: 0.9rem; color: #666;">"Quality Is Our Qualification"</p>
                         </div>
                         <p style="font-size: 0.85rem; color: #666; text-align: center;">141 Pritchard St, 2001, Johannesburg</p>
@@ -716,7 +720,7 @@
              onmouseout="this.style.boxShadow='none'">
             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
                 <div>
-                    <h3 style="margin: 0 0 5px 0; color: #2d3748;">${template.name}</h3>
+                    <h3 style="margin: 0 0 5px 0; color: #0b1c30;">${template.name}</h3>
                     <p style="margin: 0; color: #666; font-size: 0.9em;">${template.description || 'No description'}</p>
                 </div>
                 <span style="background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 12px; font-size: 0.8em; white-space: nowrap;">
@@ -727,7 +731,7 @@
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
                 <div>
                     <div style="font-size: 0.8em; color: #666;">Items</div>
-                    <div style="font-weight: 600; color: #2d3748;">${template.items_count}</div>
+                    <div style="font-weight: 600; color: #0b1c30;">${template.items_count}</div>
                 </div>
                 <div>
                     <div style="font-size: 0.8em; color: #666;">Estimated Cost</div>
@@ -735,7 +739,7 @@
                 </div>
                 <div>
                     <div style="font-size: 0.8em; color: #666;">Used</div>
-                    <div style="font-weight: 600; color: #667eea;">${template.use_count}x</div>
+                    <div style="font-weight: 600; color: #006591;">${template.use_count}x</div>
                 </div>
             </div>
         </div>

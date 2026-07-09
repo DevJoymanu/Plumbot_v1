@@ -119,11 +119,11 @@
   /* Date-window pill bar — shared by all detail-source sidebars. */
   .appt-age-bar { display:flex; align-items:center; gap:6px; flex-wrap:wrap;
     padding:8px 12px; border-bottom:1px solid #eef2f7; }
-  .appt-age-label { font-size:11px; font-weight:600; color:#94a3b8;
+  .appt-age-label { font-size:11px; font-weight:600; color:#6e7881;
     text-transform:uppercase; letter-spacing:.4px; }
-  .appt-age-pill { font-size:12px; color:#475569; text-decoration:none;
+  .appt-age-pill { font-size:12px; color:#3e4850; text-decoration:none;
     padding:3px 9px; border-radius:999px; background:#eff4ff; border:1px solid transparent; }
-  .appt-age-pill:hover { background:#e2e8f0; }
+  .appt-age-pill:hover { background:#bec8d2; }
   .appt-age-pill.is-active { background:#0f766e; color:#fff; }
 
   .appt-filter-tab.is-active::after {
@@ -170,7 +170,7 @@
     gap: 12px;
     padding: 12px 16px;
     background: #fff;
-    border-bottom: 2px solid #ef4444;
+    border-bottom: 2px solid #ba1a1a;
     color: #111827;
     text-decoration: none;
   }
@@ -206,10 +206,10 @@
 
   .workspace-stat:last-child { border-right: none; }
   .workspace-stat:nth-child(1) { background: #dff7f1; }
-  .workspace-stat:nth-child(2) { background: #dbeafe; }
-  .workspace-stat:nth-child(3) { background: #fee2e2; }
+  .workspace-stat:nth-child(2) { background: #c9e6ff; }
+  .workspace-stat:nth-child(3) { background: #ffdad6; }
   .workspace-stat:nth-child(4) { background: #fef3c7; }
-  .workspace-stat:nth-child(5) { background: #dbeafe; }
+  .workspace-stat:nth-child(5) { background: #c9e6ff; }
 
   .workspace-stat-value {
     font-size: 18px;
@@ -221,7 +221,7 @@
   .workspace-stat-label {
     margin-top: 3px;
     font-size: 11px;
-    color: #475569;
+    color: #3e4850;
   }
 
   .workspace-search {
@@ -272,11 +272,11 @@
     border: 1px solid rgba(15, 69, 101, 0.08);
   }
 
-  .workspace-chip.vh { background: #fee2e2; color: #b91c1c; }
+  .workspace-chip.vh { background: #ffdad6; color: #93000a; }
   .workspace-chip.hot { background: #fef3c7; color: #b45309; }
   .workspace-chip.warm { background: #d1fae5; color: #047857; }
-  .workspace-chip.luke { background: #dbeafe; color: #1d4ed8; }
-  .workspace-chip.cold { background: #eef2f7; color: #64748b; }
+  .workspace-chip.luke { background: #c9e6ff; color: #004c6e; }
+  .workspace-chip.cold { background: #eef2f7; color: #6e7881; }
 
   .source-section {
     margin-top: 8px;
@@ -331,7 +331,7 @@
   }
 
   .source-list-row:hover {
-    background: #f8fafc;
+    background: #eff4ff;
     text-decoration: none;
   }
 
@@ -408,9 +408,9 @@
     width: 38px;
     height: 38px;
     border-radius: 50%;
-    border: 4px solid #ef4444;
+    border: 4px solid #ba1a1a;
     background: #fff;
-    color: #ef4444;
+    color: #ba1a1a;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -421,7 +421,7 @@
   .source-stamp {
     font-size: 11px;
     font-weight: 700;
-    color: #94a3b8;
+    color: #6e7881;
   }
 
   .source-mini-actions {
@@ -443,8 +443,8 @@
   }
 
   .source-mini-btn.call {
-    background: #fee2e2;
-    color: #991b1b;
+    background: #ffdad6;
+    color: #93000a;
   }
 
   .source-mini-btn.wa {
@@ -535,19 +535,19 @@
     font-size: 11px;
     color: #6b7280;
   }
-  .appt-list-time.overdue { color: #ef4444; font-weight: 600; }
+  .appt-list-time.overdue { color: #ba1a1a; font-weight: 600; }
 
   .appt-dot {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #94a3b8;
+    background: #6e7881;
   }
-  .appt-dot--very_hot  { background: #ef4444; }
+  .appt-dot--very_hot  { background: #ba1a1a; }
   .appt-dot--hot       { background: #f59e0b; }
   .appt-dot--warm      { background: #22c55e; }
-  .appt-dot--luke_warm { background: #3b82f6; }
-  .appt-dot--cold      { background: #94a3b8; }
+  .appt-dot--luke_warm { background: #0ea5e9; }
+  .appt-dot--cold      { background: #6e7881; }
 
   .appt-pill {
     display: inline-flex;
@@ -561,13 +561,13 @@
 
   .appt-pill.booked { background: #d1fae5; color: #059669; }
   .appt-pill.pending { background: #fef3c7; color: #d97706; }
-  .appt-pill.cancelled { background: #fee2e2; color: #ef4444; }
-  .appt-pill.delayed { background: #dbeafe; color: #2563eb; }
-  .appt-pill.very_hot { background: #fee2e2; color: #ef4444; }
+  .appt-pill.cancelled { background: #ffdad6; color: #ba1a1a; }
+  .appt-pill.delayed { background: #c9e6ff; color: #006591; }
+  .appt-pill.very_hot { background: #ffdad6; color: #ba1a1a; }
   .appt-pill.hot { background: #fef3c7; color: #d97706; }
   .appt-pill.warm { background: #d1fae5; color: #059669; }
   .appt-pill.cold,
-  .appt-pill.luke_warm { background: #eef2f7; color: #64748b; }
+  .appt-pill.luke_warm { background: #eef2f7; color: #6e7881; }
 
   .appt-detail-pane {
     min-width: 0;
@@ -669,8 +669,8 @@
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    border: 3px solid #ef4444;
-    color: #ef4444;
+    border: 3px solid #ba1a1a;
+    color: #ba1a1a;
     font-size: 11px;
     font-weight: 800;
     background: #fff;
@@ -754,7 +754,7 @@
     letter-spacing: .4px; padding: 3px 9px; border-radius: 20px;
   }
   .fu-stamp--whatsapp { background: #dcf8c6; color: #075e54; }
-  .fu-stamp--email    { background: #dbeafe; color: #1e40af; }
+  .fu-stamp--email    { background: #c9e6ff; color: #004c6e; }
 
   .fu-kind { font-size: 13px; font-weight: 600; color: #374151; }
   .fu-time { font-size: 12px; color: #9ca3af; }
@@ -790,7 +790,7 @@
   .fu-badge-bad {
     display: inline-flex; align-items: center; gap: 5px;
     font-size: 11px; font-weight: 700;
-    color: #991b1b; background: #fee2e2;
+    color: #93000a; background: #ffdad6;
     padding: 3px 9px; border-radius: 20px;
   }
 
@@ -811,8 +811,8 @@
     letter-spacing: .3px; padding: 3px 10px; border-radius: 20px;
   }
   .fu-pill--sent    { background: #dcfce7; color: #166534; }
-  .fu-pill--pending { background: #dbeafe; color: #1e40af; }
-  .fu-pill--overdue { background: #fee2e2; color: #991b1b; }
+  .fu-pill--pending { background: #c9e6ff; color: #004c6e; }
+  .fu-pill--overdue { background: #ffdad6; color: #93000a; }
 
   /* Templated-email catalogue rows */
   .em-cat-row {
@@ -829,13 +829,13 @@
   .em-cat-when {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     margin: 10px 0 4px 28px; padding: 8px 10px;
-    background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px;
+    background: #eff4ff; border: 1px solid #e5e7eb; border-radius: 10px;
   }
   .em-cat-when label { font-size: 12px; font-weight: 600; color: #374151; }
   .em-cat-when .em-when-input { max-width: 240px; }
   .em-quick { display: flex; gap: 6px; flex-wrap: wrap; }
   .em-quick-btn {
-    border: 1px solid #cbd5e1; background: #fff; color: #334155;
+    border: 1px solid #bec8d2; background: #fff; color: #3e4850;
     font-size: 12px; font-weight: 600; cursor: pointer;
     padding: 5px 10px; border-radius: 20px; transition: all .15s;
   }
@@ -844,14 +844,14 @@
   /* Modal (preview + edit) */
   .em-modal {
     position: fixed; inset: 0; z-index: 1000;
-    background: rgba(15, 23, 42, 0.55);
+    background: rgba(11, 28, 48, 0.55);
     align-items: center; justify-content: center; padding: 20px;
   }
   .em-modal-box {
     background: #fff; border-radius: 14px; overflow: hidden;
     width: 100%; max-width: 680px; max-height: 86vh;
     display: flex; flex-direction: column;
-    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+    box-shadow: 0 24px 60px rgba(11, 28, 48, 0.3);
   }
   .em-modal-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -937,7 +937,7 @@
   .chat-bubble-time {
     text-align: right;
     margin-top: 4px;
-    color: #94a3b8;
+    color: #6e7881;
     font-size: 10px;
   }
 
@@ -979,7 +979,7 @@
     gap: 6px;
     border: 1px solid #dbe2e8;
     background: #fff;
-    color: #475569;
+    color: #3e4850;
     font-size: 12px;
     font-weight: 700;
     padding: 7px 12px;
@@ -1018,7 +1018,7 @@
   }
 
   .appt-send-btn:disabled {
-    background: #cbd5e1;
+    background: #bec8d2;
     cursor: not-allowed;
   }
 
@@ -1044,7 +1044,7 @@
     min-height: 44px;
     border: 1px solid #dbe2e8;
     background: #fff;
-    color: #475569;
+    color: #3e4850;
     border-radius: 12px;
     font-size: 13px;
   }
@@ -1085,13 +1085,13 @@
   }
 
   .appt-pdf-send-btn:disabled {
-    background: #cbd5e1;
+    background: #bec8d2;
     cursor: not-allowed;
   }
 
   .appt-char-count {
     text-align: right;
-    color: #94a3b8;
+    color: #6e7881;
     font-size: 11px;
     margin-top: 6px;
   }
@@ -1144,7 +1144,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #64748b;
+    color: #6e7881;
     margin-bottom: 6px;
     font-weight: 700;
   }
@@ -1155,7 +1155,7 @@
     width: 100%;
     border-radius: 12px;
     border: 1px solid #dbe2e8;
-    background: #f8fafc;
+    background: #eff4ff;
     padding: 10px 12px;
     min-height: 44px;
   }
@@ -1183,8 +1183,8 @@
   .action-btn.primary { background: var(--color-header); color: #fff; }
   .action-btn.success { background: #25D366; color: #fff; }
   .action-btn.warning { background: #fef3c7; color: #b45309; }
-  .action-btn.danger { background: #fee2e2; color: #dc2626; }
-  .action-btn.ghost { background: #fff; color: #475569; border: 1px solid #dbe2e8; }
+  .action-btn.danger { background: #ffdad6; color: #ba1a1a; }
+  .action-btn.ghost { background: #fff; color: #3e4850; border: 1px solid #dbe2e8; }
 
   .mini-stat-grid {
     display: grid;
@@ -1193,8 +1193,8 @@
   }
 
   .mini-stat {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #eff4ff;
+    border: 1px solid #bec8d2;
     border-radius: 12px;
     padding: 12px;
   }
@@ -1203,14 +1203,14 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #64748b;
+    color: #6e7881;
     margin-bottom: 5px;
     font-weight: 700;
   }
 
   .mini-stat-value {
     font-size: 14px;
-    color: #0f172a;
+    color: #0b1c30;
     font-weight: 700;
   }
 
@@ -1222,7 +1222,7 @@
 
   .job-link,
   .quote-card {
-    border: 1px solid #e2e8f0;
+    border: 1px solid #bec8d2;
     background: #fff;
     border-radius: 14px;
     padding: 14px;
@@ -1243,7 +1243,7 @@
   }
 
   .quote-meta {
-    color: #64748b;
+    color: #6e7881;
     font-size: 12px;
     display: grid;
     gap: 4px;
@@ -1469,12 +1469,12 @@
           {{ computed_lead_status_label|default:appointment.get_lead_status_display }}
         </span>
         <span class="appt-score-chip">{{ computed_lead_score|default:appointment.lead_score }}</span>
-        <span style="font-size:13px; color:#475569;">Score {{ computed_lead_score|default:appointment.lead_score }}/100</span>
+        <span style="font-size:13px; color:#3e4850;">Score {{ computed_lead_score|default:appointment.lead_score }}/100</span>
         {% if appointment.chatbot_paused %}
         <span class="appt-pill pending">Bot paused</span>
         {% endif %}
         {# Messaging-window type tag: differentiates 72h ad leads from 24h leads. #}
-        <span class="appt-pill" style="background:{% if appointment.messaging_window_kind == '72h' %}#1877f2{% else %}#475569{% endif %};color:#fff;"
+        <span class="appt-pill" style="background:{% if appointment.messaging_window_kind == '72h' %}#1877f2{% else %}#3e4850{% endif %};color:#fff;"
               title="{% if appointment.messaging_window_kind == '72h' %}Click-to-WhatsApp ad lead{% if appointment.ctwa_source_id %} (ad source {{ appointment.ctwa_source_id }}){% endif %} — extended 72h free-form window{% else %}Standard 24h free-form messaging window, reset by each customer message{% endif %}">
           <i class="far fa-clock"></i> {{ appointment.messaging_window_kind }} window
         </span>
@@ -1800,7 +1800,7 @@
                   <button class="action-btn success" type="button" onclick="toggleTemplateDropdown()" id="templateDropdownBtn">
                     <i class="fas fa-file-invoice"></i> From Template
                   </button>
-                  <div id="templateDropdown" style="display:none; position:absolute; top:100%; right:0; min-width:260px; margin-top:8px; background:#fff; border:1px solid #dbe2e8; border-radius:14px; box-shadow:0 14px 34px rgba(15, 23, 42, 0.14); z-index:20;">
+                  <div id="templateDropdown" style="display:none; position:absolute; top:100%; right:0; min-width:260px; margin-top:8px; background:#fff; border:1px solid #dbe2e8; border-radius:14px; box-shadow:0 14px 34px rgba(11, 28, 48, 0.14); z-index:20;">
                     <div style="padding:12px; border-bottom:1px solid #eef2f7;">
                       <input type="text" id="quickTemplateSearch" placeholder="Search templates..." style="width:100%; border:1px solid #dbe2e8; border-radius:10px; padding:10px 12px;" oninput="quickSearchTemplates()">
                     </div>
@@ -1890,7 +1890,7 @@
                 <div class="fu-sched-main">
                   <div class="fu-sched-label"><i class="far fa-clock"></i> {{ sf.scheduled_for|date:"D j M Y, H:i" }}</div>
                   <div class="fu-sched-note">{{ sf.message|truncatechars:160 }}</div>
-                  {% if sf.status == 'failed' %}<div class="fu-sched-note" style="color:#991b1b;">Failed: {{ sf.error|truncatechars:120 }}</div>{% endif %}
+                  {% if sf.status == 'failed' %}<div class="fu-sched-note" style="color:#93000a;">Failed: {{ sf.error|truncatechars:120 }}</div>{% endif %}
                   <form method="post" action="{% url 'edit_scheduled_followup' sf.id %}?{{ request.GET.urlencode }}" id="sched-form-{{ sf.id }}" style="display:none; margin-top:8px;">
                     {% csrf_token %}
                     <input type="datetime-local" name="scheduled_for" value="{{ sf.scheduled_for|date:'Y-m-d\\TH:i' }}" class="fu-edit-input" style="margin-bottom:8px;">
@@ -1963,7 +1963,7 @@
                     <span class="fu-pill" style="background:#dcfce7;color:#166534;">{{ r.get_channel_display }}</span>
                   </div>
                   <div class="fu-sched-note">{{ r.message|truncatechars:160 }}</div>
-                  {% if r.status == 'failed' %}<div class="fu-sched-note" style="color:#991b1b;">Failed: {{ r.error|truncatechars:120 }}</div>{% endif %}
+                  {% if r.status == 'failed' %}<div class="fu-sched-note" style="color:#93000a;">Failed: {{ r.error|truncatechars:120 }}</div>{% endif %}
                   <form method="post" action="{% url 'edit_scheduled_reminder' r.id %}?{{ request.GET.urlencode }}" id="rem-form-{{ r.id }}" style="display:none; margin-top:8px;">
                     {% csrf_token %}
                     <input type="datetime-local" name="scheduled_for" value="{{ r.scheduled_for|date:'Y-m-d\\TH:i' }}" class="fu-edit-input" style="margin-bottom:8px;">
@@ -2129,7 +2129,7 @@
                 <div class="fu-sched-main">
                   <div class="fu-sched-label"><i class="far fa-clock"></i> {{ sf.scheduled_for|date:"D j M Y, H:i" }}{% if sf.subject %} · {{ sf.subject }}{% endif %}</div>
                   <div class="fu-sched-note">{{ sf.message|truncatechars:160 }}</div>
-                  {% if sf.status == 'failed' %}<div class="fu-sched-note" style="color:#991b1b;">Failed: {{ sf.error|truncatechars:120 }}</div>{% endif %}
+                  {% if sf.status == 'failed' %}<div class="fu-sched-note" style="color:#93000a;">Failed: {{ sf.error|truncatechars:120 }}</div>{% endif %}
                   <form method="post" action="{% url 'edit_scheduled_followup' sf.id %}?{{ request.GET.urlencode }}" id="sched-form-{{ sf.id }}" style="display:none; margin-top:8px;">
                     {% csrf_token %}
                     <input type="datetime-local" name="scheduled_for" value="{{ sf.scheduled_for|date:'Y-m-d\\TH:i' }}" class="fu-edit-input" style="margin-bottom:8px;">
@@ -2579,7 +2579,7 @@
 
   function loadQuickTemplates() {
     var listEl = document.getElementById('quickTemplateList');
-    listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;"><i class="fas fa-spinner fa-spin"></i></div>';
+    listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#6e7881;"><i class="fas fa-spinner fa-spin"></i></div>';
 
     fetch('/api/quotation-templates/?active_only=true')
       .then(function (response) { return response.json(); })
@@ -2588,24 +2588,24 @@
           quickTemplates = data.templates;
           displayQuickTemplates(quickTemplates);
         } else {
-          listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">No templates found.</div>';
+          listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#6e7881;">No templates found.</div>';
         }
       })
       .catch(function () {
-        listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">Could not load templates.</div>';
+        listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#6e7881;">Could not load templates.</div>';
       });
   }
 
   function displayQuickTemplates(templates) {
     var listEl = document.getElementById('quickTemplateList');
     if (!templates.length) {
-      listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#94a3b8;">No templates found.</div>';
+      listEl.innerHTML = '<div style="padding:18px; text-align:center; color:#6e7881;">No templates found.</div>';
       return;
     }
     listEl.innerHTML = templates.map(function (t) {
-      return '<a href="/templates/' + t.id + '/use/{{ appointment.pk }}/" style="display:block; padding:12px 14px; text-decoration:none; color:#0f172a; border-bottom:1px solid #eef2f7;">'
+      return '<a href="/templates/' + t.id + '/use/{{ appointment.pk }}/" style="display:block; padding:12px 14px; text-decoration:none; color:#0b1c30; border-bottom:1px solid #eef2f7;">'
         + '<div style="font-weight:700; font-size:13px;">' + t.name + '</div>'
-        + '<div style="font-size:12px; color:#64748b; margin-top:2px;">' + t.items_count + ' items · US$' + t.estimated_cost.toFixed(2) + '</div>'
+        + '<div style="font-size:12px; color:#6e7881; margin-top:2px;">' + t.items_count + ' items · US$' + t.estimated_cost.toFixed(2) + '</div>'
         + '</a>';
     }).join('');
   }
@@ -2727,7 +2727,7 @@
     });
 
     // Avatar colour by first char of name
-    var AVATAR_COLORS = ['#22c55e','#ef4444','#f59e0b','#0f766e','#f97316','#8b5cf6','#14b8a6'];
+    var AVATAR_COLORS = ['#22c55e','#ba1a1a','#f59e0b','#0f766e','#f97316','#4648d4','#14b8a6'];
     document.querySelectorAll('.appt-list-avatar[data-name]').forEach(function (el) {
       var n = el.getAttribute('data-name') || '';
       el.style.background = AVATAR_COLORS[n.charCodeAt(0) % AVATAR_COLORS.length];
