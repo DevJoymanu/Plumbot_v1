@@ -10,43 +10,13 @@
 
   .cw-wrap { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 
-  /* ── Left: chat list ── */
-  .cw-list {
-    width: 340px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    background: var(--color-surface-lowest);
-    border-right: var(--glass-border);
-    overflow: hidden;
-  }
-  .cw-list-head { padding: 18px 18px 12px; flex-shrink: 0; }
-  .cw-list-head h2 { margin: 0 0 12px; font-size: 20px; font-weight: 700; color: var(--color-text); }
-  .cw-chips { display: flex; gap: 6px; }
-  .cw-chip { padding: 6px 14px; border-radius: var(--radius-pill); font-family: var(--font-label); font-size: 11px; font-weight: 600; color: var(--color-text-2); background: var(--color-surface-mid); text-decoration: none; }
-  .cw-chip.active { background: rgba(0,101,145,0.10); color: var(--color-primary); }
-  .cw-rows { flex: 1; min-height: 0; overflow-y: auto; }
-  .cw-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 16px; text-decoration: none; color: inherit;
-    border-left: 3px solid transparent;
-    transition: background var(--transition);
-  }
-  .cw-row:hover { background: var(--color-surface-low); }
-  .cw-row.active { background: rgba(14,165,233,0.08); border-left-color: var(--color-primary); }
   .cw-av {
     flex-shrink: 0; width: 46px; height: 46px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-family: var(--font-label); font-weight: 600; font-size: 15px; text-transform: uppercase;
   }
-  .cw-row-body { flex: 1; min-width: 0; }
-  .cw-row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .cw-row-name { font-weight: 700; font-size: 14.5px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cw-row-time { flex-shrink: 0; font-size: 10.5px; font-weight: 600; color: var(--color-muted); font-family: var(--font-label); }
-  .cw-row.active .cw-row-time { color: var(--color-primary); }
-  .cw-row-prev { margin-top: 2px; font-size: 12.5px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* ── Centre: chat ── */
+  /* ── Section 1: chat ── */
   .cw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
   .cw-head {
     flex-shrink: 0; height: 68px; padding: 0 22px;
@@ -57,7 +27,7 @@
   .cw-head-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .cw-head-who h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--color-text); line-height: 1.2; }
   .cw-head-who p { margin: 1px 0 0; font-size: 12px; color: var(--color-muted); }
-  .cw-back { display: none; margin-right: 4px; color: var(--color-primary); font-size: 18px; text-decoration: none; }
+  .cw-back { display: inline-flex; align-items: center; margin-right: 4px; color: var(--color-primary); font-size: 18px; text-decoration: none; }
   .cw-head-actions { display: flex; align-items: center; gap: 4px; }
   .cw-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--color-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: background var(--transition), color var(--transition); }
   .cw-icon-btn:hover { background: rgba(0,101,145,0.06); color: var(--color-primary); }
@@ -175,47 +145,13 @@
   }
   .cw-side-loading.hidden { opacity: 0; }
 
-  @media (max-width: 1240px) { .cw-side { display: none; } }
-  @media (max-width: 860px) {
-    .cw-list { display: none; }
-    .cw-back { display: inline-block; }
-  }
+  @media (max-width: 980px) { .cw-side { display: none; } }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="cw-wrap">
-  <!-- Left: chat list -->
-  <aside class="cw-list">
-    <div class="cw-list-head">
-      <h2>Chats</h2>
-      <div class="cw-chips">
-        <a href="{% url 'conversations_list' %}" class="cw-chip active">All</a>
-        <a href="{% url 'conversations_list' %}?status_filter=booked" class="cw-chip">Booked</a>
-        <a href="{% url 'conversations_list' %}?status_filter=pending" class="cw-chip">Pending</a>
-      </div>
-    </div>
-    <div class="cw-rows">
-      {% for t in threads %}
-      {% with tlast=t.conversation_history|last %}
-      <a class="cw-row {% if t.pk == appointment.pk %}active{% endif %}" href="{% url 'conversation_detail' t.pk %}">
-        <div class="cw-av" style="background:{% cycle '#006591' '#4648d4' '#0ea5e9' '#0f766e' '#8a5100' '#576065' %};">
-          {{ t.customer_name|default:t.phone_number|default:"AP"|slice:":2"|upper }}
-        </div>
-        <div class="cw-row-body">
-          <div class="cw-row-top">
-            <span class="cw-row-name">{% firstof t.customer_name t.phone_number "Conversation" %}</span>
-            <span class="cw-row-time" data-msg-ts="{{ t.last_inbound_at|default:t.updated_at|date:'c' }}">{{ t.last_inbound_at|default:t.updated_at|date:"j M" }}</span>
-          </div>
-          <div class="cw-row-prev">{{ tlast.content|default:"No messages yet"|truncatechars:42 }}</div>
-        </div>
-      </a>
-      {% endwith %}
-      {% endfor %}
-    </div>
-  </aside>
-
-  <!-- Centre: chat thread -->
+  <!-- Section 1: chat thread -->
   <main class="cw-main">
     <div class="cw-head">
       <div class="cw-head-who">
