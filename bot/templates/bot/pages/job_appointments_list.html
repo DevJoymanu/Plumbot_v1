@@ -1,283 +1,247 @@
 {% extends "bot/layouts/base.html" %}
 
-{% block content %}
+{% block title %}Job Appointments — Plumbot{% endblock %}
+
+{% block extra_css %}
 <style>
-    body { background: #F0F2F5; }
+    .jp-page { padding: 24px 32px 40px; display: flex; flex-direction: column; gap: 24px; }
 
-    .topbar {
-        background: #006591;
-        padding: 12px 16px;
-        color: #fff;
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .topbar h1 { font-size: 17px; font-weight: 700; margin: 0; color: #fff; }
-
-    .page-content { padding: 16px; }
-
-    .card {
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 14px;
-    }
-
-    .card-title {
-        font-size: 13px;
-        font-weight: 700;
-        color: #006591;
-        margin: 0 0 14px 0;
-        text-transform: uppercase;
-        letter-spacing: 0.4px;
-    }
-
-    .filter-row {
+    /* ── Bento metrics ── */
+    .jp-stats {
         display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: 10px;
-        align-items: end;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 24px;
     }
-
-    .form-group { margin-bottom: 0; }
-    .form-group label {
-        font-size: 11px;
-        color: #6b7280;
-        display: block;
-        margin-bottom: 3px;
-        font-weight: 500;
-    }
-    .form-group select {
-        width: 100%;
-        padding: 8px 12px;
-        border: none;
-        background: #F0F2F5;
-        border-radius: 6px;
-        font-size: 14px;
-        font-family: inherit;
-    }
-
-    .btn-primary {
-        background: #006591;
-        color: #fff;
-        border-radius: 20px;
-        padding: 10px 20px;
-        border: none;
-        font-weight: 600;
-        font-size: 14px;
-        cursor: pointer;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        white-space: nowrap;
-    }
-    .btn-secondary {
-        background: #f3f4f6;
-        color: #374151;
-        border-radius: 20px;
-        padding: 10px 20px;
-        border: none;
-        font-weight: 600;
-        font-size: 14px;
-        cursor: pointer;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        white-space: nowrap;
-    }
-    .btn-warning {
-        background: #fef3c7;
-        color: #d97706;
-        border-radius: 20px;
-        padding: 8px 16px;
-        border: none;
-        font-weight: 600;
-        font-size: 13px;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-    }
-    .btn-success {
-        background: #25D366;
-        color: #fff;
-        border-radius: 20px;
-        padding: 8px 16px;
-        border: none;
-        font-weight: 600;
-        font-size: 13px;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-    }
-    .btn-danger {
-        background: #ffdad6;
-        color: #ba1a1a;
-        border-radius: 20px;
-        padding: 8px 16px;
-        border: none;
-        font-weight: 600;
-        font-size: 13px;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-    }
-
-    .jobs-list { display: flex; flex-direction: column; gap: 12px; }
-
-    .job-item {
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 14px 16px;
-        border-left: 4px solid #006591;
-    }
-    .job-item.status-scheduled  { border-left-color: #006591; }
-    .job-item.status-in_progress { border-left-color: #d97706; }
-    .job-item.status-completed  { border-left-color: #059669; }
-    .job-item.status-cancelled  { border-left-color: #ba1a1a; }
-
-    .job-header {
+    .jp-metric {
         display: flex;
+        flex-direction: column;
         justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 10px;
+        min-height: 120px;
+        padding: 20px 24px;
+        background: var(--glass-bg);
+        backdrop-filter: blur(var(--glass-blur));
+        -webkit-backdrop-filter: blur(var(--glass-blur));
+        border: var(--glass-border);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-glow);
     }
-    .job-title h4 { margin: 0 0 3px 0; font-size: 15px; color: #111827; }
-    .job-type { font-size: 12px; color: #6b7280; }
-
-    .job-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
-    .job-meta span { font-size: 13px; color: #374151; display: flex; align-items: center; gap: 5px; }
-
-    .job-desc {
-        font-size: 13px;
-        color: #6b7280;
-        background: #F0F2F5;
-        border-radius: 6px;
-        padding: 8px 10px;
-        margin-bottom: 10px;
-    }
-
-    .job-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
-    /* Status pills */
-    .pill {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 20px;
+    .jp-metric__label {
+        font-family: var(--font-label);
         font-size: 11px;
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.4px;
+        letter-spacing: 0.05em;
+        color: var(--color-text-2);
     }
-    .pill-scheduled  { background: #c9e6ff; color: #006591; }
-    .pill-in_progress { background: #fef3c7; color: #d97706; }
-    .pill-completed  { background: #d1fae5; color: #059669; }
-    .pill-cancelled  { background: #ffdad6; color: #ba1a1a; }
+    .jp-metric__row { display: flex; align-items: baseline; justify-content: space-between; }
+    .jp-metric__num {
+        font-size: clamp(28px, 2.6vw, 40px);
+        font-weight: 300;
+        line-height: 1.05;
+        font-variant-numeric: tabular-nums;
+    }
+    .jp-metric__row i { font-size: 18px; opacity: 0.7; }
+    .jp-metric--total       .jp-metric__num, .jp-metric--total i       { color: var(--color-primary); }
+    .jp-metric--scheduled   .jp-metric__num, .jp-metric--scheduled i   { color: var(--color-primary); }
+    .jp-metric--progress    .jp-metric__num, .jp-metric--progress i    { color: #d97706; }
+    .jp-metric--completed   .jp-metric__num, .jp-metric--completed i   { color: #15803d; }
 
-    .empty-state {
-        text-align: center;
-        padding: 40px 20px;
-        color: #9ca3af;
+    /* ── Filter panel ── */
+    .jp-filter-row {
+        display: flex;
+        gap: 16px;
+        align-items: flex-end;
+        flex-wrap: wrap;
     }
-    .empty-state i { font-size: 2.5rem; margin-bottom: 12px; display: block; }
+    .jp-filter-row .form-group { flex: 1; min-width: 160px; margin-bottom: 0; }
+    .jp-filter-actions { display: flex; gap: 10px; }
+
+    /* ── Job rows ── */
+    .jp-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .jp-row { position: relative; border-left: 3px solid transparent; }
+    .jp-row--scheduled  { border-left-color: var(--color-primary); }
+    .jp-row--in_progress{ border-left-color: #d97706; }
+    .jp-row--completed  { border-left-color: #15803d; }
+    .jp-row--cancelled  { border-left-color: var(--color-error); }
+
+    .jp-type { font-size: 12px; color: var(--color-muted); margin-top: 2px; }
+
+    .jp-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 11px;
+        border-radius: var(--radius-pill);
+        font-family: var(--font-label);
+        font-size: 10.5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        flex-shrink: 0;
+    }
+    .jp-pill--scheduled   { background: var(--color-primary-fixed); color: var(--color-on-primary-fixed-variant); }
+    .jp-pill--in_progress { background: var(--color-amber-bg); color: #92400e; }
+    .jp-pill--completed   { background: #dcfce7; color: #15803d; }
+    .jp-pill--cancelled   { background: var(--color-error-container); color: var(--color-on-error-container); }
+
+    .jp-desc {
+        font-size: 13px;
+        color: var(--color-text-2);
+        background: var(--color-surface-low);
+        border-radius: var(--radius-sm);
+        padding: 10px 14px;
+        margin-top: 10px;
+    }
+
+    .jp-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(0, 101, 145, 0.06);
+    }
+    .jp-actions .btn { padding: 8px 16px; min-height: 36px; font-size: 12px; }
+
+    @media (max-width: 1100px) {
+        .jp-stats { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 767px) {
+        .jp-page { padding: 16px; gap: 16px; }
+        .jp-stats { grid-template-columns: 1fr 1fr; gap: 12px; }
+    }
 </style>
+{% endblock %}
 
-<div class="topbar">
-    <i class="fas fa-hard-hat"></i>
-    <h1>Job Appointments</h1>
-</div>
+{% block content %}
+<div class="jp-page">
 
-<div class="page-content">
-
-    <!-- Filters -->
-    <div class="card">
-        <p class="card-title">Filter Jobs</p>
-        <form method="get">
-            <div class="filter-row">
-                <div class="form-group">
-                    <label for="status">Status</label>
-                    <select id="status" name="status">
-                        <option value="">All statuses</option>
-                        <option value="scheduled" {% if selected_status == "scheduled" %}selected{% endif %}>Scheduled</option>
-                        <option value="in_progress" {% if selected_status == "in_progress" %}selected{% endif %}>In Progress</option>
-                        <option value="completed" {% if selected_status == "completed" %}selected{% endif %}>Completed</option>
-                        <option value="cancelled" {% if selected_status == "cancelled" %}selected{% endif %}>Cancelled</option>
-                    </select>
-                </div>
-                <button type="submit" class="btn-primary"><i class="fas fa-filter"></i> Filter</button>
-                <a href="{% url 'job_appointments_list' %}" class="btn-secondary">Clear</a>
-            </div>
-        </form>
+    <div class="pb-topbar">
+        <h1><i class="fas fa-hard-hat"></i> Job Appointments</h1>
+        <p>{{ job_appointments.count }} job{{ job_appointments.count|pluralize }} in view</p>
     </div>
 
-    <!-- Job Appointments List -->
-    <div class="card">
-        <p class="card-title">Scheduled Jobs ({{ job_appointments.count }})</p>
-
-        {% if job_appointments %}
-        <div class="jobs-list">
-            {% for job in job_appointments %}
-            <div class="job-item status-{{ job.job_status }}">
-                <div class="job-header">
-                    <div class="job-title">
-                        <h4>{{ job.customer_name|default:job.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</h4>
-                        <span class="job-type">{{ job.project_type }}</span>
-                    </div>
-                    <span class="pill pill-{{ job.job_status }}">{{ job.get_job_status_display }}</span>
-                </div>
-
-                <div class="job-meta">
-                    <span><i class="fas fa-calendar"></i> {{ job.scheduled_datetime|date:"M d, Y" }}</span>
-                    <span><i class="fas fa-clock"></i> {{ job.scheduled_datetime|date:"H:i" }}</span>
-                    <span><i class="fas fa-map-marker-alt"></i> {{ job.customer_area }}</span>
-                </div>
-
-                {% if job.job_description %}
-                <div class="job-desc">{{ job.job_description|truncatewords:20 }}</div>
-                {% endif %}
-
-                <div class="job-actions">
-                    <a href="{% url 'appointment_detail' job.pk %}" class="btn-primary">
-                        <i class="fas fa-eye"></i> View Details
-                    </a>
-
-                    {% if job.job_status == 'scheduled' %}
-                    <button onclick="updateJobStatus({{ job.pk }}, 'in_progress')" class="btn-warning">
-                        <i class="fas fa-play"></i> Start Job
-                    </button>
-                    <a href="{% url 'reschedule_job' job.pk %}" class="btn-secondary">
-                        <i class="fas fa-calendar-alt"></i> Reschedule
-                    </a>
-                    {% elif job.job_status == 'in_progress' %}
-                    <button onclick="updateJobStatus({{ job.pk }}, 'completed')" class="btn-success">
-                        <i class="fas fa-check"></i> Complete Job
-                    </button>
-                    {% endif %}
-
-                    {% if job.job_status == 'scheduled' or job.job_status == 'in_progress' %}
-                    <button onclick="updateJobStatus({{ job.pk }}, 'cancelled')" class="btn-danger">
-                        <i class="fas fa-times"></i> Cancel
-                    </button>
-                    {% endif %}
-                </div>
+    {# ── Bento metrics (real counts, unfiltered totals) ── #}
+    <div class="jp-stats">
+        <div class="jp-metric jp-metric--total">
+            <span class="jp-metric__label">Total Jobs</span>
+            <div class="jp-metric__row">
+                <span class="jp-metric__num">{{ total_jobs }}</span>
+                <i class="fas fa-hard-hat"></i>
             </div>
-            {% endfor %}
         </div>
-        {% else %}
-        <div class="empty-state">
-            <i class="fas fa-hard-hat"></i>
-            <p>No job appointments found</p>
+        <div class="jp-metric jp-metric--scheduled">
+            <span class="jp-metric__label">Scheduled</span>
+            <div class="jp-metric__row">
+                <span class="jp-metric__num">{{ scheduled_jobs }}</span>
+                <i class="far fa-calendar"></i>
+            </div>
         </div>
-        {% endif %}
+        <div class="jp-metric jp-metric--progress">
+            <span class="jp-metric__label">In Progress</span>
+            <div class="jp-metric__row">
+                <span class="jp-metric__num">{{ in_progress_jobs }}</span>
+                <i class="fas fa-person-digging"></i>
+            </div>
+        </div>
+        <div class="jp-metric jp-metric--completed">
+            <span class="jp-metric__label">Completed</span>
+            <div class="jp-metric__row">
+                <span class="jp-metric__num">{{ completed_jobs }}</span>
+                <i class="fas fa-circle-check"></i>
+            </div>
+        </div>
+    </div>
+
+    {# ── Filters ── #}
+    <div class="card">
+        <div class="card-header">Filter Jobs</div>
+        <div class="card-body">
+            <form method="get">
+                <div class="jp-filter-row">
+                    <div class="form-group">
+                        <label for="status">Status</label>
+                        <select id="status" name="status">
+                            <option value="">All statuses</option>
+                            <option value="scheduled" {% if selected_status == "scheduled" %}selected{% endif %}>Scheduled</option>
+                            <option value="in_progress" {% if selected_status == "in_progress" %}selected{% endif %}>In Progress</option>
+                            <option value="completed" {% if selected_status == "completed" %}selected{% endif %}>Completed</option>
+                            <option value="cancelled" {% if selected_status == "cancelled" %}selected{% endif %}>Cancelled</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="date">Date</label>
+                        <input type="date" id="date" name="date" value="{{ selected_date|default:'' }}">
+                    </div>
+                    <div class="jp-filter-actions">
+                        <button type="submit" class="btn"><i class="fas fa-filter"></i> Filter</button>
+                        <a href="{% url 'job_appointments_list' %}" class="btn btn-secondary">Clear</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Job list ── #}
+    <div class="card">
+        <div class="card-header">Scheduled Jobs ({{ job_appointments.count }})</div>
+        <div class="card-body">
+            {% if job_appointments %}
+            <div class="jp-list">
+                {% for job in job_appointments %}
+                <div class="appointment-item jp-row jp-row--{{ job.job_status }}">
+                    <div class="appointment-header">
+                        <div>
+                            <div class="appointment-name">{{ job.customer_name|default:job.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+                            <div class="jp-type">{{ job.project_type }}</div>
+                        </div>
+                        <span class="jp-pill jp-pill--{{ job.job_status }}">{{ job.get_job_status_display }}</span>
+                    </div>
+
+                    <div class="appointment-details">
+                        <span class="detail-item"><i class="fas fa-calendar"></i> {{ job.scheduled_datetime|date:"M d, Y" }}</span>
+                        <span class="detail-item"><i class="fas fa-clock"></i> {{ job.scheduled_datetime|date:"H:i" }}</span>
+                        <span class="detail-item"><i class="fas fa-map-marker-alt"></i> {{ job.customer_area }}</span>
+                    </div>
+
+                    {% if job.job_description %}
+                    <div class="jp-desc">{{ job.job_description|truncatewords:20 }}</div>
+                    {% endif %}
+
+                    <div class="jp-actions">
+                        <a href="{% url 'appointment_detail' job.pk %}" class="btn">
+                            <i class="fas fa-eye"></i> View Details
+                        </a>
+
+                        {% if job.job_status == 'scheduled' %}
+                        <button onclick="updateJobStatus({{ job.pk }}, 'in_progress')" class="btn btn-warning">
+                            <i class="fas fa-play"></i> Start Job
+                        </button>
+                        <a href="{% url 'reschedule_job' job.pk %}" class="btn btn-secondary">
+                            <i class="fas fa-calendar-alt"></i> Reschedule
+                        </a>
+                        {% elif job.job_status == 'in_progress' %}
+                        <button onclick="updateJobStatus({{ job.pk }}, 'completed')" class="btn btn-success">
+                            <i class="fas fa-check"></i> Complete Job
+                        </button>
+                        {% endif %}
+
+                        {% if job.job_status == 'scheduled' or job.job_status == 'in_progress' %}
+                        <button onclick="updateJobStatus({{ job.pk }}, 'cancelled')" class="btn btn-danger">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="fas fa-hard-hat"></i>
+                <p>No job appointments found</p>
+            </div>
+            {% endif %}
+        </div>
     </div>
 
 </div>

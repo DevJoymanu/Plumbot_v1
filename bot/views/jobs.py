@@ -407,11 +407,13 @@ def job_appointments_list(request):
         appointment_type='job'
     ).order_by('-scheduled_datetime')
     
-    # Calculate statistics
+    # Calculate statistics (keyed on job_status — the field the row badges
+    # display — not the general appointment `status`, which is a different
+    # field and previously made these counts disagree with what was shown).
     total_jobs = job_appointments.count()
-    scheduled_jobs = job_appointments.filter(status='scheduled').count()
-    in_progress_jobs = job_appointments.filter(status='in_progress').count()
-    completed_jobs = job_appointments.filter(status='completed').count()
+    scheduled_jobs = job_appointments.filter(job_status='scheduled').count()
+    in_progress_jobs = job_appointments.filter(job_status='in_progress').count()
+    completed_jobs = job_appointments.filter(job_status='completed').count()
     
     # Filter by status if provided
     status_filter = request.GET.get('status')
