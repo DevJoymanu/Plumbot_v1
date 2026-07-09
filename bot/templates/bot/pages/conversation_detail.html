@@ -12,7 +12,7 @@
 
   /* ── Left: chat list ── */
   .cw-list {
-    width: 360px;
+    width: 340px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -59,7 +59,7 @@
   .cw-head-who p { margin: 1px 0 0; font-size: 12px; color: var(--color-muted); }
   .cw-back { display: none; margin-right: 4px; color: var(--color-primary); font-size: 18px; text-decoration: none; }
   .cw-head-actions { display: flex; align-items: center; gap: 4px; }
-  .cw-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--color-muted); cursor: pointer; transition: background var(--transition), color var(--transition); }
+  .cw-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--color-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: background var(--transition), color var(--transition); }
   .cw-icon-btn:hover { background: rgba(0,101,145,0.06); color: var(--color-primary); }
 
   .cw-scroll {
@@ -105,66 +105,35 @@
   .cw-send:hover { opacity: 0.92; }
   .cw-send:active { transform: scale(0.94); }
 
-  /* ── Right: appointment editor + intel ── */
-  .cw-side { width: 340px; flex-shrink: 0; overflow-y: auto; background: var(--color-surface-lowest); border-left: var(--glass-border); padding: 22px; display: flex; flex-direction: column; gap: 20px; }
-  .cw-side h4 { margin: 0 0 14px; font-family: var(--font-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-2); display: flex; align-items: center; justify-content: space-between; }
-  .cw-fields { display: flex; flex-direction: column; gap: 14px; }
-  .cw-fld label { display: block; margin-bottom: 6px; font-family: var(--font-label); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-primary); }
-  .cw-fld input, .cw-fld textarea {
-    width: 100%; padding: 11px 14px; border-radius: var(--radius-md);
-    border: 1px solid rgba(0,101,145,0.12); background: var(--color-surface-lowest);
-    font-family: var(--font-base); font-size: 14px; color: var(--color-text);
-    transition: border-color var(--transition), box-shadow var(--transition);
+  /* ── Right: appointment record (real appointment-detail panes, tabbed) ── */
+  .cw-side { width: 460px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--color-surface-lowest); border-left: var(--glass-border); overflow: hidden; }
+  .cw-side-head {
+    flex-shrink: 0; padding: 14px 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border-bottom: 1px solid rgba(0,101,145,0.06);
   }
-  .cw-fld input:focus, .cw-fld textarea:focus { outline: none; border-color: transparent; box-shadow: 0 0 0 3px rgba(0,101,145,0.15); }
-  .cw-fld textarea { resize: vertical; min-height: 76px; }
-  .cw-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .cw-update {
-    width: 100%; margin-top: 14px; padding: 12px; border: none;
-    border-radius: var(--radius-md); background: var(--color-primary); color: var(--color-on-primary);
-    font-family: var(--font-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
-    cursor: pointer; box-shadow: 0 8px 18px -8px rgba(0,101,145,0.5); transition: opacity var(--transition);
-  }
-  .cw-update:hover { opacity: 0.92; }
-
-  .cw-intel { padding: 16px; border-radius: var(--radius-lg); background: rgba(14,165,233,0.05); border: 1px solid rgba(0,101,145,0.10); }
-  .cw-intel-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(0,101,145,0.08); }
-  .cw-intel-row:last-child { border-bottom: none; }
-  .cw-intel-row .k { font-size: 13px; color: var(--color-muted); }
-  .cw-intel-row .v { font-size: 13px; font-weight: 700; color: var(--color-text); text-align: right; }
-  .cw-tag { padding: 3px 10px; border-radius: var(--radius-pill); font-family: var(--font-label); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-  .cw-tag.hot { background: var(--color-error-container); color: var(--color-on-error-container); }
-  .cw-tag.warm { background: rgba(37,211,102,0.14); color: #0f7a3d; }
-  .cw-tag.cold { background: var(--color-surface-highest); color: var(--color-text-2); }
-  .cw-tag.plan { background: rgba(70,72,212,0.10); color: var(--color-secondary); }
-
-  .cw-quote {
-    width: 100%; padding: 15px; border: none; border-radius: var(--radius-lg);
-    background: linear-gradient(135deg, var(--color-primary-container), var(--color-primary));
-    color: var(--color-on-primary); font-family: var(--font-label); font-size: 12px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.05em; text-decoration: none;
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    box-shadow: 0 12px 26px -10px rgba(0,101,145,0.55); transition: transform var(--transition);
-  }
-  .cw-quote:hover { transform: translateY(-1px); }
-
-  /* Tabs + panes */
-  .cw-tabs { flex-shrink: 0; display: flex; gap: 4px; padding: 10px 22px 0; }
-  .cw-tab {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 9px 18px; border: none; background: transparent; cursor: pointer;
+  .cw-side-head h4 { margin: 0; font-family: var(--font-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-2); }
+  .cw-side-tabs { flex-shrink: 0; display: flex; gap: 2px; padding: 8px 12px 0; overflow-x: auto; scrollbar-width: none; }
+  .cw-side-tabs::-webkit-scrollbar { display: none; }
+  .cw-side-tab {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    padding: 9px 14px; border: none; background: transparent; cursor: pointer;
     border-radius: var(--radius-pill);
-    font-family: var(--font-label); font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+    font-family: var(--font-label); font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em;
     color: var(--color-muted); transition: background var(--transition), color var(--transition);
   }
-  .cw-tab:hover { color: var(--color-primary); }
-  .cw-tab.is-active { background: rgba(0,101,145,0.10); color: var(--color-primary); }
-  .cw-pane { flex: 1; min-height: 0; display: none; }
-  .cw-pane.is-active { display: flex; flex-direction: column; }
-  #recordFrame { flex: 1; width: 100%; border: none; background: var(--color-surface); }
-  .cw-wrap.record-mode .cw-side { display: none; }
+  .cw-side-tab:hover { color: var(--color-primary); }
+  .cw-side-tab.is-active { background: rgba(0,101,145,0.10); color: var(--color-primary); }
+  .cw-side-frame-wrap { flex: 1; min-height: 0; position: relative; }
+  #sideFrame { width: 100%; height: 100%; border: none; background: var(--color-surface); }
+  .cw-side-loading {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--color-muted); font-family: var(--font-label); font-size: 12px; gap: 8px;
+    background: var(--color-surface); pointer-events: none; transition: opacity 0.3s ease;
+  }
+  .cw-side-loading.hidden { opacity: 0; }
 
-  @media (max-width: 1180px) { .cw-side { display: none; } }
+  @media (max-width: 1240px) { .cw-side { display: none; } }
   @media (max-width: 860px) {
     .cw-list { display: none; }
     .cw-back { display: inline-block; }
@@ -216,16 +185,10 @@
         </div>
       </div>
       <div class="cw-head-actions">
-        <a class="cw-icon-btn" href="{% url 'appointment_detail' appointment.pk %}?source=conversations" title="Open full record" style="display:inline-flex;align-items:center;justify-content:center;"><i class="fas fa-up-right-from-square"></i></a>
+        <a class="cw-icon-btn" href="{% url 'appointment_detail' appointment.pk %}?source=conversations" title="Open full record page"><i class="fas fa-up-right-from-square"></i></a>
       </div>
     </div>
 
-    <div class="cw-tabs">
-      <button type="button" class="cw-tab is-active" data-tab="chat"><i class="far fa-comment-dots"></i> Chat</button>
-      <button type="button" class="cw-tab" data-tab="record"><i class="far fa-folder-open"></i> Full record</button>
-    </div>
-
-    <div class="cw-pane is-active" id="pane-chat">
     {% if conversation_history %}
     <div class="cw-scroll" id="chatScroll">
       {% for message in conversation_history %}
@@ -256,76 +219,25 @@
         <button class="cw-send" type="submit" title="Send"><i class="fas fa-paper-plane"></i></button>
       </form>
     </div>
-    </div><!-- /pane-chat -->
-
-    <div class="cw-pane" id="pane-record">
-      <iframe id="recordFrame" title="Full appointment record"
-              data-src="{% url 'appointment_detail' appointment.pk %}?source=conversations&frame=1"></iframe>
-    </div>
   </main>
 
-  <!-- Right: appointment editor + lead intelligence -->
+  <!-- Right: the real appointment record, tabbed -->
   <aside class="cw-side">
-    <section>
-      <h4>Appointment Editor <i class="fas fa-pen" style="color:var(--color-primary);"></i></h4>
-      <form method="post" action="{% url 'conversation_detail' appointment.pk %}">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="update">
-        <div class="cw-fields">
-          <div class="cw-fld">
-            <label>Service Type</label>
-            <input type="text" name="service" value="{{ appointment.project_type|default:'' }}" placeholder="e.g. Bathroom renovation">
-          </div>
-          <div class="cw-two">
-            <div class="cw-fld">
-              <label>Date</label>
-              <input type="date" name="date" value="{{ sched_date }}">
-            </div>
-            <div class="cw-fld">
-              <label>Time</label>
-              <input type="time" name="time" value="{{ sched_time }}">
-            </div>
-          </div>
-          <div class="cw-fld">
-            <label>Internal Notes</label>
-            <textarea name="notes" rows="3">{{ appointment.internal_notes|default:'' }}</textarea>
-          </div>
-        </div>
-        <button class="cw-update" type="submit">Update Details</button>
-      </form>
-    </section>
-
-    <section class="cw-intel">
-      <h4 style="margin-bottom:6px;">Lead Intelligence</h4>
-      <div class="cw-intel-row">
-        <span class="k">Intent</span>
-        <span class="v">
-          {% if appointment.lead_status == 'very_hot' or appointment.lead_status == 'hot' %}
-            <span class="cw-tag hot">{{ appointment.get_lead_status_display|default:appointment.lead_status }}</span>
-          {% elif appointment.lead_status == 'cold' %}
-            <span class="cw-tag cold">{{ appointment.get_lead_status_display|default:"Cold" }}</span>
-          {% else %}
-            <span class="cw-tag warm">{{ appointment.get_lead_status_display|default:appointment.lead_status|default:"—" }}</span>
-          {% endif %}
-        </span>
-      </div>
-      <div class="cw-intel-row">
-        <span class="k">Plan</span>
-        <span class="v"><span class="cw-tag plan">{% if appointment.has_plan %}{{ appointment.plan_status|default:"Has plan" }}{% else %}No plan{% endif %}</span></span>
-      </div>
-      <div class="cw-intel-row">
-        <span class="k">Status</span>
-        <span class="v">{{ appointment.get_status_display }}</span>
-      </div>
-      <div class="cw-intel-row">
-        <span class="k">Area</span>
-        <span class="v">{{ appointment.customer_area|default:"—" }}</span>
-      </div>
-    </section>
-
-    <a class="cw-quote" href="{% url 'create_quotation' appointment.pk %}">
-      <i class="fas fa-file-invoice-dollar"></i> Generate Quotation
-    </a>
+    <div class="cw-side-head">
+      <h4>Appointment Record</h4>
+      <a class="cw-icon-btn" href="{% url 'appointment_detail' appointment.pk %}?source=conversations" title="Open full page"><i class="fas fa-up-right-from-square" style="font-size:13px;"></i></a>
+    </div>
+    <div class="cw-side-tabs" role="tablist">
+      <button type="button" class="cw-side-tab is-active" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
+      <button type="button" class="cw-side-tab" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
+      <button type="button" class="cw-side-tab" data-tab="wa-followups"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+      <button type="button" class="cw-side-tab" data-tab="email-followups"><i class="fas fa-envelope"></i> Email</button>
+    </div>
+    <div class="cw-side-frame-wrap">
+      <div class="cw-side-loading" id="sideLoading"><i class="fas fa-circle-notch fa-spin"></i> Loading record…</div>
+      <iframe id="sideFrame" title="Appointment record"
+              data-base="{% url 'appointment_detail' appointment.pk %}?source=conversations&frame=1&hidetabs=1"></iframe>
+    </div>
   </aside>
 </div>
 {% endblock %}
@@ -343,23 +255,44 @@
     var scroll = document.getElementById('chatScroll');
     if (scroll) scroll.scrollTop = scroll.scrollHeight;
 
-    // Tab switching: Chat ⇄ Full record (record frame is lazy-loaded once).
-    var wrap = document.querySelector('.cw-wrap');
-    var tabs = Array.prototype.slice.call(document.querySelectorAll('.cw-tab'));
-    var panes = { chat: document.getElementById('pane-chat'), record: document.getElementById('pane-record') };
-    var frame = document.getElementById('recordFrame');
+    // ── Right panel: drive the real appointment-detail panes ──
+    var frame = document.getElementById('sideFrame');
+    var loading = document.getElementById('sideLoading');
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.cw-side-tab'));
+    var base = frame.getAttribute('data-base');
+    var current = 'details';
+    var ready = false;
+
+    frame.addEventListener('load', function () {
+      ready = true;
+      if (loading) loading.classList.add('hidden');
+    });
+    // Initial load at the Details pane.
+    frame.src = base + '&tab=' + current;
+
+    function selectTab(name) {
+      current = name;
+      tabs.forEach(function (t) { t.classList.toggle('is-active', t.getAttribute('data-tab') === name); });
+      // Same-origin: switch the pane in place without reloading; fall back to a
+      // reload with ?tab= if the frame's function isn't reachable yet.
+      var switched = false;
+      if (ready) {
+        try {
+          if (frame.contentWindow && typeof frame.contentWindow.showAppointmentTab === 'function') {
+            frame.contentWindow.showAppointmentTab(name);
+            switched = true;
+          }
+        } catch (e) { switched = false; }
+      }
+      if (!switched) {
+        if (loading) loading.classList.remove('hidden');
+        ready = false;
+        frame.src = base + '&tab=' + name;
+      }
+    }
+
     tabs.forEach(function (tab) {
-      tab.addEventListener('click', function () {
-        var name = tab.getAttribute('data-tab');
-        tabs.forEach(function (t) { t.classList.toggle('is-active', t === tab); });
-        Object.keys(panes).forEach(function (k) {
-          if (panes[k]) panes[k].classList.toggle('is-active', k === name);
-        });
-        if (wrap) wrap.classList.toggle('record-mode', name === 'record');
-        if (name === 'record' && frame && !frame.src) {
-          frame.src = frame.getAttribute('data-src');
-        }
-      });
+      tab.addEventListener('click', function () { selectTab(tab.getAttribute('data-tab')); });
     });
   });
 </script>

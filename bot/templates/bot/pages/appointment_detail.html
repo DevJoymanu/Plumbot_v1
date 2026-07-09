@@ -2353,6 +2353,21 @@
     });
   });
 
+  // Embed/deep-link support: ?tab=<name> opens that pane on load; ?hidetabs=1
+  // hides the internal tab bar (used when the Conversations workspace drives the
+  // panes from its own right-hand tabs).
+  (function () {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var t = params.get('tab');
+      if (t) { showAppointmentTab(t); }
+      if (params.get('hidetabs') === '1') {
+        var bar = document.querySelector('.appt-tabbar');
+        if (bar) { bar.style.display = 'none'; }
+      }
+    } catch (e) {}
+  })();
+
   // Toggle inline edit of a logged follow-up message.
   function toggleFollowupEdit(index) {
     var text = document.getElementById('fu-text-' + index);
