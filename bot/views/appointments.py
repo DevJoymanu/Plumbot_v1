@@ -62,8 +62,13 @@ logger = logging.getLogger(__name__)
 from ..services.lead_scoring import refresh_lead_score, calculate_lead_score
 
 @method_decorator(staff_required, name='dispatch')
-class AppointmentsListView(ListView):
-    template_name = 'bot/pages/appointments_list.html'
+class ConversationsView(ListView):
+    """Lead inbox — formerly the Appointments list, now the Conversations page.
+
+    Same queryset/filters as before (no DB change); only the template file and
+    the nav label moved. The calendar-based Appointments page is a separate view.
+    """
+    template_name = 'bot/pages/conversations.html'
     model = Appointment
     context_object_name = 'appointments'
     paginate_by = 20
@@ -241,7 +246,7 @@ class AppointmentsListView(ListView):
             scheduled_datetime__date=today
         ).order_by('scheduled_datetime')
 
-        context['active_nav'] = 'appointments'
+        context['active_nav'] = 'conversations'
         context['status_counts'] = {
             'total': base_qs.count(),
             'pending': base_qs.filter(status='pending').exclude(
@@ -258,6 +263,100 @@ class AppointmentsListView(ListView):
         context['delayed_leads_with_countdown'] = delayed_leads_with_countdown
         context['selected_response_age'] = response_age
         context['selected_status_filter'] = status_filter
+        return context
+
+
+@method_decorator(staff_required, name='dispatch')
+class AppointmentsListView(TemplateView):
+    """Month calendar of scheduled appointments (main, right) plus a list of the
+    month's booked appointments (left). Read-only view built entirely from
+    ``Appointment.scheduled_datetime`` — no database changes.
+    """
+    template_name = 'bot/pages/appointments_list.html'
+
+    # Sunday-first weekday order, matching the calendar mockup.
+    WEEKDAY_HEADERS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+    def _local(self, dt):
+        if timezone.is_naive(dt):
+            dt = timezone.make_aware(dt)
+        return timezone.localtime(dt)
+
+    def get_context_data(self, **kwargs):
+        import calendar as _pycal
+        from datetime import date as _date
+
+        context = super().get_context_data(**kwargs)
+        today = timezone.localdate()
+
+        # Resolve the visible month from ?month=YYYY-MM, defaulting to this month.
+        raw = (self.request.GET.get('month') or '').strip()
+        try:
+            year_str, month_str = raw.split('-')
+            first = _date(int(year_str), int(month_str), 1)
+        except (ValueError, AttributeError):
+            first = today.replace(day=1)
+        year, month = first.year, first.month
+
+        days_in_month = _pycal.monthrange(year, month)[1]
+        month_start = _date(year, month, 1)
+        month_end = _date(year, month, days_in_month)
+
+        appts = (
+            Appointment.objects.real()
+            .filter(
+                scheduled_datetime__date__gte=month_start,
+                scheduled_datetime__date__lte=month_end,
+            )
+            .exclude(status='cancelled')
+            .order_by('scheduled_datetime')
+        )
+
+        by_day = {}
+        booked = []
+        for appt in appts:
+            local = self._local(appt.scheduled_datetime)
+            entry = {
+                'pk': appt.pk,
+                'time': local.strftime('%H:%M'),
+                'name': appt.customer_name or appt.phone_number or 'Appointment',
+                'service': appt.get_project_type_display() if appt.project_type else 'No service',
+                'status': appt.status,
+            }
+            by_day.setdefault(local.day, []).append(entry)
+            if appt.status == 'confirmed':
+                booked.append({**entry, 'date_label': local.strftime('%a %d %b')})
+
+        _pycal.setfirstweekday(_pycal.SUNDAY)
+        weeks = []
+        for week in _pycal.monthcalendar(year, month):
+            cells = []
+            for day_num in week:
+                if day_num == 0:
+                    cells.append(None)
+                    continue
+                cells.append({
+                    'day': day_num,
+                    'is_today': (year == today.year and month == today.month and day_num == today.day),
+                    'appts': by_day.get(day_num, []),
+                })
+            weeks.append(cells)
+
+        prev_month = (month_start - timedelta(days=1)).replace(day=1)
+        next_month = month_end + timedelta(days=1)
+
+        context.update({
+            'active_nav': 'appointments',
+            'calendar_weeks': weeks,
+            'weekday_headers': self.WEEKDAY_HEADERS,
+            'month_label': month_start.strftime('%B %Y'),
+            'prev_month': prev_month.strftime('%Y-%m'),
+            'next_month': next_month.strftime('%Y-%m'),
+            'is_current_month': (year == today.year and month == today.month),
+            'booked_appointments': booked,
+            'booked_count': len(booked),
+            'scheduled_count': len(by_day),
+        })
         return context
 
 
@@ -506,7 +605,7 @@ class AppointmentDetailView(DetailView):
         conversation_history = appointment.conversation_history
         uploaded_files = appointment.get_all_uploaded_files()   # ← NEW
         detail_source = self.request.GET.get('source', 'appointments')
-        valid_sources = {'appointments', 'dashboard', 'priority_leads', 'followups'}
+        valid_sources = {'appointments', 'conversations', 'dashboard', 'priority_leads', 'followups'}
         if detail_source not in valid_sources:
             detail_source = 'appointments'
 
@@ -532,6 +631,10 @@ class AppointmentDetailView(DetailView):
             active_nav = 'followups'
             source_back_url = reverse('followup_dashboard')
             source_title = 'Follow-ups'
+        elif detail_source == 'conversations':
+            active_nav = 'conversations'
+            source_back_url = reverse('conversations_list')
+            source_title = 'Conversations'
 
         sidebar_filter = self.request.GET.get('sidebar_filter', 'all')
         sidebar_response_age = self.request.GET.get('sidebar_response_age', 'all')

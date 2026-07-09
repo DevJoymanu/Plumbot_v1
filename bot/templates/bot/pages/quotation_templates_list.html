@@ -24,7 +24,7 @@
 
     .card {
         background: #fff;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--color-outline-variant);
         border-radius: 12px;
         padding: 16px;
         margin-bottom: 14px;
@@ -69,8 +69,8 @@
         gap: 6px;
     }
     .btn-secondary {
-        background: #f3f4f6;
-        color: #374151;
+        background: var(--color-surface-low);
+        color: var(--color-text-2);
         border-radius: 20px;
         padding: 10px 20px;
         border: none;
@@ -96,18 +96,18 @@
     }
     .stat-card {
         background: #fff;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--color-outline-variant);
         border-radius: 12px;
         padding: 14px;
         text-align: center;
     }
     .stat-card .stat-val { font-size: 22px; font-weight: 700; color: #006591; }
-    .stat-card .stat-lbl { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .stat-card .stat-lbl { font-size: 11px; color: var(--color-muted); margin-top: 2px; }
 
     /* Filters */
     .filters-card {
         background: #fff;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--color-outline-variant);
         border-radius: 12px;
         padding: 16px;
         margin-bottom: 14px;
@@ -115,7 +115,7 @@
     .form-group { margin-bottom: 12px; }
     .form-group label {
         font-size: 11px;
-        color: #6b7280;
+        color: var(--color-muted);
         display: block;
         margin-bottom: 3px;
         font-weight: 500;
@@ -160,18 +160,18 @@
     /* Template card */
     .template-card {
         background: #fff;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--color-outline-variant);
         border-radius: 12px;
         padding: 16px;
         display: flex;
         flex-direction: column;
         gap: 10px;
     }
-    .template-name { font-size: 15px; font-weight: 600; color: #111827; margin: 0; }
-    .template-sub { font-size: 12px; color: #6b7280; margin: 0; }
+    .template-name { font-size: 15px; font-weight: 600; color: var(--color-text); margin: 0; }
+    .template-sub { font-size: 12px; color: var(--color-muted); margin: 0; }
 
     .template-meta { display: flex; flex-wrap: wrap; gap: 6px; }
-    .meta-item { font-size: 12px; color: #6b7280; }
+    .meta-item { font-size: 12px; color: var(--color-muted); }
 
     .template-footer { display: flex; gap: 8px; margin-top: auto; }
     .template-footer a,
@@ -190,7 +190,7 @@
         font-weight: 600;
     }
     .pill-active  { background: #d1fae5; color: #059669; }
-    .pill-inactive { background: #f3f4f6; color: #6b7280; }
+    .pill-inactive { background: var(--color-surface-low); color: var(--color-muted); }
 
     /* Pagination */
     .pagination {
@@ -209,8 +209,8 @@
         align-items: center;
         justify-content: center;
         background: #fff;
-        border: 1px solid #e5e7eb;
-        color: #374151;
+        border: 1px solid var(--color-outline-variant);
+        color: var(--color-text-2);
         font-size: 13px;
         font-weight: 500;
         text-decoration: none;
@@ -223,11 +223,11 @@
     .empty-state {
         text-align: center;
         padding: 50px 20px;
-        color: #9ca3af;
+        color: var(--color-muted);
         grid-column: 1 / -1;
     }
     .empty-state i { font-size: 3rem; margin-bottom: 12px; display: block; opacity: 0.4; }
-    .empty-state h3 { font-size: 18px; color: #374151; margin-bottom: 8px; }
+    .empty-state h3 { font-size: 18px; color: var(--color-text-2); margin-bottom: 8px; }
     .empty-state p { margin-bottom: 20px; }
 
     .section-header {
@@ -322,7 +322,7 @@
                     <span class="meta-item"><i class="bi bi-repeat"></i> Used {{ template.use_count }}x</span>
                 </div>
                 {% if template.description %}
-                <p style="font-size:12px;color:#6b7280;margin:0;">{{ template.description|truncatewords:15 }}</p>
+                <p style="font-size:12px;color:var(--color-muted);margin:0;">{{ template.description|truncatewords:15 }}</p>
                 {% endif %}
                 <div class="template-footer">
                     <a href="{% url 'edit_quotation_template' template.pk %}" class="btn-primary btn-sm">

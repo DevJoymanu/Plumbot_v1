@@ -12,7 +12,10 @@
     {% csrf_token %}
     <div>
         <label for="id_username" class="form-label">Username</label>
-        {{ form.username }}
+        <div class="pb-input-icon">
+            <i class="fas fa-user"></i>
+            {{ form.username }}
+        </div>
         {% if form.username.errors %}
         <div class="text-danger small mt-2">
             {% for error in form.username.errors %}
@@ -24,7 +27,10 @@
 
     <div>
         <label for="id_password" class="form-label">Password</label>
-        {{ form.password }}
+        <div class="pb-input-icon">
+            <i class="fas fa-lock"></i>
+            {{ form.password }}
+        </div>
         {% if form.password.errors %}
         <div class="text-danger small mt-2">
             {% for error in form.password.errors %}
@@ -50,6 +56,10 @@
 
 <div class="text-center text-muted small mt-4">
     Secure staff access only.
+</div>
+
+<div class="pb-auth-status">
+    <span><i></i> System Online</span>
 </div>
 {% endblock %}
 

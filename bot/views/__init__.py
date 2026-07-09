@@ -38,6 +38,7 @@ from .public_call import call_redirect
 
 from .appointments import (
     AppointmentsListView,
+    ConversationsView,
     PriorityLeadsView,
     update_priority_lead_card,
     AppointmentDetailView,

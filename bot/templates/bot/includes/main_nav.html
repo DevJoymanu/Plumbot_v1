@@ -15,6 +15,10 @@
             <i class="fas fa-calendar-alt nav-icon"></i>
             Appointments
         </a>
+        <a href="{% url 'conversations_list' %}" class="pb-sidenav__item {% if active_nav == 'conversations' %}active{% endif %}">
+            <i class="fas fa-comment-dots nav-icon"></i>
+            Conversations
+        </a>
         <a href="{% url 'priority_leads' %}" class="pb-sidenav__item {% if active_nav == 'leads' %}active{% endif %}">
             <i class="fas fa-bolt nav-icon"></i>
             Priority Leads

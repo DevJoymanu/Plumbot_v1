@@ -907,13 +907,59 @@ a { color: inherit; text-decoration: none; }
     width: 100%;
     min-height: 48px;
     border-radius: var(--radius-pill);
-    background: var(--color-primary);
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-container));
     border: none;
     font-family: var(--font-label);
     font-weight: 600;
     letter-spacing: 0.03em;
-    font-size: 14px;
+    text-transform: uppercase;
+    font-size: 13px;
     box-shadow: 0 8px 20px -6px rgba(0, 101, 145, 0.35);
+}
+
+/* Icon-inset field wrapper — reusable anywhere a pill input needs a leading icon */
+.pb-input-icon { position: relative; }
+
+.pb-input-icon > i {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-muted);
+    font-size: 14px;
+    pointer-events: none;
+}
+
+.pb-input-icon > input { padding-left: 42px !important; }
+
+.pb-auth-status {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.pb-auth-status span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-low);
+    border: 1px solid rgba(0, 101, 145, 0.08);
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+}
+
+.pb-auth-status i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    display: inline-block;
 }
 
 /* ── Responsive ── */

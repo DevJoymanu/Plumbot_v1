@@ -47,8 +47,11 @@ urlpatterns = [
 
     # Dashboard
     path('dashboard/', views.DashboardView.as_view(), name='dashboard'),
-    
-    # Appointments
+
+    # Conversations (lead inbox — formerly the appointments list)
+    path('conversations/', views.ConversationsView.as_view(), name='conversations_list'),
+
+    # Appointments (month calendar + booked list)
     path('appointments/', AppointmentsListView.as_view(), name='appointments_list'),
     path('leads/priority/', PriorityLeadsView.as_view(), name='priority_leads'),
     path('leads/priority/<int:pk>/update/', views.update_priority_lead_card, name='update_priority_lead_card'),

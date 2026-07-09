@@ -1,0 +1,859 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block extra_css %}
+<style>
+  .inbox-shell {
+    min-height: 100vh;
+  }
+
+  .inbox-layout {
+    display: grid;
+    grid-template-columns: 420px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+
+  .inbox-left {
+    background: var(--color-surface-low);
+    border-right: 1px solid var(--color-outline-variant);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .inbox-top {
+    background: var(--color-header);
+    color: #fff;
+    padding: 14px 16px 12px;
+  }
+
+  .inbox-top h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .inbox-top p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .inbox-search {
+    background: var(--color-header);
+    padding: 10px 16px 14px;
+  }
+
+  .inbox-search-wrap {
+    position: relative;
+  }
+
+  .inbox-search-wrap i {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-muted);
+    font-size: 14px;
+  }
+
+  .inbox-search input {
+    width: 100%;
+    min-height: 40px;
+    padding: 0 16px 0 40px;
+    border-radius: 999px;
+    border: none;
+    background: #fff;
+  }
+
+  .inbox-filter-tabs {
+    display: flex;
+    gap: 18px;
+    padding: 0 16px;
+    background: #fff;
+    border-bottom: 1px solid var(--color-outline-variant);
+    overflow-x: auto;
+  }
+
+  .inbox-filter-link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 0 11px;
+    text-decoration: none;
+    color: var(--color-muted);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .inbox-filter-link.active {
+    color: var(--color-teal);
+    font-weight: 700;
+  }
+
+  .inbox-filter-link.active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--color-teal);
+    border-radius: 999px;
+  }
+
+  .inbox-filter-link span {
+    display: inline-flex;
+    min-width: 18px;
+    height: 18px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #eef2f3;
+    font-size: 11px;
+  }
+
+  /* ── Time window bar ── */
+  .inbox-age-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    background: #fff;
+    border-bottom: 1px solid var(--color-outline-variant);
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+  .inbox-age-bar::-webkit-scrollbar { display: none; }
+
+  .inbox-age-label {
+    font-size: 11px;
+    color: var(--color-muted);
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .inbox-age-pill {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--color-muted);
+    background: var(--color-surface-low);
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .inbox-age-pill.active {
+    background: var(--color-teal);
+    color: #fff;
+  }
+
+  .inbox-age-pill:hover:not(.active) {
+    background: var(--color-outline-variant);
+  }
+
+  .inbox-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    background: #f5f6f8;
+  }
+
+  .inbox-row {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid #eceff3;
+    text-decoration: none;
+    color: inherit;
+    background: #fff;
+  }
+
+  .inbox-row:hover {
+    background: #f8fafb;
+    text-decoration: none;
+  }
+
+  .inbox-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .inbox-main {
+    min-width: 0;
+  }
+
+  .inbox-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .inbox-meta,
+  .inbox-preview {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .inbox-meta {
+    color: var(--color-muted);
+  }
+
+  .inbox-preview {
+    color: var(--color-muted);
+    margin-top: 2px;
+  }
+
+  .inbox-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .inbox-time {
+    font-size: 11px;
+    color: #6e7881;
+  }
+  .inbox-time.overdue { color: #ba1a1a; font-weight: 600; }
+
+  .inbox-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .inbox-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .inbox-pill.booked { background: #d1fae5; color: #059669; }
+  .inbox-pill.pending { background: #fef3c7; color: #d97706; }
+  .inbox-pill.cancelled { background: #ffdad6; color: #ba1a1a; }
+  .inbox-pill.delayed { background: #c9e6ff; color: #006591; }
+
+  .inbox-right {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: #e8ddd6;
+  }
+
+  .inbox-tabs-bar {
+    background: var(--color-header);
+    color: #fff;
+    padding: 0 12px;
+    min-height: 64px;
+    display: none;
+    align-items: flex-end;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .inbox-tabs-bar::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .inbox-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    max-width: 260px;
+    padding: 12px 14px 11px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.82);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .inbox-tab.is-active {
+    background: #eff4ff;
+    color: #0b1c30;
+  }
+
+  .inbox-tab-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 700;
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 0;
+  }
+
+  .inbox-tab-close {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .inbox-tab-close:hover {
+    background: rgba(11, 28, 48, 0.08);
+  }
+
+  .inbox-preview-body {
+    flex: 1;
+    min-height: 0;
+    padding: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
+    position: relative;
+  }
+
+  .inbox-workspace {
+    position: absolute;
+    inset: 0;
+  }
+
+  .inbox-workspace iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: none;
+    background: #eff4ff;
+  }
+
+  .inbox-workspace iframe.is-active {
+    display: block;
+  }
+
+  .inbox-empty-wrap {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+
+  .inbox-empty {
+    width: min(520px, 100%);
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 24px;
+    padding: 28px;
+    text-align: center;
+  }
+
+  .inbox-empty-icon {
+    width: 74px;
+    height: 74px;
+    margin: 0 auto 16px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, var(--color-teal), var(--color-header));
+    color: #fff;
+    font-size: 28px;
+  }
+
+  .inbox-empty h3 {
+    margin: 0 0 8px;
+    color: #0b1c30;
+    font-size: 22px;
+    font-weight: 800;
+  }
+
+  .inbox-empty p {
+    margin: 0 0 18px;
+    color: #6e7881;
+    font-size: 14px;
+  }
+
+  .inbox-empty-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .inbox-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .inbox-btn.primary {
+    background: var(--color-header);
+    color: #fff;
+  }
+
+  .inbox-btn.ghost {
+    background: #fff;
+    color: #3e4850;
+    border: 1px solid var(--color-outline-variant);
+  }
+
+  .delayed-panel {
+    margin: 16px;
+    background: #fff;
+    border: 1px solid #bfdbfe;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .delayed-panel-head {
+    padding: 14px 16px;
+    border-bottom: 1px solid #c9e6ff;
+    background: #eff6ff;
+    color: #004c6e;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .delayed-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #eef4ff;
+  }
+
+  .delayed-row:last-child {
+    border-bottom: none;
+  }
+
+  .delayed-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0b1c30;
+  }
+
+  .delayed-meta {
+    font-size: 12px;
+    color: #6e7881;
+  }
+
+  .delayed-days {
+    font-size: 20px;
+    font-weight: 800;
+    color: #004c6e;
+  }
+
+  .delayed-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: var(--color-header);
+    color: #fff;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .inbox-pagination {
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .inbox-pagination ul {
+    display: flex;
+    gap: 8px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .inbox-pagination .page-link {
+    min-width: 40px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    border: 1px solid var(--color-outline-variant);
+    background: #fff;
+    color: var(--color-header);
+    text-decoration: none;
+    padding: 0 10px;
+  }
+
+  .inbox-pagination .page-item.active .page-link {
+    background: var(--color-header);
+    color: #fff;
+    border-color: var(--color-header);
+  }
+
+  @media (max-width: 980px) {
+    .inbox-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .inbox-right {
+      display: none;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="inbox-shell">
+  <div class="inbox-layout">
+    <section class="inbox-left">
+      <div class="inbox-top">
+        <h1>Conversations</h1>
+        <p>{{ status_counts.total }} total</p>
+      </div>
+
+      <div class="inbox-search">
+        <div class="inbox-search-wrap">
+          <i class="fas fa-search"></i>
+          <input id="appointmentsSearch" type="text" placeholder="Search name, phone, service...">
+        </div>
+      </div>
+
+      <div class="inbox-filter-tabs">
+        <a href="?status_filter=all" class="inbox-filter-link {% if selected_status_filter == 'all' %}active{% endif %}">All <span>{{ status_counts.total }}</span></a>
+        <a href="?status_filter=booked" class="inbox-filter-link {% if selected_status_filter == 'booked' %}active{% endif %}">Booked <span>{{ status_counts.confirmed }}</span></a>
+        <a href="?status_filter=pending" class="inbox-filter-link {% if selected_status_filter == 'pending' %}active{% endif %}">Pending <span>{{ status_counts.pending }}</span></a>
+        <a href="?status_filter=cancelled" class="inbox-filter-link {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled <span>{{ status_counts.cancelled }}</span></a>
+        <a href="?status_filter=delayed" class="inbox-filter-link {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed <span>{{ status_counts.delayed }}</span></a>
+        <a href="?status_filter=ad" class="inbox-filter-link {% if selected_status_filter == 'ad' %}active{% endif %}">Ad <span>{{ status_counts.ad }}</span></a>
+      </div>
+
+      {# ── Per-tab time window selector ── #}
+      <div class="inbox-age-bar">
+        <span class="inbox-age-label">Window:</span>
+        <a href="?status_filter={{ selected_status_filter }}&response_age=1w_minus" class="inbox-age-pill {% if selected_response_age == '1w_minus' %}active{% endif %}">7 days</a>
+        <a href="?status_filter={{ selected_status_filter }}&response_age=3w_minus" class="inbox-age-pill {% if selected_response_age == '3w_minus' %}active{% endif %}">21 days</a>
+        <a href="?status_filter={{ selected_status_filter }}&response_age=4w_minus" class="inbox-age-pill {% if selected_response_age == '4w_minus' %}active{% endif %}">30 days</a>
+        <a href="?status_filter={{ selected_status_filter }}&response_age=all"      class="inbox-age-pill {% if selected_response_age == 'all' %}active{% endif %}">All time</a>
+      </div>
+
+      {% if selected_status_filter == 'delayed' and delayed_leads_with_countdown %}
+      <div class="delayed-panel">
+        <div class="delayed-panel-head">Delayed follow-up window</div>
+        {% for item in delayed_leads_with_countdown %}
+        {% with lead=item.lead %}
+        <div class="delayed-row">
+          <div>
+            <div class="delayed-name">{% firstof lead.customer_name lead.phone_number "Appointment" %}</div>
+            <div class="delayed-meta">Follow up by {{ item.follow_up_due_at|date:"M j, Y" }}</div>
+          </div>
+          <div class="delayed-days">{{ item.days_remaining }}</div>
+          <a href="{% url 'appointment_detail' lead.pk %}?source=conversations&frame=1"
+             class="delayed-link"
+             data-open-appointment
+             data-appointment-id="{{ lead.pk }}"
+             data-tab-label="{{ lead.customer_name|default:lead.phone_number|default:'Appointment' }}"
+             data-detail-url="{% url 'appointment_detail' lead.pk %}?source=conversations&frame=1">Open</a>
+        </div>
+        {% endwith %}
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="inbox-scroll" id="appointmentsInbox">
+        {% for appointment in appointments %}
+        <a href="{% url 'appointment_detail' appointment.pk %}?source=conversations&sidebar_filter={{ selected_status_filter }}"
+           class="inbox-row"
+           data-open-appointment
+           data-appointment-id="{{ appointment.pk }}"
+           data-tab-label="{{ appointment.customer_name|default:appointment.phone_number|default:'Appointment' }}"
+           data-detail-url="{% url 'appointment_detail' appointment.pk %}?source=conversations&frame=1"
+           data-search="{{ appointment.customer_name|default:''|lower }} {{ appointment.phone_number|default:''|lower }} {{ appointment.project_type|default:''|lower }} {{ appointment.customer_area|default:''|lower }}">
+          <div class="inbox-avatar" style="background:{% cycle '#22c55e' '#ba1a1a' '#f59e0b' '#0f766e' '#f97316' '#4648d4' '#14b8a6' %};">
+            {{ appointment.customer_name|default:appointment.phone_number|default:"AP"|slice:":2"|upper }}
+          </div>
+          <div class="inbox-main">
+            <div class="inbox-name">{% firstof appointment.customer_name appointment.phone_number "Appointment" %} <span title="{{ appointment.messaging_window_kind }} messaging window{% if not appointment.messaging_window_open %} — closed{% endif %}" style="font-size:10px;font-weight:700;color:#fff;background:{% if not appointment.messaging_window_open %}#6e7881{% elif appointment.messaging_window_kind == '72h' %}#1877f2{% else %}#0f766e{% endif %};padding:1px 5px;border-radius:3px;vertical-align:middle;">{{ appointment.messaging_window_kind }}</span></div>
+            <div class="inbox-meta">{{ appointment.get_project_type_display|default:appointment.project_type|default:"No service" }} · {{ appointment.customer_area|default:"No area" }}</div>
+            <div class="inbox-preview">{{ appointment.project_description|default:"No notes yet"|truncatewords:10 }}</div>
+          </div>
+          <div class="inbox-side">
+            <div class="inbox-time"
+                 data-appt-date="{{ appointment.scheduled_datetime|date:'c' }}"
+                 data-status="{{ appointment.status }}">{{ appointment.scheduled_datetime|date:"j M, H:i"|default:appointment.updated_at|date:"j M, H:i" }}</div>
+            <div class="inbox-dot" style="background:
+              {% if appointment.lead_status == 'very_hot' %}#ba1a1a
+              {% elif appointment.lead_status == 'hot' %}#f59e0b
+              {% elif appointment.lead_status == 'warm' %}#22c55e
+              {% elif appointment.lead_status == 'luke_warm' %}#0ea5e9
+              {% else %}#6e7881{% endif %};"></div>
+            <div class="inbox-pill {% if appointment.status == 'confirmed' %}booked{% elif appointment.status == 'pending' %}pending{% elif appointment.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">
+              {% if appointment.status == 'confirmed' %}Booked{% elif appointment.status == 'pending' %}Pending{% elif appointment.status == 'cancelled' %}Cancelled{% else %}{{ appointment.get_status_display }}{% endif %}
+            </div>
+          </div>
+        </a>
+        {% empty %}
+        <div class="empty-block">
+          <i class="fas fa-calendar-times" style="font-size:32px; opacity:.25; display:block; margin-bottom:10px;"></i>
+          No appointments found.
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if is_paginated %}
+      <div class="inbox-pagination">
+        <nav aria-label="Page navigation">
+          <ul>
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+              <a class="page-link" href="?page={{ page_obj.previous_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">&laquo;</a>
+            </li>
+            {% endif %}
+
+            {% for num in paginator.page_range %}
+            {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
+            {% if page_obj.number == num %}
+            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+            {% else %}
+            <li class="page-item">
+              <a class="page-link" href="?page={{ num }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">{{ num }}</a>
+            </li>
+            {% endif %}
+            {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+            <li class="page-item">
+              <a class="page-link" href="?page={{ page_obj.next_page_number }}&response_age={{ selected_response_age }}&status_filter={{ selected_status_filter }}">&raquo;</a>
+            </li>
+            {% endif %}
+          </ul>
+        </nav>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="inbox-right">
+      <div class="inbox-tabs-bar" id="appointmentTabs" aria-label="Open appointment tabs"></div>
+      <div class="inbox-preview-body">
+        <div class="inbox-workspace" id="appointmentWorkspace"></div>
+        <div class="inbox-empty-wrap" id="appointmentEmptyState">
+          <div class="inbox-empty">
+            <div class="inbox-empty-icon">
+              <i class="fas fa-folder-open"></i>
+            </div>
+            <h3>Open a conversation</h3>
+            <p>Appointments open here as tabs so the sidebar stays in place while you move between leads.</p>
+            <div class="inbox-empty-actions">
+              {% if appointments %}
+              <a href="{% url 'appointment_detail' appointments.0.pk %}?source=conversations&frame=1"
+                 class="inbox-btn primary"
+                 data-open-appointment
+                 data-appointment-id="{{ appointments.0.pk }}"
+                 data-tab-label="{{ appointments.0.customer_name|default:appointments.0.phone_number|default:'Appointment' }}"
+                 data-detail-url="{% url 'appointment_detail' appointments.0.pk %}?source=conversations&frame=1"><i class="fas fa-arrow-right"></i> Open first appointment</a>
+              {% endif %}
+              <a href="{% url 'export_appointments' %}" class="inbox-btn ghost"><i class="fas fa-download"></i> Export</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var search = document.getElementById('appointmentsSearch');
+    var rows = Array.from(document.querySelectorAll('.inbox-row'));
+
+    // ── Search ──
+    if (search) {
+      search.addEventListener('input', function () {
+        var term = search.value.trim().toLowerCase();
+        rows.forEach(function (row) {
+          var haystack = row.getAttribute('data-search') || '';
+          row.style.display = haystack.indexOf(term) > -1 ? '' : 'none';
+        });
+      });
+    }
+
+    // ── Persist active tab into sessionStorage so appointment_detail sidebar restores it ──
+    // Map appointments_list status_filter values → appointment_detail data-filter values
+    var TAB_MAP = { all: 'all', booked: 'confirmed', pending: 'pending', cancelled: 'cancelled', delayed: 'delayed', ad: 'ad' };
+    var currentFilter = '{{ selected_status_filter|default:"all" }}';
+    var sidebarFilter = TAB_MAP[currentFilter] || 'all';
+
+    rows.forEach(function (row) {
+      row.addEventListener('click', function () {
+        try { sessionStorage.setItem('plumbot_sidebar_tab', sidebarFilter); } catch (e) {}
+      });
+    });
+    PlumbotDates.initAppointmentDates();
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var desktopBreakpoint = window.matchMedia('(min-width: 981px)');
+    var tabsRoot = document.getElementById('appointmentTabs');
+    var workspace = document.getElementById('appointmentWorkspace');
+    var emptyState = document.getElementById('appointmentEmptyState');
+    var openers = Array.from(document.querySelectorAll('[data-open-appointment]'));
+    var TAB_MAP = { all: 'all', booked: 'confirmed', pending: 'pending', cancelled: 'cancelled', delayed: 'delayed', ad: 'ad' };
+    var currentFilter = '{{ selected_status_filter|default:"all" }}';
+    var sidebarFilter = TAB_MAP[currentFilter] || 'all';
+    var state = {
+      openTabs: [],
+      activeTabId: null
+    };
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>\"']/g, function (char) {
+        switch (char) {
+          case '&': return '&amp;';
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '"': return '&quot;';
+          case "'": return '&#39;';
+          default: return char;
+        }
+      });
+    }
+
+    function tabLabel(el) {
+      var label = (el.getAttribute('data-tab-label') || '').trim();
+      return label || 'Appointment';
+    }
+
+    function detailUrl(el) {
+      var base = el.getAttribute('data-detail-url') || el.getAttribute('href') || '';
+      if (!base) return '';
+      if (base.indexOf('sidebar_filter=') > -1) {
+        return base.replace(/sidebar_filter=[^&]*/g, 'sidebar_filter=' + encodeURIComponent(sidebarFilter));
+      }
+      return base + (base.indexOf('?') > -1 ? '&' : '?') + 'sidebar_filter=' + encodeURIComponent(sidebarFilter);
+    }
+
+    function renderTabs() {
+      if (!tabsRoot || !workspace || !emptyState) return;
+
+      tabsRoot.innerHTML = state.openTabs.map(function (tab) {
+        var activeClass = tab.id === state.activeTabId ? ' is-active' : '';
+        return '<div class="inbox-tab' + activeClass + '" data-tab-id="' + tab.id + '">' +
+          '<button type="button" class="inbox-tab-label" data-action="activate" data-tab-id="' + tab.id + '">' + escapeHtml(tab.label) + '</button>' +
+          '<button type="button" class="inbox-tab-close" aria-label="Close tab" data-action="close" data-tab-id="' + tab.id + '"><i class="fas fa-times"></i></button>' +
+        '</div>';
+      }).join('');
+
+      Array.from(workspace.querySelectorAll('iframe')).forEach(function (frame) {
+        frame.classList.toggle('is-active', frame.getAttribute('data-tab-id') === state.activeTabId);
+      });
+
+      tabsRoot.style.display = state.openTabs.length ? 'flex' : 'none';
+      emptyState.style.display = state.openTabs.length ? 'none' : '';
+    }
+
+    function setActiveTab(tabId) {
+      state.activeTabId = tabId;
+      renderTabs();
+    }
+
+    function openTabFromElement(el) {
+      if (!tabsRoot || !workspace) return;
+      var appointmentId = String(el.getAttribute('data-appointment-id'));
+      var existing = state.openTabs.find(function (tab) { return tab.id === appointmentId; });
+      if (existing) {
+        existing.label = tabLabel(el);
+        setActiveTab(appointmentId);
+        return;
+      }
+
+      var frame = document.createElement('iframe');
+      frame.setAttribute('data-tab-id', appointmentId);
+      frame.setAttribute('title', tabLabel(el));
+      frame.setAttribute('loading', 'lazy');
+      frame.src = detailUrl(el);
+      workspace.appendChild(frame);
+
+      state.openTabs.push({
+        id: appointmentId,
+        label: tabLabel(el)
+      });
+      setActiveTab(appointmentId);
+    }
+
+    function closeTab(tabId) {
+      var index = state.openTabs.findIndex(function (tab) { return tab.id === tabId; });
+      if (index === -1) return;
+
+      state.openTabs.splice(index, 1);
+      var frame = workspace.querySelector('iframe[data-tab-id="' + tabId + '"]');
+      if (frame) frame.remove();
+
+      if (state.activeTabId === tabId) {
+        var next = state.openTabs[index - 1] || state.openTabs[index] || null;
+        state.activeTabId = next ? next.id : null;
+      }
+      renderTabs();
+    }
+
+    openers.forEach(function (el) {
+      el.addEventListener('click', function (event) {
+        try { sessionStorage.setItem('plumbot_sidebar_tab', sidebarFilter); } catch (e) {}
+        if (!desktopBreakpoint.matches) return;
+        event.preventDefault();
+        openTabFromElement(el);
+      });
+    });
+
+    if (tabsRoot) {
+      tabsRoot.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-action]');
+        if (!button) return;
+        var action = button.getAttribute('data-action');
+        var tabId = button.getAttribute('data-tab-id');
+        if (action === 'activate') setActiveTab(tabId);
+        if (action === 'close') closeTab(tabId);
+      });
+    }
+
+    renderTabs();
+  });
+</script>
+{% endblock %}
