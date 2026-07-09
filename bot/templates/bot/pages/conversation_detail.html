@@ -10,27 +10,102 @@
 
   .cw-wrap { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 
+  /* ── Section 1: chats list ── */
+  .cw-list {
+    width: 340px; flex-shrink: 0; display: flex; flex-direction: column;
+    background: var(--color-surface-lowest); border-right: var(--glass-border); overflow: hidden;
+  }
+  .cw-list-head { padding: 18px 18px 12px; flex-shrink: 0; }
+  .cw-list-head h2 { margin: 0 0 12px; font-size: 20px; font-weight: 700; color: var(--color-text); }
+  .cw-chips { display: flex; gap: 6px; }
+  .cw-chip { padding: 6px 14px; border-radius: var(--radius-pill); font-family: var(--font-label); font-size: 11px; font-weight: 600; color: var(--color-text-2); background: var(--color-surface-mid); text-decoration: none; }
+  .cw-chip.active { background: rgba(0,101,145,0.10); color: var(--color-primary); }
+  .cw-rows { flex: 1; min-height: 0; overflow-y: auto; }
+  .cw-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; text-decoration: none; color: inherit;
+    border-left: 3px solid transparent; transition: background var(--transition);
+  }
+  .cw-row:hover { background: var(--color-surface-low); }
+  .cw-row.active { background: rgba(14,165,233,0.08); border-left-color: var(--color-primary); }
   .cw-av {
     flex-shrink: 0; width: 46px; height: 46px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-family: var(--font-label); font-weight: 600; font-size: 15px; text-transform: uppercase;
   }
+  .cw-row-body { flex: 1; min-width: 0; }
+  .cw-row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .cw-row-name { font-weight: 700; font-size: 14.5px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cw-row-time { flex-shrink: 0; font-size: 10.5px; font-weight: 600; color: var(--color-muted); font-family: var(--font-label); }
+  .cw-row.active .cw-row-time { color: var(--color-primary); }
+  .cw-row-prev { margin-top: 2px; font-size: 12.5px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* ── Section 1: chat ── */
+  /* ── Section 2: chat + integrated detail tabs ── */
   .cw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
   .cw-head {
-    flex-shrink: 0; height: 68px; padding: 0 22px;
-    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; padding: 12px 22px 0;
     background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur));
     -webkit-backdrop-filter: blur(var(--glass-blur)); border-bottom: var(--glass-border);
   }
+  .cw-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .cw-head-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .cw-head-who h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--color-text); line-height: 1.2; }
-  .cw-head-who p { margin: 1px 0 0; font-size: 12px; color: var(--color-muted); }
-  .cw-back { display: inline-flex; align-items: center; margin-right: 4px; color: var(--color-primary); font-size: 18px; text-decoration: none; }
-  .cw-head-actions { display: flex; align-items: center; gap: 4px; }
-  .cw-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--color-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: background var(--transition), color var(--transition); }
+  .cw-head-who p { margin: 2px 0 0; font-size: 12.5px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cw-back { display: inline-flex; align-items: center; margin-right: 2px; color: var(--color-primary); font-size: 18px; text-decoration: none; }
+
+  .cw-head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+  .cw-head-actions { display: flex; align-items: center; gap: 8px; }
+  .cw-lead-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 7px 14px; border-radius: var(--radius-pill); text-decoration: none;
+    font-family: var(--font-label); font-size: 11.5px; font-weight: 600;
+    transition: opacity var(--transition), background var(--transition);
+  }
+  .cw-lead-btn.call { background: var(--color-surface-mid); color: var(--color-primary); }
+  .cw-lead-btn.call:hover { background: var(--color-surface-high); }
+  .cw-lead-btn.wa { background: #25D366; color: #fff; }
+  .cw-lead-btn.wa:hover { opacity: 0.92; }
+  .cw-icon-btn { width: 34px; height: 34px; border-radius: 50%; border: none; background: transparent; color: var(--color-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: background var(--transition), color var(--transition); }
   .cw-icon-btn:hover { background: rgba(0,101,145,0.06); color: var(--color-primary); }
+
+  .cw-head-pills { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+  .cw-pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--radius-pill);
+    font-family: var(--font-label); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+    background: var(--color-surface-mid); color: var(--color-text-2);
+  }
+  .cw-pill.booked { background: rgba(37,211,102,0.16); color: #0f7a3d; }
+  .cw-pill.pending { background: rgba(245,158,11,0.16); color: #b45309; }
+  .cw-pill.cancelled { background: var(--color-error-container); color: var(--color-on-error-container); }
+  .cw-pill.delayed { background: rgba(0,101,145,0.10); color: var(--color-primary); }
+  .cw-pill.very_hot { background: var(--color-error-container); color: var(--color-on-error-container); }
+  .cw-pill.hot { background: rgba(245,158,11,0.16); color: #b45309; }
+  .cw-pill.warm { background: rgba(37,211,102,0.16); color: #0f7a3d; }
+  .cw-pill.luke_warm { background: rgba(14,165,233,0.14); color: var(--color-primary); }
+  .cw-pill.cold { background: var(--color-surface-highest); color: var(--color-text-2); }
+  .cw-pill.win { background: var(--color-text-2); color: #fff; }
+  .cw-pill.win-open { background: #16a34a; color: #fff; }
+  .cw-pill.win-closed { background: var(--color-muted); color: #fff; }
+  .cw-score { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 22px; padding: 0 8px; border-radius: var(--radius-pill); background: var(--color-primary); color: var(--color-on-primary); font-family: var(--font-label); font-size: 11px; font-weight: 700; }
+
+  /* Tabs — right under the number */
+  .cw-tabs { display: flex; gap: 2px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
+  .cw-tabs::-webkit-scrollbar { display: none; }
+  .cw-tab {
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    padding: 11px 16px; border: none; background: transparent; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: var(--font-label); font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+    color: var(--color-muted); transition: color var(--transition), border-color var(--transition);
+  }
+  .cw-tab:hover { color: var(--color-primary); }
+  .cw-tab.is-active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+
+  /* Body / panes */
+  .cw-body { flex: 1; min-height: 0; position: relative; display: flex; }
+  .cw-pane { flex: 1; min-width: 0; min-height: 0; display: none; flex-direction: column; }
+  .cw-pane.is-active { display: flex; }
 
   .cw-scroll {
     flex: 1; min-height: 0; overflow-y: auto; padding: 24px 6% 20px;
@@ -56,18 +131,16 @@
   .cw-bubble.out { background: linear-gradient(135deg, var(--color-primary-container), var(--color-primary)); color: var(--color-on-primary); border-top-right-radius: 4px; box-shadow: 0 6px 18px -6px rgba(0,101,145,0.35); }
   .cw-bubble-text { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.5; }
   .chat-bubble-time { margin-top: 5px; text-align: right; font-size: 10px; opacity: 0.6; }
-
   .cw-chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--color-muted); text-align: center; }
   .cw-chat-empty i { font-size: 40px; opacity: 0.3; }
 
   /* Composer */
-  .cw-composer { flex-shrink: 0; padding: 14px 22px 18px; background: transparent; }
+  .cw-composer { flex-shrink: 0; padding: 14px 22px 18px; }
   .cw-composer form { display: flex; align-items: center; gap: 10px; max-width: 900px; margin: 0 auto; }
   .cw-composer .cw-field {
     flex: 1; display: flex; align-items: center; gap: 8px;
     background: var(--color-surface-lowest); border: var(--glass-border);
-    border-radius: var(--radius-pill); padding: 4px 8px 4px 18px;
-    box-shadow: 0 2px 10px rgba(14,165,233,0.05);
+    border-radius: var(--radius-pill); padding: 4px 8px 4px 18px; box-shadow: 0 2px 10px rgba(14,165,233,0.05);
   }
   .cw-composer input[type="text"] { flex: 1; border: none; background: transparent; padding: 12px 0; font-size: 14px; }
   .cw-composer input[type="text"]:focus { outline: none; }
@@ -75,173 +148,137 @@
   .cw-send:hover { opacity: 0.92; }
   .cw-send:active { transform: scale(0.94); }
 
-  /* ── Right: appointment record (real appointment-detail panes, tabbed) ── */
-  .cw-side { width: 460px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--color-surface-lowest); border-left: var(--glass-border); overflow: hidden; }
-  /* Lead header (mirrors appointment-detail header) */
-  .cw-lead { flex-shrink: 0; padding: 18px 18px 14px; border-bottom: 1px solid rgba(0,101,145,0.06); }
-  .cw-lead-top { display: flex; align-items: center; gap: 12px; }
-  .cw-lead-av {
-    flex-shrink: 0; width: 48px; height: 48px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-container));
-    color: #fff; font-family: var(--font-label); font-weight: 600; font-size: 16px; text-transform: uppercase;
-  }
-  .cw-lead-id { min-width: 0; }
-  .cw-lead-name { font-size: 17px; font-weight: 700; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cw-lead-meta { margin-top: 1px; font-size: 12.5px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cw-lead-actions { display: flex; gap: 8px; margin-top: 14px; }
-  .cw-lead-btn {
-    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-    padding: 9px 12px; border-radius: var(--radius-pill); text-decoration: none;
-    font-family: var(--font-label); font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
-    transition: opacity var(--transition), background var(--transition);
-  }
-  .cw-lead-btn.call { background: var(--color-surface-mid); color: var(--color-primary); }
-  .cw-lead-btn.call:hover { background: var(--color-surface-high); }
-  .cw-lead-btn.wa { background: #25D366; color: #fff; }
-  .cw-lead-btn.wa:hover { opacity: 0.92; }
-  .cw-lead-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
-  .cw-pill {
-    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--radius-pill);
-    font-family: var(--font-label); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
-    background: var(--color-surface-mid); color: var(--color-text-2);
-  }
-  .cw-pill.booked { background: rgba(37,211,102,0.16); color: #0f7a3d; }
-  .cw-pill.pending { background: rgba(245,158,11,0.16); color: #b45309; }
-  .cw-pill.cancelled { background: var(--color-error-container); color: var(--color-on-error-container); }
-  .cw-pill.delayed { background: rgba(0,101,145,0.10); color: var(--color-primary); }
-  .cw-pill.very_hot { background: var(--color-error-container); color: var(--color-on-error-container); }
-  .cw-pill.hot { background: rgba(245,158,11,0.16); color: #b45309; }
-  .cw-pill.warm { background: rgba(37,211,102,0.16); color: #0f7a3d; }
-  .cw-pill.luke_warm { background: rgba(14,165,233,0.14); color: var(--color-primary); }
-  .cw-pill.cold { background: var(--color-surface-highest); color: var(--color-text-2); }
-  .cw-pill.win { background: var(--color-text-2); color: #fff; }
-  .cw-pill.win-open { background: #16a34a; color: #fff; }
-  .cw-pill.win-closed { background: var(--color-muted); color: #fff; }
-  .cw-score {
-    display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 24px; padding: 0 8px;
-    border-radius: var(--radius-pill); background: var(--color-primary); color: var(--color-on-primary);
-    font-family: var(--font-label); font-size: 12px; font-weight: 700;
-  }
-  .cw-score-txt { font-size: 12px; color: var(--color-text-2); }
-
-  .cw-side-tabs { flex-shrink: 0; display: flex; gap: 2px; padding: 10px 12px 0; overflow-x: auto; scrollbar-width: none; }
-  .cw-side-tabs::-webkit-scrollbar { display: none; }
-  .cw-side-tab {
-    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-    padding: 9px 14px; border: none; background: transparent; cursor: pointer;
-    border-radius: var(--radius-pill);
-    font-family: var(--font-label); font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em;
-    color: var(--color-muted); transition: background var(--transition), color var(--transition);
-  }
-  .cw-side-tab:hover { color: var(--color-primary); }
-  .cw-side-tab.is-active { background: rgba(0,101,145,0.10); color: var(--color-primary); }
-  .cw-side-frame-wrap { flex: 1; min-height: 0; position: relative; }
-  #sideFrame { width: 100%; height: 100%; border: none; background: var(--color-surface); }
-  .cw-side-loading {
+  /* Record frame (Details/Quotes/WhatsApp/Email panes) */
+  #recordFrame { flex: 1; width: 100%; border: none; background: var(--color-surface); }
+  .cw-frame-loading {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    color: var(--color-muted); font-family: var(--font-label); font-size: 12px; gap: 8px;
+    gap: 8px; color: var(--color-muted); font-family: var(--font-label); font-size: 12px;
     background: var(--color-surface); pointer-events: none; transition: opacity 0.3s ease;
   }
-  .cw-side-loading.hidden { opacity: 0; }
+  .cw-frame-loading.hidden { opacity: 0; }
 
-  @media (max-width: 980px) { .cw-side { display: none; } }
+  @media (max-width: 860px) { .cw-list { display: none; } }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="cw-wrap">
-  <!-- Section 1: chat thread -->
-  <main class="cw-main">
-    <div class="cw-head">
-      <div class="cw-head-who">
-        <a class="cw-back" href="{% url 'conversations_list' %}"><i class="fas fa-arrow-left"></i></a>
-        <div class="cw-av" style="width:40px;height:40px;background:var(--color-primary-container);">{{ appointment.customer_name|default:appointment.phone_number|slice:":2"|upper }}</div>
-        <div>
-          <h3>{% firstof appointment.customer_name "Unnamed lead" %}</h3>
-          <p>{{ appointment.phone_number }}{% if appointment.customer_area %} &middot; {{ appointment.customer_area }}{% endif %}</p>
-        </div>
-      </div>
-      <div class="cw-head-actions">
-        <a class="cw-icon-btn" href="{% url 'appointment_detail' appointment.pk %}?source=conversations" title="Open full record page"><i class="fas fa-up-right-from-square"></i></a>
+  <!-- Section 1: chats list -->
+  <aside class="cw-list">
+    <div class="cw-list-head">
+      <h2>Chats</h2>
+      <div class="cw-chips">
+        <a href="{% url 'conversations_list' %}" class="cw-chip active">All</a>
+        <a href="{% url 'conversations_list' %}?status_filter=booked" class="cw-chip">Booked</a>
+        <a href="{% url 'conversations_list' %}?status_filter=pending" class="cw-chip">Pending</a>
       </div>
     </div>
-
-    {% if conversation_history %}
-    <div class="cw-scroll" id="chatScroll">
-      {% for message in conversation_history %}
-      <div class="chat-bubble-row {% if message.role == 'user' %}user{% else %}assistant{% endif %}" data-ts="{{ message.timestamp }}">
-        <div class="cw-bubble {% if message.role == 'user' %}in{% else %}out{% endif %}">
-          <div class="cw-bubble-text">{{ message.content|default:"(no message content)" }}</div>
-          <div class="chat-bubble-time" data-ts="{{ message.timestamp }}"></div>
+    <div class="cw-rows">
+      {% for t in threads %}
+      {% with tlast=t.conversation_history|last %}
+      <a class="cw-row {% if t.pk == appointment.pk %}active{% endif %}" href="{% url 'conversation_detail' t.pk %}">
+        <div class="cw-av" style="background:{% cycle '#006591' '#4648d4' '#0ea5e9' '#0f766e' '#8a5100' '#576065' %};">
+          {{ t.customer_name|default:t.phone_number|default:"AP"|slice:":2"|upper }}
         </div>
-      </div>
+        <div class="cw-row-body">
+          <div class="cw-row-top">
+            <span class="cw-row-name">{% firstof t.customer_name t.phone_number "Conversation" %}</span>
+            <span class="cw-row-time" data-msg-ts="{{ t.last_inbound_at|default:t.updated_at|date:'c' }}">{{ t.last_inbound_at|default:t.updated_at|date:"j M" }}</span>
+          </div>
+          <div class="cw-row-prev">{{ tlast.content|default:"No messages yet"|truncatechars:42 }}</div>
+        </div>
+      </a>
+      {% endwith %}
       {% endfor %}
     </div>
-    {% else %}
-    <div class="cw-scroll" id="chatScroll">
-      <div class="cw-chat-empty">
-        <i class="fas fa-comment-slash"></i>
-        <p>No messages logged for this lead yet.</p>
+  </aside>
+
+  <!-- Section 2: chat thread + integrated detail tabs -->
+  <main class="cw-main">
+    <div class="cw-head">
+      <div class="cw-head-row">
+        <div class="cw-head-who">
+          <a class="cw-back" href="{% url 'conversations_list' %}" title="Back to chats"><i class="fas fa-arrow-left"></i></a>
+          <div class="cw-av" style="width:44px;height:44px;background:linear-gradient(135deg,var(--color-primary),var(--color-primary-container));">{{ appointment.customer_name|default:appointment.phone_number|slice:":2"|upper }}</div>
+          <div style="min-width:0;">
+            <h3>{% firstof appointment.customer_name "Unnamed lead" %}</h3>
+            <p>{{ appointment.phone_number }}{% if appointment.customer_area %} &middot; {{ appointment.customer_area }}{% endif %}</p>
+          </div>
+        </div>
+        <div class="cw-head-side">
+          <div class="cw-head-actions">
+            <a class="cw-lead-btn call" href="tel:{{ appointment.phone_number|cut:'whatsapp:' }}"><i class="fas fa-phone"></i> Call</a>
+            <a class="cw-lead-btn wa" target="_blank" href="https://wa.me/{{ appointment.phone_number|cut:'whatsapp:'|cut:'+'|cut:'-'|cut:' '|cut:'('|cut:')' }}"><i class="fab fa-whatsapp"></i> WhatsApp</a>
+            <a class="cw-icon-btn" href="{% url 'appointment_detail' appointment.pk %}?source=conversations" title="Open full record page"><i class="fas fa-up-right-from-square" style="font-size:13px;"></i></a>
+          </div>
+          <div class="cw-head-pills">
+            <span class="cw-pill {% if appointment.status == 'confirmed' %}booked{% elif appointment.status == 'pending' %}pending{% elif appointment.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">{% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}</span>
+            <span class="cw-pill {{ appointment.lead_status|default:computed_lead_status }}">{{ computed_lead_status_label|default:appointment.get_lead_status_display }}</span>
+            <span class="cw-score">{{ computed_lead_score|default:appointment.lead_score }}</span>
+            <span class="cw-pill win"><i class="far fa-clock"></i> {{ appointment.messaging_window_kind }} window</span>
+            {% if appointment.messaging_window_closes_at %}
+              {% if appointment.messaging_window_open %}
+              <span class="cw-pill win-open"><i class="far fa-paper-plane"></i> closes {{ appointment.messaging_window_closes_at|date:"D j M, H:i" }}</span>
+              {% else %}
+              <span class="cw-pill win-closed">window closed</span>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="cw-tabs" role="tablist">
+        <button type="button" class="cw-tab is-active" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
+        <button type="button" class="cw-tab" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
+        <button type="button" class="cw-tab" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
+        <button type="button" class="cw-tab" data-tab="wa-followups"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+        <button type="button" class="cw-tab" data-tab="email-followups"><i class="fas fa-envelope"></i> Email</button>
       </div>
     </div>
-    {% endif %}
 
-    <div class="cw-composer">
-      <form method="post" action="{% url 'conversation_detail' appointment.pk %}">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="send">
-        <div class="cw-field">
-          <input type="text" name="message" placeholder="Type a reply to send on WhatsApp..." autocomplete="off">
+    <div class="cw-body">
+      <!-- Chat pane -->
+      <div class="cw-pane is-active" id="pane-chat">
+        {% if conversation_history %}
+        <div class="cw-scroll" id="chatScroll">
+          {% for message in conversation_history %}
+          <div class="chat-bubble-row {% if message.role == 'user' %}user{% else %}assistant{% endif %}" data-ts="{{ message.timestamp }}">
+            <div class="cw-bubble {% if message.role == 'user' %}in{% else %}out{% endif %}">
+              <div class="cw-bubble-text">{{ message.content|default:"(no message content)" }}</div>
+              <div class="chat-bubble-time" data-ts="{{ message.timestamp }}"></div>
+            </div>
+          </div>
+          {% endfor %}
         </div>
-        <button class="cw-send" type="submit" title="Send"><i class="fas fa-paper-plane"></i></button>
-      </form>
+        {% else %}
+        <div class="cw-scroll" id="chatScroll">
+          <div class="cw-chat-empty">
+            <i class="fas fa-comment-slash"></i>
+            <p>No messages logged for this lead yet.</p>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="cw-composer">
+          <form method="post" action="{% url 'conversation_detail' appointment.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="send">
+            <div class="cw-field">
+              <input type="text" name="message" placeholder="Type a reply to send on WhatsApp..." autocomplete="off">
+            </div>
+            <button class="cw-send" type="submit" title="Send"><i class="fas fa-paper-plane"></i></button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Detail panes (Details / Quotes / WhatsApp / Email) -->
+      <div class="cw-pane" id="pane-record">
+        <div class="cw-frame-loading" id="frameLoading"><i class="fas fa-circle-notch fa-spin"></i> Loading record…</div>
+        <iframe id="recordFrame" title="Appointment record"
+                data-base="{% url 'appointment_detail' appointment.pk %}?source=conversations&frame=1&hidetabs=1"></iframe>
+      </div>
     </div>
   </main>
-
-  <!-- Right: the real appointment record, tabbed -->
-  <aside class="cw-side">
-    <div class="cw-lead">
-      <div class="cw-lead-top">
-        <div class="cw-lead-av">{{ appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
-        <div class="cw-lead-id">
-          <div class="cw-lead-name">{{ appointment.customer_name|default:appointment.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-          <div class="cw-lead-meta">{{ appointment.phone_number }}{% if appointment.customer_area %} &middot; {{ appointment.customer_area }}{% endif %}</div>
-        </div>
-      </div>
-      <div class="cw-lead-actions">
-        <a class="cw-lead-btn call" href="tel:{{ appointment.phone_number|cut:'whatsapp:' }}"><i class="fas fa-phone"></i> Call</a>
-        <a class="cw-lead-btn wa" target="_blank" href="https://wa.me/{{ appointment.phone_number|cut:'whatsapp:'|cut:'+'|cut:'-'|cut:' '|cut:'('|cut:')' }}"><i class="fab fa-whatsapp"></i> WhatsApp</a>
-      </div>
-      <div class="cw-lead-pills">
-        <span class="cw-pill {% if appointment.status == 'confirmed' %}booked{% elif appointment.status == 'pending' %}pending{% elif appointment.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">{% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}</span>
-        <span class="cw-pill {{ appointment.lead_status|default:computed_lead_status }}">{{ computed_lead_status_label|default:appointment.get_lead_status_display }}</span>
-        <span class="cw-score">{{ computed_lead_score|default:appointment.lead_score }}</span>
-        <span class="cw-score-txt">Score {{ computed_lead_score|default:appointment.lead_score }}/100</span>
-        {% if appointment.chatbot_paused %}<span class="cw-pill pending">Bot paused</span>{% endif %}
-        <span class="cw-pill win" title="Free-form messaging window"><i class="far fa-clock"></i> {{ appointment.messaging_window_kind }} window</span>
-        {% if appointment.messaging_window_closes_at %}
-          {% if appointment.messaging_window_open %}
-          <span class="cw-pill win-open"><i class="far fa-paper-plane"></i> closes {{ appointment.messaging_window_closes_at|date:"D j M, H:i" }}</span>
-          {% else %}
-          <span class="cw-pill win-closed"><i class="far fa-paper-plane"></i> window closed</span>
-          {% endif %}
-        {% endif %}
-      </div>
-    </div>
-    <div class="cw-side-tabs" role="tablist">
-      <button type="button" class="cw-side-tab" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
-      <button type="button" class="cw-side-tab is-active" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
-      <button type="button" class="cw-side-tab" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
-      <button type="button" class="cw-side-tab" data-tab="wa-followups"><i class="fab fa-whatsapp"></i> WhatsApp</button>
-      <button type="button" class="cw-side-tab" data-tab="email-followups"><i class="fas fa-envelope"></i> Email</button>
-    </div>
-    <div class="cw-side-frame-wrap">
-      <div class="cw-side-loading" id="sideLoading"><i class="fas fa-circle-notch fa-spin"></i> Loading record…</div>
-      <iframe id="sideFrame" title="Appointment record"
-              data-base="{% url 'appointment_detail' appointment.pk %}?source=conversations&frame=1&hidetabs=1"></iframe>
-    </div>
-  </aside>
 </div>
 {% endblock %}
 
@@ -258,44 +295,56 @@
     var scroll = document.getElementById('chatScroll');
     if (scroll) scroll.scrollTop = scroll.scrollHeight;
 
-    // ── Right panel: drive the real appointment-detail panes ──
-    var frame = document.getElementById('sideFrame');
-    var loading = document.getElementById('sideLoading');
-    var tabs = Array.prototype.slice.call(document.querySelectorAll('.cw-side-tab'));
+    // ── Tabs: Chat pane vs the real appointment-detail panes (in an iframe) ──
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.cw-tab'));
+    var paneChat = document.getElementById('pane-chat');
+    var paneRecord = document.getElementById('pane-record');
+    var frame = document.getElementById('recordFrame');
+    var loading = document.getElementById('frameLoading');
     var base = frame.getAttribute('data-base');
-    var current = 'details';
     var ready = false;
+    var loadedTab = null;
 
     frame.addEventListener('load', function () {
       ready = true;
       if (loading) loading.classList.add('hidden');
     });
-    // Initial load at the Details pane.
-    frame.src = base + '&tab=' + current;
 
-    function selectTab(name) {
-      current = name;
-      tabs.forEach(function (t) { t.classList.toggle('is-active', t.getAttribute('data-tab') === name); });
-      // Same-origin: switch the pane in place without reloading; fall back to a
-      // reload with ?tab= if the frame's function isn't reachable yet.
-      var switched = false;
-      if (ready) {
+    function showRecord(tab) {
+      if (loadedTab === null) {
+        // First open — load the frame at this pane.
+        loadedTab = tab;
+        frame.src = base + '&tab=' + tab;
+      } else if (ready) {
         try {
           if (frame.contentWindow && typeof frame.contentWindow.showAppointmentTab === 'function') {
-            frame.contentWindow.showAppointmentTab(name);
-            switched = true;
-          }
-        } catch (e) { switched = false; }
+            frame.contentWindow.showAppointmentTab(tab);
+          } else { reloadFrame(tab); }
+        } catch (e) { reloadFrame(tab); }
+      } else {
+        reloadFrame(tab);
       }
-      if (!switched) {
-        if (loading) loading.classList.remove('hidden');
-        ready = false;
-        frame.src = base + '&tab=' + name;
-      }
+    }
+    function reloadFrame(tab) {
+      loadedTab = tab; ready = false;
+      if (loading) loading.classList.remove('hidden');
+      frame.src = base + '&tab=' + tab;
     }
 
     tabs.forEach(function (tab) {
-      tab.addEventListener('click', function () { selectTab(tab.getAttribute('data-tab')); });
+      tab.addEventListener('click', function () {
+        var name = tab.getAttribute('data-tab');
+        tabs.forEach(function (t) { t.classList.toggle('is-active', t === tab); });
+        if (name === 'chat') {
+          paneChat.classList.add('is-active');
+          paneRecord.classList.remove('is-active');
+          if (scroll) scroll.scrollTop = scroll.scrollHeight;
+        } else {
+          paneChat.classList.remove('is-active');
+          paneRecord.classList.add('is-active');
+          showRecord(name);
+        }
+      });
     });
   });
 </script>

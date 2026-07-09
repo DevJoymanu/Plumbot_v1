@@ -275,6 +275,13 @@ class ConversationDetailView(TemplateView):
     """
     template_name = 'bot/pages/conversation_detail.html'
 
+    def _thread_list(self, current):
+        """Recent conversations for the left rail, current one guaranteed present."""
+        rows = list(Appointment.objects.real().order_by('-updated_at')[:40])
+        if current.pk not in {a.pk for a in rows}:
+            rows.insert(0, current)
+        return rows
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         appointment = get_object_or_404(Appointment.objects.real(), pk=kwargs['pk'])
@@ -292,6 +299,7 @@ class ConversationDetailView(TemplateView):
         context.update({
             'active_nav': 'conversations',
             'appointment': appointment,
+            'threads': self._thread_list(appointment),
             'conversation_history': appointment.conversation_history or [],
             'sched_date': local_sched.strftime('%Y-%m-%d') if local_sched else '',
             'sched_time': local_sched.strftime('%H:%M') if local_sched else '',
