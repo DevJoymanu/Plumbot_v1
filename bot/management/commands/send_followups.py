@@ -192,7 +192,7 @@ class Command(BaseCommand):
         min_wait_cutoff    = now - timedelta(hours=1)
 
         candidates = (
-            Appointment.objects
+            Appointment.objects.real()
             .filter(
                 is_lead_active=True,
                 last_inbound_at__gte=window_open_cutoff,
@@ -366,7 +366,7 @@ class Command(BaseCommand):
         window_open_cutoff = now - timedelta(days=self._PARKED_NUDGE_MAX_AGE_DAYS)
 
         candidates = (
-            Appointment.objects
+            Appointment.objects.real()
             .filter(
                 is_lead_active=True,
                 internal_notes__contains='[PARKED]',
@@ -491,7 +491,7 @@ class Command(BaseCommand):
         )
 
         due = (
-            Appointment.objects
+            Appointment.objects.real()
             .filter(
                 is_lead_active=True,
                 is_delayed=True,
@@ -750,7 +750,7 @@ class Command(BaseCommand):
         response_window = now_local - timedelta(minutes=2)  # ← must be defined FIRST
         #
         leads = (
-            Appointment.objects
+            Appointment.objects.real()
             .filter(is_lead_active=True, status='pending', is_delayed=False)
             # Quotation-only stubs have a synthetic phone_number (see
             # quotation_templates.py) and no real WhatsApp number, so any send
@@ -777,7 +777,7 @@ class Command(BaseCommand):
         response_window = now_local - timedelta(minutes=2)
         plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
 
-        q0 = Appointment.objects.filter(is_lead_active=True, status='pending')
+        q0 = Appointment.objects.real().filter(is_lead_active=True, status='pending')
         c0 = q0.count()
 
         q1 = q0.exclude(followup_stage='completed')

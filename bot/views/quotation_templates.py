@@ -264,15 +264,15 @@ def appointment_search_api(request):
     GET /api/appointments/search/?q=<query>
     Returns matching appointments for the typeahead in the standalone form.
     """
-    from .models import Appointment
+    from ..models import Appointment
     from django.db.models import Q
- 
+
     query = request.GET.get('q', '').strip()
     if len(query) < 2:
         return JsonResponse({'appointments': []})
  
     qs = (
-        Appointment.objects
+        Appointment.objects.real()
         .filter(
             Q(customer_name__icontains=query)  |
             Q(phone_number__icontains=query)   |

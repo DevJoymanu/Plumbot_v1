@@ -67,7 +67,7 @@ def appointment_data(request):
     """
     service_filter = request.GET.get('service')
     
-    appointments = Appointment.objects.all()
+    appointments = Appointment.objects.real()
     if service_filter and service_filter != "all":
         appointments = appointments.filter(project_type__icontains=service_filter)
 

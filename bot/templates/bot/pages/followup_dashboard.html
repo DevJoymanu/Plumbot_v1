@@ -458,7 +458,7 @@
 {% block extra_js %}
 <script>
 (function () {
-  var COLORS = ['#0e7490','#0a3d5c','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
+  var COLORS = ['#006591','#006591','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
   document.querySelectorAll('.fd-avatar[data-name]').forEach(function (el) {
     var n = el.getAttribute('data-name') || '';
     el.style.background = COLORS[n.charCodeAt(0) % COLORS.length];

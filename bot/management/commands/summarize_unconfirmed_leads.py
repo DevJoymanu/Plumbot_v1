@@ -37,7 +37,7 @@ class Command(BaseCommand):
         cutoff = timezone.now() - timedelta(hours=24)
 
         leads = (
-            Appointment.objects.filter(status__in=["pending", "in_progress"])
+            Appointment.objects.real().filter(status__in=["pending", "in_progress"])
             .filter(created_at__lte=cutoff)
             .exclude(conversation_history=[])
             .order_by("created_at")

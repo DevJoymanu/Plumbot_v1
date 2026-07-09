@@ -1381,8 +1381,9 @@ def send_bulk_followup(request):
         
         return redirect('followup_dashboard')
     
-    # GET request - show bulk follow-up form
-    active_leads = Appointment.objects.filter(
+    # GET request - show bulk follow-up form (real leads only — never bulk-message
+    # 999 test lines)
+    active_leads = Appointment.objects.real().filter(
         is_lead_active=True,
         status='pending'
     ).order_by('-last_customer_response')

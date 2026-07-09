@@ -6,7 +6,7 @@
 <style>
     /* ── TopBar ── */
     .pb-topbar {
-        background: linear-gradient(135deg, #0c4a6e 0%, var(--color-header-dark) 100%);
+        background: linear-gradient(135deg, #006591 0%, var(--color-header-dark) 100%);
         padding: 14px 16px;
         display: flex;
         align-items: center;
@@ -61,7 +61,7 @@
         transform: translateY(-2px);
         box-shadow: var(--shadow-sm);
     }
-    .pb-stat-cell--teal  { border-top: 2px solid #0e7490; }
+    .pb-stat-cell--teal  { border-top: 2px solid #006591; }
     .pb-stat-cell--blue  { border-top: 2px solid #2563eb; }
     .pb-stat-cell--red   { border-top: 2px solid #ef4444; }
     .pb-stat-cell--amber { border-top: 2px solid #f59e0b; }
@@ -73,7 +73,7 @@
         letter-spacing: -0.03em;
         font-variant-numeric: tabular-nums;
     }
-    .pb-stat-cell--teal  .pb-stat-cell__num { color: #0e7490; }
+    .pb-stat-cell--teal  .pb-stat-cell__num { color: #006591; }
     .pb-stat-cell--blue  .pb-stat-cell__num { color: #2563eb; }
     .pb-stat-cell--red   .pb-stat-cell__num { color: #ef4444; }
     .pb-stat-cell--amber .pb-stat-cell__num { color: #d97706; }
@@ -114,7 +114,7 @@
     }
     .pb-schedule__header:hover { background: #f8fafc; }
 
-    .pb-schedule--teal   .pb-schedule__header { border-left-color: #0e7490; }
+    .pb-schedule--teal   .pb-schedule__header { border-left-color: #006591; }
     .pb-schedule--purple .pb-schedule__header { border-left-color: #8b5cf6; }
     .pb-schedule--amber  .pb-schedule__header { border-left-color: #f59e0b; }
     .pb-schedule--red    .pb-schedule__header { border-left-color: #ef4444; }
@@ -133,7 +133,7 @@
         padding: 2px 9px;
         border-radius: var(--radius-pill);
     }
-    .pb-schedule--teal   .pb-schedule__count { background: rgba(14,116,144,0.1);  color: #0e7490; }
+    .pb-schedule--teal   .pb-schedule__count { background: rgba(0,101,145,0.1);  color: #006591; }
     .pb-schedule--purple .pb-schedule__count { background: rgba(139,92,246,0.1);  color: #7c3aed; }
     .pb-schedule--amber  .pb-schedule__count { background: rgba(245,158,11,0.1);  color: #d97706; }
     .pb-schedule--red    .pb-schedule__count { background: rgba(239,68,68,0.1);   color: #dc2626; }
@@ -151,13 +151,13 @@
         align-items: center;
         gap: 12px;
         padding: 12px 16px;
-        border-top: 1px solid #f1f5f9;
+        border-top: 1px solid #eff4ff;
         text-decoration: none;
         color: inherit;
         transition: background var(--transition);
     }
     .pb-sched-row:hover { background: #f8fafc; }
-    .pb-sched-row:active { background: #f1f5f9; }
+    .pb-sched-row:active { background: #eff4ff; }
 
     .pb-time-block {
         flex-shrink: 0;
@@ -229,7 +229,7 @@
         text-align: center;
         color: var(--color-muted);
         font-size: 12.5px;
-        border-top: 1px solid #f1f5f9;
+        border-top: 1px solid #eff4ff;
     }
     .pb-empty-inline i { margin-right: 6px; opacity: .3; }
 
@@ -247,7 +247,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid #eff4ff;
     }
     .pb-section-card__title {
         font-size: 12.5px;
@@ -270,14 +270,14 @@
         align-items: center;
         gap: 12px;
         padding: 12px 16px;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid #eff4ff;
         text-decoration: none;
         color: inherit;
         transition: background var(--transition);
     }
     .pb-followup-row:last-child { border-bottom: none; }
     .pb-followup-row:hover { background: #f8fafc; }
-    .pb-followup-row:active { background: #f1f5f9; }
+    .pb-followup-row:active { background: #eff4ff; }
 
     .pb-avatar {
         width: 42px;
@@ -562,7 +562,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // Avatar color by first char
-        var COLORS = ['#0e7490','#0a3d5c','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
+        var COLORS = ['#006591','#006591','#25D366','#0ea5e9','#8b5cf6','#f59e0b','#ef4444'];
         document.querySelectorAll('.pb-avatar[data-name]').forEach(function (el) {
             var name = el.getAttribute('data-name') || '';
             el.style.background = COLORS[name.charCodeAt(0) % COLORS.length];

@@ -539,7 +539,7 @@ class Command(BaseCommand):
             logger.warning("Scheduled reminder dispatch failed: %s", exc)
 
         # ── Fetch ALL confirmed future appointments (no WhatsApp window filter) ──
-        base_qs = Appointment.objects.filter(
+        base_qs = Appointment.objects.real().filter(
             Q(status__in=["confirmed", "scheduled", "booked"]),
             scheduled_datetime__isnull=False,
             scheduled_datetime__date__gte=today,
@@ -665,7 +665,7 @@ class Command(BaseCommand):
         followup_sent = followup_skipped = followup_failed = 0
 
         delayed_leads = list(
-            Appointment.objects.filter(
+            Appointment.objects.real().filter(
                 internal_notes__contains=f"[FOLLOW_UP_DATE] {today.isoformat()}",
             ).exclude(
                 internal_notes__contains="[FOLLOW_UP_SENT]"
@@ -871,7 +871,7 @@ class Command(BaseCommand):
 
         # Active upcoming appointments — used by emails 2, 3, 4, 5
         active_apts = list(
-            Appointment.objects.filter(
+            Appointment.objects.real().filter(
                 scheduled_datetime__isnull=False,
                 scheduled_datetime__date__gte=today,
             ).exclude(
@@ -886,7 +886,7 @@ class Command(BaseCommand):
             week_mon = today + timedelta(days=1)   # next Monday
             week_sun = today + timedelta(days=7)   # next Sunday
             week_apts = list(
-                Appointment.objects.filter(
+                Appointment.objects.real().filter(
                     scheduled_datetime__isnull=False,
                     scheduled_datetime__date__gte=week_mon,
                     scheduled_datetime__date__lte=week_sun,
@@ -1052,7 +1052,7 @@ class Command(BaseCommand):
             from bot.plumber_notifications import send_plumber_followup_alert
             no_time_apts = []
             for a in (
-                Appointment.objects
+                Appointment.objects.real()
                 .filter(scheduled_datetime__isnull=False)
                 .exclude(status__in=["cancelled", "no_show", "completed"])
             ):

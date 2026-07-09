@@ -95,7 +95,9 @@ def _dashboard_workspace_data(response_age='1w_minus'):
         '4w_minus': timedelta(weeks=4),
     }
 
-    appointments = Appointment.objects.all()
+    # .real() everywhere in this module: 999-prefixed console/scenario test
+    # lines never surface on client-facing pages (they live on /test-leads/).
+    appointments = Appointment.objects.real()
     if response_age != 'all' and response_age in age_map_minus:
         cutoff = now - age_map_minus[response_age]
         appointments = appointments.filter(last_customer_response__gte=cutoff)
@@ -181,7 +183,7 @@ def priority_leads_qs():
     )
 
     return (
-        Appointment.objects.annotate(
+        Appointment.objects.real().annotate(
             completed_fields=has_project_type + has_property_type + has_area + has_timeline + has_site_visit,
             computed_score=Case(
                 When(scheduled_datetime__isnull=False, then=Value(100)),
@@ -257,7 +259,7 @@ def _followups_workspace_data(response_age='1w_minus'):
     if response_age != 'all' and response_age in age_map_minus:
         cutoff = now - age_map_minus[response_age]
 
-    base_active = Appointment.objects.filter(
+    base_active = Appointment.objects.real().filter(
         is_lead_active=True,
         status='pending'
     )
@@ -266,7 +268,7 @@ def _followups_workspace_data(response_age='1w_minus'):
 
     stage_counts = {}
     for stage_code, stage_name in Appointment._meta.get_field('followup_stage').choices:
-        stage_qs = Appointment.objects.filter(
+        stage_qs = Appointment.objects.real().filter(
             is_lead_active=True,
             followup_stage=stage_code
         )
@@ -276,7 +278,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         if count > 0:
             stage_counts[stage_name] = count
 
-    leads_needing_followup = Appointment.objects.filter(
+    leads_needing_followup = Appointment.objects.real().filter(
         is_lead_active=True,
         status='pending'
     ).exclude(
@@ -298,7 +300,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         ]
     else:
         ready_for_followup = due_leads
-    recent_responses = Appointment.objects.filter(
+    recent_responses = Appointment.objects.real().filter(
         last_customer_response__isnull=False,
         is_lead_active=True
     )
@@ -306,7 +308,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         recent_responses = recent_responses.filter(last_customer_response__gte=cutoff)
     recent_responses = recent_responses.order_by('-last_customer_response')[:10]
 
-    recent_inactive = Appointment.objects.filter(
+    recent_inactive = Appointment.objects.real().filter(
         is_lead_active=False,
         lead_marked_inactive_at__gte=now - timedelta(days=30)
     ).order_by('-lead_marked_inactive_at')[:10]
@@ -352,7 +354,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         })
 
     email_leads = (
-        Appointment.objects
+        Appointment.objects.real()
         .exclude(customer_email__isnull=True).exclude(customer_email='')
         .filter(Q(delay_followup_due_at__isnull=False) | Q(scheduled_datetime__isnull=False))
         .order_by('delay_followup_due_at', 'scheduled_datetime')[:300]
@@ -375,7 +377,7 @@ def _followups_workspace_data(response_age='1w_minus'):
     # its lead so the template can link straight to the conversation.
     _epoch = datetime(1970, 1, 1, tzinfo=pytz.utc)
     sent_whatsapp, sent_email = [], []
-    for apt in Appointment.objects.order_by('-updated_at')[:200]:
+    for apt in Appointment.objects.real().order_by('-updated_at')[:200]:
         for ev in apt.get_followup_log():
             ts = ev.get('timestamp')
             if cutoff and ts and ts < cutoff:
@@ -431,7 +433,7 @@ _SIDEBAR_AGE_MAP = {
 def _appointments_sidebar_context(sidebar_filter='all', response_age='all'):
     # Apply the same last-response date window the main list uses, so the sidebar
     # can be filtered by 7 days / 21 days / 30 days / All time.
-    base = Appointment.objects.all()
+    base = Appointment.objects.real()
     if response_age in _SIDEBAR_AGE_MAP:
         cutoff = timezone.now() - _SIDEBAR_AGE_MAP[response_age]
         base = base.filter(last_customer_response__gte=cutoff)

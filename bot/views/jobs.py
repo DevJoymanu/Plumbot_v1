@@ -403,7 +403,7 @@ Questions? Reply to this message.
 def job_appointments_list(request):
     """List all job appointments"""
     # Get all job appointments
-    job_appointments = Appointment.objects.filter(
+    job_appointments = Appointment.objects.real().filter(
         appointment_type='job'
     ).order_by('-scheduled_datetime')
     

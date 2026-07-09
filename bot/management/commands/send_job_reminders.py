@@ -33,7 +33,7 @@ class Command(BaseCommand):
         now = timezone.now().astimezone(sa_timezone)
         
         # Get upcoming job appointments
-        upcoming_jobs = Appointment.objects.filter(
+        upcoming_jobs = Appointment.objects.real().filter(
             appointment_type='job_appointment',
             job_status__in=['scheduled'],
             job_scheduled_datetime__isnull=False,
