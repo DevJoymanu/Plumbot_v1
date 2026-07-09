@@ -267,6 +267,94 @@ class ConversationsView(ListView):
 
 
 @method_decorator(staff_required, name='dispatch')
+class ConversationDetailView(TemplateView):
+    """WhatsApp-style conversation workspace: a chat list (left), the live
+    message thread (centre) with a working reply composer, and an appointment
+    editor + lead-intelligence sidebar (right). Reads/writes only existing
+    fields — no schema change.
+    """
+    template_name = 'bot/pages/conversation_detail.html'
+
+    def _thread_list(self, current):
+        """Recent conversations for the left rail, current one guaranteed present."""
+        rows = list(Appointment.objects.real().order_by('-updated_at')[:40])
+        if current.pk not in {a.pk for a in rows}:
+            rows.insert(0, current)
+        return rows
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        appointment = get_object_or_404(Appointment.objects.real(), pk=kwargs['pk'])
+
+        local_sched = None
+        if appointment.scheduled_datetime:
+            dt = appointment.scheduled_datetime
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt)
+            local_sched = timezone.localtime(dt)
+
+        context.update({
+            'active_nav': 'conversations',
+            'appointment': appointment,
+            'threads': self._thread_list(appointment),
+            'conversation_history': appointment.conversation_history or [],
+            'sched_date': local_sched.strftime('%Y-%m-%d') if local_sched else '',
+            'sched_time': local_sched.strftime('%H:%M') if local_sched else '',
+        })
+        return context
+
+    def post(self, request, *args, **kwargs):
+        appointment = get_object_or_404(Appointment.objects.real(), pk=kwargs['pk'])
+        action = request.POST.get('action')
+
+        if action == 'send':
+            text = (request.POST.get('message') or '').strip()
+            if text:
+                try:
+                    result = whatsapp_api.send_text_message(appointment.phone_number, text)
+                    wamid = ''
+                    if isinstance(result, dict):
+                        wamid = (result.get('messages') or [{}])[0].get('id', '')
+                    appointment.add_conversation_message('assistant', text, message_id=wamid or None)
+                    messages.success(request, 'Message sent.')
+                except Exception:
+                    messages.error(
+                        request,
+                        "Couldn't send — the customer's 24-hour WhatsApp window may be closed.",
+                    )
+        elif action == 'update':
+            self._apply_update(request, appointment)
+
+        return redirect('conversation_detail', pk=appointment.pk)
+
+    def _apply_update(self, request, appointment):
+        update_fields = []
+
+        if 'service' in request.POST:
+            appointment.project_type = (request.POST.get('service') or '').strip() or None
+            update_fields.append('project_type')
+
+        if 'notes' in request.POST:
+            appointment.internal_notes = (request.POST.get('notes') or '').strip() or None
+            update_fields.append('internal_notes')
+
+        date_raw = (request.POST.get('date') or '').strip()
+        time_raw = (request.POST.get('time') or '').strip()
+        if date_raw and time_raw:
+            try:
+                naive = datetime.strptime(f'{date_raw} {time_raw}', '%Y-%m-%d %H:%M')
+                appointment.scheduled_datetime = timezone.make_aware(naive)
+                update_fields.append('scheduled_datetime')
+            except ValueError:
+                pass
+
+        if update_fields:
+            update_fields.append('updated_at')
+            appointment.save(update_fields=update_fields)
+            messages.success(request, 'Appointment details updated.')
+
+
+@method_decorator(staff_required, name='dispatch')
 class AppointmentsListView(TemplateView):
     """Month calendar of scheduled appointments (main, right) plus a list of the
     month's booked appointments (left). Read-only view built entirely from

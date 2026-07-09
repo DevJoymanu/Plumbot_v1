@@ -50,6 +50,7 @@ urlpatterns = [
 
     # Conversations (lead inbox — formerly the appointments list)
     path('conversations/', views.ConversationsView.as_view(), name='conversations_list'),
+    path('conversations/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation_detail'),
 
     # Appointments (month calendar + booked list)
     path('appointments/', AppointmentsListView.as_view(), name='appointments_list'),
