@@ -162,6 +162,10 @@ class Appointment(models.Model):
     
     # Appointment Details
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    booked_at = models.DateTimeField(
+        blank=True, null=True, db_index=True,
+        help_text="When the lead converted to a booking (status first became confirmed)",
+    )
     scheduled_datetime = models.DateTimeField(blank=True, null=True, help_text="Scheduled appointment date and time")
     end_datetime = models.DateTimeField(blank=True, null=True, help_text="Appointment end date and time")
     duration = models.DurationField(default=timedelta(hours=2), help_text="Appointment duration")
@@ -352,9 +356,18 @@ class Appointment(models.Model):
         ]
 
     def save(self, *args, **kwargs):
-        """Auto-calculate end_datetime when scheduled_datetime is set"""
+        """Auto-calculate end_datetime when scheduled_datetime is set, and stamp
+        booked_at the first time a lead converts to a confirmed booking."""
         if self.scheduled_datetime and not self.end_datetime:
             self.end_datetime = self.scheduled_datetime + self.duration
+        # Stamp the conversion time once, on any path that confirms the booking
+        # (booking_mixin, mark_as_confirmed, admin, dashboard edits). Never reset
+        # it if the appointment is later re-saved.
+        if self.status == 'confirmed' and self.booked_at is None:
+            self.booked_at = timezone.now()
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None and 'booked_at' not in update_fields:
+                kwargs['update_fields'] = list(update_fields) + ['booked_at']
         super().save(*args, **kwargs)
 
     # NEW: Job scheduling methods

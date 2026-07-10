@@ -202,7 +202,10 @@ def priority_leads_qs():
             last_response_at=Coalesce('last_customer_response', 'created_at'),
         )
         .filter(is_lead_active=True)
-        .exclude(status__in=['completed', 'cancelled'])
+        # Once a lead is booked (confirmed) it becomes an appointment, not a
+        # priority lead — drop it from every priority surface (badge, dashboard,
+        # priority page). Completed/cancelled are likewise not actionable leads.
+        .exclude(status__in=['completed', 'cancelled', 'confirmed'])
         .order_by(F('computed_score').desc(), F('recent_activity').desc(nulls_last=True))
     )
 
@@ -213,11 +216,11 @@ def priority_lead_count():
     context processor, and the dashboard 'Hot Leads' figure, so every surface
     shows the same number."""
     week_ago = timezone.now() - timedelta(weeks=1)
+    # Booked (confirmed) leads are already excluded by priority_leads_qs().
     return (
         priority_leads_qs()
         .filter(computed_status__in=['very_hot', 'hot'])
         .filter(last_response_at__gte=week_ago)
-        .exclude(status='confirmed')
         .count()
     )
 

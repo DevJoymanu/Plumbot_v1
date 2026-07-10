@@ -80,6 +80,24 @@
   }
   .cv-filter:hover { color: var(--color-primary); }
   .cv-filter.active { background: var(--color-surface-lowest); color: var(--color-primary); box-shadow: 0 2px 8px rgba(14,165,233,0.12); }
+  .cv-datefilter { display: inline-flex; margin-left: 2px; }
+  .cv-datefilter select {
+    padding: 7px 28px 7px 14px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-lowest);
+    font-family: var(--font-label);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--color-text-2);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%230ea5e9' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+  .cv-datefilter select:focus { outline: 2px solid rgba(14,165,233,0.35); }
 
   /* Conversation cards */
   .cv-list { display: flex; flex-direction: column; gap: 8px; }
@@ -195,11 +213,19 @@
       <p class="cv-sub">Engage with your customers and manage live service requests.</p>
     </div>
     <div class="cv-filters">
-      <a href="?status_filter=all" class="cv-filter {% if selected_status_filter == 'all' %}active{% endif %}">All</a>
-      <a href="?status_filter=booked" class="cv-filter {% if selected_status_filter == 'booked' %}active{% endif %}">Booked</a>
-      <a href="?status_filter=pending" class="cv-filter {% if selected_status_filter == 'pending' %}active{% endif %}">Pending</a>
-      <a href="?status_filter=delayed" class="cv-filter {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed</a>
-      <a href="?status_filter=cancelled" class="cv-filter {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled</a>
+      <a href="?status_filter=all&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'all' %}active{% endif %}">All</a>
+      <a href="?status_filter=booked&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'booked' %}active{% endif %}">Booked</a>
+      <a href="?status_filter=pending&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'pending' %}active{% endif %}">Pending</a>
+      <a href="?status_filter=delayed&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed</a>
+      <a href="?status_filter=cancelled&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled</a>
+      <form method="get" class="cv-datefilter">
+        <input type="hidden" name="status_filter" value="{{ selected_status_filter }}">
+        <select name="response_age" aria-label="Filter by date" onchange="this.form.submit()">
+          {% for value, label in age_filter_options %}
+          <option value="{{ value }}" {% if selected_response_age == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </form>
     </div>
   </div>
 
@@ -245,14 +271,14 @@
     <p class="cv-pager__info">Showing <strong>{{ page_obj.start_index }}</strong>–<strong>{{ page_obj.end_index }}</strong> of <strong>{{ paginator.count }}</strong> chats</p>
     <div class="cv-pager__nav">
       <a class="cv-pg {% if not page_obj.has_previous %}is-disabled{% endif %}"
-         href="?page={{ page_obj.previous_page_number }}&status_filter={{ selected_status_filter }}"><i class="fas fa-chevron-left" style="font-size:12px;"></i></a>
+         href="?page={{ page_obj.previous_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}"><i class="fas fa-chevron-left" style="font-size:12px;"></i></a>
       {% for num in paginator.page_range %}
         {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
-        <a class="cv-pg {% if page_obj.number == num %}active{% endif %}" href="?page={{ num }}&status_filter={{ selected_status_filter }}">{{ num }}</a>
+        <a class="cv-pg {% if page_obj.number == num %}active{% endif %}" href="?page={{ num }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}">{{ num }}</a>
         {% endif %}
       {% endfor %}
       <a class="cv-pg {% if not page_obj.has_next %}is-disabled{% endif %}"
-         href="?page={{ page_obj.next_page_number }}&status_filter={{ selected_status_filter }}"><i class="fas fa-chevron-right" style="font-size:12px;"></i></a>
+         href="?page={{ page_obj.next_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}"><i class="fas fa-chevron-right" style="font-size:12px;"></i></a>
     </div>
   </div>
   {% endif %}

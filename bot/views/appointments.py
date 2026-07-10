@@ -74,13 +74,13 @@ class ConversationsView(ListView):
     paginate_by = 20
     ordering = ['-updated_at']
 
-    # Per-tab default time windows
+    # Every tab defaults to the last 7 days; the date filter lets staff widen it.
     TAB_AGE_DEFAULTS = {
         'all':       '1w_minus',
-        'booked':    '3w_minus',
+        'booked':    '1w_minus',
         'pending':   '1w_minus',
         'cancelled': '1w_minus',
-        'delayed':   '3w_minus',
+        'delayed':   '1w_minus',
         'ad':        '1w_minus',
     }
     TAB_AGE_MAP = {
@@ -88,6 +88,13 @@ class ConversationsView(ListView):
         '3w_minus': timedelta(weeks=3),
         '4w_minus': timedelta(weeks=4),
     }
+    # (value, label) options for the date-filter dropdown, in display order.
+    AGE_FILTER_OPTIONS = [
+        ('1w_minus', 'Last 7 days'),
+        ('3w_minus', 'Last 21 days'),
+        ('4w_minus', 'Last 30 days'),
+        ('all',      'All time'),
+    ]
 
     def _resolve_age(self):
         """Return (status_filter, response_age) honouring per-tab defaults."""
@@ -165,9 +172,15 @@ class ConversationsView(ListView):
             ).order_by('-updated_at')
         )
 
+        cutoff = None
         if response_age != 'all' and response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
-            queryset = queryset.filter(last_customer_response__gte=cutoff)
+
+        # Booked = conversions, so its date window measures the booking date
+        # (booked_at); every other tab measures the last customer response.
+        date_field = 'booked_at' if status_filter == 'booked' else 'last_customer_response'
+        if cutoff:
+            queryset = queryset.filter(**{f'{date_field}__gte': cutoff})
 
         if status_filter == 'booked':
             queryset = queryset.filter(status='confirmed')
@@ -263,6 +276,7 @@ class ConversationsView(ListView):
         context['delayed_leads_with_countdown'] = delayed_leads_with_countdown
         context['selected_response_age'] = response_age
         context['selected_status_filter'] = status_filter
+        context['age_filter_options'] = self.AGE_FILTER_OPTIONS
         return context
 
 
