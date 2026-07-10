@@ -353,6 +353,113 @@ a { color: inherit; text-decoration: none; }
     background: var(--color-primary);
 }
 
+/* "More" is a <button> — strip native chrome so it matches the anchor items */
+.pb-bottomnav__more {
+    background: none;
+    border: 0;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+/* Count badge on a bottom-nav tab (Leads / Follow-ups) */
+.pb-bottomnav__badge {
+    position: absolute;
+    top: 6px;
+    left: calc(50% + 8px);
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: var(--radius-pill);
+    background: var(--color-error);
+    color: #fff;
+    font-family: var(--font-label);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+}
+
+/* ── Mobile overflow sheet (glass) — holds the desktop-only destinations ── */
+body.pb-sheet-lock { overflow: hidden; }
+
+.pb-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+}
+
+.pb-sheet__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(11, 28, 48, 0.38);
+    opacity: 0;
+    transition: opacity var(--transition);
+}
+
+.pb-sheet.is-open .pb-sheet__backdrop { opacity: 1; }
+
+.pb-sheet__panel {
+    position: absolute;
+    inset: auto 0 0 0;
+    padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+    background: var(--glass-bg);
+    border-top: var(--glass-border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    box-shadow: 0 -20px 48px -16px rgba(14, 165, 233, 0.18);
+    transform: translateY(100%);
+    transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pb-sheet.is-open .pb-sheet__panel { transform: translateY(0); }
+
+.pb-sheet__grip {
+    width: 40px;
+    height: 4px;
+    margin: 4px auto 12px;
+    border-radius: var(--radius-pill);
+    background: rgba(0, 101, 145, 0.22);
+    cursor: pointer;
+}
+
+.pb-sheet__label {
+    font-family: var(--font-label);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    padding: 10px 12px 4px;
+}
+
+.pb-sheet__item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 14px;
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: var(--color-text);
+    font-family: var(--font-label);
+    font-size: 14px;
+    font-weight: 600;
+    transition: background var(--transition), color var(--transition);
+}
+
+.pb-sheet__item i { width: 20px; text-align: center; font-size: 16px; color: var(--color-primary); }
+.pb-sheet__item:hover,
+.pb-sheet__item:active { background: rgba(14, 165, 233, 0.10); }
+.pb-sheet__item.active { background: rgba(0, 101, 145, 0.06); color: var(--color-primary); }
+.pb-sheet__item.active i { color: var(--color-primary); }
+.pb-sheet__item--danger,
+.pb-sheet__item--danger i { color: var(--color-error); }
+.pb-sheet__item--danger:hover { background: var(--color-error-container); }
+
+/* Overflow sheet is a mobile-only affordance */
+@media (min-width: 768px) { .pb-sheet { display: none; } }
+
 /* ── Page containers ── */
 .pb-page,
 .pb-content .container,

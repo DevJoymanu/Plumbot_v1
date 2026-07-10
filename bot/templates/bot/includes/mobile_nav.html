@@ -15,14 +15,77 @@
         <a href="{% url 'priority_leads' %}" class="pb-bottomnav__item {% if active_nav == 'leads' %}active{% endif %}">
             <i class="fas fa-bolt nav-icon"></i>
             Leads
+            {% if hot_lead_count %}<span class="pb-bottomnav__badge">{{ hot_lead_count }}</span>{% endif %}
         </a>
         <a href="{% url 'followup_dashboard' %}" class="pb-bottomnav__item {% if active_nav == 'followups' %}active{% endif %}">
             <i class="fas fa-bell nav-icon"></i>
             Follow-ups
+            {% if pending_followup_count %}<span class="pb-bottomnav__badge">{{ pending_followup_count }}</span>{% endif %}
         </a>
-        <a href="{% url 'settings' %}" class="pb-bottomnav__item {% if active_nav == 'settings' or active_nav == 'profile' %}active{% endif %}">
+        <button type="button" class="pb-bottomnav__item pb-bottomnav__more {% if active_nav == 'jobs' or active_nav == 'templates' or active_nav == 'new_quote' or active_nav == 'settings' or active_nav == 'profile' %}active{% endif %}"
+                aria-haspopup="true" aria-expanded="false" aria-controls="pbMobileSheet" data-sheet-toggle>
             <i class="fas fa-ellipsis-h nav-icon"></i>
             More
-        </a>
+        </button>
     </div>
 </nav>
+
+<!-- Overflow menu: every remaining desktop destination, reachable on mobile -->
+<div class="pb-sheet" id="pbMobileSheet" hidden>
+    <div class="pb-sheet__backdrop" data-sheet-close></div>
+    <div class="pb-sheet__panel" role="dialog" aria-modal="true" aria-label="More navigation">
+        <div class="pb-sheet__grip" data-sheet-close></div>
+        <div class="pb-sheet__label">Menu</div>
+        <a href="{% url 'job_appointments_list' %}" class="pb-sheet__item {% if active_nav == 'jobs' %}active{% endif %}">
+            <i class="fas fa-hard-hat"></i> Job Appointments
+        </a>
+        <a href="{% url 'quotation_templates_list' %}" class="pb-sheet__item {% if active_nav == 'templates' %}active{% endif %}">
+            <i class="fas fa-file-invoice"></i> Templates
+        </a>
+        <a href="{% url 'standalone_quotation' %}" class="pb-sheet__item {% if active_nav == 'new_quote' %}active{% endif %}">
+            <i class="fas fa-file-invoice-dollar"></i> New Quotation
+        </a>
+        <div class="pb-sheet__label">Account</div>
+        <a href="{% url 'settings' %}" class="pb-sheet__item {% if active_nav == 'settings' %}active{% endif %}">
+            <i class="fas fa-cog"></i> Settings
+        </a>
+        <a href="{% url 'profile' %}" class="pb-sheet__item {% if active_nav == 'profile' %}active{% endif %}">
+            <i class="fas fa-user-circle"></i> Profile
+        </a>
+        <a href="{% url 'logout' %}" class="pb-sheet__item pb-sheet__item--danger">
+            <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
+    </div>
+</div>
+
+<script>
+(function () {
+    var sheet = document.getElementById('pbMobileSheet');
+    if (!sheet) return;
+    var toggle = document.querySelector('[data-sheet-toggle]');
+
+    function open() {
+        sheet.hidden = false;
+        // next frame so the transition runs from the hidden state
+        requestAnimationFrame(function () { sheet.classList.add('is-open'); });
+        if (toggle) toggle.setAttribute('aria-expanded', 'true');
+        document.body.classList.add('pb-sheet-lock');
+    }
+    function close() {
+        sheet.classList.remove('is-open');
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        document.body.classList.remove('pb-sheet-lock');
+        setTimeout(function () { sheet.hidden = true; }, 260);
+    }
+
+    if (toggle) toggle.addEventListener('click', function () {
+        sheet.classList.contains('is-open') ? close() : open();
+    });
+    sheet.querySelectorAll('[data-sheet-close]').forEach(function (el) {
+        el.addEventListener('click', close);
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && sheet.classList.contains('is-open')) close();
+    });
+})();
+</script>
