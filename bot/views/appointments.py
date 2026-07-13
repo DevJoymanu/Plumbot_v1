@@ -774,7 +774,26 @@ class AppointmentDetailView(DetailView):
     def post(self, request, *args, **kwargs):
         """Handle form submission for updating appointment"""
         appointment = self.get_object()
-        
+
+        # Plan attach/replace from the glance card — its own one-field form,
+        # handled before the edit-form fields so a plan upload never touches
+        # any other appointment data. A replaced plan goes back to
+        # 'plan_uploaded' (the new file hasn't been reviewed yet).
+        plan_upload = request.FILES.get('plan_file')
+        if plan_upload:
+            try:
+                appointment.plan_file = plan_upload
+                appointment.has_plan = True
+                appointment.plan_status = 'plan_uploaded'
+                appointment.plan_uploaded_at = timezone.now()
+                appointment.save()
+                messages.success(request, 'Plan attached to this appointment.')
+            except Exception as e:
+                messages.error(request, f'Error attaching plan: {str(e)}')
+            base_url = reverse('appointment_detail', kwargs={'pk': appointment.pk})
+            qs = request.GET.urlencode()
+            return redirect(f"{base_url}?{qs}" if qs else base_url)
+
         try:
             # Update fields from POST data
             appointment.customer_name = request.POST.get('customer_name', appointment.customer_name)
