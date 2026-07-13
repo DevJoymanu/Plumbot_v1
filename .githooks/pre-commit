@@ -39,5 +39,20 @@ if [ "$status" -ne 0 ]; then
     exit 1
 fi
 
+# Dashboard view/action regression suite — offline (in-memory SQLite, mocked
+# outbound), ~3s. Catches template-time 500s (e.g. the /conversations/ pager
+# EmptyPage) and broken staff actions before they ship.
+echo "🔒 Plumbot commit gate — running dashboard view/action suite…"
+PYTHONIOENCODING=utf-8 "$PY" manage.py test bot -v 0
+status=$?
+
+if [ "$status" -ne 0 ]; then
+    echo ""
+    echo "❌ Commit blocked: the dashboard view/action suite failed."
+    echo "   Run: python manage.py test bot -v 2   to see the failure."
+    echo "   To bypass in a true emergency: git commit --no-verify"
+    exit 1
+fi
+
 echo "✅ Commit gate passed."
 exit 0

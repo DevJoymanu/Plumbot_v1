@@ -966,6 +966,10 @@ def confirm_appointment(request, pk):
     appointment.save()
     try:
         if appointment.scheduled_datetime:
+            # Local import (module-load cycle); Plumbot was never imported at
+            # module level, so this line NameError'd and the bare except below
+            # silently ate it — the Confirm button never sent the confirmation.
+            from .plumbot.base import Plumbot
             plumbot = Plumbot(appointment.phone_number)
             appointment_details = plumbot.extract_appointment_details()
             plumbot.send_confirmation_message(appointment_details, appointment.scheduled_datetime)
@@ -1031,16 +1035,17 @@ def export_appointments(request):
     
     writer = csv.writer(response)
     writer.writerow([
-        'Name', 'Phone', 'Service', 'Property Type', 'Area', 
+        'Name', 'Phone', 'Service', 'Property Type', 'Area',
         'Timeline', 'Status', 'Appointment Date', 'Created At'
     ])
-    
+
     for appointment in Appointment.objects.real().order_by('-created_at'):
         writer.writerow([
             appointment.customer_name or '',
             appointment.phone_number,
-#            appointment.get_project_type_display() or '',
-            appointment.project_type() or '',
+            # project_type is a CharField — calling it TypeError'd every export.
+            appointment.project_type or '',
+            appointment.property_type or '',
             appointment.customer_area or '',
             appointment.timeline or '',
             appointment.get_status_display(),
@@ -1106,6 +1111,8 @@ def handle_whatsapp_media(request):
                 return HttpResponse(status=200)
             
             # Check if we should accept media based on appointment state
+            # (local import — Plumbot is not a module-level name here)
+            from .plumbot.base import Plumbot
             plumbot = Plumbot(sender)
             
             # If they have a plan and we have basic info, initiate upload flow

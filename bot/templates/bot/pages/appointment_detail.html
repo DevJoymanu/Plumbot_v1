@@ -2055,8 +2055,8 @@
           <div class="glance-card">
             <div class="glance-head">
               <span class="glance-kicker">
-                <i class="{% if appointment.appointment_type == 'job' %}fas fa-wrench{% else %}far fa-clipboard{% endif %}"></i>
-                {% if appointment.appointment_type == 'job' %}Job appointment{% else %}Site visit — free assessment{% endif %}
+                <i class="{% if appointment.appointment_type == 'job_appointment' %}fas fa-wrench{% else %}far fa-clipboard{% endif %}"></i>
+                {% if appointment.appointment_type == 'job_appointment' %}Job appointment{% else %}Site visit — free assessment{% endif %}
               </span>
               <span class="appt-pill {% if appointment.status == 'confirmed' %}booked{% elif appointment.status == 'pending' %}pending{% elif appointment.status == 'cancelled' %}cancelled{% else %}delayed{% endif %}">
                 {% if appointment.status == 'confirmed' %}Booked{% else %}{{ appointment.get_status_display }}{% endif %}
@@ -2067,7 +2067,7 @@
               <div class="glance-tile glance-tile--when">
                 <div class="glance-label"><i class="far fa-calendar"></i> When</div>
                 {# firstof…as stores a rendered STRING (date filters go blank) — use with #}
-                {% if appointment.appointment_type == 'job' %}{% with glance_when=appointment.job_scheduled_datetime %}
+                {% if appointment.appointment_type == 'job_appointment' %}{% with glance_when=appointment.job_scheduled_datetime %}
                   {% if glance_when %}
                   <div class="glance-big">{{ glance_when|date:"H:i" }}</div>
                   <div class="glance-value">{{ glance_when|date:"l, j F Y" }}</div>

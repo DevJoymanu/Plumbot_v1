@@ -10,7 +10,6 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from .models import Appointment, LeadStatus
-from .management.commands.send_followups import Command
 from .services.lead_scoring import calculate_lead_score, refresh_lead_score
 
 
@@ -21,27 +20,29 @@ class LeadScoringTests(TestCase):
         self.assertEqual(score, 0)
         self.assertEqual(status, LeadStatus.COLD)
 
-    def test_warm_when_three_fields(self):
+    def test_warm_when_two_flow_fields(self):
+        """Only the 4 required flow fields score (25 pts each) — passive
+        fields like property_type / timeline no longer count."""
         appointment = Appointment.objects.create(
             phone_number="whatsapp:+10000000002",
             project_type="bathroom_renovation",
-            property_type="house",
+            property_type="house",       # passive — must NOT score
             customer_area="Hatfield",
         )
         score, status = calculate_lead_score(appointment)
-        self.assertEqual(score, 60)
+        self.assertEqual(score, 50)
         self.assertEqual(status, LeadStatus.WARM)
 
-    def test_hot_when_four_fields(self):
+    def test_hot_when_three_flow_fields(self):
         appointment = Appointment.objects.create(
             phone_number="whatsapp:+10000000003",
             project_type="bathroom_renovation",
-            property_type="house",
             customer_area="Hatfield",
-            timeline="This month",
+            has_plan=False,              # an answered has_plan counts
+            timeline="This month",       # passive — must NOT score
         )
         score, status = calculate_lead_score(appointment)
-        self.assertEqual(score, 80)
+        self.assertEqual(score, 75)
         self.assertEqual(status, LeadStatus.HOT)
 
     def test_site_visit_override_sets_very_hot_and_100(self):
@@ -53,7 +54,9 @@ class LeadScoringTests(TestCase):
         self.assertEqual(score, 100)
         self.assertEqual(status, LeadStatus.VERY_HOT)
 
-    def test_refresh_sets_pause_for_very_hot(self):
+    def test_refresh_persists_score_without_auto_pausing(self):
+        """refresh_lead_score persists score/status; the chatbot is only
+        ever paused manually — never auto-paused here."""
         appointment = Appointment.objects.create(
             phone_number="whatsapp:+10000000005",
             scheduled_datetime=timezone.now(),
@@ -62,40 +65,27 @@ class LeadScoringTests(TestCase):
         appointment.refresh_from_db()
         self.assertEqual(appointment.lead_score, 100)
         self.assertEqual(appointment.lead_status, LeadStatus.VERY_HOT)
-        self.assertTrue(appointment.chatbot_paused)
+        self.assertFalse(appointment.chatbot_paused)
 
 
-class FollowUpDeliveryModeTests(TestCase):
-    def setUp(self):
-        self.command = Command()
+class MessagingWindowTests(TestCase):
+    """The old Command._send_followup_message tests rotted when the send path
+    was refactored; the window rule itself now lives on the model (and the
+    cadence logic is pinned in tests/test_bot_responses.py TEST 0)."""
 
-    @patch('bot.management.commands.send_followups.whatsapp_api.send_text_message')
-    @patch('bot.management.commands.send_followups.whatsapp_api.send_template_message')
-    def test_uses_freeform_text_inside_24_hour_window(self, mock_send_template, mock_send_text):
+    def test_window_open_inside_24_hours(self):
         lead = Appointment.objects.create(
             phone_number='whatsapp:+10000000006',
             last_customer_response=timezone.now() - timedelta(hours=2),
         )
+        self.assertTrue(lead.messaging_window_open)
 
-        mode = self.command._send_followup_message(lead, 'Checking in on your plumbing job.')
-
-        self.assertEqual(mode, 'text')
-        mock_send_text.assert_called_once_with('10000000006', 'Checking in on your plumbing job.')
-        mock_send_template.assert_not_called()
-
-    @patch('bot.management.commands.send_followups.whatsapp_api.send_text_message')
-    @patch('bot.management.commands.send_followups.whatsapp_api.send_template_message')
-    def test_rejects_outside_24_hour_window(self, mock_send_template, mock_send_text):
+    def test_window_closed_after_24_hours(self):
         lead = Appointment.objects.create(
             phone_number='whatsapp:+10000000007',
             last_customer_response=timezone.now() - timedelta(days=2),
         )
-
-        with self.assertRaises(RuntimeError):
-            self.command._send_followup_message(lead, 'Checking in on your plumbing job.')
-
-        mock_send_text.assert_not_called()
-        mock_send_template.assert_not_called()
+        self.assertFalse(lead.messaging_window_open)
 
 
 class CustomerEmailAsyncTests(TestCase):

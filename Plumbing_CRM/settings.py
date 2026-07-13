@@ -327,3 +327,30 @@ else:
             "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
         },
     }
+
+
+# ===== TEST MODE =====
+# `manage.py test` must never touch the production database or the R2 bucket:
+# run the suite on an in-memory SQLite DB, local filesystem storage, and plain
+# (non-manifest) staticfiles so templates render without collectstatic.
+import sys
+TESTING = 'test' in sys.argv
+if TESTING:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": ":memory:",
+        }
+    }
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'test_media')
+    # Fast password hashing — login in tests shouldn't burn CPU on PBKDF2.
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+    # bot's migration history contains Postgres-only RunSQL (ALTER COLUMN /
+    # plpgsql DO blocks) that SQLite can't execute. Build the test schema
+    # straight from the current models instead — models are the source of
+    # truth, and it's much faster than replaying every migration.
+    MIGRATION_MODULES = {'bot': None}
