@@ -53,7 +53,7 @@ final price confirmed on site.
 | Vanity Unit | US$180 |
 | Toilet Seat & Cistern | US$70 |
 | Basin (pedestal / corner) | US$70 |
-| Wall-Hung Toilet | US$160 |
+| Wall-Hung Toilet (= chamber install: supply US$130 + install US$30 — never quote toilet-seat pricing for this) | US$160 |
 | Side Chamber | US$160 |
 | Standard Bathtub (1500×700) | US$160 |
 | Freestanding Tub | US$670+ |

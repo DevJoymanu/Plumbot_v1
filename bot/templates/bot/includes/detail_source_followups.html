@@ -26,7 +26,7 @@
         <div class="source-subnote">
           <span class="appt-pill cancelled">Needs attention</span>
           {% with ev=lead.last_followup_event %}{% if ev %}
-          <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 7px;border-radius:20px;{% if ev.channel == 'email' %}background:#c9e6ff;color:#004c6e;{% else %}background:#dcf8c6;color:#075e54;{% endif %}">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 7px;border-radius:20px;{% if ev.channel == 'email' %}background:var(--color-primary-fixed);color:var(--color-on-primary-fixed-variant);{% else %}background:rgba(37,211,102,0.16);color:#0f7a3d;{% endif %}">
             {% if ev.channel == 'email' %}<i class="fas fa-envelope"></i>{% else %}<i class="fab fa-whatsapp"></i>{% endif %}{{ ev.channel_label }}
           </span>
           {% endif %}{% endwith %}

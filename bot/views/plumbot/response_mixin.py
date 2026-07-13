@@ -3646,6 +3646,12 @@ class ResponseMixin:
             if 'chamber' in message_lower:
                 return {"intent": "chamber", "confidence": confidence}
             if 'toilet' in message_lower:
+                # A wall-mounted/wall-hung toilet is the chamber job (US$160
+                # all-in), not toilet-seat pricing. Shared resolver; function-
+                # local import avoids the circular import at module load.
+                from bot.whatsapp_webhook import _mentions_wall_hung_toilet
+                if _mentions_wall_hung_toilet(message_lower):
+                    return {"intent": "wall_hung_toilet", "confidence": confidence}
                 return {"intent": "toilet", "confidence": confidence}
             if any(w in message_lower for w in ('vanity', 'vanitie', 'vanitys')):
                 return {"intent": "vanity", "confidence": confidence}
@@ -3796,6 +3802,7 @@ class ResponseMixin:
                 'shower_cubicle':       'shower cubicles',
                 'toilet':               'toilets',
                 'chamber':              'side chambers',
+                'wall_hung_toilet':     'wall-hung toilet systems',
                 'bathtub_installation': 'bathtubs',
                 'tub_sales':            'bathtubs',
                 'standalone_tub':       'freestanding tubs',
@@ -3830,6 +3837,7 @@ class ResponseMixin:
                 'shower_cubicle':       'shower cubicles',
                 'chamber':              'side chambers',
                 'toilet':               'toilets',
+                'wall_hung_toilet':     'wall-hung toilet systems',
                 'bathtub_installation': 'tubs',
             }
             name = names.get(intent, 'fittings')
@@ -4350,6 +4358,20 @@ class ResponseMixin:
                             "sn_total_line": "Zvingangoita US$70 yezvinhu zvese pa standard toilet replacement.",
                             "sn_cheapest_line": "Cheapest option installation chete kana muchitova ne toilet — labour inotangira paUS$20.",
                         },
+                        # Wall-hung toilet = the chamber install (owner rule):
+                        # same US$130 + US$30 figures, worded for the toilet ask.
+                        "wall_hung_toilet": {
+                            "breakdown_lines": [
+                                "Wall-hung toilet (concealed chamber system): Supply from US$130, Install from US$30",
+                            ],
+                            "total_line": "Wall-hung toilet installs start from US$160 all-in — supply and install.",
+                            "cheapest_line": "Already have the unit? Install-only from US$30.",
+                            "sn_breakdown_lines": [
+                                "Wall-hung toilet (chamber system): Supply kubva US$130, Install kubva US$30",
+                            ],
+                            "sn_total_line": "Zvingangoita US$160 yezvinhu zvese pa wall-hung toilet system.",
+                            "sn_cheapest_line": "Muchitova ne unit? Install chete kubva US$30.",
+                        },
                         "chamber": {
                             "breakdown_lines": [
                                 "Side chamber: Supply from US$130, Install from US$30",
@@ -4501,7 +4523,7 @@ class ResponseMixin:
                     # "Custom or ready-made?" (no price asked) → we do both, then progress.
                     _FIXTURE_INTENTS = {
                         'vanity', 'shower_cubicle', 'chamber', 'toilet',
-                        'bathtub_installation',
+                        'wall_hung_toilet', 'bathtub_installation',
                     }
                     if (intent in _FIXTURE_INTENTS and
                             self._is_custom_vs_ready_question(message) and
@@ -4512,7 +4534,7 @@ class ResponseMixin:
                     # progress the sale instead of leading with a price.
                     _AVAIL_PROGRESS_INTENTS = {
                         'vanity', 'geyser', 'shower_cubicle', 'toilet', 'chamber',
-                        'bathtub_installation',
+                        'wall_hung_toilet', 'bathtub_installation',
                     }
                     if (intent in _AVAIL_PROGRESS_INTENTS and
                             self._is_availability_question(message) and

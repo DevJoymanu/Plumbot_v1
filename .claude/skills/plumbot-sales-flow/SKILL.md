@@ -164,6 +164,10 @@ never end with nothing in their hands either:
   never "Harare only".
 - **A corner tub is a built-in tub** — from US$160 all-in, NOT the
   freestanding US$670. (Pricing rule only; for sizes, corner is its own block.)
+- **A wall-mounted / wall-hung toilet is the chamber install** — from US$160
+  all-in (supply US$130 + install US$30), NOT toilet-seat pricing (US$70).
+  Deterministic resolver: `_mentions_wall_hung_toilet` → `wall_hung_toilet`
+  intent (prod: "wall mounted toilet system" was quoted the seat block).
 - Hours: Sunday–Friday 8am–6pm, closed Saturday. Payment: cash, EcoCash, bank
   transfer — no deposit language without owner sign-off.
 

@@ -605,6 +605,20 @@ def _explicitly_requests_catalogue(message: str) -> bool:
     return any(re.search(p, msg) for p in patterns)
 
 
+def _mentions_wall_hung_toilet(message: str) -> bool:
+    """True when the customer names a wall-mounted / wall-hung / concealed
+    toilet system. That job IS the chamber install (owner: "toilet installation
+    is the same as chamber" — from US$160 all-in), never toilet-seat pricing:
+    a prod lead asking to install "a wall mounted toilet system" was quoted the
+    US$70 seat block. Deterministic on purpose; shared by the keyword resolver
+    here and _correct_service_intent in response_mixin.
+    """
+    import re
+    msg = (message or '').lower()
+    return bool('toilet' in msg and re.search(
+        r'wall[\s-]*(?:mount|hung|hang)|concealed|in[\s-]?wall', msg))
+
+
 def _keyword_product_intent(message: str):
     """
     Keyword fallback for product/service intent when the AI classifier returns
@@ -634,6 +648,8 @@ def _keyword_product_intent(message: str):
     if 'chamber' in msg:
         return 'chamber'
     if 'toilet' in msg:
+        if _mentions_wall_hung_toilet(msg):
+            return 'wall_hung_toilet'
         if any(k in msg for k in ('not flush', "won't flush", 'wont flush', 'leak',
                                   'broken', 'running', 'fix', 'repair')):
             return 'toilet_repair'
@@ -659,7 +675,10 @@ _PRODUCT_FAMILY = {
     'geyser': 'geyser', 'geyser_repair': 'geyser',
     'toilet': 'toilet', 'toilet_repair': 'toilet',
     'vanity': 'vanity',
-    'chamber': 'chamber',
+    # A wall-hung toilet is the chamber job (same install, same US$160 rate) —
+    # family 'chamber' so the customer's own wall-mount wording overrides an
+    # LLM 'toilet' guess (different family) but defers to an LLM 'chamber'.
+    'chamber': 'chamber', 'wall_hung_toilet': 'chamber',
     'drain_unblocking': 'drain',
     'pipe_repair': 'pipe',
     'facebook_package': 'facebook',
@@ -2614,6 +2633,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         PRODUCT_INTENTS = {
             'tub_sales', 'standalone_tub', 'geyser', 'shower_cubicle',
             'vanity', 'bathtub_installation', 'toilet', 'chamber',
+            'wall_hung_toilet',
             'facebook_package', 'location_ask', 'location_visit',
             'previous_quotation', 'pictures', 'combined_pricing',
         }
@@ -2623,6 +2643,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         }
         PRICING_AUTO_REPLY_INTENTS = {
             'geyser', 'shower_cubicle', 'vanity', 'toilet', 'chamber',
+            'wall_hung_toilet',
             'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
             'facebook_package',
         }
@@ -2777,6 +2798,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     'cubicle':  'shower_cubicle',
                     'tub':      'tub_sales',
                     'bathtub':  'tub_sales',
+                    # Wall-mount keys BEFORE the bare 'toilet' key — first match
+                    # wins, and a wall-hung system prices at the chamber rate.
+                    'wall mounted toilet': 'wall_hung_toilet',
+                    'wall-mounted toilet': 'wall_hung_toilet',
+                    'wall hung toilet':    'wall_hung_toilet',
+                    'wall-hung toilet':    'wall_hung_toilet',
                     'toilet':   'toilet',
                     'chamber':  'chamber',
                     'drain':    'drain_unblocking',

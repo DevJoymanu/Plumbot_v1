@@ -227,6 +227,9 @@ INTENT_CORRECTION_CASES = [
     # "bathroom" must NOT be read as the tub word "bath".
     ("bathroom renovation, no plan",   "tub_sales", "none"),
     ("do you do toilets",              "tub_sales", "toilet"),
+    # Wall-mounted toilet = the chamber install (US$160 all-in), never
+    # toilet-seat pricing (prod: "wall mounted toilet system" → US$70 seat block).
+    ("install a wall mounted toilet system", "tub_sales", "wall_hung_toilet"),
     # Non-tub intents are never touched.
     ("shower cubicle price",           "shower_cubicle", "shower_cubicle"),
 ]
@@ -244,12 +247,42 @@ for msg, llm_intent, expected in INTENT_CORRECTION_CASES:
     except Exception as e:
         results.log(f"_correct_service_intent: '{msg[:38]}'", False, got=str(e))
 
+# Wall-mounted / wall-hung toilet must resolve to the chamber-rate intent
+# (US$160 all-in), never the generic 'toilet' seat block. The production bug:
+# "How much is the charge for installing a wall mounted toilet system?" was
+# answered with toilet-seat pricing (US$50 + US$20). Plain toilet asks are
+# unchanged.
+from bot.whatsapp_webhook import _keyword_product_intent
+WALL_HUNG_TOILET_CASES = [
+    ("How much is the charge for installing a wall mounted toilet system?",
+     "wall_hung_toilet"),                                     # the bug verbatim
+    ("price for a wall-hung toilet",        "wall_hung_toilet"),
+    ("wall hung toilet installation cost",  "wall_hung_toilet"),
+    ("concealed toilet system how much",    "wall_hung_toilet"),
+    ("how much is a toilet",                "toilet"),   # plain ask unchanged
+    ("toilet seat replacement price",       "toilet"),
+    ("my toilet is leaking, can you fix it", "toilet_repair"),
+]
+for msg, expected in WALL_HUNG_TOILET_CASES:
+    try:
+        got = _keyword_product_intent(msg)
+        results.log(
+            f"_keyword_product_intent: '{msg[:38]}'",
+            got == expected,
+            f"resolved to {got}",
+            expected=expected,
+            got=got,
+        )
+    except Exception as e:
+        results.log(f"_keyword_product_intent: '{msg[:38]}'", False, got=str(e))
+
 # Guard against volunteering a price block on a carried-over intent that landed
 # on a bare booking-field reply. The production bug: the area answer "Avondale"
 # was classified as shower_cubicle and the bot dumped the cubicle price block.
 from bot.whatsapp_webhook import _is_unprompted_carryover_pricing
 _PRICING_AUTO = {
     'geyser', 'shower_cubicle', 'vanity', 'toilet', 'chamber',
+    'wall_hung_toilet',
     'drain_unblocking', 'pipe_repair', 'geyser_repair', 'toilet_repair',
     'facebook_package',
 }

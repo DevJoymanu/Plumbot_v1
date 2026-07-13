@@ -1,0 +1,16 @@
+# Wall-mounted toilet = chamber install (prod 2026-07-12, +263718809800).
+# The lead asked "How much is the charge for installing a wall mounted toilet
+# system?" and got the toilet-SEAT block (US$50 supply + US$20 install, US$70
+# all-in). Owner rule: a wall-hung/wall-mounted toilet is the chamber job —
+# from US$160 all-in (supply US$130 + install US$30). Fixed by the
+# wall_hung_toilet intent (_mentions_wall_hung_toilet keyword resolver
+# overriding the LLM 'toilet' guess via the product-family gate).
+
+> Hi, I need a plumber
+expect: how may we assist
+
+> How much is the charge for installing a wall mounted toilet system?
+expect: US$160
+expect: wall-hung
+reject: US$70
+reject: toilet seat
