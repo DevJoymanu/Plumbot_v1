@@ -399,6 +399,16 @@ def _apt_deep_link(apt):
         return f"/appointments/{apt.pk}/"
 
 
+def _plan_deep_link(apt):
+    """Deep link to the customer's plan file — plan_file is always index 0 in
+    get_all_uploaded_files, served inline by the staff-gated serve_document view."""
+    try:
+        path = reverse("appointment_document_file", kwargs={"pk": apt.pk, "idx": 0})
+        return f"{_SITE_URL}{path}" if _SITE_URL else f"/appointments/{apt.pk}/documents/file/0/"
+    except Exception:
+        return f"/appointments/{apt.pk}/documents/file/0/"
+
+
 def _eflag_set(apt, key):
     return f"[{key}]" in (apt.internal_notes or "")
 
@@ -416,6 +426,14 @@ def _apt_html_block(apt):
     clean = _clean_phone(apt)
     name  = getattr(apt, "customer_name", "?") or "?"
     link  = _apt_deep_link(apt)
+    # View Plan appears only when the lead actually sent a plan file.
+    plan_btn = ""
+    if getattr(apt, "plan_file", None):
+        plan_btn = (
+            f'<a href="{_plan_deep_link(apt)}" style="display:inline-block;background:#006591;color:#fff;'
+            'text-decoration:none;padding:9px 16px;border-radius:5px;font-size:13px;'
+            'margin-left:8px;">📐 View Plan</a>'
+        )
     return (
         '<div style="border:1px solid #e0e0e0;border-radius:8px;padding:16px 20px;'
         'margin:16px 0;background:#ffffff;font-family:Arial,sans-serif;">'
@@ -435,6 +453,7 @@ def _apt_html_block(apt):
         f'<a href="{link}" style="display:inline-block;background:#1a73e8;color:#fff;'
         'text-decoration:none;padding:9px 16px;border-radius:5px;font-size:13px;">'
         '🔗 View Appointment</a>'
+        f'{plan_btn}'
         '</div>'
     )
 
