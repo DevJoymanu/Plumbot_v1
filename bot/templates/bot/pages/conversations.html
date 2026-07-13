@@ -270,15 +270,24 @@
   <div class="cv-pager">
     <p class="cv-pager__info">Showing <strong>{{ page_obj.start_index }}</strong>–<strong>{{ page_obj.end_index }}</strong> of <strong>{{ paginator.count }}</strong> chats</p>
     <div class="cv-pager__nav">
-      <a class="cv-pg {% if not page_obj.has_previous %}is-disabled{% endif %}"
+      {# previous/next_page_number RAISE EmptyPage at the ends — resolve them only behind has_previous/has_next (prod 500 on /conversations/ page 1) #}
+      {% if page_obj.has_previous %}
+      <a class="cv-pg"
          href="?page={{ page_obj.previous_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}"><i class="fas fa-chevron-left" style="font-size:12px;"></i></a>
+      {% else %}
+      <span class="cv-pg is-disabled"><i class="fas fa-chevron-left" style="font-size:12px;"></i></span>
+      {% endif %}
       {% for num in paginator.page_range %}
         {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
         <a class="cv-pg {% if page_obj.number == num %}active{% endif %}" href="?page={{ num }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}">{{ num }}</a>
         {% endif %}
       {% endfor %}
-      <a class="cv-pg {% if not page_obj.has_next %}is-disabled{% endif %}"
+      {% if page_obj.has_next %}
+      <a class="cv-pg"
          href="?page={{ page_obj.next_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}"><i class="fas fa-chevron-right" style="font-size:12px;"></i></a>
+      {% else %}
+      <span class="cv-pg is-disabled"><i class="fas fa-chevron-right" style="font-size:12px;"></i></span>
+      {% endif %}
     </div>
   </div>
   {% endif %}
