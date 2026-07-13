@@ -1905,14 +1905,15 @@
       </div>
 
       <div class="appt-tabbar">
-        <button class="appt-tab-btn is-active" type="button" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
-        <button class="appt-tab-btn" type="button" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
+        {# Details is the default pane — a plumber opens the record to see the job, not the transcript. Deep links (?tab=) still override. #}
+        <button class="appt-tab-btn is-active" type="button" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
+        <button class="appt-tab-btn" type="button" data-tab="chat"><i class="far fa-comment-alt"></i> Chat</button>
         <button class="appt-tab-btn" type="button" data-tab="quotes"><i class="far fa-file"></i> Quotes</button>
         <button class="appt-tab-btn" type="button" data-tab="wa-followups"><i class="fab fa-whatsapp"></i> WhatsApp</button>
         <button class="appt-tab-btn" type="button" data-tab="email-followups"><i class="fas fa-envelope"></i> Email</button>
       </div>
 
-      <div class="appt-tab-pane is-active" id="tab-chat">
+      <div class="appt-tab-pane" id="tab-chat">
         <div class="appt-chat-pane">
           <div class="appt-chat-scroll" id="chatScroll">
             {% for message in conversation_history %}
@@ -1987,7 +1988,7 @@
         </div>
       </div>
 
-      <div class="appt-tab-pane" id="tab-details">
+      <div class="appt-tab-pane is-active" id="tab-details">
         <div class="appt-detail-content">
 
           {# ── Job at a glance: when / where / what / who, readable in five seconds ── #}
@@ -2082,6 +2083,9 @@
                 <div class="glance-tile-actions">
                   <a class="source-mini-btn call" href="tel:{{ appointment.phone_number|cut:'whatsapp:' }}"><i class="fas fa-phone"></i> Call</a>
                   <a class="source-mini-btn wa" target="_blank" href="https://wa.me/{{ appointment.phone_number|cut:'whatsapp:'|cut:'+'|cut:'-'|cut:' '|cut:'('|cut:')' }}"><i class="fab fa-whatsapp"></i> WhatsApp</a>
+                  {% if not is_frame %}
+                  <button type="button" class="glance-mini" onclick="showAppointmentTab('chat')"><i class="far fa-comments"></i> View chat history</button>
+                  {% endif %}
                 </div>
               </div>
             </div>
@@ -2091,7 +2095,7 @@
               {% if appointment.project_description %}
               <div class="glance-desc-text">{{ appointment.project_description }}</div>
               {% else %}
-              <div class="glance-missing">No description yet — check the chat for details.</div>
+              <div class="glance-missing">No description yet{% if not is_frame %} — <a href="#" onclick="showAppointmentTab('chat'); return false;" style="color:var(--color-primary); text-decoration:underline;">check the chat</a> for details{% endif %}.</div>
               {% endif %}
             </div>
           </div>
