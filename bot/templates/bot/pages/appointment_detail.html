@@ -2029,6 +2029,15 @@
                 {% if appointment.property_type %}
                 <div class="glance-sub">{{ appointment.get_property_type_display }}</div>
                 {% endif %}
+                {% if appointment.has_plan %}
+                <div class="glance-tile-actions">
+                  <span class="appt-pill delayed"><i class="far fa-file-alt"></i> Has plan{% if appointment.plan_status %} · {{ appointment.get_plan_status_display }}{% endif %}</span>
+                </div>
+                {% elif appointment.has_plan == False %}
+                <div class="glance-tile-actions">
+                  <span class="appt-pill cold"><i class="fas fa-ruler-combined"></i> No plan — measure on site</span>
+                </div>
+                {% endif %}
               </div>
 
               <div class="glance-tile">
