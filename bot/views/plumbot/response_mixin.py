@@ -2706,7 +2706,7 @@ class ResponseMixin:
                     )
                     reply = (
                         "We unfortunately don't operate on Saturdays. \n\n"
-                        "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                        f"{_working_hours_line(self)}"
                     )
                     if alt_text:
                         reply += (
