@@ -195,10 +195,44 @@ default config** (today's exact strings/prices) when a tenant hasn't overridden
 them. That default-fallback rule is what keeps the migration incremental: nothing
 changes behaviourally until a tenant row overrides it.
 
+**Nullability rule (decided 2026-07-15, see CLIENT_ONBOARDING_CHECKLIST.md):**
+every tenant config field/upload is nullable. Fallback is two-class: **generic
+copy** (openers, question scripts, tie-downs — no business facts) may fall back
+to platform defaults; **business facts** (names, numbers, prices, locations,
+licensed claims, portfolio) have NO fallback — absent means graceful omission
+(deflect price to the free site visit, never claim licensed without docs on
+file, no photo offers without a portfolio). A missing fact must never resolve
+to another tenant's (or Homebase's) value. The Homebase tenant is simply the
+one tenant whose config happens to be fully populated by the seed migration.
+Functional go-live minimum: trading name + WhatsApp number.
+
 DeepSeek prompts get their business blocks (services, pricing guide, company
 info) from `cfg.prompt_context()` instead of inline literals.
 
-### 3.4 What stays shared
+### 3.4 Platform (developer) dashboard
+
+The operator's console — superuser-gated, separate from tenant staff dashboards,
+under its own URL namespace (e.g. `/platform/`), reusing the existing dashboard
+templates/auth/design system. Grows with the phases:
+
+- **Tenant operations (Phase 3 deliverable — prerequisite for a second tenant):**
+  tenant list (status, channel health, lead/booking counts), create/deactivate,
+  **impersonation** (enter any tenant's dashboard as they see it — also the
+  support tool), and the tenant config editor (profile/prices/scripts/FAQ). While
+  config editing is admin-only (open decision #2), this console is the *only*
+  place tenant config gets edited.
+- **Health & monitoring (Phase 4):** per-tenant WhatsApp channel status (last
+  inbound/outbound, token validity, webhook errors), a surface for
+  unknown-`phone_number_id` 200-and-log events (else a misconfigured tenant fails
+  silently), per-tenant cron run board (the per-tenant try/except isolation is
+  only useful if failures are visible), send/email-processing failures.
+- **Onboarding & quality (Phase 5):** the new-tenant wizard lives here; per-tenant
+  golden scenario pack results (a tenant goes live only when their pack is green);
+  per-tenant 999 test-line management.
+- **Usage & billing (Phase 6):** DeepSeek token metering per tenant/day, message
+  volumes, leads→bookings conversion, subscription state (follows decision #4).
+
+### 3.5 What stays shared
 - DeepSeek API key (platform-level; add `tenant` to a usage log for billing later)
 - The classifier/dispatcher logic, unified classifier, delay flows, all TEST 0-pinned behaviour — these are platform IP, identical across tenants
 - Email transport (Brevo/SendGrid keys) — per-tenant *sender identity* only
@@ -243,11 +277,14 @@ Extract in this order, each slice with its own TEST 0 additions:
 2. Roles: `owner` (billing/settings), `staff` (leads); platform superadmin.
 3. Per-tenant branding on the dashboard (name/logo).
 4. A **Tenant Settings page** (staff-only, owner role): edit profile, prices, scripts, FAQ — this replaces "ask the dev to change a constant".
+5. **Platform console v1** (§3.4) under `/platform/`: tenant list, create/deactivate, impersonation, config editor — prerequisite for running a second tenant.
 
 ### Phase 4 — Crons, email, notifications · ~1–2 sessions
-1. Wrap all six crons in the per-tenant loop with per-tenant error isolation.
+1. Wrap all five crons in the per-tenant loop with per-tenant error isolation
+   (`notify_priority_leads` was removed 2026-07-08).
 2. Emails: sender name/signature/templates from `TenantProfile`; `[APT-{id}]` matching unchanged (ids are global).
 3. Plumber notifications → `tenant.profile.plumber_contact`; Google Calendar credentials become per-tenant (or off for tenants without it).
+4. Platform console health pages (§3.4): channel status, cron run board, unknown-`phone_number_id` log, send/email failures per tenant.
 
 ### Phase 5 — Onboarding + per-tenant Scenario Lab · ~2 sessions
 1. "New tenant" wizard (superadmin): name → WhatsApp channel creds → profile → price sheet import (CSV or copy-from-default) → seed FAQ/scripts from platform defaults.
@@ -348,9 +385,111 @@ Phases 4–5 running in parallel with their pilot.
 
 ---
 
-## 11. Open decisions (need a call before Phase 0)
+## 11. Open decisions — RESOLVED 2026-07-15
 
-1. **Same customer, two tenants** — confirmed OK to treat as two independent leads? (Plan assumes yes: uniqueness is per-tenant.)
-2. **Who edits tenant config** — client owners self-serve (Phase 3 settings page) or platform-admin only at first? (Plan assumes admin-only until the settings UI is hardened.)
-3. **WhatsApp numbers** — will new tenants bring their own Meta Business + number (each needs its own access token/app review), or will the platform provision numbers under one Business Manager? Affects Phase 1 credential shape only.
-4. **Billing model** — per-lead, per-booking, or flat monthly? Phase 6 metering design follows from this; nothing earlier blocks on it.
+1. **Same customer, two tenants** — ✅ Yes: two independent leads; uniqueness is per-tenant.
+2. **Who edits tenant config** — ✅ Admin-only. Additionally: admin can send an owner a
+   **config intake form** (profile, prices, scripts, FAQ) that the owner fills in;
+   submissions land as a *pending draft* the admin reviews and approves before any of
+   it becomes the tenant's live config. (Implementation: a token-linked form page +
+   draft-vs-live config states + an approve/reject step in the platform console —
+   lands with Phase 3/5.)
+3. **WhatsApp numbers** — ✅ **REVISED 2026-07-15: platform-provisioned.** Client numbers
+   are registered under the platform's already-verified Meta Business Manager,
+   permanently (supersedes the earlier bring-your-own choice; see §13 for the model's
+   mechanics and accepted trade-offs). Why: onboarding drops from ~2 weeks of client
+   Meta verification to days (number registration + display-name review), and clients
+   need zero Meta setup. Consequences accepted: the platform pays every tenant's Meta
+   conversation charges (must be priced into the flat monthly fee — see decision #4),
+   messaging quality rating pools across tenants (per-tenant quality monitoring in the
+   console becomes important), and clients don't own their numbers. Phase 1 simplifies:
+   one platform system-user token can cover all numbers; `TenantWhatsAppChannel` keeps
+   per-tenant `phone_number_id` (still the webhook routing key) with the token shared
+   or per-channel as convenient.
+4. **Billing model** — ✅ Flat monthly subscription per tenant, **but** per-tenant cost
+   metering still ships in Phase 6: DeepSeek tokens per turn, WhatsApp message counts,
+   email sends — logged with tenant id and surfaced in the platform console, so margins
+   per tenant are visible and a future usage-based tier is possible without rework.
+
+---
+
+## 12. AGREED LAUNCH SCOPE — FULL-SCOPE launch (locked 2026-07-15, supersedes earlier de-scoped version)
+
+The first external client onboards as soon as Phases 0–5 are **all complete**.
+Nothing is deferred past launch. The initial launch includes:
+
+1. **Onboarding wizard + owner intake form** — admin sends the owner a form
+   link; owner fills in profile/prices/scripts/FAQ; submission lands as a
+   pending draft; admin verifies and approves before anything goes live
+   (decision #2). **Client #1 onboards through this wizard** — the first client
+   is the end-to-end test of the machine every future client uses.
+2. **Full Phase 4** — per-tenant cron loop with error isolation, per-tenant
+   email identity, plumber notifications from `TenantProfile`.
+3. **Full platform console** — tenant CRUD, impersonation, config editor +
+   draft approval, channel health boards, cron run board.
+4. **Per-tenant Scenario Lab** — the 21-scenario golden pack cloned
+   automatically for every new tenant; **hard go-live gate:** a client does not
+   go live until their pack passes against their own prices and name.
+
+**Timeline (from 2026-07-15):** 14–18 sessions total. At 1 session/day →
+go-live ~day 16–18 (~2026-08-01). Hitting day 14 requires ~4–5 double-session
+days and best-case Phase 2. Day 7 is not achievable at full scope.
+
+**Build order:** Days 1–2 Step 0 + Phase 0 · Days 3–4 Phase 1 (+ sandbox
+number proof) · Days 5–9 Phase 2 · Days 10–12 Phase 3 (dashboard scoping,
+roles, console CRUD + impersonation) · Days 13–14 Phase 4 (cron loop, email,
+notifications, health/cron boards) · Days 15–16 Phase 5 (wizard, intake
+draft/approve flow, per-tenant Scenario Lab + golden-pack cloning) · Days
+16–18 onboard client #1 through the wizard, run their golden pack, live
+number test, go-live with the rollback runbook standing by.
+
+**External clocks (start day 1):** with platform-provisioned numbers (decision
+#3 revised — client numbers live under the platform's verified BM), there is
+**no client-side Meta verification wait**. Remaining external items: acquire/
+register the client's number under the platform WABA + display-name review
+(days), and the client's content (price sheet, services, area, plumber
+name/contact, FAQ, portfolio photos, hours) — collectable early via a
+checklist doc, then entered through the intake form once it exists. The launch
+date is now purely code-bound.
+
+**Pace assumption:** ~1 session/day, an evening deploy window most days, the
+phone test after each deploy. Slippage in Phase 2 (the big one) moves the
+date directly.
+
+---
+
+## 13. The CHOSEN "one Business Manager" model (decision #3, revised 2026-07-15)
+
+The platform's already-verified Meta Business Manager owns the WhatsApp Business
+Account(s); a phone number is registered/bought per tenant under it; one platform
+system-user token covers all numbers. Webhook routing by `phone_number_id` is
+unchanged. Onboarding a tenant's number = register number under the WABA +
+display-name review (days, not weeks — no per-client business verification).
+
+**Accepted trade-offs (eyes open):**
+- The platform is the payer for any Meta charges — but under current bot behaviour
+  the expected Meta bill is **~US$0 per tenant**: Meta only charges for *template*
+  messages, and Plumbot sends exclusively free-form messages inside the customer's
+  open 24-hour service window (free, unlimited; CTWA opens a free 72h window).
+  Cost appears only if template messages are introduced (re-engagement after the
+  window closes, out-of-window appointment reminders) — a few US cents per
+  delivered template, payable by the platform → price into the flat fee when that
+  feature ships. Per-tenant message metering (Phase 6) keeps it visible.
+  *Related audit (independent of tenancy):* free-form sends outside the 24h window
+  are NOT delivered — `send_reminders` likely only reaches customers with a
+  recently open window; reliable reminders need a (paid) utility template.
+- Messaging quality rating and messaging-limit tiers pool at the WABA level → one
+  spammy tenant can degrade all tenants on that WABA. Mitigations: per-tenant
+  quality/limit monitoring on the console health board (Phase 4), and the option
+  to spread tenants across multiple WABAs under the same BM as we grow.
+- Per-WABA number caps exist → more WABAs under the same BM when needed.
+- Tenants don't own their numbers; leaving the platform means losing the number
+  (or a negotiated WABA-to-WABA migration). Make this explicit in client
+  contracts to keep it good faith.
+
+**Rejected alternative (for the record):** bring-your-own Meta Business — each
+tenant verifies their own business (~2 weeks), owns their number and billing.
+Cleanest ownership, but onboarding waits on Meta reviewing a third party's
+paperwork, and clients must handle Meta setup themselves. Revisit if a large
+client demands number ownership — the schema (`TenantWhatsAppChannel` with
+per-channel token) already supports mixing both models per tenant.

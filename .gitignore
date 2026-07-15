@@ -7,3 +7,4 @@ staticfiles/
 media/
 venv/
 .DS_Storeexports/
+test_media/
