@@ -962,6 +962,26 @@ class TenantConfigTests(TestCase):
         self.assertEqual(get_previous_work_images(self.acme), [])
         self.assertEqual(get_catalogue_images(self.acme), [])
 
+    def test_service_area_per_tenant(self):
+        # Phase 2.6: the decline list comes from the tenant profile.
+        from .views.plumbot.state_mixin import StateMixin
+        # Homebase: seeded list + the vic-falls alias expansion.
+        hb = StateMixin._tenant_excluded_areas(self.homebase)
+        self.assertIn('bulawayo', hb)
+        self.assertIn('vic falls', hb)
+        self.assertEqual(
+            StateMixin._is_excluded_city_keywords('Bulawayo', tenant=self.homebase),
+            'Bulawayo')
+        # Foreign tenant with no list: declines nowhere.
+        self.assertEqual(StateMixin._tenant_excluded_areas(self.acme), set())
+        self.assertIsNone(StateMixin._is_excluded_city('Bulawayo', tenant=self.acme))
+        # Foreign tenant with its own list: only theirs applies.
+        TenantProfile.objects.create(tenant=self.acme, excluded_areas=['kariba'])
+        self.assertEqual(
+            StateMixin._is_excluded_city_keywords('Kariba', tenant=self.acme), 'Kariba')
+        self.assertIsNone(
+            StateMixin._is_excluded_city_keywords('Bulawayo', tenant=self.acme))
+
     def test_identity_fields_read_from_profile(self):
         from .tenant_config import get_config
         cfg = get_config(self.homebase)

@@ -519,7 +519,7 @@ class ExtractionMixin:
                         extracted_data.get('area') != 'null' and
                         not self.appointment.customer_area):
                     _raw_area = extracted_data['area']
-                    _excl     = self._is_excluded_city(_raw_area)
+                    _excl     = self._is_excluded_city(_raw_area, tenant=getattr(self.appointment, 'tenant', None))
                     if _excl:
                         # Flag as excluded — do NOT save the area
                         token = f'[EXCLUDED_AREA:{_excl}]'
@@ -759,7 +759,7 @@ class ExtractionMixin:
                         self.appointment.has_plan = False
                     
                 elif question_type == "area" and not self.appointment.customer_area:
-                    _excl = self._is_excluded_city(extracted_value or '')
+                    _excl = self._is_excluded_city(extracted_value or '', tenant=getattr(self.appointment, 'tenant', None))
                     if _excl:
                         token = f'[EXCLUDED_AREA:{_excl}]'
                         notes = self.appointment.internal_notes or ''

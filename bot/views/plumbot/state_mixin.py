@@ -131,7 +131,24 @@ class StateMixin:
 
 
         @staticmethod
-        def _is_excluded_city(area_text: str):
+        def _tenant_excluded_areas(tenant=None) -> set:
+            """The tenant's declined places, lowercased, expanded with common
+            Zimbabwe abbreviations (Phase 2.6 — was a hardcoded set).
+            tenant=None resolves to the homebase seed tenant. Empty → the
+            tenant serves everywhere, nothing is declined."""
+            from bot.tenant_config import get_config
+            if tenant is None:
+                from bot.models import Tenant
+                tenant = Tenant.objects.filter(slug='homebase').first()
+            base = {a.strip().lower() for a in get_config(tenant).excluded_areas() if a}
+            _ALIASES = {'victoria falls': {'vic falls'}}
+            for place, aliases in _ALIASES.items():
+                if place in base:
+                    base |= aliases
+            return base
+
+        @staticmethod
+        def _is_excluded_city(area_text: str, tenant=None):
             """
             Return the out-of-zone place name if the area is outside our Harare
             service zone, or None if it's a serviceable area.
@@ -146,14 +163,16 @@ class StateMixin:
             area_text = (area_text or '').strip()
             if not area_text:
                 return None
-            ai = StateMixin._classify_service_area_ai(area_text)
+            if not StateMixin._tenant_excluded_areas(tenant):
+                return None  # this tenant declines nowhere — everywhere serviceable
+            ai = StateMixin._classify_service_area_ai(area_text, tenant=tenant)
             if ai is not None:
                 # 'IN_AREA' → serviceable; any other string is the out-of-zone place.
                 return None if ai == 'IN_AREA' else ai
-            return StateMixin._is_excluded_city_keywords(area_text)
+            return StateMixin._is_excluded_city_keywords(area_text, tenant=tenant)
 
         @staticmethod
-        def _classify_service_area_ai(area_text: str):
+        def _classify_service_area_ai(area_text: str, tenant=None):
             """
             DeepSeek-backed service-area check. Returns 'IN_AREA' when serviceable,
             the out-of-zone place name when not, or None when DeepSeek is
@@ -164,17 +183,23 @@ class StateMixin:
             try:
                 from ...services.clients import deepseek_call
                 import json as _json
+                from bot.models import Tenant as _Tenant
+                _t = tenant or _Tenant.objects.filter(slug='homebase').first()
+                _biz_name = getattr(_t, 'name', '') or 'The business'
+                _declined = ", ".join(sorted(
+                    a.title() for a in StateMixin._tenant_excluded_areas(tenant)
+                    if a != 'vic falls'  # alias — keep the prompt list canonical
+                ))
                 raw = deepseek_call(
                     messages=[
                         {"role": "system", "content": (
                             "You classify whether a plumbing customer's stated location "
-                            "is one the company will travel to. Homebase Plumbers is "
+                            f"is one the company will travel to. {_biz_name} is "
                             "mobile and comes to the customer across Zimbabwe, including "
                             "far areas like Hurungwe/Magunje, Kariba, Chinhoyi, Karoi, "
                             "Kadoma, Kwekwe and rural districts — those are all IN area. "
-                            "They DECLINE only these specific far cities/towns: Gweru, "
-                            "Bulawayo, Mutare, Masvingo, Victoria Falls, Hwange, "
-                            "Beitbridge, Plumtree. Everywhere else is in area. Read "
+                            f"They DECLINE only these specific far cities/towns: {_declined}. "
+                            "Everywhere else is in area. Read "
                             "negation carefully: 'not in Harare but in Hurungwe' is IN "
                             "area (Hurungwe is fine); 'not in Harare, in Bulawayo' is "
                             "OUT. A Harare street or suburb that merely contains a "
@@ -207,7 +232,7 @@ class StateMixin:
                 return None
 
         @staticmethod
-        def _is_excluded_city_keywords(area_text: str):
+        def _is_excluded_city_keywords(area_text: str, tenant=None):
             """
             Deterministic fallback for _is_excluded_city when DeepSeek is down.
             Returns the out-of-zone place name, or None for a serviceable area.
@@ -223,10 +248,7 @@ class StateMixin:
             - "Not in Harare but in Hurungwe" → None (Hurungwe is serviceable)
             - "Not in Harare, in Bulawayo"    → "Bulawayo" (declined city)
             """
-            _EXCLUDED = {
-                'gweru', 'bulawayo', 'mutare', 'masvingo',
-                'victoria falls', 'vic falls', 'hwange', 'beitbridge', 'plumtree',
-            }
+            _EXCLUDED = StateMixin._tenant_excluded_areas(tenant)
             _STREET_WORDS = {
                 'road', 'rd', 'avenue', 'ave', 'crescent', 'drive', 'dr',
                 'street', 'st', 'close', 'lane', 'way', 'park', 'gardens',
