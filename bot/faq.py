@@ -205,12 +205,26 @@ def match_faq_topic(message: str) -> str | None:
     return None
 
 
-def faq_fact(topic: str) -> str | None:
-    """The canned fact string for a matched topic (or None)."""
-    return _FACTS.get(topic)
+def faq_fact(topic: str, tenant=None) -> str | None:
+    """The fact sentence for a matched topic, from the TENANT's profile
+    (Phase 2 slice 1). None → the caller skips/deflects the topic.
+
+    Transition fallback: while migration 0045 hasn't seeded production yet,
+    homebase (and only homebase — tenant=None counts as homebase, the
+    pre-threading callers) still answers from the in-code _FACTS. Other
+    tenants NEVER see these strings (nullability rule: business facts have
+    no cross-tenant fallback). Delete _FACTS + this fallback once the prod
+    seed is verified."""
+    from .tenant_config import get_config
+    fact = get_config(tenant).faq_fact(topic)
+    if fact:
+        return fact
+    if tenant is None or getattr(tenant, 'slug', '') == 'homebase':
+        return _FACTS.get(topic)
+    return None
 
 
-def lookup_faq(message: str) -> str | None:
+def lookup_faq(message: str, tenant=None) -> str | None:
     """
     Check whether a message matches a known business FAQ.
 
@@ -218,4 +232,4 @@ def lookup_faq(message: str) -> str | None:
     continue through the normal flow. No API calls — pure string matching.
     """
     topic = match_faq_topic(message)
-    return _FACTS[topic] if topic else None
+    return faq_fact(topic, tenant=tenant) if topic else None

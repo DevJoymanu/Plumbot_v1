@@ -768,3 +768,66 @@ class TenantCredentialTests(TestCase):
         bare = Tenant.objects.create(name='Bare Pipes', slug='bare')
         self.assertIs(get_client_for_tenant(bare), whatsapp_api)
         self.assertIs(get_client_for_tenant(None), whatsapp_api)
+
+
+class TenantConfigTests(TestCase):
+    """Phase 2 slice 1: FAQ facts + identity via the TenantConfig seam.
+    Homebase must be byte-identical to the old hardcoded strings; a tenant
+    without facts must get graceful omission, never homebase's values."""
+
+    def setUp(self):
+        self.homebase = Tenant.objects.get(slug='homebase')  # test-DB hook seeds it
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+
+    def test_homebase_faq_facts_byte_identical_to_legacy_constants(self):
+        from .faq import _FACTS, faq_fact
+        from .tenant_config import get_config
+        cfg = get_config(self.homebase)
+        for topic, legacy in _FACTS.items():
+            with self.subTest(topic=topic):
+                self.assertEqual(cfg.faq_fact(topic), legacy)
+                self.assertEqual(faq_fact(topic, tenant=self.homebase), legacy)
+
+    def test_foreign_tenant_never_gets_homebase_facts(self):
+        from .faq import faq_fact, _FACTS
+        for topic in _FACTS:
+            with self.subTest(topic=topic):
+                self.assertIsNone(faq_fact(topic, tenant=self.acme))
+
+    def test_foreign_tenant_own_facts_win(self):
+        from .faq import faq_fact
+        TenantProfile.objects.create(
+            tenant=self.acme,
+            faq_facts={'location': "We're in Bulawayo CBD."},
+            licensed_claim_enabled=False,
+        )
+        self.assertEqual(faq_fact('location', tenant=self.acme), "We're in Bulawayo CBD.")
+        self.assertIsNone(faq_fact('payment', tenant=self.acme))
+
+    def test_licensed_claim_gated_on_certification_flag(self):
+        from .tenant_config import get_config
+        profile = TenantProfile.objects.create(
+            tenant=self.acme,
+            faq_facts={'licensed': 'Yes, fully licensed.'},
+            licensed_claim_enabled=False,
+        )
+        self.assertIsNone(get_config(self.acme).faq_fact('licensed'))
+        profile.licensed_claim_enabled = True
+        profile.save()
+        self.assertEqual(get_config(self.acme).faq_fact('licensed'), 'Yes, fully licensed.')
+
+    def test_none_tenant_transition_fallback_is_legacy_homebase(self):
+        from .faq import _FACTS, faq_fact
+        self.assertEqual(faq_fact('location', tenant=None), _FACTS['location'])
+
+    def test_identity_fields_read_from_profile(self):
+        from .tenant_config import get_config
+        cfg = get_config(self.homebase)
+        self.assertEqual(cfg.plumber_name, 'Takudzwa')
+        self.assertEqual(cfg.plumber_contact, '+263774819901')
+        self.assertEqual(cfg.business_whatsapp, '+263776255077')
+        self.assertIn('gweru', cfg.excluded_areas())
+        # Absent profile → graceful empties, never homebase's values.
+        bare_cfg = get_config(self.acme)
+        self.assertEqual(bare_cfg.plumber_name, '')
+        self.assertEqual(bare_cfg.excluded_areas(), [])

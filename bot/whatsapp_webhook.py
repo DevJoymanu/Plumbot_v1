@@ -2349,7 +2349,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                   f"{uc_product_intent(_uclass)}: '{message_body[:60]}'")
 
         if _faq_topic is not None:
-            _faq_fact = faq_fact(_faq_topic)
+            _faq_fact = faq_fact(_faq_topic, tenant=tenant)
             # AI-primary: answer contextually, grounded in the fact so it stays
             # accurate but never sounds copy-pasted; canned fact (+ qualifying close)
             # is the fallback. When the lead asked whether we do a SPECIFIC service
