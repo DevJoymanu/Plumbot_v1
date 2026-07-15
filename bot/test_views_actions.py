@@ -896,6 +896,40 @@ class TenantConfigTests(TestCase):
         self.assertEqual(allin, 670)
         self.assertEqual(split, "tub from US$400 + mixer US$150, install from US$120")
 
+    def test_structured_pricing_render_pinned(self):
+        # Phase 2.3c: the bilingual per-intent blocks render from price rows.
+        # Pin the load-bearing lines byte-for-byte (full parity vs the legacy
+        # dict was proven mechanically before the swap — 2026-07-15).
+        from .pricing_copy import build_structured_pricing
+        from .tenant_config import get_config
+        sp = build_structured_pricing(get_config(self.homebase))
+        self.assertEqual(
+            sorted(sp.keys()),
+            sorted(['tub_sales', 'standalone_tub', 'bathtub_installation', 'geyser',
+                    'shower_cubicle', 'vanity', 'toilet', 'wall_hung_toilet', 'chamber',
+                    'facebook_package', 'drain_unblocking', 'pipe_repair',
+                    'geyser_repair', 'toilet_repair']))
+        self.assertEqual(
+            sp['tub_sales']['breakdown_lines'][0],
+            "Freestanding tub: Supply US$400 | Mixer US$150 | Install US$120 → from US$670 all-in")
+        self.assertEqual(
+            sp['tub_sales']['sn_cheapest_line'],
+            "Starting point i standard tub paUS$80 supply + US$80 install.")
+        self.assertEqual(
+            sp['pipe_repair']['total_line'],
+            "Pipe repairs start from US$15–$20 for minor leaks — cost depends on the pipe size, location, and how accessible it is.")
+        self.assertEqual(
+            sp['toilet_repair']['total_line'],
+            "Toilet repairs start from US$20 for labour + parts. A full replacement (supply and fit) starts from US$100.")
+        self.assertEqual(
+            sp['facebook_package']['total_line'],
+            "The Facebook package is US$800 — freestanding tub and side chamber.")
+        self.assertEqual(
+            sp['geyser_repair']['cheapest_line'],
+            "Minor repairs like a valve or thermostat start from US$25–$30.")
+        # Bare tenant: no sheet → no blocks → handler deflects.
+        self.assertEqual(build_structured_pricing(get_config(self.acme)), {})
+
     def test_price_accessors_empty_for_bare_tenant(self):
         from .tenant_config import get_config
         cfg = get_config(self.acme)
