@@ -1599,8 +1599,23 @@ try:
     # measurements (built-in + free-standing + corner); naming a type gives just
     # that block. Business spec, 2026-07-01.
     class _FakeSelfTubSize:
-        _TUB_SIZE_BLOCKS = ResponseMixin._TUB_SIZE_BLOCKS
         _tub_sizes_reply = ResponseMixin._tub_sizes_reply
+        # Phase 2.3d: size blocks come from tenant data; pin homebase's blocks
+        # as literals so the flow pin stays DB-independent.
+        def _tub_size_blocks_map(self):
+            return {
+                'built_in': ("Built-in bathtubs\n"
+                             "- Compact / Standard: 1700 × 700 mm\n"
+                             "- Large / Luxury: 1800 × 800 mm"),
+                'freestanding': ("Free-standing bathtubs\n"
+                                 "- Compact: 1440 × 570 mm\n"
+                                 "- Standard: 1700 × 700 to 800 mm\n"
+                                 "- Large / Luxury: 1800 to 1865 × 800 to 890 mm"),
+                'corner': ("Corner bathtubs\n"
+                           "- Compact symmetrical: 1200 × 1200 mm to 1350 × 1350 mm\n"
+                           "- Standard symmetrical: 1500 × 1500 mm\n"
+                           "- Offset corner: 1500 to 1700 × 900 to 1000 mm"),
+            }
     _ts = _FakeSelfTubSize()
     _all = _ts._tub_sizes_reply("english", "what sizes do your tubs come in?")
     results.log(

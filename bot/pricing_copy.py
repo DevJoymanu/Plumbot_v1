@@ -65,6 +65,48 @@ def _figures(cfg):
     )
 
 
+def build_prompt_pricing_guide(cfg) -> str:
+    """The PRICING GUIDE block injected into the DeepSeek system prompt —
+    one '- ' line per figure the tenant actually has. With no price sheet the
+    guide becomes an explicit do-not-state-prices instruction, so the LLM
+    never invents money."""
+    f = _figures(cfg)
+    lines = []
+    if f['to_s'] is not None and f['to_l'] is not None:
+        lines.append(f"- Toilet: supply from US${f['to_s']}, install from US${f['to_l']}")
+    if f['sh_s'] is not None and f['sh_l'] is not None:
+        lines.append(f"- Shower cubicle (900x900mm): supply from US${f['sh_s']}, install from US${f['sh_l']}")
+    if f['va_s'] is not None and f['va_l'] is not None:
+        lines.append(f"- Vanity unit: supply from US${f['va_s']}, install from US${f['va_l']}")
+    if f['gey_s'] is not None and f['gey_l'] is not None:
+        lines.append(f"- Geyser: supply from US${f['gey_s']}, install from US${f['gey_l']}")
+    if f['tub_s'] is not None and f['tub_l'] is not None and f['tub_allin'] is not None:
+        lines.append(
+            f"- Bathtub (ordinary/built-in, INCLUDING corner tubs): supply from US${f['tub_s']}, "
+            f"install from US${f['tub_l']} → from US${f['tub_allin']} all-in")
+    if all(f[k] is not None for k in ('fs_supply', 'fs_mixer', 'fs_install', 'fs_allin')):
+        lines.append(
+            f"- Freestanding tub: supply from US${f['fs_supply']}, mixer from US${f['fs_mixer']}, "
+            f"install US${f['fs_install']} → from US${f['fs_allin']} all-in")
+    if f['tub_allin'] is not None:
+        lines.append(
+            f"- A CORNER tub is a built-in tub → from US${f['tub_allin']} all-in, NOT the freestanding price.")
+    if f['ch_s'] is not None and f['ch_l'] is not None and f['ch_allin'] is not None:
+        lines.append(
+            f"- Side chamber: supply from US${f['ch_s']}, install from US${f['ch_l']} → from US${f['ch_allin']} all-in")
+    full_pkg = cfg.price_item('package', 'full_bathroom')
+    if full_pkg is not None and full_pkg.flat is not None:
+        lines.append(f"- Full bathroom package: from US${int(full_pkg.flat)}+")
+    lines.append("- Site assessment / visit: FREE")
+    if len(lines) == 1:
+        return (
+            "- This business has not published price figures. Do NOT state or "
+            "estimate any prices — the free site visit confirms the exact figure.\n"
+            "        - Site assessment / visit: FREE"
+        )
+    return "\n        ".join(lines)
+
+
 def build_structured_pricing(cfg) -> dict:
     """The per-intent bilingual pricing blocks for a tenant. Intents whose
     figures are missing from the tenant's sheet are omitted."""

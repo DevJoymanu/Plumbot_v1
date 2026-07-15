@@ -77,10 +77,23 @@ HOMEBASE_PRICE_ITEMS = [
     # family, variant, label, supply, labour, flat, allin, parts
     dict(family='shower', variant='', label='shower cubicle', supply=130, labour=40, allin=170),
     dict(family='tub', variant='', label='tub', supply=80, labour=80, allin=160,
-         sizes=['standard bathtub 1500x700']),
+         sizes=['Built-in bathtubs',
+                '- Compact / Standard: 1700 × 700 mm',
+                '- Large / Luxury: 1800 × 800 mm']),
     dict(family='tub', variant='freestanding', label='freestanding tub', allin=670,
          parts=[{'name': 'tub', 'amount': 400}, {'name': 'mixer', 'amount': 150},
-                {'name': 'install', 'amount': 120}]),
+                {'name': 'install', 'amount': 120}],
+         sizes=['Free-standing bathtubs',
+                '- Compact: 1440 × 570 mm',
+                '- Standard: 1700 × 700 to 800 mm',
+                '- Large / Luxury: 1800 to 1865 × 800 to 890 mm']),
+    # Corner tub: priced as a built-in (owner rule) — this row carries only
+    # the measurement block for size questions.
+    dict(family='tub', variant='corner', label='corner tub',
+         sizes=['Corner bathtubs',
+                '- Compact symmetrical: 1200 × 1200 mm to 1350 × 1350 mm',
+                '- Standard symmetrical: 1500 × 1500 mm',
+                '- Offset corner: 1500 to 1700 × 900 to 1000 mm']),
     dict(family='geyser', variant='', label='geyser', supply=80, labour=80, allin=160),
     dict(family='vanity', variant='', label='vanity unit', short_label='vanity', supply=150, labour=30, allin=180),
     dict(family='toilet', variant='', label='toilet seat', short_label='toilet', supply=50, labour=20, allin=70),
@@ -251,6 +264,15 @@ class TenantConfig:
                     f"{label}: supply from {self.currency}{_as_int(item.supply)}, "
                     f"labour from {self.currency}{_as_int(item.labour)}"
                 )
+        return out
+
+    def tub_size_blocks(self) -> dict:
+        """{'built_in'|'freestanding'|'corner': rendered measurement block} —
+        was ResponseMixin._TUB_SIZE_BLOCKS. Rows without sizes are omitted."""
+        out = {}
+        for item in self.price_items():
+            if item.family == 'tub' and item.sizes:
+                out[item.variant or 'built_in'] = "\n".join(item.sizes)
         return out
 
     def freestanding_tub(self):

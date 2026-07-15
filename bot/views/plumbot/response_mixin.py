@@ -3746,25 +3746,10 @@ class ResponseMixin:
         # Full bathtub measurements, by type (business spec, 2026-07-01). Corner is
         # its own dimension set here — the corner→built-in collapse in
         # _tub_type_in_message is a PRICING rule only, not a sizing one.
-        _TUB_SIZE_BLOCKS = {
-            'built_in': (
-                "Built-in bathtubs\n"
-                "- Compact / Standard: 1700 × 700 mm\n"
-                "- Large / Luxury: 1800 × 800 mm"
-            ),
-            'freestanding': (
-                "Free-standing bathtubs\n"
-                "- Compact: 1440 × 570 mm\n"
-                "- Standard: 1700 × 700 to 800 mm\n"
-                "- Large / Luxury: 1800 to 1865 × 800 to 890 mm"
-            ),
-            'corner': (
-                "Corner bathtubs\n"
-                "- Compact symmetrical: 1200 × 1200 mm to 1350 × 1350 mm\n"
-                "- Standard symmetrical: 1500 × 1500 mm\n"
-                "- Offset corner: 1500 to 1700 × 900 to 1000 mm"
-            ),
-        }
+        def _tub_size_blocks_map(self) -> dict:
+            """Measurement blocks from the tenant's tub rows (Phase 2.3d) —
+            was the hardcoded _TUB_SIZE_BLOCKS."""
+            return self.tenant_cfg.tub_size_blocks()
 
         def _tub_sizes_reply(self, language: str = "english", message: str = "") -> str:
             """Answer a tub-size question. When the customer names a specific tub
@@ -3783,7 +3768,11 @@ class ResponseMixin:
                 keys = ['corner']
             else:
                 keys = ['built_in', 'freestanding', 'corner']
-            body = "\n\n".join(self._TUB_SIZE_BLOCKS[k] for k in keys)
+            blocks = self._tub_size_blocks_map()
+            keys = [k for k in keys if k in blocks]
+            if not keys:
+                return None  # no size data on this tenant's sheet — fall through
+            body = "\n\n".join(blocks[k] for k in keys)
             if is_shona:
                 header = "Saizi dzemabhavhu edu:"
                 close = "Ndeipi inokwana panzvimbo yenyu?"
@@ -4809,22 +4798,38 @@ class ResponseMixin:
                         "For a new bathroom build, pricing covers both rough plumbing and fixtures. "
                     )
 
+            # Figures from the tenant's price sheet (Phase 2.3d). Anything
+            # missing → not handled here; the router falls through and the
+            # flow deflects to the free visit rather than inventing money.
+            _fb_item = self.tenant_cfg.price_item('package', 'facebook')
+            _fb = _fb_item.flat if _fb_item is not None else None
+            _fs = self._freestanding_tub_price()
+            _fs_item = self.tenant_cfg.price_item('tub', 'freestanding')
+            _fs_parts = {p.get('name'): p.get('amount')
+                         for p in ((_fs_item.parts if _fs_item else None) or [])}
+            _tub = self._price_components_map().get('tub')
+            if (_fb is None or _fs is None or _tub is None or
+                    not all(k in _fs_parts for k in ('tub', 'mixer', 'install'))):
+                return None
+            _fb = int(_fb)
+            _tub_allin = _tub[0] + _tub[1]
+
             if language == 'shona':
                 reply = (
                     f"{project_context}"
-                    "Facebook package yedu inosvika US$800 — ine freestanding tub ne side chamber.\n\n"
-                    "Kana muri kuda tub chete — freestanding tubs kubva US$670 all-in "
-                    "(tub US$400 + mixer US$150 + install US$120), uye standard built-in tubs "
-                    "kubva US$160 all-in (tub US$80 + install US$80).\n\n"
+                    f"Facebook package yedu inosvika US${_fb} — ine freestanding tub ne side chamber.\n\n"
+                    f"Kana muri kuda tub chete — freestanding tubs kubva US${_fs[0]} all-in "
+                    f"(tub US${_fs_parts['tub']} + mixer US${_fs_parts['mixer']} + install US${_fs_parts['install']}), uye standard built-in tubs "
+                    f"kubva US${_tub_allin} all-in (tub US${_tub[0]} + install US${_tub[1]}).\n\n"
                     f"{self._product_price_close('shona')}"
                 )
             else:
                 reply = (
                     f"{project_context}"
-                    "Our Facebook package is US$800 — a freestanding tub and side chamber.\n\n"
-                    "If you're looking at just a tub — freestanding tubs from US$670 all-in "
-                    "(tub US$400 + mixer US$150 + install US$120), and standard built-in tubs "
-                    "from US$160 all-in (tub US$80 + install US$80).\n\n"
+                    f"Our Facebook package is US${_fb} — a freestanding tub and side chamber.\n\n"
+                    f"If you're looking at just a tub — freestanding tubs from US${_fs[0]} all-in "
+                    f"(tub US${_fs_parts['tub']} + mixer US${_fs_parts['mixer']} + install US${_fs_parts['install']}), and standard built-in tubs "
+                    f"from US${_tub_allin} all-in (tub US${_tub[0]} + install US${_tub[1]}).\n\n"
                     f"{self._product_price_close('english')}"
                 )
             # Carry the approximate-price disclaimer (before the closing tie-down).
@@ -5200,16 +5205,7 @@ class ResponseMixin:
         - We supply AND install all fixtures (or install customer-supplied fixtures)
 
         PRICING GUIDE (rough supply + install):
-        - Toilet: supply from US$50, install from US$20
-        - Shower cubicle (900x900mm): supply from US$130, install from US$40
-        - Vanity unit: supply from US$150, install from US$30
-        - Geyser: supply from US$80, install from US$80
-        - Bathtub (ordinary/built-in, INCLUDING corner tubs): supply from US$80, install from US$80 → from US$160 all-in
-        - Freestanding tub: supply from US$400, mixer from US$150, install US$120 → from US$670 all-in
-        - A CORNER tub is a built-in tub → from US$160 all-in, NOT the freestanding price.
-        - Side chamber: supply from US$130, install from US$30 → from US$160 all-in
-        - Full bathroom package: from US$800+
-        - Site assessment / visit: FREE
+        {build_prompt_pricing_guide(self.tenant_cfg)}
 
         COMPANY INFO:
         - Based in Hatfield, Harare
