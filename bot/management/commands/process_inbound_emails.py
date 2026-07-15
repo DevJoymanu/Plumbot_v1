@@ -242,7 +242,7 @@ def _send_reply(apt, subject, html_body):
 
 # ── Plumbot email engine ──────────────────────────────────────────────────────
 
-_EMAIL_PLUMBOT_SYSTEM = """You are Plumbot, the sales and scheduling assistant for HomeBase Plumbers in Harare, Zimbabwe. You are communicating via EMAIL — write in clean, professional email style. No markdown, no asterisks, no emojis.
+_EMAIL_PLUMBOT_SYSTEM = """You are Plumbot, the sales and scheduling assistant for {business_name} in Zimbabwe. You are communicating via EMAIL — write in clean, professional email style. No markdown, no asterisks, no emojis.
 
 Before every reply, reason through these steps internally:
 1. Intent — What is the customer asking or signalling? Look beyond the literal words.
@@ -257,17 +257,10 @@ Qualification framework (Hormozi order):
 - Qualification: service type, project detail, area, preferred timing
 - Close: offer the free on-site assessment as a presumptive close
 
-Pricing reference (starting rates, USD):
-- Full bathroom renovation: from US$900 (supply and labour)
-- Toilet: supply from US$50 + install from US$20
-- Shower cubicle: supply from US$130 + install from US$40
-- Vanity unit: supply from US$150 + install from US$30
-- Geyser supply and install: from US$160
-- Full geyser replacement: US$350
-- Drain unblocking: from US$20
-- Burst pipe repair: from US$40
+Pricing reference (starting rates):
+{pricing_guide}
 Free on-site assessment available — no obligation.
-Hours: Sunday to Friday, 08:00 to 18:00. Based in Hatfield, Harare.
+{hours_location_line}
 
 Reply rules:
 - Write in the same language the customer used (English or Shona)
@@ -485,8 +478,23 @@ def _generate_plumbot_email_reply(
     status  = getattr(apt, "status", "") or ""
 
     from bot.customer_emails import _business_name, _from_name
+    from bot.pricing_copy import build_prompt_pricing_guide
+    from bot.tenant_config import get_config
+    _tenant = getattr(apt, 'tenant', None)
+    _cfg = get_config(_tenant)
+    _hours = _cfg.hours_sentence()
+    _loc = _cfg.location_short()
+    _hl_bits = []
+    if _hours:
+        _hl_bits.append(f"Hours: {_hours}.")
+    if _loc:
+        _hl_bits.append(f"Based in {_loc}.")
     _signature = f"{_from_name(apt)}\\n{_business_name(apt)}" if apt is not None else "The team"
-    system = _EMAIL_PLUMBOT_SYSTEM + f"\n- Sign every reply exactly as: {_signature}"
+    system = _EMAIL_PLUMBOT_SYSTEM.format(
+        business_name=_business_name(apt) if apt is not None else "the plumbing team",
+        pricing_guide=build_prompt_pricing_guide(_cfg).replace("\n        ", "\n"),
+        hours_location_line=" ".join(_hl_bits),
+    ) + f"\n- Sign every reply exactly as: {_signature}"
     if service:
         system += f"\nCustomer service interest: {service}."
     if area:
