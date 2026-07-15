@@ -40,3 +40,18 @@ def _seed_test_tenant(sender, **kwargs):
         TenantPriceItem.objects.get_or_create(
             tenant=tenant, family=family, variant=variant, defaults=data,
         )
+    # Mirror migration 0053: homebase portfolio rows.
+    from .models import TenantPortfolioItem
+    from .portfolio_catalog import PORTFOLIO_ITEMS
+    for index, item in enumerate(PORTFOLIO_ITEMS):
+        TenantPortfolioItem.objects.get_or_create(
+            tenant=tenant, item_id=item['id'],
+            defaults=dict(
+                filename=item['filename'], title=item['title'],
+                price_line=item.get('price', ''),
+                description=item.get('description', ''),
+                story=item.get('story', ''),
+                keywords=list(item.get('keywords', [])),
+                sort_order=index,
+            ),
+        )

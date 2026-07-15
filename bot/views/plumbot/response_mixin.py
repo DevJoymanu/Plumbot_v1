@@ -4345,7 +4345,9 @@ class ResponseMixin:
             caller falls back to the normal service-inquiry reply.
             """
             from bot import portfolio_catalog
-            guide = portfolio_catalog.build_item_price_guide(quoted_title, language=language)
+            guide = portfolio_catalog.build_item_price_guide(
+                quoted_title, language=language,
+                tenant=getattr(self.appointment, 'tenant', None))
             if not guide:
                 return None
             # Visit already committed if we have their area, or they've opted for

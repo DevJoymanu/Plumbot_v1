@@ -255,6 +255,45 @@ class TenantPriceItem(models.Model):
         return f"{self.tenant.slug} · {self.family}/{self.variant or 'default'}"
 
 
+class TenantPortfolioItem(models.Model):
+    """One previous-work piece a tenant can show (docs/MULTI_TENANT_PLAN.md
+    §3.1) — replaces bot/portfolio_catalog.PORTFOLIO_ITEMS (Phase 2.5).
+    `filename` is relative to the portfolio images dir (homebase's bundled
+    photos); wizard-uploaded tenant photos land under a per-tenant subdir."""
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='portfolio_items')
+    item_id = models.SlugField(max_length=80)            # stable slug (logs/dedup)
+    filename = models.CharField(max_length=255)
+    title = models.CharField(max_length=120)
+    price_line = models.CharField(max_length=200, blank=True, default='')  # "kitchen renovation from US$600"
+    description = models.TextField(blank=True, default='')
+    story = models.TextField(blank=True, default='')
+    keywords = models.JSONField(default=list, blank=True)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['sort_order', 'pk']
+        constraints = [
+            models.UniqueConstraint(fields=['tenant', 'item_id'],
+                                    name='uniq_portfolio_item_per_tenant'),
+        ]
+
+    def as_catalog_dict(self) -> dict:
+        """The dict shape bot/portfolio_catalog's matching/caption logic uses."""
+        return {
+            'id': self.item_id,
+            'filename': self.filename,
+            'title': self.title,
+            'price': self.price_line,
+            'description': self.description,
+            'story': self.story,
+            'keywords': list(self.keywords or []),
+        }
+
+    def __str__(self):
+        return f"{self.tenant.slug} · {self.item_id}"
+
+
 class TenantMembership(models.Model):
     """User → tenant link with a role. Platform admins are superusers (no
     membership needed — they get the tenant switcher)."""

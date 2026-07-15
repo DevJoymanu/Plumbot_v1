@@ -939,6 +939,29 @@ class TenantConfigTests(TestCase):
         self.assertIsNone(cfg.freestanding_tub())
         self.assertIsNone(cfg.price_item('shower'))
 
+    def test_portfolio_items_per_tenant(self):
+        # Phase 2.5: catalogue reads TenantPortfolioItem rows. Homebase's rows
+        # must round-trip the legacy PORTFOLIO_ITEMS dicts; a foreign tenant
+        # gets nothing — never homebase's photos.
+        from . import portfolio_catalog
+        from .portfolio_catalog import PORTFOLIO_ITEMS, items_for
+        hb_items = items_for(self.homebase)
+        self.assertEqual(len(hb_items), len(PORTFOLIO_ITEMS))
+        legacy_by_id = {i['id']: i for i in PORTFOLIO_ITEMS}
+        for item in hb_items:
+            legacy = legacy_by_id[item['id']]
+            for key in ('filename', 'title', 'price', 'description', 'story', 'keywords'):
+                self.assertEqual(item[key], legacy.get(key, '' if key != 'keywords' else []), f"{item['id']}.{key}")
+        self.assertEqual(items_for(self.acme), [])
+        self.assertIsNone(portfolio_catalog.catalogue_overview(tenant=self.acme))
+        self.assertIsNone(portfolio_catalog.match_portfolio_item(
+            'show me the black tub photo', tenant=self.acme))
+
+    def test_foreign_tenant_gallery_never_serves_homebase_photos(self):
+        from .whatsapp_webhook import get_catalogue_images, get_previous_work_images
+        self.assertEqual(get_previous_work_images(self.acme), [])
+        self.assertEqual(get_catalogue_images(self.acme), [])
+
     def test_identity_fields_read_from_profile(self):
         from .tenant_config import get_config
         cfg = get_config(self.homebase)

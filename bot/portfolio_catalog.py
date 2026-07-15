@@ -233,14 +233,26 @@ PORTFOLIO_ITEMS: list[dict] = [
 ]
 
 
-_ITEMS_BY_ID = {item['id']: item for item in PORTFOLIO_ITEMS}
+def items_for(tenant=None) -> list:
+    """The tenant's active portfolio as catalogue dicts (Phase 2.5 — rows in
+    TenantPortfolioItem; PORTFOLIO_ITEMS above remains only as homebase's seed
+    data for migration 0053 and the test-DB hook). tenant=None resolves to the
+    homebase seed tenant (pre-threading callers). A tenant with no rows gets
+    [] — gallery/catalogue paths fall back, never another tenant's photos."""
+    from .models import Tenant, TenantPortfolioItem
+    if tenant is None:
+        tenant = Tenant.objects.filter(slug='homebase').first()
+    if tenant is None:
+        return []
+    return [row.as_catalog_dict()
+            for row in TenantPortfolioItem.objects.filter(tenant=tenant, is_active=True)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Lookups
 # ─────────────────────────────────────────────────────────────────────────────
-def get_item_by_id(item_id: str) -> Optional[dict]:
-    return _ITEMS_BY_ID.get(item_id)
+def get_item_by_id(item_id: str, tenant=None) -> Optional[dict]:
+    return next((it for it in items_for(tenant) if it['id'] == item_id), None)
 
 
 def image_path_for(item: dict) -> str:
@@ -252,8 +264,8 @@ def item_is_available(item: dict) -> bool:
     return os.path.exists(image_path_for(item))
 
 
-def available_items() -> list[dict]:
-    return [it for it in PORTFOLIO_ITEMS if item_is_available(it)]
+def available_items(tenant=None) -> list[dict]:
+    return [it for it in items_for(tenant) if item_is_available(it)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -290,7 +302,7 @@ def _normalise(text: str) -> str:
     return re.sub(r'[^a-z0-9\s-]', ' ', (text or '').lower())
 
 
-def match_portfolio_item(message: str) -> Optional[dict]:
+def match_portfolio_item(message: str, tenant=None) -> Optional[dict]:
     """
     Return the single best-matching catalogue item for a message, or None.
 
@@ -315,7 +327,7 @@ def match_portfolio_item(message: str) -> Optional[dict]:
         return None
 
     scored: list[tuple[int, dict]] = []
-    for item in available_items():
+    for item in available_items(tenant):
         score = 0
         for kw in item['keywords']:
             # word/phrase boundary match to avoid partial-word false hits
@@ -343,7 +355,7 @@ def build_item_caption(item: dict) -> str:
     return item['title']
 
 
-def build_gallery_caption(filename: str) -> Optional[str]:
+def build_gallery_caption(filename: str, tenant=None) -> Optional[str]:
     """Per-image caption for a whole-gallery send, looked up by image filename:
     the product/service name only (no pricing). Returns None when the image isn't
     a catalogued piece, so the caller can fall back to a generic caption.
@@ -351,13 +363,13 @@ def build_gallery_caption(filename: str) -> Optional[str]:
     base = os.path.splitext(os.path.basename(filename or ''))[0].lower()
     if not base:
         return None
-    for item in PORTFOLIO_ITEMS:
+    for item in items_for(tenant):
         if os.path.splitext(item['filename'])[0].lower() == base:
             return item['title']
     return None
 
 
-def get_item_by_title(title: str) -> Optional[dict]:
+def get_item_by_title(title: str, tenant=None) -> Optional[dict]:
     """Map a sent-image description back to its catalogue item, or None.
 
     The whole-gallery / portfolio sends record each image under its curated
@@ -369,13 +381,13 @@ def get_item_by_title(title: str) -> Optional[dict]:
     if not title:
         return None
     t = title.strip().lower()
-    for item in PORTFOLIO_ITEMS:
+    for item in items_for(tenant):
         if item['title'].lower() == t:
             return item
     return None
 
 
-def build_item_price_guide(title: str, language: str = 'english') -> Optional[str]:
+def build_item_price_guide(title: str, language: str = 'english', tenant=None) -> Optional[str]:
     """Full pricing for the ONE catalogued photo a customer pointed at, covering
     every item shown in that shot.
 
@@ -387,7 +399,7 @@ def build_item_price_guide(title: str, language: str = 'english') -> Optional[st
     Returns None when the title isn't a catalogued piece (an uncatalogued shot
     carries no price), so the caller falls back to the generic reply.
     """
-    item = get_item_by_title(title)
+    item = get_item_by_title(title, tenant=tenant)
     if item is None:
         return None
     if language == 'shona':
@@ -397,12 +409,12 @@ def build_item_price_guide(title: str, language: str = 'english') -> Optional[st
     return f"{header}\n- {item['price']}"
 
 
-def catalogue_overview() -> Optional[str]:
+def catalogue_overview(tenant=None) -> Optional[str]:
     """Short text menu of the pieces we can send, for 'what can you show me?'.
 
     Returns None when nothing is on disk yet, so the caller can fall back.
     """
-    items = available_items()
+    items = available_items(tenant)
     if not items:
         return None
     lines = ["Here are some of the pieces I can send you:"]

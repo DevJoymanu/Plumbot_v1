@@ -1151,7 +1151,25 @@ def _describe_work_image(filename: str) -> str:
     return cleaned
 
 
-def get_catalogue_images() -> list:
+def _tenant_gallery_paths(tenant) -> list:
+    """A non-homebase tenant's own portfolio image paths (Phase 2.5). Their
+    gallery is ONLY their uploaded/seeded items — never homebase's bundled
+    photo folders. [] when they have none (senders return False → text
+    fallback)."""
+    from bot import portfolio_catalog
+    return [
+        portfolio_catalog.image_path_for(item)
+        for item in portfolio_catalog.available_items(tenant)
+    ]
+
+
+def _is_foreign_tenant(tenant) -> bool:
+    return tenant is not None and getattr(tenant, 'slug', '') != 'homebase'
+
+
+def get_catalogue_images(tenant=None) -> list:
+    if _is_foreign_tenant(tenant):
+        return _tenant_gallery_paths(tenant)
     images = []
     if not os.path.exists(CATALOGUE_IMAGES_DIR):
         print(f"Catalogue images folder not found: {CATALOGUE_IMAGES_DIR}")
@@ -1170,7 +1188,7 @@ def send_catalogue_images(sender, appointment=None) -> bool:
     Returns True if images were queued, False if no images configured
     (caller should show the text-only price list as a fallback).
     """
-    images = get_catalogue_images()
+    images = get_catalogue_images(appointment.tenant if appointment else None)
     if not images:
         print("No catalogue images found — text-only fallback will be used")
         return False
@@ -1245,7 +1263,9 @@ def send_portfolio_item(sender, item, appointment=None) -> bool:
     return True
 
 
-def get_previous_work_images() -> list:
+def get_previous_work_images(tenant=None) -> list:
+    if _is_foreign_tenant(tenant):
+        return _tenant_gallery_paths(tenant)
     images = []
     if not os.path.exists(PREVIOUS_WORK_IMAGES_DIR):
         print(f"?? Previous work images folder not found: {PREVIOUS_WORK_IMAGES_DIR}")
@@ -1365,7 +1385,7 @@ def send_previous_work_photos(sender, appointment=None):
         if last_sent and (timezone.now() - last_sent) < timedelta(hours=24):
             print(f"Skipping previous work photos for {sender} - already sent within 24h")
             return True
-    images = get_previous_work_images()
+    images = get_previous_work_images(appointment.tenant if appointment else None)
     if not images:
         print("No previous work images found - caller should handle fallback")
         return False
@@ -1389,7 +1409,8 @@ def send_previous_work_photos(sender, appointment=None):
             for index, image_path in enumerate(images):
                 # Per-image caption from the catalogue (product/service name only,
                 # no pricing); generic fallback for uncatalogued shots.
-                caption = portfolio_catalog.build_gallery_caption(image_path)
+                caption = portfolio_catalog.build_gallery_caption(
+                    image_path, tenant=appointment.tenant if appointment else None)
                 if caption is None:
                     caption = (
                         "Our previous work - high quality plumbing & renovations"
@@ -2545,7 +2566,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # STEP 0a above; ambiguous matches return None and fall through to STEP 1.
         try:
             from bot import portfolio_catalog
-            _portfolio_item = portfolio_catalog.match_portfolio_item(message_body)
+            _portfolio_item = portfolio_catalog.match_portfolio_item(message_body, tenant=tenant)
         except Exception as _pc_exc:
             print(f"Portfolio item match failed: {_pc_exc}")
             _portfolio_item = None
@@ -2560,7 +2581,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # they can pick one. Distinct from "send me your portfolio" (gallery).
         try:
             _menu_request = portfolio_catalog.is_catalogue_menu_request(message_body)
-            _menu_text = portfolio_catalog.catalogue_overview() if _menu_request else None
+            _menu_text = portfolio_catalog.catalogue_overview(tenant=tenant) if _menu_request else None
         except Exception as _menu_exc:
             print(f"Portfolio menu check failed: {_menu_exc}")
             _menu_text = None
