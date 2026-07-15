@@ -1,0 +1,137 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}Platform Console · Plumbot{% endblock %}
+
+{% block extra_css %}
+<style>
+  .platform-body { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .platform-card {
+    background: var(--color-card, #fff);
+    border: 1px solid rgba(0, 101, 145, 0.10);
+    border-radius: 16px;
+    box-shadow: 0 20px 40px -15px rgba(14, 165, 233, 0.08);
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .platform-card__title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: #006591; margin-bottom: 16px;
+  }
+  .tenant-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tenant-table th {
+    text-align: left; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #5b7285; padding: 8px 12px;
+  }
+  .tenant-table td { padding: 12px; border-top: 1px solid rgba(0, 101, 145, 0.05); }
+  .pill {
+    display: inline-block; padding: 2px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+  }
+  .pill--ok { background: rgba(14, 165, 233, 0.12); color: #006591; }
+  .pill--off { background: rgba(186, 26, 26, 0.10); color: #ba1a1a; }
+  .pill--warn { background: rgba(180, 130, 0, 0.12); color: #7a5800; }
+  .btn-pill {
+    display: inline-block; padding: 6px 16px; border-radius: 999px;
+    border: 1px solid rgba(0, 101, 145, 0.15); background: transparent;
+    color: #006591; font-size: 13px; font-weight: 600; text-decoration: none;
+    cursor: pointer; transition: all 0.2s ease;
+  }
+  .btn-pill:hover { border-color: rgba(0, 101, 145, 0.4); background: rgba(0, 101, 145, 0.05); }
+  .btn-pill--solid { background: #006591; color: #fff; border-color: #006591; }
+  .btn-pill--solid:hover { opacity: 0.9; background: #006591; color: #fff; }
+  .create-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .create-row input {
+    border: none; background: rgba(0, 101, 145, 0.05); border-radius: 999px;
+    padding: 8px 18px; font-size: 14px; outline: none;
+  }
+  .create-row input:focus { box-shadow: 0 0 0 2px rgba(0, 101, 145, 0.2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-topbar">
+  <i class="fas fa-building"></i>
+  <h1>Platform Console</h1>
+</div>
+
+<div class="platform-body">
+
+  <div class="platform-card">
+    <div class="platform-card__title">Tenants</div>
+    <table class="tenant-table">
+      <thead>
+        <tr>
+          <th>Tenant</th><th>Status</th><th>Leads</th><th>WhatsApp channel</th>
+          <th>Config</th><th style="text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+            <strong>{{ row.tenant.name }}</strong><br>
+            <small style="color:#5b7285;">{{ row.tenant.slug }}</small>
+          </td>
+          <td>
+            {% if row.tenant.is_active %}<span class="pill pill--ok">Active</span>
+            {% else %}<span class="pill pill--off">Inactive</span>{% endif %}
+            {% if current_tenant and current_tenant.pk == row.tenant.pk %}
+            <span class="pill pill--ok" title="Your session is viewing this tenant">Viewing</span>
+            {% endif %}
+          </td>
+          <td>{{ row.lead_count }}</td>
+          <td>
+            {% if row.channel %}
+              <span class="pill pill--ok">{{ row.channel.display_number|default:row.channel.phone_number_id }}</span>
+            {% else %}
+              <span class="pill pill--warn">No number</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.has_profile %}<span class="pill pill--ok">Profile</span>
+            {% else %}<span class="pill pill--warn">Empty</span>{% endif %}
+          </td>
+          <td style="text-align:right; white-space:nowrap;">
+            <a class="btn-pill" href="{% url 'platform_tenant_config' row.tenant.slug %}">Config</a>
+            {% if row.tenant.is_active %}
+            <form method="post" action="{% url 'switch_tenant' %}" style="display:inline;">
+              {% csrf_token %}
+              <input type="hidden" name="tenant" value="{{ row.tenant.slug }}">
+              <input type="hidden" name="next" value="/dashboard/">
+              <button type="submit" class="btn-pill">View as</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'platform_toggle_tenant' row.tenant.slug %}" style="display:inline;">
+              {% csrf_token %}
+              <button type="submit" class="btn-pill">
+                {% if row.tenant.is_active %}Deactivate{% else %}Activate{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" style="text-align:center; color:#5b7285; padding:32px;">No tenants yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="platform-card">
+    <div class="platform-card__title">New tenant</div>
+    <form method="post" action="{% url 'platform_create_tenant' %}" class="create-row">
+      {% csrf_token %}
+      <input type="text" name="name" placeholder="Business name (e.g. Acme Plumbing)" required>
+      <input type="text" name="slug" placeholder="slug (optional — derived from name)">
+      <button type="submit" class="btn-pill btn-pill--solid">
+        <i class="fas fa-plus"></i> Create tenant
+      </button>
+    </form>
+    <p style="margin:12px 0 0; font-size:13px; color:#5b7285;">
+      Creates the tenant with a blank profile. Everything is optional — the bot omits
+      any topic the config doesn't cover — but go-live needs at minimum a name,
+      a WhatsApp number, and a green golden-scenario run.
+    </p>
+  </div>
+
+</div>
+{% endblock %}

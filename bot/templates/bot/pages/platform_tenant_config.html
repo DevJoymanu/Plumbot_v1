@@ -1,0 +1,131 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}{{ tenant.name }} · Config · Platform Console{% endblock %}
+
+{% block extra_css %}
+<style>
+  .platform-body { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .platform-card {
+    background: var(--color-card, #fff);
+    border: 1px solid rgba(0, 101, 145, 0.10);
+    border-radius: 16px;
+    box-shadow: 0 20px 40px -15px rgba(14, 165, 233, 0.08);
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .platform-card__title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: #006591; margin-bottom: 16px;
+  }
+  .cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px 24px; }
+  .form-group label {
+    display: block; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #5b7285; margin-bottom: 4px;
+  }
+  .form-group input, .form-group textarea, .form-group select {
+    width: 100%; border: none; background: rgba(0, 101, 145, 0.05);
+    border-radius: 12px; padding: 8px 14px; font-size: 14px; outline: none;
+  }
+  .form-group input:focus, .form-group textarea:focus { box-shadow: 0 0 0 2px rgba(0, 101, 145, 0.2); }
+  .form-group small { color: #ba1a1a; }
+  .price-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .price-table th {
+    text-align: left; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #5b7285; padding: 6px 8px;
+  }
+  .price-table td { padding: 4px 8px; border-top: 1px solid rgba(0, 101, 145, 0.05); }
+  .price-table input { width: 100%; border: none; background: rgba(0,101,145,0.05); border-radius: 8px; padding: 5px 10px; font-size: 13px; }
+  .btn-pill {
+    display: inline-block; padding: 8px 20px; border-radius: 999px;
+    border: 1px solid #006591; background: #006591; color: #fff;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s ease;
+  }
+  .btn-pill:hover { opacity: 0.9; }
+  .btn-ghost { background: transparent; color: #006591; border-color: rgba(0,101,145,0.2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-topbar">
+  <i class="fas fa-building"></i>
+  <h1>{{ tenant.name }} — Config</h1>
+</div>
+
+<div class="platform-body">
+
+  <div class="platform-card">
+    <div class="platform-card__title">WhatsApp channel</div>
+    {% if channel %}
+      <p style="margin:0; font-size:14px;">
+        Routing key <strong>{{ channel.phone_number_id }}</strong>
+        {% if channel.display_number %} · {{ channel.display_number }}{% endif %}
+        · token {% if channel.access_token %}<strong>on file (encrypted)</strong>{% else %}<strong style="color:#ba1a1a;">missing</strong>{% endif %}
+        · {% if channel.is_active %}active{% else %}inactive{% endif %}
+      </p>
+    {% else %}
+      <p style="margin:0; font-size:14px; color:#7a5800;">
+        No WhatsApp number registered yet — inbound routing for this tenant won't work
+        until a channel row exists (registered under the platform Business Manager).
+      </p>
+    {% endif %}
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+
+    <div class="platform-card">
+      <div class="platform-card__title">Profile — every field optional (absent = the bot omits the topic)</div>
+      <div class="cfg-grid">
+        {% for field in form %}
+        <div class="form-group">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% for error in field.errors %}<small>{{ error }}</small>{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="platform-card">
+      <div class="platform-card__title">Price sheet — "from" rates; blank fields stay unquoted</div>
+      {{ formset.management_form }}
+      <table class="price-table">
+        <thead>
+          <tr>
+            <th>Family</th><th>Variant</th><th>Label</th><th>Short label</th>
+            <th>Supply</th><th>Labour</th><th>Flat</th><th>All-in</th>
+            <th>Sort</th><th>Active</th><th>Delete</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in formset %}
+          <tr>
+            {{ f.id }}
+            <td>{{ f.family }}</td><td>{{ f.variant }}</td>
+            <td>{{ f.label }}</td><td>{{ f.short_label }}</td>
+            <td>{{ f.supply }}</td><td>{{ f.labour }}</td>
+            <td>{{ f.flat }}</td><td>{{ f.allin }}</td>
+            <td>{{ f.sort_order }}</td>
+            <td style="text-align:center;">{{ f.is_active }}</td>
+            <td style="text-align:center;">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
+          </tr>
+          {% if f.errors %}
+          <tr><td colspan="11"><small style="color:#ba1a1a;">{{ f.errors }}</small></td></tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      <p style="margin:12px 0 0; font-size:13px; color:#5b7285;">
+        One blank row is provided for adding an item; save to get another.
+        Sizes, parts, and keywords are edited via the intake flow (coming) or the Django admin.
+      </p>
+    </div>
+
+    <div style="display:flex; gap:12px; margin-bottom:48px;">
+      <button type="submit" class="btn-pill"><i class="fas fa-save"></i> Save config</button>
+      <a href="{% url 'platform_console' %}" class="btn-pill btn-ghost" style="text-decoration:none;">Back to console</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

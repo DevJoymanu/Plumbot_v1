@@ -726,6 +726,73 @@ class TenantViewScopingTests(TestCase):
         self.assertEqual(job.tenant_id, self.acme.pk)
 
 
+class PlatformConsoleTests(TestCase):
+    """Phase 3.2: superuser-only operator console — list, create, toggle,
+    config editor. Plain staff never get in."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+
+    def test_console_lists_tenants(self):
+        response = self.client.get(reverse('platform_console'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Homebase Plumbers', response.content.decode())
+
+    def test_staff_cannot_access_console(self):
+        get_user_model().objects.create_user(
+            username='plainstaff2', password='pass12345', is_staff=True)
+        self.client.login(username='plainstaff2', password='pass12345')
+        for name, args in [('platform_console', []),
+                           ('platform_tenant_config', ['homebase'])]:
+            response = self.client.get(reverse(name, args=args))
+            self.assertIn(response.status_code, (302, 403), name)
+
+    def test_create_tenant_with_blank_profile(self):
+        response = self.client.post(reverse('platform_create_tenant'),
+                                    {'name': 'Acme Plumbing'})
+        self.assertEqual(response.status_code, 302)
+        tenant = Tenant.objects.get(slug='acme-plumbing')
+        self.assertTrue(TenantProfile.objects.filter(tenant=tenant).exists())
+        # Blank profile = nullability rule: no facts, no claims.
+        self.assertEqual(tenant.profile.plumber_name, '')
+
+    def test_toggle_tenant_but_never_homebase_off(self):
+        acme = Tenant.objects.create(name='Acme', slug='acme')
+        self.client.post(reverse('platform_toggle_tenant', args=['acme']))
+        acme.refresh_from_db()
+        self.assertFalse(acme.is_active)
+        self.client.post(reverse('platform_toggle_tenant', args=['homebase']))
+        self.homebase.refresh_from_db()
+        self.assertTrue(self.homebase.is_active)  # refused
+
+    def test_config_page_renders_and_saves(self):
+        response = self.client.get(reverse('platform_tenant_config', args=['homebase']))
+        self.assertEqual(response.status_code, 200)
+        # Minimal valid POST: profile fields + empty price formset management.
+        data = {
+            'plumber_name': 'Takudzwa', 'plumber_contact': '+263774819901',
+            'business_whatsapp': '+263776255077',
+            'location_line': "We're in Hatfield, Harare.",
+            'location_area': 'Hatfield', 'location_city': 'Harare',
+            'business_hours': '{"days": "Sunday-Friday", "open": "08:00", "close": "18:00", "closed": ["sat"]}',
+            'timezone_name': 'Africa/Johannesburg',
+            'excluded_areas': '["gweru"]', 'currency': 'US$',
+            'packages': '[]', 'faq_facts': '{}', 'scripts': '{}',
+            'email_from_name': 'Takudzwa', 'email_sender': '',
+            'form-TOTAL_FORMS': '0', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+        }
+        response = self.client.post(
+            reverse('platform_tenant_config', args=['homebase']), data)
+        self.assertEqual(response.status_code, 302)
+        profile = TenantProfile.objects.get(tenant=self.homebase)
+        self.assertEqual(profile.excluded_areas, ['gweru'])
+
+
 class TenantWebhookRoutingTests(TestCase):
     """Phase 1: inbound events route to a tenant by metadata.phone_number_id.
     Route-miss falls back to homebase (single-tenant transition safety) —

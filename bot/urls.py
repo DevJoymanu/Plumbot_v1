@@ -124,8 +124,12 @@ urlpatterns = [
     path('test-whatsapp/', test_whatsapp, name='test_whatsapp'),
     path('export-appointments/', export_appointments, name='export_appointments'),
 
-    # Platform console (multi-tenant, §3.4) — Phase 0: just the tenant switcher
+    # Platform console (multi-tenant, §3.4) — superuser-only operator screens
+    path('platform/', platform_views.platform_console, name='platform_console'),
     path('platform/switch-tenant/', platform_views.switch_tenant, name='switch_tenant'),
+    path('platform/tenants/create/', platform_views.platform_create_tenant, name='platform_create_tenant'),
+    path('platform/tenants/<slug:slug>/toggle/', platform_views.platform_toggle_tenant, name='platform_toggle_tenant'),
+    path('platform/tenants/<slug:slug>/config/', platform_views.platform_tenant_config, name='platform_tenant_config'),
 
     # Web message-testing console (chat with the bot without a real device)
     path('test-console/', views.test_console_view, name='test_console'),
