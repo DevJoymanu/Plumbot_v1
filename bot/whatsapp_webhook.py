@@ -270,7 +270,8 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
         f"Lead: https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"
     )
     try:
-        whatsapp_api.send_text_message(plumber_number, message)
+        from .whatsapp_cloud_api import get_client_for_tenant
+        get_client_for_tenant(appointment.tenant).send_text_message(plumber_number, message)
     except Exception as exc:
         print(f"Failed to notify admin for appointment {appointment.id}: {exc}")
     send_plumber_notification_email(
@@ -285,7 +286,8 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
             _media_ack_timers.pop(sender, None)
 
         try:
-            fresh = Appointment.objects.get(phone_number=f"whatsapp:+{sender}")
+            fresh = Appointment.objects.for_tenant(appointment.tenant).get(
+                phone_number=f"whatsapp:+{sender}")
         except Appointment.DoesNotExist:
             fresh = appointment
 
@@ -308,7 +310,8 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
         print(f"?? Sending single media ack to {sender} after {delay // 60}m delay")
         time.sleep(delay)
         try:
-            whatsapp_api.send_text_message(sender, customer_reply)
+            from .whatsapp_cloud_api import get_client_for_tenant
+            get_client_for_tenant(appointment.tenant).send_text_message(sender, customer_reply)
             print(f"? Media ack sent to {sender}")
         except Exception as e:
             print(f"? Failed to send media ack to {sender}: {e}")
@@ -337,7 +340,8 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
             _plumber_alert_timers.pop(sender, None)
 
         try:
-            fresh = Appointment.objects.get(phone_number=f"whatsapp:+{sender}")
+            fresh = Appointment.objects.for_tenant(appointment.tenant).get(
+                phone_number=f"whatsapp:+{sender}")
         except Appointment.DoesNotExist:
             fresh = appointment
 
@@ -367,7 +371,8 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         )
 
         try:
-            whatsapp_api.send_text_message(plumber_number, alert_message)
+            from .whatsapp_cloud_api import get_client_for_tenant
+            get_client_for_tenant(appointment.tenant).send_text_message(plumber_number, alert_message)
             print(f"? Consolidated plumber alert sent ({len(urls)} file(s)) for {sender}")
         except Exception as e:
             print(f"? Failed to send plumber alert: {e}")
@@ -398,8 +403,18 @@ def get_random_delay() -> int:
     return seconds
 
 
-def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event=None):
+def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event=None, tenant=None):
     try:
+        # Phase 1.3: send with the owning tenant's client (falls back to the
+        # env-credential singleton when tenant is None — correct for homebase
+        # and every pre-threading call site).
+        from .whatsapp_cloud_api import get_client_for_tenant
+        client = get_client_for_tenant(tenant)
+
+        def _leads():
+            qs = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}")
+            return qs.for_tenant(tenant) if tenant is not None else qs
+
         # Snapshot the appointment status at the START of the delay window. The
         # abort guard below must only drop a reply that was generated while the
         # lead was still PENDING and then got confirmed mid-wait (a stale
@@ -407,9 +422,7 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         # email?" asks — are generated when the status is ALREADY confirmed, and
         # must NOT be aborted, or the customer never receives them.
         try:
-            _initial = Appointment.objects.filter(
-                phone_number=f"whatsapp:+{sender}"
-            ).only('status').first()
+            _initial = _leads().only('status').first()
             was_confirmed_at_start = bool(_initial and _initial.status == 'confirmed')
         except Exception:
             was_confirmed_at_start = False
@@ -445,9 +458,7 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         # i.e. this reply is a stale pre-booking question superseded by a booking.
         # Replies generated after confirmation (the name/email asks) are kept.
         try:
-            fresh = Appointment.objects.filter(
-                phone_number=f"whatsapp:+{sender}"
-            ).only('status').first()
+            fresh = _leads().only('status').first()
             if fresh and fresh.status == 'confirmed' and not was_confirmed_at_start:
                 print(f"⚠️ Aborting delayed reply to {sender} — confirmed mid-wait (stale pre-booking reply)")
                 return
@@ -456,7 +467,7 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
 
         if message_id and not is_test_sender(sender):
             try:
-                whatsapp_api.mark_message_as_read(message_id)
+                client.mark_message_as_read(message_id)
             except Exception as e:
                 print(f"⚠️ Could not mark as read before reply: {e}")
 
@@ -477,7 +488,7 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
                 # A short human "typing" gap between the acknowledgement and the
                 # follow-up question so the two messages don't land as one block.
                 time.sleep(random.randint(3, 7))
-            send_result = whatsapp_api.send_text_message(sender, part)
+            send_result = client.send_text_message(sender, part)
             preview = part.replace('\n', ' ')[:120]
             print(f"🤖 Bot → +{sender}: {preview}{'…' if len(part) > 120 else ''}")
 
@@ -488,9 +499,7 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
             try:
                 sent_wamid = (send_result or {}).get('messages', [{}])[0].get('id')
                 if sent_wamid:
-                    appt = Appointment.objects.filter(
-                        phone_number=f"whatsapp:+{sender}"
-                    ).first()
+                    appt = _leads().first()
                     if appt:
                         appt.attach_message_id("assistant", part, sent_wamid)
             except Exception as e:
@@ -1168,12 +1177,14 @@ def send_catalogue_images(sender, appointment=None) -> bool:
 
     def _send():
         try:
+            from .whatsapp_cloud_api import get_client_for_tenant
+            client = get_client_for_tenant(appointment.tenant if appointment else None)
             time.sleep(1)  # let the text message arrive first
             sent_count = 0
             media_index = {}
             for index, image_path in enumerate(images):
                 caption = "HomeBase Plumbers — product catalogue" if index == 0 else None
-                result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                result = client.send_local_image(sender, image_path, caption=caption)
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:
                     media_index[wamid] = _describe_work_image(image_path)
@@ -1210,8 +1221,10 @@ def send_portfolio_item(sender, item, appointment=None) -> bool:
 
     def _send():
         try:
+            from .whatsapp_cloud_api import get_client_for_tenant
+            client = get_client_for_tenant(appointment.tenant if appointment else None)
             time.sleep(1)  # let any preceding text land first
-            result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
+            result = client.send_local_image(sender, image_path, caption=caption)
             wamid = (result or {}).get('messages', [{}])[0].get('id')
             if appointment:
                 if wamid:
@@ -1364,10 +1377,12 @@ def send_previous_work_photos(sender, appointment=None):
     def send_images_with_delay():
         try:
             from .test_console import is_test_sender
+            from .whatsapp_cloud_api import get_client_for_tenant
+            client = get_client_for_tenant(appointment.tenant if appointment else None)
             delay_seconds = 0 if is_test_sender(sender) else get_random_delay()
             print(f"Waiting {delay_seconds // 60} minute(s) before sending images to {sender}")
             time.sleep(delay_seconds)
-            whatsapp_api.send_text_message(sender, intro)
+            client.send_text_message(sender, intro)
             sent_count = 0
             media_index = {}
             from bot import portfolio_catalog
@@ -1380,7 +1395,7 @@ def send_previous_work_photos(sender, appointment=None):
                         "Our previous work - high quality plumbing & renovations"
                         if index == 0 else None
                     )
-                result = whatsapp_api.send_local_image(sender, image_path, caption=caption)
+                result = client.send_local_image(sender, image_path, caption=caption)
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:
                     media_index[wamid] = _describe_work_image(image_path)
@@ -1388,7 +1403,7 @@ def send_previous_work_photos(sender, appointment=None):
                 time.sleep(0.5)
             follow_up = generate_photo_followup(appointment)
             time.sleep(1)
-            whatsapp_api.send_text_message(sender, follow_up)
+            client.send_text_message(sender, follow_up)
             if appointment:
                 appointment.add_conversation_message("assistant", intro)
                 appointment.record_sent_media(
@@ -1630,13 +1645,13 @@ def process_message_change(value):
                 handle_media_message(sender, message.get('video', {}), 'video', tenant=tenant)
 
             elif message_type == 'sticker':
-                handle_unsupported_media(sender, 'sticker')
+                handle_unsupported_media(sender, 'sticker', tenant=tenant)
 
             elif message_type == 'location':
                 handle_location_message(sender, message.get('location', {}), tenant=tenant)
 
             elif message_type == 'contacts':
-                handle_unsupported_media(sender, 'contacts')
+                handle_unsupported_media(sender, 'contacts', tenant=tenant)
 
             else:
                 print(f"⚠️ Unknown message type from {sender}: '{message_type}'")
@@ -1773,7 +1788,7 @@ def handle_location_message(sender, location_data, tenant=None):
         except Appointment.DoesNotExist:
             response_msg = "Thanks for the location! To get started, please tell me about your plumbing needs."
             delay = get_random_delay()
-            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
+            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
             return
 
         if appointment.chatbot_paused:
@@ -1791,7 +1806,7 @@ def handle_location_message(sender, location_data, tenant=None):
                 refresh_lead_score(appointment)
                 reply = plumbot.generate_response(f"My location is {address}")
                 delay = get_random_delay()
-                threading.Thread(target=delayed_response, args=(sender, reply, delay), daemon=True).start()
+                threading.Thread(target=delayed_response, args=(sender, reply, delay), kwargs={'tenant': tenant}, daemon=True).start()
             else:
                 response_msg = (
                     "Thanks for the location pin! ??\n\n"
@@ -1799,17 +1814,17 @@ def handle_location_message(sender, location_data, tenant=None):
                     "This helps us serve you better."
                 )
                 delay = get_random_delay()
-                threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
+                threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
         else:
             response_msg = "Thanks for sharing your location! ??\n\nI've noted it. Let me continue with your appointment details..."
             delay = get_random_delay()
-            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
+            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
 
     except Exception as e:
         print(f"? Error handling location: {str(e)}")
 
 
-def handle_unsupported_media(sender, media_type):
+def handle_unsupported_media(sender, media_type, tenant=None):
     try:
         if is_chatbot_paused_for_sender(sender):
             print(f"Chatbot paused for whatsapp:+{sender}; skipping unsupported media auto response.")
@@ -1843,6 +1858,7 @@ def handle_unsupported_media(sender, media_type):
         threading.Thread(
             target=delayed_response,
             args=(sender, response_msg, delay),
+            kwargs={'tenant': tenant},
             daemon=True
         ).start()
     except Exception as e:
@@ -1867,7 +1883,7 @@ def handle_audio_message(sender, audio_data, tenant=None):
                 "Voice notes we can't read unfortunately — just type it out and we'll get you sorted"
             )
             delay = get_random_delay()
-            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
+            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
             return
 
         if appointment.plan_status == 'pending_upload':
@@ -1881,7 +1897,7 @@ def handle_audio_message(sender, audio_data, tenant=None):
             )
 
         delay = get_random_delay()
-        threading.Thread(target=delayed_response, args=(sender, response_msg, delay), daemon=True).start()
+        threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
 
     except Exception as e:
         print(f"? Error handling audio: {str(e)}")
@@ -2213,7 +2229,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     appointment.add_conversation_message("assistant", _adv)
                     delay = get_random_delay()
                     threading.Thread(
-                        target=delayed_response, args=(sender, _adv, delay, message_id),
+                        target=delayed_response, args=(sender, _adv, delay, message_id), kwargs={'tenant': tenant},
                         daemon=True,
                     ).start()
                     return True
@@ -2234,7 +2250,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     appointment.add_conversation_message("assistant", _reply)
                     delay = get_random_delay()
                     threading.Thread(
-                        target=delayed_response, args=(sender, _reply, delay, message_id),
+                        target=delayed_response, args=(sender, _reply, delay, message_id), kwargs={'tenant': tenant},
                         daemon=True,
                     ).start()
                     return
@@ -2262,7 +2278,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 appointment.add_conversation_message("assistant", _adv)
                 delay = get_random_delay()
                 threading.Thread(
-                    target=delayed_response, args=(sender, _adv, delay, message_id),
+                    target=delayed_response, args=(sender, _adv, delay, message_id), kwargs={'tenant': tenant},
                     daemon=True,
                 ).start()
                 return
@@ -2285,7 +2301,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 appointment.add_conversation_message("assistant", _pivot_reply)
                 delay = get_random_delay()
                 threading.Thread(
-                    target=delayed_response, args=(sender, _pivot_reply, delay, message_id),
+                    target=delayed_response, args=(sender, _pivot_reply, delay, message_id), kwargs={'tenant': tenant},
                     daemon=True,
                 ).start()
                 return
@@ -2503,7 +2519,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
             delay = get_random_delay()
             threading.Thread(
-                target=delayed_response, args=(sender, reply_text, delay, message_id), daemon=True
+                target=delayed_response, args=(sender, reply_text, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
             return
 
@@ -2556,7 +2572,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
             delay = get_random_delay()
             threading.Thread(
-                target=delayed_response, args=(sender, _menu_text, delay, message_id), daemon=True
+                target=delayed_response, args=(sender, _menu_text, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
             return
 
@@ -2606,7 +2622,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             )
             appointment.add_conversation_message("assistant", fallback_reply)
             delay = get_random_delay()
-            threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), daemon=True).start()
+            threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), kwargs={'tenant': tenant}, daemon=True).start()
             return
 
         # -- STEP 1a: Budget objection after a price tie-down -------------------
@@ -2627,7 +2643,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
             delay = get_random_delay()
             threading.Thread(
-                target=delayed_response, args=(sender, _budget_reply, delay, message_id), daemon=True
+                target=delayed_response, args=(sender, _budget_reply, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
             return
 
@@ -2644,7 +2660,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
             delay = get_random_delay()
             threading.Thread(
-                target=delayed_response, args=(sender, oos_reply, delay, message_id), daemon=True
+                target=delayed_response, args=(sender, oos_reply, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
             return
 
@@ -2974,7 +2990,8 @@ def handle_media_message(sender, media_data, media_type, tenant=None):
         file_bytes = None
         if media_id:
             try:
-                file_bytes = whatsapp_api.download_media(media_id)
+                from .whatsapp_cloud_api import get_client_for_tenant
+                file_bytes = get_client_for_tenant(tenant).download_media(media_id)
                 print(f"? Downloaded {len(file_bytes)} bytes from WhatsApp (id={media_id})")
             except Exception as dl_err:
                 print(f"? Failed to download media from WhatsApp: {dl_err}")
