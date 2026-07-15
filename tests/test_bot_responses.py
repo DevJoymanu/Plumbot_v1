@@ -1097,8 +1097,6 @@ for msg, expected in MULTI_PRODUCT_CASES:
 # and never invents figures. Wires every helper the rewritten method now uses.
 class _FakeSelfCombined:
     _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
-    _FAMILY_ROUGH_PRICE = ResponseMixin._FAMILY_ROUGH_PRICE
-    _FAMILY_PRICE_COMPONENTS = ResponseMixin._FAMILY_PRICE_COMPONENTS
     _SCOPE_LABEL = ResponseMixin._SCOPE_LABEL
     _SCOPE_SHORT = ResponseMixin._SCOPE_SHORT
     _QTY_WORDS = ResponseMixin._QTY_WORDS
@@ -1113,12 +1111,24 @@ class _FakeSelfCombined:
     _asks_about_labour = ResponseMixin._asks_about_labour
     _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
     _build_combined_price_reply = ResponseMixin._build_combined_price_reply
-    _FAMILY_FLAT_PRICE = ResponseMixin._FAMILY_FLAT_PRICE
-    _FREESTANDING_TUB_ALLIN = ResponseMixin._FREESTANDING_TUB_ALLIN
-    _FREESTANDING_TUB_SPLIT = ResponseMixin._FREESTANDING_TUB_SPLIT
     _tub_type_in_message = ResponseMixin._tub_type_in_message
     def __init__(self, appointment=None):
         self.appointment = appointment
+    # Phase 2.3b: prices come from tenant data via these map methods; the fake
+    # pins homebase's sheet as literals so the flow pins stay DB-independent.
+    def _rough_price_map(self):
+        return {
+            'shower': 'shower cubicle from US$170', 'tub': 'tub from US$160',
+            'geyser': 'geyser from US$160', 'vanity': 'vanity from US$180',
+            'toilet': 'toilet from US$70', 'chamber': 'side chamber from US$160',
+        }
+    def _price_components_map(self):
+        return {'shower': (130, 40), 'tub': (80, 80), 'geyser': (80, 80),
+                'vanity': (150, 30), 'toilet': (50, 20), 'chamber': (130, 30)}
+    def _flat_price_map(self):
+        return {'basin': 70}
+    def _freestanding_tub_price(self):
+        return (670, "tub from US$400 + mixer US$150, install from US$120")
     def _next_forward_question(self, language="english", scope=None, has_accessories=False):
         return "Whereabouts are you based?"
 try:

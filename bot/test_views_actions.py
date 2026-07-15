@@ -854,33 +854,47 @@ class TenantConfigTests(TestCase):
         self.assertIn('Acme Plumbing · Zimbabwe', _wrap('<p>x</p>', acme_lead))
 
     def test_price_accessors_match_legacy_response_mixin_tables(self):
-        # Phase 2.3 parity: the cfg price shapes must equal the hardcoded
-        # tables in response_mixin BYTE-FOR-BYTE before consumers switch over.
+        # Phase 2.3 parity pins: the cfg price shapes must equal the tables
+        # that lived hardcoded in response_mixin until 2.3b (literals below
+        # ARE those tables, verbatim). Any drift in the homebase seed or the
+        # renderers = a real price change on prod — fail loudly.
         from .tenant_config import get_config
-        from .views.plumbot.response_mixin import ResponseMixin
         cfg = get_config(self.homebase)
 
-        legacy_components = ResponseMixin._FAMILY_PRICE_COMPONENTS
+        legacy_components = {
+            'shower': (130, 40), 'tub': (80, 80), 'geyser': (80, 80),
+            'vanity': (150, 30), 'toilet': (50, 20), 'chamber': (130, 30),
+        }
         components = cfg.price_components()
         for family, pair in legacy_components.items():
             self.assertEqual(components.get(family), pair, family)
 
-        self.assertEqual(cfg.flat_prices().get('basin'),
-                         ResponseMixin._FAMILY_FLAT_PRICE['basin'])
+        self.assertEqual(cfg.flat_prices().get('basin'), 70)
 
-        legacy_rough = ResponseMixin._FAMILY_ROUGH_PRICE
+        legacy_rough = {
+            'shower': 'shower cubicle from US$170', 'tub': 'tub from US$160',
+            'geyser': 'geyser from US$160', 'vanity': 'vanity from US$180',
+            'toilet': 'toilet from US$70', 'chamber': 'side chamber from US$160',
+        }
         rough = cfg.rough_price_lines()
         for family, line in legacy_rough.items():
             self.assertEqual(rough.get(family), line, family)
 
-        legacy_breakdown = ResponseMixin._FAMILY_LABOUR_BREAKDOWN
+        legacy_breakdown = {
+            'shower': 'Shower cubicle: supply from US$130, labour from US$40',
+            'tub': 'Tub: supply from US$80, labour from US$80',
+            'geyser': 'Geyser: supply from US$80, labour from US$80',
+            'vanity': 'Vanity unit: supply from US$150, labour from US$30',
+            'toilet': 'Toilet seat: supply from US$50, labour from US$20',
+            'chamber': 'Side chamber: supply from US$130, labour from US$30',
+        }
         breakdown = cfg.labour_breakdown_lines()
         for family, line in legacy_breakdown.items():
             self.assertEqual(breakdown.get(family), line, family)
 
         allin, split = cfg.freestanding_tub()
-        self.assertEqual(allin, ResponseMixin._FREESTANDING_TUB_ALLIN)
-        self.assertEqual(split, ResponseMixin._FREESTANDING_TUB_SPLIT)
+        self.assertEqual(allin, 670)
+        self.assertEqual(split, "tub from US$400 + mixer US$150, install from US$120")
 
     def test_price_accessors_empty_for_bare_tenant(self):
         from .tenant_config import get_config

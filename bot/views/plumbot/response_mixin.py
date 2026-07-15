@@ -1296,27 +1296,37 @@ class ResponseMixin:
             'drain':  (r'\bdrains?\b',),
             'pipe':   (r'\bpipes?\b',),
         }
-        # Rough all-in (supply + install) starting prices, from the business's own
-        # figures in sales_profiles/homebase.md — keep in sync, never invent.
-        _FAMILY_ROUGH_PRICE = {
-            'shower':  'shower cubicle from US$170',
-            'tub':     'tub from US$160',
-            'geyser':  'geyser from US$160',
-            'vanity':  'vanity from US$180',
-            'toilet':  'toilet from US$70',
-            'chamber': 'side chamber from US$160',
-        }
-        # Supply + labour split behind each rough all-in figure above (same
-        # homebase.md source — keep the two maps in sync, never invent figures).
-        # Used when the customer asks specifically about labour/install cost.
-        _FAMILY_LABOUR_BREAKDOWN = {
-            'shower':  'Shower cubicle: supply from US$130, labour from US$40',
-            'tub':     'Tub: supply from US$80, labour from US$80',
-            'geyser':  'Geyser: supply from US$80, labour from US$80',
-            'vanity':  'Vanity unit: supply from US$150, labour from US$30',
-            'toilet':  'Toilet seat: supply from US$50, labour from US$20',
-            'chamber': 'Side chamber: supply from US$130, labour from US$30',
-        }
+        # ── Prices (Phase 2.3b) ──────────────────────────────────────────────
+        # All price DATA lives in TenantPriceItem rows (seeded for homebase by
+        # migration 0048), read per-turn through the tenant_cfg property. A
+        # tenant without price rows gets empty maps → the price paths return
+        # None and the flow deflects to the free site visit — never another
+        # tenant's figures (nullability rule).
+
+        @property
+        def tenant_cfg(self):
+            """Per-turn TenantConfig for this conversation's tenant (cached on
+            the instance — one Plumbot per turn, like the Appointment)."""
+            if not hasattr(self, '_tenant_cfg'):
+                from bot.tenant_config import get_config
+                self._tenant_cfg = get_config(getattr(self.appointment, 'tenant', None))
+            return self._tenant_cfg
+
+        def _rough_price_map(self) -> dict:
+            """{family: 'label from US$X'} — was _FAMILY_ROUGH_PRICE."""
+            return self.tenant_cfg.rough_price_lines()
+
+        def _price_components_map(self) -> dict:
+            """{family: (supply, labour)} — was _FAMILY_PRICE_COMPONENTS."""
+            return self.tenant_cfg.price_components()
+
+        def _flat_price_map(self) -> dict:
+            """{family: flat} — was _FAMILY_FLAT_PRICE."""
+            return self.tenant_cfg.flat_prices()
+
+        def _freestanding_tub_price(self):
+            """(allin, split_sentence) or None — was _FREESTANDING_TUB_*."""
+            return self.tenant_cfg.freestanding_tub()
         # Human label for each family, used when we name the items back to the
         # customer (e.g. the confirm-intent close "both the tub and shower").
         _FAMILY_DISPLAY = {
@@ -1347,28 +1357,6 @@ class ResponseMixin:
             'chamber': 'side chamber',
             'basin':   'basin',
         }
-        # (supply, labour) behind each rough all-in figure — same homebase.md
-        # source as _FAMILY_ROUGH_PRICE / _FAMILY_LABOUR_BREAKDOWN. Numeric so we
-        # can multiply by quantity and show a line total. Keep in sync.
-        _FAMILY_PRICE_COMPONENTS = {
-            'shower':  (130, 40),
-            'tub':     (80, 80),
-            'geyser':  (80, 80),
-            'vanity':  (150, 30),
-            'toilet':  (50, 20),
-            'chamber': (130, 30),
-        }
-        # Flat 'from' prices where homebase.md gives NO supply/labour split
-        # (basin pedestal/corner: US$70). Never invent a split — quote the flat
-        # figure. Real-lead corpus: "fit a standalone tab, chamber and sink"
-        # silently dropped the sink because basin had no price entry.
-        _FAMILY_FLAT_PRICE = {'basin': 70}
-        # Freestanding tub figures (homebase.md): tub US$400 + mixer US$150 +
-        # install US$120 → from US$670 all-in. Used when the customer explicitly
-        # says standalone/freestanding in a multi-item ask, so the combined reply
-        # doesn't quote built-in money for a freestanding job.
-        _FREESTANDING_TUB_ALLIN = 670
-        _FREESTANDING_TUB_SPLIT = "tub from US$400 + mixer US$150, install from US$120"
         _QTY_WORDS = {
             'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6,
             'pair': 2, 'couple': 2, 'double': 2,
@@ -1491,14 +1479,21 @@ class ResponseMixin:
             (or '... US$170 each (×2 ≈ US$340)' when more than one). fs_tub means
             the customer explicitly said standalone/freestanding, so the tub line
             must use freestanding money, not built-in."""
+            flat_map = self._flat_price_map()
+            components = self._price_components_map()
             if family == 'tub' and fs_tub:
-                allin, label = self._FREESTANDING_TUB_ALLIN, 'freestanding tub'
-            elif family in self._FAMILY_FLAT_PRICE:
-                allin, label = self._FAMILY_FLAT_PRICE[family], self._SCOPE_LABEL[family]
-            else:
-                supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
+                fs = self._freestanding_tub_price()
+                if fs is None:
+                    return ''  # no freestanding price on file — caller skips
+                allin, label = fs[0], 'freestanding tub'
+            elif family in flat_map:
+                allin, label = flat_map[family], self._SCOPE_LABEL[family]
+            elif family in components:
+                supply, labour = components[family]
                 allin = supply + labour
                 label = self._SCOPE_LABEL[family]
+            else:
+                return ''  # family not on this tenant's price sheet — skip
             if qty > 1:
                 return f"{label} from US${allin} each (×{qty} ≈ US${allin * qty})"
             return f"{label} from US${allin}"
@@ -1507,10 +1502,17 @@ class ResponseMixin:
             """(split_text, allin) for one fixture in the labour breakdown. A flat
             price (basin) has no split in homebase.md — never invent one."""
             if family == 'tub' and fs_tub:
-                return self._FREESTANDING_TUB_SPLIT, self._FREESTANDING_TUB_ALLIN
-            if family in self._FAMILY_FLAT_PRICE:
-                return None, self._FAMILY_FLAT_PRICE[family]
-            supply, labour = self._FAMILY_PRICE_COMPONENTS[family]
+                fs = self._freestanding_tub_price()
+                if fs is None:
+                    return None, None  # not on this tenant's sheet — caller skips
+                return fs[1], fs[0]
+            flat_map = self._flat_price_map()
+            if family in flat_map:
+                return None, flat_map[family]
+            components = self._price_components_map()
+            if family not in components:
+                return None, None  # not on this tenant's sheet — caller skips
+            supply, labour = components[family]
             return f"supply from US${supply}, labour from US${labour}", supply + labour
 
         def _format_labour_scope(self, scope, has_accessories: bool,
@@ -1524,6 +1526,8 @@ class ResponseMixin:
             if len(scope) == 1:
                 family, qty = scope[0]
                 split, allin = self._labour_split_seg(family, fs_tub)
+                if allin is None:
+                    return ''  # not on this tenant's price sheet
                 short = ('freestanding tub' if (family == 'tub' and fs_tub)
                          else self._SCOPE_SHORT[family])
                 each = " fitted each" if qty > 1 else " fitted"
@@ -1539,6 +1543,8 @@ class ResponseMixin:
             lines = []
             for family, qty in scope:
                 split, allin = self._labour_split_seg(family, fs_tub)
+                if allin is None:
+                    continue  # not on this tenant's price sheet — skip the line
                 label = ('Freestanding tub' if (family == 'tub' and fs_tub)
                          else self._SCOPE_LABEL[family].capitalize())
                 seg = f"{label}"
@@ -1777,19 +1783,30 @@ class ResponseMixin:
             # lead: "fit a standalone tab, chamber and sink" was quoted built-in.
             fs_tub = self._tub_type_in_message(message) == 'freestanding'
 
+            # Tenant with no price sheet → not handled here; the router falls
+            # through and the flow deflects to the free site visit instead of
+            # quoting figures that don't exist (never another tenant's).
+            rough_map = self._rough_price_map()
+            if not rough_map and not self._flat_price_map():
+                return None
+
             # No concrete scope to work from → fall back to the rough menu so the
             # lead still gets figures.
             if not scope:
                 order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
-                priced = ", ".join(self._FAMILY_ROUGH_PRICE[f] for f in order)
+                priced = ", ".join(rough_map[f] for f in order if f in rough_map)
                 intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
                          if is_shona else "Rough all-in prices (supply + install): ")
                 body = f"{intro}{priced}."
             elif labour_breakdown:
                 body = self._format_labour_scope(scope, has_accessories, fs_tub=fs_tub)
+                if not body:
+                    return None  # nothing on the sheet for this scope
             else:
-                priced = ", ".join(self._scope_allin_phrase(f, q, fs_tub=fs_tub)
-                                   for f, q in scope)
+                priced = ", ".join(p for p in (self._scope_allin_phrase(f, q, fs_tub=fs_tub)
+                                               for f, q in scope) if p)
+                if not priced:
+                    return None  # nothing on the sheet for this scope
                 intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
                          if is_shona else "Rough all-in prices (supply + install): ")
                 body = f"{intro}{priced}."
