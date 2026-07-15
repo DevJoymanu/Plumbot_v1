@@ -532,22 +532,45 @@ class Command(BaseCommand):
                 is_access_checkin = '[DELAY_KIND] access_checkin' in (lead.internal_notes or '')
 
                 # Portfolio check-in: we sent the catalog/pricing PDF on WhatsApp and
-                # scheduled this touch to land before the (72h) window closes.
+                # scheduled this touch to land in the last stretch of the lead's
+                # free-form window (24h organic / 72h ad).
                 is_pdf_checkin = '[DELAY_KIND] pdf_checkin' in (lead.internal_notes or '')
 
                 # ── Build the WhatsApp message (touch 1 only) ───────────────────
                 if is_access_checkin:
                     message = (
                         f"{hi}, just checking in — were you able to sort out access "
-                        f"on your side? Happy to lock in a time to come through "
-                        f"whenever suits you."
+                        f"on your side?\n\n"
+                        f"Happy to lock in a time to come through whenever suits you."
                     )
                 elif is_pdf_checkin:
-                    message = (
-                        f"{hi}, did you get a chance to look through the portfolio and "
-                        f"pricing we sent? See anything you like, or any questions I can "
-                        f"help with?"
-                    )
+                    # Contextual: reference the job THEY described plus the lead
+                    # magnet we sent. Soft micro-yes close only — this lead gave a
+                    # delay signal, so no booking push. Paragraph breaks on purpose:
+                    # one block of text is hard to read on WhatsApp.
+                    want = ' '.join((lead.project_description or '').split())
+                    if not want and lead.project_type:
+                        try:
+                            want = lead.get_project_type_display() or lead.project_type
+                        except Exception:
+                            want = lead.project_type
+                    if want and len(want) > 140:
+                        want = want[:140].rsplit(' ', 1)[0]
+                    if want:
+                        message = (
+                            f"{hi}, hope you got a chance to look through the "
+                            f"portfolio and pricing guide we sent.\n\n"
+                            f"About the job you mentioned — {want} — the plumber can "
+                            f"put an exact, all-in figure on it with a quick "
+                            f"20-minute look at the space, free of charge.\n\n"
+                            f"Is that the kind of work you had in mind?"
+                        )
+                    else:
+                        message = (
+                            f"{hi}, did you get a chance to look through the "
+                            f"portfolio and pricing guide we sent?\n\n"
+                            f"See anything you like, or any questions I can help with?"
+                        )
                 else:
                     message = (
                         f"{hi}, hope you're back and settled in. "

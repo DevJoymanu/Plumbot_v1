@@ -734,15 +734,17 @@ for msg in ("next week", "August", "this weekend"):
         results.log(f"_compute_followup_date wrapper falls back offline: '{msg}'", False, got=str(e))
 
 # Vague-deferral flow ("will call you"): when no timeframe is given we auto-set a
-# 2-week follow-up date, and after sending the PDF on WhatsApp we schedule a
-# near-term afternoon check-in ONLY if the messaging window is still open ~2 days
-# out (72h ad leads) — organic 24h leads keep the longer date. Plus the AI-first
+# 2-week follow-up date, and after sending the PDF on WhatsApp we schedule ONE
+# contextual check-in in the LAST stretch of the lead's free-form window — 2h
+# before close for ~24h organic windows, 4h before close for 72h ad windows,
+# clamped into 08:00–20:00 SAST contact hours. EVERY refused-email delay lead
+# gets it now (the old 2pm/2-days rule skipped 24h leads). Plus the AI-first
 # email-step intent classifier's deterministic fallback contract.
 import types as _types
 import pytz as _pytz
 from datetime import datetime as _dt_t, timedelta as _td_t
 from bot.out_of_scope_handler import (
-    _default_followup_iso, _compute_afternoon_checkin,
+    _default_followup_iso, _compute_window_close_checkin,
     _email_step_intent_keywords, _classify_email_step_reply,
 )
 _sast = _pytz.timezone('Africa/Johannesburg')
@@ -754,18 +756,35 @@ try:
 except Exception as e:
     results.log("_default_followup_iso: 2 weeks out", False, got=str(e))
 
-try:
-    _organic = _types.SimpleNamespace(messaging_window_closes_at=_now_fixed + _td_t(hours=24))
-    _ad      = _types.SimpleNamespace(messaging_window_closes_at=_now_fixed + _td_t(hours=72))
-    _ci_org  = _compute_afternoon_checkin(_organic, now=_now_fixed)
-    _ci_ad   = _compute_afternoon_checkin(_ad, now=_now_fixed)
-    results.log("_compute_afternoon_checkin: organic 24h → skip (None)",
-                _ci_org is None, got=str(_ci_org), expected="None")
-    results.log("_compute_afternoon_checkin: ad 72h → 2pm check-in",
-                _ci_ad is not None and _ci_ad.hour == 14,
-                got=str(_ci_ad), expected="a 14:00 datetime")
-except Exception as e:
-    results.log("_compute_afternoon_checkin", False, got=str(e))
+def _wcc(closes_at, now):
+    return _compute_window_close_checkin(
+        _types.SimpleNamespace(messaging_window_closes_at=closes_at), now=now)
+
+WINDOW_CHECKIN_CASES = [
+    # (label, closes_at, now, expected datetime-or-None)
+    ("organic 24h → 2h before close",
+     _now_fixed + _td_t(hours=24), _now_fixed,
+     _sast.localize(_dt_t(2026, 6, 25, 8, 0))),
+    ("ad 72h → 4h before close, pre-dawn pulls to prior evening 19:30",
+     _now_fixed + _td_t(hours=72), _now_fixed,
+     _sast.localize(_dt_t(2026, 6, 26, 19, 30))),
+    ("late-night close → clamps to 19:30",
+     _sast.localize(_dt_t(2026, 6, 25, 23, 0)), _sast.localize(_dt_t(2026, 6, 24, 23, 0)),
+     _sast.localize(_dt_t(2026, 6, 25, 19, 30))),
+    ("window nearly shut (1h left) → None",
+     _now_fixed + _td_t(hours=1), _now_fixed, None),
+    ("2h left → near-term touch now+45min",
+     _now_fixed + _td_t(hours=2), _now_fixed,
+     _now_fixed + _td_t(minutes=45)),
+    ("no window info → None", None, _now_fixed, None),
+]
+for _label, _closes, _now_c, _expected in WINDOW_CHECKIN_CASES:
+    try:
+        _got = _wcc(_closes, _now_c)
+        results.log(f"_compute_window_close_checkin: {_label}",
+                    _got == _expected, got=str(_got), expected=str(_expected))
+    except Exception as e:
+        results.log(f"_compute_window_close_checkin: {_label}", False, got=str(e))
 
 EMAIL_STEP_KW_CASES = [
     ("jones86xi@gmail.com",            "email"),

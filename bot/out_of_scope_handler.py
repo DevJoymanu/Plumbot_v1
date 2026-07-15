@@ -1723,8 +1723,8 @@ _DEFAULT_DELAY_WEEKS = 2
 # Near-term check-in clock — 2pm SAST, two days out — used after we've sent the
 # PDF on WhatsApp, but ONLY when the lead's free-form window is still open then
 # (true for 72h ad leads; organic 24h leads keep the longer reactivation date).
-_CHECKIN_AFTERNOON_HOUR = 14
-_CHECKIN_AFTER_PDF_DAYS = 2
+# (The old fixed 2pm/2-days check-in constants were retired when the PDF
+# check-in moved to window-close timing — see _compute_window_close_checkin.)
 
 
 def _default_followup_iso(weeks: int = _DEFAULT_DELAY_WEEKS, now=None) -> str:
@@ -1735,22 +1735,50 @@ def _default_followup_iso(weeks: int = _DEFAULT_DELAY_WEEKS, now=None) -> str:
     return (base + timedelta(weeks=weeks)).isoformat()
 
 
-def _compute_afternoon_checkin(appointment, days: int = _CHECKIN_AFTER_PDF_DAYS, now=None):
-    """A 2pm-SAST check-in ~`days` out, returned ONLY if the lead's free-form
-    messaging window is still open at that time; otherwise None so the caller
-    keeps the longer reactivation date. Lets us check back inside the 72h ad
-    window without scheduling an undeliverable touch for 24h organic leads."""
+def _compute_window_close_checkin(appointment, now=None):
+    """Portfolio-PDF check-in timed to the LAST stretch of the lead's free-form
+    messaging window — 2h before close for ~24h organic windows, 4h before
+    close for 72h ad windows — so EVERY refused-email delay lead gets one
+    contextual touch while we can still message them freely. (Replaces the old
+    fixed 2pm-in-2-days check-in, which skipped 24h leads entirely.)
+
+    Late-night/pre-dawn targets are pulled back to 19:30 SAST of the nearest
+    earlier evening; if the clamped slot has already passed, falls back to a
+    near-term touch (the lead just messaged us — they're active); returns None
+    only when the window is essentially shut or unknown.
+    """
     tz = pytz.timezone('Africa/Johannesburg')
     now = now or datetime.now(tz)
     if now.tzinfo is None:
         now = tz.localize(now)
-    target  = (now + timedelta(days=days)).date()
-    checkin = tz.localize(datetime(target.year, target.month, target.day,
-                                   _CHECKIN_AFTERNOON_HOUR, 0))
     closes = getattr(appointment, 'messaging_window_closes_at', None)
     if not closes:
         return None
-    return checkin if checkin < closes else None
+    if closes.tzinfo is None:
+        closes = tz.localize(closes)
+    closes = closes.astimezone(tz)
+
+    remaining = closes - now
+    if remaining <= timedelta(minutes=75):
+        return None  # window basically shut — nothing deliverable
+
+    buffer = (timedelta(hours=2) if remaining <= timedelta(hours=30)
+              else timedelta(hours=4))
+    target = closes - buffer
+
+    # Clamp into contact hours (08:00–20:00 SAST): a late-night target pulls
+    # back to 19:30 that evening; a pre-dawn one to 19:30 the evening before.
+    if target.hour >= 20:
+        target = target.replace(hour=19, minute=30, second=0, microsecond=0)
+    elif target.hour < 8:
+        target = (target - timedelta(days=1)).replace(
+            hour=19, minute=30, second=0, microsecond=0)
+
+    if target <= now + timedelta(minutes=45):
+        target = now + timedelta(minutes=45)
+        if target >= closes - timedelta(minutes=30):
+            return None
+    return target
 
 
 def _read_delay_reask(appointment) -> int:
@@ -2045,9 +2073,10 @@ def _classify_email_step_reply(message: str, appointment=None) -> str:
 def _deliver_pdf_and_schedule_checkin(appointment, iso_date) -> bool:
     """
     Email declined / "send it here": push the portfolio + pricing PDF over
-    WhatsApp, keep the lead delayed on its follow-up date, and — only when the
-    free-form window is still open ~2 days out (72h ad leads) — bring the next
-    touch forward to a 2pm check-in. Organic 24h leads keep the longer date.
+    WhatsApp, keep the lead delayed on its follow-up date, and schedule one
+    contextual check-in in the LAST stretch of the lead's free-form messaging
+    window (24h organic / 72h ad) — the message references what they said they
+    want plus the portfolio we sent (composed at send time in send_followups).
     Alerts the plumber since we captured no email. Returns whether the PDF sent.
     """
     sent_ok = send_lead_magnet_on_whatsapp(appointment)
@@ -2062,7 +2091,7 @@ def _deliver_pdf_and_schedule_checkin(appointment, iso_date) -> bool:
     if iso_date:
         _store_delay_followup_date(appointment, iso_date)
 
-    checkin = _compute_afternoon_checkin(appointment)
+    checkin = _compute_window_close_checkin(appointment)
     if checkin is not None:
         appointment.delay_followup_due_at = checkin
         notes = appointment.internal_notes or ''
@@ -2174,8 +2203,9 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     if intent == 'unclear':
         _write_pending(appointment, 'delay_email', iso_date or '')
         return (
-            "No problem — would you like our catalog by email, or sent right here on "
-            "WhatsApp? Either works — just share your email, or say 'WhatsApp'."
+            "No problem — would you like our catalog by email, or sent right here "
+            "on WhatsApp?\n\n"
+            "Either works — just share your email, or say 'WhatsApp'."
         )
 
     # intent == 'email' → extract a valid address. The regex is authoritative for
