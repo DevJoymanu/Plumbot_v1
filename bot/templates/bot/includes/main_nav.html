@@ -48,6 +48,21 @@
     </div>
 
     <div class="pb-sidenav__secondary">
+        {% if user.is_superuser and platform_tenants|length > 1 %}
+        <form method="post" action="{% url 'switch_tenant' %}" class="pb-sidenav__item" style="display:block;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <label for="tenant-switch" style="display:block; font-size:0.7rem; opacity:0.7; margin-bottom:2px;">
+                <i class="fas fa-building nav-icon"></i> Tenant
+            </label>
+            <select id="tenant-switch" name="tenant" onchange="this.form.submit()"
+                    style="width:100%; background:transparent; border:1px solid currentColor; border-radius:6px; color:inherit; padding:2px 4px; font-size:0.8rem;">
+                {% for t in platform_tenants %}
+                <option value="{{ t.slug }}" {% if request.tenant and t.pk == request.tenant.pk %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        {% endif %}
         <a href="{% url 'settings' %}" class="pb-sidenav__item {% if active_nav == 'settings' %}active{% endif %}">
             <i class="fas fa-cog nav-icon"></i>
             Settings

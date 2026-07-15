@@ -547,7 +547,10 @@ class TenantIsolationTests(TestCase):
     """The non-negotiable isolation rules, pinned before any view is scoped."""
 
     def setUp(self):
-        self.homebase = Tenant.objects.create(name='Homebase Plumbers', slug='homebase')
+        # get_or_create: the test-DB post_migrate hook (bot/apps.py) already
+        # seeds homebase, mirroring migration 0041 on real databases.
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
         self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
         self.hb_lead = make_lead(9001, tenant=self.homebase)
         self.hb_lead2 = make_lead(9002, tenant=self.homebase)
@@ -580,12 +583,17 @@ class TenantIsolationTests(TestCase):
         lead = make_lead(9004)
         self.assertEqual(lead.tenant_id, self.homebase.pk)
 
-    def test_default_resolver_is_none_without_seed(self):
+    def test_untagged_write_fails_loudly_without_seed(self):
+        # Non-null FK (Phase 0.2): with no homebase seed, an untagged write
+        # must ERROR, never produce an ownerless row (nullability rule: no
+        # silent fallbacks for business ownership).
+        from django.db import IntegrityError, transaction
         Appointment.objects.all().delete()
         Tenant.objects.all().delete()
         self.assertIsNone(get_default_tenant_id())
-        lead = make_lead(9005)  # nullable FK: still creatable during transition
-        self.assertIsNone(lead.tenant_id)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                make_lead(9005)
 
     def test_same_customer_two_tenants_is_two_leads(self):
         # Decision #1: phone uniqueness is per-tenant, not global.
@@ -618,3 +626,46 @@ class TenantIsolationTests(TestCase):
         self.assertEqual(profile.plumber_name, '')
         self.assertFalse(profile.licensed_claim_enabled)
         self.assertEqual(profile.excluded_areas, [])
+
+
+class TenantSwitcherTests(TestCase):
+    """The Phase-0 platform console: superuser-only session tenant switch."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+
+    def test_superuser_can_switch_and_middleware_pins_it(self):
+        get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+        response = self.client.post(
+            reverse('switch_tenant'), {'tenant': 'acme', 'next': '/dashboard/'})
+        self.assertEqual(response.status_code, 302)
+        follow = self.client.get(reverse('dashboard'))
+        self.assertEqual(follow.wsgi_request.tenant, self.acme)
+
+    def test_staff_cannot_switch(self):
+        get_user_model().objects.create_user(
+            username='plainstaff', password='pass12345', is_staff=True)
+        self.client.login(username='plainstaff', password='pass12345')
+        response = self.client.post(reverse('switch_tenant'), {'tenant': 'acme'})
+        self.assertIn(response.status_code, (302, 403))  # redirected to login, never applied
+        follow = self.client.get(reverse('dashboard'))
+        self.assertNotEqual(getattr(follow.wsgi_request, 'tenant', None), self.acme)
+
+    def test_membership_pins_tenant_for_staff(self):
+        user = get_user_model().objects.create_user(
+            username='acmestaff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=self.acme, role='staff')
+        self.client.login(username='acmestaff', password='pass12345')
+        response = self.client.get(reverse('dashboard'))
+        self.assertEqual(response.wsgi_request.tenant, self.acme)
+
+    def test_no_membership_falls_back_to_homebase(self):
+        get_user_model().objects.create_user(
+            username='legacystaff', password='pass12345', is_staff=True)
+        self.client.login(username='legacystaff', password='pass12345')
+        response = self.client.get(reverse('dashboard'))
+        self.assertEqual(response.wsgi_request.tenant, self.homebase)

@@ -120,10 +120,15 @@ def get_default_tenant_id():
 def _tenant_fk(**overrides):
     """The standard tenant column (docs/MULTI_TENANT_PLAN.md §3.1). PROTECT on
     purpose: deleting a tenant must never cascade business data away —
-    off-boarding is an explicit archive-then-delete flow (Phase 6)."""
+    off-boarding is an explicit archive-then-delete flow (Phase 6).
+
+    NON-NULL since Phase 0.2 (prod backfill verified 2026-07-15): every row
+    must have an owner. Writes without a tenant resolve to the homebase seed
+    via the default; if no seed exists the insert fails loudly — an ownerless
+    row is a bug, never a fallback."""
     options = dict(
         to='bot.Tenant',
-        null=True,
+        null=False,
         blank=True,
         default=get_default_tenant_id,
         on_delete=models.PROTECT,

@@ -1,0 +1,20 @@
+
+{
+    "deploy": {
+        "startCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn Plumbing_CRM.wsgi"
+    },
+    "crons": [
+        {
+            "name": "send-followups",
+            "schedule": "3-59/7 6-19 * * *",
+            "command": "python manage.py send_followups",
+            "description": "Check non-responsive leads ~every 7 min 8 AM – 9 PM CAT, offset so ticks never land on the hour (:03,:10,:17…); each lead fires at its own jittered minute for natural human send times"
+        },
+        {
+            "name": "send-reminders",
+            "schedule": "*/15 * * * *",
+            "command": "python manage.py send_reminders",
+            "description": "Customer and plumber reminders every 15 min — booking, morning, 2hr, 30min alerts"
+        }
+    ]
+}

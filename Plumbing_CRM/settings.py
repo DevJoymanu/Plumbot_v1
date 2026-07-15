@@ -44,6 +44,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'bot.middleware.TenantMiddleware',  # pins request.tenant (after auth)
 ]
 
 ROOT_URLCONF = 'Plumbing_CRM.urls'

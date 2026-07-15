@@ -49,4 +49,16 @@ def plumbot_shell(request):
     except (OperationalError, ProgrammingError):
         pass
 
+    # Tenant switcher (superusers only — plan §3.4). request.tenant is pinned
+    # by TenantMiddleware; the switcher lists the alternatives.
+    user = getattr(request, "user", None)
+    if user is not None and getattr(user, "is_superuser", False):
+        try:
+            from .models import Tenant
+            counts["platform_tenants"] = list(
+                Tenant.objects.filter(is_active=True).order_by("name")
+            )
+        except (OperationalError, ProgrammingError):
+            pass
+
     return counts

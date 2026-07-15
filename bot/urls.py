@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 from . import views
+from .views import platform as platform_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
@@ -122,6 +123,9 @@ urlpatterns = [
     # Tools
     path('test-whatsapp/', test_whatsapp, name='test_whatsapp'),
     path('export-appointments/', export_appointments, name='export_appointments'),
+
+    # Platform console (multi-tenant, §3.4) — Phase 0: just the tenant switcher
+    path('platform/switch-tenant/', platform_views.switch_tenant, name='switch_tenant'),
 
     # Web message-testing console (chat with the bot without a real device)
     path('test-console/', views.test_console_view, name='test_console'),
