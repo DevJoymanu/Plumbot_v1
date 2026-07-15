@@ -567,15 +567,24 @@ def build_quotation_pdf_file(quotation):
         except Exception:
             pass
 
+    # Tenant identity on the quotation header (Phase 2.2b). NOTE pre-existing
+    # oddities kept verbatim pending owner review: "HOMEBASE CONSTRUCTION"
+    # (not Plumbers) and the Johannesburg street address look like template
+    # remnants — flagged 2026-07-15, replace with tenant branding/address
+    # fields when the owner confirms what should appear on quotes.
+    _apt = getattr(quotation, 'appointment', None)
+    _tenant_name = (getattr(getattr(_apt, 'tenant', None), 'name', '') or 'HOMEBASE CONSTRUCTION').upper()
+    _cell = _apt.plumber_contact() if _apt is not None and hasattr(_apt, 'plumber_contact') else ''
     c.setFillColor(colors.black)
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(left + 85, y - 20, "HOMEBASE CONSTRUCTION")
+    c.drawString(left + 85, y - 20, _tenant_name)
     c.setFont("Helvetica-Oblique", 10)
     c.setFillColor(colors.grey)
     c.drawString(left + 85, y - 38, '"Quality Is Our Qualification"')
     c.setFont("Helvetica", 9)
     c.drawString(left + 85, y - 55, "141 Pritchard St, 2001, Johannesburg")
-    c.drawString(left + 85, y - 69, "Cell: +263774819901")
+    if _cell:
+        c.drawString(left + 85, y - 69, f"Cell: {_cell}")
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(colors.black)
     c.drawString(left + 85, y - 86, quotation.get_display_name()[:80])

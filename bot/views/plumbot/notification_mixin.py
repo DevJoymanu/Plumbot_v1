@@ -264,6 +264,7 @@ class NotificationMixin:
                             timeline=appointment_info.get('timeline'),
                             plan_status=plan_status,
                             view_url=f"{site_url}/appointments/{self.appointment.id}/",
+                            apt=self.appointment,
                         )
                     except Exception as html_error:
                         print(f"⚠️ Booking email HTML build failed: {html_error}")

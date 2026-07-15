@@ -236,7 +236,7 @@ def _fmt_dt(dt):
 def _send_reply(apt, subject, html_body):
     """Send HTML email to the customer and tag with APT id."""
     from bot.customer_emails import _send, _wrap
-    html = _wrap(html_body)
+    html = _wrap(html_body, apt)
     return _send(apt, subject, html)
 
 
@@ -277,7 +277,9 @@ Reply rules:
 - When offering time slots, always use specific times — "9am or 2pm" not "morning or afternoon"
 - Never ask for a property address — ask for area or neighbourhood instead (e.g. "Which area are you in?")
 - If the customer volunteers their full address without being asked, accept it naturally and move on — never ask for it
-- Sign every reply exactly as: Takudzwa\\nHomeBase Plumbers"""
+"""
+# (The per-tenant sign-off instruction is appended at call time —
+# _generate_plumbot_email_reply — from the tenant profile.)
 
 
 def _text_to_html(text: str) -> str:
@@ -294,15 +296,15 @@ def _text_to_html(text: str) -> str:
 
 def _build_email_html(reply_text: str, apt=None) -> str:
     """Wrap AI plain-text reply in email HTML with contact buttons."""
-    from bot.customer_emails import _contact_buttons, _call_phone
+    from bot.customer_emails import _contact_buttons
 
     # Strip any WhatsApp markdown the AI may have included
     clean = reply_text.strip()
     for ch in ("**", "__", "*"):
         clean = clean.replace(ch, "")
 
-    call = _call_phone(apt) if apt else "263774819901"
-    return _text_to_html(clean) + "\n" + _contact_buttons(call)
+    buttons = _contact_buttons(apt) if apt is not None else ''
+    return _text_to_html(clean) + ("\n" + buttons if buttons else "")
 
 
 def _reply_subject(apt, intent: str) -> str:
@@ -330,10 +332,11 @@ def _build_acknowledgement_reply(apt) -> tuple[str, str]:
     """
     name = getattr(apt, "customer_name", "") or ""
     hi   = f"Hi {name}" if name else "Hi there"
+    from bot.customer_emails import _business_name, _from_name
     plain = (
         f"{hi},\n\n"
         "Got it — thanks. Talk soon.\n\n"
-        "Takudzwa\nHomeBase Plumbers"
+        f"{_from_name(apt)}\n{_business_name(apt)}"
     )
     html = _text_to_html(plain)
     return plain, html
@@ -481,7 +484,9 @@ def _generate_plumbot_email_reply(
     name    = getattr(apt, "customer_name", "") or ""
     status  = getattr(apt, "status", "") or ""
 
-    system = _EMAIL_PLUMBOT_SYSTEM
+    from bot.customer_emails import _business_name, _from_name
+    _signature = f"{_from_name(apt)}\\n{_business_name(apt)}" if apt is not None else "The team"
+    system = _EMAIL_PLUMBOT_SYSTEM + f"\n- Sign every reply exactly as: {_signature}"
     if service:
         system += f"\nCustomer service interest: {service}."
     if area:
@@ -516,10 +521,12 @@ def _generate_plumbot_email_reply(
     except Exception as e:
         logger.warning("Plumbot email reply generation failed: %s", e)
         hi = f"Hi {name},\n\n" if name else ""
+        from bot.customer_emails import _business_name, _from_name
+        _sig = f"{_from_name(apt)}\n{_business_name(apt)}" if apt is not None else "The team"
         return (
             f"{hi}Thank you for your message. "
             "We will get back to you shortly.\n\n"
-            "Takudzwa\nHomeBase Plumbers"
+            f"{_sig}"
         )
 
 

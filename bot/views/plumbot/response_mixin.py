@@ -3180,7 +3180,7 @@ class ResponseMixin:
             Answer a direct identity question before advancing the booking flow.
             Returns the answer, or None if the message is not an identity question
             (so the normal flow proceeds untouched). Routes to the protected
-            human contact (Takudzwa, +263774819901) for the hands-on plumber.
+            human contact (the tenant's plumber name + number) for the hands-on plumber.
             """
             m = (message or '').lower()
             asks_plumber = any(p in m for p in (
@@ -5119,7 +5119,7 @@ class ResponseMixin:
         NEVER use contractions — write "we will" not "we'll", "they will" not "they'll".
         Emojis only when they fit naturally — not forced at the end of every message.
         Use "we" not "I" or "our" — you represent the whole team.
-        The plumber's name is Takudzwa.
+        The plumber's name is {self.appointment.plumber_display_name()}.
 
         CURRENT FLOW:
         1. service_type or pending

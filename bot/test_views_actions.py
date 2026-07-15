@@ -834,6 +834,25 @@ class TenantConfigTests(TestCase):
         self.assertEqual(acme_lead.plumber_contact(), '')
         self.assertEqual(acme_lead.plumber_display_name(), 'the plumber')
 
+    def test_email_identity_per_tenant(self):
+        # Homebase emails carry their own identity; a bare tenant's emails
+        # omit contact buttons and use its business name — never homebase's.
+        from .customer_emails import (
+            _business_name, _call_phone, _contact_buttons, _from_name, _wa_number, _wrap,
+        )
+        hb_lead = make_lead(9701, tenant=self.homebase)
+        self.assertEqual(_call_phone(hb_lead), '263774819901')
+        self.assertEqual(_wa_number(hb_lead), '263776255077')
+        self.assertEqual(_from_name(hb_lead), 'Takudzwa')
+        self.assertIn('263776255077', _contact_buttons(hb_lead))
+        self.assertIn('Homebase Plumbers · Zimbabwe', _wrap('<p>x</p>', hb_lead))
+
+        acme_lead = make_lead(9702, tenant=self.acme)
+        self.assertEqual(_contact_buttons(acme_lead), '')
+        self.assertEqual(_from_name(acme_lead), 'Acme Plumbing')
+        self.assertNotIn('263774819901', _wrap('<p>x</p>', acme_lead))
+        self.assertIn('Acme Plumbing · Zimbabwe', _wrap('<p>x</p>', acme_lead))
+
     def test_identity_fields_read_from_profile(self):
         from .tenant_config import get_config
         cfg = get_config(self.homebase)

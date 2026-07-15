@@ -65,6 +65,7 @@ HOMEBASE_PROFILE_FIELDS = dict(
     excluded_areas=['gweru', 'bulawayo', 'mutare', 'masvingo', 'victoria falls', 'hwange', 'beitbridge', 'plumtree'],
     currency='US$',
     licensed_claim_enabled=True,
+    email_from_name='Takudzwa',
 )
 
 

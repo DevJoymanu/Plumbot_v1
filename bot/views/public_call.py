@@ -14,8 +14,10 @@ No auth: this is a customer-facing endpoint reached from the PDF.
 from django.http import HttpResponse
 from django.views.decorators.http import require_GET
 
-# Business call line — kept in sync with the PDF's Call button and
-# customer_emails._PLUMBER_PHONE.
+# Business call line — linked from the HOMEBASE portfolio PDF's Call button.
+# Public URL with no tenant context: stays homebase's number until the
+# Phase-2 portfolio slice gives each tenant its own PDF + call page URL
+# (e.g. /call/<tenant-slug>/).
 CALL_NUMBER_E164    = "+263774819901"
 CALL_NUMBER_DISPLAY = "+263 77 481 9901"
 

@@ -51,7 +51,8 @@ _deepseek = (
     else None
 )
 
-PLUMBER_NUMBER_FALLBACK = "+263774819901"
+# (Phase 2.2: the plumber's number comes from appointment.plumber_contact()
+# — per-lead override → tenant profile → omit; no hardcoded fallback.)
 
 # ── Pending-clarification state helpers ──────────────────────────────────────
 # Stored in appointment.internal_notes as a single tagged line so no migration

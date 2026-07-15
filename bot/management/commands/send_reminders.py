@@ -494,6 +494,8 @@ def _send_email(recipients, subject, html, dry_run):
     if dry_run:
         logger.info("DRY RUN email '%s' → %s", subject, recipients)
         return True
+    # TODO(Phase 4 per-tenant cron loop): footer/identity from the lead's
+    # tenant profile — homebase-correct until then.
     plain = f"{subject}\n\nHomeBase Plumbers\nWhatsApp: +263776255077"
     return send_email_to_recipients(recipients, subject, plain, html_message=html)
 
@@ -567,6 +569,7 @@ class Command(BaseCommand):
         all_apts = list(base_qs)
         self.stdout.write(f"  Confirmed appointments found: {len(all_apts)}\n")
 
+        # TODO(Phase 4 per-tenant cron loop): per-lead apt.plumber_contact().
         plumber_contact = f"+{PLUMBER_PHONE}" if PLUMBER_PHONE else "+263774819901"
 
         # ─────────────────────────────────────────────────────────────────────

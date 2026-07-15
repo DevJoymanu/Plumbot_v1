@@ -8,8 +8,10 @@ back to the correct appointment by the IMAP poller.
 
 Design decisions:
 - Minimal HTML so Gmail routes to Primary, not Promotions
-- WhatsApp button always links to the business WhatsApp (+263776255077)
-- Call button links to the plumber's direct line
+- WhatsApp button links to the tenant's business WhatsApp (profile-driven,
+  Phase 2.2b); Call button links to the lead's plumber line — either button
+  is omitted when the tenant has no number on file
+- Sender name / signature / footer come from the tenant profile
 - No "reply to reschedule" copy — all changes are nudged to WhatsApp
 - Delay quote email attaches a PDF portfolio
 """
@@ -27,9 +29,13 @@ from django.db import close_old_connections
 
 logger = logging.getLogger(__name__)
 
-_SAST          = pytz.timezone("Africa/Johannesburg")
-_PLUMBER_PHONE = "263774819901"     # fallback call number
-_WA_NUMBER     = "263776255077"     # business WhatsApp (fixed)
+_SAST = pytz.timezone("Africa/Johannesburg")
+
+# Homebase's numbers for the PRE-DESIGNED portfolio PDF asset only (the PDF is
+# homebase-branded until the Phase-2 portfolio slice makes it per-tenant).
+# Everything else reads identity through the apt/tenant helpers below.
+_HOMEBASE_PDF_WA = "263776255077"
+_HOMEBASE_PDF_CALL = "263774819901"
 
 # Pre-designed portfolio PDF emailed to leads. If this file exists it is sent
 # as-is; otherwise we fall back to the ReportLab-generated version below.
@@ -80,10 +86,37 @@ def _area(apt):
     return getattr(apt, "customer_area", "") or "your area"
 
 
+def _tenant_cfg(apt):
+    from .tenant_config import get_config
+    return get_config(getattr(apt, 'tenant', None))
+
+
 def _call_phone(apt):
-    """Direct call number — plumber's line."""
-    raw = getattr(apt, "plumber_contact_number", "") or _PLUMBER_PHONE
-    return _clean_phone(raw) or _PLUMBER_PHONE
+    """Direct call number — the lead's plumber line (per-lead override →
+    tenant profile). '' → callers omit the call button/line."""
+    if hasattr(apt, 'plumber_contact'):
+        return _clean_phone(apt.plumber_contact())
+    return ''
+
+
+def _wa_number(apt):
+    """Business WhatsApp for buttons/links; falls back to the call line."""
+    return _clean_phone(_tenant_cfg(apt).business_whatsapp) or _call_phone(apt)
+
+
+def _plumber_name(apt):
+    return apt.plumber_display_name() if hasattr(apt, 'plumber_display_name') else 'the plumber'
+
+
+def _business_name(apt):
+    tenant = getattr(apt, 'tenant', None)
+    return getattr(tenant, 'name', '') or 'Our team'
+
+
+def _from_name(apt):
+    cfg = _tenant_cfg(apt)
+    from_name = getattr(cfg.profile, 'email_from_name', '') if cfg.profile else ''
+    return from_name or _business_name(apt)
 
 
 def _apt_tag(apt):
@@ -105,7 +138,7 @@ def _apt_card(apt):
         '<p style="margin:10px 0 0;">'
         f'<a href="tel:+{call}" style="background:#444;color:#fff;text-decoration:none;'
         f'padding:7px 14px;border-radius:4px;font-size:13px;margin-right:8px;"> Call</a>'
-        f'<a href="https://wa.me/{_WA_NUMBER}" style="background:#25D366;color:#fff;'
+        f'<a href="https://wa.me/{_wa_number(apt)}" style="background:#25D366;color:#fff;'
         f'text-decoration:none;padding:7px 14px;border-radius:4px;font-size:13px;">'
         f' WhatsApp</a>'
         '</p>'
@@ -113,27 +146,40 @@ def _apt_card(apt):
     )
 
 
-def _contact_buttons(call):
-    """WhatsApp + Call buttons — outlined (no fill) to avoid Gmail Promotions routing."""
-    return (
-        '<p style="margin:16px 0;line-height:1;">'
-        f'<a href="https://wa.me/{_WA_NUMBER}" style="display:inline-block;'
-        f'border:1.5px solid #1a9e4a;color:#1a9e4a;text-decoration:none;'
-        f'padding:9px 16px;border-radius:4px;font-size:14px;font-weight:bold;'
-        f'margin-right:10px;"> WhatsApp</a>'
-        f'<a href="tel:+{call}" style="display:inline-block;'
-        f'border:1.5px solid #555;color:#333;text-decoration:none;'
-        f'padding:9px 16px;border-radius:4px;font-size:14px;"> Call Takudzwa</a>'
-        '</p>'
-    )
+def _contact_buttons(apt):
+    """WhatsApp + Call buttons — outlined (no fill) to avoid Gmail Promotions
+    routing. Buttons whose number is missing are omitted."""
+    wa = _wa_number(apt)
+    call = _call_phone(apt)
+    parts = ['<p style="margin:16px 0;line-height:1;">']
+    if wa:
+        parts.append(
+            f'<a href="https://wa.me/{wa}" style="display:inline-block;'
+            f'border:1.5px solid #1a9e4a;color:#1a9e4a;text-decoration:none;'
+            f'padding:9px 16px;border-radius:4px;font-size:14px;font-weight:bold;'
+            f'margin-right:10px;"> WhatsApp</a>'
+        )
+    if call:
+        parts.append(
+            f'<a href="tel:+{call}" style="display:inline-block;'
+            f'border:1.5px solid #555;color:#333;text-decoration:none;'
+            f'padding:9px 16px;border-radius:4px;font-size:14px;"> Call {_plumber_name(apt).title()}</a>'
+        )
+    if len(parts) == 1:
+        return ''
+    parts.append('</p>')
+    return ''.join(parts)
 
 
-def _wa_nudge():
+def _wa_nudge(apt):
     """WhatsApp nudge — used instead of "reply to this email" copy."""
+    wa = _wa_number(apt)
+    if not wa:
+        return ''
     return (
         '<p style="margin:20px 0 0;font-size:14px;color:#555;">'
         f'For any changes, message us on WhatsApp — '
-        f'<a href="https://wa.me/{_WA_NUMBER}" style="color:#25D366;font-weight:bold;">'
+        f'<a href="https://wa.me/{wa}" style="color:#25D366;font-weight:bold;">'
         f'tap here to chat</a>.'
         '</p>'
     )
@@ -161,8 +207,9 @@ def _customer_contact_buttons(customer_phone_digits):
     )
 
 
-def _wrap(body_html):
+def _wrap(body_html, apt=None):
     """Minimal HTML wrapper — clean, not promotional."""
+    footer_name = _business_name(apt) if apt is not None else 'Our team'
     return (
         '<!DOCTYPE html><html lang="en"><head>'
         '<meta charset="UTF-8">'
@@ -172,7 +219,7 @@ def _wrap(body_html):
         'font-family:Arial,sans-serif;font-size:15px;color:#333;line-height:1.6;">'
         f'{body_html}'
         '<p style="margin-top:32px;font-size:12px;color:#aaa;border-top:1px solid #eee;'
-        'padding-top:12px;">HomeBase Plumbers · Zimbabwe</p>'
+        f'padding-top:12px;">{footer_name} · Zimbabwe</p>'
         '</body></html>'
     )
 
@@ -192,21 +239,27 @@ def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfol
     # Unique per-email Message-ID that encodes the appointment PK
     domain     = getattr(settings, "EMAIL_DOMAIN", "homebaseplumbers.co.zw")
     message_id = f"<apt-{apt.pk}.{int(time.time())}@{domain}>"
+    wa = _wa_number(apt)
+    call = _call_phone(apt)
+    contact_lines = ''
+    if wa:
+        contact_lines += f"WhatsApp: https://wa.me/{wa}\n"
+    if call:
+        contact_lines += f"Call {_plumber_name(apt).title()}: +{call}\n"
     plain = (
         f"{subject}\n\n"
         f"Service: {_service(apt)}\n"
         f"Area:    {_area(apt)}\n"
         f"Date:    {_fmt_date(apt)} at {_fmt_time(apt)}\n\n"
-        f"WhatsApp: https://wa.me/{_WA_NUMBER}\n"
-        f"Call Takudzwa: +{_call_phone(apt)}\n"
-        f"HomeBase Plumbers"
+        f"{contact_lines}"
+        f"{_business_name(apt)}"
     )
     return send_email_to_recipients(
         [email], subject, plain,
         html_message=html,
         attachment=attachment,
         attachment_name=attachment_name,
-        from_name="Takudzwa",
+        from_name=_from_name(apt),
         message_id=message_id,
     )
 
@@ -392,7 +445,7 @@ def _generate_portfolio_pdf_reportlab():
         else:
             elems.append(Paragraph(
                 "Portfolio photos available on request. Message us on WhatsApp "
-                f"(+{_WA_NUMBER}) and we'll send examples of our completed work.",
+                f"(+{_HOMEBASE_PDF_WA}) and we'll send examples of our completed work.",
                 body,
             ))
 
@@ -530,7 +583,7 @@ def _generate_portfolio_pdf_reportlab():
         # ── Footer ────────────────────────────────────────────────────────────
         elems.append(Paragraph(
             f"Ready to book a free on-site assessment?  "
-            f"WhatsApp: +{_WA_NUMBER}   |   Call: +{_PLUMBER_PHONE}",
+            f"WhatsApp: +{_HOMEBASE_PDF_WA}   |   Call: +{_HOMEBASE_PDF_CALL}",
             body,
         ))
         elems.append(Paragraph(
@@ -577,10 +630,10 @@ def build_booking_confirmation_email(apt):
         f'{_apt_card(apt)}'
         '<p>Our plumber will call you 30 minutes before arrival. '
         'Please ensure someone is home and the work area is accessible.</p>'
-        f'{_wa_nudge()}'
+        f'{_wa_nudge(apt)}'
         '<p>See you then! <br><strong>HomeBase Plumbers</strong></p>'
     )
-    return subject, _wrap(body)
+    return subject, _wrap(body, apt)
 
 
 def send_booking_confirmation_email(apt):
@@ -636,8 +689,8 @@ def send_delay_quote_email(apt, follow_up_date_str=None, preview_only=False):
             f'don\'t leave until you\'re happy with the job.</p>'
             f'<p>If you\'d like to lock in a time, reply with a day that suits — '
             f'morning or afternoon — and I\'ll sort it. Or reach me directly:</p>'
-            f'{_contact_buttons(call)}'
-            f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
+            f'{_contact_buttons(apt)}'
+            f'<p>{_from_name(apt)}<br>{_business_name(apt)}' + (f'<br>+{call}' if call else '') + '</p>'
         )
 
         html = (
@@ -766,9 +819,9 @@ def build_customer_reminder_email(apt, reminder_type):
         f'<p>{intro}</p>'
         f'{_apt_card(apt)}'
         f'<p>{footer}</p>'
-        f'{_wa_nudge()}'
+        f'{_wa_nudge(apt)}'
     )
-    return subject, _wrap(body)
+    return subject, _wrap(body, apt)
 
 
 def send_customer_reminder_email(apt, reminder_type):
@@ -874,8 +927,8 @@ def build_delay_followup_email(apt):
             f'<p>If you want to take the next step, reply with a day that suits — '
             f'morning or afternoon — and I\'ll pop you in the diary. '
             f'Or reach me directly:</p>'
-            f'{_contact_buttons(call)}'
-            f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
+            f'{_contact_buttons(apt)}'
+            f'<p>{_from_name(apt)}<br>{_business_name(apt)}' + (f'<br>+{call}' if call else '') + '</p>'
         )
         return subject, ('<!DOCTYPE html><html><body>' + body + '</body></html>')
     except Exception:
@@ -921,8 +974,8 @@ def build_delay_last_check_email(apt):
             f'<p>If the timing\'s off, no problem at all — just reply "later" '
             f'and we\'ll quietly close this out. You can always come back to '
             f'us when you\'re ready.</p>'
-            f'{_contact_buttons(call)}'
-            f'<p>Takudzwa<br>HomeBase Plumbers<br>+{call}</p>'
+            f'{_contact_buttons(apt)}'
+            f'<p>{_from_name(apt)}<br>{_business_name(apt)}' + (f'<br>+{call}' if call else '') + '</p>'
         )
         return subject, ('<!DOCTYPE html><html><body>' + body + '</body></html>')
     except Exception:
@@ -946,7 +999,7 @@ def send_delay_last_check_email(apt):
 def build_plumber_booking_email_html(
     *, customer_name, customer_phone_digits, datetime_str, service,
     area=None, property_type=None, timeline=None, plan_status=None,
-    view_url=None,
+    view_url=None, apt=None,
 ):
     """
     HTML body for the plumber new-booking notification email.
@@ -990,7 +1043,7 @@ def build_plumber_booking_email_html(
         f'{_customer_contact_buttons(digits)}'
         f'{view_link}'
     )
-    return _wrap(body)
+    return _wrap(body, apt)
 
 
 def send_email_reply_notification_to_plumber(apt, customer_reply_text):
@@ -1009,7 +1062,7 @@ def send_email_reply_notification_to_plumber(apt, customer_reply_text):
             f'<blockquote style="border-left:3px solid #25D366;margin:0;padding:8px 16px;'
             f'color:#555;font-style:italic;">{customer_reply_text}</blockquote>'
         )
-        html  = _wrap(body)
+        html  = _wrap(body, apt)
         plain = f"Email reply from {name} (apt #{apt.pk}):\n\n{customer_reply_text}"
         return send_plumber_notification_email(subject, plain, html_message=html)
     except Exception:
