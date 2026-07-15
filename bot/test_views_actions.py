@@ -822,6 +822,18 @@ class TenantConfigTests(TestCase):
         from .tenant_config import HOMEBASE_FAQ_FACTS
         self.assertEqual(faq_fact('location', tenant=None), HOMEBASE_FAQ_FACTS['location'])
 
+    def test_plumber_helpers_per_tenant(self):
+        # Homebase lead: profile-driven; per-lead override wins; foreign
+        # tenant with no profile: '' + generic name (never homebase's).
+        hb_lead = make_lead(9601, tenant=self.homebase)
+        self.assertEqual(hb_lead.plumber_contact(), '+263774819901')
+        self.assertEqual(hb_lead.plumber_display_name(), 'Takudzwa')
+        hb_lead.plumber_contact_number = '+263700000001'
+        self.assertEqual(hb_lead.plumber_contact(), '+263700000001')
+        acme_lead = make_lead(9602, tenant=self.acme)
+        self.assertEqual(acme_lead.plumber_contact(), '')
+        self.assertEqual(acme_lead.plumber_display_name(), 'the plumber')
+
     def test_identity_fields_read_from_profile(self):
         from .tenant_config import get_config
         cfg = get_config(self.homebase)

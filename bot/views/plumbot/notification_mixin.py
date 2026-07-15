@@ -116,9 +116,13 @@ class NotificationMixin:
         Status: Plan uploaded — awaiting your review
         """
 
-                plumber_numbers = [
-                    '263774819901',  # ✅ international format
-                ]
+                # Phase 2.2: the tenant's own plumber line — no number on
+                # file → skip the WhatsApp alert (email path still fires).
+                _contact = self.appointment.plumber_contact().replace(
+                    'whatsapp:', '').replace('+', '').strip()
+                plumber_numbers = [_contact] if _contact else []
+                if not plumber_numbers:
+                    print("⚠️ No plumber contact on tenant profile — skipping plan WhatsApp alert")
 
                 for number in plumber_numbers:
                     whatsapp_api.send_text_message(number, plumber_message)
@@ -219,15 +223,14 @@ class NotificationMixin:
                         if n:
                             team_numbers.append(n)
 
-                    plumber_contact = getattr(self.appointment, 'plumber_contact_number', None)
+                    plumber_contact = self.appointment.plumber_contact()
                     if plumber_contact:
                         n = plumber_contact.replace('whatsapp:', '').replace('+', '').strip()
                         if n and n not in team_numbers:
                             team_numbers.append(n)
 
                     if not team_numbers:
-                        team_numbers = ['263774819901']
-                        print("⚠️ TEAM_NUMBERS env var not set — using hardcoded fallback")
+                        print("⚠️ No TEAM_NUMBERS env and no tenant plumber contact — skipping booking WhatsApp alerts")
 
                     print(f"📤 Sending booking notifications to {len(team_numbers)} team member(s)...")
 

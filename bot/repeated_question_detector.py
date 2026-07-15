@@ -26,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 _classifier_model = getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-chat')
 
-PLUMBER_NUMBER_FALLBACK = '+263774819901'
+# Phase 2.2: no hardcoded plumber number — callers pass the tenant's own
+# (appointment.plumber_contact()); '' means the redirect-to-plumber line is
+# omitted rather than borrowing another tenant's number.
 
 # How many recent assistant messages to look back through
 LOOKBACK_MESSAGES = 10
@@ -393,7 +395,7 @@ def generate_repeat_clarification(
     new_message: str,
     matched_question: str,
     matched_answer: str,
-    plumber_number: str = PLUMBER_NUMBER_FALLBACK,
+    plumber_number: str = '',
     language_hint: str = 'english',
 ) -> str:
     """
@@ -427,7 +429,7 @@ Write a warm, natural WhatsApp reply that does ALL FOUR of the following — in 
 1. REASSURE & ACKNOWLEDGE — Make them feel heard. Acknowledge that their question is totally valid. 1-2 sentences.
 2. EXPLAIN THE PREVIOUS ANSWER — In simple, friendly language, briefly explain WHY the you gave that answer (not just repeat it verbatim). 2-3 sentences max.
 3. ASK IF THEY NEED MORE CLARITY — One short, open question inviting them to say what's still unclear.
-4. REDIRECT TO THE PLUMBER — Gently explain you're just an assistant handling bookings, and for anything technical or project-specific they should speak directly to the plumber. Include their number: {plumber_number}
+4. REDIRECT TO THE PLUMBER — Gently explain you're just an assistant handling bookings, and for anything technical or project-specific they should speak directly to the plumber. {("Include their number: " + plumber_number) if plumber_number else "Offer to have the plumber get in touch (do NOT invent a phone number)."}
 
 RULES:
 - Sound like a real, warm human — not a corporate helpdesk
@@ -468,12 +470,18 @@ Write the message now:"""
 
 
 def _fallback_repeat_response(plumber_number: str) -> str:
-    clean = plumber_number.replace('+', '').replace('whatsapp:', '')
+    clean = (plumber_number or '').replace('+', '').replace('whatsapp:', '')
+    plumber_line = (
+        f"but for anything technical or specific to your project it's best to speak "
+        f"directly with our plumber on {clean}. "
+        if clean else
+        "but for anything technical or specific to your project I can have the "
+        "plumber get in touch directly. "
+    )
     return (
         "No worries at all — totally understand if the earlier answer wasn't clear. "
         "I'm the booking assistant so I can help with appointments and general info, "
-        "but for anything technical or specific to your project it's best to speak "
-        f"directly with our plumber on {clean}. "
+        + plumber_line +
         "Is there anything else I can help clarify?"
     )
 

@@ -242,11 +242,7 @@ class PlanUploadMixin:
                 self.appointment.plan_status = 'plan_uploaded'
                 self.appointment.save()
 
-                plumber_number = getattr(
-                    self.appointment,
-                    'plumber_contact_number',
-                    '+263774819901'
-                )
+                plumber_number = self.appointment.plumber_contact()
 
                 # Notify plumber
                 self.notify_plumber_about_plan()
@@ -276,9 +272,9 @@ class PlanUploadMixin:
         • They'll discuss the project details and provide a quote
         • Once approved, they'll book your appointment or message you to complete booking
 
- PLUMBER DIRECT CONTACT:
+{f''' PLUMBER DIRECT CONTACT:
         If you need to reach them directly: {plumber_number.replace('+263', '0').replace('+', '')}
-
+''' if plumber_number else ''}
         You don't need to do anything now — just wait for their call. They're very responsive!
 
         Questions? Feel free to ask here anytime 

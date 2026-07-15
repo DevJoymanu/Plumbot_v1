@@ -1759,10 +1759,19 @@ try:
     # plumber" must be ANSWERED (Plumbot + Takudzwa + the protected number) —
     # never steamrolled by the next booking question. Takudzwa is the single
     # plumber identity everywhere (emails are signed Takudzwa).
+    class _FakeApptIdent:
+        # Mirrors the Phase-2.2 Appointment helpers with homebase's values so
+        # the pinned identity strings stay byte-stable.
+        plumber_contact_number = None
+        tenant = type('T', (), {'name': 'Homebase Plumbers'})()
+        def plumber_contact(self):
+            return '+263774819901'
+        def plumber_display_name(self):
+            return 'Takudzwa'
     class _FakeSelfIdent:
         _maybe_answer_identity_question = ResponseMixin._maybe_answer_identity_question
         def __init__(self):
-            self.appointment = type('A', (), {'plumber_contact_number': None})()
+            self.appointment = _FakeApptIdent()
     _idb = _FakeSelfIdent()._maybe_answer_identity_question("Also who am I speaking to?")
     _idp = _FakeSelfIdent()._maybe_answer_identity_question(
         "Also what is the name of plumber visiting the house so I pass details to mum")

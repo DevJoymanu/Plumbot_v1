@@ -3198,37 +3198,45 @@ class ResponseMixin:
             ))
             if not (asks_plumber or asks_bot):
                 return None
-            number = (
-                getattr(self.appointment, 'plumber_contact_number', None) or '+263774819901'
-            )
+            # Tenant identity (Phase 2.2): name/number from the tenant profile
+            # via the Appointment helpers; business name from the tenant row.
+            # No number on file → the reach-him clause is omitted.
+            number = self.appointment.plumber_contact()
+            name = self.appointment.plumber_display_name()
+            business = getattr(getattr(self.appointment, 'tenant', None), 'name', '') or 'the team'
             if asks_plumber:
+                _reach = f" You can reach him directly on {number}." if number else ""
                 return (
-                    f"You'll be looked after by Takudzwa, our lead plumber at Homebase Plumbers — "
-                    f"he handles the visit personally. You can reach him directly on {number}.\n\n"
+                    f"You'll be looked after by {name}, our lead plumber at {business} — "
+                    f"he handles the visit personally.{_reach}\n\n"
                     "Any other work around the place you'd want sorted while we're there?"
                 )
+            _reach = f" (reach him on {number})" if number else ""
             return (
-                "You're chatting with Plumbot, the assistant for Homebase Plumbers here in Harare. "
-                f"Our plumber Takudzwa handles the hands-on work (reach him on {number}).\n\n"
+                f"You're chatting with Plumbot, the assistant for {business}. "
+                f"Our plumber {name} handles the hands-on work{_reach}.\n\n"
                 "Anything else on the property that needs looking at?"
             )
 
         def _build_human_handoff_reply(self) -> str:
             """Reply after 4 failed extraction attempts — offer direct human contact."""
-            from bot.out_of_scope_handler import PLUMBER_NUMBER_FALLBACK
             # Mark handed-off so the follow-up scheduler stays silent (conv 411).
             # The bot still answers if the customer re-engages here.
             try:
                 self.appointment.mark_handed_off(save=True)
             except Exception:
                 pass
-            number = (
-                getattr(self.appointment, "plumber_contact_number", None) or PLUMBER_NUMBER_FALLBACK
-            ).replace("+", "").replace("whatsapp:", "")
+            number = self.appointment.plumber_contact().replace("+", "").replace("whatsapp:", "")
+            name = self.appointment.plumber_display_name()
+            if number:
+                return (
+                    f"Let me get the right person to help you directly — "
+                    f"you can reach {name} on +{number} and he'll sort it from there.\n\n"
+                    "Or just tell me in a few words what you need and I'll take it from there."
+                )
             return (
-                f"Let me get the right person to help you directly — "
-                f"you can reach Takudzwa on +{number} and he'll sort it from there.\n\n"
-                "Or just tell me in a few words what you need and I'll take it from there."
+                "Let me get the right person to help you directly — "
+                "just tell me in a few words what you need and I'll flag it for the team."
             )
 
 
@@ -4253,7 +4261,7 @@ class ResponseMixin:
                     language = detect_language(message)
                     print(f"🌍 Detected language: {language}")
 
-                    plumber_number = self.appointment.plumber_contact_number or '+263774819901'
+                    plumber_number = self.appointment.plumber_contact()
 
                     # Has the customer already committed to a site visit or given their location?
                     already_visiting = self.appointment.has_plan is False
@@ -5400,8 +5408,8 @@ class ResponseMixin:
         - Monday–Sunday except Saturday (closed Saturdays)
         - Business hours: 8 AM – 6 PM
         - Site assessment is free, plumber gives fixed quote on the spot
-        - The plumber's name is Takudzwa
-        - Plumber direct contact: {self.appointment.plumber_contact_number or "+263774819901"}
+        - The plumber's name is {self.appointment.plumber_display_name()}
+        - Plumber direct contact: {self.appointment.plumber_contact() or "not available — offer to have the team call instead"}
 
         CUSTOMER CONTEXT:
         - Service interest: {service or "not yet specified"}

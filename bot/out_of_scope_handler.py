@@ -669,10 +669,6 @@ def _resolve_pending_clarification(answer: str, pending: dict, appointment) -> O
 
 def _build_oos_reply(message: str, appointment) -> str:
     """Warm redirect for services we don't offer."""
-    plumber_number = (
-        getattr(appointment, "plumber_contact_number", None) or PLUMBER_NUMBER_FALLBACK
-    ).replace("+", "").replace("whatsapp:", "")
-
     # Try to identify what they asked about for a personalised reply
     msg_lower = (message or "").lower()
 
@@ -2278,9 +2274,14 @@ def _build_complaint_reply(message: str, appointment) -> str:
     Acknowledges the concern, provides reassurance, and redirects to the plumber
     for anything that requires a human conversation.
     """
+    # Tenant identity (Phase 2.2): the lead's plumber name/number from the
+    # tenant profile. No number on file → the call-us offer is omitted, never
+    # another tenant's line.
     plumber_number = (
-        getattr(appointment, "plumber_contact_number", None) or PLUMBER_NUMBER_FALLBACK
-    ).replace("+", "").replace("whatsapp:", "")
+        (appointment.plumber_contact() if appointment else '')
+        .replace("+", "").replace("whatsapp:", "")
+    )
+    plumber_name = appointment.plumber_display_name() if appointment else 'the plumber'
 
     msg_lower = (message or "").lower()
 
@@ -2294,6 +2295,10 @@ def _build_complaint_reply(message: str, appointment) -> str:
         "ridiculous", "expensive", "too much", "overpriced", "rip off",
         "rip-off", "never seen", "such prices", "inodhura", "pricey",
     )):
+        _talk_line = (
+            f"\n\n(Prefer to talk it through first? You can reach {plumber_name} on "
+            f"+{plumber_number}.)"
+        ) if plumber_number else ""
         return (
             "Totally fair point to raise. Quick one though — if the price came "
             "back at a number that felt right to you, is getting this sorted "
@@ -2304,9 +2309,7 @@ def _build_complaint_reply(message: str, appointment) -> str:
             "as little as US$20 for a simple fitting.\n\n"
             "The way we land a fair, fixed price is a free on-site visit — the "
             "plumber sees the space and gives you a number on the spot, no "
-            "surprises. Shall I set that up for you?\n\n"
-            f"(Prefer to talk it through first? You can reach Takudzwa on "
-            f"+{plumber_number}.)"
+            f"surprises. Shall I set that up for you?{_talk_line}"
         )
 
     # Legitimacy / "are you real" complaint
@@ -2322,17 +2325,28 @@ def _build_complaint_reply(message: str, appointment) -> str:
             "Zimbabwe. I'm the booking assistant handling initial enquiries, and "
             "the quickest way to put any doubt to rest is a free on-site visit — "
             "you meet the plumber and see how we work, no obligation.\n\n"
-            f"Want me to line that up? Or to speak to the team directly first, you "
-            f"can reach Takudzwa on +{plumber_number}."
+            "Want me to line that up?"
+            + (
+                f" Or to speak to the team directly first, you can reach "
+                f"{plumber_name} on +{plumber_number}."
+                if plumber_number else ""
+            )
         )
 
     # Generic frustration / complaint
+    if plumber_number:
+        return (
+            "Thanks for flagging that — I hear you, and I appreciate you being upfront.\n\n"
+            "I'm the booking assistant, so if anything I've said doesn't seem right or "
+            "you'd like to speak with the plumber directly, that's the best next step.\n\n"
+            f"You can reach {plumber_name} directly on +{plumber_number} — "
+            "he'll sort it out properly."
+        )
     return (
         "Thanks for flagging that — I hear you, and I appreciate you being upfront.\n\n"
         "I'm the booking assistant, so if anything I've said doesn't seem right or "
-        "you'd like to speak with the plumber directly, that's the best next step.\n\n"
-        f"You can reach Takudzwa directly on +{plumber_number} — "
-        "he'll sort it out properly."
+        "you'd like to speak with the plumber directly, just say the word and "
+        "I'll have them get in touch."
     )
 
 

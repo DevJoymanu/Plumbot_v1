@@ -2898,10 +2898,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             if repeat_info:
                 print(f"Repeated question detected — matched: '{repeat_info['matched_question'][:60]}'")
                 lang = detect_language(message_body)
-                plumber_contact = (
-                    getattr(appointment, 'plumber_contact_number', None)
-                    or '+263774819901'
-                )
+                plumber_contact = appointment.plumber_contact()
                 reply = generate_repeat_clarification(
                     new_message=message_body,
                     matched_question=repeat_info['matched_question'],

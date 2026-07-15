@@ -402,10 +402,14 @@ class Appointment(models.Model):
         help_text="Current status of plan processing"
     )
     
+    # Per-LEAD override only (a specific plumber assigned to this job). The
+    # tenant-wide number lives in TenantProfile.plumber_contact — read through
+    # plumber_contact(), never this field directly (Phase 2.2).
     plumber_contact_number = models.CharField(
-        max_length=20, 
-        default='+263774819901',
-        help_text="Direct contact number for the assigned plumber"
+        max_length=20,
+        blank=True,
+        default='',
+        help_text="Direct contact number for the assigned plumber (overrides the tenant default)"
     )
     
     plan_notes = models.TextField(
@@ -504,6 +508,23 @@ class Appointment(models.Model):
     )
 
     
+    def plumber_contact(self) -> str:
+        """Direct line for this lead's plumber: the per-lead override when a
+        specific plumber is assigned, else the tenant profile's number.
+        '' when neither is set — callers omit the call-us offer (nullability
+        rule: never another tenant's number)."""
+        if self.plumber_contact_number:
+            return self.plumber_contact_number
+        from .tenant_config import get_config
+        return get_config(self.tenant).plumber_contact
+
+    def plumber_display_name(self) -> str:
+        """The plumber's name for customer-facing copy; the generic 'the
+        plumber' when the tenant hasn't provided one (generic copy may use a
+        platform default — a NAME is a business fact and never borrowed)."""
+        from .tenant_config import get_config
+        return get_config(self.tenant).plumber_name or 'the plumber'
+
     class Meta:
         # NOTE: this Meta is DEAD — a second `class Meta` further down this
         # (very long) class body overrides it at class creation. Effective
