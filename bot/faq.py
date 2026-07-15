@@ -5,44 +5,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ── Business facts ─────────────────────────────────────────────────────────────
-# Plain strings — the SOURCE OF TRUTH for these facts. At the call site they are
-# answered AI-primary (ai_answer_faq grounds on the fact and rephrases naturally
-# so replies don't sound copy-pasted); this canned text is the fallback. The
-# non-price qualifying close ("anything else on the property?") is appended by the
-# caller, not baked in here.
-_FACTS = {
-    'location': (
-        "We're in Hatfield, Harare."
-    ),
-    'hours': (
-        "We're available Sunday to Friday, 8am–6pm.\n\n"
-        "Easy to find a slot that fits you."
-    ),
-    'contact': (
-        "You can reach Takudzwa directly on +263774819901 if you'd like to "
-        "chat about the job first."
-    ),
-    'services': (
-        "Yes, we handle all plumbing work — vanities, tubs, geysers, showers, toilets, "
-        "renovations, repairs, new installations, you name it."
-    ),
-    'payment': (
-        "Cash, EcoCash, and bank transfer — all good.\n\n"
-        "You'll get the full price before anything starts, no surprises."
-    ),
-    'free_quote': (
-        "Yes, the site visit and quote are completely free.\n\n"
-        "We come to you, have a look, and give you a fixed price on the spot "
-        "before any work starts."
-    ),
-    'job_duration': (
-        "It depends on the scope of work — a small repair can be done in a few hours, "
-        "while a full bathroom renovation typically takes a few days."
-    ),
-    'licensed': (
-        "Yes, we're fully licensed and registered."
-    ),
-}
+# Facts live in each tenant's TenantProfile.faq_facts (Phase 2 slice 1 —
+# seeded for homebase by migration 0045, verified on prod 2026-07-15). At the
+# call site they are answered AI-primary (ai_answer_faq grounds on the fact
+# and rephrases naturally); the profile sentence is the fallback wording. The
+# non-price qualifying close is appended by the caller. A tenant without a
+# fact for a topic gets None → the caller skips the topic (nullability rule:
+# business facts never fall back to another tenant's values).
 
 # ── Trigger phrases per topic ──────────────────────────────────────────────────
 # Phrases are checked as substrings of the lowercased message.
@@ -206,22 +175,14 @@ def match_faq_topic(message: str) -> str | None:
 
 
 def faq_fact(topic: str, tenant=None) -> str | None:
-    """The fact sentence for a matched topic, from the TENANT's profile
-    (Phase 2 slice 1). None → the caller skips/deflects the topic.
-
-    Transition fallback: while migration 0045 hasn't seeded production yet,
-    homebase (and only homebase — tenant=None counts as homebase, the
-    pre-threading callers) still answers from the in-code _FACTS. Other
-    tenants NEVER see these strings (nullability rule: business facts have
-    no cross-tenant fallback). Delete _FACTS + this fallback once the prod
-    seed is verified."""
+    """The fact sentence for a matched topic, from the TENANT's profile.
+    None → the caller skips/deflects the topic. tenant=None (pre-threading
+    callers: gate tests, REPL) resolves to the homebase seed tenant."""
     from .tenant_config import get_config
-    fact = get_config(tenant).faq_fact(topic)
-    if fact:
-        return fact
-    if tenant is None or getattr(tenant, 'slug', '') == 'homebase':
-        return _FACTS.get(topic)
-    return None
+    if tenant is None:
+        from .models import Tenant
+        tenant = Tenant.objects.filter(slug='homebase').first()
+    return get_config(tenant).faq_fact(topic)
 
 
 def lookup_faq(message: str, tenant=None) -> str | None:

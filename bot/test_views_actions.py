@@ -780,17 +780,18 @@ class TenantConfigTests(TestCase):
         self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
 
     def test_homebase_faq_facts_byte_identical_to_legacy_constants(self):
-        from .faq import _FACTS, faq_fact
-        from .tenant_config import get_config
+        from .faq import faq_fact
+        from .tenant_config import HOMEBASE_FAQ_FACTS, get_config
         cfg = get_config(self.homebase)
-        for topic, legacy in _FACTS.items():
+        for topic, legacy in HOMEBASE_FAQ_FACTS.items():
             with self.subTest(topic=topic):
                 self.assertEqual(cfg.faq_fact(topic), legacy)
                 self.assertEqual(faq_fact(topic, tenant=self.homebase), legacy)
 
     def test_foreign_tenant_never_gets_homebase_facts(self):
-        from .faq import faq_fact, _FACTS
-        for topic in _FACTS:
+        from .faq import faq_fact
+        from .tenant_config import HOMEBASE_FAQ_FACTS
+        for topic in HOMEBASE_FAQ_FACTS:
             with self.subTest(topic=topic):
                 self.assertIsNone(faq_fact(topic, tenant=self.acme))
 
@@ -816,9 +817,10 @@ class TenantConfigTests(TestCase):
         profile.save()
         self.assertEqual(get_config(self.acme).faq_fact('licensed'), 'Yes, fully licensed.')
 
-    def test_none_tenant_transition_fallback_is_legacy_homebase(self):
-        from .faq import _FACTS, faq_fact
-        self.assertEqual(faq_fact('location', tenant=None), _FACTS['location'])
+    def test_none_tenant_resolves_to_homebase_seed(self):
+        from .faq import faq_fact
+        from .tenant_config import HOMEBASE_FAQ_FACTS
+        self.assertEqual(faq_fact('location', tenant=None), HOMEBASE_FAQ_FACTS['location'])
 
     def test_identity_fields_read_from_profile(self):
         from .tenant_config import get_config
