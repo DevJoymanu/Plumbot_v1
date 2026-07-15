@@ -39,8 +39,84 @@ except ImportError:
     pass
 
 import logging
-from bot.pricing_copy import build_structured_pricing
+from bot.pricing_copy import build_structured_pricing, build_prompt_pricing_guide
 logger = logging.getLogger(__name__)
+
+
+# ── Tenant fact renderers (Phase 2.4) ─────────────────────────────────────────
+# Module-level helpers taking the mixin instance: company facts (name,
+# location, hours) rendered from the tenant profile for copy and prompts.
+# Business facts absent → the clause/line is omitted or a neutral generic is
+# used — never another tenant's facts.
+
+def _biz(mixin) -> str:
+    tenant = getattr(mixin.appointment, 'tenant', None)
+    return getattr(tenant, 'name', '') or 'the plumbing team'
+
+
+def _loc_short(mixin) -> str:
+    return mixin.tenant_cfg.location_short() or 'Zimbabwe'
+
+
+def _city(mixin) -> str:
+    return mixin.tenant_cfg.location_city or 'our service area'
+
+
+def _working_hours_line(mixin) -> str:
+    sentence = mixin.tenant_cfg.hours_sentence()
+    return f"Our working hours are {sentence}.\n\n" if sentence else ""
+
+
+def _hours_clause(mixin) -> str:
+    sentence = mixin.tenant_cfg.hours_sentence()
+    return f" Our hours are {sentence}." if sentence else ""
+
+
+def _open_hours_clause(mixin) -> str:
+    medium = mixin.tenant_cfg.hours_medium()
+    return f" We're open {medium}." if medium else ""
+
+
+def _grounding_facts(mixin) -> str:
+    """One-line company grounding for the tiny FAQ prompts:
+    'Homebase Plumbers, Hatfield Harare, open Sun–Fri 8am–6pm (closed Sat).'"""
+    cfg = mixin.tenant_cfg
+    bits = [_biz(mixin)]
+    place = ' '.join(p for p in (cfg.location_area, cfg.location_city) if p)
+    if place:
+        bits.append(place)
+    compact = cfg.hours_compact()
+    if compact:
+        hours = mixin.tenant_cfg._field('business_hours', None) or {}
+        closed = " (closed Sat)" if 'sat' in (hours.get('closed') or []) else ""
+        bits.append(f"open {compact}{closed}")
+    return ", ".join(bits) + "."
+
+
+def _quick_location(mixin) -> str:
+    short = mixin.tenant_cfg.location_short()
+    return f"We're based in {short}" if short else ""
+
+
+def _quick_hours(mixin) -> str:
+    p = mixin.tenant_cfg._hours_parts()
+    if p is None:
+        return ""
+    return f"We're open {p[0]} to {p[1]}, {p[4]}–{p[5]}"
+
+
+def _hours_days(mixin) -> str:
+    p = mixin.tenant_cfg._hours_parts()
+    if p is None:
+        return "by appointment"
+    hours = mixin.tenant_cfg._field('business_hours', None) or {}
+    closed = " (closed Saturdays)" if 'sat' in (hours.get('closed') or []) else ""
+    return f"{p[0]} to {p[1]}{closed}"
+
+
+def _hours_clock(mixin) -> str:
+    p = mixin.tenant_cfg._hours_parts()
+    return f"{p[4]} – {p[5]}" if p is not None else "by appointment"
 
 
 # ── Shona comprehension + reply-in-language directive ────────────────────────
@@ -722,7 +798,7 @@ class ResponseMixin:
                 from ...services.clients import deepseek_call
                 if service_question:
                     sys = (
-                        "You are Plumbot for Homebase Plumbers in Harare, replying on "
+                        f"You are Plumbot for {_biz(self)}, replying on "
                         "WhatsApp. The customer is asking whether we do/offer a specific "
                         "thing. Using ONLY the reference fact, confirm warmly in ONE "
                         "sentence that we handle it plus related plumbing work. Then, on "
@@ -734,7 +810,7 @@ class ResponseMixin:
                     )
                 else:
                     sys = (
-                        "You are Plumbot for Homebase Plumbers in Harare, replying on "
+                        f"You are Plumbot for {_biz(self)}, replying on "
                         "WhatsApp. Answer the customer's question in 1-2 short, warm "
                         "sentences using ONLY the reference fact as the source of truth — "
                         "rephrase it naturally to fit their exact wording so it never "
@@ -2306,7 +2382,7 @@ class ResponseMixin:
                             else:
                                 reply = (
                                     "I'm having trouble finding available times. Could you suggest a "
-                                    "completely different day? Our hours are 8 AM - 6 PM, Monday to Friday."
+                                    f"completely different day?{_hours_clause(self)}"
                                 )
                         self.appointment.add_conversation_message("user", incoming_message)
                         self.appointment.add_conversation_message("assistant", reply)
@@ -2382,7 +2458,7 @@ class ResponseMixin:
                         f"Thanks for reaching out! Unfortunately *{_city}* is a bit too "
                         f"far for us to travel to at the moment, so we wouldn't be able "
                         f"to take this one on.\n\n"
-                        "If you've got plumbing work closer to Harare though, we'd be "
+                        f"If you've got plumbing work closer to {_city(self)} though, we'd be "
                         "glad to help!"
                     )
                     self.appointment.add_conversation_message("user", incoming_message)
@@ -2445,7 +2521,7 @@ class ResponseMixin:
                             )
                             reply = (
                                 "We unfortunately don't operate on Saturdays. \n\n"
-                                "Our working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                                f"{_working_hours_line(self)}"
                             )
                             if alt_text:
                                 reply += (
@@ -2777,7 +2853,7 @@ class ResponseMixin:
                     self.appointment.scheduled_datetime = None
                     self.appointment.save(update_fields=["scheduled_datetime"])
                 self._set_question_retry_count("availability_date", 0)
-                return "Oh okay when are you available? We're open Sunday–Friday, 8 AM–6 PM."
+                return f"Oh okay when are you available?{_open_hours_clause(self)}"
 
             if intent == "suggested_new_day" and day_mentioned and confidence == "HIGH":
                 # Confirm the new day without repeating the original options
@@ -2785,7 +2861,7 @@ class ResponseMixin:
 
             if (intent == "unclear" or confidence == "LOW") and retry_count >= 2:
                 # After two failed attempts, ask open-ended rather than repeating
-                return "When would work best for you? We're open Sunday–Friday, 8 AM–6 PM."
+                return f"When would work best for you?{_open_hours_clause(self)}"
 
             # accepted_offered or first-retry unclear → fall through to normal logic
             return None
@@ -2911,7 +2987,7 @@ class ResponseMixin:
                 if quoted_context else ""
             )
 
-            prompt = f"""You are writing a WhatsApp message for Homebase Plumbers in Zimbabwe.
+            prompt = f"""You are writing a WhatsApp message for {getattr(getattr(self.appointment, "tenant", None), "name", "") or "a plumbing business"} in Zimbabwe.
 
     CUSTOMER'S LAST MESSAGE: "{incoming_message}"
 {reply_to_block}
@@ -3971,12 +4047,12 @@ class ResponseMixin:
                     f"Product: {name}. "
                     "We supply both ready-made units and can arrange custom builds for fixtures. "
                     "Free on-site assessment where we go through all options together. "
-                    "HomeBase Plumbers, Hatfield Harare, open Sun-Fri 8am-6pm."
+                    f"{_grounding_facts(self)}"
                 )
                 answer = deepseek_call(
                     messages=[
                         {"role": "system", "content":
-                            "You are a HomeBase Plumbers assistant in Harare. Answer the "
+                            f"You are a {_biz(self)} assistant. Answer the "
                             "customer's product question in ONE short, warm sentence using ONLY "
                             "the facts given. If the facts don't cover it, say you'll go through "
                             "it on the free on-site assessment. The customer has NOT asked about "
@@ -4008,20 +4084,57 @@ class ResponseMixin:
         # Concise canonical one-liners for composing answers to multi-part
         # messages. Product lines mirror structured_pricing[...]['total_line']
         # in handle_service_inquiry — keep them in sync if prices change.
-        _COMPOSE_SNIPPETS = {
-            'standalone_tub':  "Freestanding (standalone) tubs: full setup from US$670 all-in (tub US$400 + mixer US$150 + install US$120).",
-            'tub_sales':       "Freestanding tubs from US$670 all-in (tub US$400 + mixer US$150 + install US$120). Standard built-in tubs from US$160 all-in.",
-            'bathtub_installation': "Standard built-in tub from US$160 all-in; freestanding setup from US$670 all-in.",
-            'geyser':          "Geysers from US$160 all-in (supply from US$80 + install from US$80).",
-            'shower_cubicle':  "Shower cubicles from US$170 all-in (supply from US$130 + install from US$40).",
-            'vanity':          "Vanities from US$180 all-in (supply from US$150 + install from US$30).",
-            'toilet':          "Toilet replacement from US$70 all-in (supply from US$50 + install from US$20).",
-            'chamber':         "Side chambers from US$160 all-in (supply from US$130 + install from US$30).",
-            'facebook_package': "Our Facebook package is US$800 — freestanding tub and side chamber.",
-            'location':        "We're based in Hatfield, Harare",
-            'hours':           "We're open Sunday to Friday, 8 AM–6 PM",
+        _COMPOSE_KNOWN = {
+            'standalone_tub', 'tub_sales', 'bathtub_installation', 'geyser',
+            'shower_cubicle', 'vanity', 'toilet', 'chamber', 'facebook_package',
+            'location', 'hours', 'pictures', 'combined_pricing', 'other',
         }
-        _COMPOSE_KNOWN = set(_COMPOSE_SNIPPETS) | {'pictures', 'combined_pricing', 'other'}
+
+        def _compose_snippets(self) -> dict:
+            """Per-intent one-line answers for compose_multi_answer, rendered
+            from the tenant's price rows/profile (Phase 2.4 — was a hardcoded
+            class dict). Intents whose facts are missing are omitted."""
+            from bot.pricing_copy import _figures
+            f = _figures(self.tenant_cfg)
+            snip = {}
+            fs_ok = all(f[k] is not None for k in ('fs_supply', 'fs_mixer', 'fs_install', 'fs_allin'))
+            if fs_ok:
+                snip['standalone_tub'] = (
+                    f"Freestanding (standalone) tubs: full setup from US${f['fs_allin']} all-in "
+                    f"(tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}).")
+            if fs_ok and f['tub_allin'] is not None:
+                snip['tub_sales'] = (
+                    f"Freestanding tubs from US${f['fs_allin']} all-in (tub US${f['fs_supply']} + "
+                    f"mixer US${f['fs_mixer']} + install US${f['fs_install']}). "
+                    f"Standard built-in tubs from US${f['tub_allin']} all-in.")
+                snip['bathtub_installation'] = (
+                    f"Standard built-in tub from US${f['tub_allin']} all-in; "
+                    f"freestanding setup from US${f['fs_allin']} all-in.")
+            if f['gey_allin'] is not None and f['gey_s'] is not None and f['gey_l'] is not None:
+                snip['geyser'] = (
+                    f"Geysers from US${f['gey_allin']} all-in (supply from US${f['gey_s']} + install from US${f['gey_l']}).")
+            if f['sh_allin'] is not None and f['sh_s'] is not None and f['sh_l'] is not None:
+                snip['shower_cubicle'] = (
+                    f"Shower cubicles from US${f['sh_allin']} all-in (supply from US${f['sh_s']} + install from US${f['sh_l']}).")
+            if f['va_allin'] is not None and f['va_s'] is not None and f['va_l'] is not None:
+                snip['vanity'] = (
+                    f"Vanities from US${f['va_allin']} all-in (supply from US${f['va_s']} + install from US${f['va_l']}).")
+            if f['to_allin'] is not None and f['to_s'] is not None and f['to_l'] is not None:
+                snip['toilet'] = (
+                    f"Toilet replacement from US${f['to_allin']} all-in (supply from US${f['to_s']} + install from US${f['to_l']}).")
+            if f['ch_allin'] is not None and f['ch_s'] is not None and f['ch_l'] is not None:
+                snip['chamber'] = (
+                    f"Side chambers from US${f['ch_allin']} all-in (supply from US${f['ch_s']} + install from US${f['ch_l']}).")
+            if f['fb'] is not None:
+                snip['facebook_package'] = (
+                    f"Our Facebook package is US${f['fb']} — freestanding tub and side chamber.")
+            location = _quick_location(self)
+            if location:
+                snip['location'] = location
+            hours = _quick_hours(self)
+            if hours:
+                snip['hours'] = hours
+            return snip
 
         def _split_intents(self, message: str):
             """
@@ -4103,6 +4216,7 @@ class ResponseMixin:
             if 'booking' in distinct:
                 return None
 
+            _snippets = self._compose_snippets()
             answerable = [i for i in distinct if i in self._COMPOSE_KNOWN]
             # Single source of truth for "should I volunteer a price?": drop any
             # priced intent the shared gate says not to price for this message (no
@@ -4128,8 +4242,8 @@ class ResponseMixin:
                         "shower cubicle from US$170, vanity from US$180, toilet from US$70, "
                         "side chamber from US$160, tub from US$160. Final price confirmed on site."
                     )
-                elif intent in self._COMPOSE_SNIPPETS:
-                    answers.append(self._COMPOSE_SNIPPETS[intent])
+                elif intent in _snippets:
+                    answers.append(_snippets[intent])
                 elif intent == 'other':
                     prose = self._concise_ai_answer(q_by_intent.get('other', message))
                     if prose:
@@ -4155,7 +4269,7 @@ class ResponseMixin:
             try:
                 from bot.services.clients import deepseek_call
                 facts = (
-                    "HomeBase Plumbers, Hatfield Harare. Open Sun–Fri 8am–6pm (closed Sat). "
+                    f"{_grounding_facts(self)} "
                     "Free on-site assessment. Services: bathroom/kitchen renovations, geysers, "
                     "shower cubicles, vanities, toilets, tubs, drains, pipe & geyser repairs. "
                     "Facebook package US$800 (freestanding tub + side chamber)."
@@ -4163,7 +4277,7 @@ class ResponseMixin:
                 return deepseek_call(
                     messages=[
                         {"role": "system", "content":
-                            "You are a HomeBase Plumbers assistant in Harare. Answer the customer's "
+                            f"You are a {_biz(self)} assistant. Answer the customer's "
                             "question in ONE short, warm sentence using ONLY the facts provided. "
                             "If the facts don't cover it, say you'll confirm with the team. No prices "
                             "you weren't given."},
@@ -4580,18 +4694,18 @@ class ResponseMixin:
                         },
 
                         "location_ask": {
-                            "en": "We are based in Hatfield, Harare, and yourself \n\n",
-                            "sn": "Tiri muHatfield, Harare. \n\n",
+                            "en": f"We are based in {_loc_short(self)}, and yourself \n\n",
+                            "sn": f"Tiri mu{_loc_short(self)}. \n\n",
                         },
 
                         "location_visit": {
                             "en": (
-                                "We work by appointment rather than walk-ins. We're in Hatfield, Harare.\n\n"
+                                f"We work by appointment rather than walk-ins. We're in {_loc_short(self)}.\n\n"
                                 "Would you like us to come to you instead? We can do a free on-site assessment "
                                 "at your place — saves you the trip and gets you a fixed price on the spot."
                             ),
                             "sn": (
-                                "Tinoshandisa ne appointment, hatisi kushanda ne walk-ins. Tiri muHatfield, Harare.\n\n"
+                                f"Tinoshandisa ne appointment, hatisi kushanda ne walk-ins. Tiri mu{_loc_short(self)}.\n\n"
                                 "Unoda here kuti tiuye kwauri? Tinogona kuita free assessment paimba yako — "
                                 "kukuponesa rwendo uye tikupe mutengo wakakwana pasite."
                             ),
@@ -4855,7 +4969,7 @@ class ResponseMixin:
                         timezone.now() + timedelta(days=1)
                     )
                     alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
-                    reply = "We unfortunately don't operate on Saturdays. \n\nOur working hours are Sunday to Friday, 8:00 AM – 6:00 PM.\n\n"
+                    reply = f"We unfortunately don't operate on Saturdays. \n\n{_working_hours_line(self)}"
                     if alt_text:
                         reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
                     else:
@@ -4921,7 +5035,7 @@ class ResponseMixin:
                 appointment_context = self.get_appointment_context()
                 retry_context_line = self._build_retry_context_line(updated_fields, next_question)
     
-                system_prompt = f"""You are a member of the Homebase Plumbers team in Harare. You help customers book a free site visit over WhatsApp.
+                system_prompt = f"""You are a member of the {_biz(self)} team. You help customers book a free site visit over WhatsApp.
 
         Text like a real, warm person — short messages, natural, Zimbabwean English. Never robotic, never corporate.
 
@@ -5208,10 +5322,10 @@ class ResponseMixin:
         {build_prompt_pricing_guide(self.tenant_cfg)}
 
         COMPANY INFO:
-        - Based in Hatfield, Harare
+        - Based in {_loc_short(self)}
         - Works by appointment (not walk-ins)
-        - Monday–Sunday except Saturday (closed Saturdays)
-        - Business hours: 8 AM – 6 PM
+        - Working days: {_hours_days(self)}
+        - Business hours: {_hours_clock(self)}
         - Site assessment is free, plumber gives fixed quote on the spot
         - The plumber's name is {self.appointment.plumber_display_name()}
         - Plumber direct contact: {self.appointment.plumber_contact() or "not available — offer to have the team call instead"}

@@ -195,6 +195,8 @@ class TenantProfile(models.Model):
     plumber_contact = models.CharField(max_length=32, blank=True, default='')
     business_whatsapp = models.CharField(max_length=32, blank=True, default='')
     location_line = models.CharField(max_length=255, blank=True, default='')
+    location_area = models.CharField(max_length=80, blank=True, default='')   # "Hatfield"
+    location_city = models.CharField(max_length=80, blank=True, default='')   # "Harare"
     business_hours = models.JSONField(null=True, blank=True)   # {"days": "Sun–Fri", "open": "08:00", "close": "18:00", "closed": ["sat"]}
     timezone_name = models.CharField(max_length=64, blank=True, default='Africa/Johannesburg')
     excluded_areas = models.JSONField(default=list, blank=True)

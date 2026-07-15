@@ -1961,7 +1961,17 @@ except Exception as e:
 # Pricing copy: compose snippets break down supply + install, and the price
 # disclaimer is reworded to "once the plumber sees the space" (no "on-site visit").
 try:
-    _snips = ResponseMixin._COMPOSE_SNIPPETS
+    # Phase 2.4: snippets render from tenant data — build them with a fake
+    # carrying the pinned homebase figures via the price-map methods.
+    class _FakeSelfSnips:
+        _compose_snippets = ResponseMixin._compose_snippets
+        tenant_cfg = None  # unused: _compose_snippets reads via pricing_copy._figures
+        def __init__(self):
+            from bot.models import Tenant
+            from bot.tenant_config import get_config
+            self.appointment = None
+            self.tenant_cfg = get_config(Tenant.objects.filter(slug='homebase').first())
+    _snips = _FakeSelfSnips()._compose_snippets()
     results.log(
         "compose snippets: shower breaks down supply + install",
         "supply from US$130 + install from US$40" in _snips['shower_cubicle'],

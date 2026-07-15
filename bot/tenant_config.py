@@ -60,6 +60,8 @@ HOMEBASE_PROFILE_FIELDS = dict(
     plumber_contact='+263774819901',
     business_whatsapp='+263776255077',
     location_line="We're in Hatfield, Harare.",
+    location_area='Hatfield',
+    location_city='Harare',
     business_hours={'days': 'Sunday-Friday', 'open': '08:00', 'close': '18:00', 'closed': ['sat']},
     timezone_name='Africa/Johannesburg',
     excluded_areas=['gweru', 'bulawayo', 'mutare', 'masvingo', 'victoria falls', 'hwange', 'beitbridge', 'plumtree'],
@@ -175,6 +177,60 @@ class TenantConfig:
     @property
     def location_line(self) -> str:
         return self._field('location_line')
+
+    @property
+    def location_area(self) -> str:
+        return self._field('location_area')
+
+    @property
+    def location_city(self) -> str:
+        return self._field('location_city')
+
+    def location_short(self) -> str:
+        """'Hatfield, Harare' — for composing sentences; '' when unknown."""
+        parts = [p for p in (self.location_area, self.location_city) if p]
+        return ', '.join(parts)
+
+    # ── Hours (rendered from business_hours JSON in the formats the copy
+    # uses; '' when the tenant has no hours on file → callers omit) ─────────
+    def _hours_parts(self):
+        hours = self._field('business_hours', None)
+        if not hours or not hours.get('days') or not hours.get('open') or not hours.get('close'):
+            return None
+        day_start, _, day_end = hours['days'].partition('-')
+        def clock(value, style):
+            hh, _, mm = value.partition(':')
+            hour12 = int(hh) % 12 or 12
+            suffix = 'AM' if int(hh) < 12 else 'PM'
+            if style == 'long':       # "8:00 AM"
+                return f"{hour12}:{mm or '00'} {suffix}"
+            if style == 'short':      # "8 AM"
+                return f"{hour12} {suffix}"
+            return f"{hour12}{suffix.lower()}"  # "8am"
+        return day_start.strip(), day_end.strip(), clock(hours['open'], 'long'), clock(hours['close'], 'long'), \
+            clock(hours['open'], 'short'), clock(hours['close'], 'short'), \
+            clock(hours['open'], 'tiny'), clock(hours['close'], 'tiny')
+
+    def hours_sentence(self) -> str:
+        """'Sunday to Friday, 8:00 AM – 6:00 PM'"""
+        p = self._hours_parts()
+        if p is None:
+            return ''
+        return f"{p[0]} to {p[1]}, {p[2]} – {p[3]}"
+
+    def hours_medium(self) -> str:
+        """'Sunday–Friday, 8 AM–6 PM'"""
+        p = self._hours_parts()
+        if p is None:
+            return ''
+        return f"{p[0]}–{p[1]}, {p[4]}–{p[5]}"
+
+    def hours_compact(self) -> str:
+        """'Sun–Fri 8am–6pm'"""
+        p = self._hours_parts()
+        if p is None:
+            return ''
+        return f"{p[0][:3]}–{p[1][:3]} {p[6]}–{p[7]}"
 
     @property
     def currency(self) -> str:
