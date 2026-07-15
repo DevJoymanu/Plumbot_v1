@@ -148,7 +148,7 @@ class ConversationsView(ListView):
         # client-facing appointments page — they live on the staff-only
         # /test-leads/ page instead.
         queryset = (
-            Appointment.objects.real().annotate(
+            Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real().annotate(
                 computed_score=Case(
                     When(scheduled_datetime__isnull=False, then=Value(100)),
                     default=completed_fields * Value(20),
@@ -212,7 +212,7 @@ class ConversationsView(ListView):
         response_age  = getattr(self, '_response_age',  '1w_minus')
         age_map_minus = self.TAB_AGE_MAP
 
-        base_qs = Appointment.objects.real()
+        base_qs = Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real()
         if response_age != 'all' and response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
@@ -291,14 +291,14 @@ class ConversationDetailView(TemplateView):
 
     def _thread_list(self, current):
         """Recent conversations for the left rail, current one guaranteed present."""
-        rows = list(Appointment.objects.real().order_by('-updated_at')[:40])
+        rows = list(Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real().order_by('-updated_at')[:40])
         if current.pk not in {a.pk for a in rows}:
             rows.insert(0, current)
         return rows
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        appointment = get_object_or_404(Appointment.objects.real(), pk=kwargs['pk'])
+        appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real(), pk=kwargs['pk'])
 
         local_sched = None
         if appointment.scheduled_datetime:
@@ -324,7 +324,7 @@ class ConversationDetailView(TemplateView):
         return context
 
     def post(self, request, *args, **kwargs):
-        appointment = get_object_or_404(Appointment.objects.real(), pk=kwargs['pk'])
+        appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real(), pk=kwargs['pk'])
         action = request.POST.get('action')
 
         if action == 'send':
@@ -411,7 +411,7 @@ class AppointmentsListView(TemplateView):
         month_end = _date(year, month, days_in_month)
 
         appts = (
-            Appointment.objects.real()
+            Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real()
             .filter(
                 scheduled_datetime__date__gte=month_start,
                 scheduled_datetime__date__lte=month_end,
@@ -528,7 +528,7 @@ class PriorityLeadsView(TemplateView):
             # consistent with the nav badge / dashboard hot-lead count (also 7
             # days). Users can still widen via the Window selector.
             response_age = '1w_minus'
-        workspace = _priority_leads_workspace_data(response_age)
+        workspace = _priority_leads_workspace_data(response_age, tenant=getattr(self.request, 'tenant', None))
         very_hot_leads = workspace['very_hot_leads']
         hot_leads = workspace['hot_leads']
         warm_leads = workspace['warm_leads']
@@ -645,7 +645,7 @@ class PriorityLeadsView(TemplateView):
 @staff_required
 @require_POST
 def update_priority_lead_card(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     now = timezone.now()
     next_url = request.POST.get('next') or reverse('priority_leads')
     if not next_url.startswith('/'):
@@ -695,6 +695,10 @@ class AppointmentDetailView(DetailView):
     template_name = 'bot/pages/appointment_detail.html'
     model = Appointment
     context_object_name = 'appointment'
+
+    def get_queryset(self):
+        # Tenant-scoped (§6.3): a foreign tenant's lead 404s, never renders.
+        return Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None))
     #
     @staticmethod
     def _followup_info_for(appointment):
@@ -725,17 +729,17 @@ class AppointmentDetailView(DetailView):
         source_back_url = reverse('appointments_list')
         source_title = 'Appointments'
         if detail_source == 'dashboard':
-            source_workspace = _dashboard_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            source_workspace = _dashboard_workspace_data(self.request.GET.get('response_age', '1w_minus'), tenant=getattr(self.request, 'tenant', None))
             active_nav = 'dashboard'
             source_back_url = reverse('dashboard')
             source_title = 'Dashboard'
         elif detail_source == 'priority_leads':
-            source_workspace = _priority_leads_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            source_workspace = _priority_leads_workspace_data(self.request.GET.get('response_age', '1w_minus'), tenant=getattr(self.request, 'tenant', None))
             active_nav = 'leads'
             source_back_url = reverse('priority_leads')
             source_title = 'Priority Leads'
         elif detail_source == 'followups':
-            source_workspace = _followups_workspace_data(self.request.GET.get('response_age', '1w_minus'))
+            source_workspace = _followups_workspace_data(self.request.GET.get('response_age', '1w_minus'), tenant=getattr(self.request, 'tenant', None))
             active_nav = 'followups'
             source_back_url = reverse('followup_dashboard')
             source_title = 'Follow-ups'
@@ -746,7 +750,7 @@ class AppointmentDetailView(DetailView):
 
         sidebar_filter = self.request.GET.get('sidebar_filter', 'all')
         sidebar_response_age = self.request.GET.get('sidebar_response_age', 'all')
-        sidebar_context = _appointments_sidebar_context(sidebar_filter, sidebar_response_age)
+        sidebar_context = _appointments_sidebar_context(sidebar_filter, sidebar_response_age, tenant=getattr(self.request, 'tenant', None))
 
         context.update({
             'active_nav': active_nav,
@@ -854,6 +858,9 @@ class AppointmentDocumentsView(DetailView):
     model = Appointment
     context_object_name = 'appointment'
 
+    def get_queryset(self):
+        return Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None))
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         appointment = self.get_object()
@@ -869,7 +876,7 @@ class AppointmentDocumentsView(DetailView):
 @staff_required
 def download_document(request, pk, document_type):
     """View to download specific documents"""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     if document_type == 'plan_file' and appointment.plan_file:
         try:
@@ -895,7 +902,7 @@ def serve_document(request, pk, idx):
     via default_storage works for any backend and stays staff-gated.
     ?dl=1 forces a download instead of inline view.
     """
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     files = appointment.get_all_uploaded_files()
     if idx < 0 or idx >= len(files):
         raise Http404('Document not found')
@@ -921,7 +928,7 @@ def serve_document(request, pk, idx):
 
 @staff_required
 def update_appointment(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
 
     # ✅ Documents (use helper methods)
     has_documents = appointment.has_uploaded_documents()
@@ -961,7 +968,7 @@ def _detail_redirect(request, pk):
 
 @staff_required
 def confirm_appointment(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     appointment.status = 'confirmed'
     appointment.save()
     try:
@@ -982,7 +989,7 @@ def confirm_appointment(request, pk):
 @staff_required
 @require_POST
 def complete_lead_appointment(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     appointment.status = 'completed'
     appointment.follow_up_status = 'completed'
     appointment.is_lead_active = False
@@ -1007,7 +1014,7 @@ def complete_lead_appointment(request, pk):
 def unbook_appointment(request, pk):
     """Reverse an accidental confirm: send the appointment back to pending so the
     chatbot resumes the conversation with the lead. The inverse of confirm_appointment."""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     appointment.status = 'pending'
     appointment.chatbot_paused = False
     appointment.is_lead_active = True
@@ -1018,7 +1025,7 @@ def unbook_appointment(request, pk):
 
 @staff_required
 def cancel_appointment(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     appointment.status = 'cancelled'
     appointment.save()
     messages.success(request, 'Appointment cancelled')
@@ -1039,7 +1046,7 @@ def export_appointments(request):
         'Timeline', 'Status', 'Appointment Date', 'Created At'
     ])
 
-    for appointment in Appointment.objects.real().order_by('-created_at'):
+    for appointment in Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real().order_by('-created_at'):
         writer.writerow([
             appointment.customer_name or '',
             appointment.phone_number,
@@ -1059,7 +1066,7 @@ def export_appointments(request):
 @staff_required
 def complete_site_visit(request, pk):
     """Mark site visit as completed and prepare for job scheduling"""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     if appointment.appointment_type != 'site_visit':
         messages.error(request, 'This is not a site visit appointment')

@@ -74,7 +74,7 @@ def test_console_view(request):
         return render(request, "bot/pages/test_console_gate.html", {})
 
     sender = _sanitize_test_number(request.GET.get("number"))
-    appointment = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}").first()
+    appointment = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).filter(phone_number=f"whatsapp:+{sender}").first()
     history = _serialize_history(appointment) if appointment else []
     return render(request, "bot/pages/test_console.html", {
         "active_nav": "test_console",
@@ -110,7 +110,7 @@ def test_console_send(request):
         sender, {"body": message}, message_id=message_id, quoted_id=quoted_id,
     )
 
-    appointment = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}").first()
+    appointment = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).filter(phone_number=f"whatsapp:+{sender}").first()
     history = _serialize_history(appointment) if appointment else []
     return JsonResponse({"ok": True, "history": history, "count": len(history)})
 
@@ -127,7 +127,7 @@ def test_console_poll(request):
     except (TypeError, ValueError):
         after = 0
 
-    appointment = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}").first()
+    appointment = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).filter(phone_number=f"whatsapp:+{sender}").first()
     history = _serialize_history(appointment) if appointment else []
     return JsonResponse({
         "ok": True,
@@ -153,7 +153,7 @@ def test_leads_view(request):
     if not _console_unlocked(request):
         return render(request, "bot/pages/test_console_gate.html", {})
 
-    leads = (Appointment.objects.test_lines()
+    leads = (Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).test_lines()
              .order_by('-updated_at')
              .only('id', 'phone_number', 'status', 'project_type',
                    'project_description', 'customer_area', 'updated_at',
@@ -182,7 +182,7 @@ def test_leads_purge(request):
     the filter can only ever match console/scenario lines, never a real lead."""
     if not _console_unlocked(request):
         return JsonResponse({"ok": False, "error": "Console locked"}, status=403)
-    deleted, _ = Appointment.objects.test_lines().delete()
+    deleted, _ = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).test_lines().delete()
     WhatsAppInboundEvent.objects.filter(sender__startswith='999').delete()
     return JsonResponse({"ok": True, "deleted": deleted})
 
@@ -199,6 +199,6 @@ def test_console_reset(request):
         payload = {}
     sender = _sanitize_test_number(payload.get("number"))
 
-    Appointment.objects.filter(phone_number=f"whatsapp:+{sender}").delete()
+    Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).filter(phone_number=f"whatsapp:+{sender}").delete()
     WhatsAppInboundEvent.objects.filter(sender=sender).delete()
     return JsonResponse({"ok": True, "number": sender})

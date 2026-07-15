@@ -17,6 +17,15 @@ class LeadQuerySet(models.QuerySet):
         Phase-0 transition while legacy rows are being backfilled."""
         return self.filter(tenant=tenant)
 
+    def for_tenant_or_seed(self, tenant):
+        """for_tenant with the homebase-seed fallback for tenant=None — the
+        view/helper scoping entry point (request.tenant is always set by the
+        middleware, but request-less callers like the nav-badge context
+        processor may pass None during the transition)."""
+        if tenant is None:
+            return self.filter(tenant_id=get_default_tenant_id())
+        return self.filter(tenant=tenant)
+
     def get_or_create_lead(self, phone_number, tenant=None, defaults=None):
         """Tenant-aware lead identity (Phase 1). Phone numbers are unique PER
         TENANT (the same customer can talk to two companies), so the tenant is
@@ -115,6 +124,15 @@ class Tenant(models.Model):
 
     def __str__(self):
         return self.name
+
+
+def _inherit_tenant(instance, parent):
+    """Child business records always belong to their parent lead's tenant —
+    regardless of who created them (dashboard actions default the FK to the
+    homebase seed, which is wrong for another tenant's lead). Called from
+    save() on every child model."""
+    if parent is not None and parent.tenant_id and instance.tenant_id != parent.tenant_id:
+        instance.tenant_id = parent.tenant_id
 
 
 def get_default_tenant_id():
@@ -2070,6 +2088,11 @@ class ConversationMessage(models.Model):
     content = models.TextField()
     timestamp = models.DateTimeField(default=timezone.now)
     
+
+    def save(self, *args, **kwargs):
+        _inherit_tenant(self, getattr(self, 'appointment', None))
+        super().save(*args, **kwargs)
+
     class Meta:
         ordering = ['timestamp']
     
@@ -2114,6 +2137,11 @@ class ScheduledFollowup(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     error = models.TextField(blank=True, default='')
+
+
+    def save(self, *args, **kwargs):
+        _inherit_tenant(self, getattr(self, 'appointment', None))
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ['scheduled_for']
@@ -2165,6 +2193,11 @@ class ScheduledReminder(models.Model):
     sent_at = models.DateTimeField(null=True, blank=True)
     error = models.TextField(blank=True, default='')
 
+
+    def save(self, *args, **kwargs):
+        _inherit_tenant(self, getattr(self, 'appointment', None))
+        super().save(*args, **kwargs)
+
     class Meta:
         ordering = ['scheduled_for']
         indexes = [
@@ -2187,6 +2220,11 @@ class AppointmentNote(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     is_customer_visible = models.BooleanField(default=False, help_text="Can customer see this note?")
     
+
+    def save(self, *args, **kwargs):
+        _inherit_tenant(self, getattr(self, 'appointment', None))
+        super().save(*args, **kwargs)
+
     class Meta:
         ordering = ['-created_at']
     
@@ -2263,6 +2301,11 @@ class Job(models.Model):
     ])
     completed_at = models.DateTimeField(null=True, blank=True)
     
+
+    def save(self, *args, **kwargs):
+        _inherit_tenant(self, getattr(self, 'site_visit', None))
+        super().save(*args, **kwargs)
+
     class Meta:
         ordering = ['-scheduled_datetime']
 
@@ -2294,7 +2337,7 @@ class Quotation(models.Model):
     sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         ordering = ['-created_at']
 
@@ -2327,6 +2370,7 @@ class Quotation(models.Model):
             return Decimal('0.00')
     
     def save(self, *args, **kwargs):
+        _inherit_tenant(self, getattr(self, 'appointment', None))
         is_new = self.pk is None
 
         # Generate quotation number if not exists
@@ -2422,6 +2466,7 @@ class QuotationTemplate(models.Model):
     def duplicate(self, new_name=None):
         """Create a copy of this template"""
         new_template = QuotationTemplate.objects.create(
+            tenant=self.tenant,  # a copy stays with its owner (Phase 3.1)
             name=new_name or f"{self.name} (Copy)",
             description=self.description,
             project_type=self.project_type,

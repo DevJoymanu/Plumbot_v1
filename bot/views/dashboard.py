@@ -53,7 +53,7 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
-def _due_followup_leads(now=None):
+def _due_followup_leads(now=None, tenant=None):
     """Leads a follow-up would ACTUALLY be sent to right now.
 
     Single source of truth for "follow-ups due" on the dashboard and the
@@ -79,7 +79,7 @@ def _due_followup_leads(now=None):
     return due
 
 
-def _dashboard_workspace_data(response_age='1w_minus'):
+def _dashboard_workspace_data(response_age='1w_minus', tenant=None):
     from bot.models import Job
 
     # Use the date in the configured TIME_ZONE (Africa/Johannesburg), not the UTC
@@ -97,7 +97,7 @@ def _dashboard_workspace_data(response_age='1w_minus'):
 
     # .real() everywhere in this module: 999-prefixed console/scenario test
     # lines never surface on client-facing pages (they live on /test-leads/).
-    appointments = Appointment.objects.real()
+    appointments = Appointment.objects.for_tenant_or_seed(tenant).real()
     if response_age != 'all' and response_age in age_map_minus:
         cutoff = now - age_map_minus[response_age]
         appointments = appointments.filter(last_customer_response__gte=cutoff)
@@ -105,7 +105,7 @@ def _dashboard_workspace_data(response_age='1w_minus'):
     # Follow-ups: only leads a follow-up would ACTUALLY be sent to now — mirrors
     # the send_followups cron (eligibility + timing + open messaging window), so
     # the figure reflects reality instead of counting suppressed/ineligible leads.
-    due_followups = _due_followup_leads(now)
+    due_followups = _due_followup_leads(now, tenant=tenant)
     followups = due_followups[:3]
     followups_due_count = len(due_followups)
 
@@ -119,7 +119,7 @@ def _dashboard_workspace_data(response_age='1w_minus'):
     # Hot leads: priority (very-hot + hot) leads from the last week that haven't
     # booked yet. Shared with the nav badge + context processor via this helper,
     # so the dashboard, its sidebar, and the global badge always agree.
-    hot_lead_count = priority_lead_count()
+    hot_lead_count = priority_lead_count(tenant)
 
     return {
         'selected_response_age': response_age,
@@ -148,7 +148,7 @@ _PRIORITY_AGE_MAP = {
 }
 
 
-def priority_leads_qs():
+def priority_leads_qs(tenant=None):
     """Canonical priority-leads queryset — the single source of truth for every
     'priority / hot lead' stat (nav badge, dashboard, priority-leads page + sidebar).
 
@@ -183,7 +183,7 @@ def priority_leads_qs():
     )
 
     return (
-        Appointment.objects.real().annotate(
+        Appointment.objects.for_tenant_or_seed(tenant).real().annotate(
             completed_fields=has_project_type + has_property_type + has_area + has_timeline + has_site_visit,
             computed_score=Case(
                 When(scheduled_datetime__isnull=False, then=Value(100)),
@@ -210,7 +210,7 @@ def priority_leads_qs():
     )
 
 
-def priority_lead_count():
+def priority_lead_count(tenant=None):
     """Count of actionable hot leads: very-hot + hot, from the last week, that
     haven't booked yet. Single source of truth for the nav badge, the global
     context processor, and the dashboard 'Hot Leads' figure, so every surface
@@ -218,19 +218,19 @@ def priority_lead_count():
     week_ago = timezone.now() - timedelta(weeks=1)
     # Booked (confirmed) leads are already excluded by priority_leads_qs().
     return (
-        priority_leads_qs()
+        priority_leads_qs(tenant)
         .filter(computed_status__in=['very_hot', 'hot'])
         .filter(last_response_at__gte=week_ago)
         .count()
     )
 
 
-def _priority_leads_workspace_data(response_age='1w_minus'):
+def _priority_leads_workspace_data(response_age='1w_minus', tenant=None):
     from django.db.models import F  # noqa: F401 — kept for parity with callers
 
     age_map_minus = _PRIORITY_AGE_MAP
 
-    leads = priority_leads_qs()
+    leads = priority_leads_qs(tenant)
     if response_age != 'all' and response_age in age_map_minus:
         cutoff = timezone.now() - age_map_minus[response_age]
         leads = leads.filter(last_response_at__gte=cutoff)
@@ -252,7 +252,7 @@ def _priority_leads_workspace_data(response_age='1w_minus'):
     }
 
 
-def _followups_workspace_data(response_age='1w_minus'):
+def _followups_workspace_data(response_age='1w_minus', tenant=None):
     now = timezone.now()
     age_map_minus = {
         '1w_minus': timedelta(weeks=1),
@@ -262,7 +262,7 @@ def _followups_workspace_data(response_age='1w_minus'):
     if response_age != 'all' and response_age in age_map_minus:
         cutoff = now - age_map_minus[response_age]
 
-    base_active = Appointment.objects.real().filter(
+    base_active = Appointment.objects.for_tenant_or_seed(tenant).real().filter(
         is_lead_active=True,
         status='pending'
     )
@@ -271,7 +271,7 @@ def _followups_workspace_data(response_age='1w_minus'):
 
     stage_counts = {}
     for stage_code, stage_name in Appointment._meta.get_field('followup_stage').choices:
-        stage_qs = Appointment.objects.real().filter(
+        stage_qs = Appointment.objects.for_tenant_or_seed(tenant).real().filter(
             is_lead_active=True,
             followup_stage=stage_code
         )
@@ -281,7 +281,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         if count > 0:
             stage_counts[stage_name] = count
 
-    leads_needing_followup = Appointment.objects.real().filter(
+    leads_needing_followup = Appointment.objects.for_tenant_or_seed(tenant).real().filter(
         is_lead_active=True,
         status='pending'
     ).exclude(
@@ -295,7 +295,7 @@ def _followups_workspace_data(response_age='1w_minus'):
     # Use the shared "would actually send now" definition (same as the dashboard
     # + the cron), then apply the workspace's date-window filter so the list and
     # its count agree with reality rather than the looser should_send_followup_now.
-    due_leads = _due_followup_leads(now)
+    due_leads = _due_followup_leads(now, tenant=tenant)
     if cutoff:
         ready_for_followup = [
             l for l in due_leads
@@ -303,7 +303,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         ]
     else:
         ready_for_followup = due_leads
-    recent_responses = Appointment.objects.real().filter(
+    recent_responses = Appointment.objects.for_tenant_or_seed(tenant).real().filter(
         last_customer_response__isnull=False,
         is_lead_active=True
     )
@@ -311,7 +311,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         recent_responses = recent_responses.filter(last_customer_response__gte=cutoff)
     recent_responses = recent_responses.order_by('-last_customer_response')[:10]
 
-    recent_inactive = Appointment.objects.real().filter(
+    recent_inactive = Appointment.objects.for_tenant_or_seed(tenant).real().filter(
         is_lead_active=False,
         lead_marked_inactive_at__gte=now - timedelta(days=30)
     ).order_by('-lead_marked_inactive_at')[:10]
@@ -357,7 +357,7 @@ def _followups_workspace_data(response_age='1w_minus'):
         })
 
     email_leads = (
-        Appointment.objects.real()
+        Appointment.objects.for_tenant_or_seed(tenant).real()
         .exclude(customer_email__isnull=True).exclude(customer_email='')
         .filter(Q(delay_followup_due_at__isnull=False) | Q(scheduled_datetime__isnull=False))
         .order_by('delay_followup_due_at', 'scheduled_datetime')[:300]
@@ -380,7 +380,7 @@ def _followups_workspace_data(response_age='1w_minus'):
     # its lead so the template can link straight to the conversation.
     _epoch = datetime(1970, 1, 1, tzinfo=pytz.utc)
     sent_whatsapp, sent_email = [], []
-    for apt in Appointment.objects.real().order_by('-updated_at')[:200]:
+    for apt in Appointment.objects.for_tenant_or_seed(tenant).real().order_by('-updated_at')[:200]:
         for ev in apt.get_followup_log():
             ts = ev.get('timestamp')
             if cutoff and ts and ts < cutoff:
@@ -433,10 +433,10 @@ _SIDEBAR_AGE_MAP = {
 }
 
 
-def _appointments_sidebar_context(sidebar_filter='all', response_age='all'):
+def _appointments_sidebar_context(sidebar_filter='all', response_age='all', tenant=None):
     # Apply the same last-response date window the main list uses, so the sidebar
     # can be filtered by 7 days / 21 days / 30 days / All time.
-    base = Appointment.objects.real()
+    base = Appointment.objects.for_tenant_or_seed(tenant).real()
     if response_age in _SIDEBAR_AGE_MAP:
         cutoff = timezone.now() - _SIDEBAR_AGE_MAP[response_age]
         base = base.filter(last_customer_response__gte=cutoff)
@@ -474,7 +474,7 @@ class DashboardView(TemplateView):
         response_age = self.request.GET.get('response_age', '').strip()
         if not response_age:
             response_age = '1w_minus'
-        workspace = _dashboard_workspace_data(response_age)
+        workspace = _dashboard_workspace_data(response_age, tenant=getattr(self.request, 'tenant', None))
 
         context.update({
             'active_nav': 'dashboard',

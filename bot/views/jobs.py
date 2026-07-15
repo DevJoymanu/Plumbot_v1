@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 @staff_required
 def schedule_job(request, pk):
     """Schedule job appointment after site visit"""
-    site_visit = get_object_or_404(Appointment, pk=pk)
+    site_visit = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     # Check if this appointment can have a job scheduled
     if site_visit.appointment_type == 'job' or site_visit.status != 'confirmed':
@@ -158,7 +158,7 @@ def schedule_job(request, pk):
 @staff_required
 def update_job_status(request, pk):
     """Update job appointment status"""
-    job_appointment = get_object_or_404(Appointment, pk=pk)
+    job_appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     if job_appointment.appointment_type != 'job_appointment':
         return JsonResponse({'success': False, 'error': 'Not a job appointment'})
@@ -192,7 +192,7 @@ def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=
         job_end_time = job_datetime + timedelta(hours=duration_hours)
         
         # Check for overlapping job appointments
-        overlapping_jobs = Appointment.objects.filter(
+        overlapping_jobs = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).filter(
             appointment_type='job_appointment',
             job_status__in=['scheduled', 'in_progress'],
             job_scheduled_datetime__isnull=False,
@@ -317,7 +317,7 @@ def send_job_status_update_notification(job_appointment, new_status):
 @staff_required 
 def reschedule_job(request, pk):
     """Reschedule a job appointment"""
-    job_appointment = get_object_or_404(Appointment, pk=pk)
+    job_appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     if job_appointment.appointment_type != 'job_appointment':
         messages.error(request, 'This is not a job appointment')
@@ -403,7 +403,7 @@ Questions? Reply to this message.
 def job_appointments_list(request):
     """List all job appointments"""
     # Get all job appointments
-    job_appointments = Appointment.objects.real().filter(
+    job_appointments = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real().filter(
         appointment_type='job'
     ).order_by('-scheduled_datetime')
     

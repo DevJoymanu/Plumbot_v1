@@ -33,6 +33,7 @@ from django.utils import timezone
 
 from .models import (
     Appointment,
+    Job,
     Quotation,
     QuotationTemplate,
     ScheduledFollowup,
@@ -669,6 +670,60 @@ class TenantSwitcherTests(TestCase):
         self.client.login(username='legacystaff', password='pass12345')
         response = self.client.get(reverse('dashboard'))
         self.assertEqual(response.wsgi_request.tenant, self.homebase)
+
+
+class TenantViewScopingTests(TestCase):
+    """Phase 3.1: every staff view is tenant-scoped. An acme staff member
+    sees only acme's leads; homebase objects 404 (never 403 — §6.3)."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.hb_lead = make_lead(9801, tenant=self.homebase, customer_name='HB Lead')
+        self.acme_lead = make_lead(9802, tenant=self.acme, customer_name='Acme Lead')
+        user = get_user_model().objects.create_user(
+            username='acme-staff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=self.acme, role='staff')
+        self.client.login(username='acme-staff', password='pass12345')
+
+    def test_lists_show_only_own_tenant(self):
+        for name in ('dashboard', 'conversations_list', 'appointments_list'):
+            with self.subTest(page=name):
+                response = self.client.get(reverse(name))
+                self.assertEqual(response.status_code, 200)
+                body = response.content.decode()
+                self.assertNotIn('HB Lead', body, name)
+
+    def test_foreign_detail_views_404(self):
+        for name in ('appointment_detail', 'conversation_detail', 'update_appointment'):
+            with self.subTest(view=name):
+                response = self.client.get(reverse(name, args=[self.hb_lead.pk]))
+                self.assertEqual(response.status_code, 404)
+
+    def test_own_detail_still_renders(self):
+        response = self.client.get(reverse('appointment_detail', args=[self.acme_lead.pk]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_foreign_action_views_404(self):
+        response = self.client.post(reverse('confirm_appointment', args=[self.hb_lead.pk]))
+        self.assertEqual(response.status_code, 404)
+        response = self.client.post(reverse('cancel_appointment', args=[self.hb_lead.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_child_records_inherit_lead_tenant(self):
+        # Dashboard-created children belong to the lead's tenant, never the
+        # homebase default (Phase 3.1 _inherit_tenant).
+        quote = Quotation.objects.create(appointment=self.acme_lead)
+        self.assertEqual(quote.tenant_id, self.acme.pk)
+        followup = ScheduledFollowup.objects.create(
+            appointment=self.acme_lead, channel='whatsapp',
+            scheduled_for=timezone.now() + timedelta(days=1))
+        self.assertEqual(followup.tenant_id, self.acme.pk)
+        job = Job.objects.create(
+            site_visit=self.acme_lead, scheduled_datetime=timezone.now(),
+            description='x', status='scheduled')
+        self.assertEqual(job.tenant_id, self.acme.pk)
 
 
 class TenantWebhookRoutingTests(TestCase):

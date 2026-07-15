@@ -82,7 +82,7 @@ class CreateQuotationView(CreateView):
         # Get appointment if pk is provided
         appointment = None
         if 'pk' in self.kwargs:
-            appointment = get_object_or_404(Appointment, pk=self.kwargs['pk'])
+            appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)), pk=self.kwargs['pk'])
             context['appointment'] = appointment
         
         # Add formset
@@ -99,7 +99,7 @@ class CreateQuotationView(CreateView):
         
         # Get appointment if pk provided
         if 'pk' in self.kwargs:
-            appointment = get_object_or_404(Appointment, pk=self.kwargs['pk'])
+            appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)), pk=self.kwargs['pk'])
             form.instance.appointment = appointment
         
         if formset.is_valid():
@@ -143,7 +143,7 @@ def create_quotation_api(request):
 
         logger.debug(f"🔍 Looking up Appointment with ID: {appointment_id}")
         try:
-            appointment = Appointment.objects.get(id=appointment_id)
+            appointment = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).get(id=appointment_id)
             logger.info(f"✅ Found Appointment: {appointment}")
         except Appointment.DoesNotExist:
             logger.error(f"❌ Appointment with ID {appointment_id} not found")
@@ -239,6 +239,11 @@ class ViewQuotationView(DetailView):
     template_name = 'bot/pages/view_quotation.html'
     context_object_name = 'quotation'
 
+
+    def get_queryset(self):
+        _t = getattr(self.request, 'tenant', None)
+        return Quotation.objects.filter(appointment__tenant=_t) if _t else Quotation.objects.all()
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['logo_url'] = _safe_logo_url()
@@ -259,7 +264,7 @@ class QuotationsListView(ListView):
 @require_http_methods(["GET"])
 def quotation_detail_api(request, pk):
     """Return quotation payload used by edit_quotation.html."""
-    quotation = get_object_or_404(Quotation, pk=pk)
+    quotation = get_object_or_404(Quotation.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else Quotation.objects, pk=pk)
     appointment = quotation.appointment
 
     items = [
@@ -305,6 +310,16 @@ class EditQuotationView(UpdateView):
     form_class = QuotationForm
     template_name = 'bot/pages/edit_quotation.html'
     
+
+
+    def get_queryset(self):
+        _t = getattr(self.request, 'tenant', None)
+        return Quotation.objects.filter(appointment__tenant=_t) if _t else Quotation.objects.all()
+
+    def get_queryset(self):
+        _t = getattr(self.request, 'tenant', None)
+        return Quotation.objects.filter(appointment__tenant=_t) if _t else Quotation.objects.all()
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
@@ -384,7 +399,7 @@ class EditQuotationView(UpdateView):
 @staff_required
 @require_http_methods(["POST"])
 def duplicate_quotation(request, pk):
-    quotation = get_object_or_404(Quotation, pk=pk)
+    quotation = get_object_or_404(Quotation.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else Quotation.objects, pk=pk)
     new_quote = Quotation.objects.create(
         appointment=quotation.appointment,
         plumber=quotation.plumber,
@@ -417,7 +432,7 @@ def duplicate_quotation(request, pk):
 @staff_required
 @require_http_methods(["POST"])
 def delete_quotation(request, pk):
-    quotation = get_object_or_404(Quotation, pk=pk)
+    quotation = get_object_or_404(Quotation.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else Quotation.objects, pk=pk)
     appointment_id = quotation.appointment_id
     quotation_name = quotation.get_display_name()
     quotation.delete()
@@ -437,7 +452,7 @@ def delete_quotation(request, pk):
 
 @staff_required
 def send_quotation(request, pk):
-    quotation = get_object_or_404(Quotation, pk=pk)
+    quotation = get_object_or_404(Quotation.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else Quotation.objects, pk=pk)
     temp_doc_path = None
     content_type = (request.content_type or '').lower()
     wants_json = (

@@ -61,7 +61,7 @@ def followup_dashboard(request):
     response_age = request.GET.get('response_age', '').strip()
     if not response_age:
         response_age = '1w_minus'
-    context = _followups_workspace_data(response_age)
+    context = _followups_workspace_data(response_age, tenant=getattr(request, 'tenant', None))
     context['active_nav'] = 'followups'
     
     return render(request, 'bot/pages/followup_dashboard.html', context)
@@ -70,7 +70,7 @@ def followup_dashboard(request):
 @staff_required
 def mark_lead_inactive(request, pk):
     """Manually mark a lead as inactive"""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     if request.method == 'POST':
         reason = request.POST.get('reason', 'manual')
@@ -87,7 +87,7 @@ def mark_lead_inactive(request, pk):
 @staff_required
 def reactivate_lead(request, pk):
     """Reactivate an inactive lead"""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     if request.method == 'POST':
         appointment.is_lead_active = True
@@ -106,7 +106,7 @@ def reactivate_lead(request, pk):
 @staff_required  
 def test_followup_message(request, pk):
     """Send a test follow-up message for a specific lead"""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     if request.method == 'POST':
         stage = request.POST.get('stage', 'day_1')
@@ -195,12 +195,12 @@ def test_followup_email(request):
 
     if apt_pk:
         try:
-            apt = Appointment.objects.get(pk=int(apt_pk))
+            apt = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).get(pk=int(apt_pk))
         except (ValueError, Appointment.DoesNotExist):
             return JsonResponse({"error": f"appointment {apt_pk} not found"}, status=404)
     else:
         apt = (
-            Appointment.objects
+            Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None))
             .filter(customer_email__isnull=False)
             .exclude(customer_email="")
             .order_by("-id")
@@ -309,7 +309,7 @@ def followup_test_suite(request):
         'email_tests': [(k, label) for k, (label, _fn) in EMAIL_TESTS.items()],
         'followup_questions': FOLLOWUP_QUESTIONS,
         'default_email': getattr(request.user, 'email', '') or '',
-        'recent_appointments': Appointment.objects.order_by('-id')[:25],
+        'recent_appointments': Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).order_by('-id')[:25],
         'results': None,
         # echo back form values so the page keeps state after a POST
         'form': request.POST if request.method == 'POST' else {},
@@ -325,10 +325,10 @@ def followup_test_suite(request):
         """Return (appointment, error_message)."""
         if apt_pk:
             try:
-                return Appointment.objects.get(pk=int(apt_pk)), None
+                return Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).get(pk=int(apt_pk)), None
             except (ValueError, Appointment.DoesNotExist):
                 return None, f'Appointment {apt_pk} not found.'
-        apt = Appointment.objects.order_by('-id').first()
+        apt = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).order_by('-id').first()
         if not apt:
             return None, 'No appointments exist to use as test context.'
         return apt, None
@@ -582,7 +582,7 @@ def edit_followup_log(request, pk):
     prefix is preserved so channel/kind detection (get_followup_log) keeps
     working, and an ``edited_at`` stamp is added for transparency.
     """
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
 
     try:
         index = int(request.POST.get('index', ''))
@@ -634,7 +634,7 @@ def schedule_followup(request, pk):
     """Queue a WhatsApp or email follow-up to be sent at a chosen date/time."""
     from ..models import ScheduledFollowup
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     channel = (request.POST.get('channel') or '').strip()
     raw = (request.POST.get('scheduled_for') or '').strip()
     message = (request.POST.get('message') or '').strip()
@@ -682,7 +682,7 @@ def edit_scheduled_followup(request, sf_id):
     """Reschedule / reword a queued follow-up (pending or failed only)."""
     from ..models import ScheduledFollowup
 
-    sf = get_object_or_404(ScheduledFollowup, pk=sf_id)
+    sf = get_object_or_404(ScheduledFollowup.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else ScheduledFollowup.objects, pk=sf_id)
     if sf.status not in ('pending', 'failed'):
         messages.error(request, 'Only pending follow-ups can be edited.')
         return _followup_redirect(request, sf.appointment_id)
@@ -715,7 +715,7 @@ def cancel_scheduled_followup(request, sf_id):
     """Cancel a queued follow-up so it is never sent."""
     from ..models import ScheduledFollowup
 
-    sf = get_object_or_404(ScheduledFollowup, pk=sf_id)
+    sf = get_object_or_404(ScheduledFollowup.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else ScheduledFollowup.objects, pk=sf_id)
     sf.status = 'cancelled'
     sf.save(update_fields=['status'])
     messages.success(request, 'Scheduled follow-up cancelled.')
@@ -730,7 +730,7 @@ def schedule_reminder(request, pk):
     """Queue a reminder to the customer or the plumber/team at a chosen date/time."""
     from ..models import ScheduledReminder
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     target  = (request.POST.get('target') or '').strip()
     channel = (request.POST.get('channel') or '').strip()
     raw     = (request.POST.get('scheduled_for') or '').strip()
@@ -784,7 +784,7 @@ def edit_scheduled_reminder(request, r_id):
     """Reschedule / reword a queued reminder (pending or failed only)."""
     from ..models import ScheduledReminder
 
-    r = get_object_or_404(ScheduledReminder, pk=r_id)
+    r = get_object_or_404(ScheduledReminder.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else ScheduledReminder.objects, pk=r_id)
     if r.status not in ('pending', 'failed'):
         messages.error(request, 'Only pending reminders can be edited.')
         return _followup_redirect(request, r.appointment_id)
@@ -816,7 +816,7 @@ def cancel_scheduled_reminder(request, r_id):
     """Cancel a queued reminder so it is never sent."""
     from ..models import ScheduledReminder
 
-    r = get_object_or_404(ScheduledReminder, pk=r_id)
+    r = get_object_or_404(ScheduledReminder.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else ScheduledReminder.objects, pk=r_id)
     r.status = 'cancelled'
     r.save(update_fields=['status'])
     messages.success(request, 'Scheduled reminder cancelled.')
@@ -830,7 +830,7 @@ def update_lead_email(request, pk):
     from django.core.validators import validate_email
     from django.core.exceptions import ValidationError
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     email = (request.POST.get('customer_email') or '').strip()
 
     if email:
@@ -868,7 +868,7 @@ def lead_email_preview(request, pk):
     """Render a catalogue email for THIS lead, for on-screen preview."""
     from ..email_catalog import EMAIL_CATALOG
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     key = (request.GET.get('key') or '').strip()
     entry = EMAIL_CATALOG.get(key)
     if not entry:
@@ -896,7 +896,7 @@ def lead_email_edit_data(request, pk):
     """Return {subject, text} for a catalogue email so staff can edit a copy."""
     from ..email_catalog import EMAIL_CATALOG
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     key = (request.GET.get('key') or '').strip()
     entry = EMAIL_CATALOG.get(key)
     if not entry:
@@ -919,7 +919,7 @@ def lead_send_catalog_emails(request, pk):
     """Send one or more catalogue emails (checkbox selection) to this lead now."""
     from ..email_catalog import EMAIL_CATALOG
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     keys = request.POST.getlist('email_keys')
 
     if not appointment.customer_email:
@@ -965,7 +965,7 @@ def lead_schedule_catalog_emails(request, pk):
     from ..email_catalog import EMAIL_CATALOG
     from ..models import ScheduledFollowup
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     keys = [k for k in request.POST.getlist('email_keys') if k in EMAIL_CATALOG]
 
     if not appointment.customer_email:
@@ -1016,7 +1016,7 @@ def lead_send_email_now(request, pk):
     """Send an edited (custom) email to this lead immediately."""
     from ..customer_emails import _wrap, _send
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     subject = (request.POST.get('subject') or '').strip()
     message = (request.POST.get('message') or '').strip()
 
@@ -1050,7 +1050,7 @@ def lead_send_email_now(request, pk):
 @require_POST
 def update_followup_schedule(request, pk):
     """Edit the upcoming (scheduled) follow-up: when it fires and its status."""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
 
     next_raw = (request.POST.get('next_follow_up_at') or '').strip()
     if next_raw:
@@ -1080,7 +1080,7 @@ def update_followup_schedule(request, pk):
 @staff_required
 @require_POST
 def pause_chatbot(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     appointment.pause_chatbot()
     # Also write delay signal so automated follow-ups stop immediately
     notes = appointment.internal_notes or ''
@@ -1095,7 +1095,7 @@ def pause_chatbot(request, pk):
 @staff_required
 @require_POST
 def resume_chatbot(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     appointment.resume_chatbot()
     # Clear delay signal so automated follow-ups can resume
     notes = appointment.internal_notes or ''
@@ -1115,7 +1115,7 @@ def resume_chatbot(request, pk):
 @require_POST
 def pause_auto_followup(request, pk):
     """Pause automatic follow-ups for a specific lead"""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     pause_duration = request.POST.get('pause_duration')
     
@@ -1155,7 +1155,7 @@ def pause_auto_followup(request, pk):
 @require_POST
 def resume_auto_followup(request, pk):
     """Resume automatic follow-ups for a specific lead"""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     appointment.manual_followup_paused = False
     appointment.manual_followup_paused_until = None
@@ -1173,7 +1173,7 @@ def send_followup(request, pk):
     from django.http import JsonResponse as _JsonResponse
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
 
     if request.method != 'POST':
         return _followup_redirect(request, appointment.pk)
@@ -1217,7 +1217,7 @@ def send_followup(request, pk):
 @staff_required
 @require_POST  
 def send_portfolio_to_lead(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     clean_phone = clean_phone_number(appointment.phone_number)
     sent = send_previous_work_photos(clean_phone, appointment)
     if sent:
@@ -1230,7 +1230,7 @@ def send_portfolio_to_lead(request, pk):
 @staff_required
 @require_POST
 def send_image_to_lead(request, pk):
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     image_url = request.POST.get('image_url', '').strip()
     caption = request.POST.get('caption', '').strip()
 
@@ -1263,7 +1263,7 @@ def send_image_to_lead(request, pk):
 @require_POST
 def send_pdf_to_lead(request, pk):
     """Send a PDF picked from the staff member's device to the lead via WhatsApp."""
-    appointment = get_object_or_404(Appointment, pk=pk)
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     uploaded = request.FILES.get('document')
     caption = request.POST.get('caption', '').strip()
 

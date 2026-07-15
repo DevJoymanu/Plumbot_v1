@@ -44,8 +44,9 @@ def plumbot_shell(request):
         # that haven't booked; follow-ups = leads actually DUE to be contacted now
         # (mirrors the send_followups cron), not every follow_up_status='pending'.
         from .views.dashboard import priority_lead_count, _due_followup_leads
-        counts["hot_lead_count"] = priority_lead_count()
-        counts["pending_followup_count"] = len(_due_followup_leads())
+        _tenant = getattr(request, "tenant", None)
+        counts["hot_lead_count"] = priority_lead_count(_tenant)
+        counts["pending_followup_count"] = len(_due_followup_leads(tenant=_tenant))
     except (OperationalError, ProgrammingError):
         pass
 

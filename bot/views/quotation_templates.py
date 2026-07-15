@@ -64,7 +64,7 @@ def quotation_templates_api(request):
         active_only = request.GET.get('active_only', 'true').lower() == 'true'
         
         # Build queryset
-        templates = QuotationTemplate.objects.all()
+        templates = QuotationTemplate.objects.filter(tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else QuotationTemplate.objects.all()
         
         if active_only:
             templates = templates.filter(is_active=True)
@@ -169,7 +169,7 @@ def create_standalone_quotation_api(request):
  
     if appointment_id:
         try:
-            appointment = Appointment.objects.get(id=int(appointment_id))
+            appointment = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).get(id=int(appointment_id))
         except (Appointment.DoesNotExist, ValueError, TypeError):
             return JsonResponse(
                 {'success': False, 'error': f'Appointment {appointment_id} not found'},
@@ -181,6 +181,7 @@ def create_standalone_quotation_api(request):
         import uuid
         stub_phone = f"quotation_only_{uuid.uuid4().hex[:10]}"
         appointment = Appointment.objects.create(
+            tenant=getattr(request, 'tenant', None),
             phone_number=stub_phone,
             customer_name=client_name or None,
             customer_email=client_email or None,
@@ -272,7 +273,7 @@ def appointment_search_api(request):
         return JsonResponse({'appointments': []})
  
     qs = (
-        Appointment.objects.real()
+        Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real()
         .filter(
             Q(customer_name__icontains=query)  |
             Q(phone_number__icontains=query)   |
@@ -308,7 +309,7 @@ class QuotationTemplatesListView(ListView):
     paginate_by = 20
     
     def get_queryset(self):
-        queryset = QuotationTemplate.objects.all()
+        queryset = QuotationTemplate.objects.filter(tenant=getattr(self.request, 'tenant', None)) if getattr(self.request, 'tenant', None) else QuotationTemplate.objects.all()
         
         # Filter by project type
         project_type = self.request.GET.get('project_type')
@@ -334,8 +335,8 @@ class QuotationTemplatesListView(ListView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['total_templates'] = QuotationTemplate.objects.count()
-        context['active_templates'] = QuotationTemplate.objects.filter(is_active=True).count()
+        context['total_templates'] = QuotationTemplate.objects.filter(tenant=getattr(self.request, 'tenant', None)).count()
+        context['active_templates'] = QuotationTemplate.objects.filter(tenant=getattr(self.request, 'tenant', None), is_active=True).count()
         return context
 
 
@@ -355,6 +356,10 @@ class CreateQuotationTemplateView(CreateView):
         return context
     
     def form_valid(self, form):
+        # New templates belong to the creating staff's tenant (Phase 3.1).
+        _t = getattr(self.request, 'tenant', None)
+        if _t is not None:
+            form.instance.tenant = _t
         context = self.get_context_data()
         formset = context['formset']
         
@@ -381,6 +386,11 @@ class EditQuotationTemplateView(UpdateView):
     form_class = QuotationTemplateForm
     template_name = 'bot/pages/edit_quotation_template.html'
     
+
+    def get_queryset(self):
+        _t = getattr(self.request, 'tenant', None)
+        return QuotationTemplate.objects.filter(tenant=_t) if _t else QuotationTemplate.objects.all()
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
@@ -414,6 +424,11 @@ class QuotationTemplateDetailView(DetailView):
     template_name = 'bot/pages/quotation_template_detail.html'
     context_object_name = 'template'
     
+
+    def get_queryset(self):
+        _t = getattr(self.request, 'tenant', None)
+        return QuotationTemplate.objects.filter(tenant=_t) if _t else QuotationTemplate.objects.all()
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['items'] = self.object.items.all()

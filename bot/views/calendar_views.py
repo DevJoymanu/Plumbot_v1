@@ -67,7 +67,7 @@ def appointment_data(request):
     """
     service_filter = request.GET.get('service')
     
-    appointments = Appointment.objects.real()
+    appointments = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real()
     if service_filter and service_filter != "all":
         appointments = appointments.filter(project_type__icontains=service_filter)
 
