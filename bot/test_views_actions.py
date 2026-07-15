@@ -723,3 +723,48 @@ class TenantWebhookRoutingTests(TestCase):
     def test_get_or_create_lead_defaults_to_homebase(self):
         lead, _ = Appointment.objects.get_or_create_lead('whatsapp:+15550008888')
         self.assertEqual(lead.tenant_id, self.homebase.pk)
+
+
+class TenantCredentialTests(TestCase):
+    """Phase 1.2: channel tokens encrypted at rest; outbound client per tenant."""
+
+    def setUp(self):
+        from .models import TenantWhatsAppChannel
+        from .whatsapp_cloud_api import invalidate_client_cache
+        invalidate_client_cache()
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.channel = TenantWhatsAppChannel.objects.create(
+            tenant=self.acme, phone_number_id='333000333',
+            access_token='plain-secret-token', verify_token='vt',
+        )
+
+    def test_token_encrypted_at_rest_and_decryptable(self):
+        self.channel.refresh_from_db()
+        self.assertTrue(self.channel.access_token.startswith('fernet:'))
+        self.assertNotIn('plain-secret-token', self.channel.access_token)
+        self.assertEqual(self.channel.decrypted_access_token(), 'plain-secret-token')
+
+    def test_encrypt_is_idempotent_and_legacy_plaintext_passes_through(self):
+        from .services.secrets import decrypt_secret, encrypt_secret
+        once = encrypt_secret('abc')
+        self.assertEqual(encrypt_secret(once), once)
+        self.assertEqual(decrypt_secret('legacy-plaintext'), 'legacy-plaintext')
+        self.assertEqual(decrypt_secret(''), '')
+
+    def test_client_for_tenant_uses_channel_credentials(self):
+        from .whatsapp_cloud_api import get_client_for_tenant
+        client = get_client_for_tenant(self.acme)
+        self.assertEqual(client.phone_number_id, '333000333')
+        self.assertEqual(client.access_token, 'plain-secret-token')
+
+    def test_client_cache_returns_same_instance(self):
+        from .whatsapp_cloud_api import get_client_for_tenant
+        self.assertIs(get_client_for_tenant(self.acme), get_client_for_tenant(self.acme))
+
+    def test_no_channel_falls_back_to_env_singleton(self):
+        from .whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
+        bare = Tenant.objects.create(name='Bare Pipes', slug='bare')
+        self.assertIs(get_client_for_tenant(bare), whatsapp_api)
+        self.assertIs(get_client_for_tenant(None), whatsapp_api)

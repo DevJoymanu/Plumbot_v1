@@ -111,13 +111,25 @@ class WhatsAppCloudAPI:
     """
     WhatsApp Cloud API client.
     Supports text, images, documents, video, audio.
+
+    Phase 1 (docs/MULTI_TENANT_PLAN.md §3.2): construct with a
+    TenantWhatsAppChannel to send as that tenant's number; with no channel it
+    reads the env vars — the Homebase seed values and the fallback for every
+    pre-tenancy call site. Use get_client_for_tenant() rather than
+    constructing directly, so clients are cached per channel.
     """
 
-    def __init__(self):
-        self.access_token = os.environ.get('WHATSAPP_ACCESS_TOKEN')
-        self.phone_number_id = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
-        self.business_account_id = os.environ.get('WHATSAPP_BUSINESS_ACCOUNT_ID')
-        self.verify_token = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'your_verify_token_here')
+    def __init__(self, channel=None):
+        if channel is not None:
+            self.access_token = channel.decrypted_access_token() or os.environ.get('WHATSAPP_ACCESS_TOKEN')
+            self.phone_number_id = channel.phone_number_id
+            self.business_account_id = channel.business_account_id or os.environ.get('WHATSAPP_BUSINESS_ACCOUNT_ID')
+            self.verify_token = channel.verify_token or os.environ.get('WHATSAPP_VERIFY_TOKEN', 'your_verify_token_here')
+        else:
+            self.access_token = os.environ.get('WHATSAPP_ACCESS_TOKEN')
+            self.phone_number_id = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
+            self.business_account_id = os.environ.get('WHATSAPP_BUSINESS_ACCOUNT_ID')
+            self.verify_token = os.environ.get('WHATSAPP_VERIFY_TOKEN', 'your_verify_token_here')
         self.api_version = 'v21.0'
         self.base_url = f'https://graph.facebook.com/{self.api_version}'
 
@@ -486,4 +498,44 @@ class WhatsAppCloudAPI:
 
 
 # ─── Singleton ───────────────────────────────────────────────────────────────
+# Env-credential client: the Homebase seed values and the fallback for every
+# pre-tenancy call site. Tenant-aware code should use get_client_for_tenant().
 whatsapp_api = WhatsAppCloudAPI()
+
+
+# ─── Per-tenant client cache (Phase 1) ───────────────────────────────────────
+import threading as _threading
+
+_client_cache: dict = {}          # channel.pk -> WhatsAppCloudAPI
+_client_cache_lock = _threading.Lock()
+
+
+def get_client_for_tenant(tenant):
+    """The tenant's outbound client, built from its active TenantWhatsAppChannel
+    and cached per channel. Falls back to the env-credential singleton when
+    tenant is None or has no active channel (correct for Homebase, whose seed
+    channel mirrors the env). After editing a channel's credentials call
+    invalidate_client_cache() (or redeploy) — clients are cached for the
+    process lifetime."""
+    if tenant is None:
+        return whatsapp_api
+    from .models import TenantWhatsAppChannel
+    channel = (
+        TenantWhatsAppChannel.objects
+        .filter(tenant=tenant, is_active=True)
+        .order_by('pk')
+        .first()
+    )
+    if channel is None:
+        return whatsapp_api
+    with _client_cache_lock:
+        client = _client_cache.get(channel.pk)
+        if client is None:
+            client = WhatsAppCloudAPI(channel)
+            _client_cache[channel.pk] = client
+        return client
+
+
+def invalidate_client_cache():
+    with _client_cache_lock:
+        _client_cache.clear()

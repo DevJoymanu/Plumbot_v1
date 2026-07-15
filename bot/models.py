@@ -161,11 +161,23 @@ class TenantWhatsAppChannel(models.Model):
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='whatsapp_channels')
     phone_number_id = models.CharField(max_length=64, unique=True)
     business_account_id = models.CharField(max_length=64, blank=True, default='')
-    access_token = models.TextField(blank=True, default='')  # encrypted at rest from Phase 1
+    # Fernet-encrypted at rest (bot/services/secrets.py); save() encrypts,
+    # decrypted_access_token() decrypts. Legacy plaintext rows pass through
+    # and get encrypted on their next save. NEVER log or display this value.
+    access_token = models.TextField(blank=True, default='')
     verify_token = models.CharField(max_length=128, blank=True, default='')
     display_number = models.CharField(max_length=32, blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        from .services.secrets import encrypt_secret
+        self.access_token = encrypt_secret(self.access_token)
+        super().save(*args, **kwargs)
+
+    def decrypted_access_token(self) -> str:
+        from .services.secrets import decrypt_secret
+        return decrypt_secret(self.access_token)
 
     def __str__(self):
         return f"{self.tenant.slug} · {self.display_number or self.phone_number_id}"
