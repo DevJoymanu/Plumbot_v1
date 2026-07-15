@@ -37,6 +37,10 @@ from .models import (
     QuotationTemplate,
     ScheduledFollowup,
     ScheduledReminder,
+    Tenant,
+    TenantMembership,
+    TenantProfile,
+    get_default_tenant_id,
 )
 
 
@@ -531,3 +535,86 @@ class QuotationActionTests(StaffClientTestCase):
                     args=[self.template.pk, self.lead.pk]))
         self.assertLess(response.status_code, 500)
         self.assertGreater(self.lead.quotations.count(), before)
+
+
+# ======================================================================
+# Tenant isolation (Phase 0 — docs/MULTI_TENANT_PLAN.md §6, §9)
+# Two tenants in-memory; assert for_tenant() never leaks a row across,
+# and that untagged writes resolve to the homebase seed when it exists.
+# ======================================================================
+
+class TenantIsolationTests(TestCase):
+    """The non-negotiable isolation rules, pinned before any view is scoped."""
+
+    def setUp(self):
+        self.homebase = Tenant.objects.create(name='Homebase Plumbers', slug='homebase')
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.hb_lead = make_lead(9001, tenant=self.homebase)
+        self.hb_lead2 = make_lead(9002, tenant=self.homebase)
+        self.acme_lead = make_lead(9003, tenant=self.acme)
+
+    def test_for_tenant_returns_only_own_rows(self):
+        hb = Appointment.objects.for_tenant(self.homebase)
+        acme = Appointment.objects.for_tenant(self.acme)
+        self.assertEqual(set(hb), {self.hb_lead, self.hb_lead2})
+        self.assertEqual(set(acme), {self.acme_lead})
+
+    def test_for_tenant_zero_cross_leakage(self):
+        self.assertFalse(
+            Appointment.objects.for_tenant(self.acme).filter(pk=self.hb_lead.pk).exists())
+        self.assertFalse(
+            Appointment.objects.for_tenant(self.homebase).filter(pk=self.acme_lead.pk).exists())
+
+    def test_for_tenant_composes_with_existing_scopes(self):
+        # .real() / .test_lines() must stack with tenant scoping
+        test_line = Appointment.objects.create(
+            phone_number='whatsapp:+9990001111', tenant=self.acme)
+        self.assertEqual(
+            set(Appointment.objects.for_tenant(self.acme).real()), {self.acme_lead})
+        self.assertEqual(
+            set(Appointment.objects.for_tenant(self.acme).test_lines()), {test_line})
+
+    def test_untagged_write_defaults_to_homebase_seed(self):
+        # Pre-Phase-1 code paths create rows without passing a tenant; the FK
+        # default must resolve them to the homebase seed, never leave orphans.
+        lead = make_lead(9004)
+        self.assertEqual(lead.tenant_id, self.homebase.pk)
+
+    def test_default_resolver_is_none_without_seed(self):
+        Appointment.objects.all().delete()
+        Tenant.objects.all().delete()
+        self.assertIsNone(get_default_tenant_id())
+        lead = make_lead(9005)  # nullable FK: still creatable during transition
+        self.assertIsNone(lead.tenant_id)
+
+    def test_same_customer_two_tenants_is_two_leads(self):
+        # Decision #1: phone uniqueness is per-tenant, not global.
+        phone = 'whatsapp:+15550009900'
+        a = Appointment.objects.create(phone_number=phone, tenant=self.homebase)
+        b = Appointment.objects.create(phone_number=phone, tenant=self.acme)
+        self.assertNotEqual(a.pk, b.pk)
+        self.assertEqual(Appointment.objects.for_tenant(self.homebase).filter(
+            phone_number=phone).count(), 1)
+        self.assertEqual(Appointment.objects.for_tenant(self.acme).filter(
+            phone_number=phone).count(), 1)
+
+    def test_tenant_delete_is_protected(self):
+        # PROTECT on purpose: deleting a tenant must never cascade leads away.
+        from django.db.models import ProtectedError
+        with self.assertRaises(ProtectedError):
+            self.acme.delete()
+
+    def test_membership_roles_and_uniqueness(self):
+        user = get_user_model().objects.create_user(username='owner1', password='x')
+        TenantMembership.objects.create(user=user, tenant=self.acme, role='owner')
+        from django.db import IntegrityError, transaction
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                TenantMembership.objects.create(user=user, tenant=self.acme, role='staff')
+
+    def test_profile_is_fully_optional(self):
+        # Nullability rule: a bare profile must be creatable with zero facts.
+        profile = TenantProfile.objects.create(tenant=self.acme)
+        self.assertEqual(profile.plumber_name, '')
+        self.assertFalse(profile.licensed_claim_enabled)
+        self.assertEqual(profile.excluded_areas, [])

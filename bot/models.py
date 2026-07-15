@@ -10,6 +10,13 @@ from decimal import Decimal, InvalidOperation
 
 
 class LeadQuerySet(models.QuerySet):
+    def for_tenant(self, tenant):
+        """Rows owned by `tenant` (a Tenant instance or pk). THE tenant-scoping
+        entry point — views and crons must never query across tenants without
+        it (docs/MULTI_TENANT_PLAN.md §6). Accepts None only during the
+        Phase-0 transition while legacy rows are being backfilled."""
+        return self.filter(tenant=tenant)
+
     def real(self):
         """Exclude console/scenario test lines (999-prefixed — the ITU-reserved
         range used by the test console and Scenario Lab; see bot/test_console).
@@ -73,6 +80,125 @@ class CallOutcome(models.TextChoices):
     BOOKED = 'booked', 'Booked'
     FOLLOW_UP_LATER = 'follow_up_later', 'Follow Up Later'
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Multi-tenancy (Phase 0 — docs/MULTI_TENANT_PLAN.md)
+# Row-level tenancy: every business table carries a nullable `tenant` FK that
+# defaults to the seeded `homebase` tenant, so all existing code paths keep
+# working unchanged while rows acquire an owner. The FK goes non-null in a
+# later Phase-0 deploy once the production backfill is verified.
+# ═══════════════════════════════════════════════════════════════════════════
+
+class Tenant(models.Model):
+    """A plumbing company on the platform. Homebase Plumbers is tenant #1,
+    seeded by migration 0041 from today's hardcoded values."""
+    name = models.CharField(max_length=120, unique=True)
+    slug = models.SlugField(max_length=60, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+def get_default_tenant_id():
+    """Owner for rows created by code paths that don't yet pass a tenant
+    (everything before Phase 1 threads it through the webhook). Resolves the
+    `homebase` seed tenant per call — a tiny indexed lookup, deliberately
+    uncached: a process-level cache goes stale across test-DB rollbacks and
+    would pin a deleted pk (same stale-state class as the shared-Appointment
+    -instance rule). Returns None when the seed doesn't exist yet (fresh test
+    DBs, mid-migration) — the FK is nullable so that's safe."""
+    try:
+        tenant = Tenant.objects.filter(slug='homebase').only('pk').first()
+    except Exception:
+        return None
+    return tenant.pk if tenant is not None else None
+
+
+def _tenant_fk(**overrides):
+    """The standard tenant column (docs/MULTI_TENANT_PLAN.md §3.1). PROTECT on
+    purpose: deleting a tenant must never cascade business data away —
+    off-boarding is an explicit archive-then-delete flow (Phase 6)."""
+    options = dict(
+        to='bot.Tenant',
+        null=True,
+        blank=True,
+        default=get_default_tenant_id,
+        on_delete=models.PROTECT,
+    )
+    options.update(overrides)
+    to = options.pop('to')
+    return models.ForeignKey(to, **options)
+
+
+class TenantWhatsAppChannel(models.Model):
+    """A tenant's WhatsApp number. `phone_number_id` is the webhook routing
+    key (Meta sends it on every inbound event). Numbers are registered under
+    the platform's Business Manager (plan §13); the access token may be the
+    shared platform token or per-channel."""
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='whatsapp_channels')
+    phone_number_id = models.CharField(max_length=64, unique=True)
+    business_account_id = models.CharField(max_length=64, blank=True, default='')
+    access_token = models.TextField(blank=True, default='')  # encrypted at rest from Phase 1
+    verify_token = models.CharField(max_length=128, blank=True, default='')
+    display_number = models.CharField(max_length=32, blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.tenant.slug} · {self.display_number or self.phone_number_id}"
+
+
+class TenantProfile(models.Model):
+    """Everything the code currently hardcodes for Homebase (plan §2.2),
+    per tenant. Every field is optional (nullability rule,
+    docs/CLIENT_ONBOARDING_CHECKLIST.md): business facts have NO fallback —
+    absent means the bot gracefully omits the topic, never borrows another
+    tenant's value. Generic copy falls back to platform defaults."""
+    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name='profile')
+    # identity
+    plumber_name = models.CharField(max_length=100, blank=True, default='')
+    plumber_contact = models.CharField(max_length=32, blank=True, default='')
+    business_whatsapp = models.CharField(max_length=32, blank=True, default='')
+    location_line = models.CharField(max_length=255, blank=True, default='')
+    business_hours = models.JSONField(null=True, blank=True)   # {"days": "Sun–Fri", "open": "08:00", "close": "18:00", "closed": ["sat"]}
+    timezone_name = models.CharField(max_length=64, blank=True, default='Africa/Johannesburg')
+    excluded_areas = models.JSONField(default=list, blank=True)
+    # sales
+    currency = models.CharField(max_length=8, blank=True, default='US$')
+    packages = models.JSONField(default=list, blank=True)
+    sales_profile_md = models.TextField(blank=True, default='')
+    faq_facts = models.JSONField(default=dict, blank=True)
+    scripts = models.JSONField(default=dict, blank=True)
+    # the "licensed and registered" claim is gated on certification docs on file
+    licensed_claim_enabled = models.BooleanField(default=False)
+    # email
+    email_from_name = models.CharField(max_length=100, blank=True, default='')
+    email_sender = models.EmailField(blank=True, default='')
+
+    def __str__(self):
+        return f"Profile · {self.tenant.slug}"
+
+
+class TenantMembership(models.Model):
+    """User → tenant link with a role. Platform admins are superusers (no
+    membership needed — they get the tenant switcher)."""
+    ROLE_CHOICES = [
+        ('owner', 'Owner'),
+        ('staff', 'Staff'),
+    ]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tenant_memberships')
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='memberships')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='staff')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('user', 'tenant')]
+
+    def __str__(self):
+        return f"{self.user.username} @ {self.tenant.slug} ({self.role})"
 
 
 class Appointment(models.Model):
@@ -148,9 +274,14 @@ class Appointment(models.Model):
     ]
 
     # Basic Information
+    tenant = _tenant_fk(related_name='appointments')
+
     objects = LeadQuerySet.as_manager()
 
-    phone_number = models.CharField(max_length=50, unique=True, help_text="Customer's WhatsApp number")
+    # Unique PER TENANT, not globally (plan §6.4): the same customer may talk
+    # to two companies on the platform. Enforced by the UniqueConstraint in
+    # Meta; NULL-tenant rows exist only mid-Phase-0 (backfill assigns homebase).
+    phone_number = models.CharField(max_length=50, help_text="Customer's WhatsApp number")
     customer_name = models.CharField(max_length=100, blank=True, null=True, help_text="Customer's full name")
     customer_email = models.EmailField(blank=True, null=True, help_text="Customer's email address")
     has_plan = models.BooleanField(
@@ -342,6 +473,9 @@ class Appointment(models.Model):
 
     
     class Meta:
+        # NOTE: this Meta is DEAD — a second `class Meta` further down this
+        # (very long) class body overrides it at class creation. Effective
+        # options live there; don't add anything here.
         ordering = ['-created_at']
         verbose_name = "Appointment"
         verbose_name_plural = "Appointments"
@@ -1767,10 +1901,20 @@ class Appointment(models.Model):
         return False
     
     class Meta:
+        # The EFFECTIVE Meta for Appointment (an earlier `class Meta` higher up
+        # is shadowed by this one — Python keeps the last definition).
         # Add index for follow-up queries
         indexes = [
             models.Index(fields=['is_lead_active', 'followup_stage', 'last_customer_response']),
             models.Index(fields=['last_followup_sent']),
+        ]
+        constraints = [
+            # Plan §6.4: same customer, two tenants = two independent leads —
+            # phone uniqueness is per tenant, not global.
+            models.UniqueConstraint(
+                fields=['tenant', 'phone_number'],
+                name='uniq_phone_per_tenant',
+            ),
         ]
 
 
@@ -1780,6 +1924,7 @@ class ConversationMessage(models.Model):
         ('assistant', 'Bot')
     ]
     
+    tenant = _tenant_fk()
     appointment = models.ForeignKey(
         Appointment,
         on_delete=models.CASCADE,
@@ -1818,6 +1963,7 @@ class ScheduledFollowup(models.Model):
         ('cancelled', 'Cancelled'),
     ]
 
+    tenant = _tenant_fk()
     appointment = models.ForeignKey(
         Appointment, on_delete=models.CASCADE, related_name='scheduled_followups'
     )
@@ -1871,6 +2017,7 @@ class ScheduledReminder(models.Model):
         ('cancelled', 'Cancelled'),
     ]
 
+    tenant = _tenant_fk()
     appointment = models.ForeignKey(
         Appointment, on_delete=models.CASCADE, related_name='scheduled_reminders'
     )
@@ -1900,6 +2047,7 @@ class ScheduledReminder(models.Model):
 
 class AppointmentNote(models.Model):
     """Additional notes for appointments"""
+    tenant = _tenant_fk()
     appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='notes')
     note = models.TextField()
     created_by = models.CharField(max_length=100, help_text="Who created this note")
@@ -1937,6 +2085,7 @@ class AppointmentReminder(models.Model):
 
 
 class WhatsAppInboundEvent(models.Model):
+    tenant = _tenant_fk()
     message_id = models.CharField(max_length=128, unique=True)
     sender = models.CharField(max_length=50, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -1953,6 +2102,7 @@ class WhatsAppInboundEvent(models.Model):
 
 class ServiceArea(models.Model):
     """Define service areas for the plumbing company"""
+    tenant = _tenant_fk()
     name = models.CharField(max_length=100)
     postal_codes = models.TextField(help_text="Comma-separated postal codes")
     is_active = models.BooleanField(default=True)
@@ -1966,6 +2116,7 @@ class ServiceArea(models.Model):
 
 
 class Job(models.Model):
+    tenant = _tenant_fk()
     site_visit = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='jobs')
     scheduled_datetime = models.DateTimeField()
     duration_hours = models.IntegerField(default=4)
@@ -1991,6 +2142,7 @@ class Quotation(models.Model):
         ('rejected', 'Rejected'),
     ]
     
+    tenant = _tenant_fk()
     appointment = models.ForeignKey('Appointment', on_delete=models.CASCADE, related_name='quotations')
     plumber = models.ForeignKey('auth.User', on_delete=models.CASCADE, null=True, blank=True)
     quotation_number = models.CharField(max_length=20, unique=True, blank=True)
@@ -2098,6 +2250,7 @@ class QuotationItem(models.Model):
 
 class QuotationTemplate(models.Model):
     """Template for creating quotations quickly"""
+    tenant = _tenant_fk()
     name = models.CharField(max_length=200, help_text="Template name (e.g., 'Standard Bathroom Renovation')")
     description = models.TextField(blank=True, help_text="Description of what this template is for")
     project_type = models.CharField(
@@ -2197,6 +2350,7 @@ class TestScenario(models.Model):
     bot/scenario_runner.py: '>' customer messages with per-turn 'expect:' /
     'reject:' assertion lines. Stored in the DB so use cases added from the
     browser survive Railway redeploys."""
+    tenant = _tenant_fk()
     name = models.CharField(max_length=120, unique=True)
     category = models.CharField(
         max_length=60, default='General',
