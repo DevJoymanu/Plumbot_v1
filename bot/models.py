@@ -214,6 +214,45 @@ class TenantProfile(models.Model):
         return f"Profile · {self.tenant.slug}"
 
 
+class TenantPriceItem(models.Model):
+    """One priceable thing a tenant sells (docs/MULTI_TENANT_PLAN.md §3.1) —
+    replaces the hardcoded price tables in response_mixin (Phase 2.3).
+
+    Numbers only — customer-facing sentences are rendered by platform copy
+    from these figures. All money fields are optional "from" rates in the
+    tenant's currency: `supply`+`labour` for split-priced fittings, `flat`
+    when the business quotes a single figure with no split (never invent
+    one), `allin` for the headline supply+install rate. `parts` itemises
+    multi-component builds (e.g. freestanding tub = tub + mixer + install).
+    """
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='price_items')
+    family = models.CharField(max_length=40)           # shower / tub / geyser / … / renovation / package / repair
+    variant = models.CharField(max_length=40, blank=True, default='')  # '' = the default build (e.g. built-in tub)
+    label = models.CharField(max_length=120, blank=True, default='')   # "vanity unit" (full noun, breakdown lines)
+    short_label = models.CharField(max_length=120, blank=True, default='')  # "vanity" (headline price lines); falls back to label
+    supply = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    labour = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    flat = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    allin = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    parts = models.JSONField(default=list, blank=True)  # [{"name": "mixer", "amount": 150}, …]
+    sizes = models.JSONField(default=list, blank=True)  # measurement/spec blocks
+    keywords = models.JSONField(default=list, blank=True)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['sort_order', 'family', 'variant']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant', 'family', 'variant'],
+                name='uniq_price_item_per_tenant',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.tenant.slug} · {self.family}/{self.variant or 'default'}"
+
+
 class TenantMembership(models.Model):
     """User → tenant link with a role. Platform admins are superusers (no
     membership needed — they get the tenant switcher)."""

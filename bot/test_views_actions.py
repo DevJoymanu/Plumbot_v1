@@ -853,6 +853,44 @@ class TenantConfigTests(TestCase):
         self.assertNotIn('263774819901', _wrap('<p>x</p>', acme_lead))
         self.assertIn('Acme Plumbing · Zimbabwe', _wrap('<p>x</p>', acme_lead))
 
+    def test_price_accessors_match_legacy_response_mixin_tables(self):
+        # Phase 2.3 parity: the cfg price shapes must equal the hardcoded
+        # tables in response_mixin BYTE-FOR-BYTE before consumers switch over.
+        from .tenant_config import get_config
+        from .views.plumbot.response_mixin import ResponseMixin
+        cfg = get_config(self.homebase)
+
+        legacy_components = ResponseMixin._FAMILY_PRICE_COMPONENTS
+        components = cfg.price_components()
+        for family, pair in legacy_components.items():
+            self.assertEqual(components.get(family), pair, family)
+
+        self.assertEqual(cfg.flat_prices().get('basin'),
+                         ResponseMixin._FAMILY_FLAT_PRICE['basin'])
+
+        legacy_rough = ResponseMixin._FAMILY_ROUGH_PRICE
+        rough = cfg.rough_price_lines()
+        for family, line in legacy_rough.items():
+            self.assertEqual(rough.get(family), line, family)
+
+        legacy_breakdown = ResponseMixin._FAMILY_LABOUR_BREAKDOWN
+        breakdown = cfg.labour_breakdown_lines()
+        for family, line in legacy_breakdown.items():
+            self.assertEqual(breakdown.get(family), line, family)
+
+        allin, split = cfg.freestanding_tub()
+        self.assertEqual(allin, ResponseMixin._FREESTANDING_TUB_ALLIN)
+        self.assertEqual(split, ResponseMixin._FREESTANDING_TUB_SPLIT)
+
+    def test_price_accessors_empty_for_bare_tenant(self):
+        from .tenant_config import get_config
+        cfg = get_config(self.acme)
+        self.assertEqual(cfg.price_components(), {})
+        self.assertEqual(cfg.rough_price_lines(), {})
+        self.assertEqual(cfg.flat_prices(), {})
+        self.assertIsNone(cfg.freestanding_tub())
+        self.assertIsNone(cfg.price_item('shower'))
+
     def test_identity_fields_read_from_profile(self):
         from .tenant_config import get_config
         cfg = get_config(self.homebase)

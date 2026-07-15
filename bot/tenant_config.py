@@ -69,6 +69,59 @@ HOMEBASE_PROFILE_FIELDS = dict(
 )
 
 
+# Homebase price sheet (Phase 2.3) — verbatim from bot/sales_profiles/homebase.md
+# and the response_mixin price tables (which cite it as their source). Written
+# to TenantPriceItem rows by migration 0047 + the test-DB hook. Numbers only;
+# sentences are rendered by platform copy.
+HOMEBASE_PRICE_ITEMS = [
+    # family, variant, label, supply, labour, flat, allin, parts
+    dict(family='shower', variant='', label='shower cubicle', supply=130, labour=40, allin=170),
+    dict(family='tub', variant='', label='tub', supply=80, labour=80, allin=160,
+         sizes=['standard bathtub 1500x700']),
+    dict(family='tub', variant='freestanding', label='freestanding tub', allin=670,
+         parts=[{'name': 'tub', 'amount': 400}, {'name': 'mixer', 'amount': 150},
+                {'name': 'install', 'amount': 120}]),
+    dict(family='geyser', variant='', label='geyser', supply=80, labour=80, allin=160),
+    dict(family='vanity', variant='', label='vanity unit', short_label='vanity', supply=150, labour=30, allin=180),
+    dict(family='toilet', variant='', label='toilet seat', short_label='toilet', supply=50, labour=20, allin=70),
+    dict(family='toilet', variant='wall_hung', label='wall-hung toilet (chamber install)',
+         supply=130, labour=30, allin=160),
+    dict(family='chamber', variant='', label='side chamber', supply=130, labour=30, allin=160),
+    dict(family='basin', variant='', label='basin (pedestal / corner)', flat=70),
+    # Renovations & packages
+    dict(family='renovation', variant='bathroom', label='Bathroom Renovation', flat=900),
+    dict(family='renovation', variant='kitchen', label='Kitchen Renovation', flat=600),
+    dict(family='package', variant='full_bathroom', label='Full Bathroom Package', flat=800),
+    dict(family='package', variant='facebook', label='Facebook Package', flat=800,
+         parts=[{'name': 'freestanding tub'}, {'name': 'side chamber'}]),
+    # Geyser services
+    dict(family='geyser_service', variant='supply_install', label='Geyser Supply & Installation', allin=160),
+    dict(family='geyser_service', variant='replacement', label='Full Geyser Replacement', allin=350),
+    dict(family='geyser_service', variant='pressure_valve', label='Pressure Valve Replacement', labour=25),
+    dict(family='geyser_service', variant='thermostat', label='Thermostat Replacement', labour=30),
+    dict(family='geyser_service', variant='element', label='Element Replacement', labour=40),
+    # Repairs & maintenance
+    dict(family='repair', variant='leaking_tap', label='Leaking Tap', labour=15),
+    dict(family='repair', variant='toilet_seat_replacement', label='Toilet Seat Replacement', supply=20, labour=10),
+    dict(family='repair', variant='cistern', label='Cistern Repair', labour=20),
+    dict(family='repair', variant='toilet_base', label='Leaking Toilet Base', labour=25),
+    dict(family='repair', variant='full_toilet_replacement', label='Full Toilet Replacement', supply=60, labour=40),
+    dict(family='repair', variant='drain_simple', label='Drain Unblocking (simple)', labour=20),
+    dict(family='repair', variant='drain_severe', label='Drain Unblocking (severe)', labour=50),
+    dict(family='repair', variant='jetting', label='High-Pressure Jetting', flat=80),
+    dict(family='repair', variant='minor_pipe_leak', label='Minor Pipe Leak Repair', labour=20),
+    dict(family='repair', variant='burst_pipe', label='Burst Pipe Repair', labour=40),
+    dict(family='repair', variant='pipe_section', label='Pipe Section Replacement', labour=50),
+]
+
+
+def _as_int(value):
+    """Prices are whole-dollar 'from' rates; render without trailing .00."""
+    if value is None:
+        return None
+    return int(value) if value == int(value) else float(value)
+
+
 class TenantConfig:
     """Per-tenant config reader. Cheap to construct; caches the profile row
     for its own lifetime (build one per turn, like the Appointment)."""
@@ -133,6 +186,89 @@ class TenantConfig:
             return None
         fact = (self.profile.faq_facts or {}).get(topic)
         return fact or None
+
+
+    # ── Prices (business facts — no fallback; Phase 2.3) ─────────────────────
+    def price_items(self) -> list:
+        """The tenant's active price rows, cached for this config's lifetime."""
+        if not hasattr(self, '_price_items'):
+            if self.tenant is None:
+                self._price_items = []
+            else:
+                from .models import TenantPriceItem
+                self._price_items = list(
+                    TenantPriceItem.objects.filter(tenant=self.tenant, is_active=True)
+                )
+        return self._price_items
+
+    def price_item(self, family: str, variant: str = ''):
+        for item in self.price_items():
+            if item.family == family and item.variant == variant:
+                return item
+        return None
+
+    def price_components(self) -> dict:
+        """{family: (supply, labour)} for default-variant fittings with a
+        split — the shape _FAMILY_PRICE_COMPONENTS consumers expect. Missing
+        family → caller deflects to the free site visit."""
+        out = {}
+        for item in self.price_items():
+            if item.variant == '' and item.supply is not None and item.labour is not None:
+                out[item.family] = (_as_int(item.supply), _as_int(item.labour))
+        return out
+
+    def flat_prices(self) -> dict:
+        """{family: flat} for default-variant items priced without a split —
+        the _FAMILY_FLAT_PRICE shape."""
+        return {
+            item.family: _as_int(item.flat)
+            for item in self.price_items()
+            if item.variant == '' and item.flat is not None
+        }
+
+    def rough_price_lines(self) -> dict:
+        """{family: 'label from US$X'} — the _FAMILY_ROUGH_PRICE shape,
+        rendered from allin (or flat) figures."""
+        out = {}
+        for item in self.price_items():
+            if item.variant != '':
+                continue
+            figure = item.allin if item.allin is not None else item.flat
+            name = item.short_label or item.label
+            if figure is None or not name:
+                continue
+            out[item.family] = f"{name} from {self.currency}{_as_int(figure)}"
+        return out
+
+    def labour_breakdown_lines(self) -> dict:
+        """{family: 'Label: supply from US$X, labour from US$Y'} — the
+        _FAMILY_LABOUR_BREAKDOWN shape."""
+        out = {}
+        for item in self.price_items():
+            if item.variant == '' and item.supply is not None and item.labour is not None:
+                label = (item.label or item.family).capitalize()
+                out[item.family] = (
+                    f"{label}: supply from {self.currency}{_as_int(item.supply)}, "
+                    f"labour from {self.currency}{_as_int(item.labour)}"
+                )
+        return out
+
+    def freestanding_tub(self):
+        """(allin, split_sentence) for the freestanding tub, or None — the
+        _FREESTANDING_TUB_* pair."""
+        item = self.price_item('tub', 'freestanding')
+        if item is None or item.allin is None:
+            return None
+        named = {p.get('name'): p.get('amount') for p in (item.parts or [])}
+        if all(k in named for k in ('tub', 'mixer', 'install')):
+            split = (
+                f"tub from {self.currency}{_as_int(named['tub'])} + "
+                f"mixer {self.currency}{_as_int(named['mixer'])}, "
+                f"install from {self.currency}{_as_int(named['install'])}"
+            )
+        else:
+            split = f"freestanding tub from {self.currency}{_as_int(item.allin)} all-in"
+        return (_as_int(item.allin), split)
 
 
 def get_config(tenant=None) -> TenantConfig:

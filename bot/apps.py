@@ -20,13 +20,23 @@ class BotConfig(AppConfig):
 
 
 def _seed_test_tenant(sender, **kwargs):
-    # Mirror migrations 0041 + 0045: tenant + fully populated profile, so
-    # tests exercise the same config the production homebase tenant has.
-    from .models import Tenant, TenantProfile
-    from .tenant_config import HOMEBASE_FAQ_FACTS, HOMEBASE_PROFILE_FIELDS
+    # Mirror migrations 0041 + 0045 + 0048: tenant + fully populated profile +
+    # price sheet, so tests exercise the same config the production homebase
+    # tenant has.
+    from .models import Tenant, TenantPriceItem, TenantProfile
+    from .tenant_config import (
+        HOMEBASE_FAQ_FACTS, HOMEBASE_PRICE_ITEMS, HOMEBASE_PROFILE_FIELDS,
+    )
     tenant, _ = Tenant.objects.get_or_create(
         slug='homebase', defaults={'name': 'Homebase Plumbers'})
     TenantProfile.objects.get_or_create(
         tenant=tenant,
         defaults=dict(HOMEBASE_PROFILE_FIELDS, faq_facts=dict(HOMEBASE_FAQ_FACTS)),
     )
+    for row in HOMEBASE_PRICE_ITEMS:
+        data = dict(row)
+        family = data.pop('family')
+        variant = data.pop('variant', '')
+        TenantPriceItem.objects.get_or_create(
+            tenant=tenant, family=family, variant=variant, defaults=data,
+        )
