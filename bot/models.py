@@ -17,6 +17,21 @@ class LeadQuerySet(models.QuerySet):
         Phase-0 transition while legacy rows are being backfilled."""
         return self.filter(tenant=tenant)
 
+    def get_or_create_lead(self, phone_number, tenant=None, defaults=None):
+        """Tenant-aware lead identity (Phase 1). Phone numbers are unique PER
+        TENANT (the same customer can talk to two companies), so the tenant is
+        part of the lookup key — a bare get_or_create(phone_number=…) would
+        match another tenant's lead. `tenant` may be a Tenant, a pk, or None
+        (→ the homebase seed, for callers that predate tenant threading)."""
+        tenant_id = tenant.pk if hasattr(tenant, 'pk') else tenant
+        if tenant_id is None:
+            tenant_id = get_default_tenant_id()
+        return self.get_or_create(
+            phone_number=phone_number,
+            tenant_id=tenant_id,
+            defaults=defaults or {'status': 'pending'},
+        )
+
     def real(self):
         """Exclude console/scenario test lines (999-prefixed — the ITU-reserved
         range used by the test console and Scenario Lab; see bot/test_console).

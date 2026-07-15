@@ -18,7 +18,7 @@ from django.views.decorators.http import require_http_methods
 import json
 import os
 from .whatsapp_cloud_api import whatsapp_api, get_extension_for_mime, MEDIA_SIZE_LIMITS
-from .models import Appointment, WhatsAppInboundEvent, LeadStatus
+from .models import Appointment, WhatsAppInboundEvent, LeadStatus, Tenant, TenantWhatsAppChannel
 from .plumber_notifications import send_plumber_notification_email
 from django.utils import timezone
 from django.core.files.base import ContentFile
@@ -1525,8 +1525,34 @@ def process_webhook_in_background(body):
     except Exception as e:
         print(f"❌ Background processing error: {str(e)}")
 
+def _resolve_tenant_for_value(value):
+    """Phase 1 tenant routing (docs/MULTI_TENANT_PLAN.md §3.2): every Meta
+    webhook event carries metadata.phone_number_id — look up the owning
+    TenantWhatsAppChannel. A route miss falls back to the homebase seed with a
+    loud log rather than dropping the message: while Homebase is the only live
+    tenant, a miss means a config problem, not another tenant's traffic.
+    TODO(before tenant #2 goes live): flip route-miss to log-and-drop."""
+    phone_number_id = (value.get('metadata') or {}).get('phone_number_id', '')
+    if phone_number_id:
+        channel = (
+            TenantWhatsAppChannel.objects
+            .filter(phone_number_id=phone_number_id, is_active=True, tenant__is_active=True)
+            .select_related('tenant')
+            .first()
+        )
+        if channel is not None:
+            return channel.tenant
+        print(f"🚨 TENANT ROUTE MISS: unknown phone_number_id={phone_number_id} — falling back to homebase")
+    else:
+        print("🚨 TENANT ROUTE MISS: event has no metadata.phone_number_id — falling back to homebase")
+    return Tenant.objects.filter(slug='homebase').first()
+
+
 def process_message_change(value):
     try:
+        # Phase 1: resolve the owning tenant once per event, thread it down.
+        tenant = _resolve_tenant_for_value(value)
+
         # ✅ 1. HANDLE STATUSES FIRST AND EXIT
         statuses = value.get('statuses', [])
         if statuses:
@@ -1559,6 +1585,7 @@ def process_message_change(value):
             if message_id:
                 try:
                     WhatsAppInboundEvent.objects.create(
+                        tenant=tenant,
                         message_id=message_id,
                         sender=sender,
                         message_type=message_type or '',
@@ -1587,26 +1614,26 @@ def process_message_change(value):
                 handle_text_message(
                     sender, message.get('text', {}),
                     message_id=message_id, quoted_id=quoted_id,
-                    referral=referral,
+                    referral=referral, tenant=tenant,
                 )
 
             elif message_type == 'image':
-                handle_media_message(sender, message.get('image', {}), 'image')
+                handle_media_message(sender, message.get('image', {}), 'image', tenant=tenant)
 
             elif message_type == 'document':
-                handle_media_message(sender, message.get('document', {}), 'document')
+                handle_media_message(sender, message.get('document', {}), 'document', tenant=tenant)
 
             elif message_type in ('audio', 'voice'):
-                handle_audio_message(sender, message.get('audio') or message.get('voice') or {})
+                handle_audio_message(sender, message.get('audio') or message.get('voice') or {}, tenant=tenant)
 
             elif message_type == 'video':
-                handle_media_message(sender, message.get('video', {}), 'video')
+                handle_media_message(sender, message.get('video', {}), 'video', tenant=tenant)
 
             elif message_type == 'sticker':
                 handle_unsupported_media(sender, 'sticker')
 
             elif message_type == 'location':
-                handle_location_message(sender, message.get('location', {}))
+                handle_location_message(sender, message.get('location', {}), tenant=tenant)
 
             elif message_type == 'contacts':
                 handle_unsupported_media(sender, 'contacts')
@@ -1730,7 +1757,7 @@ def process_status_updates(statuses):
             print(f"? Failed to process status update: {status_err}")
 
 
-def handle_location_message(sender, location_data):
+def handle_location_message(sender, location_data, tenant=None):
     try:
         latitude = location_data.get('latitude')
         longitude = location_data.get('longitude')
@@ -1739,7 +1766,10 @@ def handle_location_message(sender, location_data):
 
         phone_number = f"whatsapp:+{sender}"
         try:
-            appointment = Appointment.objects.get(phone_number=phone_number)
+            leads = Appointment.objects.filter(phone_number=phone_number)
+            if tenant is not None:
+                leads = leads.for_tenant(tenant)
+            appointment = leads.get()
         except Appointment.DoesNotExist:
             response_msg = "Thanks for the location! To get started, please tell me about your plumbing needs."
             delay = get_random_delay()
@@ -1751,7 +1781,7 @@ def handle_location_message(sender, location_data):
             return
 
         from .views import Plumbot
-        plumbot = Plumbot(phone_number)
+        plumbot = Plumbot(phone_number, tenant=tenant)
         next_question = plumbot.get_next_question_to_ask()
 
         if next_question == 'area' and not appointment.customer_area:
@@ -1807,6 +1837,9 @@ def handle_unsupported_media(sender, media_type):
         response_msg = (
             f"We can't open that one — could you send a text or a photo instead?"
         )
+        # (fixed: `delay` was previously never assigned here, so this reply
+        # silently failed with a swallowed NameError for every sticker/contact)
+        delay = get_random_delay()
         threading.Thread(
             target=delayed_response,
             args=(sender, response_msg, delay),
@@ -1816,7 +1849,7 @@ def handle_unsupported_media(sender, media_type):
         print(f"? Error handling unsupported media: {str(e)}")
 
 
-def handle_audio_message(sender, audio_data):
+def handle_audio_message(sender, audio_data, tenant=None):
     try:
         if is_chatbot_paused_for_sender(sender):
             print(f"Chatbot paused for whatsapp:+{sender}; skipping audio auto response.")
@@ -1825,7 +1858,10 @@ def handle_audio_message(sender, audio_data):
 
         phone_number = f"whatsapp:+{sender}"
         try:
-            appointment = Appointment.objects.get(phone_number=phone_number)
+            leads = Appointment.objects.filter(phone_number=phone_number)
+            if tenant is not None:
+                leads = leads.for_tenant(tenant)
+            appointment = leads.get()
         except Appointment.DoesNotExist:
             response_msg = (
                 "Voice notes we can't read unfortunately — just type it out and we'll get you sorted"
@@ -1878,7 +1914,7 @@ def _is_duplicate_text_event(sender: str, message_body: str) -> bool:
         return False
 
 
-def handle_text_message(sender, text_data, message_id=None, quoted_id=None, referral=None):
+def handle_text_message(sender, text_data, message_id=None, quoted_id=None, referral=None, tenant=None):
     try:
         message_body = text_data.get('body', '').strip()
         if not message_body:
@@ -1895,9 +1931,8 @@ def handle_text_message(sender, text_data, message_id=None, quoted_id=None, refe
 
         phone_number = f"whatsapp:+{sender}"
 
-        appointment, created = Appointment.objects.get_or_create(
-            phone_number=phone_number,
-            defaults={'status': 'pending'}
+        appointment, created = Appointment.objects.get_or_create_lead(
+            phone_number, tenant=tenant,
         )
 
         # CTWA ad lead — record the referral and (re)start the 72h free-form window.
@@ -1964,7 +1999,7 @@ def handle_text_message(sender, text_data, message_id=None, quoted_id=None, refe
 
         # Queue the message — if another arrives within MESSAGE_BATCH_WINDOW_SECONDS the
         # timer resets, and one combined reply handles both concerns together.
-        _enqueue_for_response(sender, message_body, message_id, quoted_text)
+        _enqueue_for_response(sender, message_body, message_id, quoted_text, tenant=tenant)
 
     except Exception as e:
         print(f"Error handling text: {str(e)}")
@@ -1972,7 +2007,7 @@ def handle_text_message(sender, text_data, message_id=None, quoted_id=None, refe
         traceback.print_exc()
 
 
-def _enqueue_for_response(sender: str, message_body: str, message_id, quoted_text=None):
+def _enqueue_for_response(sender: str, message_body: str, message_id, quoted_text=None, tenant=None):
     """Add message to the per-sender batch queue and reset the debounce timer.
 
     Also cancels any delayed send already in flight — the next batch will generate
@@ -1993,14 +2028,14 @@ def _enqueue_for_response(sender: str, message_body: str, message_id, quoted_tex
             existing = _pending_batch_timers.pop(sender, None)
             if existing is not None:
                 existing.cancel()
-            _pending_batches[sender] = [(message_body, message_id, quoted_text)]
+            _pending_batches[sender] = [(message_body, message_id, quoted_text, tenant)]
         _flush_text_batch(sender)
         return
 
     with _pending_batch_lock:
         if sender not in _pending_batches:
             _pending_batches[sender] = []
-        _pending_batches[sender].append((message_body, message_id, quoted_text))
+        _pending_batches[sender].append((message_body, message_id, quoted_text, tenant))
         count = len(_pending_batches[sender])
 
         existing = _pending_batch_timers.pop(sender, None)
@@ -2025,12 +2060,14 @@ def _flush_text_batch(sender: str):
     if not batch:
         return
 
-    messages = [body for body, _, _ in batch]
+    messages = [body for body, _, _, _ in batch]
     last_message_id = batch[-1][1]
     # The quoted context that matters is whatever the customer last replied to.
     quoted_text = next(
-        (q for _, _, q in reversed(batch) if q), None
+        (q for _, _, q, _ in reversed(batch) if q), None
     )
+    # All entries in a sender's batch arrived on the same channel.
+    tenant = next((t for _, _, _, t in reversed(batch) if t is not None), None)
 
     if len(messages) == 1:
         combined = messages[0]
@@ -2039,7 +2076,7 @@ def _flush_text_batch(sender: str):
         combined = "\n".join(messages)
         print(f"📦 Batch flush: {len(messages)} messages combined for {sender} → '{combined[:120]}'")
 
-    _generate_and_schedule_reply(sender, combined, last_message_id, quoted_text)
+    _generate_and_schedule_reply(sender, combined, last_message_id, quoted_text, tenant=tenant)
 
 
 def _derive_service_item(message: str) -> str:
@@ -2075,11 +2112,16 @@ def _derive_additional_items(message: str) -> str:
     return m
 
 
-def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None):
+def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None, tenant=None):
     """Generate a bot reply for message_body and schedule it with a 1-5 min send delay."""
     try:
         phone_number = f"whatsapp:+{sender}"
-        appointment = Appointment.objects.filter(phone_number=phone_number).first()
+        leads = Appointment.objects.filter(phone_number=phone_number)
+        if tenant is not None:
+            # Phone is unique per tenant — scope the lookup to the channel's
+            # owner so we never pick up another tenant's lead for this number.
+            leads = leads.for_tenant(tenant)
+        appointment = leads.first()
         if not appointment:
             return
 
@@ -2092,7 +2134,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             return
 
         from .views import Plumbot
-        plumbot = Plumbot(phone_number)
+        plumbot = Plumbot(phone_number, tenant=tenant)
         # One Appointment instance per turn: Plumbot.__init__ get_or_creates its
         # OWN copy, and a later save from that stale copy resurrects state this
         # handler already changed (prod: [SERVICE_CONFIRM_PENDING] was removed on
@@ -2919,15 +2961,14 @@ IMAGE_DOC_EXT_MAP = {
 }
 
 
-def handle_media_message(sender, media_data, media_type):
+def handle_media_message(sender, media_data, media_type, tenant=None):
     try:
         media_id = media_data.get('id')
         mime_type = media_data.get('mime_type', '')
         phone_number = f"whatsapp:+{sender}"
 
-        appointment, created = Appointment.objects.get_or_create(
-            phone_number=phone_number,
-            defaults={'status': 'pending'}
+        appointment, created = Appointment.objects.get_or_create_lead(
+            phone_number, tenant=tenant,
         )
 
         file_bytes = None

@@ -669,3 +669,57 @@ class TenantSwitcherTests(TestCase):
         self.client.login(username='legacystaff', password='pass12345')
         response = self.client.get(reverse('dashboard'))
         self.assertEqual(response.wsgi_request.tenant, self.homebase)
+
+
+class TenantWebhookRoutingTests(TestCase):
+    """Phase 1: inbound events route to a tenant by metadata.phone_number_id.
+    Route-miss falls back to homebase (single-tenant transition safety) —
+    flips to log-and-drop before tenant #2 goes live."""
+
+    def setUp(self):
+        from .models import TenantWhatsAppChannel
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        TenantWhatsAppChannel.objects.create(
+            tenant=self.homebase, phone_number_id='111000111')
+        TenantWhatsAppChannel.objects.create(
+            tenant=self.acme, phone_number_id='222000222')
+
+    def _resolve(self, value):
+        from .whatsapp_webhook import _resolve_tenant_for_value
+        return _resolve_tenant_for_value(value)
+
+    def test_known_phone_number_id_routes_to_owner(self):
+        self.assertEqual(
+            self._resolve({'metadata': {'phone_number_id': '222000222'}}), self.acme)
+        self.assertEqual(
+            self._resolve({'metadata': {'phone_number_id': '111000111'}}), self.homebase)
+
+    def test_unknown_id_falls_back_to_homebase(self):
+        self.assertEqual(
+            self._resolve({'metadata': {'phone_number_id': 'nope-999'}}), self.homebase)
+
+    def test_missing_metadata_falls_back_to_homebase(self):
+        self.assertEqual(self._resolve({}), self.homebase)
+
+    def test_inactive_channel_is_not_routable(self):
+        from .models import TenantWhatsAppChannel
+        TenantWhatsAppChannel.objects.filter(phone_number_id='222000222').update(is_active=False)
+        self.assertEqual(
+            self._resolve({'metadata': {'phone_number_id': '222000222'}}), self.homebase)
+
+    def test_get_or_create_lead_scopes_by_tenant(self):
+        phone = 'whatsapp:+15550007777'
+        a, created_a = Appointment.objects.get_or_create_lead(phone, tenant=self.homebase)
+        b, created_b = Appointment.objects.get_or_create_lead(phone, tenant=self.acme)
+        self.assertTrue(created_a and created_b)
+        self.assertNotEqual(a.pk, b.pk)
+        # Re-fetch returns each tenant's own lead, never the other's.
+        a2, created = Appointment.objects.get_or_create_lead(phone, tenant=self.homebase)
+        self.assertFalse(created)
+        self.assertEqual(a2.pk, a.pk)
+
+    def test_get_or_create_lead_defaults_to_homebase(self):
+        lead, _ = Appointment.objects.get_or_create_lead('whatsapp:+15550008888')
+        self.assertEqual(lead.tenant_id, self.homebase.pk)

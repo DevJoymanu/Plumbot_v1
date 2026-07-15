@@ -23,9 +23,13 @@ class Plumbot(
     NotificationMixin,
     PlanUploadMixin,
 ):
-    def __init__(self, phone_number):
+    def __init__(self, phone_number, tenant=None):
         self.phone_number = phone_number
-        self.appointment, _ = Appointment.objects.get_or_create(
-            phone_number=phone_number,
-            defaults={'status': 'pending'}
+        # Tenant-aware identity (Phase 1): phone is unique PER TENANT, so the
+        # lookup must include the owner. None (dashboard actions, scenario
+        # runner, chat REPL — pre-threading callers) resolves to the homebase
+        # seed inside get_or_create_lead.
+        self.appointment, _ = Appointment.objects.get_or_create_lead(
+            phone_number, tenant=tenant,
         )
+        self.tenant = self.appointment.tenant
