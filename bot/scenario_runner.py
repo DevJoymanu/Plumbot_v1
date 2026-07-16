@@ -27,13 +27,16 @@ def history(sender):
     return (appt.conversation_history or []) if appt else []
 
 
-def reset_lead(sender):
+def reset_lead(sender, tenant=None):
     """Wipe the test lead so the next message starts a fresh conversation."""
-    Appointment.objects.filter(phone_number=f"whatsapp:+{sender}").delete()
+    leads = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}")
+    if tenant is not None:
+        leads = leads.filter(tenant=tenant)
+    leads.delete()
     WhatsAppInboundEvent.objects.filter(sender=sender).delete()
 
 
-def send_message(sender, message, media_wait: float = 60.0):
+def send_message(sender, message, media_wait: float = 60.0, tenant=None):
     """Feed one customer message through the production pipeline; return the
     assistant replies generated for this turn (synchronous for 999 senders).
 
@@ -53,6 +56,7 @@ def send_message(sender, message, media_wait: float = 60.0):
     handle_text_message(
         sender, {"body": message},
         message_id=f"wamid.TESTIN{uuid.uuid4().hex}",
+        tenant=tenant,
     )
     replies = _new_replies(before)
     waited = 0.0
@@ -100,7 +104,7 @@ def parse_scenario(text: str, origin: str = "scenario"):
 
 # ── Execution ─────────────────────────────────────────────────────────────────
 
-def run_scenario(name: str, text: str, progress=None) -> dict:
+def run_scenario(name: str, text: str, progress=None, tenant=None) -> dict:
     """Run one scenario end to end and return a structured result:
 
         {name, sender, passed, failed, turns: [
@@ -112,13 +116,13 @@ def run_scenario(name: str, text: str, progress=None) -> dict:
     """
     turns = parse_scenario(text, origin=name)
     sender = scenario_number(name)
-    reset_lead(sender)
+    reset_lead(sender, tenant=tenant)
 
     result = {"name": name, "sender": sender, "passed": 0, "failed": 0, "turns": []}
     for i, (msg, checks) in enumerate(turns):
         if progress:
             progress(i, len(turns))
-        replies = send_message(sender, msg)
+        replies = send_message(sender, msg, tenant=tenant)
         reply_text = "\n".join(replies)
         low = reply_text.lower()
         turn = {"message": msg, "replies": replies, "checks": []}

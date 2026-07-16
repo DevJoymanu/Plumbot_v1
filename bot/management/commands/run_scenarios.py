@@ -30,6 +30,10 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
+            "--tenant", default="homebase",
+            help="Tenant slug to run as (default: homebase).",
+        )
+        parser.add_argument(
             "paths", nargs="*",
             help="Scenario files to run (default: scenarios/*.txt).",
         )
@@ -39,6 +43,12 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **opts):
+        from bot.models import Tenant
+        tenant = Tenant.objects.filter(slug=opts.get('tenant') or 'homebase').first()
+        if tenant is None:
+            self.stderr.write(f"Unknown tenant slug: {opts.get('tenant')}")
+            return
+        self.stdout.write(f'Running as tenant: {tenant.slug}')
         paths = opts["paths"] or sorted(glob.glob("scenarios/*.txt"))
         if not paths:
             self.stderr.write("No scenario files found (scenarios/*.txt).")
@@ -53,7 +63,7 @@ class Command(BaseCommand):
                 text = fh.read()
             print(f"\n{'=' * 64}\nSCENARIO: {name}\n{'=' * 64}")
             try:
-                result = run_scenario(name, text)
+                result = run_scenario(name, text, tenant=tenant)
             except ValueError as exc:
                 self.stderr.write(f"PARSE ERROR: {exc}")
                 total_fail += 1

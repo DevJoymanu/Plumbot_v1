@@ -29,9 +29,9 @@ from bot.scenario_runner import history as _history, reset_lead, send_message
 from bot.test_console import DEFAULT_TEST_NUMBER, is_test_sender
 
 
-def _send(sender, message):
+def _send(sender, message, tenant=None):
     """Feed one customer message through the production pipeline; print replies."""
-    replies = send_message(sender, message)
+    replies = send_message(sender, message, tenant=tenant)
     if not replies:
         print("  (no reply — conversation complete or message suppressed)")
     for r in replies:
@@ -39,8 +39,8 @@ def _send(sender, message):
     return replies
 
 
-def _reset(sender):
-    reset_lead(sender)
+def _reset(sender, tenant=None):
+    reset_lead(sender, tenant=tenant)
     print(f"[reset] fresh lead for +{sender}")
 
 
@@ -48,6 +48,10 @@ class Command(BaseCommand):
     help = "Chat with Plumbot locally (interactive REPL or scripted scenario replay)."
 
     def add_arguments(self, parser):
+        parser.add_argument(
+            "--tenant", default="homebase",
+            help="Tenant slug to chat as (default: homebase).",
+        )
         parser.add_argument(
             "--number", default=DEFAULT_TEST_NUMBER,
             help="Test line to use (999-prefixed; default %(default)s). "
@@ -64,6 +68,12 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **opts):
+        from bot.models import Tenant
+        self.tenant = Tenant.objects.filter(slug=opts.get("tenant") or "homebase").first()
+        if self.tenant is None:
+            self.stderr.write(f"Unknown tenant slug: {opts.get('tenant')}")
+            return
+        print(f"[tenant: {self.tenant.slug}]")
         sender = "".join(ch for ch in opts["number"] if ch.isdigit())
         if not is_test_sender(sender):
             self.stderr.write(
@@ -74,7 +84,7 @@ class Command(BaseCommand):
             return
 
         if opts["reset"]:
-            _reset(sender)
+            _reset(sender, tenant=self.tenant)
 
         if opts["script"]:
             self._run_script(sender, opts["script"])
@@ -95,7 +105,7 @@ class Command(BaseCommand):
         print(f"[script] {len(messages)} message(s) -> +{sender}\n")
         for msg in messages:
             print(f"CUSTOMER:\n{msg}")
-            _send(sender, msg)
+            _send(sender, msg, tenant=self.tenant)
         print("[script] done — transcript above is exactly what WhatsApp would show.")
 
     # ── Interactive REPL ────────────────────────────────────────────────────
@@ -119,6 +129,6 @@ class Command(BaseCommand):
             if msg.lower() in ("/quit", "/q", "/exit"):
                 return
             if msg.lower() == "/reset":
-                _reset(sender)
+                _reset(sender, tenant=self.tenant)
                 continue
-            _send(sender, msg)
+            _send(sender, msg, tenant=self.tenant)

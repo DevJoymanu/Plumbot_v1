@@ -887,6 +887,49 @@ class TenantIntakeTests(TestCase):
         self.assertIn('approved', response.content.decode().lower())
 
 
+class ScenarioLabTenantTests(TestCase):
+    """Phase 5: per-tenant Scenario Lab + golden-pack cloning."""
+
+    def setUp(self):
+        from .models import TestScenario
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        for i in range(3):
+            TestScenario.objects.create(
+                tenant=self.homebase, name=f'golden {i}', category='Pricing',
+                content='> how much is a geyser\nexpect: US$',
+            )
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+
+    def test_create_tenant_clones_golden_pack(self):
+        from .models import TestScenario
+        self.client.post(reverse('platform_create_tenant'), {'name': 'Acme Plumbing'})
+        acme = Tenant.objects.get(slug='acme-plumbing')
+        cloned = TestScenario.objects.filter(tenant=acme)
+        self.assertEqual(cloned.count(), 3)
+        self.assertEqual(
+            set(cloned.values_list('name', flat=True)),
+            {'golden 0', 'golden 1', 'golden 2'})
+        # Same names across tenants — per-tenant uniqueness holds.
+        self.assertEqual(TestScenario.objects.filter(name='golden 0').count(), 2)
+
+    def test_lab_shows_only_current_tenants_scenarios(self):
+        from .models import TenantMembership, TestScenario
+        acme = Tenant.objects.create(name='Acme', slug='acme')
+        TestScenario.objects.create(
+            tenant=acme, name='acme only', content='> hi\nexpect: hello')
+        staff = get_user_model().objects.create_user(
+            username='acmestaff5', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=staff, tenant=acme, role='staff')
+        self.client.login(username='acmestaff5', password='pass12345')
+        response = self.client.get(reverse('scenario_lab'))
+        body = response.content.decode()
+        self.assertIn('acme only', body)
+        self.assertNotIn('golden 0', body)
+
+
 class TenantWebhookRoutingTests(TestCase):
     """Phase 1: inbound events route to a tenant by metadata.phone_number_id.
     Route-miss falls back to homebase (single-tenant transition safety) —

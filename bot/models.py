@@ -2557,7 +2557,9 @@ class TestScenario(models.Model):
     'reject:' assertion lines. Stored in the DB so use cases added from the
     browser survive Railway redeploys."""
     tenant = _tenant_fk()
-    name = models.CharField(max_length=120, unique=True)
+    # Unique PER TENANT (Phase 5): the golden pack is cloned to every new
+    # tenant under the same names, so global uniqueness would break cloning.
+    name = models.CharField(max_length=120)
     category = models.CharField(
         max_length=60, default='General',
         help_text="Grouping shown in the Scenario Lab (e.g. Pricing, Booking flow, Objections)",
@@ -2575,6 +2577,10 @@ class TestScenario(models.Model):
 
     class Meta:
         ordering = ['category', 'name']
+        constraints = [
+            models.UniqueConstraint(fields=['tenant', 'name'],
+                                    name='uniq_scenario_per_tenant'),
+        ]
 
     def __str__(self):
         return f"{self.category} / {self.name}"

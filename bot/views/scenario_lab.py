@@ -39,18 +39,19 @@ _run_state = {
 }
 
 
-def _seed_from_files():
+def _seed_from_files(tenant=None):
     """Import repo scenarios/*.txt into the DB once (by name) so the Lab starts
     populated. DB is the source of truth afterwards — file edits don't overwrite
     a row that already exists."""
     for path in sorted(glob.glob("scenarios/*.txt")):
         name = os.path.basename(path).replace(".txt", "").replace("_", " ")
-        if TestScenario.objects.filter(name=name).exists():
+        if TestScenario.objects.filter(name=name, tenant=tenant).exists():
             continue
         try:
             with open(path, encoding="utf-8") as fh:
                 content = fh.read()
             TestScenario.objects.create(
+                tenant=tenant,
                 name=name, category="Seeded", content=content,
                 description="Imported from repo scenarios/",
             )
@@ -66,7 +67,7 @@ def _execute_run(scenarios):
             with _run_lock:
                 _run_state["current"] = sc.name
             try:
-                result = run_scenario(sc.name, sc.content)
+                result = run_scenario(sc.name, sc.content, tenant=sc.tenant)
             except ValueError as exc:
                 result = {"name": sc.name, "sender": "", "passed": 0,
                           "failed": 1, "turns": [],
@@ -89,8 +90,9 @@ def _execute_run(scenarios):
 
 @staff_required
 def scenario_lab_view(request):
-    _seed_from_files()
-    scenarios = list(TestScenario.objects.all())
+    _tenant = getattr(request, 'tenant', None)
+    _seed_from_files(_tenant)
+    scenarios = list(TestScenario.objects.filter(tenant=_tenant))
     categories = {}
     for sc in scenarios:
         categories.setdefault(sc.category or "General", []).append(sc)
@@ -110,9 +112,10 @@ def scenario_lab_run(request):
     except (ValueError, UnicodeDecodeError):
         payload = {}
 
-    qs = TestScenario.objects.filter(is_active=True)
+    _tenant = getattr(request, 'tenant', None)
+    qs = TestScenario.objects.filter(is_active=True, tenant=_tenant)
     if payload.get("id"):
-        qs = TestScenario.objects.filter(pk=payload["id"])
+        qs = TestScenario.objects.filter(pk=payload["id"], tenant=_tenant)
     elif payload.get("category"):
         qs = qs.filter(category=payload["category"])
     scenarios = list(qs)
@@ -167,17 +170,18 @@ def scenario_lab_save(request):
         "description": (payload.get("description") or "").strip(),
         "is_active": bool(payload.get("is_active", True)),
     }
+    _tenant = getattr(request, "tenant", None)
     if payload.get("id"):
-        updated = TestScenario.objects.filter(pk=payload["id"]).update(
+        updated = TestScenario.objects.filter(pk=payload["id"], tenant=_tenant).update(
             name=name, **defaults)
         if not updated:
             return JsonResponse({"ok": False, "error": "Scenario not found"}, status=404)
         sc = TestScenario.objects.get(pk=payload["id"])
     else:
-        if TestScenario.objects.filter(name=name).exists():
+        if TestScenario.objects.filter(name=name, tenant=_tenant).exists():
             return JsonResponse({"ok": False, "error": f"'{name}' already exists"},
                                 status=400)
-        sc = TestScenario.objects.create(name=name, **defaults)
+        sc = TestScenario.objects.create(name=name, tenant=_tenant, **defaults)
     return JsonResponse({"ok": True, "id": sc.pk})
 
 
@@ -188,7 +192,8 @@ def scenario_lab_delete(request):
         payload = json.loads(request.body.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         return JsonResponse({"ok": False, "error": "Invalid JSON"}, status=400)
-    deleted, _ = TestScenario.objects.filter(pk=payload.get("id")).delete()
+    deleted, _ = TestScenario.objects.filter(
+        pk=payload.get("id"), tenant=getattr(request, "tenant", None)).delete()
     return JsonResponse({"ok": bool(deleted)})
 
 
@@ -196,7 +201,7 @@ def scenario_lab_delete(request):
 @require_http_methods(["GET"])
 def scenario_lab_detail(request, pk):
     """Full scenario (content + last result) for the editor / results panel."""
-    sc = TestScenario.objects.filter(pk=pk).first()
+    sc = TestScenario.objects.filter(pk=pk, tenant=getattr(request, "tenant", None)).first()
     if not sc:
         return JsonResponse({"ok": False, "error": "Not found"}, status=404)
     return JsonResponse({"ok": True, "scenario": {

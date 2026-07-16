@@ -82,8 +82,34 @@ def platform_create_tenant(request):
         return redirect('platform_console')
     tenant = Tenant.objects.create(name=name, slug=slug)
     TenantProfile.objects.create(tenant=tenant)  # blank — nullability rule
-    messages.success(request, f'Tenant "{name}" created. Fill in their config before go-live.')
+    cloned = _clone_golden_pack(tenant)
+    messages.success(
+        request,
+        f'Tenant "{name}" created with {cloned} golden scenarios. '
+        'Fill in their config, then run the pack green before go-live.')
     return redirect('platform_tenant_config', slug=tenant.slug)
+
+
+def _clone_golden_pack(tenant) -> int:
+    """Copy homebase's scenario pack to a new tenant (Phase 5): instant
+    regression coverage — the pack must run green against the tenant's own
+    config before they go live (§12 hard gate)."""
+    from ..models import TestScenario
+    homebase = Tenant.objects.filter(slug='homebase').first()
+    if homebase is None or tenant.pk == homebase.pk:
+        return 0
+    cloned = 0
+    for scenario in TestScenario.objects.filter(tenant=homebase, is_active=True):
+        _, created = TestScenario.objects.get_or_create(
+            tenant=tenant, name=scenario.name,
+            defaults=dict(
+                category=scenario.category,
+                description=scenario.description,
+                content=scenario.content,
+            ),
+        )
+        cloned += int(created)
+    return cloned
 
 
 @require_POST
