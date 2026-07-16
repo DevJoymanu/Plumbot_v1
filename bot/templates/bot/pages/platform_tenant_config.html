@@ -70,6 +70,36 @@
     {% endif %}
   </div>
 
+  <div class="platform-card">
+    <div class="platform-card__title">Owner intake (draft → review → approve)</div>
+    <form method="post" action="{% url 'platform_new_intake' tenant.slug %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit" class="btn-pill btn-ghost">
+        <i class="fas fa-link"></i> New intake link
+      </button>
+    </form>
+    {% if intakes %}
+    <table class="price-table" style="margin-top:16px;">
+      <thead><tr><th>Created</th><th>Status</th><th>Link / review</th></tr></thead>
+      <tbody>
+        {% for intake in intakes %}
+        <tr>
+          <td>{{ intake.created_at|date:"j M Y H:i" }}</td>
+          <td>{{ intake.get_status_display }}</td>
+          <td>
+            {% if intake.status == 'pending' %}
+              <code style="font-size:11px;">/intake/{{ intake.token }}/</code>
+            {% else %}
+              <a href="{% url 'platform_review_intake' intake.pk %}">Open review</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
   <form method="post">
     {% csrf_token %}
 

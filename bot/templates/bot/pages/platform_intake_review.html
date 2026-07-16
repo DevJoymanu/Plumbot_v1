@@ -1,0 +1,98 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}Intake review · {{ tenant.name }} · Platform{% endblock %}
+
+{% block extra_css %}
+<style>
+  .platform-body { padding: 24px; max-width: 900px; margin: 0 auto; }
+  .platform-card {
+    background: var(--color-card, #fff); border: 1px solid rgba(0,101,145,0.10);
+    border-radius: 16px; box-shadow: 0 20px 40px -15px rgba(14,165,233,0.08);
+    padding: 24px; margin-bottom: 24px;
+  }
+  .platform-card__title {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: #006591; margin-bottom: 16px;
+  }
+  .kv { display: grid; grid-template-columns: 220px 1fr; gap: 8px 16px; font-size: 14px; }
+  .kv dt { color: #5b7285; }
+  .kv dd { margin: 0; }
+  .price-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .price-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #5b7285; padding: 6px 8px; }
+  .price-table td { padding: 6px 8px; border-top: 1px solid rgba(0,101,145,0.05); }
+  .btn-pill {
+    display: inline-block; padding: 10px 24px; border-radius: 999px; border: none;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .btn-approve { background: #006591; color: #fff; }
+  .btn-reject { background: transparent; color: #ba1a1a; border: 1px solid rgba(186,26,26,0.3); }
+  textarea { width: 100%; border: none; background: rgba(0,101,145,0.05); border-radius: 12px; padding: 10px 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-topbar">
+  <i class="fas fa-inbox"></i>
+  <h1>Intake review — {{ tenant.name }}</h1>
+</div>
+
+<div class="platform-body">
+
+  <div class="platform-card">
+    <div class="platform-card__title">Status: {{ intake.get_status_display }} · submitted {{ intake.submitted_at|date:"j M Y H:i"|default:"—" }}</div>
+    <div class="kv">
+      {% for key, value in intake.data.profile.items %}
+        <dt>{{ key }}</dt><dd>{{ value|default:"—" }}</dd>
+      {% endfor %}
+      <dt>hours</dt><dd>{{ intake.data.hours.days|default:"—" }} {{ intake.data.hours.open }}–{{ intake.data.hours.close }}</dd>
+      <dt>excluded areas</dt><dd>{{ intake.data.excluded_areas|join:", "|default:"none — serves everywhere" }}</dd>
+      {% for topic, answer in intake.data.faq_facts.items %}
+        <dt>FAQ · {{ topic }}</dt><dd>{{ answer }}</dd>
+      {% endfor %}
+      {% if intake.data.notes %}<dt>notes</dt><dd>{{ intake.data.notes }}</dd>{% endif %}
+    </div>
+  </div>
+
+  <div class="platform-card">
+    <div class="platform-card__title">Submitted price rows ({{ intake.data.prices|length }})</div>
+    <table class="price-table">
+      <thead><tr><th>Label</th><th>Family</th><th>Supply</th><th>Labour</th><th>All-in</th></tr></thead>
+      <tbody>
+        {% for row in intake.data.prices %}
+        <tr>
+          <td>{{ row.label }}</td><td>{{ row.family }}</td>
+          <td>{{ row.supply|default:"—" }}</td><td>{{ row.labour|default:"—" }}</td>
+          <td>{{ row.allin|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" style="color:#5b7285; text-align:center; padding:24px;">No prices submitted — the bot will deflect all price questions to the free visit.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if intake.status == 'submitted' %}
+  <form method="post" class="platform-card">
+    {% csrf_token %}
+    <div class="platform-card__title">Decision</div>
+    <p style="font-size:13px; color:#5b7285; margin-top:0;">
+      Approve applies everything above to the live config (profile fields, FAQ answers
+      merged, price rows created/updated). Reject applies nothing.
+    </p>
+    <textarea name="review_note" rows="2" placeholder="Review note (optional)"></textarea>
+    <div style="display:flex; gap:12px; margin-top:16px;">
+      <button type="submit" name="decision" value="approve" class="btn-pill btn-approve">
+        <i class="fas fa-check"></i> Approve & apply
+      </button>
+      <button type="submit" name="decision" value="reject" class="btn-pill btn-reject">Reject</button>
+    </div>
+  </form>
+  {% elif intake.review_note %}
+  <div class="platform-card">
+    <div class="platform-card__title">Review note</div>
+    <p style="margin:0;">{{ intake.review_note }}</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

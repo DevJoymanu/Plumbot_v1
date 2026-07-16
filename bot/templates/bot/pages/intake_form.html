@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ tenant.name }} — Business setup</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    background: #f4f8fb; color: #0b1c30; line-height: 1.5;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: #5b7285; font-size: 14px; margin: 0 0 24px; }
+  .card {
+    background: #fff; border: 1px solid rgba(0,101,145,0.10);
+    border-radius: 16px; box-shadow: 0 20px 40px -15px rgba(14,165,233,0.08);
+    padding: 24px; margin-bottom: 20px;
+  }
+  .card h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: #006591; margin: 0 0 16px;
+  }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 4px; }
+  label small { display: block; font-weight: 400; color: #5b7285; }
+  input, textarea {
+    width: 100%; border: none; background: rgba(0,101,145,0.05);
+    border-radius: 12px; padding: 10px 14px; font-size: 15px; outline: none;
+  }
+  input:focus, textarea:focus { box-shadow: 0 0 0 2px rgba(0,101,145,0.2); }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #5b7285; padding: 6px 4px; }
+  td { padding: 4px; }
+  td input { padding: 8px 10px; font-size: 13px; }
+  .btn {
+    display: inline-block; border: none; background: #006591; color: #fff;
+    border-radius: 999px; padding: 12px 28px; font-size: 15px; font-weight: 600;
+    cursor: pointer; margin-top: 8px;
+  }
+  .btn:hover { opacity: 0.9; }
+  .btn-ghost { background: transparent; color: #006591; border: 1px solid rgba(0,101,145,0.25); padding: 8px 18px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ tenant.name }} — business setup</h1>
+  <p class="sub">
+    Fill in what you can — every question is optional. Whatever you leave blank,
+    the assistant simply won't claim or quote. Your answers go to the platform
+    team for review before anything goes live.
+  </p>
+
+  <form method="post">
+    {% csrf_token %}
+
+    <div class="card">
+      <h2>Who you are</h2>
+      {% for field, label, help in profile_fields %}
+      <label for="id_{{ field }}">{{ label }}<small>{{ help }}</small></label>
+      <input type="text" id="id_{{ field }}" name="{{ field }}">
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2>When you work</h2>
+      <div class="row">
+        <div>
+          <label>Days<small>e.g. Sunday-Friday</small></label>
+          <input type="text" name="hours_days" placeholder="Sunday-Friday">
+        </div>
+        <div>
+          <label>Open<small>24h, e.g. 08:00</small></label>
+          <input type="text" name="hours_open" placeholder="08:00">
+        </div>
+        <div>
+          <label>Close<small>e.g. 18:00</small></label>
+          <input type="text" name="hours_close" placeholder="18:00">
+        </div>
+      </div>
+      <label>Places you do NOT travel to<small>Comma-separated, e.g. Bulawayo, Mutare. Leave blank if you go everywhere.</small></label>
+      <input type="text" name="excluded_areas" placeholder="">
+    </div>
+
+    <div class="card">
+      <h2>Common customer questions — answer in your own words</h2>
+      {% for topic, question, help in faq_topics %}
+      <label for="id_faq_{{ topic }}">{{ question }}<small>{{ help }}</small></label>
+      <textarea id="id_faq_{{ topic }}" name="faq_{{ topic }}" rows="2"></textarea>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2>Your price list — "from" rates, leave blanks where there's no split</h2>
+      <table id="price-table">
+        <thead>
+          <tr><th>What is it?</th><th>Type</th><th>Supply from</th><th>Labour from</th><th>All-in from</th></tr>
+        </thead>
+        <tbody>
+          {% for i in "12345678"|make_list %}
+          <tr>
+            <td><input type="text" name="price_label" placeholder="e.g. Shower cubicle"></td>
+            <td><input type="text" name="price_family" placeholder="shower / tub / geyser / repair"></td>
+            <td><input type="text" name="price_supply"></td>
+            <td><input type="text" name="price_labour"></td>
+            <td><input type="text" name="price_allin"></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="button" class="btn btn-ghost" onclick="addRow()">+ More rows</button>
+    </div>
+
+    <div class="card">
+      <h2>Anything else we should know?</h2>
+      <textarea name="notes" rows="3" placeholder="Guarantees, payment terms, special services..."></textarea>
+    </div>
+
+    <button type="submit" class="btn">Send for review</button>
+  </form>
+</div>
+<script>
+function addRow() {
+  const body = document.querySelector('#price-table tbody');
+  body.insertAdjacentHTML('beforeend', body.querySelector('tr').outerHTML
+    .replace(/value="[^"]*"/g, ''));
+  body.lastElementChild.querySelectorAll('input').forEach(i => i.value = '');
+}
+</script>
+</body>
+</html>

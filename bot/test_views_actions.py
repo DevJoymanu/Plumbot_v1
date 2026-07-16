@@ -793,6 +793,100 @@ class PlatformConsoleTests(TestCase):
         self.assertEqual(profile.excluded_areas, ['gweru'])
 
 
+class TenantIntakeTests(TestCase):
+    """Phase 3.3: owner intake — token form → draft → admin approve applies
+    to the live config; nothing goes live unreviewed."""
+
+    def setUp(self):
+        from .models import TenantIntake
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.intake = TenantIntake.objects.create(tenant=self.acme)
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+
+    def _submit(self):
+        return self.client.post(f'/intake/{self.intake.token}/', {
+            'plumber_name': 'Blessing', 'plumber_contact': '+263711111111',
+            'business_whatsapp': '', 'location_area': 'Kwekwe',
+            'location_city': 'Kwekwe', 'email_from_name': 'Blessing',
+            'hours_days': 'Monday-Saturday', 'hours_open': '07:00', 'hours_close': '17:00',
+            'excluded_areas': 'Harare',
+            'faq_payment': 'Cash and EcoCash.',
+            'price_label': ['Geyser install', ''],
+            'price_family': ['geyser', ''],
+            'price_supply': ['90', ''], 'price_labour': ['60', ''],
+            'price_allin': ['150', ''],
+        })
+
+    def test_public_form_renders_by_token_and_404s_otherwise(self):
+        response = self.client.get(f'/intake/{self.intake.token}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get('/intake/not-a-token/').status_code, 404)
+
+    def test_submission_is_draft_not_live(self):
+        response = self._submit()
+        self.assertEqual(response.status_code, 200)
+        self.intake.refresh_from_db()
+        self.assertEqual(self.intake.status, 'submitted')
+        self.assertEqual(self.intake.data['profile']['plumber_name'], 'Blessing')
+        # NOT applied to live config yet.
+        profile = TenantProfile.objects.filter(tenant=self.acme).first()
+        self.assertTrue(profile is None or profile.plumber_name == '')
+
+    def test_approve_applies_everything(self):
+        self._submit()
+        self.client.login(username='root', password='pass12345')
+        response = self.client.post(
+            reverse('platform_review_intake', args=[self.intake.pk]),
+            {'decision': 'approve'})
+        self.assertEqual(response.status_code, 302)
+        profile = TenantProfile.objects.get(tenant=self.acme)
+        self.assertEqual(profile.plumber_name, 'Blessing')
+        self.assertEqual(profile.business_hours['open'], '07:00')
+        self.assertEqual(profile.excluded_areas, ['harare'])
+        self.assertEqual(profile.faq_facts['payment'], 'Cash and EcoCash.')
+        from .models import TenantPriceItem
+        item = TenantPriceItem.objects.get(tenant=self.acme, family='geyser', variant='')
+        self.assertEqual(int(item.supply), 90)
+        self.assertEqual(int(item.allin), 150)
+        # The bot now answers from it.
+        from .tenant_config import get_config
+        self.assertEqual(get_config(self.acme).price_components().get('geyser'), (90, 60))
+
+    def test_reject_applies_nothing(self):
+        self._submit()
+        self.client.login(username='root', password='pass12345')
+        self.client.post(reverse('platform_review_intake', args=[self.intake.pk]),
+                         {'decision': 'reject', 'review_note': 'numbers look off'})
+        self.intake.refresh_from_db()
+        self.assertEqual(self.intake.status, 'rejected')
+        profile = TenantProfile.objects.filter(tenant=self.acme).first()
+        self.assertTrue(profile is None or profile.plumber_name == '')
+
+    def test_non_superuser_cannot_review(self):
+        self._submit()
+        get_user_model().objects.create_user(
+            username='staff3', password='pass12345', is_staff=True)
+        self.client.login(username='staff3', password='pass12345')
+        response = self.client.post(
+            reverse('platform_review_intake', args=[self.intake.pk]),
+            {'decision': 'approve'})
+        self.assertIn(response.status_code, (302, 403))
+        self.intake.refresh_from_db()
+        self.assertEqual(self.intake.status, 'submitted')  # untouched
+
+    def test_closed_intake_shows_done_page(self):
+        self._submit()
+        self.intake.refresh_from_db()
+        self.intake.status = 'approved'
+        self.intake.save()
+        response = self.client.get(f'/intake/{self.intake.token}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('approved', response.content.decode().lower())
+
+
 class TenantWebhookRoutingTests(TestCase):
     """Phase 1: inbound events route to a tenant by metadata.phone_number_id.
     Route-miss falls back to homebase (single-tenant transition safety) —

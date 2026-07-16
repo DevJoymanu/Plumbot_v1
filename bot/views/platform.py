@@ -16,8 +16,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
+from django.utils import timezone
+
 from ..middleware import TENANT_SESSION_KEY
-from ..models import Tenant, TenantPriceItem, TenantProfile
+from ..models import Tenant, TenantIntake, TenantPriceItem, TenantProfile
 
 
 def _superuser(user):
@@ -98,6 +100,161 @@ def platform_toggle_tenant(request, slug):
     return redirect('platform_console')
 
 
+# ── Owner intake (decision #2: draft → admin verify → approve) ───────────────
+
+INTAKE_PROFILE_FIELDS = [
+    # (field, label, help)
+    ('plumber_name', 'Lead plumber name', 'The person customers can ask for.'),
+    ('plumber_contact', 'Plumber direct number', 'e.g. +2637...'),
+    ('business_whatsapp', 'Business WhatsApp number', 'Where email buttons point. Can be the same as above.'),
+    ('location_area', 'Suburb / area', 'e.g. Hatfield'),
+    ('location_city', 'City', 'e.g. Harare'),
+    ('email_from_name', 'Email sender name', 'Whose name customer emails come from.'),
+]
+
+INTAKE_FAQ_TOPICS = [
+    ('payment', 'How do customers pay?', 'e.g. Cash, EcoCash, and bank transfer.'),
+    ('free_quote', 'Is the quote/visit free?', 'Your wording for the free-visit promise.'),
+    ('job_duration', 'How long do jobs take?', 'Typical durations for small vs big jobs.'),
+    ('services', 'What do you handle?', 'One sentence listing your services.'),
+]
+
+
+@superuser_required
+@require_POST
+def platform_new_intake(request, slug):
+    tenant = get_object_or_404(Tenant, slug=slug)
+    intake = TenantIntake.objects.create(tenant=tenant)
+    link = request.build_absolute_uri(f"/intake/{intake.token}/")
+    messages.success(
+        request,
+        f'Intake link for {tenant.name} (send it to the owner): {link}')
+    return redirect('platform_tenant_config', slug=tenant.slug)
+
+
+def intake_form(request, token):
+    """PUBLIC (token-gated) owner intake form. Submissions are drafts — the
+    admin reviews and approves before anything goes live."""
+    intake = get_object_or_404(TenantIntake, token=token)
+    if intake.status in ('approved', 'rejected'):
+        return render(request, 'bot/pages/intake_done.html',
+                      {'intake': intake}, status=200)
+
+    if request.method == 'POST':
+        data = {'profile': {}, 'faq_facts': {}, 'prices': [], 'hours': {}, 'notes': ''}
+        for field, _label, _help in INTAKE_PROFILE_FIELDS:
+            data['profile'][field] = (request.POST.get(field) or '').strip()
+        for topic, _q, _h in INTAKE_FAQ_TOPICS:
+            value = (request.POST.get(f'faq_{topic}') or '').strip()
+            if value:
+                data['faq_facts'][topic] = value
+        data['hours'] = {
+            'days': (request.POST.get('hours_days') or '').strip(),
+            'open': (request.POST.get('hours_open') or '').strip(),
+            'close': (request.POST.get('hours_close') or '').strip(),
+        }
+        data['excluded_areas'] = [
+            a.strip().lower() for a in
+            (request.POST.get('excluded_areas') or '').split(',') if a.strip()
+        ]
+        # Price rows arrive as parallel arrays from the dynamic table.
+        labels = request.POST.getlist('price_label')
+        families = request.POST.getlist('price_family')
+        supplies = request.POST.getlist('price_supply')
+        labours = request.POST.getlist('price_labour')
+        allins = request.POST.getlist('price_allin')
+        for i, label in enumerate(labels):
+            if not label.strip():
+                continue
+            data['prices'].append({
+                'label': label.strip(),
+                'family': (families[i] if i < len(families) else '').strip().lower() or 'other',
+                'supply': (supplies[i] if i < len(supplies) else '').strip(),
+                'labour': (labours[i] if i < len(labours) else '').strip(),
+                'allin': (allins[i] if i < len(allins) else '').strip(),
+            })
+        data['notes'] = (request.POST.get('notes') or '').strip()
+        intake.data = data
+        intake.status = 'submitted'
+        intake.submitted_at = timezone.now()
+        intake.save(update_fields=['data', 'status', 'submitted_at'])
+        return render(request, 'bot/pages/intake_done.html', {'intake': intake})
+
+    return render(request, 'bot/pages/intake_form.html', {
+        'intake': intake,
+        'tenant': intake.tenant,
+        'profile_fields': INTAKE_PROFILE_FIELDS,
+        'faq_topics': INTAKE_FAQ_TOPICS,
+        'existing': intake.data or {},
+    })
+
+
+def _to_decimal_or_none(raw):
+    from decimal import Decimal, InvalidOperation
+    raw = (raw or '').replace('US$', '').replace('$', '').replace(',', '').strip()
+    if not raw:
+        return None
+    try:
+        return Decimal(raw)
+    except InvalidOperation:
+        return None
+
+
+@superuser_required
+def platform_review_intake(request, pk):
+    """Review a submitted intake; approve applies it to the live config."""
+    intake = get_object_or_404(TenantIntake, pk=pk)
+    tenant = intake.tenant
+
+    if request.method == 'POST':
+        decision = request.POST.get('decision')
+        intake.review_note = (request.POST.get('review_note') or '').strip()
+        if decision == 'approve' and intake.status == 'submitted':
+            profile, _ = TenantProfile.objects.get_or_create(tenant=tenant)
+            data = intake.data or {}
+            for field, value in (data.get('profile') or {}).items():
+                if value and hasattr(profile, field):
+                    setattr(profile, field, value)
+            hours = data.get('hours') or {}
+            if hours.get('days') and hours.get('open') and hours.get('close'):
+                profile.business_hours = hours
+            if data.get('excluded_areas'):
+                profile.excluded_areas = data['excluded_areas']
+            merged = dict(profile.faq_facts or {})
+            merged.update(data.get('faq_facts') or {})
+            profile.faq_facts = merged
+            profile.save()
+            for row in data.get('prices') or []:
+                TenantPriceItem.objects.update_or_create(
+                    tenant=tenant, family=row.get('family') or 'other',
+                    variant=row.get('variant', ''),
+                    defaults=dict(
+                        label=row.get('label', ''),
+                        supply=_to_decimal_or_none(row.get('supply')),
+                        labour=_to_decimal_or_none(row.get('labour')),
+                        allin=_to_decimal_or_none(row.get('allin')),
+                    ),
+                )
+            intake.status = 'approved'
+            intake.reviewed_at = timezone.now()
+            intake.save(update_fields=['status', 'review_note', 'reviewed_at'])
+            messages.success(request, f'Intake approved and applied to {tenant.name}.')
+            return redirect('platform_tenant_config', slug=tenant.slug)
+        if decision == 'reject':
+            intake.status = 'rejected'
+            intake.reviewed_at = timezone.now()
+            intake.save(update_fields=['status', 'review_note', 'reviewed_at'])
+            messages.success(request, 'Intake rejected — nothing was applied.')
+            return redirect('platform_console')
+        messages.error(request, 'No valid decision.')
+
+    return render(request, 'bot/pages/platform_intake_review.html', {
+        'intake': intake,
+        'tenant': tenant,
+        'active_nav': 'platform',
+    })
+
+
 class TenantProfileForm(forms.ModelForm):
     class Meta:
         model = TenantProfile
@@ -156,5 +313,6 @@ def platform_tenant_config(request, slug):
         'form': form,
         'formset': formset,
         'channel': channel,
+        'intakes': tenant.intakes.all()[:10],
         'active_nav': 'platform',
     })

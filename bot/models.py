@@ -312,6 +312,34 @@ class TenantPortfolioItem(models.Model):
         return f"{self.tenant.slug} · {self.item_id}"
 
 
+class TenantIntake(models.Model):
+    """An owner-filled config submission (decision #2): the admin sends the
+    owner a token link; the owner fills profile/FAQ/prices; the submission
+    lands here as a DRAFT and only an admin approval applies it to the live
+    TenantProfile/TenantPriceItem config. Nothing an owner types goes live
+    unreviewed."""
+    STATUS_CHOICES = [
+        ('pending', 'Awaiting owner'),
+        ('submitted', 'Submitted — awaiting review'),
+        ('approved', 'Approved & applied'),
+        ('rejected', 'Rejected'),
+    ]
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='intakes')
+    token = models.CharField(max_length=64, unique=True, default=uuid.uuid4)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='pending', db_index=True)
+    data = models.JSONField(default=dict, blank=True)      # the owner's draft
+    review_note = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Intake {self.pk} · {self.tenant.slug} · {self.status}"
+
+
 class TenantMembership(models.Model):
     """User → tenant link with a role. Platform admins are superusers (no
     membership needed — they get the tenant switcher)."""

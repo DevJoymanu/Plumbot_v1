@@ -130,6 +130,10 @@ urlpatterns = [
     path('platform/tenants/create/', platform_views.platform_create_tenant, name='platform_create_tenant'),
     path('platform/tenants/<slug:slug>/toggle/', platform_views.platform_toggle_tenant, name='platform_toggle_tenant'),
     path('platform/tenants/<slug:slug>/config/', platform_views.platform_tenant_config, name='platform_tenant_config'),
+    path('platform/tenants/<slug:slug>/intake/new/', platform_views.platform_new_intake, name='platform_new_intake'),
+    path('platform/intake/<int:pk>/', platform_views.platform_review_intake, name='platform_review_intake'),
+    # PUBLIC owner intake form (token-gated, no login) — decision #2.
+    path('intake/<token>/', platform_views.intake_form, name='intake_form'),
 
     # Web message-testing console (chat with the bot without a real device)
     path('test-console/', views.test_console_view, name='test_console'),
