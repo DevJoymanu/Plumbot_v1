@@ -13,7 +13,7 @@
     --muted: #5b7285; --error: #ba1a1a; --surface: rgba(248,249,255,0.92);
   }
   body {
-    margin: 0; padding: 0 16px 96px;
+    margin: 0; padding: 0 16px 110px;
     font-family: Inter, -apple-system, "Segoe UI", Arial, sans-serif;
     background:
       radial-gradient(600px 400px at 85% -10%, rgba(14,165,233,0.07), transparent),
@@ -21,86 +21,130 @@
       #f4f8fb;
     color: var(--ink); line-height: 1.55;
   }
-  .material-symbols-outlined {
-    font-family: 'Material Symbols Outlined'; font-weight: 300;
-    font-size: 20px; vertical-align: -4px;
-  }
+  .material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-weight: 300; font-size: 20px; vertical-align: -4px; }
   .wrap { max-width: 640px; margin: 0 auto; }
 
-  /* ── Sticky progress header ── */
   .progress-shell {
-    position: sticky; top: 0; z-index: 10; margin: 0 -16px 24px;
-    padding: 14px 16px 12px; background: var(--surface);
+    position: sticky; top: 0; z-index: 10; margin: 0 -16px 20px;
+    padding: 12px 16px 10px; background: var(--surface);
     backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
     border-bottom: 1px solid rgba(0,101,145,0.10);
     box-shadow: 0 20px 40px -15px rgba(14,165,233,0.08);
   }
   .progress-top { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
-  .brand { font-size: 13px; font-weight: 700; color: var(--primary); letter-spacing: 0.05em; text-transform: uppercase; flex: 1; }
+  .brand { font-size: 12px; font-weight: 700; color: var(--primary); letter-spacing: 0.05em; text-transform: uppercase; flex: 1; }
   .readiness { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
   .readiness strong { color: var(--primary); font-size: 15px; }
   .bar { max-width: 640px; margin: 8px auto 0; height: 6px; border-radius: 999px; background: rgba(0,101,145,0.08); overflow: hidden; }
-  .bar > div {
-    height: 100%; width: 0%; border-radius: 999px;
-    background: linear-gradient(90deg, var(--primary), var(--vibrant));
-    box-shadow: 0 0 12px rgba(14,165,233,0.5);
-    transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  .dots { max-width: 640px; margin: 10px auto 0; display: flex; gap: 6px; }
-  .dots span {
-    flex: 1; height: 3px; border-radius: 999px; background: rgba(0,101,145,0.10);
-    transition: background 0.3s ease;
-  }
+  .bar > div { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), var(--vibrant)); box-shadow: 0 0 12px rgba(14,165,233,0.5); transition: width 0.5s cubic-bezier(0.22,1,0.36,1); }
+  .dots { max-width: 640px; margin: 8px auto 0; display: flex; gap: 6px; }
+  .dots span { flex: 1; height: 3px; border-radius: 999px; background: rgba(0,101,145,0.10); transition: background 0.3s ease; }
   .dots span.done { background: var(--vibrant); }
   .dots span.now { background: var(--primary); }
 
-  /* ── Steps ── */
-  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
-  .sub { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+  h1 { font-size: 21px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
   .step { display: none; animation: rise 0.35s ease; }
   .step.active { display: block; }
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-  .step-eyebrow {
-    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--vibrant); margin: 0 0 2px;
-  }
+  .step-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vibrant); margin: 0 0 2px; }
   .card {
     background: var(--surface); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
     border: 1px solid rgba(0,101,145,0.10); border-radius: 20px;
     box-shadow: 0 20px 40px -15px rgba(14,165,233,0.08);
-    padding: 24px; margin-bottom: 16px;
+    padding: 20px; margin-bottom: 14px;
   }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 4px; }
+  .card h3 { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--primary); margin: 0 0 12px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 4px; }
   label:first-of-type { margin-top: 0; }
   label small { display: block; font-weight: 400; color: var(--muted); }
-  input, textarea {
+  input, textarea, select {
     width: 100%; border: none; background: rgba(0,101,145,0.05);
-    border-radius: 14px; padding: 12px 16px; font-size: 15px; outline: none;
+    border-radius: 14px; padding: 11px 15px; font-size: 15px; outline: none;
     font-family: inherit; transition: box-shadow 0.2s ease;
   }
-  input:focus, textarea:focus { box-shadow: 0 0 0 2px rgba(0,101,145,0.25); }
+  input:focus, textarea:focus, select:focus { box-shadow: 0 0 0 2px rgba(0,101,145,0.25); }
+  input.invalid { box-shadow: 0 0 0 2px rgba(186,26,26,0.35); }
+  .field-error { color: var(--error); font-size: 12px; margin-top: 4px; display: none; }
   .row { display: flex; gap: 10px; }
   .row > div { flex: 1; }
 
-  /* ── Capability unlocks ── */
-  .unlocks { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 20px; min-height: 30px; }
+  /* Chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 1px solid rgba(0,101,145,0.18); background: transparent;
+    color: var(--primary); border-radius: 999px; padding: 9px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: all 0.15s ease; user-select: none;
+  }
+  .chip:active { transform: scale(0.94); }
+  .chip.on { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 4px 14px rgba(0,101,145,0.25); }
+  .chip-group-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; }
+  .chip-group-label:first-child { margin-top: 0; }
+
+  .unlocks { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; min-height: 30px; }
   .unlock {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12px; font-weight: 600; color: var(--primary);
-    background: rgba(14,165,233,0.10); border: 1px solid rgba(14,165,233,0.25);
-    border-radius: 999px; padding: 4px 12px;
-    animation: pop 0.3s ease;
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    color: var(--primary); background: rgba(14,165,233,0.10); border: 1px solid rgba(14,165,233,0.25);
+    border-radius: 999px; padding: 4px 12px; animation: pop 0.3s ease;
   }
   .unlock .material-symbols-outlined { font-size: 16px; color: var(--vibrant); }
   @keyframes pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
 
-  /* ── Price table ── */
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 4px; }
-  td { padding: 4px 3px; }
-  td input { padding: 9px 10px; font-size: 13px; border-radius: 10px; }
+  /* Price library */
+  .lib-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-radius: 14px; border: 1px solid transparent; transition: all 0.15s ease;
+  }
+  .lib-item .lib-name { flex: 1; font-size: 14px; color: var(--muted); cursor: pointer; user-select: none; }
+  .lib-item.on { background: rgba(14,165,233,0.06); border-color: rgba(14,165,233,0.25); }
+  .lib-item.on .lib-name { color: var(--ink); font-weight: 600; }
+  .lib-prices { display: none; gap: 6px; }
+  .lib-item.on .lib-prices { display: flex; }
+  .lib-prices .money { position: relative; width: 92px; }
+  .lib-prices .money::before {
+    content: attr(data-cur); position: absolute; left: 10px; top: 50%;
+    transform: translateY(-50%); font-size: 12px; color: var(--muted);
+  }
+  .lib-prices input { padding: 8px 8px 8px 26px; font-size: 13px; border-radius: 10px; }
+  .lib-toggle {
+    width: 22px; height: 22px; border-radius: 999px; border: 2px solid rgba(0,101,145,0.3);
+    background: transparent; cursor: pointer; flex: none; padding: 0; position: relative;
+  }
+  .lib-item.on .lib-toggle { background: var(--vibrant); border-color: var(--vibrant); }
+  .lib-item.on .lib-toggle::after {
+    content: '✓'; color: #fff; font-size: 13px; position: absolute; top: -1px; left: 4px;
+  }
 
-  /* ── Nav buttons ── */
+  /* Tags (excluded areas) */
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    background: rgba(0,101,145,0.08); color: var(--primary); border-radius: 999px; padding: 4px 10px;
+  }
+  .tag button { border: none; background: none; color: var(--primary); cursor: pointer; padding: 0; font-size: 14px; }
+  .typeahead { position: relative; }
+  .suggestions {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 5;
+    background: #fff; border: 1px solid rgba(0,101,145,0.15); border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(11,28,48,0.12); max-height: 180px; overflow: auto; display: none;
+  }
+  .suggestions div { padding: 9px 14px; font-size: 14px; cursor: pointer; }
+  .suggestions div:hover { background: rgba(0,101,145,0.06); }
+
+  /* Gallery */
+  .drop {
+    border: 2px dashed rgba(0,101,145,0.2); border-radius: 16px; padding: 22px;
+    text-align: center; color: var(--muted); font-size: 14px; cursor: pointer;
+  }
+  .drop strong { color: var(--primary); }
+  .photo-list { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
+  .photo-row { display: flex; gap: 10px; align-items: center; background: rgba(0,101,145,0.04); border-radius: 14px; padding: 8px; }
+  .photo-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; flex: none; }
+  .photo-row select, .photo-row input[type=text] { padding: 8px 10px; font-size: 12px; border-radius: 10px; }
+  .photo-row .pairbtn { flex: none; font-size: 11px; }
+  .photo-row .del { border: none; background: none; color: var(--error); cursor: pointer; flex: none; }
+
   .nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
     background: var(--surface); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
@@ -108,21 +152,19 @@
   }
   .nav-inner { max-width: 640px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
   .btn {
-    border: none; border-radius: 999px; padding: 13px 26px; font-size: 15px;
-    font-weight: 600; cursor: pointer; font-family: inherit;
-    transition: transform 0.15s ease, opacity 0.2s ease;
+    border: none; border-radius: 999px; padding: 13px 26px; font-size: 15px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: transform 0.15s ease, opacity 0.2s ease;
   }
   .btn:active { transform: scale(0.95); }
   .btn-next { background: var(--primary); color: #fff; flex: 1; box-shadow: 0 8px 20px rgba(0,101,145,0.25); }
-  .btn-next:hover { opacity: 0.92; }
   .btn-back { background: transparent; color: var(--primary); border: 1px solid rgba(0,101,145,0.2); }
   .skip-note { text-align: center; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .saved-flash { font-size: 11px; color: var(--vibrant); margin-left: 8px; opacity: 0; transition: opacity 0.4s ease; }
 
-  /* ── Review step ── */
   .review-line { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(0,101,145,0.06); font-size: 14px; }
-  .review-line span:first-child { color: var(--muted); }
+  .review-line span:first-child { color: var(--muted); flex: none; }
   .review-line span:last-child { font-weight: 600; text-align: right; }
-  noscript .step { display: block; }
+  .quiet { opacity: 0.75; }
 </style>
 </head>
 <body>
@@ -130,12 +172,10 @@
 <div class="progress-shell">
   <div class="progress-top">
     <div class="brand">{{ tenant.name }} · Setup</div>
-    <div class="readiness">Assistant readiness <strong id="readiness">0%</strong></div>
+    <div class="readiness">Assistant readiness <strong id="readiness">0%</strong><span class="saved-flash" id="saved">saved</span></div>
   </div>
   <div class="bar"><div id="bar-fill"></div></div>
-  <div class="dots" id="dots">
-    <span></span><span></span><span></span><span></span><span></span>
-  </div>
+  <div class="dots" id="dots"><span></span><span></span><span></span><span></span><span></span><span></span></div>
 </div>
 
 <div class="wrap">
@@ -143,97 +183,229 @@
 
   <form method="post" id="intake">
     {% csrf_token %}
+    <input type="hidden" name="photos_meta" id="photos_meta" value="[]">
+    <input type="hidden" name="excluded_areas" id="excluded_hidden">
+    <input type="hidden" name="plumber_contact" id="contact_e164">
 
     <!-- STEP 1 — Identity -->
     <section class="step active" data-step="0">
-      <p class="step-eyebrow">Step 1 of 5 · 2 minutes</p>
+      <p class="step-eyebrow">Step 1 of 6 · 2 minutes</p>
       <h1>Let's introduce your business</h1>
-      <p class="sub">This is how your WhatsApp assistant will introduce your team to customers.</p>
+      <p class="sub">How your assistant introduces your team to customers.</p>
       <div class="card">
-        {% for field, label, help in profile_fields %}
-        <label for="id_{{ field }}">{{ label }}<small>{{ help }}</small></label>
-        <input type="text" id="id_{{ field }}" name="{{ field }}" data-cap="identity">
-        {% endfor %}
+        <label for="id_plumber_name">Lead plumber name<small>The person customers can ask for.</small></label>
+        <input type="text" id="id_plumber_name" name="plumber_name" data-cap="identity">
+
+        <label>Plumber direct number<small>Customers can call this line for anything technical.</small></label>
+        <div class="row">
+          <div style="flex:0 0 118px;">
+            <select id="cc">
+              <option value="+263" selected>🇿🇼 +263</option>
+              <option value="+27">🇿🇦 +27</option>
+              <option value="+260">🇿🇲 +260</option>
+              <option value="+267">🇧🇼 +267</option>
+              <option value="+258">🇲🇿 +258</option>
+              <option value="+44">🇬🇧 +44</option>
+            </select>
+          </div>
+          <div>
+            <input type="tel" id="phone_national" inputmode="numeric" placeholder="77 123 4567" data-cap="identity">
+            <div class="field-error" id="phone_error">That doesn't look like a valid number — digits only, e.g. 771234567.</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="id_location_area">Suburb / area<small>e.g. Hatfield</small></label>
+            <input type="text" id="id_location_area" name="location_area" data-cap="identity">
+          </div>
+          <div>
+            <label for="id_location_city">City<small>e.g. Harare</small></label>
+            <input type="text" id="id_location_city" name="location_city" data-cap="identity">
+          </div>
+        </div>
+
+        <label for="id_email_from_name">Email sender name<small>Whose name customer emails come from.</small></label>
+        <input type="text" id="id_email_from_name" name="email_from_name">
+      </div>
+
+      <div class="card">
+        <h3><span class="material-symbols-outlined">smart_toy</span> Your AI Appointment Setter number</h3>
+        <p style="margin:0; font-size:13px; color:var(--muted);">
+          This is the WhatsApp number your customers message. Your AI assistant answers
+          here 24/7 — qualifying leads, answering questions, and booking visits. It's
+          separate from your personal number, so your private chats stay private.
+          <strong style="color:var(--primary);">We provision this number for you</strong> —
+          nothing to fill in here.
+        </p>
       </div>
     </section>
 
     <!-- STEP 2 — Hours & areas -->
     <section class="step" data-step="1">
-      <p class="step-eyebrow">Step 2 of 5 · 1 minute</p>
-      <h1>When and where you work</h1>
-      <p class="sub">So the assistant books visits only when you're actually available.</p>
+      <p class="step-eyebrow">Step 2 of 6 · 1 minute</p>
+      <h1>When you work</h1>
+      <p class="sub">So the assistant books visits only when you're available.</p>
       <div class="card">
-        <div class="row">
+        <div class="chip-group-label">Working days — tap to toggle</div>
+        <div class="chips" id="day-chips">
+          <button type="button" class="chip on" data-day="monday">Mon</button>
+          <button type="button" class="chip on" data-day="tuesday">Tue</button>
+          <button type="button" class="chip on" data-day="wednesday">Wed</button>
+          <button type="button" class="chip on" data-day="thursday">Thu</button>
+          <button type="button" class="chip on" data-day="friday">Fri</button>
+          <button type="button" class="chip" data-day="saturday">Sat</button>
+          <button type="button" class="chip" data-day="sunday">Sun</button>
+        </div>
+        <div class="row" style="margin-top:16px;">
           <div>
-            <label>Days<small>e.g. Sunday-Friday</small></label>
-            <input type="text" name="hours_days" placeholder="Sunday-Friday" data-cap="hours">
+            <label for="id_open">Open</label>
+            <input type="time" id="id_open" name="hours_open" value="08:00" data-cap="hours">
           </div>
           <div>
-            <label>Open<small>e.g. 08:00</small></label>
-            <input type="text" name="hours_open" placeholder="08:00" data-cap="hours">
-          </div>
-          <div>
-            <label>Close<small>e.g. 18:00</small></label>
-            <input type="text" name="hours_close" placeholder="18:00" data-cap="hours">
+            <label for="id_close">Close</label>
+            <input type="time" id="id_close" name="hours_close" value="18:00" data-cap="hours">
           </div>
         </div>
-        <label>Places you do NOT travel to<small>Comma-separated. Leave blank if you go everywhere — the assistant will politely decline these areas for you.</small></label>
-        <input type="text" name="excluded_areas" data-cap="areas">
+      </div>
+
+      <div class="card quiet">
+        <h3>Optional — anywhere you'd rather not travel?</h3>
+        <p style="margin:0 0 8px; font-size:12px; color:var(--muted);">
+          Most plumbers leave this blank (you go everywhere). Add a place and the
+          assistant politely declines jobs there for you.</p>
+        <div class="typeahead">
+          <input type="text" id="area_input" placeholder="Start typing… e.g. Bulawayo" autocomplete="off">
+          <div class="suggestions" id="area_suggestions"></div>
+        </div>
+        <div class="tags" id="area_tags"></div>
       </div>
     </section>
 
-    <!-- STEP 3 — FAQ -->
+    <!-- STEP 3 — Services, payments, durations -->
     <section class="step" data-step="2">
-      <p class="step-eyebrow">Step 3 of 5 · 3 minutes</p>
-      <h1>Answer like you would on WhatsApp</h1>
-      <p class="sub">Your assistant repeats these in your voice. Write exactly what you'd text a customer.</p>
+      <p class="step-eyebrow">Step 3 of 6 · tap-tap-tap</p>
+      <h1>What you do, and how you get paid</h1>
+      <p class="sub">Only what you tick becomes something the assistant offers —
+        anything else it politely declines.</p>
+
       <div class="card">
-        {% for topic, question, help in faq_topics %}
-        <label for="id_faq_{{ topic }}">{{ question }}<small>{{ help }}</small></label>
-        <textarea id="id_faq_{{ topic }}" name="faq_{{ topic }}" rows="2" data-cap="faq"></textarea>
-        {% endfor %}
+        <h3>Jobs you handle</h3>
+        <div id="service-chips">
+          <div class="chip-group-label">Core plumbing</div>
+          <div class="chips" data-group>
+            <button type="button" class="chip" data-service="leak repairs">Leak repairs</button>
+            <button type="button" class="chip" data-service="blocked drains">Blocked drains</button>
+            <button type="button" class="chip" data-service="geyser install & repair">Geysers</button>
+            <button type="button" class="chip" data-service="taps & fixtures">Taps &amp; fixtures</button>
+            <button type="button" class="chip" data-service="pipe work">Pipe work</button>
+          </div>
+          <div class="chip-group-label">Bathroom &amp; kitchen</div>
+          <div class="chips" data-group>
+            <button type="button" class="chip" data-service="toilet installs">Toilets</button>
+            <button type="button" class="chip" data-service="sink & basin installs">Sinks &amp; basins</button>
+            <button type="button" class="chip" data-service="shower installs">Showers</button>
+            <button type="button" class="chip" data-service="bathroom renovations">Bathroom renovations</button>
+            <button type="button" class="chip" data-service="kitchen plumbing">Kitchen plumbing</button>
+          </div>
+          <div class="chip-group-label">Related trades — ticking means the assistant ACCEPTS these jobs</div>
+          <div class="chips" data-group>
+            <button type="button" class="chip" data-service="tiling">Tiling</button>
+            <button type="button" class="chip" data-service="general handyman work">Handyman</button>
+            <button type="button" class="chip" data-service="electrical work">Electrical</button>
+          </div>
+        </div>
+        <label for="service_other" style="margin-top:14px;">+ Add a service<small>Anything we missed.</small></label>
+        <input type="text" id="service_other" name="service_other">
+      </div>
+
+      <div class="card">
+        <h3>Payment methods you accept</h3>
+        <div class="chips" id="payment-chips">
+          <button type="button" class="chip" data-pay="Cash (USD)">Cash (USD)</button>
+          <button type="button" class="chip" data-pay="EcoCash">EcoCash</button>
+          <button type="button" class="chip" data-pay="bank transfer">Bank transfer</button>
+          <button type="button" class="chip" data-pay="swipe/card">Swipe / Card</button>
+          <button type="button" class="chip" data-pay="InnBucks">InnBucks</button>
+          <button type="button" class="chip" data-pay="ZWL">ZWL</button>
+          <button type="button" class="chip" data-pay="__other">Other…</button>
+        </div>
+        <input type="text" id="payment_other" name="payment_other" placeholder="e.g. Mukuru" style="display:none; margin-top:10px;">
+      </div>
+
+      <div class="card">
+        <h3>How long do jobs usually take?</h3>
+        <div class="chip-group-label">Small jobs (a tap, a leak)</div>
+        <div class="chips" data-single="duration_small">
+          <button type="button" class="chip" data-value="under an hour">Under 1 hr</button>
+          <button type="button" class="chip" data-value="1–2 hours">1–2 hrs</button>
+          <button type="button" class="chip" data-value="half a day">Half day</button>
+        </div>
+        <div class="chip-group-label">Big jobs (installs, renovations)</div>
+        <div class="chips" data-single="duration_big">
+          <button type="button" class="chip" data-value="half a day">Half day</button>
+          <button type="button" class="chip" data-value="a full day">Full day</button>
+          <button type="button" class="chip" data-value="a few days">Multi-day</button>
+        </div>
+        <input type="hidden" name="duration_small" id="duration_small">
+        <input type="hidden" name="duration_big" id="duration_big">
+      </div>
+
+      <div class="card">
+        <label for="id_free_quote">Is your quote/visit free? Say it in your own words.<small>e.g. "Yes — we come out, look, and give you a fixed price on the spot. No obligation."</small></label>
+        <textarea id="id_free_quote" name="faq_free_quote" rows="2"></textarea>
       </div>
     </section>
 
     <!-- STEP 4 — Prices -->
     <section class="step" data-step="3">
-      <p class="step-eyebrow">Step 4 of 5 · the big one</p>
+      <p class="step-eyebrow">Step 4 of 6 · the big one</p>
       <h1>Your price list</h1>
-      <p class="sub">"From" rates are perfect — the exact figure is always confirmed on site.
-        Anything you skip, the assistant deflects to your free quote instead of guessing.</p>
+      <p class="sub">Tap a job to activate it, then put in YOUR "from" rate.
+        Anything you skip, the assistant deflects to your free quote — it never guesses.</p>
+
+      <div class="card quiet">
+        <h3>Already have a rate sheet?</h3>
+        <label for="pasted" style="margin-top:0;"><small>Paste it here (or WhatsApp us a voice note) and we'll set the list up for you — no ticking required.</small></label>
+        <textarea id="pasted" name="pasted_price_list" rows="3" placeholder="Geyser install $150, unblocking from $20, ..."></textarea>
+      </div>
+
+      <div class="card" id="price-library"></div>
+
       <div class="card">
-        <table id="price-table">
-          <thead>
-            <tr><th>What is it?</th><th>Type</th><th>Supply</th><th>Labour</th><th>All-in</th></tr>
-          </thead>
-          <tbody>
-            {% for i in "1234"|make_list %}
-            <tr>
-              <td><input type="text" name="price_label" placeholder="e.g. Geyser install" data-cap="prices"></td>
-              <td><input type="text" name="price_family" placeholder="geyser"></td>
-              <td><input type="text" name="price_supply"></td>
-              <td><input type="text" name="price_labour"></td>
-              <td><input type="text" name="price_allin"></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        <button type="button" class="btn btn-back" style="margin-top:12px; padding:8px 18px; font-size:13px;" onclick="addRow()">
-          <span class="material-symbols-outlined">add</span> More rows
-        </button>
+        <h3>+ Anything else you charge for</h3>
+        <div id="custom-prices"></div>
+        <button type="button" class="chip" onclick="addCustomPrice()">+ Add item</button>
       </div>
     </section>
 
-    <!-- STEP 5 — Review -->
+    <!-- STEP 5 — Gallery -->
     <section class="step" data-step="4">
-      <p class="step-eyebrow">Step 5 of 5 · done!</p>
+      <p class="step-eyebrow">Step 5 of 6 · optional, powerful</p>
+      <h1>Show off your past work</h1>
+      <p class="sub">When a customer asks "have you done geysers before?", the assistant
+        answers with your photos. Before/after pairs work brilliantly. Totally fine to
+        skip — you can add photos from your dashboard anytime.</p>
+      <div class="card">
+        <div class="drop" id="drop">
+          <span class="material-symbols-outlined" style="font-size:32px;">add_photo_alternate</span><br>
+          <strong>Tap to add photos</strong><br>from your gallery or camera
+        </div>
+        <input type="file" id="photo_input" accept="image/*" multiple style="display:none;">
+        <div class="photo-list" id="photo_list"></div>
+      </div>
+    </section>
+
+    <!-- STEP 6 — Review -->
+    <section class="step" data-step="5">
+      <p class="step-eyebrow">Step 6 of 6 · done!</p>
       <h1>Here's what your assistant learned</h1>
       <p class="sub">The platform team double-checks everything before it goes live —
         you can't break anything.</p>
       <div class="card" id="review-card"></div>
       <div class="card">
-        <label>Anything else we should know?<small>Guarantees, payment terms, specialities…</small></label>
-        <textarea name="notes" rows="3"></textarea>
+        <label for="id_notes">Anything else we should know?<small>Guarantees, specialities, anything at all…</small></label>
+        <textarea id="id_notes" name="notes" rows="3"></textarea>
       </div>
     </section>
 
@@ -245,58 +417,371 @@
           <span class="material-symbols-outlined">send</span> Send for review
         </button>
       </div>
-      <p class="skip-note">Every question is optional — skip anything and keep moving.</p>
+      <p class="skip-note">Every question is optional — skip anything and keep moving. Progress saves automatically.</p>
     </div>
   </form>
 </div>
 
 <script>
+const EXISTING = {{ existing_json|safe }};
+const TOKEN = "{{ intake.token }}";
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+const LIBRARY = [
+  {cat: 'Geysers', items: [
+    {label: 'Geyser supply & install', family: 'geyser', variant: ''},
+    {label: 'Full geyser replacement', family: 'geyser_service', variant: 'replacement'},
+    {label: 'Element replacement', family: 'geyser_service', variant: 'element'},
+    {label: 'Thermostat replacement', family: 'geyser_service', variant: 'thermostat'},
+    {label: 'Pressure valve', family: 'geyser_service', variant: 'pressure_valve'},
+  ]},
+  {cat: 'Drains', items: [
+    {label: 'Drain unblocking (simple)', family: 'repair', variant: 'drain_simple'},
+    {label: 'Severe blockage / sewer line', family: 'repair', variant: 'drain_severe'},
+    {label: 'High-pressure jetting', family: 'repair', variant: 'jetting'},
+  ]},
+  {cat: 'Taps & fixtures', items: [
+    {label: 'Leaking tap', family: 'repair', variant: 'leaking_tap'},
+    {label: 'Toilet seat replacement', family: 'repair', variant: 'toilet_seat_replacement'},
+    {label: 'Cistern repair', family: 'repair', variant: 'cistern'},
+    {label: 'Full toilet replacement', family: 'repair', variant: 'full_toilet_replacement'},
+  ]},
+  {cat: 'Pipes', items: [
+    {label: 'Minor pipe leak', family: 'repair', variant: 'minor_pipe_leak'},
+    {label: 'Burst pipe', family: 'repair', variant: 'burst_pipe'},
+    {label: 'Pipe section replacement', family: 'repair', variant: 'pipe_section'},
+  ]},
+  {cat: 'Installs', items: [
+    {label: 'Shower cubicle', family: 'shower', variant: ''},
+    {label: 'Vanity unit', family: 'vanity', variant: ''},
+    {label: 'Toilet install', family: 'toilet', variant: ''},
+    {label: 'Basin', family: 'basin', variant: ''},
+    {label: 'Built-in tub', family: 'tub', variant: ''},
+    {label: 'Freestanding tub', family: 'tub', variant: 'freestanding'},
+    {label: 'Side chamber', family: 'chamber', variant: ''},
+  ]},
+];
+
+const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant','Mabelreign',
+  'Marlborough','Greendale','Chisipite','Glen View','Highfield','Mbare','Kuwadzana','Budiriro',
+  'Waterfalls','Chitungwiza','Ruwa','Norton','Epworth','Gweru','Bulawayo','Mutare','Masvingo',
+  'Victoria Falls','Hwange','Beitbridge','Plumtree','Kwekwe','Kadoma','Chinhoyi','Kariba','Bindura'];
+
 (function () {
   const steps = Array.from(document.querySelectorAll('.step'));
   const dots = Array.from(document.querySelectorAll('#dots span'));
   const back = document.getElementById('back');
   const next = document.getElementById('next');
   const send = document.getElementById('send');
+  const form = document.getElementById('intake');
   let current = 0;
+  let photos = [];        // {path, tag, caption, pair_with_prev, previewUrl}
+  let areas = [];
 
-  const CAPS = {
-    identity: { icon: 'badge', label: 'Introduces your team' },
-    hours:    { icon: 'schedule', label: 'Books within your hours' },
-    areas:    { icon: 'map', label: 'Knows where you work' },
-    faq:      { icon: 'forum', label: 'Answers common questions' },
-    prices:   { icon: 'sell', label: 'Quotes your prices' },
+  // ── Build price library ────────────────────────────────────────────────
+  const lib = document.getElementById('price-library');
+  lib.innerHTML = '<h3>Common plumbing jobs — tap to activate</h3>' + LIBRARY.map(group =>
+    `<div class="chip-group-label">${group.cat}</div>` + group.items.map(item => `
+      <div class="lib-item" data-family="${item.family}" data-variant="${item.variant}">
+        <button type="button" class="lib-toggle" aria-label="toggle"></button>
+        <span class="lib-name">${item.label}</span>
+        <span class="lib-prices">
+          <span class="money" data-cur="$"><input type="text" inputmode="decimal" data-price="allin" placeholder="from __"></span>
+        </span>
+      </div>`).join('')
+  ).join('');
+
+  lib.addEventListener('click', e => {
+    const item = e.target.closest('.lib-item');
+    if (!item) return;
+    if (e.target.closest('.lib-toggle') || e.target.classList.contains('lib-name')) {
+      item.classList.toggle('on');
+      if (item.classList.contains('on')) item.querySelector('input').focus();
+      refresh();
+    }
+  });
+
+  window.addCustomPrice = function (label, price) {
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.style.marginBottom = '8px';
+    div.innerHTML = `
+      <div style="flex:2;"><input type="text" class="cp-label" placeholder="e.g. Borehole pump" value="${label || ''}"></div>
+      <div style="flex:1;"><span class="money" data-cur="$" style="position:relative; display:block;">
+        <input type="text" class="cp-price" inputmode="decimal" placeholder="from __" value="${price || ''}" style="padding-left:26px;"></span></div>`;
+    document.getElementById('custom-prices').appendChild(div);
   };
 
-  function capState() {
-    const state = {};
-    for (const key of Object.keys(CAPS)) state[key] = false;
-    document.querySelectorAll('[data-cap]').forEach(el => {
-      if (el.value.trim()) state[el.dataset.cap] = true;
+  // ── Chips ──────────────────────────────────────────────────────────────
+  document.querySelectorAll('#day-chips .chip, #service-chips .chip, #payment-chips .chip')
+    .forEach(chip => chip.addEventListener('click', () => {
+      chip.classList.toggle('on');
+      if (chip.dataset.pay === '__other') {
+        document.getElementById('payment_other').style.display =
+          chip.classList.contains('on') ? '' : 'none';
+      }
+      refresh();
+    }));
+  document.querySelectorAll('[data-single]').forEach(group => {
+    group.addEventListener('click', e => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      group.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+      chip.classList.add('on');
+      document.getElementById(group.dataset.single).value = chip.dataset.value;
+      refresh();
     });
-    return state;
-  }
+  });
 
+  // ── Areas typeahead ────────────────────────────────────────────────────
+  const areaInput = document.getElementById('area_input');
+  const sugg = document.getElementById('area_suggestions');
+  function renderAreas() {
+    document.getElementById('area_tags').innerHTML = areas.map((a, i) =>
+      `<span class="tag">${a}<button type="button" onclick="window._rmArea(${i})">×</button></span>`).join('');
+    document.getElementById('excluded_hidden').value = areas.join(', ');
+  }
+  window._rmArea = i => { areas.splice(i, 1); renderAreas(); refresh(); };
+  areaInput.addEventListener('input', () => {
+    const q = areaInput.value.trim().toLowerCase();
+    if (!q) { sugg.style.display = 'none'; return; }
+    const hits = PLACES.filter(p => p.toLowerCase().startsWith(q) && !areas.includes(p)).slice(0, 6);
+    sugg.innerHTML = hits.map(p => `<div>${p}</div>`).join('');
+    sugg.style.display = hits.length ? 'block' : 'none';
+  });
+  sugg.addEventListener('click', e => {
+    if (e.target.tagName === 'DIV') {
+      areas.push(e.target.textContent);
+      areaInput.value = ''; sugg.style.display = 'none';
+      renderAreas(); refresh();
+    }
+  });
+  areaInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const v = areaInput.value.trim();
+      if (v && !areas.includes(v)) { areas.push(v); renderAreas(); refresh(); }
+      areaInput.value = ''; sugg.style.display = 'none';
+    }
+  });
+
+  // ── Phone validation → E.164 ───────────────────────────────────────────
+  const phone = document.getElementById('phone_national');
+  const cc = document.getElementById('cc');
+  function syncPhone() {
+    const digits = phone.value.replace(/\D/g, '').replace(/^0+/, '');
+    const ok = digits.length === 0 || (digits.length >= 7 && digits.length <= 10);
+    phone.classList.toggle('invalid', !ok);
+    document.getElementById('phone_error').style.display = ok ? 'none' : 'block';
+    document.getElementById('contact_e164').value = digits ? cc.value + digits : '';
+  }
+  phone.addEventListener('input', () => { syncPhone(); refresh(); });
+  cc.addEventListener('change', syncPhone);
+
+  // ── Gallery ────────────────────────────────────────────────────────────
+  const drop = document.getElementById('drop');
+  const fileInput = document.getElementById('photo_input');
+  drop.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    for (const file of fileInput.files) {
+      const fd = new FormData();
+      fd.append('photo', file);
+      fd.append('csrfmiddlewaretoken', CSRF);
+      try {
+        const res = await fetch(`/intake/${TOKEN}/photo/`, { method: 'POST', body: fd });
+        const out = await res.json();
+        if (out.ok) {
+          photos.push({ path: out.path, tag: 'general', caption: '',
+                        pair_with_prev: false, previewUrl: URL.createObjectURL(file) });
+        } else { alert(out.error || 'Upload failed'); }
+      } catch (e) { alert('Upload failed — check your connection and try again.'); }
+    }
+    fileInput.value = '';
+    renderPhotos(); refresh();
+  });
+
+  const TAGS = ['general','geyser','drain','bathroom install','kitchen','pipes','taps'];
+  function renderPhotos() {
+    document.getElementById('photo_list').innerHTML = photos.map((p, i) => `
+      <div class="photo-row">
+        ${p.previewUrl ? `<img src="${p.previewUrl}">` : '<span class="material-symbols-outlined" style="font-size:40px;color:var(--muted);">image</span>'}
+        <select onchange="window._pTag(${i}, this.value)">
+          ${TAGS.map(t => `<option ${p.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+        <input type="text" placeholder="caption (optional)" value="${p.caption}"
+               oninput="window._pCap(${i}, this.value)" style="flex:1;">
+        ${i > 0 ? `<button type="button" class="chip pairbtn ${p.pair_with_prev ? 'on' : ''}"
+               onclick="window._pPair(${i})">before→after</button>` : ''}
+        <button type="button" class="del" onclick="window._pDel(${i})">✕</button>
+      </div>`).join('');
+    document.getElementById('photos_meta').value = JSON.stringify(
+      photos.map(({ path, tag, caption, pair_with_prev }) => ({ path, tag, caption, pair_with_prev })));
+  }
+  window._pTag = (i, v) => { photos[i].tag = v; renderPhotos(); };
+  window._pCap = (i, v) => { photos[i].caption = v; document.getElementById('photos_meta').value = JSON.stringify(photos.map(({path,tag,caption,pair_with_prev}) => ({path,tag,caption,pair_with_prev}))); };
+  window._pPair = i => { photos[i].pair_with_prev = !photos[i].pair_with_prev; renderPhotos(); refresh(); };
+  window._pDel = i => { photos.splice(i, 1); renderPhotos(); refresh(); };
+
+  // ── Readiness / unlocks ────────────────────────────────────────────────
+  const CAPS = {
+    identity: { icon: 'badge', label: 'Introduces your team', w: 20 },
+    hours:    { icon: 'schedule', label: 'Books within your hours', w: 10 },
+    services: { icon: 'plumbing', label: 'Knows your services', w: 15 },
+    payment:  { icon: 'payments', label: 'Explains how to pay', w: 10 },
+    prices:   { icon: 'sell', label: 'Quotes your prices', w: 30 },
+    gallery:  { icon: 'photo_library', label: 'Shows your past work', w: 15 },
+  };
+  function capState() {
+    return {
+      identity: !!(document.getElementById('id_plumber_name').value.trim() || document.getElementById('contact_e164').value),
+      hours: !!(document.getElementById('id_open').value && document.getElementById('id_close').value &&
+                document.querySelectorAll('#day-chips .chip.on').length),
+      services: !!document.querySelectorAll('#service-chips .chip.on').length,
+      payment: !!document.querySelectorAll('#payment-chips .chip.on:not([data-pay="__other"])').length ||
+               !!document.getElementById('payment_other').value.trim(),
+      prices: !!document.querySelectorAll('.lib-item.on input[data-price]').length &&
+              Array.from(document.querySelectorAll('.lib-item.on input[data-price]')).some(i => i.value.trim()) ||
+              Array.from(document.querySelectorAll('.cp-price')).some(i => i.value.trim()) ||
+              !!document.getElementById('pasted').value.trim(),
+      gallery: photos.length > 0,
+    };
+  }
   function refresh() {
     const state = capState();
-    const unlocked = Object.keys(state).filter(k => state[k]);
-    // Readiness: capability coverage weighted toward prices + identity.
-    const weights = { identity: 25, hours: 15, areas: 10, faq: 20, prices: 30 };
     let score = 0;
-    unlocked.forEach(k => score += weights[k]);
+    const box = document.getElementById('unlocks');
+    box.innerHTML = Object.keys(CAPS).filter(k => state[k]).map(k => {
+      score += CAPS[k].w;
+      return `<span class="unlock"><span class="material-symbols-outlined">${CAPS[k].icon}</span>${CAPS[k].label}</span>`;
+    }).join('');
     document.getElementById('readiness').textContent = score + '%';
     document.getElementById('bar-fill').style.width = score + '%';
-    const box = document.getElementById('unlocks');
-    box.innerHTML = unlocked.map(k =>
-      `<span class="unlock"><span class="material-symbols-outlined">${CAPS[k].icon}</span>${CAPS[k].label}</span>`
-    ).join('');
+  }
+  form.addEventListener('input', refresh);
+
+  // ── Serialisation of chips/prices into the form on any submit-ish event ─
+  function materialise() {
+    form.querySelectorAll('.dyn').forEach(el => el.remove());
+    function hidden(name, value) {
+      const el = document.createElement('input');
+      el.type = 'hidden'; el.name = name; el.value = value; el.className = 'dyn';
+      form.appendChild(el);
+    }
+    document.querySelectorAll('#day-chips .chip.on').forEach(c => hidden('days', c.dataset.day));
+    document.querySelectorAll('#service-chips .chip.on').forEach(c => hidden('services', c.dataset.service));
+    document.querySelectorAll('#payment-chips .chip.on').forEach(c => {
+      if (c.dataset.pay !== '__other') hidden('payment', c.dataset.pay);
+    });
+    document.querySelectorAll('.lib-item.on').forEach(item => {
+      const price = item.querySelector('input[data-price]').value.trim();
+      if (!price) return;
+      hidden('price_label', item.querySelector('.lib-name').textContent);
+      hidden('price_family', item.dataset.family);
+      hidden('price_variant', item.dataset.variant);
+      hidden('price_supply', ''); hidden('price_labour', '');
+      hidden('price_allin', price);
+    });
+    document.querySelectorAll('#custom-prices .row').forEach(row => {
+      const label = row.querySelector('.cp-label').value.trim();
+      const price = row.querySelector('.cp-price').value.trim();
+      if (!label) return;
+      hidden('price_label', label);
+      hidden('price_family', 'other'); hidden('price_variant', label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40));
+      hidden('price_supply', ''); hidden('price_labour', '');
+      hidden('price_allin', price);
+    });
+  }
+  form.addEventListener('submit', materialise);
+
+  // ── Autosave per step ──────────────────────────────────────────────────
+  async function autosave() {
+    materialise();
+    try {
+      const res = await fetch(`/intake/${TOKEN}/autosave/`, {
+        method: 'POST', body: new FormData(form) });
+      if (res.ok) {
+        const flash = document.getElementById('saved');
+        flash.style.opacity = 1;
+        setTimeout(() => flash.style.opacity = 0, 1200);
+      }
+    } catch (e) { /* offline — data still lives in the page */ }
   }
 
+  // ── Resume from a saved draft ──────────────────────────────────────────
+  function resume(d) {
+    if (!d || !Object.keys(d).length) return;
+    for (const [k, v] of Object.entries(d.profile || {})) {
+      const el = document.getElementById('id_' + k);
+      if (el && v) el.value = v;
+    }
+    if ((d.profile || {}).plumber_contact) {
+      const raw = d.profile.plumber_contact;
+      const known = ['+263','+27','+260','+267','+258','+44'].find(c => raw.startsWith(c));
+      if (known) { cc.value = known; phone.value = raw.slice(known.length); }
+      else phone.value = raw.replace(/^\+/, '');
+      syncPhone();
+    }
+    const hours = d.hours || {};
+    if (Array.isArray(hours.days) && hours.days.length) {
+      document.querySelectorAll('#day-chips .chip').forEach(c =>
+        c.classList.toggle('on', hours.days.includes(c.dataset.day)));
+    }
+    if (hours.open) document.getElementById('id_open').value = hours.open;
+    if (hours.close) document.getElementById('id_close').value = hours.close;
+    (d.excluded_areas || []).forEach(a => areas.push(a.replace(/\b\w/g, m => m.toUpperCase())));
+    renderAreas();
+    document.querySelectorAll('#service-chips .chip').forEach(c =>
+      c.classList.toggle('on', (d.services || []).includes(c.dataset.service)));
+    document.querySelectorAll('#payment-chips .chip').forEach(c =>
+      c.classList.toggle('on', (d.payment_methods || []).includes(c.dataset.pay)));
+    const durations = d.durations || {};
+    ['duration_small', 'duration_big'].forEach(name => {
+      const val = durations[name.replace('duration_', '')];
+      if (!val) return;
+      document.getElementById(name).value = val;
+      document.querySelectorAll(`[data-single="${name}"] .chip`).forEach(c =>
+        c.classList.toggle('on', c.dataset.value === val));
+    });
+    if ((d.faq_facts || {}).free_quote) document.getElementById('id_free_quote').value = d.faq_facts.free_quote;
+    if (d.pasted_price_list) document.getElementById('pasted').value = d.pasted_price_list;
+    if (d.notes) document.getElementById('id_notes').value = d.notes;
+    (d.prices || []).forEach(row => {
+      const item = document.querySelector(
+        `.lib-item[data-family="${row.family}"][data-variant="${row.variant || ''}"]`);
+      if (item && item.querySelector('.lib-name').textContent === row.label) {
+        item.classList.add('on');
+        item.querySelector('input[data-price]').value = row.allin || row.supply || '';
+      } else if (row.label) {
+        addCustomPrice(row.label, row.allin || row.supply || '');
+      }
+    });
+    photos = (d.photos || []).map(p => ({ ...p, previewUrl: null }));
+    renderPhotos();
+  }
+
+  // ── Review ─────────────────────────────────────────────────────────────
+  function buildReview() {
+    const state = capState();
+    const priceCount = document.querySelectorAll('.lib-item.on').length +
+      Array.from(document.querySelectorAll('.cp-label')).filter(i => i.value.trim()).length;
+    const rows = [
+      ['Team introduction', state.identity ? (document.getElementById('id_plumber_name').value.trim() || 'Provided') : 'Skipped — generic wording used'],
+      ['Working hours', state.hours ? `${document.querySelectorAll('#day-chips .chip.on').length} days, ${document.getElementById('id_open').value}–${document.getElementById('id_close').value}` : 'Skipped'],
+      ['No-go areas', areas.length ? areas.join(', ') : 'None — you go everywhere'],
+      ['Services', state.services ? `${document.querySelectorAll('#service-chips .chip.on').length} selected — anything else is politely declined` : 'Skipped'],
+      ['Payments', state.payment ? 'Provided' : 'Skipped'],
+      ['Price list', state.prices ? (document.getElementById('pasted').value.trim() ? 'Pasted — we\'ll set it up for you' : `${priceCount} item(s) — assistant can quote`) : 'Skipped — all price questions deflect to your free quote'],
+      ['Past work photos', photos.length ? `${photos.length} photo(s)` : 'Skipped — add anytime from your dashboard'],
+    ];
+    document.getElementById('review-card').innerHTML = rows.map(
+      ([k, v]) => `<div class="review-line"><span>${k}</span><span>${v}</span></div>`).join('');
+  }
+
+  // ── Step navigation ────────────────────────────────────────────────────
   function show(index) {
     current = Math.max(0, Math.min(steps.length - 1, index));
     steps.forEach((s, i) => s.classList.toggle('active', i === current));
-    dots.forEach((d, i) => {
-      d.className = i < current ? 'done' : (i === current ? 'now' : '');
-    });
+    dots.forEach((d, i) => { d.className = i < current ? 'done' : (i === current ? 'now' : ''); });
     back.style.visibility = current === 0 ? 'hidden' : 'visible';
     next.style.display = current === steps.length - 1 ? 'none' : '';
     send.style.display = current === steps.length - 1 ? '' : 'none';
@@ -304,35 +789,12 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
     refresh();
   }
+  back.addEventListener('click', () => { autosave(); show(current - 1); });
+  next.addEventListener('click', () => { autosave(); show(current + 1); });
 
-  function buildReview() {
-    const state = capState();
-    const rows = [];
-    const name = document.getElementById('id_plumber_name');
-    rows.push(['Team introduction', state.identity ? (name && name.value.trim() ? name.value.trim() : 'Provided') : 'Skipped — generic wording used']);
-    rows.push(['Working hours', state.hours ? 'Provided' : 'Skipped — no hours claims']);
-    rows.push(['No-go areas', state.areas ? document.querySelector('[name=excluded_areas]').value : 'None — you go everywhere']);
-    rows.push(['Customer questions', state.faq ? 'Answered in your voice' : 'Skipped — handled generically']);
-    const priceCount = Array.from(document.querySelectorAll('[name=price_label]')).filter(i => i.value.trim()).length;
-    rows.push(['Price list', priceCount ? priceCount + ' item(s) — assistant can quote' : 'Skipped — all price questions deflect to your free quote']);
-    document.getElementById('review-card').innerHTML = rows.map(
-      ([k, v]) => `<div class="review-line"><span>${k}</span><span>${v}</span></div>`
-    ).join('');
-  }
-
-  back.addEventListener('click', () => show(current - 1));
-  next.addEventListener('click', () => show(current + 1));
-  document.getElementById('intake').addEventListener('input', refresh);
+  resume(EXISTING);
   refresh();
   show(0);
-
-  window.addRow = function () {
-    const body = document.querySelector('#price-table tbody');
-    const clone = body.querySelector('tr').cloneNode(true);
-    clone.querySelectorAll('input').forEach(i => i.value = '');
-    body.appendChild(clone);
-    refresh();
-  };
 })();
 </script>
 </body>

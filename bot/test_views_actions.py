@@ -869,19 +869,27 @@ class TenantIntakeTests(TestCase):
         self.root = get_user_model().objects.create_superuser(
             username='root', password='pass12345', email='root@example.com')
 
-    def _submit(self):
-        return self.client.post(f'/intake/{self.intake.token}/', {
+    def _submit(self, extra=None):
+        payload = {
             'plumber_name': 'Blessing', 'plumber_contact': '+263711111111',
-            'business_whatsapp': '', 'location_area': 'Kwekwe',
-            'location_city': 'Kwekwe', 'email_from_name': 'Blessing',
-            'hours_days': 'Monday-Saturday', 'hours_open': '07:00', 'hours_close': '17:00',
+            'location_area': 'Kwekwe', 'location_city': 'Kwekwe',
+            'email_from_name': 'Blessing',
+            'days': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+            'hours_open': '07:00', 'hours_close': '17:00',
             'excluded_areas': 'Harare',
-            'faq_payment': 'Cash and EcoCash.',
-            'price_label': ['Geyser install', ''],
+            'payment': ['Cash (USD)', 'EcoCash'],
+            'services': ['leak repairs', 'geyser install & repair'],
+            'duration_small': 'under an hour', 'duration_big': 'a full day',
+            'faq_free_quote': 'Yes — free visit, fixed price on the spot.',
+            'price_label': ['Geyser supply & install', ''],
             'price_family': ['geyser', ''],
+            'price_variant': ['', ''],
             'price_supply': ['90', ''], 'price_labour': ['60', ''],
             'price_allin': ['150', ''],
-        })
+            'photos_meta': '[]',
+        }
+        payload.update(extra or {})
+        return self.client.post(f'/intake/{self.intake.token}/', payload)
 
     def test_public_form_renders_by_token_and_404s_otherwise(self):
         response = self.client.get(f'/intake/{self.intake.token}/')
@@ -907,16 +915,69 @@ class TenantIntakeTests(TestCase):
         self.assertEqual(response.status_code, 302)
         profile = TenantProfile.objects.get(tenant=self.acme)
         self.assertEqual(profile.plumber_name, 'Blessing')
+        # Day chips + pickers composed into the canonical hours shape…
+        self.assertEqual(profile.business_hours['days'], 'Monday-Saturday')
         self.assertEqual(profile.business_hours['open'], '07:00')
+        self.assertEqual(profile.business_hours['closed'], ['sun'])
+        # …and it renders through the bot's hour formatters.
+        from .tenant_config import get_config
+        cfg = get_config(self.acme)
+        self.assertEqual(cfg.hours_sentence(), 'Monday to Saturday, 7:00 AM – 5:00 PM')
         self.assertEqual(profile.excluded_areas, ['harare'])
-        self.assertEqual(profile.faq_facts['payment'], 'Cash and EcoCash.')
+        # Structured answers composed into fact sentences.
+        self.assertIn('Cash (USD)', profile.faq_facts['payment'])
+        self.assertIn('EcoCash', profile.faq_facts['payment'])
+        self.assertIn('leak repairs', profile.faq_facts['services'])
+        self.assertIn('under an hour', profile.faq_facts['job_duration'])
+        self.assertEqual(profile.faq_facts['free_quote'],
+                         'Yes — free visit, fixed price on the spot.')
         from .models import TenantPriceItem
         item = TenantPriceItem.objects.get(tenant=self.acme, family='geyser', variant='')
         self.assertEqual(int(item.supply), 90)
         self.assertEqual(int(item.allin), 150)
-        # The bot now answers from it.
-        from .tenant_config import get_config
-        self.assertEqual(get_config(self.acme).price_components().get('geyser'), (90, 60))
+        self.assertEqual(cfg.price_components().get('geyser'), (90, 60))
+
+    def test_photo_upload_and_pairing(self):
+        # Upload two photos via the endpoint, submit as a before/after pair,
+        # approve → ONE portfolio item with pair_filename + tag keyword.
+        import json as _json
+        png = (b'\x89PNG\r\n\x1a\n' + b'0' * 64)
+        paths = []
+        for name in ('before.png', 'after.png'):
+            response = self.client.post(
+                f'/intake/{self.intake.token}/photo/',
+                {'photo': SimpleUploadedFile(name, png, content_type='image/png')})
+            body = response.json()
+            self.assertTrue(body['ok'], body)
+            paths.append(body['path'])
+        self._submit({'photos_meta': _json.dumps([
+            {'path': paths[0], 'tag': 'geyser', 'caption': '', 'pair_with_prev': False},
+            {'path': paths[1], 'tag': 'geyser', 'caption': 'Geyser swap in Kwekwe',
+             'pair_with_prev': True},
+        ])})
+        self.client.login(username='root', password='pass12345')
+        self.client.post(reverse('platform_review_intake', args=[self.intake.pk]),
+                         {'decision': 'approve'})
+        from .models import TenantPortfolioItem
+        items = list(TenantPortfolioItem.objects.filter(tenant=self.acme))
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].filename, paths[1])       # after
+        self.assertEqual(items[0].pair_filename, paths[0])  # before
+        self.assertEqual(items[0].keywords, ['geyser'])
+        self.assertEqual(items[0].title, 'Geyser swap in Kwekwe')
+
+    def test_autosave_merges_draft_for_resume(self):
+        response = self.client.post(f'/intake/{self.intake.token}/autosave/', {
+            'plumber_name': 'Draft Guy', 'days': ['monday'],
+            'hours_open': '08:00', 'hours_close': '17:00', 'photos_meta': '[]',
+        })
+        self.assertTrue(response.json()['ok'])
+        self.intake.refresh_from_db()
+        self.assertEqual(self.intake.status, 'pending')  # still a draft
+        self.assertEqual(self.intake.data['profile']['plumber_name'], 'Draft Guy')
+        # The form GET embeds the draft for resume.
+        response = self.client.get(f'/intake/{self.intake.token}/')
+        self.assertIn('Draft Guy', response.content.decode())
 
     def test_reject_applies_nothing(self):
         self._submit()

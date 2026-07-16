@@ -207,8 +207,7 @@ def platform_reset_staff_password(request, slug, user_id):
 INTAKE_PROFILE_FIELDS = [
     # (field, label, help)
     ('plumber_name', 'Lead plumber name', 'The person customers can ask for.'),
-    ('plumber_contact', 'Plumber direct number', 'e.g. +2637...'),
-    ('business_whatsapp', 'Business WhatsApp number', 'Where email buttons point. Can be the same as above.'),
+    ('plumber_contact', 'Plumber direct number', 'Customers can call this line for anything technical.'),
     ('location_area', 'Suburb / area', 'e.g. Hatfield'),
     ('location_city', 'City', 'e.g. Harare'),
     ('email_from_name', 'Email sender name', 'Whose name customer emails come from.'),
@@ -234,49 +233,87 @@ def platform_new_intake(request, slug):
     return redirect('platform_tenant_config', slug=tenant.slug)
 
 
+def _parse_intake_post(request) -> dict:
+    """Normalise the wizard's POST into the intake draft shape (v2)."""
+    import json as _json
+    data = {'profile': {}, 'faq_facts': {}, 'prices': [], 'hours': {},
+            'payment_methods': [], 'services': [], 'durations': {},
+            'photos': [], 'notes': '', 'pasted_price_list': ''}
+    for field, _label, _help in INTAKE_PROFILE_FIELDS:
+        data['profile'][field] = (request.POST.get(field) or '').strip()
+    free_quote = (request.POST.get('faq_free_quote') or '').strip()
+    if free_quote:
+        data['faq_facts']['free_quote'] = free_quote
+    data['hours'] = {
+        'days': [d for d in request.POST.getlist('days') if d],
+        'open': (request.POST.get('hours_open') or '').strip(),
+        'close': (request.POST.get('hours_close') or '').strip(),
+    }
+    data['excluded_areas'] = [
+        a.strip().lower() for a in
+        (request.POST.get('excluded_areas') or '').split(',') if a.strip()
+    ]
+    data['payment_methods'] = [p for p in request.POST.getlist('payment') if p]
+    other_pay = (request.POST.get('payment_other') or '').strip()
+    if other_pay:
+        data['payment_methods'].append(other_pay)
+    data['services'] = [s for s in request.POST.getlist('services') if s]
+    other_service = (request.POST.get('service_other') or '').strip()
+    if other_service:
+        data['services'].append(other_service)
+    data['durations'] = {
+        'small': (request.POST.get('duration_small') or '').strip(),
+        'big': (request.POST.get('duration_big') or '').strip(),
+    }
+    labels = request.POST.getlist('price_label')
+    families = request.POST.getlist('price_family')
+    variants = request.POST.getlist('price_variant')
+    supplies = request.POST.getlist('price_supply')
+    labours = request.POST.getlist('price_labour')
+    allins = request.POST.getlist('price_allin')
+
+    def at(lst, i):
+        return (lst[i] if i < len(lst) else '').strip()
+
+    for i, label in enumerate(labels):
+        if not label.strip():
+            continue
+        data['prices'].append({
+            'label': label.strip(),
+            'family': at(families, i).lower() or 'other',
+            'variant': at(variants, i).lower(),
+            'supply': at(supplies, i),
+            'labour': at(labours, i),
+            'allin': at(allins, i),
+        })
+    try:
+        photos = _json.loads(request.POST.get('photos_meta') or '[]')
+        if isinstance(photos, list):
+            data['photos'] = [
+                {'path': str(p.get('path', ''))[:255],
+                 'tag': str(p.get('tag', 'general'))[:40],
+                 'caption': str(p.get('caption', ''))[:200],
+                 'pair_with_prev': bool(p.get('pair_with_prev'))}
+                for p in photos if p.get('path')
+            ]
+    except (ValueError, AttributeError):
+        pass
+    data['pasted_price_list'] = (request.POST.get('pasted_price_list') or '').strip()
+    data['notes'] = (request.POST.get('notes') or '').strip()
+    return data
+
+
 def intake_form(request, token):
-    """PUBLIC (token-gated) owner intake form. Submissions are drafts — the
+    """PUBLIC (token-gated) owner intake wizard. Submissions are drafts — the
     admin reviews and approves before anything goes live."""
+    import json as _json
     intake = get_object_or_404(TenantIntake, token=token)
     if intake.status in ('approved', 'rejected'):
         return render(request, 'bot/pages/intake_done.html',
                       {'intake': intake}, status=200)
 
     if request.method == 'POST':
-        data = {'profile': {}, 'faq_facts': {}, 'prices': [], 'hours': {}, 'notes': ''}
-        for field, _label, _help in INTAKE_PROFILE_FIELDS:
-            data['profile'][field] = (request.POST.get(field) or '').strip()
-        for topic, _q, _h in INTAKE_FAQ_TOPICS:
-            value = (request.POST.get(f'faq_{topic}') or '').strip()
-            if value:
-                data['faq_facts'][topic] = value
-        data['hours'] = {
-            'days': (request.POST.get('hours_days') or '').strip(),
-            'open': (request.POST.get('hours_open') or '').strip(),
-            'close': (request.POST.get('hours_close') or '').strip(),
-        }
-        data['excluded_areas'] = [
-            a.strip().lower() for a in
-            (request.POST.get('excluded_areas') or '').split(',') if a.strip()
-        ]
-        # Price rows arrive as parallel arrays from the dynamic table.
-        labels = request.POST.getlist('price_label')
-        families = request.POST.getlist('price_family')
-        supplies = request.POST.getlist('price_supply')
-        labours = request.POST.getlist('price_labour')
-        allins = request.POST.getlist('price_allin')
-        for i, label in enumerate(labels):
-            if not label.strip():
-                continue
-            data['prices'].append({
-                'label': label.strip(),
-                'family': (families[i] if i < len(families) else '').strip().lower() or 'other',
-                'supply': (supplies[i] if i < len(supplies) else '').strip(),
-                'labour': (labours[i] if i < len(labours) else '').strip(),
-                'allin': (allins[i] if i < len(allins) else '').strip(),
-            })
-        data['notes'] = (request.POST.get('notes') or '').strip()
-        intake.data = data
+        intake.data = _parse_intake_post(request)
         intake.status = 'submitted'
         intake.submitted_at = timezone.now()
         intake.save(update_fields=['data', 'status', 'submitted_at'])
@@ -286,9 +323,136 @@ def intake_form(request, token):
         'intake': intake,
         'tenant': intake.tenant,
         'profile_fields': INTAKE_PROFILE_FIELDS,
-        'faq_topics': INTAKE_FAQ_TOPICS,
-        'existing': intake.data or {},
+        'existing_json': _json.dumps(intake.data or {}),
     })
+
+
+@require_POST
+def intake_autosave(request, token):
+    """Per-step autosave (public, token-gated): merge the wizard's current
+    state into the draft so owners resume where they left off."""
+    from django.http import JsonResponse
+    intake = get_object_or_404(TenantIntake, token=token)
+    if intake.status != 'pending':
+        return JsonResponse({'ok': False, 'error': 'closed'}, status=409)
+    intake.data = _parse_intake_post(request)
+    intake.save(update_fields=['data'])
+    return JsonResponse({'ok': True})
+
+
+@require_POST
+def intake_photo_upload(request, token):
+    """Photo upload for the gallery step (public, token-gated). Stores the
+    file immediately; the wizard tracks path+tag+caption client-side and
+    submits them in photos_meta."""
+    import uuid as _uuid
+
+    from django.core.files.storage import default_storage
+    from django.http import JsonResponse
+    intake = get_object_or_404(TenantIntake, token=token)
+    if intake.status != 'pending':
+        return JsonResponse({'ok': False, 'error': 'closed'}, status=409)
+    upload = request.FILES.get('photo')
+    if upload is None:
+        return JsonResponse({'ok': False, 'error': 'no file'}, status=400)
+    if upload.size > 8 * 1024 * 1024:
+        return JsonResponse({'ok': False, 'error': 'Photo too large (8 MB max).'}, status=400)
+    ext = (upload.name.rsplit('.', 1)[-1] if '.' in upload.name else 'jpg').lower()
+    if ext not in ('jpg', 'jpeg', 'png', 'webp'):
+        return JsonResponse({'ok': False, 'error': 'Use a JPG, PNG, or WebP photo.'}, status=400)
+    path = default_storage.save(
+        f'intake_photos/{intake.tenant.slug}/{_uuid.uuid4().hex}.{ext}', upload)
+    return JsonResponse({'ok': True, 'path': path})
+
+
+_WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+
+
+def _compose_business_hours(hours: dict):
+    """Wizard day-chips + time pickers → the profile's business_hours shape
+    ({'days': 'Monday-Saturday', 'open', 'close', 'closed': ['sun']})."""
+    selected = [d for d in _WEEK if d in (hours.get('days') or [])]
+    if not selected or not hours.get('open') or not hours.get('close'):
+        return None
+    return {
+        'days': f"{selected[0].title()}-{selected[-1].title()}",
+        'open': hours['open'],
+        'close': hours['close'],
+        'closed': [d[:3] for d in _WEEK if d not in selected],
+    }
+
+
+def _join_natural(items):
+    items = [i for i in items if i]
+    if not items:
+        return ''
+    if len(items) == 1:
+        return items[0]
+    return ', '.join(items[:-1]) + f", and {items[-1]}"
+
+
+def _compose_payment_fact(methods) -> str:
+    joined = _join_natural(methods)
+    if not joined:
+        return ''
+    return (f"{joined} — all good.\n\n"
+            "You'll get the full price before anything starts, no surprises.")
+
+
+def _compose_services_fact(services) -> str:
+    joined = _join_natural([s.lower() for s in services])
+    if not joined:
+        return ''
+    return f"Yes, we handle {joined}."
+
+
+def _compose_duration_fact(durations: dict) -> str:
+    small, big = durations.get('small'), durations.get('big')
+    if small and big:
+        return (f"It depends on the scope — smaller jobs usually take {small}, "
+                f"while bigger jobs run {big}.")
+    if small or big:
+        return f"Most jobs take {small or big}, depending on the scope."
+    return ''
+
+
+def _apply_intake_photos(tenant, photos):
+    """Approved gallery photos → TenantPortfolioItem rows (before/after pairs
+    merge into one item; tags become keywords so the bot sends RELEVANT shots)."""
+    from django.utils.text import slugify as _slugify
+
+    from ..models import TenantPortfolioItem
+    previous_path = None
+    index = TenantPortfolioItem.objects.filter(tenant=tenant).count()
+    for photo in photos:
+        path, tag = photo.get('path'), (photo.get('tag') or 'general').lower()
+        if not path:
+            continue
+        if photo.get('pair_with_prev') and previous_path:
+            # This shot is the AFTER of a pair; the previous upload is the BEFORE.
+            item = TenantPortfolioItem.objects.filter(
+                tenant=tenant, filename=previous_path).first()
+            if item is not None:
+                item.pair_filename = item.filename
+                item.filename = path
+                title = photo.get('caption') or f"{tag.title()} — before & after"
+                item.title = title[:120]
+                item.save(update_fields=['pair_filename', 'filename', 'title'])
+                previous_path = path
+                continue
+        index += 1
+        TenantPortfolioItem.objects.get_or_create(
+            tenant=tenant,
+            item_id=_slugify(f"{tag}-{index}")[:80],
+            defaults=dict(
+                filename=path,
+                title=(photo.get('caption') or f"{tag.title()} work")[:120],
+                description=photo.get('caption', ''),
+                keywords=[tag],
+                sort_order=index,
+            ),
+        )
+        previous_path = path
 
 
 def _to_decimal_or_none(raw):
@@ -318,12 +482,23 @@ def platform_review_intake(request, pk):
                 if value and hasattr(profile, field):
                     setattr(profile, field, value)
             hours = data.get('hours') or {}
-            if hours.get('days') and hours.get('open') and hours.get('close'):
-                profile.business_hours = hours
+            composed_hours = _compose_business_hours(hours)
+            if composed_hours:
+                profile.business_hours = composed_hours
             if data.get('excluded_areas'):
                 profile.excluded_areas = data['excluded_areas']
             merged = dict(profile.faq_facts or {})
             merged.update(data.get('faq_facts') or {})
+            # Structured answers → the bot's fact sentences.
+            payment_line = _compose_payment_fact(data.get('payment_methods') or [])
+            if payment_line:
+                merged['payment'] = payment_line
+            services_line = _compose_services_fact(data.get('services') or [])
+            if services_line:
+                merged['services'] = services_line
+            duration_line = _compose_duration_fact(data.get('durations') or {})
+            if duration_line:
+                merged['job_duration'] = duration_line
             profile.faq_facts = merged
             profile.save()
             for row in data.get('prices') or []:
@@ -337,6 +512,7 @@ def platform_review_intake(request, pk):
                         allin=_to_decimal_or_none(row.get('allin')),
                     ),
                 )
+            _apply_intake_photos(tenant, data.get('photos') or [])
             intake.status = 'approved'
             intake.reviewed_at = timezone.now()
             intake.save(update_fields=['status', 'review_note', 'reviewed_at'])

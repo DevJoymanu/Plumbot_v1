@@ -281,6 +281,9 @@ class TenantPortfolioItem(models.Model):
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='portfolio_items')
     item_id = models.SlugField(max_length=80)            # stable slug (logs/dedup)
     filename = models.CharField(max_length=255)
+    # Before/after pair (plumbing gold): the "before" shot's path; the main
+    # filename is the "after". Blank = a single photo.
+    pair_filename = models.CharField(max_length=255, blank=True, default='')
     title = models.CharField(max_length=120)
     price_line = models.CharField(max_length=200, blank=True, default='')  # "kitchen renovation from US$600"
     description = models.TextField(blank=True, default='')
