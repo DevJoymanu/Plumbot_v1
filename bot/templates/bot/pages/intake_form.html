@@ -4,131 +4,336 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ tenant.name }} — Business setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL@20..48,300,0..1&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; }
+  :root {
+    --primary: #006591; --vibrant: #0ea5e9; --ink: #0b1c30;
+    --muted: #5b7285; --error: #ba1a1a; --surface: rgba(248,249,255,0.92);
+  }
   body {
-    margin: 0; padding: 24px 16px 64px;
-    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
-    background: #f4f8fb; color: #0b1c30; line-height: 1.5;
+    margin: 0; padding: 0 16px 96px;
+    font-family: Inter, -apple-system, "Segoe UI", Arial, sans-serif;
+    background:
+      radial-gradient(600px 400px at 85% -10%, rgba(14,165,233,0.07), transparent),
+      radial-gradient(500px 350px at -10% 30%, rgba(70,72,212,0.05), transparent),
+      #f4f8fb;
+    color: var(--ink); line-height: 1.55;
   }
-  .wrap { max-width: 720px; margin: 0 auto; }
-  h1 { font-size: 24px; font-weight: 600; margin: 0 0 4px; }
-  .sub { color: #5b7285; font-size: 14px; margin: 0 0 24px; }
+  .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined'; font-weight: 300;
+    font-size: 20px; vertical-align: -4px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  /* ── Sticky progress header ── */
+  .progress-shell {
+    position: sticky; top: 0; z-index: 10; margin: 0 -16px 24px;
+    padding: 14px 16px 12px; background: var(--surface);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid rgba(0,101,145,0.10);
+    box-shadow: 0 20px 40px -15px rgba(14,165,233,0.08);
+  }
+  .progress-top { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+  .brand { font-size: 13px; font-weight: 700; color: var(--primary); letter-spacing: 0.05em; text-transform: uppercase; flex: 1; }
+  .readiness { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .readiness strong { color: var(--primary); font-size: 15px; }
+  .bar { max-width: 640px; margin: 8px auto 0; height: 6px; border-radius: 999px; background: rgba(0,101,145,0.08); overflow: hidden; }
+  .bar > div {
+    height: 100%; width: 0%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--primary), var(--vibrant));
+    box-shadow: 0 0 12px rgba(14,165,233,0.5);
+    transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .dots { max-width: 640px; margin: 10px auto 0; display: flex; gap: 6px; }
+  .dots span {
+    flex: 1; height: 3px; border-radius: 999px; background: rgba(0,101,145,0.10);
+    transition: background 0.3s ease;
+  }
+  .dots span.done { background: var(--vibrant); }
+  .dots span.now { background: var(--primary); }
+
+  /* ── Steps ── */
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+  .step { display: none; animation: rise 0.35s ease; }
+  .step.active { display: block; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .step-eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--vibrant); margin: 0 0 2px;
+  }
   .card {
-    background: #fff; border: 1px solid rgba(0,101,145,0.10);
-    border-radius: 16px; box-shadow: 0 20px 40px -15px rgba(14,165,233,0.08);
-    padding: 24px; margin-bottom: 20px;
+    background: var(--surface); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(0,101,145,0.10); border-radius: 20px;
+    box-shadow: 0 20px 40px -15px rgba(14,165,233,0.08);
+    padding: 24px; margin-bottom: 16px;
   }
-  .card h2 {
-    font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
-    text-transform: uppercase; color: #006591; margin: 0 0 16px;
-  }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 4px; }
-  label small { display: block; font-weight: 400; color: #5b7285; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 4px; }
+  label:first-of-type { margin-top: 0; }
+  label small { display: block; font-weight: 400; color: var(--muted); }
   input, textarea {
     width: 100%; border: none; background: rgba(0,101,145,0.05);
-    border-radius: 12px; padding: 10px 14px; font-size: 15px; outline: none;
+    border-radius: 14px; padding: 12px 16px; font-size: 15px; outline: none;
+    font-family: inherit; transition: box-shadow 0.2s ease;
   }
-  input:focus, textarea:focus { box-shadow: 0 0 0 2px rgba(0,101,145,0.2); }
-  .row { display: flex; gap: 12px; }
+  input:focus, textarea:focus { box-shadow: 0 0 0 2px rgba(0,101,145,0.25); }
+  .row { display: flex; gap: 10px; }
   .row > div { flex: 1; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #5b7285; padding: 6px 4px; }
-  td { padding: 4px; }
-  td input { padding: 8px 10px; font-size: 13px; }
-  .btn {
-    display: inline-block; border: none; background: #006591; color: #fff;
-    border-radius: 999px; padding: 12px 28px; font-size: 15px; font-weight: 600;
-    cursor: pointer; margin-top: 8px;
+
+  /* ── Capability unlocks ── */
+  .unlocks { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 20px; min-height: 30px; }
+  .unlock {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; color: var(--primary);
+    background: rgba(14,165,233,0.10); border: 1px solid rgba(14,165,233,0.25);
+    border-radius: 999px; padding: 4px 12px;
+    animation: pop 0.3s ease;
   }
-  .btn:hover { opacity: 0.9; }
-  .btn-ghost { background: transparent; color: #006591; border: 1px solid rgba(0,101,145,0.25); padding: 8px 18px; font-size: 13px; }
+  .unlock .material-symbols-outlined { font-size: 16px; color: var(--vibrant); }
+  @keyframes pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
+
+  /* ── Price table ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 4px; }
+  td { padding: 4px 3px; }
+  td input { padding: 9px 10px; font-size: 13px; border-radius: 10px; }
+
+  /* ── Nav buttons ── */
+  .nav {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    background: var(--surface); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid rgba(0,101,145,0.10); padding: 12px 16px;
+  }
+  .nav-inner { max-width: 640px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
+  .btn {
+    border: none; border-radius: 999px; padding: 13px 26px; font-size: 15px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: transform 0.15s ease, opacity 0.2s ease;
+  }
+  .btn:active { transform: scale(0.95); }
+  .btn-next { background: var(--primary); color: #fff; flex: 1; box-shadow: 0 8px 20px rgba(0,101,145,0.25); }
+  .btn-next:hover { opacity: 0.92; }
+  .btn-back { background: transparent; color: var(--primary); border: 1px solid rgba(0,101,145,0.2); }
+  .skip-note { text-align: center; font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* ── Review step ── */
+  .review-line { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(0,101,145,0.06); font-size: 14px; }
+  .review-line span:first-child { color: var(--muted); }
+  .review-line span:last-child { font-weight: 600; text-align: right; }
+  noscript .step { display: block; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>{{ tenant.name }} — business setup</h1>
-  <p class="sub">
-    Fill in what you can — every question is optional. Whatever you leave blank,
-    the assistant simply won't claim or quote. Your answers go to the platform
-    team for review before anything goes live.
-  </p>
 
-  <form method="post">
+<div class="progress-shell">
+  <div class="progress-top">
+    <div class="brand">{{ tenant.name }} · Setup</div>
+    <div class="readiness">Assistant readiness <strong id="readiness">0%</strong></div>
+  </div>
+  <div class="bar"><div id="bar-fill"></div></div>
+  <div class="dots" id="dots">
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="unlocks" id="unlocks"></div>
+
+  <form method="post" id="intake">
     {% csrf_token %}
 
-    <div class="card">
-      <h2>Who you are</h2>
-      {% for field, label, help in profile_fields %}
-      <label for="id_{{ field }}">{{ label }}<small>{{ help }}</small></label>
-      <input type="text" id="id_{{ field }}" name="{{ field }}">
-      {% endfor %}
-    </div>
-
-    <div class="card">
-      <h2>When you work</h2>
-      <div class="row">
-        <div>
-          <label>Days<small>e.g. Sunday-Friday</small></label>
-          <input type="text" name="hours_days" placeholder="Sunday-Friday">
-        </div>
-        <div>
-          <label>Open<small>24h, e.g. 08:00</small></label>
-          <input type="text" name="hours_open" placeholder="08:00">
-        </div>
-        <div>
-          <label>Close<small>e.g. 18:00</small></label>
-          <input type="text" name="hours_close" placeholder="18:00">
-        </div>
+    <!-- STEP 1 — Identity -->
+    <section class="step active" data-step="0">
+      <p class="step-eyebrow">Step 1 of 5 · 2 minutes</p>
+      <h1>Let's introduce your business</h1>
+      <p class="sub">This is how your WhatsApp assistant will introduce your team to customers.</p>
+      <div class="card">
+        {% for field, label, help in profile_fields %}
+        <label for="id_{{ field }}">{{ label }}<small>{{ help }}</small></label>
+        <input type="text" id="id_{{ field }}" name="{{ field }}" data-cap="identity">
+        {% endfor %}
       </div>
-      <label>Places you do NOT travel to<small>Comma-separated, e.g. Bulawayo, Mutare. Leave blank if you go everywhere.</small></label>
-      <input type="text" name="excluded_areas" placeholder="">
-    </div>
+    </section>
 
-    <div class="card">
-      <h2>Common customer questions — answer in your own words</h2>
-      {% for topic, question, help in faq_topics %}
-      <label for="id_faq_{{ topic }}">{{ question }}<small>{{ help }}</small></label>
-      <textarea id="id_faq_{{ topic }}" name="faq_{{ topic }}" rows="2"></textarea>
-      {% endfor %}
-    </div>
+    <!-- STEP 2 — Hours & areas -->
+    <section class="step" data-step="1">
+      <p class="step-eyebrow">Step 2 of 5 · 1 minute</p>
+      <h1>When and where you work</h1>
+      <p class="sub">So the assistant books visits only when you're actually available.</p>
+      <div class="card">
+        <div class="row">
+          <div>
+            <label>Days<small>e.g. Sunday-Friday</small></label>
+            <input type="text" name="hours_days" placeholder="Sunday-Friday" data-cap="hours">
+          </div>
+          <div>
+            <label>Open<small>e.g. 08:00</small></label>
+            <input type="text" name="hours_open" placeholder="08:00" data-cap="hours">
+          </div>
+          <div>
+            <label>Close<small>e.g. 18:00</small></label>
+            <input type="text" name="hours_close" placeholder="18:00" data-cap="hours">
+          </div>
+        </div>
+        <label>Places you do NOT travel to<small>Comma-separated. Leave blank if you go everywhere — the assistant will politely decline these areas for you.</small></label>
+        <input type="text" name="excluded_areas" data-cap="areas">
+      </div>
+    </section>
 
-    <div class="card">
-      <h2>Your price list — "from" rates, leave blanks where there's no split</h2>
-      <table id="price-table">
-        <thead>
-          <tr><th>What is it?</th><th>Type</th><th>Supply from</th><th>Labour from</th><th>All-in from</th></tr>
-        </thead>
-        <tbody>
-          {% for i in "12345678"|make_list %}
-          <tr>
-            <td><input type="text" name="price_label" placeholder="e.g. Shower cubicle"></td>
-            <td><input type="text" name="price_family" placeholder="shower / tub / geyser / repair"></td>
-            <td><input type="text" name="price_supply"></td>
-            <td><input type="text" name="price_labour"></td>
-            <td><input type="text" name="price_allin"></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <button type="button" class="btn btn-ghost" onclick="addRow()">+ More rows</button>
-    </div>
+    <!-- STEP 3 — FAQ -->
+    <section class="step" data-step="2">
+      <p class="step-eyebrow">Step 3 of 5 · 3 minutes</p>
+      <h1>Answer like you would on WhatsApp</h1>
+      <p class="sub">Your assistant repeats these in your voice. Write exactly what you'd text a customer.</p>
+      <div class="card">
+        {% for topic, question, help in faq_topics %}
+        <label for="id_faq_{{ topic }}">{{ question }}<small>{{ help }}</small></label>
+        <textarea id="id_faq_{{ topic }}" name="faq_{{ topic }}" rows="2" data-cap="faq"></textarea>
+        {% endfor %}
+      </div>
+    </section>
 
-    <div class="card">
-      <h2>Anything else we should know?</h2>
-      <textarea name="notes" rows="3" placeholder="Guarantees, payment terms, special services..."></textarea>
-    </div>
+    <!-- STEP 4 — Prices -->
+    <section class="step" data-step="3">
+      <p class="step-eyebrow">Step 4 of 5 · the big one</p>
+      <h1>Your price list</h1>
+      <p class="sub">"From" rates are perfect — the exact figure is always confirmed on site.
+        Anything you skip, the assistant deflects to your free quote instead of guessing.</p>
+      <div class="card">
+        <table id="price-table">
+          <thead>
+            <tr><th>What is it?</th><th>Type</th><th>Supply</th><th>Labour</th><th>All-in</th></tr>
+          </thead>
+          <tbody>
+            {% for i in "1234"|make_list %}
+            <tr>
+              <td><input type="text" name="price_label" placeholder="e.g. Geyser install" data-cap="prices"></td>
+              <td><input type="text" name="price_family" placeholder="geyser"></td>
+              <td><input type="text" name="price_supply"></td>
+              <td><input type="text" name="price_labour"></td>
+              <td><input type="text" name="price_allin"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <button type="button" class="btn btn-back" style="margin-top:12px; padding:8px 18px; font-size:13px;" onclick="addRow()">
+          <span class="material-symbols-outlined">add</span> More rows
+        </button>
+      </div>
+    </section>
 
-    <button type="submit" class="btn">Send for review</button>
+    <!-- STEP 5 — Review -->
+    <section class="step" data-step="4">
+      <p class="step-eyebrow">Step 5 of 5 · done!</p>
+      <h1>Here's what your assistant learned</h1>
+      <p class="sub">The platform team double-checks everything before it goes live —
+        you can't break anything.</p>
+      <div class="card" id="review-card"></div>
+      <div class="card">
+        <label>Anything else we should know?<small>Guarantees, payment terms, specialities…</small></label>
+        <textarea name="notes" rows="3"></textarea>
+      </div>
+    </section>
+
+    <div class="nav">
+      <div class="nav-inner">
+        <button type="button" class="btn btn-back" id="back" style="visibility:hidden;">Back</button>
+        <button type="button" class="btn btn-next" id="next">Continue</button>
+        <button type="submit" class="btn btn-next" id="send" style="display:none;">
+          <span class="material-symbols-outlined">send</span> Send for review
+        </button>
+      </div>
+      <p class="skip-note">Every question is optional — skip anything and keep moving.</p>
+    </div>
   </form>
 </div>
+
 <script>
-function addRow() {
-  const body = document.querySelector('#price-table tbody');
-  body.insertAdjacentHTML('beforeend', body.querySelector('tr').outerHTML
-    .replace(/value="[^"]*"/g, ''));
-  body.lastElementChild.querySelectorAll('input').forEach(i => i.value = '');
-}
+(function () {
+  const steps = Array.from(document.querySelectorAll('.step'));
+  const dots = Array.from(document.querySelectorAll('#dots span'));
+  const back = document.getElementById('back');
+  const next = document.getElementById('next');
+  const send = document.getElementById('send');
+  let current = 0;
+
+  const CAPS = {
+    identity: { icon: 'badge', label: 'Introduces your team' },
+    hours:    { icon: 'schedule', label: 'Books within your hours' },
+    areas:    { icon: 'map', label: 'Knows where you work' },
+    faq:      { icon: 'forum', label: 'Answers common questions' },
+    prices:   { icon: 'sell', label: 'Quotes your prices' },
+  };
+
+  function capState() {
+    const state = {};
+    for (const key of Object.keys(CAPS)) state[key] = false;
+    document.querySelectorAll('[data-cap]').forEach(el => {
+      if (el.value.trim()) state[el.dataset.cap] = true;
+    });
+    return state;
+  }
+
+  function refresh() {
+    const state = capState();
+    const unlocked = Object.keys(state).filter(k => state[k]);
+    // Readiness: capability coverage weighted toward prices + identity.
+    const weights = { identity: 25, hours: 15, areas: 10, faq: 20, prices: 30 };
+    let score = 0;
+    unlocked.forEach(k => score += weights[k]);
+    document.getElementById('readiness').textContent = score + '%';
+    document.getElementById('bar-fill').style.width = score + '%';
+    const box = document.getElementById('unlocks');
+    box.innerHTML = unlocked.map(k =>
+      `<span class="unlock"><span class="material-symbols-outlined">${CAPS[k].icon}</span>${CAPS[k].label}</span>`
+    ).join('');
+  }
+
+  function show(index) {
+    current = Math.max(0, Math.min(steps.length - 1, index));
+    steps.forEach((s, i) => s.classList.toggle('active', i === current));
+    dots.forEach((d, i) => {
+      d.className = i < current ? 'done' : (i === current ? 'now' : '');
+    });
+    back.style.visibility = current === 0 ? 'hidden' : 'visible';
+    next.style.display = current === steps.length - 1 ? 'none' : '';
+    send.style.display = current === steps.length - 1 ? '' : 'none';
+    if (current === steps.length - 1) buildReview();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    refresh();
+  }
+
+  function buildReview() {
+    const state = capState();
+    const rows = [];
+    const name = document.getElementById('id_plumber_name');
+    rows.push(['Team introduction', state.identity ? (name && name.value.trim() ? name.value.trim() : 'Provided') : 'Skipped — generic wording used']);
+    rows.push(['Working hours', state.hours ? 'Provided' : 'Skipped — no hours claims']);
+    rows.push(['No-go areas', state.areas ? document.querySelector('[name=excluded_areas]').value : 'None — you go everywhere']);
+    rows.push(['Customer questions', state.faq ? 'Answered in your voice' : 'Skipped — handled generically']);
+    const priceCount = Array.from(document.querySelectorAll('[name=price_label]')).filter(i => i.value.trim()).length;
+    rows.push(['Price list', priceCount ? priceCount + ' item(s) — assistant can quote' : 'Skipped — all price questions deflect to your free quote']);
+    document.getElementById('review-card').innerHTML = rows.map(
+      ([k, v]) => `<div class="review-line"><span>${k}</span><span>${v}</span></div>`
+    ).join('');
+  }
+
+  back.addEventListener('click', () => show(current - 1));
+  next.addEventListener('click', () => show(current + 1));
+  document.getElementById('intake').addEventListener('input', refresh);
+  refresh();
+  show(0);
+
+  window.addRow = function () {
+    const body = document.querySelector('#price-table tbody');
+    const clone = body.querySelector('tr').cloneNode(true);
+    clone.querySelectorAll('input').forEach(i => i.value = '');
+    body.appendChild(clone);
+    refresh();
+  };
+})();
 </script>
 </body>
 </html>
