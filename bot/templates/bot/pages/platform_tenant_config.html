@@ -42,7 +42,37 @@
   }
   .btn-pill:hover { opacity: 0.9; }
   .btn-ghost { background: transparent; color: #006591; border-color: rgba(0,101,145,0.2); }
+  .btn-share { padding: 4px 12px; font-size: 12px; text-decoration: none; margin-right: 6px; }
+  .btn-share.copied { background: rgba(14,165,233,0.12); border-color: rgba(14,165,233,0.4); }
 </style>
+<script>
+function _intakeUrl(group) {
+  return window.location.origin + '/intake/' + group.dataset.token + '/';
+}
+function _shareMessage(url) {
+  return 'Hi! Here is your {{ tenant.name }} assistant setup form — takes about 5 minutes, ' +
+         'every question is optional, and nothing goes live until our team reviews it: ' + url;
+}
+function copyIntake(btn) {
+  const group = btn.closest('.share-group');
+  navigator.clipboard.writeText(_intakeUrl(group)).then(() => {
+    btn.classList.add('copied');
+    const original = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Copied';
+    setTimeout(() => { btn.innerHTML = original; btn.classList.remove('copied'); }, 1800);
+  });
+}
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.share-group').forEach(function (group) {
+    const url = _intakeUrl(group);
+    const message = encodeURIComponent(_shareMessage(url));
+    group.querySelector('.share-wa').href = 'https://wa.me/?text=' + message;
+    group.querySelector('.share-email').href =
+      'mailto:?subject=' + encodeURIComponent('Your {{ tenant.name }} assistant setup') +
+      '&body=' + message;
+  });
+});
+</script>
 {% endblock %}
 
 {% block content %}
@@ -88,7 +118,17 @@
           <td>{{ intake.get_status_display }}</td>
           <td>
             {% if intake.status == 'pending' %}
-              <code style="font-size:11px;">/intake/{{ intake.token }}/</code>
+              <span class="share-group" data-token="{{ intake.token }}">
+                <button type="button" class="btn-pill btn-ghost btn-share" onclick="copyIntake(this)">
+                  <i class="fas fa-copy"></i> Copy link
+                </button>
+                <a class="btn-pill btn-ghost btn-share share-wa" href="#" target="_blank" rel="noopener">
+                  <i class="fab fa-whatsapp"></i> WhatsApp
+                </a>
+                <a class="btn-pill btn-ghost btn-share share-email" href="#">
+                  <i class="fas fa-envelope"></i> Email
+                </a>
+              </span>
             {% else %}
               <a href="{% url 'platform_review_intake' intake.pk %}">Open review</a>
             {% endif %}
