@@ -135,7 +135,8 @@ from .scenario_lab import (
 )
 
 # Auth views
-from ..auth_views import login_view, logout_view, profile_view, change_password_view
+from ..auth_views import (login_view, logout_view, profile_view,
+                          change_password_view, password_reset_request)
 
 # Shared clients re-exported for management commands that do:
 #   from bot.views import twilio_client, TWILIO_WHATSAPP_NUMBER

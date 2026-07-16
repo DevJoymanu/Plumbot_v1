@@ -215,12 +215,26 @@ def profile_view(request):
     user = request.user
     
     if request.method == 'POST':
+        # Username change (self-service): unique, sane length, logged.
+        new_username = (request.POST.get('username') or '').strip()
+        if new_username and new_username != user.username:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            if len(new_username) < 3:
+                messages.error(request, 'Username must be at least 3 characters.')
+                return redirect('profile')
+            if User.objects.filter(username__iexact=new_username).exclude(pk=user.pk).exists():
+                messages.error(request, f'Username "{new_username}" is already taken.')
+                return redirect('profile')
+            logger.info(f"User {user.username} renamed to {new_username}")
+            user.username = new_username
+
         # Simple profile update
         user.first_name = request.POST.get('first_name', user.first_name)
         user.last_name = request.POST.get('last_name', user.last_name)
         user.email = request.POST.get('email', user.email)
         user.save()
-        
+
         messages.success(request, 'Profile updated successfully!')
         logger.info(f"User {user.username} updated profile")
         return redirect('profile')
@@ -231,6 +245,56 @@ def profile_view(request):
     }
     
     return render(request, 'bot/pages/registration/profile.html', context)
+
+
+def password_reset_request(request):
+    """Public forgot-password page. Sends the reset link through the
+    platform's HTTP email transport (Railway blocks SMTP, so Django's
+    built-in PasswordResetView would silently fail to send)."""
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.tokens import default_token_generator
+    from django.db.models import Q
+    from django.utils.encoding import force_bytes
+    from django.utils.http import urlsafe_base64_encode
+
+    sent = False
+    if request.method == 'POST':
+        identifier = (request.POST.get('identifier') or '').strip()
+        User = get_user_model()
+        users = User.objects.filter(
+            Q(username__iexact=identifier) | Q(email__iexact=identifier),
+            is_active=True,
+        ).exclude(email='')
+        for user in users:
+            uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            link = request.build_absolute_uri(f'/reset/{uidb64}/{token}/')
+            try:
+                from .plumber_notifications import send_email_to_recipients
+                send_email_to_recipients(
+                    [user.email],
+                    'Reset your dashboard password',
+                    (f'Hi {user.first_name or user.username},\n\n'
+                     f'Someone (hopefully you) asked to reset your dashboard password.\n'
+                     f'Set a new one here (link valid for a limited time):\n{link}\n\n'
+                     f'If this was not you, ignore this email — nothing changes.'),
+                    html_message=(
+                        f'<p>Hi {user.first_name or user.username},</p>'
+                        f'<p>Someone (hopefully you) asked to reset your dashboard password.</p>'
+                        f'<p><a href="{link}" style="background:#006591;color:#fff;'
+                        f'padding:10px 22px;border-radius:999px;text-decoration:none;">'
+                        f'Set a new password</a></p>'
+                        f'<p style="color:#5b7285;">If this was not you, ignore this '
+                        f'email — nothing changes.</p>'),
+                )
+                logger.info(f"Password reset link sent for {user.username}")
+            except Exception as exc:
+                logger.error(f"Password reset email failed for {user.username}: {exc}")
+        # Always claim success — never reveal whether an account exists.
+        sent = True
+    return render(request, 'bot/pages/registration/password_reset_request.html', {
+        'title': 'Reset password', 'sent': sent,
+    })
 
 
 def access_denied_view(request, exception=None):

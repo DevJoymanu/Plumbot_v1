@@ -45,6 +45,13 @@ urlpatterns = [
     path('logout/', logout_view, name='logout'),
     path('profile/', profile_view, name='profile'),
     path('change-password/', change_password_view, name='change_password'),
+    # Self-service password reset (public; email link via HTTP transport)
+    path('password-reset/', views.password_reset_request, name='password_reset_request'),
+    path('reset/<uidb64>/<token>/',
+         __import__('django.contrib.auth.views', fromlist=['PasswordResetConfirmView']).PasswordResetConfirmView.as_view(
+             template_name='bot/pages/registration/password_reset_confirm.html',
+             success_url='/login/'),
+         name='password_reset_confirm'),
 
     # Dashboard
     path('dashboard/', views.DashboardView.as_view(), name='dashboard'),

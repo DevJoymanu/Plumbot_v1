@@ -993,6 +993,62 @@ class ScenarioLabTenantTests(TestCase):
         self.assertNotIn('golden 0', body)
 
 
+class SelfServiceAccountTests(TestCase):
+    """Users manage their own username/password: profile rename (unique,
+    logged) and the forgot-password email flow (HTTP transport, no
+    enumeration, token round-trip)."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.user = get_user_model().objects.create_user(
+            username='renameme', password='oldpass123', is_staff=True,
+            email='me@example.test')
+        TenantMembership.objects.create(user=self.user, tenant=self.homebase, role='staff')
+
+    def test_username_change_and_uniqueness(self):
+        get_user_model().objects.create_user(username='taken', password='x' * 10)
+        self.client.login(username='renameme', password='oldpass123')
+        # Taken name rejected (case-insensitive), original intact.
+        self.client.post(reverse('profile'), {'username': 'TAKEN', 'email': 'me@example.test'})
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, 'renameme')
+        # Fresh name accepted; next login uses it.
+        self.client.post(reverse('profile'), {'username': 'newname', 'email': 'me@example.test'})
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, 'newname')
+        self.client.logout()
+        self.assertTrue(self.client.login(username='newname', password='oldpass123'))
+
+    @patch('bot.plumber_notifications.send_email_to_recipients')
+    def test_password_reset_round_trip(self, mock_send):
+        # Request a link (by email this time).
+        response = self.client.post(reverse('password_reset_request'),
+                                    {'identifier': 'me@example.test'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(mock_send.called)
+        plain_body = mock_send.call_args[0][2]
+        import re as _re
+        link = _re.search(r'(/reset/[^\s]+/)', plain_body).group(1)
+        # Django's confirm view redirects to a set-password session URL.
+        response = self.client.get(link, follow=True)
+        self.assertEqual(response.status_code, 200)
+        set_url = response.request['PATH_INFO']
+        response = self.client.post(set_url, {
+            'new_password1': 'brandNew!234', 'new_password2': 'brandNew!234'},
+            follow=True)
+        self.assertFalse(self.client.login(username='renameme', password='oldpass123'))
+        self.assertTrue(self.client.login(username='renameme', password='brandNew!234'))
+
+    @patch('bot.plumber_notifications.send_email_to_recipients')
+    def test_unknown_identifier_reveals_nothing(self, mock_send):
+        response = self.client.post(reverse('password_reset_request'),
+                                    {'identifier': 'ghost@nowhere.test'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('a reset link is on its way', response.content.decode())
+        self.assertFalse(mock_send.called)
+
+
 class TenantWebhookRoutingTests(TestCase):
     """Phase 1: inbound events route to a tenant by metadata.phone_number_id.
     Route-miss falls back to homebase (single-tenant transition safety) —

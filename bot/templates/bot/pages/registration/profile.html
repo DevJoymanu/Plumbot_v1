@@ -16,6 +16,39 @@
 
             <div class="row">
                 <div class="col-lg-8">
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="card-title mb-0"><i class="fas fa-user-cog me-2"></i>Account settings</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post">
+                                {% csrf_token %}
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_username">Username</label>
+                                        <input type="text" name="username" id="id_username" class="form-control" value="{{ user.username }}" minlength="3">
+                                        <small class="text-muted">You'll sign in with this from now on.</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_email">Email</label>
+                                        <input type="email" name="email" id="id_email" class="form-control" value="{{ user.email }}">
+                                        <small class="text-muted">Used for password reset links.</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_first_name">First name</label>
+                                        <input type="text" name="first_name" id="id_first_name" class="form-control" value="{{ user.first_name }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_last_name">Last name</label>
+                                        <input type="text" name="last_name" id="id_last_name" class="form-control" value="{{ user.last_name }}">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save changes</button>
+                                <a href="{% url 'change_password' %}" class="btn btn-outline-primary ms-2"><i class="fas fa-key me-1"></i>Change password</a>
+                            </form>
+                        </div>
+                    </div>
+
                     <div class="card shadow-sm">
                         <div class="card-header bg-primary text-white">
                             <h5 class="card-title mb-0">
