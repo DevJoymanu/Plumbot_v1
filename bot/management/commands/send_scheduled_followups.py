@@ -52,9 +52,9 @@ def dispatch_due_scheduled_followups(now=None, dry_run=False, log=None):
                 if dry_run:
                     _emit(f'[dry-run] WhatsApp → apt {apt.pk}: {message[:60]}…')
                 else:
-                    from bot.whatsapp_cloud_api import whatsapp_api
+                    from bot.whatsapp_cloud_api import get_client_for_tenant
                     from bot.utils import clean_phone_number
-                    whatsapp_api.send_text_message(clean_phone_number(apt.phone_number), message)
+                    get_client_for_tenant(getattr(sf.appointment, 'tenant', None)).send_text_message(clean_phone_number(apt.phone_number), message)
                     apt.add_conversation_message('assistant', f'[SCHEDULED FOLLOW-UP] {message}')
                     apt.last_followup_sent = timezone.now()
                     apt.followup_count = (apt.followup_count or 0) + 1

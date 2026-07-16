@@ -71,9 +71,9 @@ def dispatch_due_scheduled_reminders(now=None, dry_run=False, log=None):
                     if dry_run:
                         _emit(f'[dry-run] customer WhatsApp → apt {apt.pk}: {body[:60]}…')
                     else:
-                        from bot.whatsapp_cloud_api import whatsapp_api
+                        from bot.whatsapp_cloud_api import get_client_for_tenant
                         from bot.utils import clean_phone_number
-                        whatsapp_api.send_text_message(clean_phone_number(apt.phone_number), body)
+                        get_client_for_tenant(getattr(r.appointment, 'tenant', None)).send_text_message(clean_phone_number(apt.phone_number), body)
                         apt.add_conversation_message('assistant', f'[SCHEDULED REMINDER] {body}')
                 else:  # email
                     if not apt.customer_email:
@@ -115,8 +115,8 @@ def dispatch_due_scheduled_reminders(now=None, dry_run=False, log=None):
                     if dry_run:
                         _emit(f'[dry-run] plumber WhatsApp → +{plumber_phone}: {body[:60]}…')
                     else:
-                        from bot.whatsapp_cloud_api import whatsapp_api
-                        whatsapp_api.send_text_message(plumber_phone, body)
+                        from bot.whatsapp_cloud_api import get_client_for_tenant
+                        get_client_for_tenant(getattr(r.appointment, 'tenant', None)).send_text_message(plumber_phone, body)
 
             if not dry_run:
                 r.status = 'sent'

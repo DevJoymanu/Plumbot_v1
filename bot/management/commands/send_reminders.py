@@ -192,15 +192,15 @@ def _mark_sent_plumber(apt, rtype: str) -> None:
 # WHATSAPP SENDER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _send_wa(phone: str, message: str, dry_run: bool = False) -> bool:
-    """Send a WhatsApp message. Returns True on success."""
+def _send_wa(phone: str, message: str, dry_run: bool = False, tenant=None) -> bool:
+    """Send a WhatsApp message as the lead's tenant (Phase 4). Returns True on success."""
     if dry_run:
         print(f"  [DRY RUN] Would send to +{phone}: {message[:80]}…")
         return True
     try:
-        from bot.whatsapp_cloud_api import whatsapp_api
+        from bot.whatsapp_cloud_api import get_client_for_tenant
         clean = _fmt_phone(phone)
-        whatsapp_api.send_text_message(clean, message)
+        get_client_for_tenant(tenant).send_text_message(clean, message)
         return True
     except Exception as e:
         logger.error(f"WhatsApp send failed to {phone}: {e}")
@@ -490,7 +490,7 @@ def _hr():
     return '<hr style="border:none;border-top:1px solid #e0e0e0;margin:16px 0;">'
 
 
-def _send_email(recipients, subject, html, dry_run):
+def _send_email(recipients, subject, html, dry_run, apt=None):
     if dry_run:
         logger.info("DRY RUN email '%s' → %s", subject, recipients)
         return True
@@ -570,7 +570,9 @@ class Command(BaseCommand):
         self.stdout.write(f"  Confirmed appointments found: {len(all_apts)}\n")
 
         # TODO(Phase 4 per-tenant cron loop): per-lead apt.plumber_contact().
-        plumber_contact = f"+{PLUMBER_PHONE}" if PLUMBER_PHONE else "+263774819901"
+        # Phase 4: the tenant's own plumber line per lead; env is homebase's
+        # global fallback. (Resolved per-apt below where one is in scope.)
+        plumber_contact = f"+{PLUMBER_PHONE}" if PLUMBER_PHONE else ''
 
         # ─────────────────────────────────────────────────────────────────────
         # CUSTOMER REMINDERS
@@ -609,7 +611,7 @@ class Command(BaseCommand):
                         self.stdout.write(f"    SKIP  {label} → {apt_label}")
                     elif window_open:
                         msg = builder(apt, plumber_contact.replace("+", ""))
-                        ok  = _send_wa(phone, msg, dry_run=dry_run)
+                        ok  = _send_wa(phone, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
                         if ok:
                             if not dry_run:
                                 _mark_sent_customer(apt, rtype)
@@ -645,8 +647,9 @@ class Command(BaseCommand):
                     customer_skipped += 1
                     self.stdout.write(f"    SKIP  2 Hours Before → {apt_label}")
                 elif window_open:
-                    msg = _msg_2hours(apt, plumber_contact.replace("+", ""))
-                    ok  = _send_wa(phone, msg, dry_run=dry_run)
+                    _pc = (apt.plumber_contact() or plumber_contact).replace("+", "")
+                    msg = _msg_2hours(apt, _pc)
+                    ok  = _send_wa(phone, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
                     if ok:
                         if not dry_run:
                             _mark_sent_customer(apt, rtype)
@@ -819,7 +822,7 @@ class Command(BaseCommand):
                         self.stdout.write(f"    SKIP  Tomorrow's Jobs ({len(tomorrow_apts)} apts) [already sent]")
                     else:
                         msg = _msg_plumber_next_day(tomorrow_apts, PLUMBER_NAME)
-                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run, tenant=getattr(marker, 'tenant', None))
                         if ok:
                             if not dry_run:
                                 _mark_sent_plumber(marker, rtype)
@@ -844,7 +847,7 @@ class Command(BaseCommand):
                         self.stdout.write(f"    SKIP  Morning Briefing ({len(today_apts)} apts) [already sent]")
                     else:
                         msg = _msg_plumber_morning(today_apts, PLUMBER_NAME)
-                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run, tenant=getattr(marker, 'tenant', None))
                         if ok:
                             if not dry_run:
                                 _mark_sent_plumber(marker, rtype)
@@ -871,7 +874,7 @@ class Command(BaseCommand):
                         self.stdout.write(f"    SKIP  2-Hour Alert → {name} [already sent]")
                     else:
                         msg = _msg_plumber_2hours(apt, PLUMBER_NAME)
-                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run)
+                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
                         if ok:
                             if not dry_run:
                                 _mark_sent_plumber(apt, rtype)
@@ -950,7 +953,7 @@ class Command(BaseCommand):
                     f"Next week — {n} appointment{'s' if n != 1 else ''} scheduled",
                     body_html,
                 )
-                ok = _send_email(email_recipients, subject, html, dry_run)
+                ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                 if ok:
                     if not dry_run and week_apts:
                         _eflag_mark(week_apts[0], flag)
@@ -1001,7 +1004,7 @@ class Command(BaseCommand):
                         f"🗓️ Tomorrow's Jobs — {n} Appointment{'s' if n != 1 else ''}",
                         body_html,
                     )
-                    ok = _send_email(email_recipients, subject, html, dry_run)
+                    ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                     if ok:
                         if not dry_run:
                             _eflag_mark(marker, flag)
@@ -1051,7 +1054,7 @@ class Command(BaseCommand):
                         f"☀️ Today's Jobs — {n} Appointment{'s' if n != 1 else ''}",
                         body_html,
                     )
-                    ok = _send_email(email_recipients, subject, html, dry_run)
+                    ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                     if ok:
                         if not dry_run:
                             _eflag_mark(marker, flag)
@@ -1141,7 +1144,7 @@ class Command(BaseCommand):
                         f"⏰ Job in 2 Hours — {_service(apt)} in {_area(apt)}",
                         body_html,
                     )
-                    ok = _send_email(email_recipients, subject, html, dry_run)
+                    ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                     if ok:
                         if not dry_run:
                             _eflag_mark(apt, flag)
@@ -1174,7 +1177,7 @@ class Command(BaseCommand):
                         f"🚨 30 Minutes Away — {_service(apt)} in {_area(apt)}",
                         body_html,
                     )
-                    ok = _send_email(email_recipients, subject, html, dry_run)
+                    ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                     if ok:
                         if not dry_run:
                             _eflag_mark(apt, flag)

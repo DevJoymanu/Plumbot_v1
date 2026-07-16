@@ -19,7 +19,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 from bot.models import Appointment, LeadStatus
-from bot.whatsapp_cloud_api import whatsapp_api
+from bot.whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 import os
 import re
 import logging
@@ -254,7 +254,7 @@ class Command(BaseCommand):
                     continue
 
                 clean = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-                whatsapp_api.send_text_message(clean, message)
+                get_client_for_tenant(lead.tenant).send_text_message(clean, message)
 
                 self._write_delay_nudge_state(lead, nudge_count + 1, now)
                 lead.add_conversation_message(
@@ -416,7 +416,7 @@ class Command(BaseCommand):
                     continue
 
                 clean = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
-                whatsapp_api.send_text_message(clean, message)
+                get_client_for_tenant(lead.tenant).send_text_message(clean, message)
 
                 self._write_parked_nudge_state(lead, nudge_count + 1, now)
                 lead.add_conversation_message(
@@ -599,7 +599,7 @@ class Command(BaseCommand):
                     # ── Near-term check-in: single WhatsApp shot ────────────
                     kind = 'portfolio' if is_pdf_checkin else 'access'
                     try:
-                        whatsapp_api.send_text_message(clean, message)
+                        get_client_for_tenant(lead.tenant).send_text_message(clean, message)
                         wa_ok = True
                     except Exception as wa_exc:
                         logger.warning(
@@ -642,7 +642,7 @@ class Command(BaseCommand):
                 else:
                     # ── Touch 1: WhatsApp + (optional) email ────────────────
                     try:
-                        whatsapp_api.send_text_message(clean, message)
+                        get_client_for_tenant(lead.tenant).send_text_message(clean, message)
                         wa_ok = True
                     except Exception as wa_exc:
                         logger.warning(
@@ -872,7 +872,7 @@ class Command(BaseCommand):
             # would 400 against the Cloud API. Skip instead of erroring forever.
             logger.debug(f'Lead {lead.id} skipped: non-numeric phone {clean_phone!r}')
             return {'status': 'skipped'}
-        whatsapp_api.send_text_message(clean_phone, message)
+        get_client_for_tenant(lead.tenant).send_text_message(clean_phone, message)
 
         lead.last_followup_sent = timezone.now()
         lead.followup_count    += 1
