@@ -53,12 +53,16 @@ def make_lead(suffix, **kwargs):
 
 
 class StaffClientTestCase(TestCase):
-    """Logged-in staff client, shared by every test class below."""
+    """Logged-in staff client, shared by every test class below. Staff needs
+    an explicit homebase membership since the admin/homebase separation —
+    mirroring migration 0056's backfill for real users."""
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(
             username='staff-tester', password='pass12345', is_staff=True,
         )
+        TenantMembership.objects.create(
+            user=self.user, tenant=Tenant.objects.get(slug='homebase'), role='staff')
         self.client.force_login(self.user)
 
 
@@ -664,11 +668,24 @@ class TenantSwitcherTests(TestCase):
         response = self.client.get(reverse('dashboard'))
         self.assertEqual(response.wsgi_request.tenant, self.acme)
 
-    def test_no_membership_falls_back_to_homebase(self):
+    def test_no_membership_is_blocked_not_homebase(self):
+        # Homebase/admin separation: a staff login with NO membership must be
+        # clearly blocked — never silently dropped into homebase's data.
         get_user_model().objects.create_user(
             username='legacystaff', password='pass12345', is_staff=True)
         self.client.login(username='legacystaff', password='pass12345')
         response = self.client.get(reverse('dashboard'))
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('No workspace assigned', response.content.decode())
+        # Public/auth surfaces stay reachable.
+        self.assertLess(self.client.get('/logout/').status_code, 400)
+
+    def test_superuser_defaults_to_homebase_lens(self):
+        get_user_model().objects.create_superuser(
+            username='root2', password='pass12345', email='r2@example.com')
+        self.client.login(username='root2', password='pass12345')
+        response = self.client.get(reverse('dashboard'))
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.wsgi_request.tenant, self.homebase)
 
 

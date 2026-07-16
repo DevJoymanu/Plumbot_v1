@@ -114,11 +114,14 @@ class CustomerEmailAsyncTests(TestCase):
 
 class SendPdfToLeadTests(TestCase):
     def setUp(self):
+        from .models import Tenant, TenantMembership
         self.user = get_user_model().objects.create_user(
             username='pdf-sender',
             password='testpass123',
             is_staff=True,
         )
+        TenantMembership.objects.create(
+            user=self.user, tenant=Tenant.objects.get(slug='homebase'), role='staff')
         self.client.force_login(self.user)
         self.appointment = Appointment.objects.create(
             phone_number='whatsapp:+10000000009',

@@ -21,9 +21,28 @@ Webhook traffic does NOT use this: inbound WhatsApp resolves its tenant by
 ``phone_number_id`` (Phase 1), not by session.
 """
 
+from django.http import HttpResponseForbidden
+
 from .models import Tenant, TenantMembership
 
 TENANT_SESSION_KEY = 'platform_tenant_slug'
+
+# Paths that don't require a tenant workspace: auth, public surfaces, the
+# webhook, the platform console itself, and static assets.
+_EXEMPT_PREFIXES = (
+    '/login', '/logout', '/webhook', '/intake/', '/call/', '/call',
+    '/admin', '/platform', '/static', '/media', '/favicon',
+)
+
+_NO_WORKSPACE_HTML = (
+    '<div style="font-family:Arial,sans-serif; max-width:480px; margin:80px auto; '
+    'text-align:center; color:#0b1c30;">'
+    '<h1 style="color:#006591; font-size:22px;">No workspace assigned</h1>'
+    '<p style="color:#5b7285;">Your login works, but it is not linked to a '
+    'business workspace yet. Ask your platform administrator to add you to '
+    'your company from the console.</p>'
+    '<p><a href="/logout/" style="color:#006591;">Log out</a></p></div>'
+)
 
 
 class TenantMiddleware:
@@ -32,6 +51,15 @@ class TenantMiddleware:
 
     def __call__(self, request):
         request.tenant = self._resolve(request)
+        # Separation rule: an authenticated non-superuser with NO membership
+        # gets a clear block, never a silent fallback into homebase's data.
+        user = getattr(request, 'user', None)
+        if (
+            user is not None and user.is_authenticated and not user.is_superuser
+            and request.tenant is None
+            and not request.path.startswith(_EXEMPT_PREFIXES)
+        ):
+            return HttpResponseForbidden(_NO_WORKSPACE_HTML)
         return self.get_response(request)
 
     def _resolve(self, request):
@@ -43,6 +71,8 @@ class TenantMiddleware:
                     tenant = Tenant.objects.filter(slug=slug, is_active=True).first()
                     if tenant is not None:
                         return tenant
+                # Platform admin's default LENS (not a membership): homebase.
+                return Tenant.objects.filter(slug='homebase').first()
             membership = (
                 TenantMembership.objects
                 .filter(user=user, tenant__is_active=True)
@@ -52,4 +82,5 @@ class TenantMiddleware:
             )
             if membership is not None:
                 return membership.tenant
+            return None  # staff without a keycard — middleware blocks above
         return Tenant.objects.filter(slug='homebase').first()
