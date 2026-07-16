@@ -101,6 +101,57 @@ document.addEventListener('DOMContentLoaded', function () {
   </div>
 
   <div class="platform-card">
+    <div class="platform-card__title">Staff &amp; logins</div>
+    {% if staff %}
+    <table class="price-table" style="margin-bottom:16px;">
+      <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last login</th><th style="text-align:right;">Actions</th></tr></thead>
+      <tbody>
+        {% for m in staff %}
+        <tr>
+          <td><strong>{{ m.user.username }}</strong>{% if m.user.email %}<br><small style="color:#5b7285;">{{ m.user.email }}</small>{% endif %}</td>
+          <td>{{ m.get_role_display }}</td>
+          <td>{% if m.user.is_active %}<span style="color:#006591; font-weight:600;">Active</span>{% else %}<span style="color:#ba1a1a; font-weight:600;">Deactivated</span>{% endif %}</td>
+          <td>{{ m.user.last_login|date:"j M Y H:i"|default:"never" }}</td>
+          <td style="text-align:right; white-space:nowrap;">
+            <form method="post" action="{% url 'platform_toggle_staff' tenant.slug m.user_id %}" style="display:inline;">
+              {% csrf_token %}
+              <button type="submit" class="btn-pill btn-ghost btn-share">
+                {% if m.user.is_active %}Deactivate{% else %}Reactivate{% endif %}
+              </button>
+            </form>
+            <form method="post" action="{% url 'platform_reset_staff_password' tenant.slug m.user_id %}" style="display:inline;">
+              {% csrf_token %}
+              <input type="password" name="password" placeholder="new password" required minlength="8"
+                     style="width:130px; border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:5px 12px; font-size:12px;">
+              <button type="submit" class="btn-pill btn-ghost btn-share">Reset</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="font-size:13px; color:#5b7285; margin:0 0 16px;">No logins yet — this tenant's team can't access the dashboard until you create one.</p>
+    {% endif %}
+    <form method="post" action="{% url 'platform_add_staff' tenant.slug %}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      {% csrf_token %}
+      <input type="text" name="username" placeholder="username" required
+             style="border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:8px 16px; font-size:13px;">
+      <input type="email" name="email" placeholder="email (optional)"
+             style="border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:8px 16px; font-size:13px;">
+      <input type="password" name="password" placeholder="temp password (8+ chars)" required minlength="8"
+             style="border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:8px 16px; font-size:13px;">
+      <select name="role" style="border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:8px 16px; font-size:13px;">
+        <option value="staff">Staff</option>
+        <option value="owner">Owner</option>
+      </select>
+      <button type="submit" class="btn-pill" style="padding:8px 18px; font-size:13px;">
+        <i class="fas fa-user-plus"></i> Add login
+      </button>
+    </form>
+  </div>
+
+  <div class="platform-card">
     <div class="platform-card__title">Owner intake (draft → review → approve)</div>
     <form method="post" action="{% url 'platform_new_intake' tenant.slug %}" style="display:inline;">
       {% csrf_token %}

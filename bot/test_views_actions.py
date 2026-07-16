@@ -778,6 +778,43 @@ class PlatformConsoleTests(TestCase):
         self.homebase.refresh_from_db()
         self.assertTrue(self.homebase.is_active)  # refused
 
+    def test_staff_login_lifecycle(self):
+        # Checklist 6.6: create login → member sees own tenant; deactivate
+        # blocks login; reset password works; superusers never managed here.
+        from .models import TenantMembership
+        acme = Tenant.objects.create(name='Acme', slug='acme')
+        response = self.client.post(reverse('platform_add_staff', args=['acme']), {
+            'username': 'acmeboss', 'email': 'boss@acme.test',
+            'password': 'trustno1!', 'role': 'owner'})
+        self.assertEqual(response.status_code, 302)
+        user = get_user_model().objects.get(username='acmeboss')
+        self.assertTrue(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        membership = TenantMembership.objects.get(user=user)
+        self.assertEqual((membership.tenant, membership.role), (acme, 'owner'))
+        # New login works and lands in their own tenant.
+        client2 = self.client.__class__()
+        self.assertTrue(client2.login(username='acmeboss', password='trustno1!'))
+        self.assertEqual(client2.get(reverse('dashboard')).wsgi_request.tenant, acme)
+        # Deactivate blocks login.
+        self.client.post(reverse('platform_toggle_staff', args=['acme', user.pk]))
+        self.assertFalse(client2.login(username='acmeboss', password='trustno1!'))
+        # Reactivate + reset password.
+        self.client.post(reverse('platform_toggle_staff', args=['acme', user.pk]))
+        self.client.post(reverse('platform_reset_staff_password', args=['acme', user.pk]),
+                         {'password': 'newpass99!'})
+        self.assertTrue(client2.login(username='acmeboss', password='newpass99!'))
+        # Duplicate username is friendly.
+        response = self.client.post(reverse('platform_add_staff', args=['acme']), {
+            'username': 'ACMEBOSS', 'password': 'whatever123'})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(get_user_model().objects.filter(
+            username__iexact='acmeboss').count(), 1)
+        # Managing a superuser through this surface 404s.
+        response = self.client.post(
+            reverse('platform_toggle_staff', args=['acme', self.root.pk]))
+        self.assertEqual(response.status_code, 404)
+
     def test_config_page_renders_and_saves(self):
         response = self.client.get(reverse('platform_tenant_config', args=['homebase']))
         self.assertEqual(response.status_code, 200)

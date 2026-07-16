@@ -12,6 +12,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.db.models import Count
 from django.forms import modelformset_factory
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
@@ -127,6 +128,78 @@ def platform_toggle_tenant(request, slug):
     state = 'activated' if tenant.is_active else 'deactivated'
     messages.success(request, f'Tenant "{tenant.name}" {state}.')
     return redirect('platform_console')
+
+
+# ── Staff & logins (checklist 6.6) ───────────────────────────────────────────
+
+@superuser_required
+@require_POST
+def platform_add_staff(request, slug):
+    """Create a dashboard login for a tenant: Django user (is_staff, never
+    superuser) + TenantMembership with the chosen role."""
+    from django.contrib.auth import get_user_model
+    from ..models import TenantMembership
+    tenant = get_object_or_404(Tenant, slug=slug)
+    username = (request.POST.get('username') or '').strip()
+    email = (request.POST.get('email') or '').strip()
+    password = request.POST.get('password') or ''
+    role = request.POST.get('role') if request.POST.get('role') in ('owner', 'staff') else 'staff'
+    if not username or len(password) < 8:
+        messages.error(request, 'Username and a password of at least 8 characters are required.')
+        return redirect('platform_tenant_config', slug=slug)
+    User = get_user_model()
+    if User.objects.filter(username__iexact=username).exists():
+        messages.error(request, f'Username "{username}" is already taken.')
+        return redirect('platform_tenant_config', slug=slug)
+    user = User.objects.create_user(
+        username=username, email=email, password=password, is_staff=True)
+    TenantMembership.objects.create(user=user, tenant=tenant, role=role)
+    messages.success(
+        request,
+        f'Login created: {username} ({role}) for {tenant.name}. '
+        'Share the temporary password securely and ask them to change it in Profile.')
+    return redirect('platform_tenant_config', slug=slug)
+
+
+def _tenant_member_or_404(tenant, user_id):
+    from ..models import TenantMembership
+    membership = get_object_or_404(
+        TenantMembership.objects.select_related('user'),
+        tenant=tenant, user_id=user_id)
+    if membership.user.is_superuser:
+        raise Http404  # platform admins are never managed from here
+    return membership
+
+
+@superuser_required
+@require_POST
+def platform_toggle_staff(request, slug, user_id):
+    tenant = get_object_or_404(Tenant, slug=slug)
+    membership = _tenant_member_or_404(tenant, user_id)
+    user = membership.user
+    user.is_active = not user.is_active
+    user.save(update_fields=['is_active'])
+    state = 'reactivated' if user.is_active else 'deactivated'
+    messages.success(request, f'{user.username} {state}.')
+    return redirect('platform_tenant_config', slug=slug)
+
+
+@superuser_required
+@require_POST
+def platform_reset_staff_password(request, slug, user_id):
+    tenant = get_object_or_404(Tenant, slug=slug)
+    membership = _tenant_member_or_404(tenant, user_id)
+    password = request.POST.get('password') or ''
+    if len(password) < 8:
+        messages.error(request, 'New password must be at least 8 characters.')
+        return redirect('platform_tenant_config', slug=slug)
+    user = membership.user
+    user.set_password(password)
+    user.save(update_fields=['password'])
+    messages.success(
+        request,
+        f'Password reset for {user.username}. Share it securely; they can change it in Profile.')
+    return redirect('platform_tenant_config', slug=slug)
 
 
 # ── Owner intake (decision #2: draft → admin verify → approve) ───────────────
@@ -343,5 +416,6 @@ def platform_tenant_config(request, slug):
         'formset': formset,
         'channel': channel,
         'intakes': tenant.intakes.all()[:10],
+        'staff': tenant.memberships.select_related('user').order_by('user__username'),
         'active_nav': 'platform',
     })

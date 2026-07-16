@@ -131,6 +131,9 @@ urlpatterns = [
     path('platform/tenants/<slug:slug>/toggle/', platform_views.platform_toggle_tenant, name='platform_toggle_tenant'),
     path('platform/tenants/<slug:slug>/config/', platform_views.platform_tenant_config, name='platform_tenant_config'),
     path('platform/tenants/<slug:slug>/intake/new/', platform_views.platform_new_intake, name='platform_new_intake'),
+    path('platform/tenants/<slug:slug>/staff/add/', platform_views.platform_add_staff, name='platform_add_staff'),
+    path('platform/tenants/<slug:slug>/staff/<int:user_id>/toggle/', platform_views.platform_toggle_staff, name='platform_toggle_staff'),
+    path('platform/tenants/<slug:slug>/staff/<int:user_id>/reset/', platform_views.platform_reset_staff_password, name='platform_reset_staff_password'),
     path('platform/intake/<int:pk>/', platform_views.platform_review_intake, name='platform_review_intake'),
     # PUBLIC owner intake form (token-gated, no login) — decision #2.
     path('intake/<token>/', platform_views.intake_form, name='intake_form'),
