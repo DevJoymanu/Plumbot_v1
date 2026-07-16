@@ -80,6 +80,9 @@ def platform_create_tenant(request):
     if Tenant.objects.filter(slug=slug).exists():
         messages.error(request, f'Slug "{slug}" is already taken.')
         return redirect('platform_console')
+    if Tenant.objects.filter(name__iexact=name).exists():
+        messages.error(request, f'A tenant named "{name}" already exists.')
+        return redirect('platform_console')
     tenant = Tenant.objects.create(name=name, slug=slug)
     TenantProfile.objects.create(tenant=tenant)  # blank — nullability rule
     cloned = _clone_golden_pack(tenant)

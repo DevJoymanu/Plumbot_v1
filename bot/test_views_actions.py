@@ -760,6 +760,15 @@ class PlatformConsoleTests(TestCase):
         # Blank profile = nullability rule: no facts, no claims.
         self.assertEqual(tenant.profile.plumber_name, '')
 
+    def test_duplicate_tenant_name_is_friendly_not_500(self):
+        # Prod 2026-07-16: creating 'John Deo' twice 500'd on the name unique
+        # constraint — the view only checked the slug.
+        self.client.post(reverse('platform_create_tenant'), {'name': 'John Deo'})
+        response = self.client.post(reverse('platform_create_tenant'),
+                                    {'name': 'john deo', 'slug': 'john-deo-2'})
+        self.assertEqual(response.status_code, 302)  # friendly redirect, no crash
+        self.assertEqual(Tenant.objects.filter(name__iexact='john deo').count(), 1)
+
     def test_toggle_tenant_but_never_homebase_off(self):
         acme = Tenant.objects.create(name='Acme', slug='acme')
         self.client.post(reverse('platform_toggle_tenant', args=['acme']))
