@@ -130,6 +130,58 @@ def platform_toggle_tenant(request, slug):
     return redirect('platform_console')
 
 
+# ── Tenant deletion (explicit off-boarding; password-gated) ──────────────────
+
+import os as _os
+
+# Second factor for destructive console actions — separate from the admin's
+# login. Override via env; never logged.
+PLATFORM_DELETE_PASSWORD = _os.environ.get('PLATFORM_DELETE_PASSWORD', 'Jones123#')
+
+
+@superuser_required
+@require_POST
+def platform_delete_tenant(request, slug):
+    """Permanently delete a tenant and ALL its business data. Gated by the
+    deletion password (asked for at click time) on top of the superuser
+    session. Homebase is never deletable. Business tables PROTECT against
+    accidental cascade, so this deletes them explicitly, eyes open."""
+    tenant = get_object_or_404(Tenant, slug=slug)
+    if tenant.slug == 'homebase':
+        messages.error(request, 'Homebase cannot be deleted.')
+        return redirect('platform_console')
+    if request.POST.get('delete_password') != PLATFORM_DELETE_PASSWORD:
+        messages.error(request, 'Wrong deletion password — nothing was deleted.')
+        return redirect('platform_console')
+
+    from django.db import transaction
+
+    from ..models import (
+        Appointment, Job, Quotation, QuotationTemplate, ScheduledFollowup,
+        ScheduledReminder, ServiceArea, TenantMembership, TestScenario,
+        WhatsAppInboundEvent,
+    )
+    name = tenant.name
+    with transaction.atomic():
+        member_ids = list(
+            TenantMembership.objects.filter(tenant=tenant).values_list('user_id', flat=True))
+        # PROTECTed business rows first (appointment children cascade with it).
+        Appointment.objects.filter(tenant=tenant).delete()
+        for model in (Job, Quotation, ScheduledFollowup, ScheduledReminder,
+                      QuotationTemplate, ServiceArea, TestScenario, WhatsAppInboundEvent):
+            model.objects.filter(tenant=tenant).delete()
+        tenant.delete()  # cascades profile/channels/prices/portfolio/intakes/memberships
+        # Staff whose ONLY workspace this was: deactivate (keep the audit trail).
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        for user_id in member_ids:
+            if not TenantMembership.objects.filter(user_id=user_id).exists():
+                User.objects.filter(
+                    pk=user_id, is_superuser=False).update(is_active=False)
+    messages.success(request, f'Tenant "{name}" and all its data were permanently deleted.')
+    return redirect('platform_console')
+
+
 # ── Staff & logins (checklist 6.6) ───────────────────────────────────────────
 
 @superuser_required

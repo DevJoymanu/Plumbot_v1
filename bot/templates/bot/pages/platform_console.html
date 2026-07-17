@@ -107,6 +107,14 @@
                 {% if row.tenant.is_active %}Deactivate{% else %}Activate{% endif %}
               </button>
             </form>
+            {% if row.tenant.slug != 'homebase' %}
+            <form method="post" action="{% url 'platform_delete_tenant' row.tenant.slug %}" style="display:inline;"
+                  onsubmit="return confirmDelete(this, '{{ row.tenant.name|escapejs }}', {{ row.lead_count }});">
+              {% csrf_token %}
+              <input type="hidden" name="delete_password">
+              <button type="submit" class="btn-pill" style="color:#ba1a1a; border-color:rgba(186,26,26,0.3);">Delete</button>
+            </form>
+            {% endif %}
           </td>
         </tr>
         {% empty %}
@@ -134,4 +142,16 @@
   </div>
 
 </div>
+<script>
+function confirmDelete(form, name, leadCount) {
+  const warning = 'PERMANENTLY delete "' + name + '"' +
+    (leadCount ? ' and its ' + leadCount + ' lead(s)' : '') +
+    '? This cannot be undone.';
+  if (!window.confirm(warning)) return false;
+  const pw = window.prompt('Enter the deletion password to confirm:');
+  if (!pw) return false;
+  form.querySelector('[name=delete_password]').value = pw;
+  return true;
+}
+</script>
 {% endblock %}

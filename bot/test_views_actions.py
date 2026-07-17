@@ -795,6 +795,37 @@ class PlatformConsoleTests(TestCase):
         self.homebase.refresh_from_db()
         self.assertTrue(self.homebase.is_active)  # refused
 
+    def test_delete_tenant_password_gated(self):
+        from .models import TenantMembership, TestScenario
+        acme = Tenant.objects.create(name='Doomed Plumbing', slug='doomed')
+        lead = make_lead(9901, tenant=acme)
+        TestScenario.objects.create(tenant=acme, name='doomed sc', content='> hi\nexpect: x')
+        staff = get_user_model().objects.create_user(
+            username='doomedstaff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=staff, tenant=acme, role='staff')
+
+        # Wrong password → nothing deleted.
+        response = self.client.post(reverse('platform_delete_tenant', args=['doomed']),
+                                    {'delete_password': 'nope'})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Tenant.objects.filter(slug='doomed').exists())
+        self.assertTrue(Appointment.objects.filter(pk=lead.pk).exists())
+
+        # Right password → tenant + business data gone; orphan staff deactivated.
+        from .views.platform import PLATFORM_DELETE_PASSWORD
+        self.client.post(reverse('platform_delete_tenant', args=['doomed']),
+                         {'delete_password': PLATFORM_DELETE_PASSWORD})
+        self.assertFalse(Tenant.objects.filter(slug='doomed').exists())
+        self.assertFalse(Appointment.objects.filter(pk=lead.pk).exists())
+        self.assertFalse(TestScenario.objects.filter(name='doomed sc').exists())
+        staff.refresh_from_db()
+        self.assertFalse(staff.is_active)
+
+        # Homebase is never deletable, even with the right password.
+        self.client.post(reverse('platform_delete_tenant', args=['homebase']),
+                         {'delete_password': PLATFORM_DELETE_PASSWORD})
+        self.assertTrue(Tenant.objects.filter(slug='homebase').exists())
+
     def test_staff_login_lifecycle(self):
         # Checklist 6.6: create login → member sees own tenant; deactivate
         # blocks login; reset password works; superusers never managed here.
