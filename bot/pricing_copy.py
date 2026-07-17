@@ -65,6 +65,24 @@ def _figures(cfg):
     )
 
 
+def facebook_package_facts(cfg):
+    """The tenant's social-ad package for copy composition, or None.
+    {'price': int, 'label': 'Facebook package', 'names': [...],
+     'en': 'freestanding tub and side chamber', 'sn': '… ne …'}"""
+    item = cfg.price_item('package', 'facebook')
+    if item is None or item.flat is None:
+        return None
+    names = [p.get('name') for p in (item.parts or []) if p.get('name')]
+    label = (item.label or 'Facebook Package')
+    return {
+        'price': int(item.flat),
+        'label': label[:1].upper() + label[1:].lower(),  # "Facebook package"
+        'names': names,
+        'en': ' and '.join(names),
+        'sn': ' ne '.join(names),
+    }
+
+
 def build_prompt_pricing_guide(cfg) -> str:
     """The PRICING GUIDE block injected into the DeepSeek system prompt —
     one '- ' line per figure the tenant actually has. With no price sheet the
@@ -218,8 +236,10 @@ def build_structured_pricing(cfg) -> dict:
             "sn_cheapest_line": f"Cheapest option installation chete kana muchitova ne chamber — labour inotangira paUS${f['ch_l']}.",
         }
 
-    if have('fb', 'sh_s', 'sh_l', 'va_s', 'va_l', 'to_s', 'to_l', 'ch_s', 'ch_l',
-            'tub_s', 'tub_l', 'fs_supply', 'fs_mixer', 'fs_install'):
+    _fbp = facebook_package_facts(cfg)
+    if _fbp is not None and have('sh_s', 'sh_l', 'va_s', 'va_l', 'to_s', 'to_l',
+                                 'ch_s', 'ch_l', 'tub_s', 'tub_l',
+                                 'fs_supply', 'fs_mixer', 'fs_install'):
         out["facebook_package"] = {
             "breakdown_lines": [
                 f"Shower cubicle: Supply from US${f['sh_s']}, Install from US${f['sh_l']}",
@@ -229,7 +249,9 @@ def build_structured_pricing(cfg) -> dict:
                 f"Tub: Supply from US${f['tub_s']}, Install from US${f['tub_l']}",
                 f"Freestanding tub: supply from US${f['fs_supply']}, mixer from US${f['fs_mixer']}, install US${f['fs_install']}",
             ],
-            "total_line": f"The Facebook package is US${f['fb']} — freestanding tub and side chamber.",
+            "total_line": (
+                f"The {_fbp['label']} is US${f['fb']}"
+                + (f" — {_fbp['en']}." if _fbp['en'] else ".")),
             "cheapest_line": "We'll give you the exact price once we've seen the space.",
             "sn_breakdown_lines": [
                 f"Shower cubicle: Supply kubva US${f['sh_s']}, Install kubva US${f['sh_l']}",
@@ -239,7 +261,9 @@ def build_structured_pricing(cfg) -> dict:
                 f"Tub: Supply kubva US${f['tub_s']}, Install kubva US${f['tub_l']}",
                 f"Free-standing tub mixer: Supply kubva US${f['fs_mixer']}, Install kubva US${f['fs_install']}",
             ],
-            "sn_total_line": f"Facebook package inosvika US${f['fb']} — freestanding tub ne side chamber.",
+            "sn_total_line": (
+                f"{_fbp['label'][:1].upper() + _fbp['label'][1:]} inosvika US${f['fb']}"
+                + (f" — {_fbp['sn']}." if _fbp['sn'] else ".")),
             "sn_cheapest_line": f"Cheapest option i basic package inotangira paUS${f['fb']} zvinhu zvekuwedzera zvisati zvaiswa.",
         }
 

@@ -1400,6 +1400,30 @@ class TenantConfigTests(TestCase):
         # Bare tenant: no sheet → no blocks → handler deflects.
         self.assertEqual(build_structured_pricing(get_config(self.acme)), {})
 
+    def test_facebook_offer_varies_per_tenant(self):
+        # The social-ad offer composes from the tenant's OWN package row:
+        # label, price, and contents — never homebase's wording.
+        from .models import TenantPriceItem
+        from .pricing_copy import facebook_package_facts
+        from .tenant_config import get_config
+        # Homebase: byte-identical to the legacy copy.
+        hb = facebook_package_facts(get_config(self.homebase))
+        self.assertEqual(
+            (hb['label'], hb['price'], hb['en']),
+            ('Facebook package', 800, 'freestanding tub and side chamber'))
+        # A tenant with a different special gets their own composition.
+        TenantPriceItem.objects.create(
+            tenant=self.acme, family='package', variant='facebook',
+            label='WhatsApp winter special', flat=350,
+            parts=[{'name': 'geyser'}, {'name': 'thermostat'}])
+        acme = facebook_package_facts(get_config(self.acme))
+        self.assertEqual(
+            (acme['label'], acme['price'], acme['en']),
+            ('Whatsapp winter special', 350, 'geyser and thermostat'))
+        # A tenant with NO package: no offer to pitch.
+        bare = Tenant.objects.create(name='Bare Pipes 2', slug='bare2')
+        self.assertIsNone(facebook_package_facts(get_config(bare)))
+
     def test_price_accessors_empty_for_bare_tenant(self):
         from .tenant_config import get_config
         cfg = get_config(self.acme)

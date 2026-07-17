@@ -39,7 +39,8 @@ except ImportError:
     pass
 
 import logging
-from bot.pricing_copy import build_structured_pricing, build_prompt_pricing_guide
+from bot.pricing_copy import (build_structured_pricing, build_prompt_pricing_guide,
+                              facebook_package_facts)
 logger = logging.getLogger(__name__)
 
 
@@ -1261,14 +1262,19 @@ class ResponseMixin:
             """Confirm the chat prices match the Facebook ad, restate what the
             US$800 package covers, and close (no stacked question if the last
             turn was already a tie-down)."""
+            _fbp = facebook_package_facts(self.tenant_cfg)
             if language == 'shona':
                 body = ("Ehe — iyi ndiyo mitengo yedu yazvino, yakafanana neya "
-                        "paFacebook page yedu. Facebook package yeUS$800 ine "
-                        "freestanding tub ne side chamber, zvaiswa.")
+                        "paFacebook page yedu.")
+                if _fbp is not None and _fbp['sn']:
+                    body += (f" {_fbp['label']} yeUS${_fbp['price']} ine "
+                             f"{_fbp['sn']}, zvaiswa.")
             else:
                 body = ("Yes — those are our current prices, the same as on our "
-                        "Facebook page. The US$800 Facebook package specifically "
-                        "covers a freestanding tub and side chamber, fitted.")
+                        "Facebook page.")
+                if _fbp is not None and _fbp['en']:
+                    body += (f" The US${_fbp['price']} {_fbp['label']} specifically "
+                             f"covers a {_fbp['en']}, fitted.")
             return self._append_tiedown(body, language)
 
         @staticmethod
@@ -4126,8 +4132,11 @@ class ResponseMixin:
                 snip['chamber'] = (
                     f"Side chambers from US${f['ch_allin']} all-in (supply from US${f['ch_s']} + install from US${f['ch_l']}).")
             if f['fb'] is not None:
-                snip['facebook_package'] = (
-                    f"Our Facebook package is US${f['fb']} — freestanding tub and side chamber.")
+                _fbp = facebook_package_facts(self.tenant_cfg)
+                if _fbp is not None:
+                    snip['facebook_package'] = (
+                        f"Our {_fbp['label']} is US${f['fb']}"
+                        + (f" — {_fbp['en']}." if _fbp['en'] else "."))
             location = _quick_location(self)
             if location:
                 snip['location'] = location
@@ -4268,11 +4277,17 @@ class ResponseMixin:
             """One short, grounded prose answer for a sub-question with no canonical reply."""
             try:
                 from bot.services.clients import deepseek_call
+                _fbp = facebook_package_facts(self.tenant_cfg)
+                _fb_line = ""
+                if _fbp is not None:
+                    _contents = ' + '.join(_fbp['names'])
+                    _fb_line = (f" {_fbp['label']} US${_fbp['price']}"
+                                + (f" ({_contents})." if _contents else "."))
                 facts = (
                     f"{_grounding_facts(self)} "
                     "Free on-site assessment. Services: bathroom/kitchen renovations, geysers, "
-                    "shower cubicles, vanities, toilets, tubs, drains, pipe & geyser repairs. "
-                    "Facebook package US$800 (freestanding tub + side chamber)."
+                    "shower cubicles, vanities, toilets, tubs, drains, pipe & geyser repairs."
+                    f"{_fb_line}"
                 )
                 return deepseek_call(
                     messages=[
@@ -4406,13 +4421,16 @@ class ResponseMixin:
 
                     # Facebook package — always return the anchor price and move to sale
                     if intent == 'facebook_package':
+                        _fbp = facebook_package_facts(self.tenant_cfg)
+                        if _fbp is None:
+                            return None  # no package on this tenant's sheet → deflect
                         if language == 'shona':
                             return (
-                                "Facebook package yedu inosvika US$800.\n\n"
+                                f"{_fbp['label']} yedu inosvika US${_fbp['price']}.\n\n"
                                 f"{self._get_pricing_followup_prompt('shona')}"
                             )
                         return (
-                            "Our Facebook package is US$800.\n\n"
+                            f"Our {_fbp['label']} is US${_fbp['price']}.\n\n"
                             f"{self._get_pricing_followup_prompt('english')}"
                         )
 
@@ -4929,12 +4947,15 @@ class ResponseMixin:
                 return None
             _fb = int(_fb)
             _tub_allin = _tub[0] + _tub[1]
+            _fbp2 = facebook_package_facts(self.tenant_cfg) or {
+                'label': 'Facebook package', 'en': '', 'sn': ''}
 
             if language == 'shona':
                 reply = (
                     f"{project_context}"
-                    f"Facebook package yedu inosvika US${_fb} — ine freestanding tub ne side chamber.\n\n"
-                    f"Kana muri kuda tub chete — freestanding tubs kubva US${_fs[0]} all-in "
+                    + f"{_fbp2['label']} yedu inosvika US${_fb}"
+                    + (f" — ine {_fbp2['sn']}.\n\n" if _fbp2['sn'] else ".\n\n")
+                    + f"Kana muri kuda tub chete — freestanding tubs kubva US${_fs[0]} all-in "
                     f"(tub US${_fs_parts['tub']} + mixer US${_fs_parts['mixer']} + install US${_fs_parts['install']}), uye standard built-in tubs "
                     f"kubva US${_tub_allin} all-in (tub US${_tub[0]} + install US${_tub[1]}).\n\n"
                     f"{self._product_price_close('shona')}"
@@ -4942,8 +4963,9 @@ class ResponseMixin:
             else:
                 reply = (
                     f"{project_context}"
-                    f"Our Facebook package is US${_fb} — a freestanding tub and side chamber.\n\n"
-                    f"If you're looking at just a tub — freestanding tubs from US${_fs[0]} all-in "
+                    + f"Our {_fbp2['label']} is US${_fb}"
+                    + (f" — a {_fbp2['en']}.\n\n" if _fbp2['en'] else ".\n\n")
+                    + f"If you're looking at just a tub — freestanding tubs from US${_fs[0]} all-in "
                     f"(tub US${_fs_parts['tub']} + mixer US${_fs_parts['mixer']} + install US${_fs_parts['install']}), and standard built-in tubs "
                     f"from US${_tub_allin} all-in (tub US${_tub[0]} + install US${_tub[1]}).\n\n"
                     f"{self._product_price_close('english')}"

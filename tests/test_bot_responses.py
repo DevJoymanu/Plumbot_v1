@@ -1869,6 +1869,13 @@ try:
     class _FakeSelfFB(_FakeSelfFollowup):
         _is_facebook_price_ref = staticmethod(ResponseMixin._is_facebook_price_ref)
         _facebook_price_confirm_reply = ResponseMixin._facebook_price_confirm_reply
+        # The offer now composes from the tenant's package row (per-tenant
+        # Facebook offer); the fake reads homebase's real row.
+        @property
+        def tenant_cfg(self):
+            from bot.models import Tenant
+            from bot.tenant_config import get_config
+            return get_config(Tenant.objects.filter(slug='homebase').first())
     _fbrep2 = _FakeSelfFB("area")._facebook_price_confirm_reply("english")
     results.log(
         "facebook price ref: reply confirms FB pricing + US$800 package contents",
