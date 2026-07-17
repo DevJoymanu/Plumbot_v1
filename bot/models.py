@@ -490,6 +490,12 @@ class Appointment(models.Model):
     # of the 72-hour free-form messaging window; ctwa_referral keeps the ad headline/
     # body/source for reference.
     ctwa_source_id = models.CharField(max_length=64, blank=True, default='', help_text="Meta ad source_id for a CTWA lead")
+    # Where this lead came from (Phase: source attribution). Deterministic for
+    # ad clicks (Meta referral); inferred from the customer's own words
+    # otherwise. 'direct' = no signal yet; inference upgrades it if a later
+    # message reveals the source.
+    lead_source = models.CharField(max_length=30, blank=True, default='', db_index=True,
+                                   help_text="facebook_ad / instagram_ad / facebook / instagram / google_search / referral / flyer / whatsapp_status / direct")
     ctwa_entry_at = models.DateTimeField(blank=True, null=True, help_text="Start of the 72h CTWA messaging window")
     ctwa_referral = models.JSONField(blank=True, null=True, help_text="Full CTWA referral object from the ad click")
 
@@ -637,6 +643,44 @@ class Appointment(models.Model):
     )
 
     
+    _SOURCE_PATTERNS = [
+        # (source, regex) - first match wins; ORDER matters (ad phrasing before
+        # bare platform names).
+        ('facebook', r'\bfacebook\b|\bfb\s*(page|post|group|ad)?\b'),
+        ('instagram', r'\binsta(gram)?\b|\big\s+(page|post)\b'),
+        ('google_search', r'\bgoogled?\b|\bsearche?d\b'),
+        ('whatsapp_status', r'\b(whatsapp\s+)?status\b'),
+        ('referral', r'\breferr?ed\b|\brecommend\w*|\bfriend (told|gave|said)\b|'
+                     r'\bwas told about\b|\bword of mouth\b|\bmy (friend|neighbou?r|brother|sister)\b'),
+        ('flyer', r'\bflyer\b|\bposter\b|\bbanner\b|\bpamphlet\b'),
+    ]
+
+    @classmethod
+    def infer_lead_source(cls, message: str) -> str:
+        """Deterministic source inference from the customer's own words.
+        Returns '' when the message carries no source signal."""
+        text = (message or '').lower()
+        if not text:
+            return ''
+        for source, pattern in cls._SOURCE_PATTERNS:
+            if re.search(pattern, text):
+                return source
+        return ''
+
+    def update_lead_source(self, message: str, is_first_message: bool = False):
+        """Tag/upgrade where this lead came from. Ad attribution (set by
+        record_ctwa_referral) always wins; otherwise the first source signal
+        in any message sticks. A first message with no signal tags 'direct'."""
+        if self.lead_source in ('facebook_ad', 'instagram_ad'):
+            return
+        inferred = self.infer_lead_source(message)
+        if inferred and self.lead_source in ('', 'direct'):
+            self.lead_source = inferred
+            self.save(update_fields=['lead_source'])
+        elif is_first_message and not self.lead_source:
+            self.lead_source = 'direct'
+            self.save(update_fields=['lead_source'])
+
     def plumber_contact(self) -> str:
         """Direct line for this lead's plumber: the per-lead override when a
         specific plumber is assigned, else the tenant profile's number.
@@ -1603,7 +1647,10 @@ class Appointment(models.Model):
         self.ctwa_source_id = str(referral.get('source_id') or '')[:64]
         self.ctwa_referral = referral
         self.ctwa_entry_at = timezone.now()
-        self.save(update_fields=['ctwa_source_id', 'ctwa_referral', 'ctwa_entry_at'])
+        # Deterministic source attribution: the ad platform from the referral.
+        source_url = str(referral.get('source_url') or '').lower()
+        self.lead_source = 'instagram_ad' if 'instagram' in source_url else 'facebook_ad'
+        self.save(update_fields=['ctwa_source_id', 'ctwa_referral', 'ctwa_entry_at', 'lead_source'])
         return True
 
     @property

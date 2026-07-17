@@ -161,6 +161,7 @@
   .cv-pill.pending { background: rgba(70,72,212,0.12); color: var(--color-secondary); }
   .cv-pill.cancelled { background: var(--color-error-container); color: var(--color-on-error-container); }
   .cv-pill.delayed { background: rgba(0,101,145,0.10); color: var(--color-primary); }
+  .cv-pill.cv-source { background: rgba(14,165,233,0.10); color: #006591; font-size: 10px; padding: 2px 8px; flex: none; }
 
   .cv-empty {
     padding: 56px 20px; text-align: center;
@@ -240,6 +241,19 @@
       <div class="cv-body">
         <div class="cv-row1">
           <span class="cv-name">{% firstof appointment.customer_name appointment.phone_number "Conversation" %}</span>
+          {% if appointment.lead_source and appointment.lead_source != 'direct' %}
+          <span class="cv-pill cv-source" title="Lead source">
+            {% if appointment.lead_source == 'facebook_ad' %}<i class="fab fa-facebook" style="font-size:10px;"></i> Ad
+            {% elif appointment.lead_source == 'instagram_ad' %}<i class="fab fa-instagram" style="font-size:10px;"></i> Ad
+            {% elif appointment.lead_source == 'facebook' %}<i class="fab fa-facebook" style="font-size:10px;"></i> FB
+            {% elif appointment.lead_source == 'instagram' %}<i class="fab fa-instagram" style="font-size:10px;"></i> IG
+            {% elif appointment.lead_source == 'google_search' %}<i class="fab fa-google" style="font-size:10px;"></i>
+            {% elif appointment.lead_source == 'referral' %}<i class="fas fa-user-friends" style="font-size:10px;"></i> Referral
+            {% elif appointment.lead_source == 'whatsapp_status' %}<i class="fab fa-whatsapp" style="font-size:10px;"></i> Status
+            {% elif appointment.lead_source == 'flyer' %}<i class="fas fa-scroll" style="font-size:10px;"></i> Flyer
+            {% else %}{{ appointment.lead_source }}{% endif %}
+          </span>
+          {% endif %}
           <span class="cv-time {% if last.role == 'user' %}is-awaiting{% endif %}"
                 data-msg-ts="{{ appointment.last_inbound_at|default:appointment.updated_at|date:'c' }}">{{ appointment.last_inbound_at|default:appointment.updated_at|date:"j M, H:i" }}</span>
         </div>

@@ -1043,7 +1043,7 @@ def export_appointments(request):
     writer = csv.writer(response)
     writer.writerow([
         'Name', 'Phone', 'Service', 'Property Type', 'Area',
-        'Timeline', 'Status', 'Appointment Date', 'Created At'
+        'Timeline', 'Status', 'Lead Source', 'Appointment Date', 'Created At'
     ])
 
     for appointment in Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real().order_by('-created_at'):
@@ -1056,6 +1056,7 @@ def export_appointments(request):
             appointment.customer_area or '',
             appointment.timeline or '',
             appointment.get_status_display(),
+            appointment.lead_source or '',
             appointment.scheduled_datetime.strftime('%Y-%m-%d %H:%M') if appointment.scheduled_datetime else '',
             appointment.created_at.strftime('%Y-%m-%d %H:%M')
         ])

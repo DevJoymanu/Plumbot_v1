@@ -1972,6 +1972,13 @@ def handle_text_message(sender, text_data, message_id=None, quoted_id=None, refe
             phone_number, tenant=tenant,
         )
 
+        # Source attribution: tag where the lead came from (ad referral wins;
+        # else inferred from their own words; first message w/o signal = direct).
+        try:
+            appointment.update_lead_source(message_body, is_first_message=created)
+        except Exception as src_err:
+            print(f"lead_source tagging failed: {src_err}")
+
         # CTWA ad lead — record the referral and (re)start the 72h free-form window.
         if referral and appointment.record_ctwa_referral(referral):
             print(

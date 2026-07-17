@@ -1085,6 +1085,60 @@ class ScenarioLabTenantTests(TestCase):
         self.assertNotIn('golden 0', body)
 
 
+class LeadSourceTests(TestCase):
+    """Channel attribution: ad referrals are deterministic; everything else
+    is inferred from the customer's own words and can upgrade later."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+
+    def test_inference_patterns(self):
+        cases = {
+            'Hi, saw your post on Facebook about geysers': 'facebook',
+            'found you on fb page': 'facebook',
+            'I saw you on instagram': 'instagram',
+            'googled plumbers in harare': 'google_search',
+            'found you on google': 'google_search',
+            'my friend told me about you': 'referral',
+            'you were recommended to me': 'referral',
+            'saw your whatsapp status': 'whatsapp_status',
+            'got your flyer at the shops': 'flyer',
+            'Hi, how much is a geyser?': '',
+        }
+        for message, expected in cases.items():
+            with self.subTest(message=message):
+                self.assertEqual(Appointment.infer_lead_source(message), expected)
+
+    def test_first_message_tags_and_later_upgrades(self):
+        lead = make_lead(9950, tenant=self.homebase)
+        # First message, no signal → direct.
+        lead.update_lead_source('Hi, how much is a geyser?', is_first_message=True)
+        self.assertEqual(lead.lead_source, 'direct')
+        # Later message reveals the source → upgrades.
+        lead.update_lead_source('by the way I saw you on facebook')
+        self.assertEqual(lead.lead_source, 'facebook')
+        # A different signal later does NOT overwrite a real source.
+        lead.update_lead_source('also my friend recommended you')
+        self.assertEqual(lead.lead_source, 'facebook')
+
+    def test_ad_referral_is_deterministic_and_wins(self):
+        lead = make_lead(9951, tenant=self.homebase)
+        lead.record_ctwa_referral({
+            'source_type': 'ad', 'source_id': '123',
+            'source_url': 'https://fb.me/somead'})
+        self.assertEqual(lead.lead_source, 'facebook_ad')
+        # Words can never downgrade ad attribution.
+        lead.update_lead_source('my friend told me about you')
+        self.assertEqual(lead.lead_source, 'facebook_ad')
+        # Instagram ads are distinguished by the source URL.
+        lead2 = make_lead(9952, tenant=self.homebase)
+        lead2.record_ctwa_referral({
+            'source_type': 'ad', 'source_id': '456',
+            'source_url': 'https://instagram.com/somead'})
+        self.assertEqual(lead2.lead_source, 'instagram_ad')
+
+
 class SelfServiceAccountTests(TestCase):
     """Users manage their own username/password: profile rename (unique,
     logged) and the forgot-password email flow (HTTP transport, no
