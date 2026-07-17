@@ -1117,7 +1117,30 @@ def build_catalogue_price_text(followup: str) -> str:
     )
 
 
-def _describe_work_image(filename: str) -> str:
+def _materialize_image(path: str):
+    """A local filesystem path for an image that may live in remote storage
+    (wizard uploads). Returns (local_path, is_temp) — callers unlink temps
+    after sending."""
+    if os.path.exists(path):
+        return path, False
+    rel = (path or '').replace(chr(92), '/')
+    try:
+        from django.core.files.storage import default_storage
+        if default_storage.exists(rel):
+            import shutil
+            import tempfile
+            suffix = os.path.splitext(rel)[1] or '.jpg'
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            with default_storage.open(rel) as fh:
+                shutil.copyfileobj(fh, tmp)
+            tmp.close()
+            return tmp.name, True
+    except Exception as exc:
+        print(f"_materialize_image failed for {path}: {exc}")
+    return path, False
+
+
+def _describe_work_image(filename: str, tenant=None) -> str:
     """
     Human description of a sent image, derived from its filename, so a customer
     who replies to a specific photo ("this one how much") can be told — and the
@@ -1132,8 +1155,9 @@ def _describe_work_image(filename: str) -> str:
     # Curated title for catalogued pieces.
     try:
         from bot import portfolio_catalog
-        for item in portfolio_catalog.PORTFOLIO_ITEMS:
-            if os.path.splitext(item['filename'])[0].lower() == base.lower():
+        for item in portfolio_catalog.items_for(tenant):
+            item_base = os.path.splitext(os.path.basename(item['filename']))[0].lower()
+            if item_base == base.lower():
                 return item['title']
     except Exception:
         pass
@@ -1200,12 +1224,19 @@ def send_catalogue_images(sender, appointment=None) -> bool:
             time.sleep(1)  # let the text message arrive first
             sent_count = 0
             media_index = {}
+            _tenant = appointment.tenant if appointment else None
             for index, image_path in enumerate(images):
                 caption = "HomeBase Plumbers — product catalogue" if index == 0 else None
-                result = client.send_local_image(sender, image_path, caption=caption)
+                local_path, is_temp = _materialize_image(image_path)
+                try:
+                    result = client.send_local_image(sender, local_path, caption=caption)
+                finally:
+                    if is_temp:
+                        try: os.unlink(local_path)
+                        except OSError: pass
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:
-                    media_index[wamid] = _describe_work_image(image_path)
+                    media_index[wamid] = _describe_work_image(image_path, tenant=_tenant)
                 sent_count += 1
                 time.sleep(0.5)
             if appointment:
@@ -1231,8 +1262,8 @@ def send_portfolio_item(sender, item, appointment=None) -> bool:
     from bot import portfolio_catalog
 
     image_path = portfolio_catalog.image_path_for(item)
-    if not os.path.exists(image_path):
-        print(f"Portfolio item image missing on disk: {image_path}")
+    if not portfolio_catalog.item_is_available(item):
+        print(f"Portfolio item image missing: {image_path}")
         return False
 
     caption = portfolio_catalog.build_item_caption(item)
@@ -1242,7 +1273,13 @@ def send_portfolio_item(sender, item, appointment=None) -> bool:
             from .whatsapp_cloud_api import get_client_for_tenant
             client = get_client_for_tenant(appointment.tenant if appointment else None)
             time.sleep(1)  # let any preceding text land first
-            result = client.send_local_image(sender, image_path, caption=caption)
+            local_path, is_temp = _materialize_image(image_path)
+            try:
+                result = client.send_local_image(sender, local_path, caption=caption)
+            finally:
+                if is_temp:
+                    try: os.unlink(local_path)
+                    except OSError: pass
             wamid = (result or {}).get('messages', [{}])[0].get('id')
             if appointment:
                 if wamid:
@@ -1416,10 +1453,17 @@ def send_previous_work_photos(sender, appointment=None):
                         "Our previous work - high quality plumbing & renovations"
                         if index == 0 else None
                     )
-                result = client.send_local_image(sender, image_path, caption=caption)
+                local_path, is_temp = _materialize_image(image_path)
+                try:
+                    result = client.send_local_image(sender, local_path, caption=caption)
+                finally:
+                    if is_temp:
+                        try: os.unlink(local_path)
+                        except OSError: pass
                 wamid = (result or {}).get('messages', [{}])[0].get('id')
                 if wamid:
-                    media_index[wamid] = _describe_work_image(image_path)
+                    media_index[wamid] = _describe_work_image(
+                        image_path, tenant=appointment.tenant if appointment else None)
                 sent_count += 1
                 time.sleep(0.5)
             follow_up = generate_photo_followup(appointment)

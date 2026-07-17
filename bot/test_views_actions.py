@@ -21,6 +21,7 @@ settings.py switches to an in-memory SQLite DB + local file storage when
 or the R2 bucket and runs fully offline.
 """
 
+import os
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
@@ -1504,6 +1505,42 @@ class TenantConfigTests(TestCase):
         self.assertIsNone(portfolio_catalog.catalogue_overview(tenant=self.acme))
         self.assertIsNone(portfolio_catalog.match_portfolio_item(
             'show me the black tub photo', tenant=self.acme))
+
+    def test_uploaded_photo_quotable_via_highlight_chain(self):
+        # A tenant's wizard-uploaded photo (storage-backed path) must be:
+        # available → in their gallery → described by ITS title (so a customer
+        # highlighting it gets the right answer) → priced via get_item_by_title.
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import default_storage
+
+        from . import portfolio_catalog
+        from .models import TenantPortfolioItem
+        from .whatsapp_webhook import _describe_work_image, _materialize_image, get_previous_work_images
+
+        path = default_storage.save('intake_photos/acme/testgeyser.png',
+                                    ContentFile(b'\x89PNG fake'))
+        TenantPortfolioItem.objects.create(
+            tenant=self.acme, item_id='geyser-1', filename=path,
+            title='Geyser swap in Kwekwe', price_line='geyser install from US$150',
+            keywords=['geyser'])
+        item = portfolio_catalog.items_for(self.acme)[0]
+        self.assertTrue(portfolio_catalog.item_is_available(item))
+        self.assertEqual(get_previous_work_images(self.acme), [path])
+        # Description (what record_sent_media stores → what quotes resolve to).
+        self.assertEqual(_describe_work_image(path, tenant=self.acme),
+                         'Geyser swap in Kwekwe')
+        # Homebase describing the same path finds nothing of its own.
+        self.assertNotEqual(_describe_work_image(path, tenant=self.homebase),
+                            'Geyser swap in Kwekwe')
+        # Title → item → price guide (the "this one how much?" answer).
+        guide = portfolio_catalog.build_item_price_guide(
+            'Geyser swap in Kwekwe', tenant=self.acme)
+        self.assertIn('US$150', guide)
+        # Materialization yields a real local file for the WhatsApp send.
+        local, is_temp = _materialize_image(path)
+        self.assertTrue(os.path.exists(local))
+        if is_temp:
+            os.unlink(local)
 
     def test_foreign_tenant_gallery_never_serves_homebase_photos(self):
         from .whatsapp_webhook import get_catalogue_images, get_previous_work_images

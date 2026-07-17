@@ -255,12 +255,30 @@ def get_item_by_id(item_id: str, tenant=None) -> Optional[dict]:
     return next((it for it in items_for(tenant) if it['id'] == item_id), None)
 
 
+def _is_storage_path(filename: str) -> bool:
+    """Wizard-uploaded photos are stored under a relative storage path
+    (e.g. intake_photos/<slug>/<uuid>.jpg); bundled homebase photos are bare
+    filenames inside PORTFOLIO_IMAGES_DIR."""
+    return '/' in (filename or '').replace(chr(92), '/')
+
+
 def image_path_for(item: dict) -> str:
-    return os.path.join(PORTFOLIO_IMAGES_DIR, item['filename'])
+    filename = item['filename']
+    if _is_storage_path(filename):
+        return filename  # storage-relative; senders materialize it
+    return os.path.join(PORTFOLIO_IMAGES_DIR, filename)
 
 
 def item_is_available(item: dict) -> bool:
-    """True only when the image file actually exists on disk."""
+    """True when the image exists — on disk for bundled photos, in the
+    default storage for wizard uploads."""
+    filename = item['filename']
+    if _is_storage_path(filename):
+        try:
+            from django.core.files.storage import default_storage
+            return default_storage.exists(filename)
+        except Exception:
+            return False
     return os.path.exists(image_path_for(item))
 
 
@@ -364,7 +382,8 @@ def build_gallery_caption(filename: str, tenant=None) -> Optional[str]:
     if not base:
         return None
     for item in items_for(tenant):
-        if os.path.splitext(item['filename'])[0].lower() == base:
+        item_base = os.path.splitext(os.path.basename(item['filename']))[0].lower()
+        if item_base == base:
             return item['title']
     return None
 
