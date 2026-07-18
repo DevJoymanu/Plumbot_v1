@@ -144,6 +144,14 @@
   .photo-row select, .photo-row input[type=text] { padding: 8px 10px; font-size: 12px; border-radius: 10px; }
   .photo-row .pairbtn { flex: none; font-size: 11px; }
   .photo-row .del { border: none; background: none; color: var(--error); cursor: pointer; flex: none; }
+  .pair-card { background: rgba(0,101,145,0.04); border: 1px dashed rgba(0,101,145,0.35); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .pair-thumbs { display: flex; align-items: center; gap: 10px; }
+  .pair-slot { position: relative; flex: none; }
+  .pair-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
+  .pair-tag { display: inline-block; background: var(--primary); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .05em; padding: 2px 8px; border-radius: 8px; flex: none; }
+  .pair-slot .pair-tag { position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); }
+  .pair-tag--after { background: var(--ok, #1a7f4b); }
+  .pair-next { display: flex; gap: 8px; padding: 4px 8px 0; }
 
   .nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
@@ -400,6 +408,11 @@
         <input type="file" id="photo_input"
                accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/3gpp"
                multiple style="display:none;">
+        <div class="drop" id="drop_pair" style="margin-top:10px;">
+          <span class="material-symbols-outlined" style="font-size:32px;">compare</span><br>
+          <strong>Add a before &amp; after pair</strong><br>we'll ask for the two photos one at a time — no guessing
+        </div>
+        <input type="file" id="pair_input" accept="image/jpeg,image/png,image/webp" style="display:none;">
         <div class="photo-list" id="photo_list"></div>
       </div>
     </section>
@@ -593,47 +606,137 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
   const drop = document.getElementById('drop');
   const fileInput = document.getElementById('photo_input');
   drop.addEventListener('click', () => fileInput.click());
+  async function uploadOne(file) {
+    if (photos.length >= 20) { alert('Media limit reached (20 files).'); return null; }
+    const fd = new FormData();
+    fd.append('photo', file);
+    fd.append('csrfmiddlewaretoken', CSRF);
+    try {
+      const res = await fetch(`/intake/${TOKEN}/photo/`, { method: 'POST', body: fd });
+      const out = await res.json();
+      if (out.ok) return { path: out.path, previewUrl: URL.createObjectURL(file) };
+      alert(out.error || 'Upload failed');
+    } catch (e) { alert('Upload failed — check your connection and try again.'); }
+    return null;
+  }
+
   fileInput.addEventListener('change', async () => {
     for (const file of fileInput.files) {
-      if (photos.length >= 20) { alert('Media limit reached (20 files).'); break; }
-      const fd = new FormData();
-      fd.append('photo', file);
-      fd.append('csrfmiddlewaretoken', CSRF);
-      try {
-        const res = await fetch(`/intake/${TOKEN}/photo/`, { method: 'POST', body: fd });
-        const out = await res.json();
-        if (out.ok) {
-          photos.push({ path: out.path, tag: 'general', caption: '',
-                        pair_with_prev: false, previewUrl: URL.createObjectURL(file) });
-        } else { alert(out.error || 'Upload failed'); }
-      } catch (e) { alert('Upload failed — check your connection and try again.'); }
+      const up = await uploadOne(file);
+      if (!up) break;
+      photos.push({ path: up.path, tag: 'general', caption: '',
+                    pair_with_prev: false, previewUrl: up.previewUrl });
     }
     fileInput.value = '';
     renderPhotos(); refresh();
   });
 
+  // ── Guided before/after pair flow — the two photos are picked one at a
+  // time into labelled BEFORE/AFTER slots, so nothing depends on list order.
+  let pendingBefore = null;   // index of a BEFORE photo still waiting for its AFTER
+  let pairPick = null;        // which slot the next pick fills
+  const pairInput = document.getElementById('pair_input');
+  document.getElementById('drop_pair').addEventListener('click', () => {
+    if (pendingBefore !== null) {
+      alert('Finish the current pair first — add its AFTER photo (or keep it as a single photo).');
+      return;
+    }
+    pairPick = 'before'; pairInput.click();
+  });
+  window._pairAfterPick = () => { pairPick = 'after'; pairInput.click(); };
+  window._pairCancel = () => { pendingBefore = null; renderPhotos(); refresh(); };
+  pairInput.addEventListener('change', async () => {
+    const file = pairInput.files[0];
+    pairInput.value = '';
+    if (!file) return;
+    const up = await uploadOne(file);
+    if (up && pairPick === 'before') {
+      photos.push({ path: up.path, tag: 'general', caption: '',
+                    pair_with_prev: false, previewUrl: up.previewUrl });
+      pendingBefore = photos.length - 1;
+    } else if (up && pendingBefore !== null) {
+      photos.splice(pendingBefore + 1, 0,
+        { path: up.path, tag: photos[pendingBefore].tag, caption: '',
+          pair_with_prev: true, previewUrl: up.previewUrl });
+      pendingBefore = null;
+    }
+    renderPhotos(); refresh();
+  });
+
   const TAGS = ['general','geyser','drain','bathroom install','kitchen','pipes','taps'];
+  const thumb = p => /\.(mp4|mov|3gp)$/i.test(p.path || '')
+    ? '<span class="material-symbols-outlined" style="font-size:40px;color:var(--muted);">videocam</span>'
+    : p.previewUrl ? `<img src="${p.previewUrl}">`
+    : '<span class="material-symbols-outlined" style="font-size:40px;color:var(--muted);">image</span>';
+
   function renderPhotos() {
-    document.getElementById('photo_list').innerHTML = photos.map((p, i) => `
+    let html = '';
+    for (let i = 0; i < photos.length; i++) {
+      const p = photos[i], nxt = photos[i + 1];
+      if (nxt && nxt.pair_with_prev) {
+        // A linked pair renders as ONE card with labelled slots.
+        html += `
+        <div class="pair-card">
+          <div class="pair-thumbs">
+            <div class="pair-slot">${thumb(p)}<span class="pair-tag">BEFORE</span></div>
+            <span class="material-symbols-outlined" style="color:var(--muted);">arrow_forward</span>
+            <div class="pair-slot">${thumb(nxt)}<span class="pair-tag pair-tag--after">AFTER</span></div>
+          </div>
+          <div class="photo-row" style="background:none;padding:0;">
+            <select onchange="window._pairTag(${i}, this.value)">
+              ${TAGS.map(t => `<option ${nxt.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+            <input type="text" placeholder="names of items (required)" value="${nxt.caption}"
+                   oninput="window._pCap(${i + 1}, this.value)"
+                   style="flex:1;${photoNeedsTitle(i + 1) ? 'border-color:#d9534f;' : ''}">
+            <button type="button" class="chip" onclick="window._pairSplit(${i + 1})">unlink</button>
+            <button type="button" class="del" onclick="window._pairDel(${i})">✕</button>
+          </div>
+        </div>`;
+        i++;
+        continue;
+      }
+      if (i === pendingBefore) {
+        html += `
+        <div class="photo-row">
+          ${thumb(p)}
+          <span class="pair-tag">BEFORE</span>
+          <span style="flex:1;font-size:13px;color:var(--muted);">waiting for its AFTER photo…</span>
+          <button type="button" class="del" onclick="window._pDel(${i})">✕</button>
+        </div>
+        <div class="pair-next">
+          <button type="button" class="chip on" onclick="window._pairAfterPick()">+ add the AFTER photo</button>
+          <button type="button" class="chip" onclick="window._pairCancel()">keep as a single photo</button>
+        </div>`;
+        continue;
+      }
+      html += `
       <div class="photo-row">
-        ${/\.(mp4|mov|3gp)$/i.test(p.path || '') ? '<span class="material-symbols-outlined" style="font-size:40px;color:var(--muted);">videocam</span>' : p.previewUrl ? `<img src="${p.previewUrl}">` : '<span class="material-symbols-outlined" style="font-size:40px;color:var(--muted);">image</span>'}
+        ${thumb(p)}
         <select onchange="window._pTag(${i}, this.value)">
           ${TAGS.map(t => `<option ${p.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
         </select>
         <input type="text" placeholder="names of items (required)" value="${p.caption}"
                oninput="window._pCap(${i}, this.value)"
                style="flex:1;${photoNeedsTitle(i) ? 'border-color:#d9534f;' : ''}">
-        ${i > 0 ? `<button type="button" class="chip pairbtn ${p.pair_with_prev ? 'on' : ''}"
-               onclick="window._pPair(${i})">before→after</button>` : ''}
         <button type="button" class="del" onclick="window._pDel(${i})">✕</button>
-      </div>`).join('');
+      </div>`;
+    }
+    document.getElementById('photo_list').innerHTML = html;
     document.getElementById('photos_meta').value = JSON.stringify(
       photos.map(({ path, tag, caption, pair_with_prev }) => ({ path, tag, caption, pair_with_prev })));
   }
   window._pTag = (i, v) => { photos[i].tag = v; renderPhotos(); };
   window._pCap = (i, v) => { photos[i].caption = v; document.getElementById('photos_meta').value = JSON.stringify(photos.map(({path,tag,caption,pair_with_prev}) => ({path,tag,caption,pair_with_prev}))); };
-  window._pPair = i => { photos[i].pair_with_prev = !photos[i].pair_with_prev; renderPhotos(); refresh(); };
-  window._pDel = i => { photos.splice(i, 1); renderPhotos(); refresh(); };
+  window._pairTag = (i, v) => { photos[i].tag = v; photos[i + 1].tag = v; renderPhotos(); };
+  window._pairSplit = i => { photos[i].pair_with_prev = false; renderPhotos(); refresh(); };
+  window._pairDel = i => { photos.splice(i, 2); if (pendingBefore !== null && pendingBefore > i) pendingBefore -= 2; renderPhotos(); refresh(); };
+  window._pDel = i => {
+    photos.splice(i, 1);
+    if (i === pendingBefore) pendingBefore = null;
+    else if (pendingBefore !== null && pendingBefore > i) pendingBefore -= 1;
+    renderPhotos(); refresh();
+  };
 
   // ── Readiness / unlocks ────────────────────────────────────────────────
   const CAPS = {
@@ -814,6 +917,10 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
   back.addEventListener('click', () => { autosave(); show(current - 1); });
   next.addEventListener('click', () => {
     autosave();
+    if (current === 4 && pendingBefore !== null) {
+      alert('Add the AFTER photo for your before & after pair, or keep it as a single photo.');
+      return;
+    }
     if (current === 4 && anyUntitledPhoto()) {
       alert('Please provide names of items for the image.');
       renderPhotos();
@@ -822,6 +929,12 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
     show(current + 1);
   });
   document.getElementById('intake').addEventListener('submit', (e) => {
+    if (pendingBefore !== null) {
+      e.preventDefault();
+      alert('Add the AFTER photo for your before & after pair, or keep it as a single photo.');
+      show(4);
+      return;
+    }
     if (anyUntitledPhoto()) {
       e.preventDefault();
       alert('Please provide names of items for the image.');
