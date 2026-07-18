@@ -26,21 +26,35 @@
   .cfg-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px 22px; }
   .form-group label { display: block; font-family: var(--font-label); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); margin-bottom: 6px; }
   .form-group small { color: var(--color-error); font-size: 12px; }
-  /* Price table */
-  .price-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .price-table th { text-align: left; font-family: var(--font-label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); padding: 6px 8px; font-weight: 500; }
-  .price-table td { padding: 5px 8px; border-top: 1px solid rgba(0,101,145,0.06); vertical-align: middle; }
-  .price-table input { width: 100%; border: none; background: var(--color-surface-low); border-radius: var(--radius-sm); padding: 7px 12px; font-size: 13px; min-height: 36px; outline: none; }
-  .price-table input:focus { box-shadow: 0 0 0 2px rgba(0,101,145,0.2); background: var(--color-surface-lowest); }
-  .price-table input[type="checkbox"] { width: auto; min-height: 0; }
+  /* Price sheet — horizontal grid rows (each item on one line; scrolls on narrow screens) */
+  .ps-scroll { overflow-x: auto; padding-bottom: 4px; }
+  .ps-head, .ps-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 1.6fr) repeat(4, minmax(80px, 94px)) 62px 50px;
+    gap: 12px; align-items: center; min-width: 710px;
+  }
+  .ps-head { padding: 0 14px 8px; }
+  .ps-head span { font-family: var(--font-label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); font-weight: 500; }
+  .ps-center { text-align: center; justify-self: center; }
+  .ps-head em { font-style: normal; font-family: var(--font-label); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-primary); background: rgba(0,101,145,0.08); border-radius: 6px; padding: 1px 5px; margin-left: 2px; }
+  .ps-hidden { display: none; }
+  .ps-row {
+    background: var(--color-surface-lowest); border: 1px solid rgba(0,101,145,0.08);
+    border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 8px;
+    transition: box-shadow var(--transition), border-color var(--transition);
+  }
+  .ps-row:hover { border-color: rgba(0,101,145,0.16); box-shadow: var(--shadow-xs); }
+  .ps-row input { width: 100%; border: none; background: var(--color-surface-low); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; min-height: 36px; outline: none; }
+  .ps-row input:focus { box-shadow: 0 0 0 2px rgba(0,101,145,0.2); background: var(--color-surface-lowest); }
+  .ps-row .ps-item input { font-weight: 600; }
+  .ps-row input[type="checkbox"] { width: auto; min-height: 0; }
+  .ps-breakdown { grid-column: 1 / -1; }
   .money-cell { display: flex; align-items: center; gap: 4px; }
   .money-cell .cur { font-size: 11px; color: var(--color-muted); font-weight: 600; white-space: nowrap; }
   .money-cell input { flex: 1; min-width: 0; }
   .money-cell input[readonly] { background: rgba(0,101,145,0.02); color: var(--color-primary); font-weight: 600; }
   .money-cell input.is-auto { box-shadow: inset 0 0 0 1px rgba(0,101,145,0.18); }
-  .th-auto { font-family: var(--font-label); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-primary); background: rgba(0,101,145,0.08); border-radius: 6px; padding: 1px 5px; margin-left: 2px; font-weight: 600; }
   /* Breakdown chips */
-  .parts-subrow td { border-top: none; padding-top: 0; }
   .parts-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0 10px 12px; }
   .parts-tag { font-family: var(--font-label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); font-weight: 600; }
   .part-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--color-surface-low); border-radius: var(--radius-pill); padding: 3px 6px 3px 12px; }
@@ -99,43 +113,37 @@
         part's price there and it rolls into All-in. New items, sizes, and keywords live in the Django admin.
       </p>
       {{ formset.management_form }}
-      <table class="price-table">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Supply</th><th>Labour</th><th>Flat</th><th>All-in <span class="th-auto">auto</span></th>
-            <th>Active</th><th>Delete</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in formset %}
-          <tr class="price-row">
-            {{ f.id }}{{ f.family.as_hidden }}{{ f.variant.as_hidden }}{{ f.short_label.as_hidden }}{{ f.sort_order.as_hidden }}{{ f.parts }}
-            <td>{{ f.label }}</td>
-            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.supply }}</td>
-            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.labour }}</td>
-            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.flat }}</td>
-            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.allin }}</td>
-            <td style="text-align:center;">{{ f.is_active }}</td>
-            <td style="text-align:center;">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
-          </tr>
+      <div class="ps-scroll">
+        <div class="ps-head">
+          <span>Item</span>
+          <span>Supply</span><span>Labour</span><span>Flat</span><span>All-in <em>auto</em></span>
+          <span class="ps-center">Active</span><span class="ps-center">Del</span>
+        </div>
+        {% for f in formset %}
+        <div class="ps-row price-row">
+          <span class="ps-hidden">{{ f.id }}{{ f.family.as_hidden }}{{ f.variant.as_hidden }}{{ f.short_label.as_hidden }}{{ f.sort_order.as_hidden }}{{ f.parts }}</span>
+          <div class="ps-item">{{ f.label }}</div>
+          <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.supply }}</div>
+          <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.labour }}</div>
+          <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.flat }}</div>
+          <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.allin }}</div>
+          <div class="ps-center">{{ f.is_active }}</div>
+          <div class="ps-center">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</div>
           {% if f.parts.value %}
-          <tr class="parts-subrow">
-            <td colspan="7">
-              <div class="parts-editor" data-target="#{{ f.parts.id_for_label }}">
-                <span class="parts-tag">Breakdown</span>
-                <span class="parts-chips"></span>
-                <button type="button" class="parts-add">+ add part</button>
-              </div>
-            </td>
-          </tr>
+          <div class="ps-breakdown">
+            <div class="parts-editor" data-target="#{{ f.parts.id_for_label }}">
+              <span class="parts-tag">Breakdown</span>
+              <span class="parts-chips"></span>
+              <button type="button" class="parts-add">+ add part</button>
+            </div>
+          </div>
           {% endif %}
           {% if f.errors %}
-          <tr><td colspan="7"><small style="color:var(--color-error);">{{ f.errors }}</small></td></tr>
+          <div class="ps-breakdown"><small style="color:var(--color-error);">{{ f.errors }}</small></div>
           {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
+        </div>
+        {% endfor %}
+      </div>
     </section>
 
     <div class="cfg-actionbar cfg-glass">
