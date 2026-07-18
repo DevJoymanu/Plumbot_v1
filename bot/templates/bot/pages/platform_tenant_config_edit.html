@@ -192,6 +192,43 @@
     </section>
 
     <section class="cfg-glass cfg-card">
+      <div class="cfg-card__title">WhatsApp channel</div>
+      <p class="cfg-card__hint">
+        The tenant's Meta WhatsApp Cloud API number. <strong>Phone number ID</strong> is the routing key
+        Meta puts on every inbound message — it must match the number registered under the platform
+        Business Manager, with its webhook pointed at <code>/webhook/</code>. The access token is
+        encrypted at rest; leave it blank to keep the one on file. Saved with the rest of the config.
+      </p>
+      <div class="cfg-form-grid">
+        <div class="form-group">
+          <label for="ch_pid">Phone number ID (routing key)</label>
+          <input type="text" id="ch_pid" name="phone_number_id" value="{{ channel.phone_number_id|default:'' }}" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="ch_num">Display number</label>
+          <input type="text" id="ch_num" name="display_number" value="{{ channel.display_number|default:'' }}" placeholder="+263…" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="ch_waba">Business account ID (WABA)</label>
+          <input type="text" id="ch_waba" name="business_account_id" value="{{ channel.business_account_id|default:'' }}" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="ch_tok">Access token</label>
+          <input type="password" id="ch_tok" name="access_token" autocomplete="new-password"
+                 placeholder="{% if channel and channel.access_token %}On file — leave blank to keep{% else %}Paste access token{% endif %}">
+        </div>
+        <div class="form-group">
+          <label for="ch_verify">Verify token</label>
+          <input type="text" id="ch_verify" name="verify_token" value="{{ channel.verify_token|default:'' }}" autocomplete="off">
+        </div>
+        <label class="cfg-toggle">
+          <input type="checkbox" name="channel_active" {% if not channel or channel.is_active %}checked{% endif %}>
+          Channel active (routes inbound &amp; sends outbound)
+        </label>
+      </div>
+    </section>
+
+    <section class="cfg-glass cfg-card">
       <div class="cfg-card__title">Price sheet · "from" rates in <span id="cur-heading">{{ currency }}</span></div>
       <p class="cfg-card__hint">
         The sheet is prefilled with the standard item list — just type each price (a row only saves
@@ -256,52 +293,6 @@
       <span class="spacer"></span>
     </div>
 
-  </div>
-</form>
-
-<!-- WhatsApp channel: its own form (separate model + credentials), saved independently -->
-<form method="post" action="{% url 'platform_tenant_channel_save' tenant.slug %}" autocomplete="off">
-  {% csrf_token %}
-  <div class="cfg-wrap" style="padding-top:0;">
-    <section class="cfg-glass cfg-card">
-      <div class="cfg-card__title">WhatsApp channel</div>
-      <p class="cfg-card__hint">
-        The tenant's Meta WhatsApp Cloud API number. <strong>Phone number ID</strong> is the routing key
-        Meta puts on every inbound message — it must match the number registered under the platform
-        Business Manager, with its webhook pointed at <code>/webhook/</code>. The access token is
-        encrypted at rest; leave it blank to keep the one on file. Saving reloads the send client.
-      </p>
-      <div class="cfg-form-grid">
-        <div class="form-group">
-          <label for="ch_pid">Phone number ID (routing key)</label>
-          <input type="text" id="ch_pid" name="phone_number_id" value="{{ channel.phone_number_id|default:'' }}" required>
-        </div>
-        <div class="form-group">
-          <label for="ch_num">Display number</label>
-          <input type="text" id="ch_num" name="display_number" value="{{ channel.display_number|default:'' }}" placeholder="+263…">
-        </div>
-        <div class="form-group">
-          <label for="ch_waba">Business account ID (WABA)</label>
-          <input type="text" id="ch_waba" name="business_account_id" value="{{ channel.business_account_id|default:'' }}">
-        </div>
-        <div class="form-group">
-          <label for="ch_tok">Access token</label>
-          <input type="password" id="ch_tok" name="access_token" autocomplete="new-password"
-                 placeholder="{% if channel and channel.access_token %}On file — leave blank to keep{% else %}Paste access token{% endif %}">
-        </div>
-        <div class="form-group">
-          <label for="ch_verify">Verify token</label>
-          <input type="text" id="ch_verify" name="verify_token" value="{{ channel.verify_token|default:'' }}">
-        </div>
-        <label class="cfg-toggle">
-          <input type="checkbox" name="is_active" {% if not channel or channel.is_active %}checked{% endif %}>
-          Channel active (routes inbound &amp; sends outbound)
-        </label>
-      </div>
-      <div style="margin-top:16px;">
-        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save channel</button>
-      </div>
-    </section>
   </div>
 </form>
 {% endblock %}

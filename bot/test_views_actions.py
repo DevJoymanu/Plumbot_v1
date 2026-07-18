@@ -2286,11 +2286,18 @@ class TenantChannelEditorTests(TestCase):
         self.client.login(username='root', password='pass12345')
 
     def _save(self, **extra):
-        data = {'phone_number_id': '111222333', 'display_number': '+263771',
-                'is_active': 'on'}
+        # The channel rides along on the single config-edit 'Save changes' form.
+        data = {
+            'plumber_name': '', 'plumber_contact': '', 'business_whatsapp': '',
+            'location_line': '', 'location_area': '', 'location_city': '',
+            'timezone_name': '', 'currency': 'US$', 'email_from_name': '', 'email_sender': '',
+            'form-TOTAL_FORMS': '0', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+            'phone_number_id': '111222333', 'display_number': '+263771', 'channel_active': 'on',
+        }
         data.update(extra)
         return self.client.post(
-            reverse('platform_tenant_channel_save', args=['acme']), data)
+            reverse('platform_tenant_config_edit', args=['acme']), data)
 
     def test_create_channel_encrypts_the_token(self):
         from .models import TenantWhatsAppChannel
@@ -2318,22 +2325,28 @@ class TenantChannelEditorTests(TestCase):
         ch = TenantWhatsAppChannel.objects.get(tenant=self.acme)
         self.assertEqual(ch.decrypted_access_token(), 'NEW')
 
+    def test_no_phone_number_id_creates_no_channel(self):
+        from .models import TenantWhatsAppChannel
+        self._save(phone_number_id='')  # config saves; channel is optional
+        self.assertFalse(TenantWhatsAppChannel.objects.filter(tenant=self.acme).exists())
+
     def test_duplicate_phone_number_id_is_rejected(self):
         from .models import TenantWhatsAppChannel
         other = Tenant.objects.create(name='Other', slug='other')
         TenantWhatsAppChannel.objects.create(tenant=other, phone_number_id='999888')
         resp = self._save(phone_number_id='999888')
-        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.status_code, 302)   # rest of config still saved
         self.assertFalse(TenantWhatsAppChannel.objects.filter(tenant=self.acme).exists())
 
-    def test_editor_renders_form_and_never_leaks_the_token(self):
+    def test_editor_renders_above_price_sheet_and_never_leaks_the_token(self):
         from .models import TenantWhatsAppChannel
         TenantWhatsAppChannel.objects.create(
             tenant=self.acme, phone_number_id='111222333', access_token='TOPSECRET')
         body = self.client.get(
             reverse('platform_tenant_config_edit', args=['acme'])).content.decode()
         self.assertIn('name="phone_number_id"', body)
-        self.assertIn(reverse('platform_tenant_channel_save', args=['acme']), body)
+        # The channel card sits above the price sheet card.
+        self.assertLess(body.index('>WhatsApp channel</div>'), body.index('Price sheet ·'))
         self.assertNotIn('TOPSECRET', body)                          # token not rendered
         self.assertNotIn('fernet:', body)
         self.assertIn('leave blank to keep', body.lower())

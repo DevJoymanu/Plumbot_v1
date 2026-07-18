@@ -831,28 +831,24 @@ def platform_tenant_lead_magnet_regenerate(request, slug):
     return redirect('platform_tenant_config', slug=slug)
 
 
-@require_POST
-@superuser_required
-def platform_tenant_channel_save(request, slug):
-    """Create or update the tenant's WhatsApp Cloud API channel (the number
-    inbound webhooks route to and outbound sends go from)."""
+def _apply_tenant_channel(request, tenant):
+    """Upsert the tenant's WhatsApp channel from the config-edit form (part of
+    the single 'Save changes' submit). No phone_number_id = nothing to do. The
+    access token is stored encrypted (model.save() → Fernet); a blank field
+    keeps the one on file. A duplicate id warns without blocking the rest."""
     from django.db import IntegrityError, transaction
 
     from ..models import TenantWhatsAppChannel
-    tenant = get_object_or_404(Tenant, slug=slug)
     phone_number_id = (request.POST.get('phone_number_id') or '').strip()[:64]
     if not phone_number_id:
-        messages.error(request, 'Phone number ID is required — it is the webhook routing key.')
-        return redirect('platform_tenant_config_edit', slug=slug)
+        return
     channel = (tenant.whatsapp_channels.order_by('pk').first()
                or TenantWhatsAppChannel(tenant=tenant))
     channel.phone_number_id = phone_number_id
     channel.display_number = (request.POST.get('display_number') or '').strip()[:32]
     channel.business_account_id = (request.POST.get('business_account_id') or '').strip()[:64]
     channel.verify_token = (request.POST.get('verify_token') or '').strip()[:128]
-    channel.is_active = bool(request.POST.get('is_active'))
-    # A new token is stored (model.save() encrypts it); blank keeps the current
-    # one — never overwrite an on-file token with an empty field.
+    channel.is_active = bool(request.POST.get('channel_active'))
     new_token = (request.POST.get('access_token') or '').strip()
     if new_token:
         channel.access_token = new_token
@@ -860,12 +856,8 @@ def platform_tenant_channel_save(request, slug):
         with transaction.atomic():
             channel.save()
     except IntegrityError:
-        messages.error(request, 'That phone number ID is already registered to another tenant.')
-        return redirect('platform_tenant_config_edit', slug=slug)
-    from ..whatsapp_cloud_api import invalidate_client_cache
-    invalidate_client_cache()   # rebuild the cached client with the new credentials
-    messages.success(request, f'WhatsApp channel saved for {tenant.name}.')
-    return redirect('platform_tenant_config_edit', slug=slug)
+        messages.warning(request, 'WhatsApp channel not saved — that phone number '
+                                  'ID is already registered to another tenant.')
 
 
 @superuser_required
@@ -915,7 +907,9 @@ def platform_tenant_config_edit(request, slug):
             # so images and the price list always correspond.
             from ..media_library import resync_portfolio_prices
             resync_portfolio_prices(tenant)
-            # Config/prices changed → rebuild the tenant's lead-magnet PDF.
+            _apply_tenant_channel(request, tenant)   # WhatsApp channel (optional)
+            # Config/prices changed → rebuild the tenant's lead-magnet PDF (async,
+            # so keep it last — its DB thread mustn't race the writes above).
             from ..lead_magnet import regenerate_lead_magnet_async
             regenerate_lead_magnet_async(tenant)
             from ..whatsapp_cloud_api import invalidate_client_cache
