@@ -1616,6 +1616,13 @@ class OfferPageTests(TestCase):
         self.assertEqual((facts['price'], facts['label'], facts['en']),
                          (800, 'Bathroom makeover special',
                           'freestanding tub and side chamber'))
+        # The page preview is the bot's FULL vague-'how much' reply — anchor,
+        # approximate-price disclaimer, and the budget tie-down close.
+        page = self.client.get(reverse('offer'))
+        self.assertContains(
+            page, 'Our Bathroom makeover special is US$800 — a freestanding tub and side chamber.')
+        self.assertContains(page, 'approximate starting prices')
+        self.assertContains(page, 'That sit alright with your budget?')
         # Homebase's own offer row is untouched by acme's edits.
         self.assertTrue(TenantPriceItem.objects.filter(
             tenant=self.homebase, family='package', variant='facebook').exists())

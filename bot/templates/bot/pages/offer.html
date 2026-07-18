@@ -93,10 +93,10 @@
             <button type="submit" class="btn-primary">Save offer</button>
         </form>
 
-        {% if facts %}
+        {% if preview %}
         <div class="preview">
             <span class="lbl">How the assistant says it</span>
-            Our {{ facts.label }} is US${{ facts.price }}{% if facts.en %} — a {{ facts.en }}{% endif %}.
+            <div style="white-space: pre-line;">{{ preview }}</div>
         </div>
         {% else %}
         <div class="preview" style="background:#fdf6ec; border-color:#f0e0c2;">

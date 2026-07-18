@@ -14,7 +14,6 @@ from django.views.decorators.http import require_POST
 
 from ..decorators import staff_required
 from ..models import TenantPriceItem
-from ..pricing_copy import facebook_package_facts
 from ..tenant_config import get_config
 
 
@@ -38,6 +37,32 @@ COMMON_INCLUDES = [
 ]
 
 
+def _compose_offer_preview(tenant):
+    """The bot's ACTUAL vague-'how much' reply for this tenant — same code
+    path the router uses (_compose_pricing_overview), so the preview never
+    drifts from what customers receive. Shims the mixin's per-conversation
+    bits (fresh-conversation state) around the tenant's real config."""
+    from .plumbot.response_mixin import ResponseMixin as _RM
+    cfg = get_config(tenant)
+
+    class _Shim:
+        tenant_cfg = cfg
+        _compose_pricing_overview = _RM._compose_pricing_overview
+        _freestanding_tub_price = _RM._freestanding_tub_price
+        _price_components_map = _RM._price_components_map
+        _product_price_close = _RM._product_price_close
+        _price_tiedown = _RM._price_tiedown
+        _ensure_price_disclaimer = _RM._ensure_price_disclaimer
+        _PRICED_INTENTS = _RM._PRICED_INTENTS
+
+        def _last_assistant_was_tiedown(self):
+            return False  # preview = a fresh conversation
+    try:
+        return _Shim()._compose_pricing_overview('english')
+    except Exception:
+        return None
+
+
 @staff_required
 def offer_page(request):
     tenant = _tenant_or_404(request)
@@ -45,7 +70,7 @@ def offer_page(request):
     return render(request, 'bot/pages/offer.html', {
         'active_nav': 'offer',
         'row': row,
-        'facts': facebook_package_facts(get_config(tenant)),
+        'preview': _compose_offer_preview(tenant),
         'common_includes': COMMON_INCLUDES,
         'includes_list': [p.get('name', '') for p in
                           ((row.parts if row else None) or []) if p.get('name')],
