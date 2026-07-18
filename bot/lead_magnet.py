@@ -10,7 +10,6 @@ Regenerated (in the background) whenever a tenant's config or prices change.
 """
 import logging
 import os
-from collections import OrderedDict
 from io import BytesIO
 
 from django.core.files.base import ContentFile
@@ -20,24 +19,15 @@ logger = logging.getLogger(__name__)
 
 STORAGE_PREFIX = 'lead_magnets_pdfs'
 
-# The design pool — same content, different colour/cover treatments. A tenant
-# is pinned to one by design_index_for(); add/remove freely (cycling adapts).
+# The design pool — homebase's portfolio layout in one theme colour per tenant
+# (deterministic). Add/remove freely; the cycling adapts.
 LEAD_MAGNET_DESIGNS = [
-    dict(key='ocean',  primary='#006591', accent='#0ea5e9', cover='band'),
-    dict(key='forest', primary='#15803d', accent='#22c55e', cover='panel'),
-    dict(key='amber',  primary='#b45309', accent='#f59e0b', cover='minimal'),
-    dict(key='indigo', primary='#4648d4', accent='#6366f1', cover='band'),
-    dict(key='slate',  primary='#334155', accent='#0ea5e9', cover='panel'),
+    dict(key='ocean',  primary='#006591'),
+    dict(key='forest', primary='#15803d'),   # homebase-style green
+    dict(key='amber',  primary='#b45309'),
+    dict(key='indigo', primary='#4648d4'),
+    dict(key='slate',  primary='#334155'),
 ]
-
-# family → section title for the pricing guide.
-_FAMILY_TITLES = {
-    'shower': 'Showers', 'tub': 'Bathtubs', 'geyser': 'Geysers',
-    'geyser_service': 'Geyser services', 'vanity': 'Vanities',
-    'toilet': 'Toilets', 'chamber': 'Chambers', 'basin': 'Basins',
-    'renovation': 'Renovations', 'package': 'Packages',
-    'repair': 'Repairs & maintenance',
-}
 
 
 def design_index_for(tenant) -> int:
@@ -75,33 +65,58 @@ def _price_str(item, cur):
     return None
 
 
-def _pricing_sections(tenant, cur):
-    """{section title: [(label, price str), …]} from the tenant's priced items."""
-    from .models import TenantPriceItem
-    sections = OrderedDict()
-    for item in TenantPriceItem.objects.filter(tenant=tenant, is_active=True):
-        price = _price_str(item, cur)
-        if not price:
-            continue
-        title = _FAMILY_TITLES.get(item.family, item.family.replace('_', ' ').title())
-        sections.setdefault(title, []).append((item.label or item.family, price))
-    return sections
-
-
-def _portfolio_images(tenant, limit=4):
-    """Up to `limit` local image paths for the tenant's gallery (best-effort;
-    remote files are materialised to temp). Returns [(local_path, is_temp), …]."""
+def _portfolio_images(tenant, limit=6):
+    """Up to `limit` (local_path, is_temp, caption) for the tenant's gallery
+    (best-effort; remote files are materialised to temp)."""
     out = []
     try:
+        from . import portfolio_catalog
         from .whatsapp_webhook import _materialize_image, get_previous_work_images
         for path in (get_previous_work_images(tenant) or [])[:limit]:
             local, is_temp = _materialize_image(path)
-            if local and os.path.exists(local):
-                out.append((local, is_temp))
+            if not local or not os.path.exists(local):
+                continue
+            try:
+                cap = portfolio_catalog.build_gallery_caption(path, tenant=tenant)
+            except Exception:
+                cap = None
+            out.append((local, is_temp, cap or 'Completed project'))
     except Exception:
         logger.exception('lead-magnet portfolio images failed for %s',
                          getattr(tenant, 'slug', None))
     return out
+
+
+# Pricing sections mirror homebase's portfolio PDF layout.
+_FITTING_FAMILIES = ['shower', 'tub', 'vanity', 'toilet', 'chamber', 'basin', 'geyser']
+_PRICING_SECTIONS = [
+    ('Full Renovations & Packages', ['renovation', 'package'], 'cost'),
+    ('Bathroom Fittings', _FITTING_FAMILIES, 'fitting'),
+    ('Geyser Services', ['geyser_service'], 'cost'),
+    ('Repairs & Maintenance', ['repair'], 'cost'),
+]
+
+
+def _fitting_cells(item, cur):
+    """(supply, install, all-in) strings for a fitting row — parts breakdown
+    goes in the install column when there's no plain labour figure."""
+    parts = [p for p in (item.parts or []) if p.get('amount') not in (None, '')]
+    supply = _money(item.supply, cur) or '—'
+    if item.labour is not None:
+        install = _money(item.labour, cur)
+    elif parts:
+        install = ' + '.join(f"{p.get('name', '').title()} {_money(p['amount'], cur)}"
+                             for p in parts) or '—'
+    else:
+        install = '—'
+    allin_val = item.allin
+    if allin_val is None:
+        allin_val = item.flat
+    if allin_val is None and (item.supply is not None or item.labour is not None):
+        allin_val = (item.supply or 0) + (item.labour or 0)
+    if allin_val is None and parts:
+        allin_val = sum(p['amount'] for p in parts)
+    return supply, install, (_money(allin_val, cur) or '—')
 
 
 # ── PDF build ───────────────────────────────────────────────────────────────
@@ -114,157 +129,177 @@ def build_lead_magnet_pdf(tenant):
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
-        from reportlab.lib.utils import ImageReader
-        from reportlab.platypus import (HRFlowable, Image as RLImage, Paragraph,
-                                        SimpleDocTemplate, Spacer, Table, TableStyle)
+        from reportlab.platypus import (HRFlowable, Image as RLImage, KeepTogether,
+                                        Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle)
 
+        from .models import TenantPriceItem
         from .tenant_config import get_config
 
         cfg = get_config(tenant)
-        design = design_for(tenant)
-        primary = colors.HexColor(design['primary'])
-        accent = colors.HexColor(design['accent'])
+        theme = colors.HexColor(design_for(tenant)['primary'])   # replaces homebase's green
         dark = colors.HexColor('#1a1a1a')
         mid = colors.HexColor('#555555')
+        light = colors.HexColor('#eeeeee')
         white = colors.white
 
         business = (getattr(tenant, 'name', '') or 'Our').strip()
         cur = cfg.currency or 'US$'
+        wa, call = cfg.business_whatsapp, cfg.plumber_contact
+        loc = cfg.location_short()
 
         styles = getSampleStyleSheet()
-        cover_title = ParagraphStyle('ct', parent=styles['Heading1'], fontSize=26,
-                                     textColor=white, leading=30, spaceAfter=4)
-        cover_sub = ParagraphStyle('cs', parent=styles['Normal'], fontSize=12,
-                                   textColor=white, leading=16)
-        h2 = ParagraphStyle('h2', parent=styles['Heading2'], fontSize=13,
-                            textColor=primary, spaceBefore=14, spaceAfter=4,
-                            fontName='Helvetica-Bold')
-        body = ParagraphStyle('body', parent=styles['Normal'], fontSize=10,
-                              textColor=mid, leading=15)
-        item_l = ParagraphStyle('il', parent=styles['Normal'], fontSize=9.5,
-                               textColor=dark, leading=13)
-        item_p = ParagraphStyle('ip', parent=styles['Normal'], fontSize=9.5,
-                               textColor=primary, leading=13, fontName='Helvetica-Bold',
-                               alignment=2)
-        note = ParagraphStyle('note', parent=styles['Normal'], fontSize=8,
-                             textColor=mid, leading=11)
+        h1 = ParagraphStyle('h1', parent=styles['Heading1'], fontSize=24, textColor=dark, spaceAfter=2, spaceBefore=0)
+        sub = ParagraphStyle('sub', parent=styles['Normal'], fontSize=11, textColor=mid, spaceAfter=0)
+        h2 = ParagraphStyle('h2', parent=styles['Heading2'], fontSize=13, textColor=theme, spaceAfter=4, spaceBefore=14, fontName='Helvetica-Bold')
+        body = ParagraphStyle('body', parent=styles['Normal'], fontSize=9, textColor=mid, leading=13)
+        caption = ParagraphStyle('cap', parent=styles['Normal'], fontSize=8, textColor=mid, leading=12, fontName='Helvetica-Oblique', spaceAfter=8)
+        th = ParagraphStyle('th', parent=styles['Normal'], fontSize=8, textColor=white, fontName='Helvetica-Bold')
+        td = ParagraphStyle('td', parent=styles['Normal'], fontSize=8, textColor=dark, leading=11)
+        td_mid = ParagraphStyle('tdm', parent=styles['Normal'], fontSize=8, textColor=mid, leading=11)
+        note = ParagraphStyle('note', parent=styles['Normal'], fontSize=7, textColor=mid, leading=10, fontName='Helvetica-Oblique')
 
         buffer = BytesIO()
-        margin = 1.6 * cm
-        doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=margin,
-                                rightMargin=margin, topMargin=margin, bottomMargin=margin)
-        W = A4[0] - 2 * margin
-        story = []
+        margin = 1.8 * cm
+        doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=margin, rightMargin=margin,
+                                topMargin=margin, bottomMargin=margin)
+        AW = A4[0] - 2 * margin
 
-        # ── Cover (style varies by design) ──
-        contact_bits = [b for b in (
-            f'WhatsApp {cfg.business_whatsapp}' if cfg.business_whatsapp else '',
-            f'Call {cfg.plumber_contact}' if cfg.plumber_contact else '',
-        ) if b]
-        cover_inner = [Paragraph(business, cover_title),
-                       Paragraph('Portfolio &amp; Pricing Guide', cover_sub)]
-        if contact_bits:
-            cover_inner.append(Spacer(1, 6))
-            cover_inner.append(Paragraph(' &nbsp;·&nbsp; '.join(contact_bits), cover_sub))
-        cover = Table([[cover_inner]], colWidths=[W])
-        cover_style = [('LEFTPADDING', (0, 0), (-1, -1), 18),
-                       ('RIGHTPADDING', (0, 0), (-1, -1), 18),
-                       ('TOPPADDING', (0, 0), (-1, -1), 22),
-                       ('BOTTOMPADDING', (0, 0), (-1, -1), 22)]
-        if design['cover'] == 'minimal':
-            # Light cover: dark text on white with an accent rule underneath.
-            cover_title.textColor = dark
-            cover_sub.textColor = mid
-            cover_style += [('LINEBELOW', (0, 0), (-1, -1), 3, accent)]
-        elif design['cover'] == 'panel':
-            cover_style += [('BACKGROUND', (0, 0), (-1, -1), primary),
-                            ('LINEBEFORE', (0, 0), (0, -1), 8, accent)]
-        else:  # band
-            cover_style += [('BACKGROUND', (0, 0), (-1, -1), primary)]
-        cover.setStyle(TableStyle(cover_style))
-        story += [cover, Spacer(1, 16)]
+        def styled_table(data, col_widths):
+            t = Table(data, colWidths=col_widths, repeatRows=1)
+            t.setStyle(TableStyle([
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#dddddd')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [white, colors.HexColor('#f7f7f7')]),
+                ('BACKGROUND', (0, 0), (-1, 0), theme),
+                ('TEXTCOLOR', (0, 0), (-1, 0), white),
+            ]))
+            return t
 
-        # ── Intro ──
-        intro_bits = []
-        loc = cfg.location_short()
-        if loc:
-            intro_bits.append(f'Based in {loc}')
-        hrs = cfg.hours_sentence()
-        if hrs:
-            intro_bits.append(f'open {hrs}')
-        intro = '. '.join(intro_bits)
-        story.append(Paragraph(
-            (f'{intro}. ' if intro else '') +
-            f'{business} handles the full range of plumbing — installs, renovations, '
-            'geysers, drains and repairs. Below is our previous work and a guide to our '
-            'pricing so you know what to expect before we start.', body))
+        elems = []
 
-        # ── Pricing ──
-        sections = _pricing_sections(tenant, cur)
-        if sections:
-            story += [Spacer(1, 6), Paragraph('Pricing guide', h2),
-                      HRFlowable(width='100%', thickness=1, color=accent, spaceAfter=6)]
-            for title, rows in sections.items():
-                story.append(Paragraph(title, ParagraphStyle(
-                    't', parent=body, fontSize=10.5, textColor=dark,
-                    fontName='Helvetica-Bold', spaceBefore=8, spaceAfter=2)))
-                data = [[Paragraph(label, item_l), Paragraph(price, item_p)]
-                        for label, price in rows]
-                tbl = Table(data, colWidths=[W * 0.72, W * 0.28])
-                tbl.setStyle(TableStyle([
-                    ('LINEBELOW', (0, 0), (-1, -2), 0.5, colors.HexColor('#eeeeee')),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ]))
-                story.append(tbl)
-            story.append(Spacer(1, 4))
-            story.append(Paragraph(
-                'Prices are "from" starting rates — the free on-site visit confirms the '
-                'exact figure before any work begins.', note))
+        # ── Header ──
+        elems.append(Paragraph(business, h1))
+        elems.append(Paragraph(
+            f'Trusted plumbing specialists in {loc}' if loc else 'Trusted plumbing specialists', sub))
+        elems.append(HRFlowable(width='100%', thickness=2, color=theme, spaceAfter=14, spaceBefore=6))
 
-        # ── Portfolio images (best-effort, 2-up) ──
-        temps = _portfolio_images(tenant, limit=4)
+        # ── Our Previous Work ──
+        elems.append(Paragraph('Our Previous Work', h2))
+        elems.append(Paragraph(
+            "Every project below was completed with a focus on quality, cleanliness, "
+            "and care for the client's home.", body))
+        elems.append(Spacer(1, 0.3 * cm))
+        temps = _portfolio_images(tenant, limit=6)
         if temps:
-            story += [Spacer(1, 10), Paragraph('Previous work', h2),
-                      HRFlowable(width='100%', thickness=1, color=accent, spaceAfter=8)]
-            cell_w = (W - 0.5 * cm) / 2
-            flow, row = [], []
-            for local, _t in temps:
-                try:
-                    iw, ih = ImageReader(local).getSize()
-                    img = RLImage(local, width=cell_w, height=cell_w * ih / iw)
-                    row.append(img)
-                    if len(row) == 2:
-                        flow.append(row)
-                        row = []
-                except Exception:
-                    continue
-            if row:
-                row.append('')
-                flow.append(row)
-            if flow:
-                grid = Table(flow, colWidths=[cell_w, cell_w])
-                grid.setStyle(TableStyle([
-                    ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                    ('TOPPADDING', (0, 0), (-1, -1), 0),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ]))
-                story.append(grid)
+            cell_w = (AW - 0.4 * cm) / 2
+            img_h = 5.5 * cm
+            for i in range(0, len(temps), 2):
+                pair = temps[i:i + 2]
+                imgs, caps = [], []
+                for local, _t, cap in pair:
+                    try:
+                        imgs.append(RLImage(local, width=cell_w, height=img_h))
+                    except Exception:
+                        imgs.append(Paragraph('(photo)', td_mid))
+                    caps.append(Paragraph(cap, caption))
+                while len(imgs) < 2:
+                    imgs.append('')
+                    caps.append('')
+                img_row = Table([imgs], colWidths=[cell_w, cell_w])
+                img_row.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                                             ('LEFTPADDING', (0, 0), (-1, -1), 2), ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                                             ('BOTTOMPADDING', (0, 0), (-1, -1), 2)]))
+                cap_row = Table([caps], colWidths=[cell_w, cell_w])
+                cap_row.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                                             ('RIGHTPADDING', (0, 0), (-1, -1), 2), ('TOPPADDING', (0, 0), (-1, -1), 3),
+                                             ('BOTTOMPADDING', (0, 0), (-1, -1), 8)]))
+                elems.append(KeepTogether([img_row, cap_row]))
+        else:
+            msg = 'Portfolio photos available on request.'
+            if wa:
+                msg += f" Message us on WhatsApp ({wa}) and we'll send examples of our completed work."
+            elems.append(Paragraph(msg, body))
 
-        doc.build(story)
+        elems.append(Spacer(1, 0.2 * cm))
+        elems.append(HRFlowable(width='100%', thickness=1, color=light, spaceAfter=4, spaceBefore=4))
+
+        # ── Complete Services & Pricing Guide (styled tables per section) ──
+        by_family = {}
+        for item in TenantPriceItem.objects.filter(tenant=tenant, is_active=True):
+            by_family.setdefault(item.family, []).append(item)
+        pricing_elems, any_priced = [], False
+        for title, families, kind in _PRICING_SECTIONS:
+            rows = []
+            for fam in families:
+                for item in by_family.get(fam, []):
+                    if kind == 'fitting':
+                        supply, install, allin = _fitting_cells(item, cur)
+                        if supply == '—' and install == '—' and allin == '—':
+                            continue
+                        rows.append([Paragraph(item.label or fam, td), Paragraph(supply, td_mid),
+                                     Paragraph(install, td_mid), Paragraph(allin, td)])
+                    else:
+                        price = _price_str(item, cur)
+                        if not price:
+                            continue
+                        rows.append([Paragraph(item.label or fam, td),
+                                     Paragraph(price.replace('from ', 'From '), td)])
+            if not rows:
+                continue
+            any_priced = True
+            pricing_elems.append(Paragraph(title, h2))
+            if kind == 'fitting':
+                header = [Paragraph(x, th) for x in ['Item', 'Supply (from)', 'Install (from)', 'All-in (from)']]
+                widths = [AW * 0.34, AW * 0.20, AW * 0.26, AW * 0.20]
+            else:
+                header = [Paragraph(x, th) for x in ['Service', 'Cost (from)']]
+                widths = [AW * 0.66, AW * 0.34]
+            pricing_elems.append(styled_table([header] + rows, widths))
+            pricing_elems.append(Spacer(1, 0.2 * cm))
+
+        if any_priced:
+            elems.append(Paragraph('Complete Services & Pricing Guide', h2))
+            elems.append(Paragraph(
+                f'All prices are in {cur}. Supply and labour vary by fixture choice, site '
+                'conditions, and scope of work. A free on-site assessment gives you an exact '
+                'written quote with no obligation.', body))
+            elems.append(Spacer(1, 0.25 * cm))
+            elems += pricing_elems
+            elems.append(Paragraph(
+                '* Labour prices are for work only; parts and fixtures are charged separately '
+                'unless stated as all-in. All prices are starting rates — we confirm the final '
+                'price before starting work.', note))
+
+        elems.append(Spacer(1, 0.3 * cm))
+        elems.append(HRFlowable(width='100%', thickness=1, color=light, spaceAfter=8, spaceBefore=4))
+
+        # ── Footer ──
+        bits = []
+        if wa:
+            bits.append(f'WhatsApp: {wa}')
+        if call:
+            bits.append(f'Call: {call}')
+        elems.append(Paragraph(
+            'Ready to book a free on-site assessment?  ' + '   |   '.join(bits), body))
+        elems.append(Paragraph(
+            'All work carried out by experienced plumbers. Satisfaction guaranteed on every job.',
+            note))
+
+        doc.build(elems)
         return buffer.getvalue()
     except Exception:
         logger.exception('build_lead_magnet_pdf failed for %s',
                          getattr(tenant, 'slug', None))
         return None
     finally:
-        for local, is_temp in temps:
-            if is_temp:
+        for entry in temps:
+            if entry[1]:  # is_temp
                 try:
-                    os.unlink(local)
+                    os.unlink(entry[0])
                 except OSError:
                     pass
 
