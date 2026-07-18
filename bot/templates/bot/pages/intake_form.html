@@ -384,14 +384,17 @@
       <p class="step-eyebrow">Step 5 of 6 · optional, powerful</p>
       <h1>Show off your past work</h1>
       <p class="sub">When a customer asks "have you done geysers before?", the assistant
-        answers with your photos. Before/after pairs work brilliantly. Totally fine to
-        skip — you can add photos from your dashboard anytime.</p>
+        answers with your photos. Before/after pairs work brilliantly. Short videos work
+        too (MP4, up to 16 MB). Totally fine to skip — you can add media from your
+        dashboard's Gallery page anytime. Up to 20 files.</p>
       <div class="card">
         <div class="drop" id="drop">
           <span class="material-symbols-outlined" style="font-size:32px;">add_photo_alternate</span><br>
-          <strong>Tap to add photos</strong><br>from your gallery or camera
+          <strong>Tap to add photos or videos</strong><br>from your gallery or camera
         </div>
-        <input type="file" id="photo_input" accept="image/*" multiple style="display:none;">
+        <input type="file" id="photo_input"
+               accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/3gpp"
+               multiple style="display:none;">
         <div class="photo-list" id="photo_list"></div>
       </div>
     </section>
@@ -587,6 +590,7 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
   drop.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', async () => {
     for (const file of fileInput.files) {
+      if (photos.length >= 20) { alert('Media limit reached (20 files).'); break; }
       const fd = new FormData();
       fd.append('photo', file);
       fd.append('csrfmiddlewaretoken', CSRF);
@@ -607,7 +611,7 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
   function renderPhotos() {
     document.getElementById('photo_list').innerHTML = photos.map((p, i) => `
       <div class="photo-row">
-        ${p.previewUrl ? `<img src="${p.previewUrl}">` : '<span class="material-symbols-outlined" style="font-size:40px;color:var(--muted);">image</span>'}
+        ${/\.(mp4|mov|3gp)$/i.test(p.path || '') ? '<span class="material-symbols-outlined" style="font-size:40px;color:var(--muted);">videocam</span>' : p.previewUrl ? `<img src="${p.previewUrl}">` : '<span class="material-symbols-outlined" style="font-size:40px;color:var(--muted);">image</span>'}
         <select onchange="window._pTag(${i}, this.value)">
           ${TAGS.map(t => `<option ${p.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
         </select>

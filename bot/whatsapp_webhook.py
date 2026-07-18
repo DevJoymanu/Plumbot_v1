@@ -1140,6 +1140,14 @@ def _materialize_image(path: str):
     return path, False
 
 
+def _send_local_media(client, to, source_path, local_path, caption=None):
+    """Gallery items may be photos or short videos — route by extension."""
+    from .media_library import is_video_filename
+    if is_video_filename(source_path):
+        return client.send_local_video(to, local_path, caption=caption)
+    return client.send_local_image(to, local_path, caption=caption)
+
+
 def _describe_work_image(filename: str, tenant=None) -> str:
     """
     Human description of a sent image, derived from its filename, so a customer
@@ -1229,7 +1237,7 @@ def send_catalogue_images(sender, appointment=None) -> bool:
                 caption = "HomeBase Plumbers — product catalogue" if index == 0 else None
                 local_path, is_temp = _materialize_image(image_path)
                 try:
-                    result = client.send_local_image(sender, local_path, caption=caption)
+                    result = _send_local_media(client, sender, image_path, local_path, caption=caption)
                 finally:
                     if is_temp:
                         try: os.unlink(local_path)
@@ -1275,7 +1283,7 @@ def send_portfolio_item(sender, item, appointment=None) -> bool:
             time.sleep(1)  # let any preceding text land first
             local_path, is_temp = _materialize_image(image_path)
             try:
-                result = client.send_local_image(sender, local_path, caption=caption)
+                result = _send_local_media(client, sender, image_path, local_path, caption=caption)
             finally:
                 if is_temp:
                     try: os.unlink(local_path)
@@ -1455,7 +1463,7 @@ def send_previous_work_photos(sender, appointment=None):
                     )
                 local_path, is_temp = _materialize_image(image_path)
                 try:
-                    result = client.send_local_image(sender, local_path, caption=caption)
+                    result = _send_local_media(client, sender, image_path, local_path, caption=caption)
                 finally:
                     if is_temp:
                         try: os.unlink(local_path)

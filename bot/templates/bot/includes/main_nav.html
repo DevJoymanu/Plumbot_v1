@@ -37,6 +37,10 @@
             <i class="fas fa-hard-hat nav-icon"></i>
             Job Appointments
         </a>
+        <a href="{% url 'gallery' %}" class="pb-sidenav__item {% if active_nav == 'gallery' %}active{% endif %}">
+            <i class="fas fa-images nav-icon"></i>
+            Gallery
+        </a>
         <a href="{% url 'quotation_templates_list' %}" class="pb-sidenav__item {% if active_nav == 'templates' %}active{% endif %}">
             <i class="fas fa-file-invoice nav-icon"></i>
             Templates

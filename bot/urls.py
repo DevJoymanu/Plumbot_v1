@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import path
 from . import views
 from .views import platform as platform_views
+from .views import gallery as gallery_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
@@ -72,6 +73,13 @@ urlpatterns = [
     path('appointments/<int:pk>/unbook/', unbook_appointment, name='unbook_appointment'),
     path('appointments/<int:pk>/send-image/', views.send_image_to_lead, name='send_image_to_lead'),
     path('appointments/<int:pk>/send-portfolio/',views.send_portfolio_to_lead,name='send_portfolio_to_lead'),
+
+    # Tenant gallery management (portal)
+    path('gallery/', gallery_views.gallery_page, name='gallery'),
+    path('gallery/add/', gallery_views.gallery_add, name='gallery_add'),
+    path('gallery/<int:pk>/update/', gallery_views.gallery_update, name='gallery_update'),
+    path('gallery/<int:pk>/delete/', gallery_views.gallery_delete, name='gallery_delete'),
+    path('gallery/media/<int:pk>/', gallery_views.gallery_media, name='gallery_media'),
     path('appointments/<int:pk>/send-pdf/', views.send_pdf_to_lead, name='send_pdf_to_lead'),
 
         # API endpoints for fetching appointment data

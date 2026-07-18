@@ -1295,6 +1295,123 @@ class TenantCredentialTests(TestCase):
         self.assertIs(get_client_for_tenant(None), whatsapp_api)
 
 
+class GalleryPortalTests(TestCase):
+    """Portal Gallery page + shared upload rules: uploads land under
+    tenant_portfolios/<slug>/, the 20-file cap holds, videos are accepted
+    and routed to send_local_video, and deletes never touch repo files."""
+
+    def setUp(self):
+        # The media cap counts files in storage, which outlives each test's
+        # DB — start every test with an empty tenant folder.
+        import shutil
+
+        from django.conf import settings as dj_settings
+        shutil.rmtree(os.path.join(dj_settings.MEDIA_ROOT, 'tenant_portfolios'),
+                      ignore_errors=True)
+        self.homebase = Tenant.objects.get(slug='homebase')
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.user = get_user_model().objects.create_user(
+            username='acme-owner', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=self.user, tenant=self.acme, role='owner')
+        self.client.force_login(self.user)
+
+    def _upload(self, name='job.jpg', content=b'\xff\xd8 fake jpg', **extra):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        data = {'media': SimpleUploadedFile(name, content), 'tag': 'geyser',
+                'caption': 'Geyser swap in Avondale'}
+        data.update(extra)
+        return self.client.post(reverse('gallery_add'), data)
+
+    def test_gallery_page_renders(self):
+        self.assertEqual(self.client.get(reverse('gallery')).status_code, 200)
+
+    def test_add_lands_in_tenant_folder_and_creates_item(self):
+        from .models import TenantPortfolioItem
+        self._upload(price_line='geyser install from US$150')
+        item = TenantPortfolioItem.objects.get(tenant=self.acme)
+        self.assertTrue(item.filename.startswith('tenant_portfolios/acme/'))
+        self.assertEqual(item.title, 'Geyser swap in Avondale')
+        self.assertEqual(item.keywords, ['geyser'])
+        self.assertEqual(item.price_line, 'geyser install from US$150')
+
+    def test_video_accepted_and_routed_to_video_send(self):
+        from unittest.mock import MagicMock
+
+        from .media_library import is_video_filename
+        from .models import TenantPortfolioItem
+        from .whatsapp_webhook import _send_local_media
+        self._upload(name='pipes.mp4', content=b'\x00\x00 fake mp4')
+        item = TenantPortfolioItem.objects.get(tenant=self.acme)
+        self.assertTrue(item.filename.endswith('.mp4'))
+        self.assertTrue(is_video_filename(item.filename))
+        client = MagicMock()
+        _send_local_media(client, '+263771', item.filename, '/tmp/x.mp4', caption='c')
+        client.send_local_video.assert_called_once()
+        client.send_local_image.assert_not_called()
+        _send_local_media(client, '+263771', 'a/b.jpg', '/tmp/y.jpg')
+        client.send_local_image.assert_called_once()
+
+    def test_bad_type_and_cap_rejected(self):
+        from unittest.mock import patch
+
+        from .models import TenantPortfolioItem
+        self._upload(name='malware.exe')
+        self.assertEqual(TenantPortfolioItem.objects.filter(tenant=self.acme).count(), 0)
+        with patch('bot.media_library.MAX_PORTFOLIO_MEDIA', 1):
+            self._upload(name='one.jpg')
+            self._upload(name='two.jpg')
+        self.assertEqual(TenantPortfolioItem.objects.filter(tenant=self.acme).count(), 1)
+
+    def test_update_delete_and_tenant_pinning(self):
+        from django.core.files.storage import default_storage
+
+        from .models import TenantPortfolioItem
+        self._upload()
+        item = TenantPortfolioItem.objects.get(tenant=self.acme)
+        self.client.post(reverse('gallery_update', args=[item.pk]),
+                         {'title': 'New title', 'price_line': 'from US$99'})
+        item.refresh_from_db()
+        self.assertEqual((item.title, item.price_line), ('New title', 'from US$99'))
+        # A homebase item is invisible to acme's portal (404 on every action).
+        hb_item = TenantPortfolioItem.objects.filter(tenant=self.homebase).first()
+        self.assertIsNotNone(hb_item)
+        for name in ('gallery_update', 'gallery_delete'):
+            self.assertEqual(self.client.post(
+                reverse(name, args=[hb_item.pk]), {}).status_code, 404)
+        self.assertEqual(self.client.get(
+            reverse('gallery_media', args=[hb_item.pk])).status_code, 404)
+        # Delete removes the row AND the uploaded file.
+        path = item.filename
+        self.assertTrue(default_storage.exists(path))
+        self.client.post(reverse('gallery_delete', args=[item.pk]))
+        self.assertFalse(TenantPortfolioItem.objects.filter(pk=item.pk).exists())
+        self.assertFalse(default_storage.exists(path))
+
+    def test_delete_never_unlinks_repo_files(self):
+        from .views.gallery import _is_tenant_owned_file
+        self.assertFalse(_is_tenant_owned_file(self.acme, 'modern_shower.jpg'))
+        self.assertFalse(_is_tenant_owned_file(self.acme, 'tenant_portfolios/homebase/x.jpg'))
+        self.assertTrue(_is_tenant_owned_file(self.acme, 'tenant_portfolios/acme/x.jpg'))
+        self.assertTrue(_is_tenant_owned_file(self.acme, 'intake_photos/acme/x.jpg'))
+
+    def test_wizard_upload_endpoint_uses_shared_rules(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from .models import TenantIntake
+        intake = TenantIntake.objects.create(tenant=self.acme)
+        self.client.logout()  # endpoint is public, token-gated
+        res = self.client.post(
+            reverse('intake_photo_upload', args=[intake.token]),
+            {'photo': SimpleUploadedFile('work.mp4', b'\x00 fake')})
+        out = res.json()
+        self.assertTrue(out['ok'])
+        self.assertTrue(out['path'].startswith('tenant_portfolios/acme/'))
+        res = self.client.post(
+            reverse('intake_photo_upload', args=[intake.token]),
+            {'photo': SimpleUploadedFile('bad.exe', b'x')})
+        self.assertEqual(res.status_code, 400)
+
+
 class TenantConfigTests(TestCase):
     """Phase 2 slice 1: FAQ facts + identity via the TenantConfig seam.
     Homebase must be byte-identical to the old hardcoded strings; a tenant

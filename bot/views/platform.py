@@ -394,26 +394,21 @@ def intake_autosave(request, token):
 
 @require_POST
 def intake_photo_upload(request, token):
-    """Photo upload for the gallery step (public, token-gated). Stores the
-    file immediately; the wizard tracks path+tag+caption client-side and
-    submits them in photos_meta."""
-    import uuid as _uuid
-
-    from django.core.files.storage import default_storage
+    """Media upload for the gallery step (public, token-gated). Stores the
+    file immediately under tenant_portfolios/<slug>/; the wizard tracks
+    path+tag+caption client-side and submits them in photos_meta."""
     from django.http import JsonResponse
+
+    from ..media_library import save_portfolio_upload
     intake = get_object_or_404(TenantIntake, token=token)
     if intake.status != 'pending':
         return JsonResponse({'ok': False, 'error': 'closed'}, status=409)
     upload = request.FILES.get('photo')
     if upload is None:
         return JsonResponse({'ok': False, 'error': 'no file'}, status=400)
-    if upload.size > 8 * 1024 * 1024:
-        return JsonResponse({'ok': False, 'error': 'Photo too large (8 MB max).'}, status=400)
-    ext = (upload.name.rsplit('.', 1)[-1] if '.' in upload.name else 'jpg').lower()
-    if ext not in ('jpg', 'jpeg', 'png', 'webp'):
-        return JsonResponse({'ok': False, 'error': 'Use a JPG, PNG, or WebP photo.'}, status=400)
-    path = default_storage.save(
-        f'intake_photos/{intake.tenant.slug}/{_uuid.uuid4().hex}.{ext}', upload)
+    path, error = save_portfolio_upload(intake.tenant, upload)
+    if error:
+        return JsonResponse({'ok': False, 'error': error}, status=400)
     return JsonResponse({'ok': True, 'path': path})
 
 

@@ -1,0 +1,133 @@
+{% extends "bot/layouts/base.html" %}
+{% load static %}
+
+{% block title %}Gallery{% endblock %}
+
+{% block content %}
+<style>
+    body { background: #F0F2F5; }
+    .topbar {
+        background: #006591; padding: 12px 16px; color: #fff;
+        position: sticky; top: 0; z-index: 10;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .topbar h1 { font-size: 17px; font-weight: 700; margin: 0; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .topbar .quota { font-size: 13px; opacity: .9; }
+    .page-content { padding: 16px; max-width: 1100px; margin: 0 auto; }
+    .g-card {
+        background: #fff; border-radius: 12px; padding: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px;
+    }
+    .g-card h2 { font-size: 15px; margin: 0 0 10px; color: #1c2b33; }
+    .add-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+    .add-row .field { display: flex; flex-direction: column; gap: 4px; }
+    .add-row label { font-size: 12px; color: #54656f; font-weight: 600; }
+    .add-row input[type=text] { border: 1px solid #d1d7db; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+    .btn-primary {
+        background: #006591; color: #fff; border: 0; border-radius: 8px;
+        padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-danger { background: #d9534f; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+    .tile { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; flex-direction: column; }
+    .tile .media { position: relative; aspect-ratio: 4/3; background: #e9edef; }
+    .tile img, .tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .tile .pair-badge, .tile .video-badge {
+        position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.65);
+        color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    }
+    .tile .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .tile input[type=text] { border: 1px solid #e0e4e7; border-radius: 7px; padding: 6px 8px; font-size: 13px; width: 100%; box-sizing: border-box; }
+    .tile .tags { font-size: 11px; color: #54656f; }
+    .tile .actions { display: flex; gap: 8px; margin-top: 4px; }
+    .tile .actions button { flex: 1; padding: 7px 0; font-size: 13px; border-radius: 7px; border: 0; cursor: pointer; font-weight: 600; }
+    .tile .save-btn { background: #e7f3f8; color: #006591; }
+    .tile .del-btn { background: #fdecea; color: #c0392b; }
+    .empty { text-align: center; color: #54656f; padding: 40px 16px; }
+    .hint { font-size: 12px; color: #54656f; margin-top: 8px; }
+</style>
+
+<div class="topbar">
+    <h1><i class="fas fa-images"></i> Gallery</h1>
+    <span class="quota">{{ media_used }} / {{ media_max }} files used</span>
+</div>
+
+<div class="page-content">
+    {% include "bot/includes/messages.html" %}
+
+    <div class="g-card">
+        <h2>Add a photo or short video</h2>
+        <form method="post" action="{% url 'gallery_add' %}" enctype="multipart/form-data" class="add-row">
+            {% csrf_token %}
+            <div class="field">
+                <label>Photo / video</label>
+                <input type="file" name="media" required
+                       accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/3gpp">
+            </div>
+            <div class="field">
+                <label>What kind of job? (helps the assistant pick relevant shots)</label>
+                <input type="text" name="tag" list="tag-ideas" placeholder="e.g. geyser" required>
+                <datalist id="tag-ideas">
+                    <option value="geyser"><option value="bathroom"><option value="kitchen">
+                    <option value="shower"><option value="tub"><option value="toilet">
+                    <option value="tiling"><option value="drainage"><option value="borehole">
+                    <option value="general">
+                </datalist>
+            </div>
+            <div class="field" style="flex:1; min-width:180px;">
+                <label>Caption (becomes the title customers see)</label>
+                <input type="text" name="caption" maxlength="120" placeholder="e.g. Geyser swap in Avondale">
+            </div>
+            <div class="field" style="min-width:180px;">
+                <label>Price line (optional)</label>
+                <input type="text" name="price_line" maxlength="200" placeholder="e.g. geyser install from US$150">
+            </div>
+            <button type="submit" class="btn-primary">Upload</button>
+        </form>
+        <p class="hint">Photos up to 8 MB (JPG/PNG/WebP), videos up to 16 MB (MP4/MOV — WhatsApp's limit).
+            When a customer highlights one of these and asks about it, the assistant answers using the
+            title and price line you set here.</p>
+    </div>
+
+    {% if items %}
+    <div class="grid">
+        {% for item in items %}
+        <div class="tile">
+            <div class="media">
+                {% if item.is_video %}
+                <video src="{% url 'gallery_media' item.pk %}" controls preload="metadata"></video>
+                <span class="video-badge">Video</span>
+                {% else %}
+                <img src="{% url 'gallery_media' item.pk %}" alt="{{ item.title }}" loading="lazy">
+                {% endif %}
+                {% if item.pair_filename %}<span class="pair-badge">Before / after</span>{% endif %}
+            </div>
+            <div class="body">
+                <form method="post" action="{% url 'gallery_update' item.pk %}">
+                    {% csrf_token %}
+                    <input type="text" name="title" value="{{ item.title }}" maxlength="120" title="Title">
+                    <input type="text" name="price_line" value="{{ item.price_line }}" maxlength="200"
+                           placeholder="Price line, e.g. from US$150" title="Price line" style="margin-top:6px;">
+                    <div class="tags">{{ item.keywords|join:", " }}</div>
+                    <div class="actions">
+                        <button type="submit" class="save-btn">Save</button>
+                        <button type="submit" class="del-btn"
+                                formaction="{% url 'gallery_delete' item.pk %}"
+                                onclick="return confirm('Remove this from your gallery? The file is deleted too.');">
+                            Remove
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="g-card empty">
+        <p><strong>No gallery items yet.</strong></p>
+        <p>Add photos of your best work — the assistant sends them when customers ask
+            "have you done this before?" and can quote the price line when they ask about a specific shot.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
