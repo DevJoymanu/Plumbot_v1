@@ -29,16 +29,45 @@
     .up-tile:hover { border-color: #006591; }
     .up-tile strong { color: #006591; display: block; margin-top: 4px; }
     .up-tile i { font-size: 26px; color: #006591; }
-    .pair-wait {
-        margin-top: 12px; background: #e7f3f8; border-radius: 10px; padding: 10px 14px;
-        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    }
-    .pair-wait img { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; }
     .badge-before, .badge-after {
         background: #006591; color: #fff; font-size: 10px; font-weight: 700;
         letter-spacing: .05em; padding: 2px 8px; border-radius: 8px;
     }
     .badge-after { background: #1a7f4b; }
+    /* Before / after pair builder */
+    .pair-panel {
+        margin-top: 14px; border: 1px solid #d5e8f0; background: #f7fbfd;
+        border-radius: 12px; padding: 16px;
+    }
+    .pair-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .pair-panel-head strong { font-size: 14px; color: #1c2b33; display: flex; align-items: center; gap: 8px; }
+    .pair-slots { display: flex; gap: 14px; align-items: flex-start; }
+    .pair-slot { flex: 1 1 0; min-width: 0; }
+    .slot-pic {
+        width: 100%; aspect-ratio: 4/3; border: 2px dashed #b8c4cb; border-radius: 12px;
+        background: #fff; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 8px; cursor: pointer; color: #54656f;
+        padding: 10px; overflow: hidden; transition: border-color .15s;
+    }
+    .slot-pic:hover { border-color: #006591; }
+    .slot-pic i { font-size: 26px; color: #006591; }
+    .slot-pic span { font-size: 12.5px; font-weight: 600; text-align: center; }
+    .slot-pic img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
+    .pair-slot.filled .slot-pic { border-style: solid; padding: 0; }
+    #slot_before.filled .slot-pic { border-color: #006591; }
+    #slot_after.filled .slot-pic { border-color: #1a7f4b; }
+    .slot-head {
+        display: flex; flex-direction: column; align-items: center; gap: 4px;
+        margin-top: 10px; font-size: 12px; color: #54656f;
+    }
+    .slot-head em { font-style: normal; }
+    .pair-arrow { flex: none; align-self: center; color: #b8c4cb; font-size: 20px; padding-top: 18px; }
+    .pair-actions { margin-top: 16px; display: flex; justify-content: flex-end; }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+    @media (max-width: 520px) {
+        .pair-slots { flex-direction: column; }
+        .pair-arrow { transform: rotate(90deg); align-self: center; padding: 0; }
+    }
     .btn-primary {
         background: #006591; color: #fff; border: 0; border-radius: 8px;
         padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -158,20 +187,49 @@
             <div class="up-tile" id="tile_pair">
                 <i class="fas fa-exchange-alt"></i>
                 <strong>Add a before &amp; after pair</strong>
-                we'll ask for the two photos one at a time — no guessing
+                two shots of the same job, shown side by side
             </div>
         </div>
         <input type="file" id="multi_input" multiple style="display:none;"
                accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/3gpp">
         <input type="file" id="pair_input" style="display:none;"
                accept="image/jpeg,image/png,image/webp">
-        <div class="pair-wait" id="pair_wait" style="display:none;">
-            <img id="pair_before_thumb" alt="">
-            <span class="badge-before">BEFORE</span>
-            <span style="flex:1; font-size:13px; color:#54656f;">waiting for its AFTER photo…</span>
-            <button type="button" class="btn-primary" id="pair_after_btn">+ add the AFTER photo</button>
-            <button type="button" class="btn-ghost" id="pair_cancel_btn">cancel</button>
+
+        <!-- Before / after pair builder: pick each photo in the main area, the
+             BEFORE / AFTER heading sits right under its own slot. -->
+        <div class="pair-panel" id="pair_panel" style="display:none;">
+            <div class="pair-panel-head">
+                <strong><i class="fas fa-exchange-alt"></i> Before &amp; after pair</strong>
+                <button type="button" class="btn-ghost" id="pair_close">Cancel</button>
+            </div>
+            <div class="pair-slots">
+                <div class="pair-slot" id="slot_before" data-role="before">
+                    <button type="button" class="slot-pic">
+                        <i class="fas fa-camera"></i><span>Tap to choose the BEFORE photo</span>
+                    </button>
+                    <div class="slot-head slot-head--before">
+                        <span class="badge-before">BEFORE</span>
+                        <em>the original state</em>
+                    </div>
+                </div>
+                <div class="pair-arrow"><i class="fas fa-arrow-right"></i></div>
+                <div class="pair-slot" id="slot_after" data-role="after">
+                    <button type="button" class="slot-pic">
+                        <i class="fas fa-camera"></i><span>Tap to choose the AFTER photo</span>
+                    </button>
+                    <div class="slot-head slot-head--after">
+                        <span class="badge-after">AFTER</span>
+                        <em>the finished work</em>
+                    </div>
+                </div>
+            </div>
+            <div class="pair-actions">
+                <button type="button" class="btn-primary" id="pair_continue" disabled>
+                    Continue — name it
+                </button>
+            </div>
         </div>
+
         <p class="hint">Photos up to 8 MB (JPG/PNG/WebP), videos up to 16 MB (MP4/MOV — WhatsApp's limit).
             One photo can show several jobs — tap every one that appears and its price and
             category fill in from your price list automatically. That name and price are what the
@@ -465,39 +523,61 @@
     openAnnot(entries);
   });
 
-  // ── Guided before/after pair ───────────────────────────────────────────
+  // ── Before/after pair builder (two distinct labelled slots) ─────────────
   const pairInput = document.getElementById('pair_input');
-  const pairWait = document.getElementById('pair_wait');
-  let pairBefore = null, pairPick = null;
+  const pairPanel = document.getElementById('pair_panel');
+  const slotBefore = document.getElementById('slot_before');
+  const slotAfter = document.getElementById('slot_after');
+  const pairContinue = document.getElementById('pair_continue');
+  const pairShots = { before: null, after: null };
+  let pairTarget = null;
+
+  const SLOT_PROMPT = {
+    before: '<i class="fas fa-camera"></i><span>Tap to choose the BEFORE photo</span>',
+    after: '<i class="fas fa-camera"></i><span>Tap to choose the AFTER photo</span>',
+  };
+  function resetPair() {
+    pairShots.before = pairShots.after = null;
+    [['before', slotBefore], ['after', slotAfter]].forEach(([role, slot]) => {
+      slot.classList.remove('filled');
+      slot.querySelector('.slot-pic').innerHTML = SLOT_PROMPT[role];
+    });
+    pairContinue.disabled = true;
+  }
   document.getElementById('tile_pair').addEventListener('click', () => {
-    if (pairBefore) { alert('Finish the current pair first — add its AFTER photo (or cancel).'); return; }
-    pairPick = 'before'; pairInput.click();
+    resetPair();
+    pairPanel.style.display = 'block';
+    pairPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
-  document.getElementById('pair_after_btn').addEventListener('click', () => {
-    pairPick = 'after'; pairInput.click();
+  document.getElementById('pair_close').addEventListener('click', () => {
+    pairPanel.style.display = 'none';
   });
-  document.getElementById('pair_cancel_btn').addEventListener('click', () => {
-    pairBefore = null; pairWait.style.display = 'none';
+  [slotBefore, slotAfter].forEach(slot => {
+    slot.querySelector('.slot-pic').addEventListener('click', () => {
+      pairTarget = slot.dataset.role; pairInput.click();
+    });
   });
   pairInput.addEventListener('change', async () => {
     const file = pairInput.files[0];
     pairInput.value = '';
-    if (!file) return;
+    if (!file || !pairTarget) return;
     const up = await uploadOne(file);
     if (!up) return;
-    if (pairPick === 'before') {
-      pairBefore = up;
-      document.getElementById('pair_before_thumb').src = up.previewUrl;
-      pairWait.style.display = 'flex';
-    } else if (pairBefore) {
-      const entry = { path: up.path, url: up.url, previewUrl: up.previewUrl,
-                      libs: [], caption: '', captionEdited: false, price_line: '',
-                      priceEdited: false, tags: ['general'], tag: 'general',
-                      pair_path: pairBefore.path };
-      pairBefore = null;
-      pairWait.style.display = 'none';
-      openAnnot([entry]);
-    }
+    pairShots[pairTarget] = up;
+    const slot = pairTarget === 'before' ? slotBefore : slotAfter;
+    slot.classList.add('filled');
+    slot.querySelector('.slot-pic').innerHTML = `<img src="${up.previewUrl}" alt="">`;
+    pairContinue.disabled = !(pairShots.before && pairShots.after);
+  });
+  pairContinue.addEventListener('click', () => {
+    if (!(pairShots.before && pairShots.after)) return;
+    const after = pairShots.after, before = pairShots.before;
+    pairPanel.style.display = 'none';
+    // The AFTER shot is the item's main photo; BEFORE rides along as its pair.
+    openAnnot([{ path: after.path, url: after.url, previewUrl: after.previewUrl,
+                 libs: [], caption: '', captionEdited: false, price_line: '',
+                 priceEdited: false, tags: ['general'], tag: 'general',
+                 pair_path: before.path }]);
   });
 
   // ── Edit / View on existing tiles ──────────────────────────────────────
