@@ -153,18 +153,43 @@
     .annot input[type=text] { width: 100%; box-sizing: border-box; border: 1px solid #d1d7db;
         border-radius: 8px; padding: 8px 10px; font-size: 14px; margin-top: 10px; }
     .annot-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
-    /* WhatsApp preview */
+    /* Image viewer (fills the screen; content always fits + centered) */
     .wa-view { position: fixed; inset: 0; background: #0b141a; z-index: 70;
-               display: flex; align-items: center; justify-content: center; padding: 20px; cursor: pointer; }
+               display: flex; align-items: center; justify-content: center; padding: 16px; cursor: pointer; }
+    .viewer-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+                  display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; }
+    .viewer-modes { display: flex; gap: 4px; background: rgba(255,255,255,.08);
+                    border-radius: 999px; padding: 4px; }
+    .viewer-modes button { background: transparent; border: 0; color: rgba(233,237,239,.75);
+                    font-size: 12.5px; font-weight: 600; padding: 7px 15px; border-radius: 999px; cursor: pointer; }
+    .viewer-modes button.on { background: #fff; color: #0b141a; }
+    .viewer-close { background: rgba(255,255,255,.08); border: 0; color: #e9edef;
+                    width: 38px; height: 38px; border-radius: 50%; cursor: pointer; font-size: 16px; }
+    .viewer-stage { display: flex; align-items: center; justify-content: center; max-width: 96vw; }
+    /* WhatsApp bubble mode */
     .wa-bubble { background: #005c4b; border-radius: 12px; border-top-right-radius: 2px;
-                 padding: 4px; max-width: 330px; width: 100%; cursor: default; }
-    .wa-bubble img, .wa-bubble video { width: 100%; border-radius: 9px; display: block; }
+                 padding: 4px; max-width: 340px; width: 100%; cursor: default; }
+    .wa-bubble img, .wa-bubble video { width: 100%; max-height: 72vh; object-fit: contain;
+                 border-radius: 9px; display: block; }
     .wa-cap { color: #e9edef; font-size: 14px; padding: 6px 6px 2px; }
     .wa-meta { display: flex; justify-content: flex-end; gap: 4px; align-items: center;
                color: rgba(233,237,239,0.6); font-size: 11px; padding: 0 6px 4px; }
     .wa-ticks { color: #53bdeb; font-size: 12px; letter-spacing: -3px; }
-    .wa-hint { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
-               color: rgba(233,237,239,0.5); font-size: 12px; }
+    /* Full-image mode */
+    .viewer-full img, .viewer-full video { max-width: 96vw; max-height: 86vh;
+                 object-fit: contain; border-radius: 10px; display: block; cursor: default; }
+    /* Before / after mode */
+    .viewer-ba { display: flex; gap: 16px; align-items: flex-start; cursor: default; }
+    .viewer-ba figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .viewer-ba img, .viewer-ba video { max-width: 45vw; max-height: 74vh; object-fit: contain;
+                 border-radius: 10px; display: block; }
+    .viewer-ba figcaption { display: flex; }
+    .wa-hint { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center;
+               color: rgba(233,237,239,0.5); font-size: 12px; padding: 0 16px; }
+    @media (max-width: 640px) {
+        .viewer-ba { flex-direction: column; align-items: center; }
+        .viewer-ba img, .viewer-ba video { max-width: 92vw; max-height: 36vh; }
+    }
 </style>
 
 <div class="topbar">
@@ -264,6 +289,8 @@
                 <div class="actions">
                     <button type="button" class="view-btn"
                             data-src="{% url 'gallery_media' item.pk %}"
+                            data-before="{% url 'gallery_media' item.pk %}?pair=1"
+                            data-pair="{% if item.pair_filename %}1{% else %}0{% endif %}"
                             data-video="{{ item.is_video|yesno:'1,0' }}">View</button>
                     <button type="button" class="edit-btn"
                             data-pk="{{ item.pk }}" data-video="{{ item.is_video|yesno:'1,0' }}"
@@ -315,14 +342,18 @@
     </div>
 </div>
 
-<!-- WhatsApp-style preview -->
+<!-- Image viewer with switchable modes -->
 <div class="wa-view" id="wa_view" style="display:none;">
-    <div class="wa-bubble" onclick="event.stopPropagation()">
-        <div id="wa_media"></div>
-        <div class="wa-cap" id="wa_cap"></div>
-        <div class="wa-meta"><span id="wa_time"></span><span class="wa-ticks">✓✓</span></div>
+    <div class="viewer-bar" onclick="event.stopPropagation()">
+        <div class="viewer-modes" id="viewer_modes">
+            <button type="button" data-mode="whatsapp" class="on">WhatsApp</button>
+            <button type="button" data-mode="full">Full image</button>
+            <button type="button" data-mode="ba" id="mode_ba" style="display:none;">Before / after</button>
+        </div>
+        <button type="button" class="viewer-close" id="viewer_close" aria-label="Close"><i class="fas fa-times"></i></button>
     </div>
-    <div class="wa-hint">This is how customers will see it on WhatsApp — tap anywhere to close</div>
+    <div class="viewer-stage" id="viewer_stage" onclick="event.stopPropagation()"></div>
+    <div class="wa-hint" id="viewer_hint"></div>
 </div>
 
 {{ library|json_script:"lib-data" }}
@@ -596,17 +627,65 @@
                    tags: libs.length ? tagsOf(libs) : [], tag: '' }]);
     });
   });
+  // ── Image viewer (WhatsApp / Full image / Before-after) ─────────────────
   const waEl = document.getElementById('wa_view');
-  waEl.addEventListener('click', () => { waEl.style.display = 'none'; });
+  const stage = document.getElementById('viewer_stage');
+  const hintEl = document.getElementById('viewer_hint');
+  const modeBar = document.getElementById('viewer_modes');
+  const modeBaBtn = document.getElementById('mode_ba');
+  let viewData = null, viewMode = 'whatsapp';
+
+  const mediaTag = (src, isVideo) => isVideo
+    ? `<video src="${src}" controls playsinline></video>`
+    : `<img src="${src}" alt="">`;
+
+  function renderView() {
+    if (!viewData) return;
+    const v = viewData, isVid = v.video;
+    if (viewMode === 'full') {
+      stage.innerHTML = `<div class="viewer-full">${mediaTag(v.src, isVid)}</div>`;
+      hintEl.textContent = 'Full image — tap outside to close';
+    } else if (viewMode === 'ba' && v.pair) {
+      stage.innerHTML =
+        `<div class="viewer-ba">
+           <figure>${mediaTag(v.before, false)}<figcaption><span class="badge-before">BEFORE</span></figcaption></figure>
+           <figure>${mediaTag(v.src, isVid)}<figcaption><span class="badge-after">AFTER</span></figcaption></figure>
+         </div>`;
+      hintEl.textContent = 'Before & after — tap outside to close';
+    } else {
+      viewMode = 'whatsapp';
+      stage.innerHTML =
+        `<div class="wa-bubble">${mediaTag(v.src, isVid)}
+           <div class="wa-cap">${esc(v.caption)}</div>
+           <div class="wa-meta"><span>${v.time}</span><span class="wa-ticks">✓✓</span></div>
+         </div>`;
+      hintEl.textContent = 'How customers see it on WhatsApp — tap outside to close';
+    }
+    modeBar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === viewMode));
+  }
+  function closeViewer() { waEl.style.display = 'none'; viewData = null; }
+  waEl.addEventListener('click', closeViewer);
+  document.getElementById('viewer_close').addEventListener('click', e => { e.stopPropagation(); closeViewer(); });
+  modeBar.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    viewMode = btn.dataset.mode;
+    renderView();
+  });
   document.querySelectorAll('.view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tile = btn.closest('.tile');
-      document.getElementById('wa_media').innerHTML = btn.dataset.video === '1'
-        ? `<video src="${btn.dataset.src}" controls></video>`
-        : `<img src="${btn.dataset.src}">`;
-      document.getElementById('wa_cap').textContent =
-        tile.querySelector('.t-title').textContent.trim();
-      document.getElementById('wa_time').textContent = new Date().toTimeString().slice(0, 5);
+      viewData = {
+        src: btn.dataset.src,
+        before: btn.dataset.before,
+        pair: btn.dataset.pair === '1',
+        video: btn.dataset.video === '1',
+        caption: tile.querySelector('.t-title').textContent.trim(),
+        time: new Date().toTimeString().slice(0, 5),
+      };
+      viewMode = 'whatsapp';
+      modeBaBtn.style.display = viewData.pair ? '' : 'none';   // pairs only
+      renderView();
       waEl.style.display = 'flex';
     });
   });
