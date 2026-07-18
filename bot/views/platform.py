@@ -785,6 +785,7 @@ def platform_tenant_config(request, slug):
                     if line]
     faq_topics = [key.replace('_', ' ').title()
                   for key in (profile.faq_facts if profile else {}) or {}]
+    from ..lead_magnet import design_for
     return render(request, 'bot/pages/platform_tenant_config.html', {
         'tenant': tenant,
         'profile': profile,
@@ -792,11 +793,42 @@ def platform_tenant_config(request, slug):
         'currency': cur,
         'priced_items': priced_items,
         'faq_topics': faq_topics,
+        'lead_magnet_design': design_for(tenant)['key'],
         'channel': tenant.whatsapp_channels.first(),
         'intakes': tenant.intakes.all()[:10],
         'staff': tenant.memberships.select_related('user').order_by('user__username'),
         'active_nav': 'platform',
     })
+
+
+@superuser_required
+def platform_tenant_lead_magnet(request, slug):
+    """Stream the tenant's lead-magnet PDF (building it if not cached yet)."""
+    from django.core.files.storage import default_storage
+    from django.http import FileResponse
+
+    from ..lead_magnet import get_or_build_lead_magnet
+    tenant = get_object_or_404(Tenant, slug=slug)
+    path = get_or_build_lead_magnet(tenant)
+    if not path or not default_storage.exists(path):
+        raise Http404
+    resp = FileResponse(default_storage.open(path, 'rb'), content_type='application/pdf')
+    resp['Content-Disposition'] = f'inline; filename="{tenant.slug}_portfolio.pdf"'
+    return resp
+
+
+@require_POST
+@superuser_required
+def platform_tenant_lead_magnet_regenerate(request, slug):
+    """Force a rebuild of the tenant's lead-magnet PDF."""
+    from ..lead_magnet import get_or_build_lead_magnet
+    tenant = get_object_or_404(Tenant, slug=slug)
+    ok = get_or_build_lead_magnet(tenant, force=True)
+    if ok:
+        messages.success(request, f'Lead magnet rebuilt for {tenant.name}.')
+    else:
+        messages.error(request, 'Could not rebuild the lead magnet — check the logs.')
+    return redirect('platform_tenant_config', slug=slug)
 
 
 @superuser_required

@@ -249,6 +249,26 @@
       </section>
 
       <section class="cfg-glass cfg-card">
+        <div class="cfg-card__head">
+          <span class="cfg-label">Lead magnet</span>
+          <span class="cfg-chip">{{ lead_magnet_design }} design</span>
+        </div>
+        <div class="cfg-channel">
+          A portfolio &amp; pricing PDF the assistant sends leads on WhatsApp/email —
+          built from this tenant's own details and prices. It updates automatically
+          when the profile, prices, or offer change.
+        </div>
+        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center;">
+          <a class="btn btn-primary cfg-btn-sm" href="{% url 'platform_tenant_lead_magnet' tenant.slug %}"
+             target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> View PDF</a>
+          <form method="post" action="{% url 'platform_tenant_lead_magnet_regenerate' tenant.slug %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary cfg-btn-sm"><i class="fas fa-rotate"></i> Rebuild</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="cfg-glass cfg-card">
         <div class="cfg-card__head"><span class="cfg-label">Staff &amp; logins</span></div>
         {% if staff %}
         <table class="cfg-mini">

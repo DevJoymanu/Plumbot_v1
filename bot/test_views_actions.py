@@ -2253,3 +2253,21 @@ class LeadMagnetTests(TestCase):
         from django.core.files.storage import default_storage
         from .lead_magnet import storage_path
         default_storage.delete(storage_path(self.acme))
+
+    def test_portal_shows_and_streams_the_pdf(self):
+        from django.core.files.storage import default_storage
+        from .lead_magnet import storage_path
+        root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+        # Config overview shows the Lead magnet card with a View PDF link.
+        body = self.client.get(
+            reverse('platform_tenant_config', args=['acme'])).content.decode()
+        self.assertIn('Lead magnet', body)
+        self.assertIn(reverse('platform_tenant_lead_magnet', args=['acme']), body)
+        # The link streams a PDF (building it on demand).
+        resp = self.client.get(reverse('platform_tenant_lead_magnet', args=['acme']))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'application/pdf')
+        self.assertEqual(b''.join(resp.streaming_content)[:4], b'%PDF')
+        default_storage.delete(storage_path(self.acme))
