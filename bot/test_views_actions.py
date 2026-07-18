@@ -890,17 +890,25 @@ class PlatformConsoleTests(TestCase):
     def test_config_edit_page_renders_and_saves(self):
         response = self.client.get(reverse('platform_tenant_config_edit', args=['homebase']))
         self.assertEqual(response.status_code, 200)
-        # Minimal valid POST: profile fields + empty price formset management.
+        body = response.content.decode()
+        # The raw JSON textareas are gone — structured inputs in their place.
+        self.assertNotIn('name="business_hours"', body)
+        self.assertNotIn('name="faq_facts"', body)
+        self.assertIn('name="hours_day"', body)
+        self.assertIn('name="excluded_area"', body)
+        self.assertIn('name="faq_payment"', body)
+        # Structured POST: day chips + times, area chips, per-topic FAQ fields.
         data = {
             'plumber_name': 'Takudzwa', 'plumber_contact': '+263774819901',
             'business_whatsapp': '+263776255077',
             'location_line': "We're in Hatfield, Harare.",
             'location_area': 'Hatfield', 'location_city': 'Harare',
-            'business_hours': '{"days": "Sunday-Friday", "open": "08:00", "close": "18:00", "closed": ["sat"]}',
-            'timezone_name': 'Africa/Johannesburg',
-            'excluded_areas': '["gweru"]', 'currency': 'US$',
-            'packages': '[]', 'faq_facts': '{}', 'scripts': '{}',
+            'timezone_name': 'Africa/Johannesburg', 'currency': 'US$',
             'email_from_name': 'Takudzwa', 'email_sender': '',
+            'hours_day': ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+            'hours_open': '08:00', 'hours_close': '18:00',
+            'excluded_area': ['Gweru', 'Bulawayo'],
+            'faq_payment': 'Cash and EcoCash — all good.',
             'form-TOTAL_FORMS': '0', 'form-INITIAL_FORMS': '0',
             'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
         }
@@ -908,7 +916,10 @@ class PlatformConsoleTests(TestCase):
             reverse('platform_tenant_config_edit', args=['homebase']), data)
         self.assertEqual(response.status_code, 302)  # → back to the read-only view
         profile = TenantProfile.objects.get(tenant=self.homebase)
-        self.assertEqual(profile.excluded_areas, ['gweru'])
+        self.assertEqual(profile.excluded_areas, ['gweru', 'bulawayo'])   # chips → list
+        self.assertEqual(profile.business_hours['open'], '08:00')          # times composed
+        self.assertEqual(profile.business_hours['closed'], ['sat'])        # unpicked day
+        self.assertEqual(profile.faq_facts['payment'], 'Cash and EcoCash — all good.')
 
     def test_new_tenant_sheet_prefills_catalogue_prices_blank(self):
         from .models import TenantPriceItem

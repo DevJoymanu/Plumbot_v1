@@ -26,6 +26,31 @@
   .cfg-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px 22px; }
   .form-group label { display: block; font-family: var(--font-label); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); margin-bottom: 6px; }
   .form-group small { color: var(--color-error); font-size: 12px; }
+  /* Structured profile blocks (replace the raw JSON textareas) */
+  .cfg-subblock { margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(0,101,145,0.08); }
+  .cfg-subhead { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; font-weight: 600; color: var(--color-primary); margin-bottom: 14px; }
+  .cfg-mini-note { font-size: 12px; color: var(--color-muted); margin: 12px 0 0; }
+  .cfg-toggle { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; color: var(--color-text-2); cursor: pointer; }
+  .cfg-toggle input { width: auto !important; min-height: 0 !important; }
+  /* Day toggles */
+  .cfg-days { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .cfg-day { cursor: pointer; position: relative; }
+  .cfg-day input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .cfg-day span { display: inline-flex; align-items: center; justify-content: center; min-width: 52px; padding: 9px 15px; border-radius: var(--radius-pill); background: var(--color-surface-low); border: 1px solid transparent; font-family: var(--font-label); font-size: 12.5px; font-weight: 600; color: var(--color-text-2); transition: all var(--transition); }
+  .cfg-day:hover span { background: var(--color-surface-mid); }
+  .cfg-day.on span { background: var(--color-primary); color: #fff; box-shadow: 0 8px 20px -6px rgba(0,101,145,0.35); }
+  .cfg-times { display: flex; gap: 16px; flex-wrap: wrap; }
+  .cfg-times .form-group { flex: 1 1 150px; }
+  /* Area chips */
+  .cfg-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cfg-chips:not(:empty) { margin-bottom: 12px; }
+  .cfg-chip-x { display: inline-flex; align-items: center; gap: 4px; background: var(--color-surface-low); border: 1px solid rgba(0,101,145,0.1); border-radius: var(--radius-pill); padding: 5px 6px 5px 14px; font-size: 13px; }
+  .cfg-chip-x .chip-del { border: none; background: transparent; color: var(--color-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
+  .cfg-chip-add { display: flex; gap: 8px; align-items: center; max-width: 440px; }
+  .cfg-chip-add input { flex: 1; }
+  /* FAQ answers */
+  .cfg-faq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px 20px; }
+  .cfg-faq-grid textarea { min-height: 72px; }
   /* Price sheet — horizontal grid rows (each item on one line; scrolls on narrow screens) */
   .ps-scroll { overflow: auto; max-height: 62vh; padding: 0 2px 4px; }
   .ps-head, .ps-row {
@@ -103,14 +128,66 @@
     <section class="cfg-glass cfg-card">
       <div class="cfg-card__title">Business profile</div>
       <p class="cfg-card__hint">Every field is optional — absent means the bot omits that topic (it never borrows another tenant's value).</p>
+
       <div class="cfg-form-grid">
         {% for field in form %}
-        <div class="form-group">
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% for error in field.errors %}<small>{{ error }}</small>{% endfor %}
-        </div>
+          {% if field.name == 'licensed_claim_enabled' %}
+          <label class="cfg-toggle">{{ field }} Licensed &amp; registered — let the bot say so</label>
+          {% else %}
+          <div class="form-group">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<small>{{ error }}</small>{% endfor %}
+          </div>
+          {% endif %}
         {% endfor %}
+      </div>
+
+      <div class="cfg-subblock">
+        <div class="cfg-subhead">Opening hours</div>
+        <div class="cfg-days">
+          {% for day, short in weekdays %}
+          <label class="cfg-day {% if day in hours_selected %}on{% endif %}">
+            <input type="checkbox" name="hours_day" value="{{ day }}" {% if day in hours_selected %}checked{% endif %}>
+            <span>{{ short }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="cfg-times">
+          <div class="form-group"><label>Opens</label><input type="time" name="hours_open" value="{{ hours_open }}"></div>
+          <div class="form-group"><label>Closes</label><input type="time" name="hours_close" value="{{ hours_close }}"></div>
+        </div>
+        <p class="cfg-mini-note">Tap the days worked and set the daily open/close. No days selected = the bot omits hours.</p>
+      </div>
+
+      <div class="cfg-subblock">
+        <div class="cfg-subhead">Service area — suburbs the business declines</div>
+        <div class="cfg-chips" id="area-chips">
+          {% for area in excluded_areas %}
+          <span class="cfg-chip-x">
+            <input type="hidden" name="excluded_area" value="{{ area }}">
+            <span>{{ area|title }}</span>
+            <button type="button" class="chip-del" aria-label="remove">&times;</button>
+          </span>
+          {% endfor %}
+        </div>
+        <div class="cfg-chip-add">
+          <input type="text" id="area-input" placeholder="e.g. Bulawayo" autocomplete="off">
+          <button type="button" class="ps-add" id="area-add"><i class="fas fa-plus"></i> Add</button>
+        </div>
+        <p class="cfg-mini-note">Travels everywhere except these. Leave empty = no area is out of range.</p>
+      </div>
+
+      <div class="cfg-subblock">
+        <div class="cfg-subhead">FAQ answers — what the bot says when asked</div>
+        <div class="cfg-faq-grid">
+          {% for key, label, value in faq_fields %}
+          <div class="form-group">
+            <label for="faq_{{ key }}">{{ label }}</label>
+            <textarea name="faq_{{ key }}" id="faq_{{ key }}" rows="2" placeholder="Leave blank to skip this topic">{{ value }}</textarea>
+          </div>
+          {% endfor %}
+        </div>
       </div>
     </section>
 
@@ -187,6 +264,39 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('.parts-editor').forEach(initPartsEditor);
+
+  // Business hours — day toggle pills reflect their checkbox.
+  document.querySelectorAll('.cfg-day input').forEach(function (inp) {
+    inp.addEventListener('change', function () {
+      inp.closest('.cfg-day').classList.toggle('on', inp.checked);
+    });
+  });
+
+  // Service area — removable chips, each carrying a hidden excluded_area field.
+  const areaChips = document.getElementById('area-chips');
+  const areaInput = document.getElementById('area-input');
+  const areaAdd = document.getElementById('area-add');
+  const titleCase = s => s.replace(/\b\w/g, c => c.toUpperCase());
+  function bindDel(btn) { btn.addEventListener('click', function () { btn.closest('.cfg-chip-x').remove(); }); }
+  function addArea(value) {
+    value = (value || '').trim();
+    if (!value || !areaChips) return;
+    const chip = document.createElement('span');
+    chip.className = 'cfg-chip-x';
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden'; hidden.name = 'excluded_area'; hidden.value = value.toLowerCase();
+    const label = document.createElement('span'); label.textContent = titleCase(value);
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'chip-del'; del.setAttribute('aria-label', 'remove'); del.textContent = '×';
+    bindDel(del);
+    chip.append(hidden, label, del);
+    areaChips.appendChild(chip);
+  }
+  if (areaChips) areaChips.querySelectorAll('.chip-del').forEach(bindDel);
+  if (areaAdd) areaAdd.addEventListener('click', function () { addArea(areaInput.value); areaInput.value = ''; areaInput.focus(); });
+  if (areaInput) areaInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addArea(areaInput.value); areaInput.value = ''; }
+  });
 
   // Currency: shown on every money field and kept live with the currency input.
   const curField = document.getElementById('id_currency');

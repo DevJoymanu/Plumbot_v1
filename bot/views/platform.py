@@ -629,20 +629,77 @@ def platform_review_intake(request, pk):
     })
 
 
+# FAQ topics the bot can answer (faq.py keys) — each gets a labelled field in
+# the editor instead of a raw JSON blob. Order = display order.
+FAQ_TOPICS = [
+    ('location', 'Location'),
+    ('hours', 'Opening hours'),
+    ('contact', 'Contact'),
+    ('services', 'Services offered'),
+    ('payment', 'Payment methods'),
+    ('free_quote', 'Free visit & quote'),
+    ('job_duration', 'Job duration'),
+    ('licensed', 'Licensed & registered'),
+]
+WEEKDAYS = [('monday', 'Mon'), ('tuesday', 'Tue'), ('wednesday', 'Wed'),
+            ('thursday', 'Thu'), ('friday', 'Fri'), ('saturday', 'Sat'),
+            ('sunday', 'Sun')]
+
+
 class TenantProfileForm(forms.ModelForm):
     class Meta:
         model = TenantProfile
+        # business_hours, excluded_areas and faq_facts are edited by the
+        # structured widgets in the template (composed in the view); packages
+        # and scripts aren't read by the bot, so they stay out of the editor.
         fields = [
             'plumber_name', 'plumber_contact', 'business_whatsapp',
-            'location_line', 'location_area', 'location_city',
-            'business_hours', 'timezone_name', 'excluded_areas',
-            'currency', 'packages', 'faq_facts', 'scripts',
+            'location_area', 'location_city', 'location_line',
+            'timezone_name', 'currency',
             'licensed_claim_enabled', 'email_from_name', 'email_sender',
         ]
-        widgets = {
-            field: forms.Textarea(attrs={'rows': 3})
-            for field in ('business_hours', 'excluded_areas', 'packages', 'faq_facts', 'scripts')
-        }
+
+
+def _profile_structured_ctx(profile):
+    """The current business_hours / excluded_areas / faq_facts as the structured
+    widgets need them (selected days, times, area chips, per-topic values)."""
+    bh = (profile.business_hours if profile else None) or {}
+    closed = set(bh.get('closed') or [])
+    selected = [day for day, _ in WEEKDAYS if day[:3] not in closed] if bh else []
+    facts = (profile.faq_facts if profile else None) or {}
+    return {
+        'weekdays': WEEKDAYS,
+        'hours_selected': selected,
+        'hours_open': bh.get('open', ''),
+        'hours_close': bh.get('close', ''),
+        'excluded_areas': (profile.excluded_areas if profile else None) or [],
+        'faq_fields': [(key, label, facts.get(key, '')) for key, label in FAQ_TOPICS],
+    }
+
+
+def _apply_structured_profile(request, profile):
+    """Compose the structured hours / area chips / FAQ fields back onto the
+    profile (unknown faq_facts keys are preserved)."""
+    profile.business_hours = _compose_business_hours({
+        'days': request.POST.getlist('hours_day'),
+        'open': (request.POST.get('hours_open') or '').strip(),
+        'close': (request.POST.get('hours_close') or '').strip(),
+    })
+    areas, seen = [], set()
+    for raw in request.POST.getlist('excluded_area'):
+        area = (raw or '').strip().lower()
+        if area and area not in seen:
+            seen.add(area)
+            areas.append(area)
+    profile.excluded_areas = areas
+    facts = dict(profile.faq_facts or {})
+    for key, _label in FAQ_TOPICS:
+        value = (request.POST.get(f'faq_{key}') or '').strip()
+        if value:
+            facts[key] = value
+        else:
+            facts.pop(key, None)
+    profile.faq_facts = facts
 
 
 class PriceItemForm(forms.ModelForm):
@@ -764,7 +821,9 @@ def platform_tenant_config_edit(request, slug):
         formset = _price_formset(0)(request.POST, queryset=prices_qs)
         if form.is_valid() and formset.is_valid():
             from django.db import IntegrityError, transaction
-            form.save()
+            profile = form.save(commit=False)
+            _apply_structured_profile(request, profile)  # hours / areas / FAQ
+            profile.save()
             items = formset.save(commit=False)
             for item in items:
                 if item.pk is None:
@@ -797,10 +856,12 @@ def platform_tenant_config_edit(request, slug):
         formset = _price_formset(len(prefill) if prefill else 0)(
             queryset=prices_qs, initial=prefill)
 
-    return render(request, 'bot/pages/platform_tenant_config_edit.html', {
+    ctx = {
         'tenant': tenant,
         'form': form,
         'formset': formset,
         'currency': (profile.currency or 'US$'),
         'active_nav': 'platform',
-    })
+    }
+    ctx.update(_profile_structured_ctx(profile))
+    return render(request, 'bot/pages/platform_tenant_config_edit.html', ctx)
