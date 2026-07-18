@@ -130,6 +130,29 @@ HOMEBASE_PRICE_ITEMS = [
 ]
 
 
+# Money columns an owner fills in themselves — never auto-filled from homebase.
+_PRICE_MONEY_FIELDS = ('supply', 'labour', 'flat', 'allin')
+
+
+def blank_priced_catalog():
+    """The homebase catalogue as item skeletons — identity/label only, no
+    figures — for prefilling a NEW tenant's price sheet as a fill-in template
+    (they set their own prices; blank stays unquoted). Everything that CAN be
+    auto-filled without inventing the tenant's money is; the four money fields
+    are left empty for the owner."""
+    skeleton = []
+    for order, row in enumerate(HOMEBASE_PRICE_ITEMS):
+        item = {k: v for k, v in row.items() if k not in _PRICE_MONEY_FIELDS}
+        # Components (e.g. freestanding tub = tub + mixer + install) keep their
+        # names as a ready breakdown; amounts blank for the owner to fill.
+        if item.get('parts'):
+            item['parts'] = [{'name': p['name']} for p in item['parts'] if p.get('name')]
+        item.setdefault('variant', '')
+        item['sort_order'] = order
+        skeleton.append(item)
+    return skeleton
+
+
 def _as_int(value):
     """Prices are whole-dollar 'from' rates; render without trailing .00."""
     if value is None:

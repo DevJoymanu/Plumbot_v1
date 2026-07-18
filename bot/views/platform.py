@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from ..middleware import TENANT_SESSION_KEY
 from ..models import Tenant, TenantIntake, TenantPriceItem, TenantProfile
+from ..tenant_config import blank_priced_catalog
 
 
 def _superuser(user):
@@ -626,12 +627,32 @@ class TenantProfileForm(forms.ModelForm):
         }
 
 
-PriceItemFormSet = modelformset_factory(
-    TenantPriceItem,
-    fields=['family', 'variant', 'label', 'short_label',
-            'supply', 'labour', 'flat', 'allin', 'sort_order', 'is_active'],
-    extra=1, can_delete=True,
-)
+class PriceItemForm(forms.ModelForm):
+    class Meta:
+        model = TenantPriceItem
+        fields = ['family', 'variant', 'label', 'short_label',
+                  'supply', 'labour', 'flat', 'allin', 'parts',
+                  'sort_order', 'is_active']
+        # parts (component breakdown, e.g. tub + mixer + install) is edited by
+        # the inline chip UI; the raw JSON rides along in a hidden input.
+        widgets = {'parts': forms.HiddenInput()}
+
+
+def _price_formset(extra):
+    """Price-sheet formset. `extra` blank rows carry the prefill template on a
+    tenant that has no items yet; 0 once the sheet has real rows."""
+    return modelformset_factory(
+        TenantPriceItem, form=PriceItemForm, extra=extra, can_delete=True,
+    )
+
+
+def _is_unpriced(item):
+    """A template row the owner never touched — no headline figure AND no
+    component amount, so there is nothing to persist yet."""
+    no_money = all(getattr(item, f) is None for f in ('supply', 'labour', 'flat', 'allin'))
+    no_part_amount = not any(
+        p.get('amount') not in (None, '') for p in (item.parts or []))
+    return no_money and no_part_amount
 
 
 @superuser_required
@@ -642,13 +663,20 @@ def platform_tenant_config(request, slug):
     profile, _ = TenantProfile.objects.get_or_create(tenant=tenant)
     prices_qs = TenantPriceItem.objects.filter(tenant=tenant)
 
+    # New tenant with an empty sheet → offer homebase's catalogue as a fill-in
+    # template (labels prefilled, prices blank). Rows only persist once priced.
+    prefill = None if prices_qs.exists() else blank_priced_catalog()
+
     if request.method == 'POST':
         form = TenantProfileForm(request.POST, instance=profile)
-        formset = PriceItemFormSet(request.POST, queryset=prices_qs)
+        formset = _price_formset(0)(request.POST, queryset=prices_qs)
         if form.is_valid() and formset.is_valid():
             form.save()
             items = formset.save(commit=False)
             for item in items:
+                # Untouched template rows (new + no price) are dropped, not saved.
+                if item.pk is None and _is_unpriced(item):
+                    continue
                 item.tenant = tenant
                 item.save()
             for item in formset.deleted_objects:
@@ -660,7 +688,8 @@ def platform_tenant_config(request, slug):
         messages.error(request, 'Fix the errors below — nothing was saved.')
     else:
         form = TenantProfileForm(instance=profile)
-        formset = PriceItemFormSet(queryset=prices_qs)
+        formset = _price_formset(len(prefill) if prefill else 0)(
+            queryset=prices_qs, initial=prefill)
 
     channel = tenant.whatsapp_channels.first()
     return render(request, 'bot/pages/platform_tenant_config.html', {

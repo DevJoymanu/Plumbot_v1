@@ -44,6 +44,27 @@
   .btn-ghost { background: transparent; color: #006591; border-color: rgba(0,101,145,0.2); }
   .btn-share { padding: 4px 12px; font-size: 12px; text-decoration: none; margin-right: 6px; }
   .btn-share.copied { background: rgba(14,165,233,0.12); border-color: rgba(14,165,233,0.4); }
+  .parts-subrow td { border-top: none; padding-top: 0; }
+  .parts-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0 8px 12px; }
+  .parts-tag {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #5b7285; font-weight: 600;
+  }
+  .part-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(0,101,145,0.05); border-radius: 999px; padding: 3px 6px 3px 10px;
+  }
+  .part-chip .part-name { width: 92px; background: transparent; padding: 2px 4px; font-size: 12px; }
+  .part-chip .part-cur { font-size: 11px; color: #5b7285; }
+  .part-chip .part-amt { width: 52px; background: #fff; border-radius: 6px; padding: 2px 6px; font-size: 12px; }
+  .part-chip .part-del {
+    border: none; background: transparent; color: #5b7285; cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 2px;
+  }
+  .parts-add {
+    border: 1px dashed rgba(0,101,145,0.35); background: transparent; color: #006591;
+    border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer;
+  }
 </style>
 <script>
 function _intakeUrl(group) {
@@ -71,7 +92,62 @@ document.addEventListener('DOMContentLoaded', function () {
       'mailto:?subject=' + encodeURIComponent('Your {{ tenant.name }} assistant setup') +
       '&body=' + message;
   });
+  document.querySelectorAll('.parts-editor').forEach(initPartsEditor);
 });
+
+// Inline component breakdown (e.g. freestanding tub = tub + mixer + install):
+// a chip editor kept in sync with a hidden JSON field on the price row.
+function _partsRead(hidden) {
+  try { return JSON.parse(hidden.value || '[]'); } catch (e) { return []; }
+}
+function _partsSync(editor) {
+  const hidden = document.querySelector(editor.dataset.target);
+  const parts = [];
+  editor.querySelectorAll('.part-chip').forEach(function (chip) {
+    const name = chip.querySelector('.part-name').value.trim();
+    const amt = chip.querySelector('.part-amt').value.trim();
+    if (!name && !amt) return;
+    const part = { name: name };
+    if (amt !== '') part.amount = Number(amt);
+    parts.push(part);
+  });
+  hidden.value = JSON.stringify(parts);
+}
+function _partsRender(editor) {
+  const hidden = document.querySelector(editor.dataset.target);
+  const parts = _partsRead(hidden);
+  const chips = editor.querySelector('.parts-chips');
+  chips.textContent = '';
+  parts.forEach(function (p, i) {
+    const chip = document.createElement('span');
+    chip.className = 'part-chip';
+    const name = document.createElement('input');
+    name.className = 'part-name'; name.placeholder = 'part'; name.value = p.name || '';
+    const cur = document.createElement('span');
+    cur.className = 'part-cur'; cur.textContent = '{{ profile.currency|default:"US$" }}';
+    const amt = document.createElement('input');
+    amt.className = 'part-amt'; amt.type = 'number'; amt.min = '0'; amt.step = '1';
+    amt.value = (p.amount === undefined || p.amount === null) ? '' : p.amount;
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'part-del'; del.textContent = '×';
+    name.addEventListener('input', function () { _partsSync(editor); });
+    amt.addEventListener('input', function () { _partsSync(editor); });
+    del.addEventListener('click', function () {
+      const arr = _partsRead(hidden); arr.splice(i, 1);
+      hidden.value = JSON.stringify(arr); _partsRender(editor);
+    });
+    chip.append(name, cur, amt, del);
+    chips.appendChild(chip);
+  });
+}
+function initPartsEditor(editor) {
+  _partsRender(editor);
+  editor.querySelector('.parts-add').addEventListener('click', function () {
+    const hidden = document.querySelector(editor.dataset.target);
+    const arr = _partsRead(hidden); arr.push({ name: '' });
+    hidden.value = JSON.stringify(arr); _partsRender(editor);
+  });
+}
 </script>
 {% endblock %}
 
@@ -213,32 +289,45 @@ document.addEventListener('DOMContentLoaded', function () {
       <table class="price-table">
         <thead>
           <tr>
-            <th>Family</th><th>Variant</th><th>Label</th><th>Short label</th>
+            <th>Item</th>
             <th>Supply</th><th>Labour</th><th>Flat</th><th>All-in</th>
-            <th>Sort</th><th>Active</th><th>Delete</th>
+            <th>Active</th><th>Delete</th>
           </tr>
         </thead>
         <tbody>
           {% for f in formset %}
           <tr>
-            {{ f.id }}
-            <td>{{ f.family }}</td><td>{{ f.variant }}</td>
-            <td>{{ f.label }}</td><td>{{ f.short_label }}</td>
+            {{ f.id }}{{ f.family.as_hidden }}{{ f.variant.as_hidden }}{{ f.short_label.as_hidden }}{{ f.sort_order.as_hidden }}{{ f.parts }}
+            <td>{{ f.label }}</td>
             <td>{{ f.supply }}</td><td>{{ f.labour }}</td>
             <td>{{ f.flat }}</td><td>{{ f.allin }}</td>
-            <td>{{ f.sort_order }}</td>
             <td style="text-align:center;">{{ f.is_active }}</td>
             <td style="text-align:center;">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
           </tr>
+          {% if f.parts.value %}
+          <tr class="parts-subrow">
+            <td colspan="7">
+              <div class="parts-editor" data-target="#{{ f.parts.id_for_label }}">
+                <span class="parts-tag">Breakdown</span>
+                <span class="parts-chips"></span>
+                <button type="button" class="parts-add">+ add part</button>
+              </div>
+            </td>
+          </tr>
+          {% endif %}
           {% if f.errors %}
-          <tr><td colspan="11"><small style="color:#ba1a1a;">{{ f.errors }}</small></td></tr>
+          <tr><td colspan="7"><small style="color:#ba1a1a;">{{ f.errors }}</small></td></tr>
           {% endif %}
           {% endfor %}
         </tbody>
       </table>
       <p style="margin:12px 0 0; font-size:13px; color:#5b7285;">
-        One blank row is provided for adding an item; save to get another.
-        Sizes, parts, and keywords are edited via the intake flow (coming) or the Django admin.
+        A new tenant's sheet is prefilled with the standard item list — just type each price
+        (a row only saves once it has a figure; leave the rest blank). Each item takes a
+        supply + labour split, a single flat price, or an all-in rate — fill whichever the
+        business quotes. Items with a component breakdown (e.g. a freestanding tub's mixer and
+        install) show a "Breakdown" line — set each part's price there. New items, sizes, and
+        keywords are managed in the Django admin.
       </p>
     </div>
 

@@ -887,6 +887,63 @@ class PlatformConsoleTests(TestCase):
         profile = TenantProfile.objects.get(tenant=self.homebase)
         self.assertEqual(profile.excluded_areas, ['gweru'])
 
+    def test_new_tenant_sheet_prefills_catalogue_prices_blank(self):
+        from .models import TenantPriceItem
+        from .tenant_config import blank_priced_catalog
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        response = self.client.get(reverse('platform_tenant_config', args=['acme']))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        # Item labels from homebase's catalogue are prefilled…
+        self.assertIn('shower cubicle', body)
+        self.assertIn('freestanding tub', body)
+        # …the freestanding tub's component names ride along as a breakdown…
+        self.assertIn('Breakdown', body)
+        self.assertIn('mixer', body)
+        # …but nothing is persisted and no figure is prefilled.
+        self.assertFalse(TenantPriceItem.objects.filter(tenant=acme).exists())
+        self.assertTrue(len(blank_priced_catalog()) > 10)
+
+    def test_only_priced_rows_persist_incl_component_amounts(self):
+        from .models import TenantPriceItem
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        base = {
+            'plumber_name': 'A', 'plumber_contact': '+263700000000',
+            'business_whatsapp': '', 'location_line': '', 'location_area': '',
+            'location_city': '', 'business_hours': '{}', 'timezone_name': '',
+            'excluded_areas': '[]', 'currency': 'US$', 'packages': '[]',
+            'faq_facts': '{}', 'scripts': '{}', 'email_from_name': '', 'email_sender': '',
+            'form-TOTAL_FORMS': '3', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+        }
+        rows = {
+            # 0: priced by all-in → persists
+            'form-0-family': 'shower', 'form-0-variant': '', 'form-0-label': 'shower cubicle',
+            'form-0-short_label': '', 'form-0-supply': '', 'form-0-labour': '',
+            'form-0-flat': '', 'form-0-allin': '170', 'form-0-parts': '[]',
+            'form-0-sort_order': '0', 'form-0-is_active': 'on',
+            # 1: no figure anywhere → dropped
+            'form-1-family': 'toilet', 'form-1-variant': '', 'form-1-label': 'toilet seat',
+            'form-1-short_label': '', 'form-1-supply': '', 'form-1-labour': '',
+            'form-1-flat': '', 'form-1-allin': '', 'form-1-parts': '[]',
+            'form-1-sort_order': '1', 'form-1-is_active': 'on',
+            # 2: only a component amount → persists (breakdown counts as priced)
+            'form-2-family': 'tub', 'form-2-variant': 'freestanding',
+            'form-2-label': 'freestanding tub', 'form-2-short_label': '',
+            'form-2-supply': '', 'form-2-labour': '', 'form-2-flat': '', 'form-2-allin': '',
+            'form-2-parts': '[{"name": "mixer", "amount": 150}]',
+            'form-2-sort_order': '2', 'form-2-is_active': 'on',
+        }
+        base.update(rows)
+        response = self.client.post(
+            reverse('platform_tenant_config', args=['acme']), base)
+        self.assertEqual(response.status_code, 302)
+        families = set(TenantPriceItem.objects.filter(
+            tenant=acme).values_list('family', flat=True))
+        self.assertEqual(families, {'shower', 'tub'})  # toilet dropped
+        tub = TenantPriceItem.objects.get(tenant=acme, family='tub', variant='freestanding')
+        self.assertEqual(tub.parts, [{'name': 'mixer', 'amount': 150}])
+
 
 class TenantIntakeTests(TestCase):
     """Phase 3.3: owner intake — token form → draft → admin approve applies
