@@ -87,12 +87,14 @@ def offer_save(request):
     includes = [line.strip() for line in
                 (request.POST.get('includes') or '').splitlines() if line.strip()]
 
+    from ..lead_magnet import regenerate_lead_magnet_async
     from ..media_library import resync_portfolio_prices
 
     if not price_raw:
         deleted, _ = TenantPriceItem.objects.filter(
             tenant=tenant, family='package', variant='facebook').delete()
         resync_portfolio_prices(tenant)   # linked photos follow the offer
+        regenerate_lead_magnet_async(tenant)
         messages.success(
             request,
             'Offer removed — the assistant now deflects vague price questions '
@@ -113,6 +115,7 @@ def offer_save(request):
             parts=[{'name': name[:80]} for name in includes[:12]],
         ))
     resync_portfolio_prices(tenant)   # linked photos follow the offer price
+    regenerate_lead_magnet_async(tenant)
     messages.success(
         request,
         'Offer saved — this is what the assistant leads with when someone '

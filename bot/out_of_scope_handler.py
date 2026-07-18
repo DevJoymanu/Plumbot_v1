@@ -148,30 +148,50 @@ def send_lead_magnet_on_whatsapp(appointment) -> bool:
         return True
     try:
         import os as _os, tempfile as _tempfile
-        from bot.whatsapp_cloud_api import whatsapp_api
-        from bot.customer_emails import PORTFOLIO_PDF_PATH
+        from django.core.files.storage import default_storage
+
+        from bot.lead_magnet import get_or_build_lead_magnet
+        from bot.whatsapp_cloud_api import get_client_for_tenant
 
         to = (getattr(appointment, 'phone_number', '') or '').replace('whatsapp:', '').strip()
         if not to:
             return False
 
-        doc_path = PORTFOLIO_PDF_PATH
-        if not _os.path.exists(doc_path):
-            # Static asset missing — fall back to the generated portfolio bytes.
-            from bot.customer_emails import generate_portfolio_pdf
-            data = generate_portfolio_pdf()
-            if not data:
-                return False
-            tmp = _tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-            tmp.write(data)
-            tmp.close()
-            doc_path = tmp.name
+        tenant = getattr(appointment, 'tenant', None)
+        business = (getattr(tenant, 'name', '') or 'Our').strip()
+        slug = getattr(tenant, 'slug', None) or 'portfolio'
 
-        whatsapp_api.send_local_document(
+        doc_path, is_temp = None, False
+        storage_rel = get_or_build_lead_magnet(tenant)   # the tenant's own PDF
+        if storage_rel:
+            tmp = _tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+            with default_storage.open(storage_rel, 'rb') as fh:
+                tmp.write(fh.read())
+            tmp.close()
+            doc_path, is_temp = tmp.name, True
+        else:
+            # Fallback: legacy static/generated portfolio so a send never fails.
+            from bot.customer_emails import PORTFOLIO_PDF_PATH, generate_portfolio_pdf
+            if _os.path.exists(PORTFOLIO_PDF_PATH):
+                doc_path = PORTFOLIO_PDF_PATH
+            else:
+                data = generate_portfolio_pdf()
+                if not data:
+                    return False
+                tmp = _tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+                tmp.write(data)
+                tmp.close()
+                doc_path, is_temp = tmp.name, True
+
+        client = get_client_for_tenant(tenant)
+        client.send_local_document(
             to, doc_path,
-            caption="Our portfolio of past projects plus a detailed pricing guide.",
-            filename="HomeBase_Plumbers_Portfolio.pdf",
+            caption=f"{business}'s portfolio of past projects plus a pricing guide.",
+            filename=f"{slug}_portfolio.pdf",
         )
+        if is_temp:
+            try: _os.unlink(doc_path)
+            except OSError: pass
         appointment.internal_notes = f'{notes}\n[LEAD_MAGNET_WA_SENT]'.strip()
         appointment.save(update_fields=['internal_notes'])
         logger.info("Lead magnet PDF sent on WhatsApp — apt %s",

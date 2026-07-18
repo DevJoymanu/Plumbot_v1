@@ -707,11 +707,17 @@ def send_delay_quote_email(apt, follow_up_date_str=None, preview_only=False):
             )
             return subject, preview_html
 
-        pdf = generate_portfolio_pdf()
+        # The tenant's own lead-magnet PDF; fall back to the legacy portfolio
+        # so the email is never sent without an attachment.
+        tenant = getattr(apt, "tenant", None)
+        try:
+            from bot.lead_magnet import lead_magnet_bytes
+            pdf = lead_magnet_bytes(tenant)
+        except Exception:
+            logger.exception("lead_magnet_bytes failed for apt %s", apt.pk)
+            pdf = None
         if pdf is None:
-            # Retry once — PDF generation can fail transiently on first run
-            logger.warning("generate_portfolio_pdf returned None for apt %s — retrying", apt.pk)
-            pdf = generate_portfolio_pdf()
+            pdf = generate_portfolio_pdf() or generate_portfolio_pdf()  # legacy, retry once
 
         if pdf is None:
             logger.error(
@@ -719,10 +725,11 @@ def send_delay_quote_email(apt, follow_up_date_str=None, preview_only=False):
             )
             return False
 
+        slug = getattr(tenant, "slug", None) or "portfolio"
         ok = _send(
             apt, subject, html,
             attachment=pdf,
-            attachment_name="HomeBase_Plumbers_Portfolio.pdf",
+            attachment_name=f"{slug}_portfolio.pdf",
         )
         if ok:
             logger.info("Delay quote email sent with PDF — apt %s", apt.pk)

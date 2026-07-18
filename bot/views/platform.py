@@ -846,6 +846,9 @@ def platform_tenant_config_edit(request, slug):
             # so images and the price list always correspond.
             from ..media_library import resync_portfolio_prices
             resync_portfolio_prices(tenant)
+            # Config/prices changed → rebuild the tenant's lead-magnet PDF.
+            from ..lead_magnet import regenerate_lead_magnet_async
+            regenerate_lead_magnet_async(tenant)
             from ..whatsapp_cloud_api import invalidate_client_cache
             invalidate_client_cache()
             messages.success(request, f'Config saved for {tenant.name}.')

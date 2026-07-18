@@ -2194,3 +2194,62 @@ class PortfolioPriceSyncTests(TestCase):
             TenantPriceItem.objects.filter(tenant=self.tenant, family='geyser').count(), 1)
         item.refresh_from_db()
         self.assertIn('US$160', item.price_line)        # photo now shows the new price
+
+
+class LeadMagnetTests(TestCase):
+    """Per-tenant lead-magnet PDF: one design per tenant (rotated), built from
+    the tenant's own config + prices, cached in object storage."""
+
+    def setUp(self):
+        import shutil
+        from django.conf import settings as dj_settings
+        shutil.rmtree(os.path.join(dj_settings.MEDIA_ROOT, 'lead_magnets_pdfs'),
+                      ignore_errors=True)
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        TenantProfile.objects.create(
+            tenant=self.acme, plumber_name='Blessing',
+            business_whatsapp='+263700000000', currency='US$')
+        from .models import TenantPriceItem
+        TenantPriceItem.objects.create(
+            tenant=self.acme, family='geyser', variant='', label='geyser', allin=160)
+        TenantPriceItem.objects.create(
+            tenant=self.acme, family='basin', variant='', label='basin', flat=70)
+
+    def test_design_is_deterministic_and_in_range(self):
+        from .lead_magnet import LEAD_MAGNET_DESIGNS, design_index_for
+        idx = design_index_for(self.acme)
+        self.assertEqual(idx, design_index_for(self.acme))         # stable per tenant
+        self.assertTrue(0 <= idx < len(LEAD_MAGNET_DESIGNS))
+
+    def test_storage_path_is_per_tenant(self):
+        from .lead_magnet import storage_path
+        self.assertEqual(storage_path(self.acme), 'lead_magnets_pdfs/acme/portfolio.pdf')
+
+    def test_build_produces_a_pdf(self):
+        from .lead_magnet import build_lead_magnet_pdf
+        data = build_lead_magnet_pdf(self.acme)
+        self.assertIsNotNone(data)
+        self.assertEqual(data[:4], b'%PDF')
+        self.assertGreater(len(data), 1000)
+
+    def test_get_or_build_caches_then_invalidates(self):
+        from django.core.files.storage import default_storage
+        from .lead_magnet import (get_or_build_lead_magnet, invalidate_lead_magnet,
+                                  storage_path)
+        path = get_or_build_lead_magnet(self.acme)
+        self.assertEqual(path, storage_path(self.acme))
+        self.assertTrue(default_storage.exists(path))
+        self.assertEqual(get_or_build_lead_magnet(self.acme), path)  # reuses cache
+        invalidate_lead_magnet(self.acme)
+        self.assertFalse(default_storage.exists(path))
+
+    def test_bytes_are_pdf(self):
+        from .lead_magnet import lead_magnet_bytes
+        data = lead_magnet_bytes(self.acme)
+        self.assertIsNotNone(data)
+        self.assertEqual(data[:4], b'%PDF')
+        from django.core.files.storage import default_storage
+        from .lead_magnet import storage_path
+        default_storage.delete(storage_path(self.acme))
