@@ -72,7 +72,7 @@ def deepseek_call(
     existing except blocks and fallback logic unchanged.
     """
     from django.conf import settings
-    _model = model or getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-chat')
+    _model = model or getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-v4-flash')
 
     last_exc = None
     for attempt in range(retries):

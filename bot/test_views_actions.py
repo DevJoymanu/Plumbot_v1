@@ -1471,6 +1471,47 @@ class GalleryPortalTests(TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn('Please provide names of items', res.json()['error'])
 
+    def test_multi_item_finalize_stores_all_tags_and_groups(self):
+        import json as _json
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from .models import TenantPortfolioItem
+        up = self.client.post(reverse('gallery_upload'),
+                              {'media': SimpleUploadedFile('bath.jpg', b'x')}).json()
+        # A bathroom photo showing three jobs → one row, every category kept.
+        res = self.client.post(reverse('gallery_finalize'), data=_json.dumps([
+            {'path': up['path'], 'caption': 'Shower cubicle · Vanity unit · Basin',
+             'tags': ['bathroom install', 'bathroom install', 'general'],
+             'price_line': 'Shower cubicle from US$380\nVanity unit from US$120'},
+        ]), content_type='application/json')
+        self.assertTrue(res.json()['ok'])
+        item = TenantPortfolioItem.objects.get(tenant=self.acme)
+        # De-duplicated, primary first, both categories preserved.
+        self.assertEqual(item.keywords, ['bathroom install', 'general'])
+        self.assertIn('Vanity unit from US$120', item.price_line)
+        # The gallery page groups it under its primary category.
+        groups = self.client.get(reverse('gallery')).context['groups']
+        primary = next(g for g in groups if g['key'] == 'bathroom install')
+        self.assertIn(item, primary['items'])
+
+    def test_gallery_update_accepts_multi_tags(self):
+        import json as _json
+
+        from .models import TenantPortfolioItem
+        self._upload()
+        item = TenantPortfolioItem.objects.get(tenant=self.acme)
+        self.client.post(reverse('gallery_update', args=[item.pk]),
+                         {'title': 'Bathroom refit', 'price_line': 'from US$500',
+                          'tags': _json.dumps(['bathroom install', 'pipes'])})
+        item.refresh_from_db()
+        self.assertEqual(item.keywords, ['bathroom install', 'pipes'])
+        # A rename with no tags leaves the existing categories untouched.
+        self.client.post(reverse('gallery_update', args=[item.pk]),
+                         {'title': 'Renamed', 'tags': '[]'})
+        item.refresh_from_db()
+        self.assertEqual(item.keywords, ['bathroom install', 'pipes'])
+
     def test_annotator_library_prices_come_from_tenant_rows(self):
         from .media_library import portfolio_library_with_prices
         from .models import TenantPriceItem

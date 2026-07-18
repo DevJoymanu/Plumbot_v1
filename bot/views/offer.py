@@ -30,6 +30,14 @@ def _offer_row(tenant):
         tenant=tenant, family='package', variant='facebook').first()
 
 
+# Common package contents, offered as tap-to-select chips ("Other" covers the
+# rest) — selection over typing: consistent names, no spelling risk.
+COMMON_INCLUDES = [
+    'freestanding tub', 'built-in tub', 'side chamber', 'shower cubicle',
+    'vanity unit', 'toilet', 'basin', 'geyser', 'taps & mixers', 'tiling',
+]
+
+
 @staff_required
 def offer_page(request):
     tenant = _tenant_or_404(request)
@@ -38,8 +46,9 @@ def offer_page(request):
         'active_nav': 'offer',
         'row': row,
         'facts': facebook_package_facts(get_config(tenant)),
-        'includes': '\n'.join(
-            p.get('name', '') for p in ((row.parts if row else None) or [])),
+        'common_includes': COMMON_INCLUDES,
+        'includes_list': [p.get('name', '') for p in
+                          ((row.parts if row else None) or []) if p.get('name')],
     })
 
 

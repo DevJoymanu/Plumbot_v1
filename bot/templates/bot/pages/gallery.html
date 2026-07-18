@@ -77,11 +77,50 @@
     .annot-stage img, .annot-stage video { max-width: 100%; max-height: 38vh; border-radius: 12px; }
     .cat-label { font-size: 11px; font-weight: 700; color: #54656f; text-transform: uppercase;
                  letter-spacing: .05em; margin: 10px 0 4px; }
-    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    .chip { border: 1px solid #d1d7db; background: #fff; border-radius: 999px;
-            padding: 6px 12px; font-size: 12px; cursor: pointer; color: #1c2b33; }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .chip { display: inline-flex; align-items: center; gap: 7px;
+            border: 1.5px solid #d1d7db; background: #fff; border-radius: 999px;
+            padding: 7px 13px; font-size: 12.5px; cursor: pointer; color: #1c2b33;
+            transition: border-color .15s, background .15s, transform .1s; user-select: none; }
+    .chip:hover { border-color: #006591; background: #f2f9fc; }
+    .chip:active { transform: scale(.96); }
+    .chip::before { content: ''; width: 15px; height: 15px; border-radius: 50%;
+            border: 1.5px solid #c3cdd3; flex: none; transition: border-color .15s, background .15s;
+            background-repeat: no-repeat; background-position: center; background-size: 11px; }
     .chip.on { background: #006591; border-color: #006591; color: #fff; }
-    .chip .p { opacity: .75; font-size: 11px; }
+    .chip.on:hover { background: #00587f; }
+    .chip.on::before { border-color: #fff; background-color: #fff;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23006591' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E"); }
+    .chip .p { font-size: 11px; font-weight: 600; color: #1a7f4b; }
+    .chip.on .p { color: #cdeddd; }
+    /* Selected-items summary (live auto name / price / categories) */
+    .sel-summary { background: #f2f9fc; border: 1px solid #d5e8f0; border-radius: 10px;
+            padding: 10px 12px; margin-top: 12px; font-size: 12.5px; color: #1c2b33; }
+    .sel-summary .lbl { font-size: 10px; font-weight: 700; letter-spacing: .05em;
+            text-transform: uppercase; color: #54656f; }
+    .sel-summary .name { font-weight: 600; margin-top: 2px; }
+    .sel-summary .price { color: #1a7f4b; font-weight: 600; margin-top: 4px; white-space: pre-line; }
+    .sel-summary .cats { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
+    .sel-summary .cat-pill { background: #e7f3f8; color: #006591; font-size: 10px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: .04em; padding: 3px 9px; border-radius: 999px; }
+    .sel-summary .none { color: #54656f; }
+    /* Category filter bar + section headers on the gallery grid */
+    .cat-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+    .cat-filter button { display: inline-flex; align-items: center; gap: 6px;
+            border: 1.5px solid #d1d7db; background: #fff; color: #1c2b33; border-radius: 999px;
+            padding: 7px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+            transition: border-color .15s, background .15s, transform .1s; }
+    .cat-filter button:hover { border-color: #006591; }
+    .cat-filter button:active { transform: scale(.96); }
+    .cat-filter button.on { background: #006591; border-color: #006591; color: #fff; }
+    .cat-filter button .n { font-size: 11px; background: rgba(0,0,0,.08); border-radius: 999px; padding: 0 7px; }
+    .cat-filter button.on .n { background: rgba(255,255,255,.22); }
+    .cat-head { display: flex; align-items: center; gap: 10px; margin: 22px 0 12px; }
+    .cat-head h3 { font-size: 13px; font-weight: 700; color: #1c2b33; margin: 0;
+            text-transform: uppercase; letter-spacing: .04em; }
+    .cat-head .count { font-size: 11px; color: #54656f; }
+    .cat-head::after { content: ''; flex: 1; height: 1px; background: #e3e8eb; }
+    .cat-section.hide { display: none; }
     .annot input[type=text] { width: 100%; box-sizing: border-box; border: 1px solid #d1d7db;
         border-radius: 8px; padding: 8px 10px; font-size: 14px; margin-top: 10px; }
     .annot-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
@@ -134,14 +173,24 @@
             <button type="button" class="btn-ghost" id="pair_cancel_btn">cancel</button>
         </div>
         <p class="hint">Photos up to 8 MB (JPG/PNG/WebP), videos up to 16 MB (MP4/MOV — WhatsApp's limit).
-            Each item's name and price are what the assistant answers with when a customer
-            highlights it and asks.</p>
+            One photo can show several jobs — tap every one that appears and its price and
+            category fill in from your price list automatically. That name and price are what the
+            assistant answers with when a customer highlights the photo and asks.</p>
     </div>
 
     {% if items %}
-    <div class="grid">
-        {% for item in items %}
-        <div class="tile" id="tile-{{ item.pk }}">
+    <div class="cat-filter" id="cat_filter">
+        <button type="button" class="on" data-cat="">All <span class="n">{{ items|length }}</span></button>
+        {% for g in groups %}
+        <button type="button" data-cat="{{ g.key }}">{{ g.label }} <span class="n">{{ g.items|length }}</span></button>
+        {% endfor %}
+    </div>
+    {% for g in groups %}
+    <div class="cat-section" data-section="{{ g.key }}">
+        <div class="cat-head"><h3>{{ g.label }}</h3><span class="count">{{ g.items|length }} item{{ g.items|length|pluralize }}</span></div>
+        <div class="grid">
+        {% for item in g.items %}
+        <div class="tile" id="tile-{{ item.pk }}" data-cats="{{ item.cats_attr }}">
             <div class="media">
                 {% if item.is_video %}
                 <video src="{% url 'gallery_media' item.pk %}" preload="metadata" muted></video>
@@ -170,7 +219,11 @@
             </div>
         </div>
         {% endfor %}
+        </div>
     </div>
+    {% endfor %}
+    <div class="empty" id="filter_empty" style="display:none; color:#54656f; text-align:center; padding:30px;">
+        No items in this category yet.</div>
     {% else %}
     <div class="g-card empty">
         <p><strong>No gallery items yet.</strong></p>
@@ -187,13 +240,15 @@
             <strong id="annot_count"></strong>
             <button type="button" class="x" id="annot_close">✕</button>
         </div>
-        <p class="annot-note">Name each one, one at a time — tap the job it shows, or type your own.
+        <p class="annot-note">Tap every job shown in this photo — pick as many as apply.
+            Each one's price and category fill in from your price list automatically.
             Not for before &amp; after pairs: close this and use the
             "Add a before &amp; after pair" tile for those.</p>
         <div class="annot-stage" id="annot_stage"></div>
         <div id="annot_picker"></div>
-        <input type="text" id="annot_custom" maxlength="120" placeholder="or type your own description">
-        <input type="text" id="annot_price" maxlength="200" placeholder="price line (optional), e.g. from US$150">
+        <div class="sel-summary" id="annot_summary"></div>
+        <input type="text" id="annot_custom" maxlength="120" placeholder="rename this photo (optional — defaults to the jobs you picked)">
+        <input type="text" id="annot_price" maxlength="200" placeholder="override the price line (optional)">
         <div class="annot-nav">
             <button type="button" class="btn-ghost" id="annot_prev">Back</button>
             <button type="button" class="btn-primary" id="annot_done">Next</button>
@@ -241,24 +296,62 @@
   }
 
   // ── Annotator ──────────────────────────────────────────────────────────
-  // queue entries: fresh uploads {path,url,previewUrl,caption,tag,lib,price_line,pair_path}
-  // or an existing-item edit {editPk, src, isVideo, caption, tag, price_line, lib}
+  // queue entries carry the multi-item selection:
+  //   fresh: {path,url,previewUrl, libs:[{family,variant,label,price}], caption,
+  //           captionEdited, price_line, priceEdited, tags:[], tag, pair_path}
+  //   edit:  {editPk, src, isVideo, libs, caption, captionEdited, price_line,
+  //           priceEdited, tags, tag}
+  const CAT_LABELS = { 'bathroom install': 'Bathroom install', geyser: 'Geyser',
+    drain: 'Drain', taps: 'Taps & fixtures', pipes: 'Pipes', general: 'General' };
   const annot = document.getElementById('annot');
   const custom = document.getElementById('annot_custom');
   const priceIn = document.getElementById('annot_price');
+  const summaryEl = document.getElementById('annot_summary');
   let queue = [], pos = 0;
 
-  function libPrice(libref) {
-    if (!libref) return '';
-    for (const g of LIB) for (const it of g.items)
-      if (it.family === libref.family && it.variant === libref.variant) return it.price || '';
-    return '';
+  const esc = s => (s || '').replace(/[<>&"]/g, c =>
+    ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+
+  // Derive a photo's categories, auto name and auto price from its picked jobs.
+  function tagsOf(libs) {
+    const out = [], seen = new Set();
+    libs.forEach(l => { const g = famTag(l.family, l.variant);
+                        if (!seen.has(g)) { seen.add(g); out.push(g); } });
+    return out.length ? out : ['general'];
   }
+  const autoCaption = libs => libs.map(l => l.label).join(' · ');
+  const autoPrice = libs => libs.filter(l => l.price)
+    .map(l => `${l.label} from US$${l.price}`).join('\n');
+  function recompose(e) {
+    if (!e.captionEdited) e.caption = autoCaption(e.libs);
+    if (!e.priceEdited) e.price_line = autoPrice(e.libs);
+    e.tags = tagsOf(e.libs);
+    e.tag = e.tags[0];
+  }
+
   function openAnnot(entries) {
     if (!entries.length) return;
     queue = entries; pos = 0;
     annot.style.display = 'flex';
     showAnnot();
+  }
+  function renderSummary(e) {
+    if (!e.libs.length && !(e.caption || '').trim()) {
+      summaryEl.innerHTML = '<span class="none">No jobs picked yet — '
+        + 'tap the jobs shown in the photo above, or just type a name below.</span>';
+      return;
+    }
+    const cats = e.tags.map(t =>
+      `<span class="cat-pill">${esc(CAT_LABELS[t] || t)}</span>`).join('');
+    const price = e.price_line
+      ? `<div class="price">${esc(e.price_line)}</div>`
+      : (e.libs.length
+          ? '<div class="none">No price on file for these yet — set it on your '
+            + 'Price list, or type one below.</div>' : '');
+    summaryEl.innerHTML =
+      '<div class="lbl">Saved to your gallery as</div>'
+      + `<div class="name">${esc(e.caption) || '&mdash;'}</div>`
+      + price + `<div class="cats">${cats}</div>`;
   }
   function showAnnot() {
     const e = queue[pos];
@@ -269,14 +362,16 @@
     document.getElementById('annot_stage').innerHTML = vid
       ? `<video src="${src}" controls></video>` : `<img src="${src}">`;
     document.getElementById('annot_picker').innerHTML = LIB.map(g =>
-      `<div class="cat-label">${g.cat}</div><div class="chips">` +
+      `<div class="cat-label">${esc(g.cat)}</div><div class="chips">` +
       g.items.map(it => {
-        const on = e.lib && e.lib.family === it.family && e.lib.variant === it.variant;
+        const on = e.libs.some(l => l.family === it.family && l.variant === it.variant);
         return `<button type="button" class="chip ${on ? 'on' : ''}"
-          data-family="${it.family}" data-variant="${it.variant}">${it.label}${it.price ? ` <span class="p">· US$${it.price}</span>` : ''}</button>`;
+          data-family="${esc(it.family)}" data-variant="${esc(it.variant)}"
+          data-label="${esc(it.label)}" data-price="${esc(it.price || '')}">${esc(it.label)}${it.price ? ` <span class="p">US$${esc(it.price)}</span>` : ''}</button>`;
       }).join('') + '</div>').join('');
-    custom.value = e.lib ? '' : (e.caption || '');
-    priceIn.value = e.price_line || '';
+    custom.value = e.captionEdited ? (e.caption || '') : '';
+    priceIn.value = e.priceEdited ? (e.price_line || '') : '';
+    renderSummary(e);
     document.getElementById('annot_prev').style.visibility = pos === 0 ? 'hidden' : 'visible';
     document.getElementById('annot_done').textContent = pos === queue.length - 1 ? 'Done' : 'Next';
   }
@@ -284,22 +379,27 @@
     const chip = ev.target.closest('.chip');
     if (!chip) return;
     const e = queue[pos];
-    e.lib = { family: chip.dataset.family, variant: chip.dataset.variant };
-    e.caption = chip.textContent.replace(/· US\$.*$/, '').trim();
-    e.tag = famTag(e.lib.family, e.lib.variant);
-    const val = libPrice(e.lib);
-    e.price_line = val ? `${e.caption} from US$${val}` : '';
+    const ref = { family: chip.dataset.family, variant: chip.dataset.variant,
+                  label: chip.dataset.label, price: chip.dataset.price || '' };
+    const idx = e.libs.findIndex(l => l.family === ref.family && l.variant === ref.variant);
+    if (idx >= 0) e.libs.splice(idx, 1); else e.libs.push(ref);
+    recompose(e);
     showAnnot();
   });
   custom.addEventListener('input', () => {
     const e = queue[pos];
-    e.caption = custom.value;
-    if (e.lib) {
-      e.lib = null; e.price_line = priceIn.value;
-      document.querySelectorAll('#annot_picker .chip.on').forEach(c => c.classList.remove('on'));
-    }
+    e.captionEdited = custom.value.trim() !== '';
+    if (e.captionEdited) e.caption = custom.value;
+    recompose(e);              // blank again → reverts to the auto name
+    renderSummary(e);
   });
-  priceIn.addEventListener('input', () => { queue[pos].price_line = priceIn.value; });
+  priceIn.addEventListener('input', () => {
+    const e = queue[pos];
+    e.priceEdited = priceIn.value.trim() !== '';
+    if (e.priceEdited) e.price_line = priceIn.value;
+    recompose(e);
+    renderSummary(e);
+  });
   document.getElementById('annot_prev').addEventListener('click', () => {
     if (pos > 0) { pos--; showAnnot(); }
   });
@@ -313,7 +413,8 @@
       fd.append('csrfmiddlewaretoken', CSRF);
       fd.append('title', queue[0].caption);
       fd.append('price_line', queue[0].price_line || '');
-      fd.append('tag', queue[0].tag || '');
+      fd.append('tags', JSON.stringify(queue[0].tags || []));
+      fd.append('tag', (queue[0].tags || [])[0] || '');
       await fetch(`/gallery/${queue[0].editPk}/update/`,
                   { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
     } else {
@@ -322,7 +423,7 @@
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
         body: JSON.stringify(queue.map(q => ({
           path: q.path, caption: q.caption, tag: q.tag || 'general',
-          price_line: q.price_line || '', pair_path: q.pair_path || '' }))),
+          tags: q.tags || [], price_line: q.price_line || '', pair_path: q.pair_path || '' }))),
       });
       const out = await res.json();
       if (!out.ok) { alert(out.error || 'Could not save'); return; }
@@ -342,7 +443,8 @@
     for (const file of multiInput.files) {
       const up = await uploadOne(file);
       if (!up) break;
-      entries.push({ ...up, caption: '', tag: 'general', lib: null, price_line: '', pair_path: '' });
+      entries.push({ ...up, libs: [], caption: '', captionEdited: false,
+        price_line: '', priceEdited: false, tags: ['general'], tag: 'general', pair_path: '' });
     }
     multiInput.value = '';
     openAnnot(entries);
@@ -374,7 +476,8 @@
       pairWait.style.display = 'flex';
     } else if (pairBefore) {
       const entry = { path: up.path, url: up.url, previewUrl: up.previewUrl,
-                      caption: '', tag: 'general', lib: null, price_line: '',
+                      libs: [], caption: '', captionEdited: false, price_line: '',
+                      priceEdited: false, tags: ['general'], tag: 'general',
                       pair_path: pairBefore.path };
       pairBefore = null;
       pairWait.style.display = 'none';
@@ -386,11 +489,13 @@
   document.querySelectorAll('.edit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tile = btn.closest('.tile');
+      const title = tile.querySelector('.t-title').textContent.trim();
+      const priceTxt = (tile.querySelector('.t-price') || { textContent: '' }).textContent.trim();
       openAnnot([{ editPk: btn.dataset.pk, src: btn.dataset.src,
                    isVideo: btn.dataset.video === '1',
-                   caption: tile.querySelector('.t-title').textContent.trim(),
-                   tag: '', lib: null,
-                   price_line: (tile.querySelector('.t-price') || { textContent: '' }).textContent.trim() }]);
+                   libs: [], caption: title, captionEdited: !!title,
+                   price_line: priceTxt, priceEdited: !!priceTxt,
+                   tags: [], tag: '' }]);
     });
   });
   const waEl = document.getElementById('wa_view');
@@ -407,6 +512,31 @@
       waEl.style.display = 'flex';
     });
   });
+
+  // ── Category filter bar ────────────────────────────────────────────────
+  // Tile-level filtering: a multi-item photo appears under any category it
+  // carries, so filtering matches its full tag set (data-cats, '|'-joined).
+  const filterBar = document.getElementById('cat_filter');
+  if (filterBar) {
+    filterBar.addEventListener('click', ev => {
+      const btn = ev.target.closest('button');
+      if (!btn) return;
+      filterBar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+      const cat = btn.dataset.cat;
+      let anyVisible = false;
+      document.querySelectorAll('.cat-section').forEach(sec => {
+        let shown = 0;
+        sec.querySelectorAll('.tile').forEach(tile => {
+          const match = cat === '' || (tile.dataset.cats || '').split('|').includes(cat);
+          tile.style.display = match ? '' : 'none';
+          if (match) shown++;
+        });
+        sec.classList.toggle('hide', shown === 0);
+        if (shown > 0) anyVisible = true;
+      });
+      document.getElementById('filter_empty').style.display = anyVisible ? 'none' : 'block';
+    });
+  }
 })();
 </script>
 {% endblock %}

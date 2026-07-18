@@ -24,7 +24,7 @@ from bot.services.clients import deepseek_client as _classifier
 
 logger = logging.getLogger(__name__)
 
-_classifier_model = getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-chat')
+_classifier_model = getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-v4-flash')
 
 # Phase 2.2: no hardcoded plumber number — callers pass the tenant's own
 # (appointment.plumber_contact()); '' means the redirect-to-plumber line is

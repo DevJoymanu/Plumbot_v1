@@ -4,6 +4,7 @@ step creates, so wizard photos and portal uploads are one library."""
 import json
 import mimetypes
 import os
+from collections import OrderedDict
 
 from django.contrib import messages
 from django.core.files.storage import default_storage
@@ -19,6 +20,32 @@ from ..media_library import (MAX_PORTFOLIO_MEDIA, is_video_filename,
                              save_portfolio_upload, tenant_media_count,
                              tenant_prefix)
 from ..models import TenantPortfolioItem
+
+# Gallery groups, in display order. The annotator's famTag() (gallery.html)
+# maps each library job to one of these keys; a multi-item photo carries
+# several tags and is grouped under its first (primary) one.
+GALLERY_CATEGORIES = [
+    ('bathroom install', 'Bathroom installs'),
+    ('geyser', 'Geysers'),
+    ('drain', 'Drains'),
+    ('taps', 'Taps & fixtures'),
+    ('pipes', 'Pipes'),
+    ('general', 'General'),
+]
+_CATEGORY_LABELS = dict(GALLERY_CATEGORIES)
+
+
+def _clean_tags(raw) -> list:
+    """Normalise a list of category tags: trimmed, lowercased, capped,
+    de-duplicated, first-seen order preserved."""
+    seen, out = set(), []
+    for tag in raw or []:
+        tag = str(tag or '').strip().lower()[:40]
+        if tag and tag not in seen:
+            seen.add(tag)
+            out.append(tag)
+    return out
+
 
 # Deleting a row must never unlink homebase's repo-bundled photos — only
 # files the tenant actually uploaded (their bucket folder, old intake path).
@@ -39,12 +66,22 @@ def _tenant_or_404(request):
 def gallery_page(request):
     tenant = _tenant_or_404(request)
     items = list(TenantPortfolioItem.objects.filter(tenant=tenant))
+    # Bucket each item under its primary (first) category; a multi-item photo
+    # still carries all its tags for the filter bar (item.cats_attr).
+    buckets = OrderedDict((key, []) for key, _ in GALLERY_CATEGORIES)
     for item in items:
         item.is_video = is_video_filename(item.filename)
-        item.tag = (item.keywords or ['general'])[0]
+        tags = _clean_tags(item.keywords) or ['general']
+        item.tag = tags[0]
+        item.cats_attr = '|'.join(tags)  # '|' — some keys contain spaces
+        buckets.setdefault(item.tag, []).append(item)
+    groups = [{'key': key, 'label': _CATEGORY_LABELS.get(key, key.title()),
+               'items': group}
+              for key, group in buckets.items() if group]
     return render(request, 'bot/pages/gallery.html', {
         'active_nav': 'gallery',
         'items': items,
+        'groups': groups,
         'media_used': tenant_media_count(tenant),
         'media_max': MAX_PORTFOLIO_MEDIA,
         'library': portfolio_library_with_prices(tenant),
@@ -99,17 +136,20 @@ def gallery_finalize(request):
         pair_path = str(entry.get('pair_path') or '')
         if pair_path and not pair_path.startswith(prefix):
             pair_path = ''
-        tag = (str(entry.get('tag') or 'general').strip().lower() or 'general')[:40]
+        # A multi-item photo sends every item's category in `tags`; fall back
+        # to the single `tag` for older/simple entries.
+        tags = _clean_tags(entry.get('tags')) or [
+            (str(entry.get('tag') or 'general').strip().lower() or 'general')[:40]]
         TenantPortfolioItem.objects.create(
             tenant=tenant,
             item_id=slugify(
-                f'{tag}-{os.path.splitext(os.path.basename(path))[0][:8]}')[:80],
+                f'{tags[0]}-{os.path.splitext(os.path.basename(path))[0][:8]}')[:80],
             filename=path,
             pair_filename=pair_path,
             title=caption[:120],
             description=caption,
             price_line=str(entry.get('price_line') or '').strip()[:200],
-            keywords=[tag],
+            keywords=tags,
             sort_order=TenantPortfolioItem.objects.filter(tenant=tenant).count() + 1,
         )
         created += 1
@@ -159,9 +199,17 @@ def gallery_update(request, pk):
     item.title = title[:120]
     item.price_line = (request.POST.get('price_line') or '').strip()[:200]
     item.description = (request.POST.get('description') or '').strip()
-    tag = (request.POST.get('tag') or '').strip().lower()
-    if tag:
-        item.keywords = [tag[:40]]
+    # Prefer a multi-item `tags` JSON list; fall back to a single `tag`.
+    tags = None
+    try:
+        tags = _clean_tags(json.loads(request.POST.get('tags') or 'null'))
+    except ValueError:
+        tags = None
+    if not tags:
+        single = (request.POST.get('tag') or '').strip().lower()
+        tags = [single[:40]] if single else None
+    if tags:
+        item.keywords = tags
     item.save(update_fields=['title', 'price_line', 'description', 'keywords'])
     if request.headers.get('x-requested-with') == 'fetch':
         return JsonResponse({'ok': True})
