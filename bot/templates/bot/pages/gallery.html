@@ -629,6 +629,12 @@
   });
   // ── Image viewer (WhatsApp / Full image / Before-after) ─────────────────
   const waEl = document.getElementById('wa_view');
+  // The page's content wrapper has a transform (fade-in), which would make this
+  // position:fixed overlay pin to that scrollable box instead of the screen.
+  // Re-parent it to <body> so it's centered on the actual viewport.
+  if (waEl.parentElement !== document.body) document.body.appendChild(waEl);
+  const scrollHost = document.getElementById('pb-content');
+  const lockScroll = on => { if (scrollHost) scrollHost.style.overflow = on ? 'hidden' : ''; };
   const stage = document.getElementById('viewer_stage');
   const hintEl = document.getElementById('viewer_hint');
   const modeBar = document.getElementById('viewer_modes');
@@ -663,7 +669,7 @@
     }
     modeBar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === viewMode));
   }
-  function closeViewer() { waEl.style.display = 'none'; viewData = null; }
+  function closeViewer() { waEl.style.display = 'none'; viewData = null; lockScroll(false); }
   waEl.addEventListener('click', closeViewer);
   document.getElementById('viewer_close').addEventListener('click', e => { e.stopPropagation(); closeViewer(); });
   modeBar.addEventListener('click', e => {
@@ -687,6 +693,7 @@
       modeBaBtn.style.display = viewData.pair ? '' : 'none';   // pairs only
       renderView();
       waEl.style.display = 'flex';
+      lockScroll(true);
     });
   });
 
