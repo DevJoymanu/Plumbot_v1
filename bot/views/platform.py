@@ -831,6 +831,43 @@ def platform_tenant_lead_magnet_regenerate(request, slug):
     return redirect('platform_tenant_config', slug=slug)
 
 
+@require_POST
+@superuser_required
+def platform_tenant_channel_save(request, slug):
+    """Create or update the tenant's WhatsApp Cloud API channel (the number
+    inbound webhooks route to and outbound sends go from)."""
+    from django.db import IntegrityError, transaction
+
+    from ..models import TenantWhatsAppChannel
+    tenant = get_object_or_404(Tenant, slug=slug)
+    phone_number_id = (request.POST.get('phone_number_id') or '').strip()[:64]
+    if not phone_number_id:
+        messages.error(request, 'Phone number ID is required — it is the webhook routing key.')
+        return redirect('platform_tenant_config_edit', slug=slug)
+    channel = (tenant.whatsapp_channels.order_by('pk').first()
+               or TenantWhatsAppChannel(tenant=tenant))
+    channel.phone_number_id = phone_number_id
+    channel.display_number = (request.POST.get('display_number') or '').strip()[:32]
+    channel.business_account_id = (request.POST.get('business_account_id') or '').strip()[:64]
+    channel.verify_token = (request.POST.get('verify_token') or '').strip()[:128]
+    channel.is_active = bool(request.POST.get('is_active'))
+    # A new token is stored (model.save() encrypts it); blank keeps the current
+    # one — never overwrite an on-file token with an empty field.
+    new_token = (request.POST.get('access_token') or '').strip()
+    if new_token:
+        channel.access_token = new_token
+    try:
+        with transaction.atomic():
+            channel.save()
+    except IntegrityError:
+        messages.error(request, 'That phone number ID is already registered to another tenant.')
+        return redirect('platform_tenant_config_edit', slug=slug)
+    from ..whatsapp_cloud_api import invalidate_client_cache
+    invalidate_client_cache()   # rebuild the cached client with the new credentials
+    messages.success(request, f'WhatsApp channel saved for {tenant.name}.')
+    return redirect('platform_tenant_config_edit', slug=slug)
+
+
 @superuser_required
 def platform_tenant_config_edit(request, slug):
     """Per-tenant config editor: profile + price sheet. The ONLY place tenant
@@ -896,6 +933,7 @@ def platform_tenant_config_edit(request, slug):
         'form': form,
         'formset': formset,
         'currency': (profile.currency or 'US$'),
+        'channel': tenant.whatsapp_channels.order_by('pk').first(),
         'active_nav': 'platform',
     }
     ctx.update(_profile_structured_ctx(profile))

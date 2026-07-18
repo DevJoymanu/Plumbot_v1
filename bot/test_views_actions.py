@@ -2271,3 +2271,69 @@ class LeadMagnetTests(TestCase):
         self.assertEqual(resp['Content-Type'], 'application/pdf')
         self.assertEqual(b''.join(resp.streaming_content)[:4], b'%PDF')
         default_storage.delete(storage_path(self.acme))
+
+
+class TenantChannelEditorTests(TestCase):
+    """Superuser can create/update a tenant's WhatsApp channel from the config
+    editor — the access token is stored encrypted and never re-rendered."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+
+    def _save(self, **extra):
+        data = {'phone_number_id': '111222333', 'display_number': '+263771',
+                'is_active': 'on'}
+        data.update(extra)
+        return self.client.post(
+            reverse('platform_tenant_channel_save', args=['acme']), data)
+
+    def test_create_channel_encrypts_the_token(self):
+        from .models import TenantWhatsAppChannel
+        resp = self._save(access_token='EAAB-secret-token')
+        self.assertEqual(resp.status_code, 302)
+        ch = TenantWhatsAppChannel.objects.get(tenant=self.acme)
+        self.assertEqual(ch.phone_number_id, '111222333')
+        self.assertTrue(ch.is_active)
+        self.assertTrue(ch.access_token.startswith('fernet:'))       # encrypted at rest
+        self.assertEqual(ch.decrypted_access_token(), 'EAAB-secret-token')
+
+    def test_blank_token_keeps_the_one_on_file(self):
+        from .models import TenantWhatsAppChannel
+        TenantWhatsAppChannel.objects.create(
+            tenant=self.acme, phone_number_id='111222333', access_token='KEEP-ME')
+        self._save()  # no access_token field
+        ch = TenantWhatsAppChannel.objects.get(tenant=self.acme)
+        self.assertEqual(ch.decrypted_access_token(), 'KEEP-ME')     # preserved
+
+    def test_new_token_replaces_the_old(self):
+        from .models import TenantWhatsAppChannel
+        TenantWhatsAppChannel.objects.create(
+            tenant=self.acme, phone_number_id='111222333', access_token='OLD')
+        self._save(access_token='NEW')
+        ch = TenantWhatsAppChannel.objects.get(tenant=self.acme)
+        self.assertEqual(ch.decrypted_access_token(), 'NEW')
+
+    def test_duplicate_phone_number_id_is_rejected(self):
+        from .models import TenantWhatsAppChannel
+        other = Tenant.objects.create(name='Other', slug='other')
+        TenantWhatsAppChannel.objects.create(tenant=other, phone_number_id='999888')
+        resp = self._save(phone_number_id='999888')
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(TenantWhatsAppChannel.objects.filter(tenant=self.acme).exists())
+
+    def test_editor_renders_form_and_never_leaks_the_token(self):
+        from .models import TenantWhatsAppChannel
+        TenantWhatsAppChannel.objects.create(
+            tenant=self.acme, phone_number_id='111222333', access_token='TOPSECRET')
+        body = self.client.get(
+            reverse('platform_tenant_config_edit', args=['acme'])).content.decode()
+        self.assertIn('name="phone_number_id"', body)
+        self.assertIn(reverse('platform_tenant_channel_save', args=['acme']), body)
+        self.assertNotIn('TOPSECRET', body)                          # token not rendered
+        self.assertNotIn('fernet:', body)
+        self.assertIn('leave blank to keep', body.lower())
