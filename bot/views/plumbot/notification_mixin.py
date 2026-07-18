@@ -28,7 +28,7 @@ from ...utils import (
     clean_phone_number, format_phone_number_for_storage,
     _append_admin_note,
 )
-from ...whatsapp_cloud_api import whatsapp_api
+from ...whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 from ...plumber_notifications import send_plumber_notification_email
 
 try:
@@ -125,7 +125,7 @@ class NotificationMixin:
                     print("⚠️ No plumber contact on tenant profile — skipping plan WhatsApp alert")
 
                 for number in plumber_numbers:
-                    whatsapp_api.send_text_message(number, plumber_message)
+                    get_client_for_tenant(self.appointment.tenant).send_text_message(number, plumber_message)
                     print(f"✅ Plan notification sent to plumber {number}")
 
             except Exception as e:
@@ -160,7 +160,7 @@ class NotificationMixin:
                 )
 
                 clean_phone = clean_phone_number(self.phone_number)
-                whatsapp_api.send_text_message(clean_phone, confirmation_message)
+                get_client_for_tenant(self.appointment.tenant).send_text_message(clean_phone, confirmation_message)
                 print(f"✅ Confirmation sent to {clean_phone}")
 
             except Exception as e:
@@ -237,7 +237,7 @@ class NotificationMixin:
                     sent_count = 0
                     for number in team_numbers:
                         try:
-                            whatsapp_api.send_text_message(number, team_message)
+                            get_client_for_tenant(self.appointment.tenant).send_text_message(number, team_message)
                             print(f"✅ Booking notification sent to {number}")
                             sent_count += 1
                         except Exception as msg_error:
@@ -354,7 +354,8 @@ class NotificationMixin:
             """Send WhatsApp message using Cloud API"""
             try:
                 clean_phone = clean_phone_number(self.phone_number)
-                result = whatsapp_api.send_text_message(clean_phone, message_text)
+                _tenant = getattr(getattr(self, 'appointment', None), 'tenant', None)
+                result = get_client_for_tenant(_tenant).send_text_message(clean_phone, message_text)
                 print(f"✅ Message sent via Cloud API to {clean_phone}")
                 return result
             except Exception as e:

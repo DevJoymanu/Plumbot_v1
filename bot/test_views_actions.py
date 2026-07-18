@@ -379,6 +379,19 @@ class FollowupActionTests(StaffClientTestCase):
         self.assertIn('[MANUAL FOLLOW-UP]',
                       self.lead.conversation_history[-1]['content'])
 
+    @patch('bot.views.followups.get_client_for_tenant')
+    def test_manual_followup_sends_from_the_leads_tenant(self, mock_get_client):
+        # The send is routed through the lead's own tenant channel, not the
+        # global env singleton — so a tenant messages from its own number.
+        from unittest.mock import MagicMock
+        mock_get_client.return_value = MagicMock()
+        response = self.client.post(
+            reverse('send_followup', args=[self.lead.pk]),
+            {'message': 'Hi {name}, checking in.'})
+        self.assertEqual(response.status_code, 302)
+        mock_get_client.assert_called_once_with(self.lead.tenant)
+        mock_get_client.return_value.send_text_message.assert_called_once()
+
     @patch('bot.views.followups.whatsapp_api.send_text_message')
     def test_send_manual_followup_rejects_empty_message(self, mock_send):
         response = self.client.post(

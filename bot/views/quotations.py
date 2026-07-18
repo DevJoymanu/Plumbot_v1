@@ -38,7 +38,7 @@ from ..forms import (
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
 from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
-from ..whatsapp_cloud_api import whatsapp_api
+from ..whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 from ..services.clients import (
     twilio_client, deepseek_client,
     TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
@@ -470,7 +470,7 @@ def send_quotation(request, pk):
         safe_name = re.sub(r'[^A-Za-z0-9 _-]+', '', quotation_name).strip().replace(' ', '_')
         safe_name = safe_name[:80] or f"Quotation-{quotation.quotation_number}"
         temp_doc_path = build_quotation_pdf_file(quotation)
-        whatsapp_api.send_local_document(
+        get_client_for_tenant(quotation.appointment.tenant).send_local_document(
             quotation.appointment.phone_number,
             temp_doc_path,
             caption=quotation_name,

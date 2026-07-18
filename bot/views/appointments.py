@@ -46,7 +46,7 @@ from ..forms import (
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
 from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
-from ..whatsapp_cloud_api import whatsapp_api
+from ..whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 from ..services.clients import (
     twilio_client, deepseek_client,
     TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
@@ -331,7 +331,7 @@ class ConversationDetailView(TemplateView):
             text = (request.POST.get('message') or '').strip()
             if text:
                 try:
-                    result = whatsapp_api.send_text_message(appointment.phone_number, text)
+                    result = get_client_for_tenant(appointment.tenant).send_text_message(appointment.phone_number, text)
                     wamid = ''
                     if isinstance(result, dict):
                         wamid = (result.get('messages') or [{}])[0].get('id', '')

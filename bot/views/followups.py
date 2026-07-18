@@ -39,7 +39,7 @@ from ..forms import (
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
 from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
-from ..whatsapp_cloud_api import whatsapp_api
+from ..whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 from ..services.clients import (
     twilio_client, deepseek_client,
     TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
@@ -122,8 +122,8 @@ def test_followup_message(request, pk):
         
         # Send it
         clean_phone = clean_phone_number(appointment.phone_number)
-        whatsapp_api.send_text_message(clean_phone, message)
-        
+        get_client_for_tenant(appointment.tenant).send_text_message(clean_phone, message)
+
         messages.success(request, f'Test {stage} follow-up sent to {appointment.phone_number}')
         return _followup_redirect(request, appointment.pk)
     
@@ -499,7 +499,7 @@ def followup_test_suite(request):
                     send_error = 'Phone number required to actually send.'
                 else:
                     try:
-                        whatsapp_api.send_text_message(clean_phone_number(to_phone), message)
+                        get_client_for_tenant(apt.tenant).send_text_message(clean_phone_number(to_phone), message)
                         sent = True
                     except Exception as exc:
                         send_error = f'{type(exc).__name__}: {exc}'
@@ -1190,7 +1190,7 @@ def send_followup(request, pk):
         personalized_message = message.replace('{name}', customer_name)
         clean_phone = clean_phone_number(appointment.phone_number)
 
-        whatsapp_api.send_text_message(clean_phone, personalized_message)
+        get_client_for_tenant(appointment.tenant).send_text_message(clean_phone, personalized_message)
 
         appointment.add_conversation_message('assistant', f"[MANUAL FOLLOW-UP] {personalized_message}")
         appointment.last_followup_sent = timezone.now()
@@ -1240,7 +1240,7 @@ def send_image_to_lead(request, pk):
 
     try:
         clean_phone = clean_phone_number(appointment.phone_number)
-        whatsapp_api.send_media_message(
+        get_client_for_tenant(appointment.tenant).send_media_message(
             to=clean_phone,
             media_url=image_url,
             media_type='image',
@@ -1294,7 +1294,7 @@ def send_pdf_to_lead(request, pk):
             temp_path = tmp.name
 
         clean_phone = clean_phone_number(appointment.phone_number)
-        whatsapp_api.send_local_document(
+        get_client_for_tenant(appointment.tenant).send_local_document(
             clean_phone,
             temp_path,
             caption=caption or None,
@@ -1348,8 +1348,8 @@ def send_bulk_followup(request):
                 
                 # Send message
                 clean_phone = clean_phone_number(appointment.phone_number)
-                whatsapp_api.send_text_message(clean_phone, personalized_message)
-                
+                get_client_for_tenant(appointment.tenant).send_text_message(clean_phone, personalized_message)
+
                 # Update tracking
                 appointment.add_conversation_message('assistant', f"[BULK MANUAL FOLLOW-UP] {personalized_message}")
                 appointment.last_followup_sent = timezone.now()

@@ -38,7 +38,7 @@ from ..forms import (
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
 from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
-from ..whatsapp_cloud_api import whatsapp_api
+from ..whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 from ..services.clients import (
     twilio_client, deepseek_client,
     TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
@@ -256,7 +256,7 @@ Questions? Reply to this message.
         
         # Send to customer
         clean_phone = clean_phone_number(job_appointment.phone_number)
-        whatsapp_api.send_text_message(clean_phone, customer_message)
+        get_client_for_tenant(job_appointment.tenant).send_text_message(clean_phone, customer_message)
         
         # Team notification
         plumber_name = job_appointment.assigned_plumber.get_full_name() if job_appointment.assigned_plumber else "Unassigned"
@@ -281,7 +281,7 @@ View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         TEAM_NUMBERS = ['0774819901']
         for number in TEAM_NUMBERS:
             try:
-                whatsapp_api.send_text_message(number, team_message)
+                get_client_for_tenant(job_appointment.tenant).send_text_message(number, team_message)
             except Exception as e:
                 print(f"Failed to send team notification: {str(e)}")
 
