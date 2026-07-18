@@ -701,6 +701,7 @@ def platform_tenant_config(request, slug):
         'tenant': tenant,
         'form': form,
         'formset': formset,
+        'currency': (profile.currency or 'US$'),
         'channel': channel,
         'intakes': tenant.intakes.all()[:10],
         'staff': tenant.memberships.select_related('user').order_by('user__username'),

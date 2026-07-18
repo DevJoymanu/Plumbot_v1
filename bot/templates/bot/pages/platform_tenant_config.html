@@ -65,6 +65,16 @@
     border: 1px dashed rgba(0,101,145,0.35); background: transparent; color: #006591;
     border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer;
   }
+  .money-cell { display: flex; align-items: center; gap: 4px; }
+  .money-cell .cur { font-size: 11px; color: #5b7285; font-weight: 600; white-space: nowrap; }
+  .money-cell input { flex: 1; min-width: 0; }
+  .money-cell input[readonly] { background: rgba(0,101,145,0.02); color: #006591; font-weight: 600; }
+  .money-cell input.is-auto { box-shadow: inset 0 0 0 1px rgba(0,101,145,0.12); }
+  .th-auto {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #006591; background: rgba(0,101,145,0.08); border-radius: 6px;
+    padding: 1px 5px; margin-left: 2px; font-weight: 600;
+  }
 </style>
 <script>
 function _intakeUrl(group) {
@@ -93,7 +103,65 @@ document.addEventListener('DOMContentLoaded', function () {
       '&body=' + message;
   });
   document.querySelectorAll('.parts-editor').forEach(initPartsEditor);
+
+  // Currency: shown on every money field and kept live with the currency input.
+  const curField = document.getElementById('id_currency');
+  if (curField) curField.addEventListener('input', updateCurrencyLabels);
+  updateCurrencyLabels();
+
+  // All-in auto-calculates from supply + labour (+ any component amounts).
+  document.querySelectorAll('.price-row').forEach(function (row) {
+    ['-supply', '-labour'].forEach(function (suffix) {
+      const input = row.querySelector('[name$="' + suffix + '"]');
+      if (input) input.addEventListener('input', function () { recalcAllin(row); });
+    });
+    recalcAllin(row);
+  });
 });
+
+function currentCurrency() {
+  const f = document.getElementById('id_currency');
+  const v = f ? f.value.trim() : '';
+  return v || '{{ currency|default:"US$" }}';
+}
+function updateCurrencyLabels() {
+  const cur = currentCurrency();
+  document.querySelectorAll('.cur, .part-cur, #cur-heading').forEach(function (el) {
+    el.textContent = cur;
+  });
+}
+function _num(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function _sumPartAmounts(row) {
+  const hidden = row.querySelector('[name$="-parts"]');
+  if (!hidden) return 0;
+  let parts = []; try { parts = JSON.parse(hidden.value || '[]'); } catch (e) { }
+  return parts.reduce(function (s, p) {
+    return s + (p.amount === undefined || p.amount === null || p.amount === '' ? 0 : Number(p.amount) || 0);
+  }, 0);
+}
+function recalcAllin(row) {
+  const supply = row.querySelector('[name$="-supply"]');
+  const labour = row.querySelector('[name$="-labour"]');
+  const allin = row.querySelector('[name$="-allin"]');
+  if (!allin) return;
+  const s = supply ? supply.value.trim() : '';
+  const l = labour ? labour.value.trim() : '';
+  const partsSum = _sumPartAmounts(row);
+  // Nothing to derive from → leave all-in for direct entry (some items are
+  // quoted at a single all-in rate with no split), clearing only a stale auto value.
+  if (s === '' && l === '' && !partsSum) {
+    if (allin.classList.contains('is-auto')) allin.value = '';
+    allin.readOnly = false;
+    allin.classList.remove('is-auto');
+    allin.title = '';
+    return;
+  }
+  const total = _num(s) + _num(l) + partsSum;
+  allin.value = total ? String(total) : '';
+  allin.readOnly = true;
+  allin.classList.add('is-auto');
+  allin.title = 'Auto: supply + labour' + (partsSum ? ' + breakdown' : '');
+}
 
 // Inline component breakdown (e.g. freestanding tub = tub + mixer + install):
 // a chip editor kept in sync with a hidden JSON field on the price row.
@@ -112,6 +180,9 @@ function _partsSync(editor) {
     parts.push(part);
   });
   hidden.value = JSON.stringify(parts);
+  // A component amount feeds the row's all-in total.
+  const row = hidden.closest('.price-row');
+  if (row) recalcAllin(row);
 }
 function _partsRender(editor) {
   const hidden = document.querySelector(editor.dataset.target);
@@ -124,7 +195,7 @@ function _partsRender(editor) {
     const name = document.createElement('input');
     name.className = 'part-name'; name.placeholder = 'part'; name.value = p.name || '';
     const cur = document.createElement('span');
-    cur.className = 'part-cur'; cur.textContent = '{{ profile.currency|default:"US$" }}';
+    cur.className = 'part-cur'; cur.textContent = currentCurrency();
     const amt = document.createElement('input');
     amt.className = 'part-amt'; amt.type = 'number'; amt.min = '0'; amt.step = '1';
     amt.value = (p.amount === undefined || p.amount === null) ? '' : p.amount;
@@ -135,6 +206,8 @@ function _partsRender(editor) {
     del.addEventListener('click', function () {
       const arr = _partsRead(hidden); arr.splice(i, 1);
       hidden.value = JSON.stringify(arr); _partsRender(editor);
+      const row = hidden.closest('.price-row');
+      if (row) recalcAllin(row);
     });
     chip.append(name, cur, amt, del);
     chips.appendChild(chip);
@@ -284,23 +357,27 @@ function initPartsEditor(editor) {
     </div>
 
     <div class="platform-card">
-      <div class="platform-card__title">Price sheet — "from" rates; blank fields stay unquoted</div>
+      <div class="platform-card__title">
+        Price sheet — "from" rates in <span id="cur-heading">{{ currency }}</span>; blank fields stay unquoted
+      </div>
       {{ formset.management_form }}
       <table class="price-table">
         <thead>
           <tr>
             <th>Item</th>
-            <th>Supply</th><th>Labour</th><th>Flat</th><th>All-in</th>
+            <th>Supply</th><th>Labour</th><th>Flat</th><th>All-in <span class="th-auto">auto</span></th>
             <th>Active</th><th>Delete</th>
           </tr>
         </thead>
         <tbody>
           {% for f in formset %}
-          <tr>
+          <tr class="price-row">
             {{ f.id }}{{ f.family.as_hidden }}{{ f.variant.as_hidden }}{{ f.short_label.as_hidden }}{{ f.sort_order.as_hidden }}{{ f.parts }}
             <td>{{ f.label }}</td>
-            <td>{{ f.supply }}</td><td>{{ f.labour }}</td>
-            <td>{{ f.flat }}</td><td>{{ f.allin }}</td>
+            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.supply }}</td>
+            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.labour }}</td>
+            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.flat }}</td>
+            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.allin }}</td>
             <td style="text-align:center;">{{ f.is_active }}</td>
             <td style="text-align:center;">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
           </tr>
@@ -325,10 +402,12 @@ function initPartsEditor(editor) {
         The sheet is prefilled with the standard item list — just type each price
         (a row only saves once it has a figure; unpriced items stay on the list next visit).
         Items you've already priced keep their figures. Each item takes a
-        supply + labour split, a single flat price, or an all-in rate — fill whichever the
-        business quotes. Items with a component breakdown (e.g. a freestanding tub's mixer and
-        install) show a "Breakdown" line — set each part's price there. New items, sizes, and
-        keywords are managed in the Django admin.
+        supply + labour split, a single flat price, or an all-in rate. Enter supply and labour
+        and All-in fills itself (supply + labour); leave those blank to type a single all-in
+        rate directly. Items with a component breakdown (e.g. a freestanding tub's mixer and
+        install) show a "Breakdown" line — set each part's price there and it rolls into All-in.
+        All figures are in the currency shown on each field. New items, sizes, and keywords are
+        managed in the Django admin.
       </p>
     </div>
 

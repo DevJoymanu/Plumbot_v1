@@ -903,6 +903,10 @@ class PlatformConsoleTests(TestCase):
         # …but nothing is persisted and no figure is prefilled.
         self.assertFalse(TenantPriceItem.objects.filter(tenant=acme).exists())
         self.assertTrue(len(blank_priced_catalog()) > 10)
+        # Currency is indicated on the money fields; All-in is flagged auto.
+        self.assertIn('class="cur"', body)
+        self.assertIn('US$', body)
+        self.assertIn('th-auto', body)
 
     def test_existing_tenant_gets_missing_catalogue_items_prefilled(self):
         from .models import TenantPriceItem
