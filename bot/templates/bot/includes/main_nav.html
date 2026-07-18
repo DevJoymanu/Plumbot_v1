@@ -41,6 +41,10 @@
             <i class="fas fa-images nav-icon"></i>
             Gallery
         </a>
+        <a href="{% url 'offer' %}" class="pb-sidenav__item {% if active_nav == 'offer' %}active{% endif %}">
+            <i class="fas fa-bullhorn nav-icon"></i>
+            My Offer
+        </a>
         <a href="{% url 'quotation_templates_list' %}" class="pb-sidenav__item {% if active_nav == 'templates' %}active{% endif %}">
             <i class="fas fa-file-invoice nav-icon"></i>
             Templates

@@ -1888,6 +1888,47 @@ try:
         _fca._is_captured_flow_answer("that on facebook", ['project_description']) is False,
         got=str(_fca._is_captured_flow_answer("that on facebook", ['project_description'])),
     )
+    # Vague "how much" overview: the tenant's own FB offer is the anchor and
+    # is SUFFICIENT on its own — tub lines only render when the tenant has
+    # tub prices; no offer at all -> None (router deflects to the free visit).
+    class _FakeCfgItem:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+    class _FakeCfgFBOnly:
+        def price_item(self, family, variant=''):
+            if (family, variant) == ('package', 'facebook'):
+                return _FakeCfgItem(flat=350, label='winter special',
+                                    parts=[{'name': 'geyser'}, {'name': 'thermostat'}])
+            return None
+    class _FakeSelfOverview:
+        _compose_pricing_overview = ResponseMixin._compose_pricing_overview
+        tenant_cfg = _FakeCfgFBOnly()
+        def _freestanding_tub_price(self):
+            return None
+        def _price_components_map(self):
+            return {}
+        def _product_price_close(self, lang):
+            return 'CLOSE'
+        def _ensure_price_disclaimer(self, intent, reply):
+            return reply
+    _ovr = _FakeSelfOverview()._compose_pricing_overview('english')
+    results.log(
+        "pricing overview: FB offer alone anchors the vague 'how much' reply",
+        _ovr is not None
+        and "Our Winter special is US$350 — a geyser and thermostat." in _ovr
+        and "tub" not in _ovr and _ovr.endswith("CLOSE"),
+        got=_ovr,
+    )
+    class _FakeCfgNoOffer:
+        def price_item(self, family, variant=''):
+            return None
+    class _FakeSelfOverviewNone(_FakeSelfOverview):
+        tenant_cfg = _FakeCfgNoOffer()
+    results.log(
+        "pricing overview: no offer -> None (deflect to free visit)",
+        _FakeSelfOverviewNone()._compose_pricing_overview('english') is None,
+        got="None as expected",
+    )
     # Service-type-only detector: bare service categories are NOT a description;
     # anything with a concrete item or real detail is.
     _sto = ResponseMixin._is_service_type_only

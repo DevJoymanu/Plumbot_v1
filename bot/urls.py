@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 from .views import platform as platform_views
 from .views import gallery as gallery_views
+from .views import offer as offer_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
@@ -82,6 +83,10 @@ urlpatterns = [
     path('gallery/<int:pk>/update/', gallery_views.gallery_update, name='gallery_update'),
     path('gallery/<int:pk>/delete/', gallery_views.gallery_delete, name='gallery_delete'),
     path('gallery/media/<int:pk>/', gallery_views.gallery_media, name='gallery_media'),
+
+    # Tenant Facebook/social offer (portal)
+    path('offer/', offer_views.offer_page, name='offer'),
+    path('offer/save/', offer_views.offer_save, name='offer_save'),
     path('appointments/<int:pk>/send-pdf/', views.send_pdf_to_lead, name='send_pdf_to_lead'),
 
         # API endpoints for fetching appointment data

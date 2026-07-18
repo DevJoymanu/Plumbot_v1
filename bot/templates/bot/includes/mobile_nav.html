@@ -42,6 +42,9 @@
         <a href="{% url 'gallery' %}" class="pb-sheet__item {% if active_nav == 'gallery' %}active{% endif %}">
             <i class="fas fa-images"></i> Gallery
         </a>
+        <a href="{% url 'offer' %}" class="pb-sheet__item {% if active_nav == 'offer' %}active{% endif %}">
+            <i class="fas fa-bullhorn"></i> My Offer
+        </a>
         <a href="{% url 'quotation_templates_list' %}" class="pb-sheet__item {% if active_nav == 'templates' %}active{% endif %}">
             <i class="fas fa-file-invoice"></i> Templates
         </a>

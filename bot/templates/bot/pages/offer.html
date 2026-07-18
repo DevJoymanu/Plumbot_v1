@@ -1,0 +1,89 @@
+{% extends "bot/layouts/base.html" %}
+{% load static %}
+
+{% block title %}My Offer{% endblock %}
+
+{% block content %}
+<style>
+    body { background: #F0F2F5; }
+    .topbar {
+        background: #006591; padding: 12px 16px; color: #fff;
+        position: sticky; top: 0; z-index: 10;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .topbar h1 { font-size: 17px; font-weight: 700; margin: 0; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .page-content { padding: 16px; max-width: 680px; margin: 0 auto; }
+    .o-card {
+        background: #fff; border-radius: 12px; padding: 18px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px;
+    }
+    .o-card h2 { font-size: 15px; margin: 0 0 6px; color: #1c2b33; }
+    .o-card p.sub { font-size: 13px; color: #54656f; margin: 0 0 14px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #54656f; margin: 12px 0 4px; }
+    input[type=text], textarea {
+        width: 100%; box-sizing: border-box; border: 1px solid #d1d7db;
+        border-radius: 8px; padding: 9px 11px; font-size: 14px; font-family: inherit;
+    }
+    .btn-primary {
+        background: #006591; color: #fff; border: 0; border-radius: 8px;
+        padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 14px;
+    }
+    .preview {
+        background: #e7f8f2; border: 1px solid #bfe8d9; border-radius: 10px;
+        padding: 12px 14px; font-size: 14px; color: #1c2b33; margin-top: 14px;
+    }
+    .preview .lbl { font-size: 11px; font-weight: 700; color: #1a7f4b; text-transform: uppercase;
+                    letter-spacing: .05em; display: block; margin-bottom: 4px; }
+    .muted-note { font-size: 12px; color: #54656f; margin-top: 10px; }
+</style>
+
+<div class="topbar">
+    <h1><i class="fas fa-bullhorn"></i> My Offer</h1>
+</div>
+
+<div class="page-content">
+    {% include "bot/includes/messages.html" %}
+
+    <div class="o-card">
+        <h2>Your Facebook / social media offer</h2>
+        <p class="sub">When someone messages just "how much?" with no context — usually straight
+            off your ad — the assistant answers with THIS offer first, then steers them toward
+            booking. Set it to whatever you're currently running.</p>
+
+        <form method="post" action="{% url 'offer_save' %}">
+            {% csrf_token %}
+            <label for="id_label">Offer name</label>
+            <input type="text" id="id_label" name="label" maxlength="120"
+                   value="{{ row.label|default:'' }}" placeholder="e.g. Bathroom makeover special">
+
+            <label for="id_price">Price (US$)</label>
+            <input type="text" id="id_price" name="price" inputmode="decimal"
+                   value="{{ row.flat|default:'' }}" placeholder="e.g. 800">
+
+            <label for="id_includes">What's included — one item per line</label>
+            <textarea id="id_includes" name="includes" rows="4"
+                      placeholder="freestanding tub&#10;side chamber">{{ includes }}</textarea>
+
+            <button type="submit" class="btn-primary">Save offer</button>
+        </form>
+
+        {% if facts %}
+        <div class="preview">
+            <span class="lbl">How the assistant says it</span>
+            Our {{ facts.label }} is US${{ facts.price }}{% if facts.en %} — a {{ facts.en }}{% endif %}.
+        </div>
+        {% else %}
+        <div class="preview" style="background:#fdf6ec; border-color:#f0e0c2;">
+            <span class="lbl" style="color:#a8760b;">No offer set</span>
+            Vague "how much?" questions currently get deflected to your free quote.
+            Save an offer above and the assistant will lead with it instead.
+        </div>
+        {% endif %}
+
+        <p class="muted-note">To remove the offer, clear the price field and save —
+            the assistant goes back to deflecting vague price questions to the free quote.
+            Prices for specific jobs (geysers, drains, installs…) are managed separately
+            in your price list.</p>
+    </div>
+</div>
+{% endblock %}

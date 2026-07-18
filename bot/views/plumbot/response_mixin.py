@@ -4932,44 +4932,58 @@ class ResponseMixin:
                         "For a new bathroom build, pricing covers both rough plumbing and fixtures. "
                     )
 
-            # Figures from the tenant's price sheet (Phase 2.3d). Anything
-            # missing → not handled here; the router falls through and the
-            # flow deflects to the free visit rather than inventing money.
+            return self._compose_pricing_overview(language, project_context)
+
+        def _compose_pricing_overview(self, language, project_context=''):
+            """The vague-'how much' reply: anchored on the tenant's OWN
+            Facebook/social offer (the assumed context for a no-context price
+            ask — usually the ad they came from). No offer set → None, the
+            router deflects to the free visit. The tub section only renders
+            when the tenant has tub pricing, so an offer alone is enough."""
             _fb_item = self.tenant_cfg.price_item('package', 'facebook')
             _fb = _fb_item.flat if _fb_item is not None else None
+            if _fb is None:
+                return None
+            _fb = int(_fb)
+            _fbp2 = facebook_package_facts(self.tenant_cfg) or {
+                'label': 'Facebook package', 'en': '', 'sn': ''}
+
             _fs = self._freestanding_tub_price()
             _fs_item = self.tenant_cfg.price_item('tub', 'freestanding')
             _fs_parts = {p.get('name'): p.get('amount')
                          for p in ((_fs_item.parts if _fs_item else None) or [])}
             _tub = self._price_components_map().get('tub')
-            if (_fb is None or _fs is None or _tub is None or
-                    not all(k in _fs_parts for k in ('tub', 'mixer', 'install'))):
-                return None
-            _fb = int(_fb)
-            _tub_allin = _tub[0] + _tub[1]
-            _fbp2 = facebook_package_facts(self.tenant_cfg) or {
-                'label': 'Facebook package', 'en': '', 'sn': ''}
+            has_tubs = (_fs is not None and _tub is not None and
+                        all(k in _fs_parts for k in ('tub', 'mixer', 'install')))
 
             if language == 'shona':
                 reply = (
                     f"{project_context}"
                     + f"{_fbp2['label']} yedu inosvika US${_fb}"
                     + (f" — ine {_fbp2['sn']}.\n\n" if _fbp2['sn'] else ".\n\n")
-                    + f"Kana muri kuda tub chete — freestanding tubs kubva US${_fs[0]} all-in "
-                    f"(tub US${_fs_parts['tub']} + mixer US${_fs_parts['mixer']} + install US${_fs_parts['install']}), uye standard built-in tubs "
-                    f"kubva US${_tub_allin} all-in (tub US${_tub[0]} + install US${_tub[1]}).\n\n"
-                    f"{self._product_price_close('shona')}"
                 )
+                if has_tubs:
+                    _tub_allin = _tub[0] + _tub[1]
+                    reply += (
+                        f"Kana muri kuda tub chete — freestanding tubs kubva US${_fs[0]} all-in "
+                        f"(tub US${_fs_parts['tub']} + mixer US${_fs_parts['mixer']} + install US${_fs_parts['install']}), uye standard built-in tubs "
+                        f"kubva US${_tub_allin} all-in (tub US${_tub[0]} + install US${_tub[1]}).\n\n"
+                    )
+                reply += f"{self._product_price_close('shona')}"
             else:
                 reply = (
                     f"{project_context}"
                     + f"Our {_fbp2['label']} is US${_fb}"
                     + (f" — a {_fbp2['en']}.\n\n" if _fbp2['en'] else ".\n\n")
-                    + f"If you're looking at just a tub — freestanding tubs from US${_fs[0]} all-in "
-                    f"(tub US${_fs_parts['tub']} + mixer US${_fs_parts['mixer']} + install US${_fs_parts['install']}), and standard built-in tubs "
-                    f"from US${_tub_allin} all-in (tub US${_tub[0]} + install US${_tub[1]}).\n\n"
-                    f"{self._product_price_close('english')}"
                 )
+                if has_tubs:
+                    _tub_allin = _tub[0] + _tub[1]
+                    reply += (
+                        f"If you're looking at just a tub — freestanding tubs from US${_fs[0]} all-in "
+                        f"(tub US${_fs_parts['tub']} + mixer US${_fs_parts['mixer']} + install US${_fs_parts['install']}), and standard built-in tubs "
+                        f"from US${_tub_allin} all-in (tub US${_tub[0]} + install US${_tub[1]}).\n\n"
+                    )
+                reply += f"{self._product_price_close('english')}"
             # Carry the approximate-price disclaimer (before the closing tie-down).
             return self._ensure_price_disclaimer('facebook_package', reply)
 

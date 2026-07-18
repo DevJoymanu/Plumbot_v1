@@ -1548,6 +1548,83 @@ class GalleryPortalTests(TestCase):
         self.assertEqual(res.status_code, 400)
 
 
+class OfferPageTests(TestCase):
+    """Portal 'My Offer': the tenant's own Facebook/social offer — the price
+    the bot leads with on vague, no-context 'how much' questions."""
+
+    def setUp(self):
+        self.homebase = Tenant.objects.get(slug='homebase')
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.user = get_user_model().objects.create_user(
+            username='acme-owner2', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=self.user, tenant=self.acme, role='owner')
+        self.client.force_login(self.user)
+
+    def test_save_edit_and_remove_offer(self):
+        from .models import TenantPriceItem
+        from .pricing_copy import facebook_package_facts
+        from .tenant_config import get_config
+        self.assertEqual(self.client.get(reverse('offer')).status_code, 200)
+        self.client.post(reverse('offer_save'), {
+            'label': 'Bathroom makeover special', 'price': 'US$800',
+            'includes': 'freestanding tub\nside chamber\n'})
+        row = TenantPriceItem.objects.get(
+            tenant=self.acme, family='package', variant='facebook')
+        self.assertEqual(int(row.flat), 800)
+        facts = facebook_package_facts(get_config(self.acme))
+        self.assertEqual((facts['price'], facts['label'], facts['en']),
+                         (800, 'Bathroom makeover special',
+                          'freestanding tub and side chamber'))
+        # Homebase's own offer row is untouched by acme's edits.
+        self.assertTrue(TenantPriceItem.objects.filter(
+            tenant=self.homebase, family='package', variant='facebook').exists())
+        # Clearing the price removes the offer entirely.
+        self.client.post(reverse('offer_save'),
+                         {'label': 'x', 'price': '', 'includes': ''})
+        self.assertFalse(TenantPriceItem.objects.filter(
+            tenant=self.acme, family='package', variant='facebook').exists())
+
+    def test_bad_price_rejected(self):
+        from .models import TenantPriceItem
+        self.client.post(reverse('offer_save'), {'price': 'eight hundred'})
+        self.assertFalse(TenantPriceItem.objects.filter(
+            tenant=self.acme, family='package').exists())
+
+    def test_vague_how_much_composes_from_offer_alone(self):
+        # A tenant whose ONLY price row is the offer still gets the anchored
+        # reply; a tenant with no offer gets None (router deflects).
+        from .models import TenantPriceItem
+        from .tenant_config import get_config
+        from .views.plumbot.response_mixin import ResponseMixin
+        TenantPriceItem.objects.create(
+            tenant=self.acme, family='package', variant='facebook',
+            label='winter special', flat=350,
+            parts=[{'name': 'geyser'}, {'name': 'thermostat'}])
+        acme_cfg = get_config(self.acme)
+
+        class _Fake:
+            tenant_cfg = acme_cfg
+            def _freestanding_tub_price(self):
+                return None
+            def _price_components_map(self):
+                return {}
+            def _product_price_close(self, lang):
+                return 'Which area are you in?'
+            def _ensure_price_disclaimer(self, intent, reply):
+                return reply
+        reply = ResponseMixin._compose_pricing_overview(_Fake(), 'english')
+        self.assertIn('Our Winter special is US$350 — a geyser and thermostat.', reply)
+        self.assertNotIn('tub', reply)
+        self.assertTrue(reply.endswith('Which area are you in?'))
+        bare = Tenant.objects.create(name='Bare Offer', slug='bare-offer')
+        bare_cfg = get_config(bare)
+
+        class _FakeNone(_Fake):
+            tenant_cfg = bare_cfg
+        self.assertIsNone(
+            ResponseMixin._compose_pricing_overview(_FakeNone(), 'english'))
+
+
 class TenantConfigTests(TestCase):
     """Phase 2 slice 1: FAQ facts + identity via the TenantConfig seam.
     Homebase must be byte-identical to the old hardcoded strings; a tenant
