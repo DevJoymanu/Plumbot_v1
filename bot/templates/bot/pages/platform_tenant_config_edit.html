@@ -27,13 +27,18 @@
   .form-group label { display: block; font-family: var(--font-label); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); margin-bottom: 6px; }
   .form-group small { color: var(--color-error); font-size: 12px; }
   /* Price sheet — horizontal grid rows (each item on one line; scrolls on narrow screens) */
-  .ps-scroll { overflow-x: auto; padding-bottom: 4px; }
+  .ps-scroll { overflow: auto; max-height: 62vh; padding: 0 2px 4px; }
   .ps-head, .ps-row {
     display: grid;
-    grid-template-columns: minmax(150px, 1.6fr) repeat(4, minmax(80px, 94px)) 62px 50px;
-    gap: 12px; align-items: center; min-width: 710px;
+    grid-template-columns: minmax(160px, 1.5fr) repeat(3, minmax(108px, 1fr)) 60px 46px;
+    gap: 12px; align-items: center; min-width: 640px;
   }
-  .ps-head { padding: 0 14px 8px; }
+  /* Sticky column-label row — stays put while the list scrolls */
+  .ps-head {
+    position: sticky; top: 0; z-index: 3;
+    padding: 10px 16px 10px; margin-bottom: 4px;
+    background: var(--color-surface); box-shadow: 0 1px 0 rgba(0,101,145,0.10);
+  }
   .ps-head span { font-family: var(--font-label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); font-weight: 500; }
   .ps-center { text-align: center; justify-self: center; }
   .ps-head em { font-style: normal; font-family: var(--font-label); font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-primary); background: rgba(0,101,145,0.08); border-radius: 6px; padding: 1px 5px; margin-left: 2px; }
@@ -44,16 +49,22 @@
     transition: box-shadow var(--transition), border-color var(--transition);
   }
   .ps-row:hover { border-color: rgba(0,101,145,0.16); box-shadow: var(--shadow-xs); }
-  .ps-row input { width: 100%; border: none; background: var(--color-surface-low); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; min-height: 36px; outline: none; }
+  .ps-row.is-new { border-color: rgba(0,101,145,0.3); border-style: dashed; }
+  .ps-row input { width: 100%; border: none; background: var(--color-surface-low); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; min-height: 36px; outline: none; }
   .ps-row input:focus { box-shadow: 0 0 0 2px rgba(0,101,145,0.2); background: var(--color-surface-lowest); }
   .ps-row .ps-item input { font-weight: 600; }
   .ps-row input[type="checkbox"] { width: auto; min-height: 0; }
   .ps-breakdown { grid-column: 1 / -1; }
-  .money-cell { display: flex; align-items: center; gap: 4px; }
+  .ps-remove { border: none; background: transparent; color: var(--color-error); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px; }
+  .money-cell { display: flex; align-items: center; gap: 5px; }
   .money-cell .cur { font-size: 11px; color: var(--color-muted); font-weight: 600; white-space: nowrap; }
-  .money-cell input { flex: 1; min-width: 0; }
+  .money-cell input { flex: 1; min-width: 0; text-align: right; }
   .money-cell input[readonly] { background: rgba(0,101,145,0.02); color: var(--color-primary); font-weight: 600; }
   .money-cell input.is-auto { box-shadow: inset 0 0 0 1px rgba(0,101,145,0.18); }
+  /* Add-item bar */
+  .ps-addbar { display: flex; justify-content: flex-start; margin-top: 14px; }
+  .ps-add { border: 1px dashed rgba(0,101,145,0.4); background: rgba(0,101,145,0.03); color: var(--color-primary); border-radius: var(--radius-pill); padding: 9px 18px; font-family: var(--font-label); font-size: 12px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; cursor: pointer; transition: background var(--transition), border-color var(--transition); }
+  .ps-add:hover { background: rgba(0,101,145,0.08); border-color: rgba(0,101,145,0.6); }
   /* Breakdown chips */
   .parts-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0 10px 12px; }
   .parts-tag { font-family: var(--font-label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); font-weight: 600; }
@@ -110,41 +121,57 @@
         once it has a figure; unpriced items stay on the list next visit). Enter supply and labour and
         All-in fills itself; leave those blank to type a single all-in rate. Items with a component
         breakdown (e.g. a freestanding tub's mixer and install) show a "Breakdown" line — set each
-        part's price there and it rolls into All-in. New items, sizes, and keywords live in the Django admin.
+        part's price there and it rolls into All-in. Use "Add item" for anything not on the standard list.
       </p>
       {{ formset.management_form }}
       <div class="ps-scroll">
         <div class="ps-head">
           <span>Item</span>
-          <span>Supply</span><span>Labour</span><span>Flat</span><span>All-in <em>auto</em></span>
+          <span>Supply</span><span>Labour</span><span>All-in <em>auto</em></span>
           <span class="ps-center">Active</span><span class="ps-center">Del</span>
         </div>
-        {% for f in formset %}
-        <div class="ps-row price-row">
-          <span class="ps-hidden">{{ f.id }}{{ f.family.as_hidden }}{{ f.variant.as_hidden }}{{ f.short_label.as_hidden }}{{ f.sort_order.as_hidden }}{{ f.parts }}</span>
-          <div class="ps-item">{{ f.label }}</div>
-          <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.supply }}</div>
-          <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.labour }}</div>
-          <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.flat }}</div>
-          <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.allin }}</div>
-          <div class="ps-center">{{ f.is_active }}</div>
-          <div class="ps-center">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</div>
-          {% if f.parts.value %}
-          <div class="ps-breakdown">
-            <div class="parts-editor" data-target="#{{ f.parts.id_for_label }}">
-              <span class="parts-tag">Breakdown</span>
-              <span class="parts-chips"></span>
-              <button type="button" class="parts-add">+ add part</button>
+        <div id="ps-list">
+          {% for f in formset %}
+          <div class="ps-row price-row">
+            <span class="ps-hidden">{{ f.id }}{{ f.family.as_hidden }}{{ f.variant.as_hidden }}{{ f.short_label.as_hidden }}{{ f.sort_order.as_hidden }}{{ f.parts }}</span>
+            <div class="ps-item">{{ f.label }}</div>
+            <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.supply }}</div>
+            <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.labour }}</div>
+            <div class="money-cell"><span class="cur">{{ currency }}</span>{{ f.allin }}</div>
+            <div class="ps-center">{{ f.is_active }}</div>
+            <div class="ps-center">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</div>
+            {% if f.parts.value %}
+            <div class="ps-breakdown">
+              <div class="parts-editor" data-target="#{{ f.parts.id_for_label }}">
+                <span class="parts-tag">Breakdown</span>
+                <span class="parts-chips"></span>
+                <button type="button" class="parts-add">+ add part</button>
+              </div>
             </div>
+            {% endif %}
+            {% if f.errors %}
+            <div class="ps-breakdown"><small style="color:var(--color-error);">{{ f.errors }}</small></div>
+            {% endif %}
           </div>
-          {% endif %}
-          {% if f.errors %}
-          <div class="ps-breakdown"><small style="color:var(--color-error);">{{ f.errors }}</small></div>
-          {% endif %}
+          {% endfor %}
         </div>
-        {% endfor %}
+      </div>
+      <div class="ps-addbar">
+        <button type="button" class="ps-add" id="ps-add"><i class="fas fa-plus"></i> Add item</button>
       </div>
     </section>
+
+    <template id="ps-empty-row">
+      <div class="ps-row price-row is-new">
+        <span class="ps-hidden">{{ formset.empty_form.id }}{{ formset.empty_form.family.as_hidden }}{{ formset.empty_form.variant.as_hidden }}{{ formset.empty_form.short_label.as_hidden }}{{ formset.empty_form.sort_order.as_hidden }}{{ formset.empty_form.parts }}</span>
+        <div class="ps-item">{{ formset.empty_form.label }}</div>
+        <div class="money-cell"><span class="cur">{{ currency }}</span>{{ formset.empty_form.supply }}</div>
+        <div class="money-cell"><span class="cur">{{ currency }}</span>{{ formset.empty_form.labour }}</div>
+        <div class="money-cell"><span class="cur">{{ currency }}</span>{{ formset.empty_form.allin }}</div>
+        <div class="ps-center">{{ formset.empty_form.is_active }}</div>
+        <div class="ps-center"><button type="button" class="ps-remove" title="Remove">&times;</button></div>
+      </div>
+    </template>
 
     <div class="cfg-actionbar cfg-glass">
       <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save changes</button>
@@ -167,14 +194,40 @@ document.addEventListener('DOMContentLoaded', function () {
   updateCurrencyLabels();
 
   // All-in auto-calculates from supply + labour (+ any component amounts).
-  document.querySelectorAll('.price-row').forEach(function (row) {
-    ['-supply', '-labour'].forEach(function (suffix) {
-      const input = row.querySelector('[name$="' + suffix + '"]');
-      if (input) input.addEventListener('input', function () { recalcAllin(row); });
+  document.querySelectorAll('.price-row').forEach(wireRow);
+
+  // Add item: clone the empty formset row, bump the management count, wire it.
+  const addBtn = document.getElementById('ps-add');
+  const total = document.getElementById('id_form-TOTAL_FORMS');
+  const tmpl = document.getElementById('ps-empty-row');
+  const list = document.getElementById('ps-list');
+  if (addBtn && total && tmpl && list) {
+    addBtn.addEventListener('click', function () {
+      const idx = parseInt(total.value, 10);
+      const holder = document.createElement('div');
+      holder.innerHTML = tmpl.innerHTML.replace(/__prefix__/g, idx).trim();
+      const row = holder.firstElementChild;
+      list.appendChild(row);
+      total.value = idx + 1;
+      const active = row.querySelector('[name$="-is_active"]');
+      if (active) active.checked = true;                    // new items default visible
+      const label = row.querySelector('[name$="-label"]');
+      if (label) { label.placeholder = 'New item name'; }
+      const rm = row.querySelector('.ps-remove');
+      if (rm) rm.addEventListener('click', function () { row.remove(); });
+      wireRow(row);
+      if (label) label.focus();
     });
-    recalcAllin(row);
-  });
+  }
 });
+
+function wireRow(row) {
+  ['-supply', '-labour'].forEach(function (suffix) {
+    const input = row.querySelector('[name$="' + suffix + '"]');
+    if (input) input.addEventListener('input', function () { recalcAllin(row); });
+  });
+  recalcAllin(row);
+}
 
 function currentCurrency() {
   const f = document.getElementById('id_currency');

@@ -927,11 +927,37 @@ class PlatformConsoleTests(TestCase):
         self.assertFalse(TenantPriceItem.objects.filter(tenant=acme).exists())
         self.assertTrue(len(blank_priced_catalog()) > 10)
         # Currency is indicated on the money fields; All-in is flagged auto;
-        # items are laid out as horizontal grid rows.
+        # items are laid out as horizontal grid rows; Flat is gone; Add item is offered.
         self.assertIn('class="cur"', body)
         self.assertIn('US$', body)
         self.assertIn('<em>auto</em>', body)
         self.assertIn('ps-row', body)
+        self.assertNotIn('<span>Flat</span>', body)
+        self.assertIn('id="ps-add"', body)
+
+    def test_add_custom_item_keys_off_the_name(self):
+        from .models import TenantPriceItem
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        data = {
+            'plumber_name': '', 'plumber_contact': '', 'business_whatsapp': '',
+            'location_line': '', 'location_area': '', 'location_city': '',
+            'business_hours': '{}', 'timezone_name': '', 'excluded_areas': '[]',
+            'currency': 'US$', 'packages': '[]', 'faq_facts': '{}', 'scripts': '{}',
+            'email_from_name': '', 'email_sender': '',
+            'form-TOTAL_FORMS': '1', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+            # A custom "Add item" row: no family posted, keyed off the label.
+            'form-0-family': '', 'form-0-variant': '', 'form-0-label': 'Underfloor Heating',
+            'form-0-short_label': '', 'form-0-supply': '', 'form-0-labour': '',
+            'form-0-allin': '300', 'form-0-parts': '[]',
+            'form-0-sort_order': '0', 'form-0-is_active': 'on',
+        }
+        response = self.client.post(
+            reverse('platform_tenant_config_edit', args=['acme']), data)
+        self.assertEqual(response.status_code, 302)
+        item = TenantPriceItem.objects.get(tenant=acme, label='Underfloor Heating')
+        self.assertEqual(item.family, 'underfloor-heating')
+        self.assertEqual(int(item.allin), 300)
 
     def test_existing_tenant_gets_missing_catalogue_items_prefilled(self):
         from .models import TenantPriceItem

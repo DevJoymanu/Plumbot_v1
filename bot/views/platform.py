@@ -630,12 +630,20 @@ class TenantProfileForm(forms.ModelForm):
 class PriceItemForm(forms.ModelForm):
     class Meta:
         model = TenantPriceItem
+        # 'flat' retired from the editor — a single figure goes in All-in.
+        # Existing flat values are preserved (the form never touches the field).
         fields = ['family', 'variant', 'label', 'short_label',
-                  'supply', 'labour', 'flat', 'allin', 'parts',
+                  'supply', 'labour', 'allin', 'parts',
                   'sort_order', 'is_active']
         # parts (component breakdown, e.g. tub + mixer + install) is edited by
         # the inline chip UI; the raw JSON rides along in a hidden input.
         widgets = {'parts': forms.HiddenInput()}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # A brand-new custom row (Add item) posts no family — it's derived from
+        # the name on save; catalogue rows always carry their hidden family.
+        self.fields['family'].required = False
 
 
 def _price_formset(extra):
@@ -737,14 +745,24 @@ def platform_tenant_config_edit(request, slug):
         form = TenantProfileForm(request.POST, instance=profile)
         formset = _price_formset(0)(request.POST, queryset=prices_qs)
         if form.is_valid() and formset.is_valid():
+            from django.db import IntegrityError, transaction
             form.save()
             items = formset.save(commit=False)
             for item in items:
-                # Untouched template rows (new + no price) are dropped, not saved.
-                if item.pk is None and _is_unpriced(item):
-                    continue
+                if item.pk is None:
+                    # Untouched template rows (new + no price) are dropped.
+                    if _is_unpriced(item):
+                        continue
+                    # A custom "Add item" row carries no family — key it off the name.
+                    if not item.family:
+                        item.family = (slugify(item.label) or 'custom')[:40]
+                        item.variant = ''
                 item.tenant = tenant
-                item.save()
+                try:
+                    with transaction.atomic():
+                        item.save()
+                except IntegrityError:
+                    messages.warning(request, f'Skipped duplicate item "{item.label}".')
             for item in formset.deleted_objects:
                 item.delete()
             from ..whatsapp_cloud_api import invalidate_client_cache
