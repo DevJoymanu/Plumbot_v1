@@ -22,6 +22,73 @@ def is_video_filename(filename: str) -> bool:
     return (filename or '').rsplit('.', 1)[-1].lower() in VIDEO_EXTS
 
 
+# The categorized job library shown when annotating gallery photos (mirrors
+# the intake wizard's LIBRARY). (label, family, variant) — family/variant
+# join to TenantPriceItem so the tenant's own price rides along.
+PORTFOLIO_LIBRARY = [
+    ('Geysers', [
+        ('Geyser supply & install', 'geyser', ''),
+        ('Full geyser replacement', 'geyser_service', 'replacement'),
+        ('Element replacement', 'geyser_service', 'element'),
+        ('Thermostat replacement', 'geyser_service', 'thermostat'),
+        ('Pressure valve', 'geyser_service', 'pressure_valve'),
+    ]),
+    ('Drains', [
+        ('Drain unblocking (simple)', 'repair', 'drain_simple'),
+        ('Severe blockage / sewer line', 'repair', 'drain_severe'),
+        ('High-pressure jetting', 'repair', 'jetting'),
+    ]),
+    ('Taps & fixtures', [
+        ('Leaking tap', 'repair', 'leaking_tap'),
+        ('Toilet seat replacement', 'repair', 'toilet_seat_replacement'),
+        ('Cistern repair', 'repair', 'cistern'),
+        ('Full toilet replacement', 'repair', 'full_toilet_replacement'),
+    ]),
+    ('Pipes', [
+        ('Minor pipe leak', 'repair', 'minor_pipe_leak'),
+        ('Burst pipe', 'repair', 'burst_pipe'),
+        ('Pipe section replacement', 'repair', 'pipe_section'),
+    ]),
+    ('Specials & packages', [
+        ('Facebook / social media special', 'package', 'facebook'),
+    ]),
+    ('Installs', [
+        ('Shower cubicle', 'shower', ''),
+        ('Vanity unit', 'vanity', ''),
+        ('Toilet install', 'toilet', ''),
+        ('Basin', 'basin', ''),
+        ('Built-in tub', 'tub', ''),
+        ('Freestanding tub', 'tub', 'freestanding'),
+        ('Side chamber', 'chamber', ''),
+    ]),
+]
+
+
+def _price_display(value) -> str:
+    text = str(value)
+    return text.rstrip('0').rstrip('.') if '.' in text else text
+
+
+def portfolio_library_with_prices(tenant):
+    """PORTFOLIO_LIBRARY as JSON-ready dicts with the tenant's own price
+    (all-in, else flat, else supply+labour) attached to each item; '' when
+    the tenant hasn't priced that job."""
+    from .models import TenantPriceItem
+    prices = {}
+    for row in TenantPriceItem.objects.filter(tenant=tenant):
+        value = row.allin or row.flat
+        if value is None and row.supply is not None and row.labour is not None:
+            value = row.supply + row.labour
+        if value is not None:
+            prices[(row.family, row.variant or '')] = _price_display(value)
+    return [{
+        'cat': cat,
+        'items': [{'label': label, 'family': family, 'variant': variant,
+                   'price': prices.get((family, variant), '')}
+                  for label, family, variant in items],
+    } for cat, items in PORTFOLIO_LIBRARY]
+
+
 # Inbound customer media (plans, site photos/videos, voice notes) gets a
 # per-tenant subfolder too, so the bucket reads customer_plans/<slug>/...
 CUSTOMER_MEDIA_FOLDERS = {

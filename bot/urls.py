@@ -77,6 +77,8 @@ urlpatterns = [
     # Tenant gallery management (portal)
     path('gallery/', gallery_views.gallery_page, name='gallery'),
     path('gallery/add/', gallery_views.gallery_add, name='gallery_add'),
+    path('gallery/upload/', gallery_views.gallery_upload, name='gallery_upload'),
+    path('gallery/finalize/', gallery_views.gallery_finalize, name='gallery_finalize'),
     path('gallery/<int:pk>/update/', gallery_views.gallery_update, name='gallery_update'),
     path('gallery/<int:pk>/delete/', gallery_views.gallery_delete, name='gallery_delete'),
     path('gallery/media/<int:pk>/', gallery_views.gallery_media, name='gallery_media'),

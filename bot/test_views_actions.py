@@ -1440,6 +1440,49 @@ class GalleryPortalTests(TestCase):
         intake.refresh_from_db()
         self.assertEqual(intake.status, 'submitted')
 
+    def test_portal_ajax_upload_and_finalize_single_and_pair(self):
+        import json as _json
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from .models import TenantPortfolioItem
+        ups = [self.client.post(reverse('gallery_upload'),
+                                {'media': SimpleUploadedFile(n, b'x')}).json()
+               for n in ('a.jpg', 'b.jpg', 'c.jpg')]
+        self.assertTrue(all(u['ok'] and 'url' in u for u in ups))
+        res = self.client.post(reverse('gallery_finalize'), data=_json.dumps([
+            {'path': ups[0]['path'], 'caption': 'Shower cubicle',
+             'tag': 'bathroom install', 'price_line': 'Shower cubicle from US$380'},
+            {'path': ups[2]['path'], 'caption': 'Geyser before and after',
+             'tag': 'geyser', 'pair_path': ups[1]['path']},
+            {'path': 'tenant_portfolios/other/x.jpg', 'caption': 'Sneaky'},
+        ]), content_type='application/json')
+        self.assertTrue(res.json()['ok'])
+        items = TenantPortfolioItem.objects.filter(tenant=self.acme)
+        self.assertEqual(items.count(), 2)  # the foreign-folder path is skipped
+        pair = items.get(title='Geyser before and after')
+        self.assertEqual(pair.pair_filename, ups[1]['path'])
+        self.assertEqual(items.get(title='Shower cubicle').price_line,
+                         'Shower cubicle from US$380')
+        # An unnamed entry rejects the batch with the canonical message.
+        res = self.client.post(reverse('gallery_finalize'), data=_json.dumps([
+            {'path': ups[0]['path'], 'caption': '  '}]),
+            content_type='application/json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('Please provide names of items', res.json()['error'])
+
+    def test_annotator_library_prices_come_from_tenant_rows(self):
+        from .media_library import portfolio_library_with_prices
+        from .models import TenantPriceItem
+        TenantPriceItem.objects.create(tenant=self.acme, family='geyser',
+                                       variant='', label='Geyser', allin=150)
+        lib = portfolio_library_with_prices(self.acme)
+        flat = [it for group in lib for it in group['items']]
+        geyser = next(it for it in flat if it['family'] == 'geyser' and it['variant'] == '')
+        self.assertEqual(geyser['price'], '150')
+        # Everything the tenant hasn't priced stays blank — no cross-tenant leak.
+        self.assertTrue(all(it['price'] == '' for it in flat if it is not geyser))
+
     def test_annotator_price_line_applies_on_approve(self):
         from .models import TenantPortfolioItem
         from .views.platform import _apply_intake_photos

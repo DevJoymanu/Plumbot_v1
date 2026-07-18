@@ -19,32 +19,84 @@
         box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px;
     }
     .g-card h2 { font-size: 15px; margin: 0 0 10px; color: #1c2b33; }
-    .add-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
-    .add-row .field { display: flex; flex-direction: column; gap: 4px; }
-    .add-row label { font-size: 12px; color: #54656f; font-weight: 600; }
-    .add-row input[type=text] { border: 1px solid #d1d7db; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+    .hint { font-size: 12px; color: #54656f; margin-top: 8px; }
+    .tiles { display: flex; gap: 12px; flex-wrap: wrap; }
+    .up-tile {
+        flex: 1; min-width: 220px; border: 2px dashed #b8c4cb; border-radius: 12px;
+        padding: 18px 14px; text-align: center; cursor: pointer; color: #54656f;
+        transition: border-color .15s;
+    }
+    .up-tile:hover { border-color: #006591; }
+    .up-tile strong { color: #006591; display: block; margin-top: 4px; }
+    .up-tile i { font-size: 26px; color: #006591; }
+    .pair-wait {
+        margin-top: 12px; background: #e7f3f8; border-radius: 10px; padding: 10px 14px;
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .pair-wait img { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; }
+    .badge-before, .badge-after {
+        background: #006591; color: #fff; font-size: 10px; font-weight: 700;
+        letter-spacing: .05em; padding: 2px 8px; border-radius: 8px;
+    }
+    .badge-after { background: #1a7f4b; }
     .btn-primary {
         background: #006591; color: #fff; border: 0; border-radius: 8px;
-        padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+        padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
     }
-    .btn-danger { background: #d9534f; }
+    .btn-ghost {
+        background: #eef2f4; color: #1c2b33; border: 0; border-radius: 8px;
+        padding: 8px 14px; font-size: 13px; cursor: pointer;
+    }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
     .tile { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; flex-direction: column; }
     .tile .media { position: relative; aspect-ratio: 4/3; background: #e9edef; }
     .tile img, .tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .tile .pair-badge, .tile .video-badge {
+    .tile .flag {
         position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.65);
         color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 10px;
     }
-    .tile .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
-    .tile input[type=text] { border: 1px solid #e0e4e7; border-radius: 7px; padding: 6px 8px; font-size: 13px; width: 100%; box-sizing: border-box; }
-    .tile .tags { font-size: 11px; color: #54656f; }
-    .tile .actions { display: flex; gap: 8px; margin-top: 4px; }
-    .tile .actions button { flex: 1; padding: 7px 0; font-size: 13px; border-radius: 7px; border: 0; cursor: pointer; font-weight: 600; }
-    .tile .save-btn { background: #e7f3f8; color: #006591; }
-    .tile .del-btn { background: #fdecea; color: #c0392b; }
+    .tile .body { padding: 10px 12px 12px; }
+    .tile .t-title { font-size: 13px; font-weight: 600; color: #1c2b33; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tile .t-sub { font-size: 11px; color: #54656f; margin-top: 2px; }
+    .tile .t-price { color: #1a7f4b; font-weight: 600; }
+    .tile .actions { display: flex; gap: 6px; margin-top: 8px; }
+    .tile .actions button { flex: 1; padding: 7px 0; font-size: 12px; border-radius: 7px; border: 0; cursor: pointer; font-weight: 600; }
+    .view-btn { background: #eef2f4; color: #1c2b33; }
+    .edit-btn { background: #e7f3f8; color: #006591; }
+    .del-btn { background: #fdecea; color: #c0392b; }
     .empty { text-align: center; color: #54656f; padding: 40px 16px; }
-    .hint { font-size: 12px; color: #54656f; margin-top: 8px; }
+    /* Annotator */
+    .annot { position: fixed; inset: 0; background: rgba(9,14,20,0.72); z-index: 60;
+             display: flex; align-items: center; justify-content: center; padding: 14px; }
+    .annot-card { background: #fff; border-radius: 16px; padding: 16px; width: 100%;
+                  max-width: 500px; max-height: 92vh; overflow-y: auto; }
+    .annot-head { display: flex; justify-content: space-between; align-items: center; }
+    .annot-head .x { border: none; background: none; color: #c0392b; cursor: pointer; font-size: 16px; }
+    .annot-note { font-size: 12px; color: #54656f; margin: 6px 0 10px; }
+    .annot-stage { display: flex; justify-content: center; margin-bottom: 10px; }
+    .annot-stage img, .annot-stage video { max-width: 100%; max-height: 38vh; border-radius: 12px; }
+    .cat-label { font-size: 11px; font-weight: 700; color: #54656f; text-transform: uppercase;
+                 letter-spacing: .05em; margin: 10px 0 4px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { border: 1px solid #d1d7db; background: #fff; border-radius: 999px;
+            padding: 6px 12px; font-size: 12px; cursor: pointer; color: #1c2b33; }
+    .chip.on { background: #006591; border-color: #006591; color: #fff; }
+    .chip .p { opacity: .75; font-size: 11px; }
+    .annot input[type=text] { width: 100%; box-sizing: border-box; border: 1px solid #d1d7db;
+        border-radius: 8px; padding: 8px 10px; font-size: 14px; margin-top: 10px; }
+    .annot-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+    /* WhatsApp preview */
+    .wa-view { position: fixed; inset: 0; background: #0b141a; z-index: 70;
+               display: flex; align-items: center; justify-content: center; padding: 20px; cursor: pointer; }
+    .wa-bubble { background: #005c4b; border-radius: 12px; border-top-right-radius: 2px;
+                 padding: 4px; max-width: 330px; width: 100%; cursor: default; }
+    .wa-bubble img, .wa-bubble video { width: 100%; border-radius: 9px; display: block; }
+    .wa-cap { color: #e9edef; font-size: 14px; padding: 6px 6px 2px; }
+    .wa-meta { display: flex; justify-content: flex-end; gap: 4px; align-items: center;
+               color: rgba(233,237,239,0.6); font-size: 11px; padding: 0 6px 4px; }
+    .wa-ticks { color: #53bdeb; font-size: 12px; letter-spacing: -3px; }
+    .wa-hint { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
+               color: rgba(233,237,239,0.5); font-size: 12px; }
 </style>
 
 <div class="topbar">
@@ -54,75 +106,67 @@
 
 <div class="page-content">
     {% include "bot/includes/messages.html" %}
+    <form id="csrf_holder" style="display:none;">{% csrf_token %}</form>
 
     <div class="g-card">
-        <h2>Add a photo or short video</h2>
-        <form method="post" action="{% url 'gallery_add' %}" enctype="multipart/form-data" class="add-row">
-            {% csrf_token %}
-            <div class="field">
-                <label>Photo / video</label>
-                <input type="file" name="media" required
-                       accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/3gpp">
+        <h2>Add to your gallery</h2>
+        <div class="tiles">
+            <div class="up-tile" id="tile_multi">
+                <i class="fas fa-images"></i>
+                <strong>Tap to add photos or videos</strong>
+                single shots — you'll name each one as it's shown
             </div>
-            <div class="field">
-                <label>What kind of job? (helps the assistant pick relevant shots)</label>
-                <input type="text" name="tag" list="tag-ideas" placeholder="e.g. geyser" required>
-                <datalist id="tag-ideas">
-                    <option value="geyser"><option value="bathroom"><option value="kitchen">
-                    <option value="shower"><option value="tub"><option value="toilet">
-                    <option value="tiling"><option value="drainage"><option value="borehole">
-                    <option value="general">
-                </datalist>
+            <div class="up-tile" id="tile_pair">
+                <i class="fas fa-exchange-alt"></i>
+                <strong>Add a before &amp; after pair</strong>
+                we'll ask for the two photos one at a time — no guessing
             </div>
-            <div class="field" style="flex:1; min-width:180px;">
-                <label>Names of items in the photo (required — becomes the title customers see)</label>
-                <input type="text" name="caption" maxlength="120" required
-                       placeholder="e.g. Geyser swap in Avondale"
-                       oninvalid="this.setCustomValidity('Please provide names of items for the image.')"
-                       oninput="this.setCustomValidity('')">
-            </div>
-            <div class="field" style="min-width:180px;">
-                <label>Price line (optional)</label>
-                <input type="text" name="price_line" maxlength="200" placeholder="e.g. geyser install from US$150">
-            </div>
-            <button type="submit" class="btn-primary">Upload</button>
-        </form>
+        </div>
+        <input type="file" id="multi_input" multiple style="display:none;"
+               accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/3gpp">
+        <input type="file" id="pair_input" style="display:none;"
+               accept="image/jpeg,image/png,image/webp">
+        <div class="pair-wait" id="pair_wait" style="display:none;">
+            <img id="pair_before_thumb" alt="">
+            <span class="badge-before">BEFORE</span>
+            <span style="flex:1; font-size:13px; color:#54656f;">waiting for its AFTER photo…</span>
+            <button type="button" class="btn-primary" id="pair_after_btn">+ add the AFTER photo</button>
+            <button type="button" class="btn-ghost" id="pair_cancel_btn">cancel</button>
+        </div>
         <p class="hint">Photos up to 8 MB (JPG/PNG/WebP), videos up to 16 MB (MP4/MOV — WhatsApp's limit).
-            When a customer highlights one of these and asks about it, the assistant answers using the
-            title and price line you set here.</p>
+            Each item's name and price are what the assistant answers with when a customer
+            highlights it and asks.</p>
     </div>
 
     {% if items %}
     <div class="grid">
         {% for item in items %}
-        <div class="tile">
+        <div class="tile" id="tile-{{ item.pk }}">
             <div class="media">
                 {% if item.is_video %}
-                <video src="{% url 'gallery_media' item.pk %}" controls preload="metadata"></video>
-                <span class="video-badge">Video</span>
+                <video src="{% url 'gallery_media' item.pk %}" preload="metadata" muted></video>
+                <span class="flag">Video</span>
                 {% else %}
                 <img src="{% url 'gallery_media' item.pk %}" alt="{{ item.title }}" loading="lazy">
                 {% endif %}
-                {% if item.pair_filename %}<span class="pair-badge">Before / after</span>{% endif %}
+                {% if item.pair_filename %}<span class="flag">Before / after</span>{% endif %}
             </div>
             <div class="body">
-                <form method="post" action="{% url 'gallery_update' item.pk %}">
-                    {% csrf_token %}
-                    <input type="text" name="title" value="{{ item.title }}" maxlength="120" required title="Title"
-                           oninvalid="this.setCustomValidity('Please provide names of items for the image.')"
-                           oninput="this.setCustomValidity('')">
-                    <input type="text" name="price_line" value="{{ item.price_line }}" maxlength="200"
-                           placeholder="Price line, e.g. from US$150" title="Price line" style="margin-top:6px;">
-                    <div class="tags">{{ item.keywords|join:", " }}</div>
-                    <div class="actions">
-                        <button type="submit" class="save-btn">Save</button>
-                        <button type="submit" class="del-btn"
-                                formaction="{% url 'gallery_delete' item.pk %}"
-                                onclick="return confirm('Remove this from your gallery? The file is deleted too.');">
-                            Remove
-                        </button>
-                    </div>
-                </form>
+                <div class="t-title">{{ item.title }}</div>
+                <div class="t-sub">{{ item.tag }}{% if item.price_line %} · <span class="t-price">{{ item.price_line }}</span>{% endif %}</div>
+                <div class="actions">
+                    <button type="button" class="view-btn"
+                            data-src="{% url 'gallery_media' item.pk %}"
+                            data-video="{{ item.is_video|yesno:'1,0' }}">View</button>
+                    <button type="button" class="edit-btn"
+                            data-pk="{{ item.pk }}" data-video="{{ item.is_video|yesno:'1,0' }}"
+                            data-src="{% url 'gallery_media' item.pk %}">Edit</button>
+                    <form method="post" action="{% url 'gallery_delete' item.pk %}" style="flex:1; display:flex;"
+                          onsubmit="return confirm('Remove this from your gallery? The file is deleted too.');">
+                        {% csrf_token %}
+                        <button type="submit" class="del-btn" style="flex:1;">Delete</button>
+                    </form>
+                </div>
             </div>
         </div>
         {% endfor %}
@@ -131,8 +175,238 @@
     <div class="g-card empty">
         <p><strong>No gallery items yet.</strong></p>
         <p>Add photos of your best work — the assistant sends them when customers ask
-            "have you done this before?" and can quote the price line when they ask about a specific shot.</p>
+            "have you done this before?" and quotes the price you attach when they ask about a specific shot.</p>
     </div>
     {% endif %}
 </div>
+
+<!-- Annotator: one photo centred at a time; describe by tapping a job. -->
+<div class="annot" id="annot" style="display:none;">
+    <div class="annot-card">
+        <div class="annot-head">
+            <strong id="annot_count"></strong>
+            <button type="button" class="x" id="annot_close">✕</button>
+        </div>
+        <p class="annot-note">Name each one, one at a time — tap the job it shows, or type your own.
+            Not for before &amp; after pairs: close this and use the
+            "Add a before &amp; after pair" tile for those.</p>
+        <div class="annot-stage" id="annot_stage"></div>
+        <div id="annot_picker"></div>
+        <input type="text" id="annot_custom" maxlength="120" placeholder="or type your own description">
+        <input type="text" id="annot_price" maxlength="200" placeholder="price line (optional), e.g. from US$150">
+        <div class="annot-nav">
+            <button type="button" class="btn-ghost" id="annot_prev">Back</button>
+            <button type="button" class="btn-primary" id="annot_done">Next</button>
+        </div>
+    </div>
+</div>
+
+<!-- WhatsApp-style preview -->
+<div class="wa-view" id="wa_view" style="display:none;">
+    <div class="wa-bubble" onclick="event.stopPropagation()">
+        <div id="wa_media"></div>
+        <div class="wa-cap" id="wa_cap"></div>
+        <div class="wa-meta"><span id="wa_time"></span><span class="wa-ticks">✓✓</span></div>
+    </div>
+    <div class="wa-hint">This is how customers will see it on WhatsApp — tap anywhere to close</div>
+</div>
+
+{{ library|json_script:"lib-data" }}
+<script>
+(function () {
+  const LIB = JSON.parse(document.getElementById('lib-data').textContent);
+  const CSRF = document.querySelector('#csrf_holder [name=csrfmiddlewaretoken]').value;
+  const isVidPath = p => /\.(mp4|mov|3gp)$/i.test(p || '');
+
+  function famTag(family, variant) {
+    if (family.indexOf('geyser') === 0) return 'geyser';
+    if (['drain_simple','drain_severe','jetting'].includes(variant)) return 'drain';
+    if (['leaking_tap','toilet_seat_replacement','cistern','full_toilet_replacement'].includes(variant)) return 'taps';
+    if (['minor_pipe_leak','burst_pipe','pipe_section'].includes(variant)) return 'pipes';
+    if (['shower','vanity','toilet','basin','tub','chamber'].includes(family)) return 'bathroom install';
+    return 'general';
+  }
+
+  async function uploadOne(file) {
+    const fd = new FormData();
+    fd.append('media', file);
+    fd.append('csrfmiddlewaretoken', CSRF);
+    try {
+      const res = await fetch("{% url 'gallery_upload' %}", { method: 'POST', body: fd });
+      const out = await res.json();
+      if (out.ok) return { path: out.path, url: out.url, previewUrl: URL.createObjectURL(file) };
+      alert(out.error || 'Upload failed');
+    } catch (e) { alert('Upload failed — check your connection and try again.'); }
+    return null;
+  }
+
+  // ── Annotator ──────────────────────────────────────────────────────────
+  // queue entries: fresh uploads {path,url,previewUrl,caption,tag,lib,price_line,pair_path}
+  // or an existing-item edit {editPk, src, isVideo, caption, tag, price_line, lib}
+  const annot = document.getElementById('annot');
+  const custom = document.getElementById('annot_custom');
+  const priceIn = document.getElementById('annot_price');
+  let queue = [], pos = 0;
+
+  function libPrice(libref) {
+    if (!libref) return '';
+    for (const g of LIB) for (const it of g.items)
+      if (it.family === libref.family && it.variant === libref.variant) return it.price || '';
+    return '';
+  }
+  function openAnnot(entries) {
+    if (!entries.length) return;
+    queue = entries; pos = 0;
+    annot.style.display = 'flex';
+    showAnnot();
+  }
+  function showAnnot() {
+    const e = queue[pos];
+    document.getElementById('annot_count').textContent =
+      e.editPk ? 'Edit item' : `Photo ${pos + 1} of ${queue.length}`;
+    const src = e.src || e.previewUrl || e.url || '';
+    const vid = e.editPk ? e.isVideo : isVidPath(e.path);
+    document.getElementById('annot_stage').innerHTML = vid
+      ? `<video src="${src}" controls></video>` : `<img src="${src}">`;
+    document.getElementById('annot_picker').innerHTML = LIB.map(g =>
+      `<div class="cat-label">${g.cat}</div><div class="chips">` +
+      g.items.map(it => {
+        const on = e.lib && e.lib.family === it.family && e.lib.variant === it.variant;
+        return `<button type="button" class="chip ${on ? 'on' : ''}"
+          data-family="${it.family}" data-variant="${it.variant}">${it.label}${it.price ? ` <span class="p">· US$${it.price}</span>` : ''}</button>`;
+      }).join('') + '</div>').join('');
+    custom.value = e.lib ? '' : (e.caption || '');
+    priceIn.value = e.price_line || '';
+    document.getElementById('annot_prev').style.visibility = pos === 0 ? 'hidden' : 'visible';
+    document.getElementById('annot_done').textContent = pos === queue.length - 1 ? 'Done' : 'Next';
+  }
+  document.getElementById('annot_picker').addEventListener('click', ev => {
+    const chip = ev.target.closest('.chip');
+    if (!chip) return;
+    const e = queue[pos];
+    e.lib = { family: chip.dataset.family, variant: chip.dataset.variant };
+    e.caption = chip.textContent.replace(/· US\$.*$/, '').trim();
+    e.tag = famTag(e.lib.family, e.lib.variant);
+    const val = libPrice(e.lib);
+    e.price_line = val ? `${e.caption} from US$${val}` : '';
+    showAnnot();
+  });
+  custom.addEventListener('input', () => {
+    const e = queue[pos];
+    e.caption = custom.value;
+    if (e.lib) {
+      e.lib = null; e.price_line = priceIn.value;
+      document.querySelectorAll('#annot_picker .chip.on').forEach(c => c.classList.remove('on'));
+    }
+  });
+  priceIn.addEventListener('input', () => { queue[pos].price_line = priceIn.value; });
+  document.getElementById('annot_prev').addEventListener('click', () => {
+    if (pos > 0) { pos--; showAnnot(); }
+  });
+  document.getElementById('annot_done').addEventListener('click', async () => {
+    const e = queue[pos];
+    if (!(e.caption || '').trim()) { alert('Please provide names of items for the image.'); return; }
+    if (pos < queue.length - 1) { pos++; showAnnot(); return; }
+    // Finished — persist.
+    if (queue[0].editPk) {
+      const fd = new FormData();
+      fd.append('csrfmiddlewaretoken', CSRF);
+      fd.append('title', queue[0].caption);
+      fd.append('price_line', queue[0].price_line || '');
+      fd.append('tag', queue[0].tag || '');
+      await fetch(`/gallery/${queue[0].editPk}/update/`,
+                  { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
+    } else {
+      const res = await fetch("{% url 'gallery_finalize' %}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify(queue.map(q => ({
+          path: q.path, caption: q.caption, tag: q.tag || 'general',
+          price_line: q.price_line || '', pair_path: q.pair_path || '' }))),
+      });
+      const out = await res.json();
+      if (!out.ok) { alert(out.error || 'Could not save'); return; }
+    }
+    location.reload();
+  });
+  document.getElementById('annot_close').addEventListener('click', () => {
+    annot.style.display = 'none';
+    queue = [];
+  });
+
+  // ── Multi upload → annotator ───────────────────────────────────────────
+  const multiInput = document.getElementById('multi_input');
+  document.getElementById('tile_multi').addEventListener('click', () => multiInput.click());
+  multiInput.addEventListener('change', async () => {
+    const entries = [];
+    for (const file of multiInput.files) {
+      const up = await uploadOne(file);
+      if (!up) break;
+      entries.push({ ...up, caption: '', tag: 'general', lib: null, price_line: '', pair_path: '' });
+    }
+    multiInput.value = '';
+    openAnnot(entries);
+  });
+
+  // ── Guided before/after pair ───────────────────────────────────────────
+  const pairInput = document.getElementById('pair_input');
+  const pairWait = document.getElementById('pair_wait');
+  let pairBefore = null, pairPick = null;
+  document.getElementById('tile_pair').addEventListener('click', () => {
+    if (pairBefore) { alert('Finish the current pair first — add its AFTER photo (or cancel).'); return; }
+    pairPick = 'before'; pairInput.click();
+  });
+  document.getElementById('pair_after_btn').addEventListener('click', () => {
+    pairPick = 'after'; pairInput.click();
+  });
+  document.getElementById('pair_cancel_btn').addEventListener('click', () => {
+    pairBefore = null; pairWait.style.display = 'none';
+  });
+  pairInput.addEventListener('change', async () => {
+    const file = pairInput.files[0];
+    pairInput.value = '';
+    if (!file) return;
+    const up = await uploadOne(file);
+    if (!up) return;
+    if (pairPick === 'before') {
+      pairBefore = up;
+      document.getElementById('pair_before_thumb').src = up.previewUrl;
+      pairWait.style.display = 'flex';
+    } else if (pairBefore) {
+      const entry = { path: up.path, url: up.url, previewUrl: up.previewUrl,
+                      caption: '', tag: 'general', lib: null, price_line: '',
+                      pair_path: pairBefore.path };
+      pairBefore = null;
+      pairWait.style.display = 'none';
+      openAnnot([entry]);
+    }
+  });
+
+  // ── Edit / View on existing tiles ──────────────────────────────────────
+  document.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tile = btn.closest('.tile');
+      openAnnot([{ editPk: btn.dataset.pk, src: btn.dataset.src,
+                   isVideo: btn.dataset.video === '1',
+                   caption: tile.querySelector('.t-title').textContent.trim(),
+                   tag: '', lib: null,
+                   price_line: (tile.querySelector('.t-price') || { textContent: '' }).textContent.trim() }]);
+    });
+  });
+  const waEl = document.getElementById('wa_view');
+  waEl.addEventListener('click', () => { waEl.style.display = 'none'; });
+  document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tile = btn.closest('.tile');
+      document.getElementById('wa_media').innerHTML = btn.dataset.video === '1'
+        ? `<video src="${btn.dataset.src}" controls></video>`
+        : `<img src="${btn.dataset.src}">`;
+      document.getElementById('wa_cap').textContent =
+        tile.querySelector('.t-title').textContent.trim();
+      document.getElementById('wa_time').textContent = new Date().toTimeString().slice(0, 5);
+      waEl.style.display = 'flex';
+    });
+  });
+})();
+</script>
 {% endblock %}
