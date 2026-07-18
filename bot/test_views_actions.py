@@ -1394,6 +1394,52 @@ class GalleryPortalTests(TestCase):
         self.assertTrue(_is_tenant_owned_file(self.acme, 'tenant_portfolios/acme/x.jpg'))
         self.assertTrue(_is_tenant_owned_file(self.acme, 'intake_photos/acme/x.jpg'))
 
+    def test_title_is_mandatory_everywhere(self):
+        import json
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.db import IntegrityError, transaction
+
+        from .models import TenantIntake, TenantPortfolioItem
+        # Portal add without a name: rejected with the message, no row created.
+        res = self.client.post(reverse('gallery_add'),
+                               {'media': SimpleUploadedFile('job.jpg', b'x'),
+                                'tag': 'geyser', 'caption': '  '}, follow=True)
+        self.assertContains(res, 'Please provide names of items for the image.')
+        self.assertEqual(TenantPortfolioItem.objects.filter(tenant=self.acme).count(), 0)
+        # Portal update can't blank an existing title.
+        self._upload()
+        item = TenantPortfolioItem.objects.get(tenant=self.acme)
+        self.client.post(reverse('gallery_update', args=[item.pk]),
+                         {'title': '   ', 'price_line': 'x'})
+        item.refresh_from_db()
+        self.assertEqual(item.title, 'Geyser swap in Avondale')
+        # DB-level: an empty title violates the check constraint.
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            TenantPortfolioItem.objects.create(
+                tenant=self.acme, item_id='untitled', filename='x.jpg', title='')
+        # Wizard submit with an untitled photo: draft kept, error shown,
+        # intake NOT submitted. A 'before' shot of a pair is exempt.
+        intake = TenantIntake.objects.create(tenant=self.acme)
+        self.client.logout()
+        res = self.client.post(reverse('intake_form', args=[intake.token]), {
+            'photos_meta': json.dumps([
+                {'path': 'tenant_portfolios/acme/a.jpg', 'tag': 'geyser',
+                 'caption': '', 'pair_with_prev': False}]),
+        })
+        self.assertContains(res, 'Please provide names of items for the image.')
+        intake.refresh_from_db()
+        self.assertEqual(intake.status, 'pending')
+        res = self.client.post(reverse('intake_form', args=[intake.token]), {
+            'photos_meta': json.dumps([
+                {'path': 'tenant_portfolios/acme/a.jpg', 'tag': 'geyser',
+                 'caption': '', 'pair_with_prev': False},
+                {'path': 'tenant_portfolios/acme/b.jpg', 'tag': 'geyser',
+                 'caption': 'Geyser before and after', 'pair_with_prev': True}]),
+        })
+        intake.refresh_from_db()
+        self.assertEqual(intake.status, 'submitted')
+
     def test_customer_media_paths_are_per_tenant(self):
         from .media_library import customer_media_path
         self.assertEqual(customer_media_path(self.acme, 'image', 'p.jpg'),

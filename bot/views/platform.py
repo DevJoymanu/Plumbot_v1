@@ -365,7 +365,25 @@ def intake_form(request, token):
                       {'intake': intake}, status=200)
 
     if request.method == 'POST':
-        intake.data = _parse_intake_post(request)
+        data = _parse_intake_post(request)
+        # Titles are mandatory: every photo needs a name, except a 'before'
+        # shot whose pair takes the 'after' photo's title.
+        photos = data.get('photos') or []
+        untitled = any(
+            not (p.get('caption') or '').strip()
+            and not (i + 1 < len(photos) and photos[i + 1].get('pair_with_prev'))
+            for i, p in enumerate(photos))
+        if untitled:
+            intake.data = data  # keep the draft — nothing the owner typed is lost
+            intake.save(update_fields=['data'])
+            return render(request, 'bot/pages/intake_form.html', {
+                'intake': intake,
+                'tenant': intake.tenant,
+                'profile_fields': INTAKE_PROFILE_FIELDS,
+                'existing_json': _json.dumps(intake.data or {}),
+                'error': 'Please provide names of items for the image.',
+            })
+        intake.data = data
         intake.status = 'submitted'
         intake.submitted_at = timezone.now()
         intake.save(update_fields=['data', 'status', 'submitted_at'])

@@ -57,6 +57,9 @@ def gallery_add(request):
         return redirect('gallery')
     tag = (request.POST.get('tag') or 'general').strip().lower() or 'general'
     caption = (request.POST.get('caption') or '').strip()
+    if not caption:
+        messages.error(request, 'Please provide names of items for the image.')
+        return redirect('gallery')
     path, error = save_portfolio_upload(tenant, upload)
     if error:
         messages.error(request, error)
@@ -65,7 +68,7 @@ def gallery_add(request):
         tenant=tenant,
         item_id=slugify(f'{tag}-{os.path.splitext(os.path.basename(path))[0][:8]}')[:80],
         filename=path,
-        title=(caption or f'{tag.title()} work')[:120],
+        title=caption[:120],
         description=caption,
         price_line=(request.POST.get('price_line') or '').strip()[:200],
         keywords=[tag],
@@ -80,7 +83,11 @@ def gallery_add(request):
 def gallery_update(request, pk):
     tenant = _tenant_or_404(request)
     item = get_object_or_404(TenantPortfolioItem, pk=pk, tenant=tenant)
-    item.title = (request.POST.get('title') or item.title).strip()[:120]
+    title = (request.POST.get('title') or '').strip()
+    if not title:
+        messages.error(request, 'Please provide names of items for the image.')
+        return redirect('gallery')
+    item.title = title[:120]
     item.price_line = (request.POST.get('price_line') or '').strip()[:200]
     item.description = (request.POST.get('description') or '').strip()
     item.save(update_fields=['title', 'price_line', 'description'])

@@ -75,8 +75,11 @@
                 </datalist>
             </div>
             <div class="field" style="flex:1; min-width:180px;">
-                <label>Caption (becomes the title customers see)</label>
-                <input type="text" name="caption" maxlength="120" placeholder="e.g. Geyser swap in Avondale">
+                <label>Names of items in the photo (required — becomes the title customers see)</label>
+                <input type="text" name="caption" maxlength="120" required
+                       placeholder="e.g. Geyser swap in Avondale"
+                       oninvalid="this.setCustomValidity('Please provide names of items for the image.')"
+                       oninput="this.setCustomValidity('')">
             </div>
             <div class="field" style="min-width:180px;">
                 <label>Price line (optional)</label>
@@ -105,7 +108,9 @@
             <div class="body">
                 <form method="post" action="{% url 'gallery_update' item.pk %}">
                     {% csrf_token %}
-                    <input type="text" name="title" value="{{ item.title }}" maxlength="120" title="Title">
+                    <input type="text" name="title" value="{{ item.title }}" maxlength="120" required title="Title"
+                           oninvalid="this.setCustomValidity('Please provide names of items for the image.')"
+                           oninput="this.setCustomValidity('')">
                     <input type="text" name="price_line" value="{{ item.price_line }}" maxlength="200"
                            placeholder="Price line, e.g. from US$150" title="Price line" style="margin-top:6px;">
                     <div class="tags">{{ item.keywords|join:", " }}</div>

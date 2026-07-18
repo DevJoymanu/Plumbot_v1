@@ -297,6 +297,10 @@ class TenantPortfolioItem(models.Model):
         constraints = [
             models.UniqueConstraint(fields=['tenant', 'item_id'],
                                     name='uniq_portfolio_item_per_tenant'),
+            # Every piece must be titled — the title is what a customer's
+            # quoted-photo question resolves to (see _describe_work_image).
+            models.CheckConstraint(check=~models.Q(title=''),
+                                   name='portfolio_title_required'),
         ]
 
     def as_catalog_dict(self) -> dict:
