@@ -124,9 +124,11 @@ SITE_URL = os.environ.get('SITE_URL', '').rstrip('/')
 # DeepSeek API (replacing OpenAI)
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 # Model is env-overridable so it can be switched without a redeploy. Note:
-# DeepSeek's documented API models are 'deepseek-chat' and 'deepseek-reasoner';
-# if the configured model returns empty/garbled completions, set DEEPSEEK_MODEL
-# to 'deepseek-chat' in the environment to fall back to a known-stable model.
+# DeepSeek's current API models are 'deepseek-v4-flash' (non-thinking) and
+# 'deepseek-v4-pro' (thinking); the legacy names 'deepseek-chat'/'deepseek-reasoner'
+# were deprecated 2026-07-24. If the configured model returns empty/garbled
+# completions, set DEEPSEEK_MODEL to 'deepseek-v4-flash' to fall back to a
+# known-stable model.
 DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-v4-flash')
 
 # Twilio Configuration
