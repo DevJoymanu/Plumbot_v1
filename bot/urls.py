@@ -153,6 +153,7 @@ urlpatterns = [
     path('platform/tenants/<slug:slug>/toggle/', platform_views.platform_toggle_tenant, name='platform_toggle_tenant'),
     path('platform/tenants/<slug:slug>/delete/', platform_views.platform_delete_tenant, name='platform_delete_tenant'),
     path('platform/tenants/<slug:slug>/config/', platform_views.platform_tenant_config, name='platform_tenant_config'),
+    path('platform/tenants/<slug:slug>/config/edit/', platform_views.platform_tenant_config_edit, name='platform_tenant_config_edit'),
     path('platform/tenants/<slug:slug>/intake/new/', platform_views.platform_new_intake, name='platform_new_intake'),
     path('platform/tenants/<slug:slug>/staff/add/', platform_views.platform_add_staff, name='platform_add_staff'),
     path('platform/tenants/<slug:slug>/staff/<int:user_id>/toggle/', platform_views.platform_toggle_staff, name='platform_toggle_staff'),

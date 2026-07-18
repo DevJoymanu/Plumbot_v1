@@ -655,8 +655,69 @@ def _is_unpriced(item):
     return no_money and no_part_amount
 
 
+def _money(value, cur):
+    """'US$170' — whole-dollar 'from' rates, no trailing .00."""
+    if value is None:
+        return None
+    value = int(value) if value == int(value) else value
+    return f"{cur}{value}"
+
+
+def _price_line(item, cur):
+    """A configured item as a human price string for the read-only view —
+    headline figure + an optional breakdown line. Returns None for an item
+    that carries no figure at all (nothing to show)."""
+    parts = [p for p in (item.parts or []) if p.get('amount') not in (None, '')]
+    parts_sub = ' · '.join(
+        f"{p.get('name', 'part')} {_money(p['amount'], cur)}" for p in parts)
+    if item.allin is not None:
+        headline = f"{_money(item.allin, cur)} all-in"
+        sub = (f"supply {_money(item.supply, cur)} + labour {_money(item.labour, cur)}"
+               if item.supply is not None and item.labour is not None else parts_sub)
+    elif item.flat is not None:
+        headline, sub = _money(item.flat, cur), parts_sub
+    elif item.supply is not None or item.labour is not None:
+        total = (item.supply or 0) + (item.labour or 0)
+        headline = f"{_money(total, cur)} all-in"
+        sub = f"supply {_money(item.supply or 0, cur)} + labour {_money(item.labour or 0, cur)}"
+    elif parts:
+        headline = f"{_money(sum(p['amount'] for p in parts), cur)} all-in"
+        sub = parts_sub
+    else:
+        return None
+    return {'label': item.label or item.family, 'family': item.family,
+            'headline': headline, 'sub': sub, 'is_active': item.is_active}
+
+
 @superuser_required
 def platform_tenant_config(request, slug):
+    """Read-only tenant overview: channel, profile, configured prices, staff,
+    intake. Editing lives on platform_tenant_config_edit."""
+    from ..tenant_config import get_config
+    tenant = get_object_or_404(Tenant, slug=slug)
+    profile = TenantProfile.objects.filter(tenant=tenant).first()
+    cur = (profile.currency if profile and profile.currency else 'US$')
+    priced_items = [line for line in
+                    (_price_line(it, cur) for it in TenantPriceItem.objects.filter(tenant=tenant))
+                    if line]
+    faq_topics = [key.replace('_', ' ').title()
+                  for key in (profile.faq_facts if profile else {}) or {}]
+    return render(request, 'bot/pages/platform_tenant_config.html', {
+        'tenant': tenant,
+        'profile': profile,
+        'cfg': get_config(tenant),
+        'currency': cur,
+        'priced_items': priced_items,
+        'faq_topics': faq_topics,
+        'channel': tenant.whatsapp_channels.first(),
+        'intakes': tenant.intakes.all()[:10],
+        'staff': tenant.memberships.select_related('user').order_by('user__username'),
+        'active_nav': 'platform',
+    })
+
+
+@superuser_required
+def platform_tenant_config_edit(request, slug):
     """Per-tenant config editor: profile + price sheet. The ONLY place tenant
     config is edited until the owner intake flow ships (decision #2)."""
     tenant = get_object_or_404(Tenant, slug=slug)
@@ -696,14 +757,10 @@ def platform_tenant_config(request, slug):
         formset = _price_formset(len(prefill) if prefill else 0)(
             queryset=prices_qs, initial=prefill)
 
-    channel = tenant.whatsapp_channels.first()
-    return render(request, 'bot/pages/platform_tenant_config.html', {
+    return render(request, 'bot/pages/platform_tenant_config_edit.html', {
         'tenant': tenant,
         'form': form,
         'formset': formset,
         'currency': (profile.currency or 'US$'),
-        'channel': channel,
-        'intakes': tenant.intakes.all()[:10],
-        'staff': tenant.memberships.select_related('user').order_by('user__username'),
         'active_nav': 'platform',
     })

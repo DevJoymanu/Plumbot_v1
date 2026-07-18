@@ -1,81 +1,348 @@
 {% extends "bot/layouts/base.html" %}
 
-{% block title %}{{ tenant.name }} · Config · Platform Console{% endblock %}
+{% block title %}{{ tenant.name }} · Overview · Platform Console{% endblock %}
 
 {% block extra_css %}
 <style>
-  .platform-body { padding: 24px; max-width: 1100px; margin: 0 auto; }
-  .platform-card {
-    background: var(--color-card, #fff);
-    border: 1px solid rgba(0, 101, 145, 0.10);
-    border-radius: 16px;
-    box-shadow: 0 20px 40px -15px rgba(14, 165, 233, 0.08);
-    padding: 24px;
-    margin-bottom: 24px;
+  .cfg-wrap { padding: 24px 32px; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+  .cfg-glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: var(--glass-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-glow);
   }
-  .platform-card__title {
-    font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
-    text-transform: uppercase; color: #006591; margin-bottom: 16px;
+  /* Hero */
+  .cfg-hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding: 26px 30px; flex-wrap: wrap; }
+  .cfg-hero__main { display: flex; gap: 18px; align-items: center; }
+  .cfg-hero__mark {
+    width: 56px; height: 56px; border-radius: var(--radius-md); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-container));
+    color: #fff; font-size: 22px; box-shadow: 0 12px 28px -8px rgba(14,165,233,0.35);
   }
-  .cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px 24px; }
-  .form-group label {
-    display: block; font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.05em; color: #5b7285; margin-bottom: 4px;
+  .cfg-eyebrow { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; font-weight: 500; color: var(--color-primary); }
+  .cfg-hero h1 { margin: 3px 0 9px; font-weight: 400; font-size: clamp(1.5rem, 2.4vw, 2rem); letter-spacing: 0.01em; color: var(--color-text); }
+  .cfg-hero__meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .cfg-hero__actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .cfg-chip { font-family: var(--font-label); font-size: 11px; letter-spacing: 0.04em; color: var(--color-muted); background: var(--color-surface-mid); border-radius: var(--radius-pill); padding: 4px 12px; }
+  .cfg-pill { font-family: var(--font-label); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 11px; border-radius: var(--radius-pill); }
+  .cfg-pill--ok   { background: #dcfce7; color: #15803d; }
+  .cfg-pill--warn { background: var(--color-amber-bg); color: #92400e; }
+  .cfg-pill--off  { background: var(--color-error-container); color: var(--color-on-error-container); }
+  /* Stat strip */
+  .cfg-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+  .cfg-stat { padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; }
+  .cfg-stat__label { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10.5px; color: var(--color-muted); display: flex; justify-content: space-between; align-items: center; }
+  .cfg-stat__label i { color: var(--color-primary); opacity: 0.7; }
+  .cfg-stat__value { font-size: 32px; font-weight: 300; color: var(--color-primary); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .cfg-stat__value small { font-size: 14px; color: var(--color-muted); font-weight: 500; }
+  .cfg-stat__value.is-warn { color: #92400e; }
+  /* Two-column body */
+  .cfg-grid2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 24px; align-items: start; }
+  .cfg-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+  .cfg-card { padding: 24px 26px; }
+  .cfg-card__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .cfg-label { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 12px; font-weight: 600; color: var(--color-primary); }
+  .cfg-edit {
+    font-family: var(--font-label); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--color-primary); border: 1px solid rgba(0,101,145,0.15); border-radius: var(--radius-pill);
+    padding: 4px 12px; transition: all var(--transition); white-space: nowrap;
   }
-  .form-group input, .form-group textarea, .form-group select {
-    width: 100%; border: none; background: rgba(0, 101, 145, 0.05);
-    border-radius: 12px; padding: 8px 14px; font-size: 14px; outline: none;
-  }
-  .form-group input:focus, .form-group textarea:focus { box-shadow: 0 0 0 2px rgba(0, 101, 145, 0.2); }
-  .form-group small { color: #ba1a1a; }
-  .price-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .price-table th {
-    text-align: left; font-size: 10px; text-transform: uppercase;
-    letter-spacing: 0.05em; color: #5b7285; padding: 6px 8px;
-  }
-  .price-table td { padding: 4px 8px; border-top: 1px solid rgba(0, 101, 145, 0.05); }
-  .price-table input { width: 100%; border: none; background: rgba(0,101,145,0.05); border-radius: 8px; padding: 5px 10px; font-size: 13px; }
-  .btn-pill {
-    display: inline-block; padding: 8px 20px; border-radius: 999px;
-    border: 1px solid #006591; background: #006591; color: #fff;
-    font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s ease;
-  }
-  .btn-pill:hover { opacity: 0.9; }
-  .btn-ghost { background: transparent; color: #006591; border-color: rgba(0,101,145,0.2); }
-  .btn-share { padding: 4px 12px; font-size: 12px; text-decoration: none; margin-right: 6px; }
-  .btn-share.copied { background: rgba(14,165,233,0.12); border-color: rgba(14,165,233,0.4); }
-  .parts-subrow td { border-top: none; padding-top: 0; }
-  .parts-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0 8px 12px; }
-  .parts-tag {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #5b7285; font-weight: 600;
-  }
-  .part-chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    background: rgba(0,101,145,0.05); border-radius: 999px; padding: 3px 6px 3px 10px;
-  }
-  .part-chip .part-name { width: 92px; background: transparent; padding: 2px 4px; font-size: 12px; }
-  .part-chip .part-cur { font-size: 11px; color: #5b7285; }
-  .part-chip .part-amt { width: 52px; background: #fff; border-radius: 6px; padding: 2px 6px; font-size: 12px; }
-  .part-chip .part-del {
-    border: none; background: transparent; color: #5b7285; cursor: pointer;
-    font-size: 14px; line-height: 1; padding: 0 2px;
-  }
-  .parts-add {
-    border: 1px dashed rgba(0,101,145,0.35); background: transparent; color: #006591;
-    border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer;
-  }
-  .money-cell { display: flex; align-items: center; gap: 4px; }
-  .money-cell .cur { font-size: 11px; color: #5b7285; font-weight: 600; white-space: nowrap; }
-  .money-cell input { flex: 1; min-width: 0; }
-  .money-cell input[readonly] { background: rgba(0,101,145,0.02); color: #006591; font-weight: 600; }
-  .money-cell input.is-auto { box-shadow: inset 0 0 0 1px rgba(0,101,145,0.12); }
-  .th-auto {
-    font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #006591; background: rgba(0,101,145,0.08); border-radius: 6px;
-    padding: 1px 5px; margin-left: 2px; font-weight: 600;
+  .cfg-edit:hover { background: rgba(0,101,145,0.06); border-color: rgba(0,101,145,0.4); }
+  /* Definition grid */
+  .cfg-defs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px 20px; }
+  .cfg-def__k { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; color: var(--color-muted); margin-bottom: 3px; }
+  .cfg-def__v { font-size: 14px; color: var(--color-text); font-weight: 500; word-break: break-word; }
+  .cfg-def__v.is-empty { color: var(--color-outline-variant); font-weight: 400; }
+  .cfg-subgroup { margin-top: 20px; padding-top: 18px; border-top: 1px solid rgba(0,101,145,0.06); display: flex; flex-direction: column; gap: 14px; }
+  .cfg-subgroup__k { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; color: var(--color-muted); margin-bottom: 8px; }
+  .cfg-tagrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .cfg-tag { font-size: 12px; background: var(--color-surface-low); border: 1px solid rgba(0,101,145,0.08); border-radius: var(--radius-pill); padding: 4px 12px; color: var(--color-text-2); }
+  .cfg-tag--muted { color: var(--color-outline-variant); }
+  /* Price list */
+  .cfg-prices { display: flex; flex-direction: column; }
+  .cfg-price-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 13px 0; border-bottom: 1px solid rgba(0,101,145,0.06); transition: background var(--transition); }
+  .cfg-price-row:last-child { border-bottom: none; }
+  .cfg-price-row.is-off { opacity: 0.5; }
+  .cfg-price__name { font-size: 14px; font-weight: 600; color: var(--color-text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .cfg-price__fam { font-family: var(--font-label); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-muted); background: var(--color-surface-mid); border-radius: var(--radius-pill); padding: 2px 8px; }
+  .cfg-price__right { text-align: right; flex-shrink: 0; }
+  .cfg-price__headline { font-size: 14px; font-weight: 600; color: var(--color-primary); font-variant-numeric: tabular-nums; }
+  .cfg-price__sub { font-size: 11.5px; color: var(--color-muted); margin-top: 2px; }
+  /* Empty states */
+  .cfg-empty { padding: 34px 20px; text-align: center; border: 2px dashed rgba(0,101,145,0.1); border-radius: var(--radius-md); color: rgba(62,72,80,0.6); font-size: 13.5px; }
+  .cfg-empty i { font-size: 32px; color: rgba(0,101,145,0.2); display: block; margin-bottom: 10px; }
+  .cfg-note { margin: 14px 0 0; font-size: 12.5px; color: var(--color-muted); }
+  /* Channel */
+  .cfg-channel { font-size: 14px; line-height: 1.9; color: var(--color-text-2); }
+  .cfg-channel code { background: var(--color-surface-mid); border-radius: 6px; padding: 2px 8px; font-size: 13px; color: var(--color-text); }
+  /* Mini tables (staff / intake) */
+  .cfg-mini { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .cfg-mini th { text-align: left; font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; color: var(--color-muted); padding: 6px 8px; font-weight: 500; }
+  .cfg-mini td { padding: 11px 8px; border-top: 1px solid rgba(0,101,145,0.06); vertical-align: middle; }
+  .cfg-inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+  .cfg-inline-form .cfg-input { width: auto; flex: 1 1 130px; min-width: 0; }
+  .cfg-input { border: none; background: var(--color-surface-low); border-radius: var(--radius-pill); padding: 9px 15px; font-size: 13px; outline: none; min-height: 40px; }
+  .cfg-input:focus { box-shadow: 0 0 0 3px rgba(0,101,145,0.18); background: var(--color-surface-lowest); }
+  .cfg-actions-cell { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  .cfg-btn-sm { font-size: 11.5px !important; min-height: 34px !important; padding: 6px 14px !important; }
+  .cfg-share { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  @media (max-width: 900px) {
+    .cfg-wrap { padding: 16px; }
+    .cfg-hero { padding: 20px; }
+    .cfg-grid2 { grid-template-columns: 1fr; }
   }
 </style>
+{% endblock %}
+
+{% block content %}
+<div class="cfg-wrap">
+
+  <!-- Hero -->
+  <div class="cfg-hero cfg-glass">
+    <div class="cfg-hero__main">
+      <div class="cfg-hero__mark"><i class="fas fa-building"></i></div>
+      <div>
+        <div class="cfg-eyebrow">Tenant configuration</div>
+        <h1>{{ tenant.name }}</h1>
+        <div class="cfg-hero__meta">
+          <span class="cfg-chip">{{ tenant.slug }}</span>
+          {% if tenant.is_active %}<span class="cfg-pill cfg-pill--ok">Active</span>
+          {% else %}<span class="cfg-pill cfg-pill--off">Inactive</span>{% endif %}
+          {% if channel %}<span class="cfg-pill cfg-pill--ok">Channel live</span>
+          {% else %}<span class="cfg-pill cfg-pill--warn">No channel</span>{% endif %}
+          {% if profile %}<span class="cfg-pill cfg-pill--ok">Profile set</span>
+          {% else %}<span class="cfg-pill cfg-pill--warn">No profile</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="cfg-hero__actions">
+      <a class="btn btn-primary" href="{% url 'platform_tenant_config_edit' tenant.slug %}">
+        <i class="fas fa-pen"></i> Edit configuration
+      </a>
+      <a class="btn btn-secondary" href="{% url 'platform_console' %}">
+        <i class="fas fa-arrow-left"></i> Console
+      </a>
+    </div>
+  </div>
+
+  <!-- Readiness strip -->
+  <div class="cfg-stats">
+    <div class="cfg-stat cfg-glass">
+      <div class="cfg-stat__label">WhatsApp channel <i class="fab fa-whatsapp"></i></div>
+      {% if channel %}
+        <div class="cfg-stat__value" style="font-size:18px;">{{ channel.display_number|default:channel.phone_number_id }}</div>
+      {% else %}
+        <div class="cfg-stat__value is-warn" style="font-size:18px;">Missing</div>
+      {% endif %}
+    </div>
+    <div class="cfg-stat cfg-glass">
+      <div class="cfg-stat__label">Priced items <i class="fas fa-tags"></i></div>
+      <div class="cfg-stat__value">{{ priced_items|length }}</div>
+    </div>
+    <div class="cfg-stat cfg-glass">
+      <div class="cfg-stat__label">Logins <i class="fas fa-users"></i></div>
+      <div class="cfg-stat__value">{{ staff|length }}</div>
+    </div>
+    <div class="cfg-stat cfg-glass">
+      <div class="cfg-stat__label">Currency <i class="fas fa-coins"></i></div>
+      <div class="cfg-stat__value">{{ currency }}</div>
+    </div>
+  </div>
+
+  <div class="cfg-grid2">
+
+    <!-- Left: profile + prices -->
+    <div class="cfg-col">
+
+      <section class="cfg-glass cfg-card">
+        <div class="cfg-card__head">
+          <span class="cfg-label">Business profile</span>
+          <a class="cfg-edit" href="{% url 'platform_tenant_config_edit' tenant.slug %}"><i class="fas fa-pen"></i> Edit</a>
+        </div>
+        {% if profile %}
+        <div class="cfg-defs">
+          <div><div class="cfg-def__k">Owner</div><div class="cfg-def__v {% if not profile.plumber_name %}is-empty{% endif %}">{{ profile.plumber_name|default:"—" }}</div></div>
+          <div><div class="cfg-def__k">Direct line</div><div class="cfg-def__v {% if not profile.plumber_contact %}is-empty{% endif %}">{{ profile.plumber_contact|default:"—" }}</div></div>
+          <div><div class="cfg-def__k">Business WhatsApp</div><div class="cfg-def__v {% if not profile.business_whatsapp %}is-empty{% endif %}">{{ profile.business_whatsapp|default:"—" }}</div></div>
+          <div><div class="cfg-def__k">Location</div><div class="cfg-def__v {% if not cfg.location_short and not profile.location_line %}is-empty{% endif %}">{{ cfg.location_short|default:profile.location_line|default:"—" }}</div></div>
+          <div><div class="cfg-def__k">Hours</div><div class="cfg-def__v {% if not cfg.hours_sentence %}is-empty{% endif %}">{{ cfg.hours_sentence|default:"—" }}</div></div>
+          <div><div class="cfg-def__k">Currency</div><div class="cfg-def__v">{{ currency }}</div></div>
+          <div><div class="cfg-def__k">Licensed claim</div><div class="cfg-def__v">{% if profile.licensed_claim_enabled %}Enabled{% else %}<span class="is-empty">Off</span>{% endif %}</div></div>
+          <div><div class="cfg-def__k">Email sender</div><div class="cfg-def__v {% if not profile.email_sender %}is-empty{% endif %}">{{ profile.email_from_name|default:"—" }}{% if profile.email_sender %} · {{ profile.email_sender }}{% endif %}</div></div>
+        </div>
+        <div class="cfg-subgroup">
+          <div>
+            <div class="cfg-subgroup__k">Service area — declined suburbs</div>
+            <div class="cfg-tagrow">
+              {% for area in profile.excluded_areas %}<span class="cfg-tag">{{ area|title }}</span>
+              {% empty %}<span class="cfg-tag cfg-tag--muted">Travels everywhere</span>{% endfor %}
+            </div>
+          </div>
+          <div>
+            <div class="cfg-subgroup__k">Answered FAQ topics</div>
+            <div class="cfg-tagrow">
+              {% for topic in faq_topics %}<span class="cfg-tag">{{ topic }}</span>
+              {% empty %}<span class="cfg-tag cfg-tag--muted">None configured</span>{% endfor %}
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="cfg-empty">
+          <i class="fas fa-id-card"></i>
+          No profile yet — the bot omits every business fact until one is set.
+          <div style="margin-top:14px;"><a class="btn btn-primary cfg-btn-sm" href="{% url 'platform_tenant_config_edit' tenant.slug %}">Set up profile</a></div>
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="cfg-glass cfg-card">
+        <div class="cfg-card__head">
+          <span class="cfg-label">Price sheet · {{ currency }}</span>
+          <a class="cfg-edit" href="{% url 'platform_tenant_config_edit' tenant.slug %}"><i class="fas fa-pen"></i> Edit prices</a>
+        </div>
+        {% if priced_items %}
+        <div class="cfg-prices">
+          {% for it in priced_items %}
+          <div class="cfg-price-row {% if not it.is_active %}is-off{% endif %}">
+            <div class="cfg-price__name">
+              {{ it.label }}
+              <span class="cfg-price__fam">{{ it.family }}</span>
+              {% if not it.is_active %}<span class="cfg-pill cfg-pill--off">Hidden</span>{% endif %}
+            </div>
+            <div class="cfg-price__right">
+              <div class="cfg-price__headline">{{ it.headline }}</div>
+              {% if it.sub %}<div class="cfg-price__sub">{{ it.sub }}</div>{% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="cfg-empty">
+          <i class="fas fa-tags"></i>
+          No prices set — the assistant deflects money questions to the free visit until you price the sheet.
+          <div style="margin-top:14px;"><a class="btn btn-primary cfg-btn-sm" href="{% url 'platform_tenant_config_edit' tenant.slug %}">Price the sheet</a></div>
+        </div>
+        {% endif %}
+      </section>
+
+    </div>
+
+    <!-- Right: channel + staff + intake -->
+    <div class="cfg-col">
+
+      <section class="cfg-glass cfg-card">
+        <div class="cfg-card__head"><span class="cfg-label">WhatsApp channel</span></div>
+        {% if channel %}
+        <div class="cfg-channel">
+          Routing key <code>{{ channel.phone_number_id }}</code><br>
+          {% if channel.display_number %}Number {{ channel.display_number }}<br>{% endif %}
+          Token {% if channel.access_token %}<span class="cfg-pill cfg-pill--ok">On file (encrypted)</span>{% else %}<span class="cfg-pill cfg-pill--off">Missing</span>{% endif %}<br>
+          Status {% if channel.is_active %}<span class="cfg-pill cfg-pill--ok">Active</span>{% else %}<span class="cfg-pill cfg-pill--warn">Inactive</span>{% endif %}
+        </div>
+        {% else %}
+        <div class="cfg-empty">
+          <i class="fab fa-whatsapp"></i>
+          No number registered — inbound routing won't work until a channel row exists
+          (registered under the platform Business Manager).
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="cfg-glass cfg-card">
+        <div class="cfg-card__head"><span class="cfg-label">Staff &amp; logins</span></div>
+        {% if staff %}
+        <table class="cfg-mini">
+          <thead><tr><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for m in staff %}
+            <tr>
+              <td>
+                <strong>{{ m.user.username }}</strong>
+                {% if m.user.email %}<br><small style="color:var(--color-muted);">{{ m.user.email }}</small>{% endif %}
+                <br><small style="color:var(--color-muted);">Last in: {{ m.user.last_login|date:"j M Y H:i"|default:"never" }}</small>
+              </td>
+              <td>{{ m.get_role_display }}</td>
+              <td>
+                {% if m.user.is_active %}<span class="cfg-pill cfg-pill--ok">Active</span>
+                {% else %}<span class="cfg-pill cfg-pill--off">Off</span>{% endif %}
+              </td>
+              <td>
+                <div class="cfg-actions-cell">
+                  <form method="post" action="{% url 'platform_toggle_staff' tenant.slug m.user_id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-secondary cfg-btn-sm">
+                      {% if m.user.is_active %}Deactivate{% else %}Reactivate{% endif %}
+                    </button>
+                  </form>
+                  <form method="post" action="{% url 'platform_reset_staff_password' tenant.slug m.user_id %}" class="cfg-share">
+                    {% csrf_token %}
+                    <input type="password" name="password" class="cfg-input" placeholder="new password" required minlength="8" style="flex:0 0 120px;">
+                    <button type="submit" class="btn btn-secondary cfg-btn-sm">Reset</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="cfg-empty">
+          <i class="fas fa-user-lock"></i>
+          No logins yet — this tenant's team can't reach the dashboard until you create one.
+        </div>
+        {% endif %}
+        <form method="post" action="{% url 'platform_add_staff' tenant.slug %}" class="cfg-inline-form">
+          {% csrf_token %}
+          <input type="text" name="username" class="cfg-input" placeholder="username" required>
+          <input type="email" name="email" class="cfg-input" placeholder="email (optional)">
+          <input type="password" name="password" class="cfg-input" placeholder="temp password (8+)" required minlength="8">
+          <select name="role" class="cfg-input"><option value="staff">Staff</option><option value="owner">Owner</option></select>
+          <button type="submit" class="btn btn-primary cfg-btn-sm"><i class="fas fa-user-plus"></i> Add login</button>
+        </form>
+      </section>
+
+      <section class="cfg-glass cfg-card">
+        <div class="cfg-card__head">
+          <span class="cfg-label">Owner intake</span>
+          <form method="post" action="{% url 'platform_new_intake' tenant.slug %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary cfg-btn-sm"><i class="fas fa-link"></i> New link</button>
+          </form>
+        </div>
+        {% if intakes %}
+        <table class="cfg-mini">
+          <thead><tr><th>Created</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody>
+            {% for intake in intakes %}
+            <tr>
+              <td>{{ intake.created_at|date:"j M Y H:i" }}</td>
+              <td>{{ intake.get_status_display }}</td>
+              <td>
+                {% if intake.status == 'pending' %}
+                <span class="share-group cfg-share" data-token="{{ intake.token }}">
+                  <button type="button" class="btn btn-secondary cfg-btn-sm" onclick="copyIntake(this)"><i class="fas fa-copy"></i> Copy</button>
+                  <a class="btn btn-secondary cfg-btn-sm share-wa" href="#" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i></a>
+                  <a class="btn btn-secondary cfg-btn-sm share-email" href="#"><i class="fas fa-envelope"></i></a>
+                </span>
+                {% else %}
+                <a class="cfg-edit" href="{% url 'platform_review_intake' intake.pk %}">Open review</a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="cfg-note">No intake links yet. Generate one to let the owner fill their own details (draft → review → approve).</p>
+        {% endif %}
+      </section>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
 <script>
 function _intakeUrl(group) {
   return window.location.origin + '/intake/' + group.dataset.token + '/';
@@ -87,335 +354,21 @@ function _shareMessage(url) {
 function copyIntake(btn) {
   const group = btn.closest('.share-group');
   navigator.clipboard.writeText(_intakeUrl(group)).then(() => {
-    btn.classList.add('copied');
     const original = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-check"></i> Copied';
-    setTimeout(() => { btn.innerHTML = original; btn.classList.remove('copied'); }, 1800);
+    setTimeout(() => { btn.innerHTML = original; }, 1800);
   });
 }
 document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('.share-group').forEach(function (group) {
     const url = _intakeUrl(group);
     const message = encodeURIComponent(_shareMessage(url));
-    group.querySelector('.share-wa').href = 'https://wa.me/?text=' + message;
-    group.querySelector('.share-email').href =
-      'mailto:?subject=' + encodeURIComponent('Your {{ tenant.name }} assistant setup') +
-      '&body=' + message;
-  });
-  document.querySelectorAll('.parts-editor').forEach(initPartsEditor);
-
-  // Currency: shown on every money field and kept live with the currency input.
-  const curField = document.getElementById('id_currency');
-  if (curField) curField.addEventListener('input', updateCurrencyLabels);
-  updateCurrencyLabels();
-
-  // All-in auto-calculates from supply + labour (+ any component amounts).
-  document.querySelectorAll('.price-row').forEach(function (row) {
-    ['-supply', '-labour'].forEach(function (suffix) {
-      const input = row.querySelector('[name$="' + suffix + '"]');
-      if (input) input.addEventListener('input', function () { recalcAllin(row); });
-    });
-    recalcAllin(row);
+    const wa = group.querySelector('.share-wa');
+    const email = group.querySelector('.share-email');
+    if (wa) wa.href = 'https://wa.me/?text=' + message;
+    if (email) email.href = 'mailto:?subject=' +
+      encodeURIComponent('Your {{ tenant.name }} assistant setup') + '&body=' + message;
   });
 });
-
-function currentCurrency() {
-  const f = document.getElementById('id_currency');
-  const v = f ? f.value.trim() : '';
-  return v || '{{ currency|default:"US$" }}';
-}
-function updateCurrencyLabels() {
-  const cur = currentCurrency();
-  document.querySelectorAll('.cur, .part-cur, #cur-heading').forEach(function (el) {
-    el.textContent = cur;
-  });
-}
-function _num(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
-function _sumPartAmounts(row) {
-  const hidden = row.querySelector('[name$="-parts"]');
-  if (!hidden) return 0;
-  let parts = []; try { parts = JSON.parse(hidden.value || '[]'); } catch (e) { }
-  return parts.reduce(function (s, p) {
-    return s + (p.amount === undefined || p.amount === null || p.amount === '' ? 0 : Number(p.amount) || 0);
-  }, 0);
-}
-function recalcAllin(row) {
-  const supply = row.querySelector('[name$="-supply"]');
-  const labour = row.querySelector('[name$="-labour"]');
-  const allin = row.querySelector('[name$="-allin"]');
-  if (!allin) return;
-  const s = supply ? supply.value.trim() : '';
-  const l = labour ? labour.value.trim() : '';
-  const partsSum = _sumPartAmounts(row);
-  // Nothing to derive from → leave all-in for direct entry (some items are
-  // quoted at a single all-in rate with no split), clearing only a stale auto value.
-  if (s === '' && l === '' && !partsSum) {
-    if (allin.classList.contains('is-auto')) allin.value = '';
-    allin.readOnly = false;
-    allin.classList.remove('is-auto');
-    allin.title = '';
-    return;
-  }
-  const total = _num(s) + _num(l) + partsSum;
-  allin.value = total ? String(total) : '';
-  allin.readOnly = true;
-  allin.classList.add('is-auto');
-  allin.title = 'Auto: supply + labour' + (partsSum ? ' + breakdown' : '');
-}
-
-// Inline component breakdown (e.g. freestanding tub = tub + mixer + install):
-// a chip editor kept in sync with a hidden JSON field on the price row.
-function _partsRead(hidden) {
-  try { return JSON.parse(hidden.value || '[]'); } catch (e) { return []; }
-}
-function _partsSync(editor) {
-  const hidden = document.querySelector(editor.dataset.target);
-  const parts = [];
-  editor.querySelectorAll('.part-chip').forEach(function (chip) {
-    const name = chip.querySelector('.part-name').value.trim();
-    const amt = chip.querySelector('.part-amt').value.trim();
-    if (!name && !amt) return;
-    const part = { name: name };
-    if (amt !== '') part.amount = Number(amt);
-    parts.push(part);
-  });
-  hidden.value = JSON.stringify(parts);
-  // A component amount feeds the row's all-in total.
-  const row = hidden.closest('.price-row');
-  if (row) recalcAllin(row);
-}
-function _partsRender(editor) {
-  const hidden = document.querySelector(editor.dataset.target);
-  const parts = _partsRead(hidden);
-  const chips = editor.querySelector('.parts-chips');
-  chips.textContent = '';
-  parts.forEach(function (p, i) {
-    const chip = document.createElement('span');
-    chip.className = 'part-chip';
-    const name = document.createElement('input');
-    name.className = 'part-name'; name.placeholder = 'part'; name.value = p.name || '';
-    const cur = document.createElement('span');
-    cur.className = 'part-cur'; cur.textContent = currentCurrency();
-    const amt = document.createElement('input');
-    amt.className = 'part-amt'; amt.type = 'number'; amt.min = '0'; amt.step = '1';
-    amt.value = (p.amount === undefined || p.amount === null) ? '' : p.amount;
-    const del = document.createElement('button');
-    del.type = 'button'; del.className = 'part-del'; del.textContent = '×';
-    name.addEventListener('input', function () { _partsSync(editor); });
-    amt.addEventListener('input', function () { _partsSync(editor); });
-    del.addEventListener('click', function () {
-      const arr = _partsRead(hidden); arr.splice(i, 1);
-      hidden.value = JSON.stringify(arr); _partsRender(editor);
-      const row = hidden.closest('.price-row');
-      if (row) recalcAllin(row);
-    });
-    chip.append(name, cur, amt, del);
-    chips.appendChild(chip);
-  });
-}
-function initPartsEditor(editor) {
-  _partsRender(editor);
-  editor.querySelector('.parts-add').addEventListener('click', function () {
-    const hidden = document.querySelector(editor.dataset.target);
-    const arr = _partsRead(hidden); arr.push({ name: '' });
-    hidden.value = JSON.stringify(arr); _partsRender(editor);
-  });
-}
 </script>
-{% endblock %}
-
-{% block content %}
-<div class="page-topbar">
-  <i class="fas fa-building"></i>
-  <h1>{{ tenant.name }} — Config</h1>
-</div>
-
-<div class="platform-body">
-
-  <div class="platform-card">
-    <div class="platform-card__title">WhatsApp channel</div>
-    {% if channel %}
-      <p style="margin:0; font-size:14px;">
-        Routing key <strong>{{ channel.phone_number_id }}</strong>
-        {% if channel.display_number %} · {{ channel.display_number }}{% endif %}
-        · token {% if channel.access_token %}<strong>on file (encrypted)</strong>{% else %}<strong style="color:#ba1a1a;">missing</strong>{% endif %}
-        · {% if channel.is_active %}active{% else %}inactive{% endif %}
-      </p>
-    {% else %}
-      <p style="margin:0; font-size:14px; color:#7a5800;">
-        No WhatsApp number registered yet — inbound routing for this tenant won't work
-        until a channel row exists (registered under the platform Business Manager).
-      </p>
-    {% endif %}
-  </div>
-
-  <div class="platform-card">
-    <div class="platform-card__title">Staff &amp; logins</div>
-    {% if staff %}
-    <table class="price-table" style="margin-bottom:16px;">
-      <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last login</th><th style="text-align:right;">Actions</th></tr></thead>
-      <tbody>
-        {% for m in staff %}
-        <tr>
-          <td><strong>{{ m.user.username }}</strong>{% if m.user.email %}<br><small style="color:#5b7285;">{{ m.user.email }}</small>{% endif %}</td>
-          <td>{{ m.get_role_display }}</td>
-          <td>{% if m.user.is_active %}<span style="color:#006591; font-weight:600;">Active</span>{% else %}<span style="color:#ba1a1a; font-weight:600;">Deactivated</span>{% endif %}</td>
-          <td>{{ m.user.last_login|date:"j M Y H:i"|default:"never" }}</td>
-          <td style="text-align:right; white-space:nowrap;">
-            <form method="post" action="{% url 'platform_toggle_staff' tenant.slug m.user_id %}" style="display:inline;">
-              {% csrf_token %}
-              <button type="submit" class="btn-pill btn-ghost btn-share">
-                {% if m.user.is_active %}Deactivate{% else %}Reactivate{% endif %}
-              </button>
-            </form>
-            <form method="post" action="{% url 'platform_reset_staff_password' tenant.slug m.user_id %}" style="display:inline;">
-              {% csrf_token %}
-              <input type="password" name="password" placeholder="new password" required minlength="8"
-                     style="width:130px; border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:5px 12px; font-size:12px;">
-              <button type="submit" class="btn-pill btn-ghost btn-share">Reset</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p style="font-size:13px; color:#5b7285; margin:0 0 16px;">No logins yet — this tenant's team can't access the dashboard until you create one.</p>
-    {% endif %}
-    <form method="post" action="{% url 'platform_add_staff' tenant.slug %}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-      {% csrf_token %}
-      <input type="text" name="username" placeholder="username" required
-             style="border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:8px 16px; font-size:13px;">
-      <input type="email" name="email" placeholder="email (optional)"
-             style="border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:8px 16px; font-size:13px;">
-      <input type="password" name="password" placeholder="temp password (8+ chars)" required minlength="8"
-             style="border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:8px 16px; font-size:13px;">
-      <select name="role" style="border:none; background:rgba(0,101,145,0.05); border-radius:999px; padding:8px 16px; font-size:13px;">
-        <option value="staff">Staff</option>
-        <option value="owner">Owner</option>
-      </select>
-      <button type="submit" class="btn-pill" style="padding:8px 18px; font-size:13px;">
-        <i class="fas fa-user-plus"></i> Add login
-      </button>
-    </form>
-  </div>
-
-  <div class="platform-card">
-    <div class="platform-card__title">Owner intake (draft → review → approve)</div>
-    <form method="post" action="{% url 'platform_new_intake' tenant.slug %}" style="display:inline;">
-      {% csrf_token %}
-      <button type="submit" class="btn-pill btn-ghost">
-        <i class="fas fa-link"></i> New intake link
-      </button>
-    </form>
-    {% if intakes %}
-    <table class="price-table" style="margin-top:16px;">
-      <thead><tr><th>Created</th><th>Status</th><th>Link / review</th></tr></thead>
-      <tbody>
-        {% for intake in intakes %}
-        <tr>
-          <td>{{ intake.created_at|date:"j M Y H:i" }}</td>
-          <td>{{ intake.get_status_display }}</td>
-          <td>
-            {% if intake.status == 'pending' %}
-              <span class="share-group" data-token="{{ intake.token }}">
-                <button type="button" class="btn-pill btn-ghost btn-share" onclick="copyIntake(this)">
-                  <i class="fas fa-copy"></i> Copy link
-                </button>
-                <a class="btn-pill btn-ghost btn-share share-wa" href="#" target="_blank" rel="noopener">
-                  <i class="fab fa-whatsapp"></i> WhatsApp
-                </a>
-                <a class="btn-pill btn-ghost btn-share share-email" href="#">
-                  <i class="fas fa-envelope"></i> Email
-                </a>
-              </span>
-            {% else %}
-              <a href="{% url 'platform_review_intake' intake.pk %}">Open review</a>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-  </div>
-
-  <form method="post">
-    {% csrf_token %}
-
-    <div class="platform-card">
-      <div class="platform-card__title">Profile — every field optional (absent = the bot omits the topic)</div>
-      <div class="cfg-grid">
-        {% for field in form %}
-        <div class="form-group">
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% for error in field.errors %}<small>{{ error }}</small>{% endfor %}
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-
-    <div class="platform-card">
-      <div class="platform-card__title">
-        Price sheet — "from" rates in <span id="cur-heading">{{ currency }}</span>; blank fields stay unquoted
-      </div>
-      {{ formset.management_form }}
-      <table class="price-table">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Supply</th><th>Labour</th><th>Flat</th><th>All-in <span class="th-auto">auto</span></th>
-            <th>Active</th><th>Delete</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for f in formset %}
-          <tr class="price-row">
-            {{ f.id }}{{ f.family.as_hidden }}{{ f.variant.as_hidden }}{{ f.short_label.as_hidden }}{{ f.sort_order.as_hidden }}{{ f.parts }}
-            <td>{{ f.label }}</td>
-            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.supply }}</td>
-            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.labour }}</td>
-            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.flat }}</td>
-            <td class="money-cell"><span class="cur">{{ currency }}</span>{{ f.allin }}</td>
-            <td style="text-align:center;">{{ f.is_active }}</td>
-            <td style="text-align:center;">{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
-          </tr>
-          {% if f.parts.value %}
-          <tr class="parts-subrow">
-            <td colspan="7">
-              <div class="parts-editor" data-target="#{{ f.parts.id_for_label }}">
-                <span class="parts-tag">Breakdown</span>
-                <span class="parts-chips"></span>
-                <button type="button" class="parts-add">+ add part</button>
-              </div>
-            </td>
-          </tr>
-          {% endif %}
-          {% if f.errors %}
-          <tr><td colspan="7"><small style="color:#ba1a1a;">{{ f.errors }}</small></td></tr>
-          {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
-      <p style="margin:12px 0 0; font-size:13px; color:#5b7285;">
-        The sheet is prefilled with the standard item list — just type each price
-        (a row only saves once it has a figure; unpriced items stay on the list next visit).
-        Items you've already priced keep their figures. Each item takes a
-        supply + labour split, a single flat price, or an all-in rate. Enter supply and labour
-        and All-in fills itself (supply + labour); leave those blank to type a single all-in
-        rate directly. Items with a component breakdown (e.g. a freestanding tub's mixer and
-        install) show a "Breakdown" line — set each part's price there and it rolls into All-in.
-        All figures are in the currency shown on each field. New items, sizes, and keywords are
-        managed in the Django admin.
-      </p>
-    </div>
-
-    <div style="display:flex; gap:12px; margin-bottom:48px;">
-      <button type="submit" class="btn-pill"><i class="fas fa-save"></i> Save config</button>
-      <a href="{% url 'platform_console' %}" class="btn-pill btn-ghost" style="text-decoration:none;">Back to console</a>
-    </div>
-  </form>
-
-</div>
 {% endblock %}

@@ -765,7 +765,8 @@ class PlatformConsoleTests(TestCase):
             username='plainstaff2', password='pass12345', is_staff=True)
         self.client.login(username='plainstaff2', password='pass12345')
         for name, args in [('platform_console', []),
-                           ('platform_tenant_config', ['homebase'])]:
+                           ('platform_tenant_config', ['homebase']),
+                           ('platform_tenant_config_edit', ['homebase'])]:
             response = self.client.get(reverse(name, args=args))
             self.assertIn(response.status_code, (302, 403), name)
 
@@ -864,8 +865,30 @@ class PlatformConsoleTests(TestCase):
             reverse('platform_toggle_staff', args=['acme', self.root.pk]))
         self.assertEqual(response.status_code, 404)
 
-    def test_config_page_renders_and_saves(self):
-        response = self.client.get(reverse('platform_tenant_config', args=['homebase']))
+    def test_config_view_page_renders_readonly(self):
+        # Display page: read-only overview with an Edit button, no form POST.
+        from .models import TenantPriceItem
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        TenantProfile.objects.create(
+            tenant=acme, plumber_name='Blessing', currency='ZAR',
+            business_hours={'days': 'Monday-Friday', 'open': '08:00', 'close': '17:00'},
+            excluded_areas=['bulawayo'], faq_facts={'free_quote': 'Yes, free.'})
+        TenantPriceItem.objects.create(
+            tenant=acme, family='shower', variant='',
+            label='shower cubicle', supply=130, labour=40, allin=170)
+        response = self.client.get(reverse('platform_tenant_config', args=['acme']))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('shower cubicle', body)
+        self.assertIn('all-in', body)                       # rendered price line
+        self.assertIn('ZAR', body)                           # tenant currency, not US$
+        self.assertIn('Monday to Friday', body)              # hours sentence via cfg
+        self.assertIn('Bulawayo', body)                      # declined-area tag
+        self.assertIn('Free Quote', body)                    # FAQ topic tag
+        self.assertIn(reverse('platform_tenant_config_edit', args=['acme']), body)
+
+    def test_config_edit_page_renders_and_saves(self):
+        response = self.client.get(reverse('platform_tenant_config_edit', args=['homebase']))
         self.assertEqual(response.status_code, 200)
         # Minimal valid POST: profile fields + empty price formset management.
         data = {
@@ -882,8 +905,8 @@ class PlatformConsoleTests(TestCase):
             'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
         }
         response = self.client.post(
-            reverse('platform_tenant_config', args=['homebase']), data)
-        self.assertEqual(response.status_code, 302)
+            reverse('platform_tenant_config_edit', args=['homebase']), data)
+        self.assertEqual(response.status_code, 302)  # → back to the read-only view
         profile = TenantProfile.objects.get(tenant=self.homebase)
         self.assertEqual(profile.excluded_areas, ['gweru'])
 
@@ -891,7 +914,7 @@ class PlatformConsoleTests(TestCase):
         from .models import TenantPriceItem
         from .tenant_config import blank_priced_catalog
         acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
-        response = self.client.get(reverse('platform_tenant_config', args=['acme']))
+        response = self.client.get(reverse('platform_tenant_config_edit', args=['acme']))
         self.assertEqual(response.status_code, 200)
         body = response.content.decode()
         # Item labels from homebase's catalogue are prefilled…
@@ -916,7 +939,7 @@ class PlatformConsoleTests(TestCase):
             tenant=acme, family='shower', variant='', label='shower cubicle', allin=170)
         TenantPriceItem.objects.create(
             tenant=acme, family='other', variant='', label='Geyser link', flat=5)
-        response = self.client.get(reverse('platform_tenant_config', args=['acme']))
+        response = self.client.get(reverse('platform_tenant_config_edit', args=['acme']))
         self.assertEqual(response.status_code, 200)
         body = response.content.decode()
         # Missing catalogue items are still offered to fill in…
@@ -962,7 +985,7 @@ class PlatformConsoleTests(TestCase):
         }
         base.update(rows)
         response = self.client.post(
-            reverse('platform_tenant_config', args=['acme']), base)
+            reverse('platform_tenant_config_edit', args=['acme']), base)
         self.assertEqual(response.status_code, 302)
         families = set(TenantPriceItem.objects.filter(
             tenant=acme).values_list('family', flat=True))
