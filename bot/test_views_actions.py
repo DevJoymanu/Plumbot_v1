@@ -1394,6 +1394,41 @@ class GalleryPortalTests(TestCase):
         self.assertTrue(_is_tenant_owned_file(self.acme, 'tenant_portfolios/acme/x.jpg'))
         self.assertTrue(_is_tenant_owned_file(self.acme, 'intake_photos/acme/x.jpg'))
 
+    def test_customer_media_paths_are_per_tenant(self):
+        from .media_library import customer_media_path
+        self.assertEqual(customer_media_path(self.acme, 'image', 'p.jpg'),
+                         'customer_plans/acme/p.jpg')
+        self.assertEqual(customer_media_path(self.acme, 'document', 'p.pdf'),
+                         'customer_plans/acme/p.pdf')
+        self.assertEqual(customer_media_path(self.acme, 'video', 'v.mp4'),
+                         'customer_videos/acme/v.mp4')
+        self.assertEqual(customer_media_path(self.acme, 'audio', 'n.ogg'),
+                         'customer_audio/acme/n.ogg')
+        self.assertEqual(customer_media_path(self.acme, 'sticker', 'x.bin'),
+                         'customer_media/acme/x.bin')
+        self.assertEqual(customer_media_path(None, 'image', 'p.jpg'),
+                         'customer_plans/homebase/p.jpg')
+
+    def test_inbound_plan_and_video_land_in_tenant_folder(self):
+        from unittest.mock import MagicMock, patch
+
+        from .models import Appointment
+        from .whatsapp_webhook import handle_media_message
+        wa = MagicMock()
+        wa.download_media.return_value = b'%PDF fake plan'
+        with patch('bot.whatsapp_cloud_api.get_client_for_tenant', return_value=wa), \
+             patch('bot.whatsapp_webhook._schedule_media_ack'):
+            handle_media_message('263771000111',
+                                 {'id': 'MID1', 'mime_type': 'application/pdf'},
+                                 'document', tenant=self.acme)
+            handle_media_message('263771000111',
+                                 {'id': 'MID2', 'mime_type': 'video/mp4'},
+                                 'video', tenant=self.acme)
+        apt = Appointment.objects.get(tenant=self.acme)
+        self.assertTrue(str(apt.plan_file).startswith('customer_plans/acme/'),
+                        str(apt.plan_file))
+        self.assertIn('customer_videos/acme/', apt.internal_notes)
+
     def test_wizard_upload_endpoint_uses_shared_rules(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
 

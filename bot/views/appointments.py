@@ -1218,8 +1218,9 @@ def download_and_save_media(media_url, content_type, appointment, file_index):
         safe_name = ''.join(c for c in customer_name if c.isalnum())
         filename = f"plan_{safe_name}_{appointment.id}_{timestamp}_{file_index}{extension}"
         
-        # Save file
-        file_path = f"customer_plans/{filename}"
+        # Save file (per-tenant subfolder, same shape as the webhook saves)
+        from ..media_library import customer_media_path
+        file_path = customer_media_path(appointment.tenant, 'document', filename)
         file_content = ContentFile(response.content, name=filename)
         
         saved_path = default_storage.save(file_path, file_content)

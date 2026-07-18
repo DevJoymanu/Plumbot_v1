@@ -22,6 +22,22 @@ def is_video_filename(filename: str) -> bool:
     return (filename or '').rsplit('.', 1)[-1].lower() in VIDEO_EXTS
 
 
+# Inbound customer media (plans, site photos/videos, voice notes) gets a
+# per-tenant subfolder too, so the bucket reads customer_plans/<slug>/...
+CUSTOMER_MEDIA_FOLDERS = {
+    'image':    'customer_plans',
+    'document': 'customer_plans',
+    'video':    'customer_videos',
+    'audio':    'customer_audio',
+}
+
+
+def customer_media_path(tenant, media_type: str, filename: str) -> str:
+    folder = CUSTOMER_MEDIA_FOLDERS.get(media_type, 'customer_media')
+    slug = getattr(tenant, 'slug', None) or 'homebase'
+    return f'{folder}/{slug}/{filename}'
+
+
 def tenant_prefix(tenant) -> str:
     return f'{PORTFOLIO_PREFIX}/{tenant.slug}'
 

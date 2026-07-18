@@ -3037,13 +3037,6 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 # Media handler (unchanged logic, kept intact)
 # -----------------------------------------------------------------------------
 
-MEDIA_STORAGE_FOLDERS = {
-    'image':    'customer_plans',
-    'document': 'customer_plans',
-    'video':    'customer_videos',
-    'audio':    'customer_audio',
-}
-
 IMAGE_DOC_EXT_MAP = {
     'image/jpeg': '.jpg',
     'image/jpg':  '.jpg',
@@ -3082,13 +3075,13 @@ def handle_media_message(sender, media_data, media_type, tenant=None):
                 else:
                     ext = get_extension_for_mime(mime_type)
 
-                folder = MEDIA_STORAGE_FOLDERS.get(media_type, 'customer_media')
+                from .media_library import customer_media_path
                 timestamp = timezone.now().strftime('%Y%m%d_%H%M%S_%f')  # Added %f for microseconds to avoid filename collisions
                 customer_slug = ''.join(
                     c for c in (appointment.customer_name or 'customer') if c.isalnum()
                 )
                 filename = f"{media_type}_{customer_slug}_{appointment.id}_{timestamp}{ext}"
-                storage_path = f"{folder}/{filename}"
+                storage_path = customer_media_path(appointment.tenant, media_type, filename)
 
                 file_obj = ContentFile(file_bytes, name=filename)
                 saved_path = default_storage.save(storage_path, file_obj)
