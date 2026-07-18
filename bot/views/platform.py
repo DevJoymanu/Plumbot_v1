@@ -663,9 +663,14 @@ def platform_tenant_config(request, slug):
     profile, _ = TenantProfile.objects.get_or_create(tenant=tenant)
     prices_qs = TenantPriceItem.objects.filter(tenant=tenant)
 
-    # New tenant with an empty sheet → offer homebase's catalogue as a fill-in
-    # template (labels prefilled, prices blank). Rows only persist once priced.
-    prefill = None if prices_qs.exists() else blank_priced_catalog()
+    # Offer every homebase catalogue item the tenant doesn't already have as a
+    # fill-in template row (labels prefilled, prices blank) — so even a tenant
+    # with a few rows sees the full standard list to price. Existing rows keep
+    # their own figures; a template row persists only once it's priced, and any
+    # still-unpriced item re-appears next visit until it's given a figure.
+    have = {(p.family, p.variant) for p in prices_qs}
+    prefill = [row for row in blank_priced_catalog()
+               if (row['family'], row['variant']) not in have] or None
 
     if request.method == 'POST':
         form = TenantProfileForm(request.POST, instance=profile)

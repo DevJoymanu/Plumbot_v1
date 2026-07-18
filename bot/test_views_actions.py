@@ -904,6 +904,28 @@ class PlatformConsoleTests(TestCase):
         self.assertFalse(TenantPriceItem.objects.filter(tenant=acme).exists())
         self.assertTrue(len(blank_priced_catalog()) > 10)
 
+    def test_existing_tenant_gets_missing_catalogue_items_prefilled(self):
+        from .models import TenantPriceItem
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        # Acme already priced one item and has a bespoke row not in the catalogue.
+        TenantPriceItem.objects.create(
+            tenant=acme, family='shower', variant='', label='shower cubicle', allin=170)
+        TenantPriceItem.objects.create(
+            tenant=acme, family='other', variant='', label='Geyser link', flat=5)
+        response = self.client.get(reverse('platform_tenant_config', args=['acme']))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        # Missing catalogue items are still offered to fill in…
+        self.assertIn('freestanding tub', body)
+        self.assertIn('vanity', body)
+        # …the already-priced item keeps its figure and isn't re-added blank…
+        self.assertEqual(TenantPriceItem.objects.filter(
+            tenant=acme, family='shower').count(), 1)
+        self.assertEqual(body.count('shower cubicle'), 1)  # not duplicated blank
+        self.assertIn('value="170', body)                  # its figure is rendered
+        # …and the bespoke non-catalogue row survives untouched.
+        self.assertIn('Geyser link', body)
+
     def test_only_priced_rows_persist_incl_component_amounts(self):
         from .models import TenantPriceItem
         acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
