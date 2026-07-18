@@ -1440,6 +1440,17 @@ class GalleryPortalTests(TestCase):
         intake.refresh_from_db()
         self.assertEqual(intake.status, 'submitted')
 
+    def test_annotator_price_line_applies_on_approve(self):
+        from .models import TenantPortfolioItem
+        from .views.platform import _apply_intake_photos
+        _apply_intake_photos(self.acme, [
+            {'path': 'tenant_portfolios/acme/g.jpg', 'tag': 'geyser',
+             'caption': 'Geyser supply & install',
+             'price_line': 'Geyser supply & install from US$150'}])
+        item = TenantPortfolioItem.objects.get(tenant=self.acme)
+        self.assertEqual(item.title, 'Geyser supply & install')
+        self.assertEqual(item.price_line, 'Geyser supply & install from US$150')
+
     def test_customer_media_paths_are_per_tenant(self):
         from .media_library import customer_media_path
         self.assertEqual(customer_media_path(self.acme, 'image', 'p.jpg'),
@@ -1487,6 +1498,7 @@ class GalleryPortalTests(TestCase):
         out = res.json()
         self.assertTrue(out['ok'])
         self.assertTrue(out['path'].startswith('tenant_portfolios/acme/'))
+        self.assertIn('url', out)  # the wizard's annotator/preview needs it
         res = self.client.post(
             reverse('intake_photo_upload', args=[intake.token]),
             {'photo': SimpleUploadedFile('bad.exe', b'x')})

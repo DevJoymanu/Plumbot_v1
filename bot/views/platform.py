@@ -345,7 +345,12 @@ def _parse_intake_post(request) -> dict:
                 {'path': str(p.get('path', ''))[:255],
                  'tag': str(p.get('tag', 'general'))[:40],
                  'caption': str(p.get('caption', ''))[:200],
-                 'pair_with_prev': bool(p.get('pair_with_prev'))}
+                 'pair_with_prev': bool(p.get('pair_with_prev')),
+                 # Annotator extras: the picked library item (for re-linking
+                 # prices in the UI), the composed price line, the preview URL.
+                 'lib': p.get('lib') if isinstance(p.get('lib'), dict) else None,
+                 'price_line': str(p.get('price_line', ''))[:200],
+                 'url': str(p.get('url', ''))[:500]}
                 for p in photos if p.get('path')
             ]
     except (ValueError, AttributeError):
@@ -427,7 +432,12 @@ def intake_photo_upload(request, token):
     path, error = save_portfolio_upload(intake.tenant, upload)
     if error:
         return JsonResponse({'ok': False, 'error': error}, status=400)
-    return JsonResponse({'ok': True, 'path': path})
+    from django.core.files.storage import default_storage
+    try:
+        url = default_storage.url(path)
+    except Exception:
+        url = ''
+    return JsonResponse({'ok': True, 'path': path, 'url': url})
 
 
 _WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -502,7 +512,8 @@ def _apply_intake_photos(tenant, photos):
                 item.filename = path
                 title = photo.get('caption') or f"{tag.title()} — before & after"
                 item.title = title[:120]
-                item.save(update_fields=['pair_filename', 'filename', 'title'])
+                item.price_line = (photo.get('price_line') or item.price_line or '')[:200]
+                item.save(update_fields=['pair_filename', 'filename', 'title', 'price_line'])
                 previous_path = path
                 continue
         index += 1
@@ -513,6 +524,7 @@ def _apply_intake_photos(tenant, photos):
                 filename=path,
                 title=(photo.get('caption') or f"{tag.title()} work")[:120],
                 description=photo.get('caption', ''),
+                price_line=(photo.get('price_line') or '')[:200],
                 keywords=[tag],
                 sort_order=index,
             ),
