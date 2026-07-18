@@ -69,6 +69,112 @@ def _price_display(value) -> str:
     return text.rstrip('0').rstrip('.') if '.' in text else text
 
 
+# (family, variant) → (library label, category) — the labels/categories used
+# when composing a photo's price line and bucketing it in the gallery.
+_LIBRARY_INDEX = {(family, variant or ''): (label, cat)
+                  for cat, items in PORTFOLIO_LIBRARY
+                  for label, family, variant in items}
+
+
+def _fam_tag(family: str, variant: str) -> str:
+    """Gallery category key for a job — server-side twin of gallery.html's
+    famTag(); keep the two in lockstep so bucketing is identical either side."""
+    if family.startswith('geyser'):
+        return 'geyser'
+    if variant in ('drain_simple', 'drain_severe', 'jetting'):
+        return 'drain'
+    if variant in ('leaking_tap', 'toilet_seat_replacement', 'cistern', 'full_toilet_replacement'):
+        return 'taps'
+    if variant in ('minor_pipe_leak', 'burst_pipe', 'pipe_section'):
+        return 'pipes'
+    if family in ('shower', 'vanity', 'toilet', 'basin', 'tub', 'chamber'):
+        return 'bathroom install'
+    return 'general'
+
+
+def _price_value(row):
+    """A price row's headline figure: all-in, else flat, else supply+labour."""
+    value = row.allin or row.flat
+    if value is None and row.supply is not None and row.labour is not None:
+        value = row.supply + row.labour
+    return value
+
+
+def clean_price_refs(raw) -> list:
+    """Normalise a photo's price refs to [{family, variant}] — the link to the
+    price list. De-duplicated, first-seen order kept."""
+    out, seen = [], set()
+    for ref in raw or []:
+        if not isinstance(ref, dict):
+            continue
+        family = str(ref.get('family') or '').strip().lower()[:40]
+        variant = str(ref.get('variant') or '').strip().lower()[:40]
+        if not family:
+            continue
+        key = (family, variant)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({'family': family, 'variant': variant})
+    return out
+
+
+def _tenant_currency(tenant) -> str:
+    from .models import TenantProfile
+    profile = TenantProfile.objects.filter(tenant=tenant).first()
+    return (profile.currency if profile and profile.currency else 'US$')
+
+
+def price_line_and_tags_for_refs(tenant, refs):
+    """The AUTHORITATIVE price line + gallery category tags for a photo, pulled
+    live from the tenant's price list. `<label> from <cur><price>` per priced
+    ref (newline-joined, blank while unpriced); tags come from every ref so the
+    photo is bucketed by the jobs it shows. Returns (None, None) when there are
+    no refs — the caller then keeps whatever was typed by hand."""
+    refs = clean_price_refs(refs)
+    if not refs:
+        return None, None
+    from .models import TenantPriceItem
+    cur = _tenant_currency(tenant)
+    rows = {(r.family, r.variant or ''): r
+            for r in TenantPriceItem.objects.filter(tenant=tenant)}
+    lines, tags, seen = [], [], set()
+    for ref in refs:
+        key = (ref['family'], ref['variant'])
+        label = _LIBRARY_INDEX.get(key, (ref['family'].replace('_', ' '), None))[0]
+        tag = _fam_tag(ref['family'], ref['variant'])
+        if tag not in seen:
+            seen.add(tag)
+            tags.append(tag)
+        value = _price_value(rows[key]) if key in rows else None
+        if value is not None:
+            lines.append(f"{label} from {cur}{_price_display(value)}")
+    return '\n'.join(lines), (tags or ['general'])
+
+
+def resync_portfolio_prices(tenant) -> int:
+    """Re-pull every linked photo's price line (and category) from the current
+    price list — called after prices change so images and prices never drift.
+    Only photos with price_refs are touched; hand-typed ones are left alone."""
+    from .models import TenantPortfolioItem
+    updated = 0
+    for item in TenantPortfolioItem.objects.filter(tenant=tenant):
+        if not item.price_refs:
+            continue
+        line, tags = price_line_and_tags_for_refs(tenant, item.price_refs)
+        if line is None:
+            continue
+        changed = False
+        if item.price_line != line[:200]:
+            item.price_line, changed = line[:200], True
+        if tags and item.keywords != tags:
+            item.keywords, changed = tags, True
+        if changed:
+            item.save(update_fields=['price_line', 'keywords'])
+            updated += 1
+    return updated
+
+
 def portfolio_library_with_prices(tenant):
     """PORTFOLIO_LIBRARY as JSON-ready dicts with the tenant's own price
     (all-in, else flat, else supply+labour) attached to each item; '' when

@@ -497,13 +497,26 @@ def _apply_intake_photos(tenant, photos):
     merge into one item; tags become keywords so the bot sends RELEVANT shots)."""
     from django.utils.text import slugify as _slugify
 
+    from ..media_library import clean_price_refs, price_line_and_tags_for_refs
     from ..models import TenantPortfolioItem
+
+    def _photo_link(photo):
+        """The photo's price-list link + derived price line/tags. Falls back to
+        the wizard's typed values when no library job was picked."""
+        lib = photo.get('lib') if isinstance(photo.get('lib'), dict) else None
+        refs = clean_price_refs([lib] if lib else [])
+        line, tags = price_line_and_tags_for_refs(tenant, refs)
+        if refs:
+            return refs, (line or '')[:200], (tags or None)
+        return [], (photo.get('price_line') or '')[:200], None
+
     previous_path = None
     index = TenantPortfolioItem.objects.filter(tenant=tenant).count()
     for photo in photos:
         path, tag = photo.get('path'), (photo.get('tag') or 'general').lower()
         if not path:
             continue
+        refs, price_line, derived_tags = _photo_link(photo)
         if photo.get('pair_with_prev') and previous_path:
             # This shot is the AFTER of a pair; the previous upload is the BEFORE.
             item = TenantPortfolioItem.objects.filter(
@@ -513,8 +526,12 @@ def _apply_intake_photos(tenant, photos):
                 item.filename = path
                 title = photo.get('caption') or f"{tag.title()} — before & after"
                 item.title = title[:120]
-                item.price_line = (photo.get('price_line') or item.price_line or '')[:200]
-                item.save(update_fields=['pair_filename', 'filename', 'title', 'price_line'])
+                item.price_refs = refs
+                item.price_line = (price_line or item.price_line or '')[:200]
+                if derived_tags:
+                    item.keywords = derived_tags
+                item.save(update_fields=['pair_filename', 'filename', 'title',
+                                         'price_line', 'price_refs', 'keywords'])
                 previous_path = path
                 continue
         index += 1
@@ -525,8 +542,9 @@ def _apply_intake_photos(tenant, photos):
                 filename=path,
                 title=(photo.get('caption') or f"{tag.title()} work")[:120],
                 description=photo.get('caption', ''),
-                price_line=(photo.get('price_line') or '')[:200],
-                keywords=[tag],
+                price_line=price_line,
+                price_refs=refs,
+                keywords=(derived_tags or [tag]),
                 sort_order=index,
             ),
         )
@@ -765,6 +783,10 @@ def platform_tenant_config_edit(request, slug):
                     messages.warning(request, f'Skipped duplicate item "{item.label}".')
             for item in formset.deleted_objects:
                 item.delete()
+            # Prices changed → re-pull every linked portfolio photo's price line
+            # so images and the price list always correspond.
+            from ..media_library import resync_portfolio_prices
+            resync_portfolio_prices(tenant)
             from ..whatsapp_cloud_api import invalidate_client_cache
             invalidate_client_cache()
             messages.success(request, f'Config saved for {tenant.name}.')

@@ -286,6 +286,10 @@ class TenantPortfolioItem(models.Model):
     pair_filename = models.CharField(max_length=255, blank=True, default='')
     title = models.CharField(max_length=120)
     price_line = models.CharField(max_length=200, blank=True, default='')  # "kitchen renovation from US$600"
+    # The price-list rows this photo showcases: [{"family","variant"}, …].
+    # The link that keeps price_line pulled live from TenantPriceItem — set
+    # when the photo is annotated, re-read whenever prices change.
+    price_refs = models.JSONField(default=list, blank=True)
     description = models.TextField(blank=True, default='')
     story = models.TextField(blank=True, default='')
     keywords = models.JSONField(default=list, blank=True)

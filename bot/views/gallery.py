@@ -15,8 +15,9 @@ from django.views.decorators.http import require_POST
 
 from .. import portfolio_catalog
 from ..decorators import staff_required
-from ..media_library import (MAX_PORTFOLIO_MEDIA, is_video_filename,
-                             portfolio_library_with_prices,
+from ..media_library import (MAX_PORTFOLIO_MEDIA, clean_price_refs,
+                             is_video_filename, portfolio_library_with_prices,
+                             price_line_and_tags_for_refs,
                              save_portfolio_upload, tenant_media_count,
                              tenant_prefix)
 from ..models import TenantPortfolioItem
@@ -74,6 +75,7 @@ def gallery_page(request):
         tags = _clean_tags(item.keywords) or ['general']
         item.tag = tags[0]
         item.cats_attr = '|'.join(tags)  # '|' — some keys contain spaces
+        item.refs_json = json.dumps(item.price_refs or [])  # for the edit re-link
         buckets.setdefault(item.tag, []).append(item)
     groups = [{'key': key, 'label': _CATEGORY_LABELS.get(key, key.title()),
                'items': group}
@@ -136,10 +138,17 @@ def gallery_finalize(request):
         pair_path = str(entry.get('pair_path') or '')
         if pair_path and not pair_path.startswith(prefix):
             pair_path = ''
-        # A multi-item photo sends every item's category in `tags`; fall back
-        # to the single `tag` for older/simple entries.
-        tags = _clean_tags(entry.get('tags')) or [
-            (str(entry.get('tag') or 'general').strip().lower() or 'general')[:40]]
+        # The picked jobs (family/variant) link this photo to the price list —
+        # price line and categories are pulled from it, so they always match.
+        refs = clean_price_refs(entry.get('refs'))
+        price_line, derived_tags = price_line_and_tags_for_refs(tenant, refs)
+        if refs:
+            tags = derived_tags
+        else:
+            # Hand-typed photo (no library job): keep the owner's own text.
+            price_line = str(entry.get('price_line') or '').strip()[:200]
+            tags = _clean_tags(entry.get('tags')) or [
+                (str(entry.get('tag') or 'general').strip().lower() or 'general')[:40]]
         TenantPortfolioItem.objects.create(
             tenant=tenant,
             item_id=slugify(
@@ -148,7 +157,8 @@ def gallery_finalize(request):
             pair_filename=pair_path,
             title=caption[:120],
             description=caption,
-            price_line=str(entry.get('price_line') or '').strip()[:200],
+            price_line=(price_line or '')[:200],
+            price_refs=refs,
             keywords=tags,
             sort_order=TenantPortfolioItem.objects.filter(tenant=tenant).count() + 1,
         )
@@ -197,20 +207,33 @@ def gallery_update(request, pk):
         messages.error(request, 'Please provide names of items for the image.')
         return redirect('gallery')
     item.title = title[:120]
-    item.price_line = (request.POST.get('price_line') or '').strip()[:200]
     item.description = (request.POST.get('description') or '').strip()
-    # Prefer a multi-item `tags` JSON list; fall back to a single `tag`.
-    tags = None
+    # Re-linked jobs → price line + categories come from the price list.
+    refs = None
     try:
-        tags = _clean_tags(json.loads(request.POST.get('tags') or 'null'))
+        refs = clean_price_refs(json.loads(request.POST.get('refs') or 'null'))
     except ValueError:
-        tags = None
-    if not tags:
-        single = (request.POST.get('tag') or '').strip().lower()
-        tags = [single[:40]] if single else None
-    if tags:
+        refs = None
+    if refs:
+        price_line, tags = price_line_and_tags_for_refs(tenant, refs)
+        item.price_refs = refs
+        item.price_line = (price_line or '')[:200]
         item.keywords = tags
-    item.save(update_fields=['title', 'price_line', 'description', 'keywords'])
+    else:
+        item.price_refs = []
+        item.price_line = (request.POST.get('price_line') or '').strip()[:200]
+        # Prefer a multi-item `tags` JSON list; fall back to a single `tag`.
+        tags = None
+        try:
+            tags = _clean_tags(json.loads(request.POST.get('tags') or 'null'))
+        except ValueError:
+            tags = None
+        if not tags:
+            single = (request.POST.get('tag') or '').strip().lower()
+            tags = [single[:40]] if single else None
+        if tags:
+            item.keywords = tags
+    item.save(update_fields=['title', 'price_line', 'price_refs', 'description', 'keywords'])
     if request.headers.get('x-requested-with') == 'fetch':
         return JsonResponse({'ok': True})
     messages.success(request, f'Updated "{item.title}".')

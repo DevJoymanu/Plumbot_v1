@@ -209,7 +209,8 @@
                             data-video="{{ item.is_video|yesno:'1,0' }}">View</button>
                     <button type="button" class="edit-btn"
                             data-pk="{{ item.pk }}" data-video="{{ item.is_video|yesno:'1,0' }}"
-                            data-src="{% url 'gallery_media' item.pk %}">Edit</button>
+                            data-src="{% url 'gallery_media' item.pk %}"
+                            data-refs='{{ item.refs_json }}'>Edit</button>
                     <form method="post" action="{% url 'gallery_delete' item.pk %}" style="flex:1; display:flex;"
                           onsubmit="return confirm('Remove this from your gallery? The file is deleted too.');">
                         {% csrf_token %}
@@ -322,6 +323,18 @@
   const autoCaption = libs => libs.map(l => l.label).join(' · ');
   const autoPrice = libs => libs.filter(l => l.price)
     .map(l => `${l.label} from US$${l.price}`).join('\n');
+  // The price-list link that travels with a photo: just family/variant.
+  const refsOf = libs => (libs || []).map(l => ({ family: l.family, variant: l.variant }));
+  // Rebuild full lib entries (label + live price) from stored refs, so an
+  // edited photo keeps its price-list link and shows the right chips.
+  function libsFromRefs(refs) {
+    return (refs || []).map(r => {
+      for (const g of LIB) for (const it of g.items)
+        if (it.family === r.family && (it.variant || '') === (r.variant || ''))
+          return { family: it.family, variant: it.variant, label: it.label, price: it.price || '' };
+      return { family: r.family, variant: r.variant || '', label: r.family, price: '' };
+    });
+  }
   function recompose(e) {
     if (!e.captionEdited) e.caption = autoCaption(e.libs);
     if (!e.priceEdited) e.price_line = autoPrice(e.libs);
@@ -415,6 +428,7 @@
       fd.append('price_line', queue[0].price_line || '');
       fd.append('tags', JSON.stringify(queue[0].tags || []));
       fd.append('tag', (queue[0].tags || [])[0] || '');
+      fd.append('refs', JSON.stringify(refsOf(queue[0].libs)));
       await fetch(`/gallery/${queue[0].editPk}/update/`,
                   { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
     } else {
@@ -423,7 +437,8 @@
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
         body: JSON.stringify(queue.map(q => ({
           path: q.path, caption: q.caption, tag: q.tag || 'general',
-          tags: q.tags || [], price_line: q.price_line || '', pair_path: q.pair_path || '' }))),
+          tags: q.tags || [], price_line: q.price_line || '',
+          refs: refsOf(q.libs), pair_path: q.pair_path || '' }))),
       });
       const out = await res.json();
       if (!out.ok) { alert(out.error || 'Could not save'); return; }
@@ -491,11 +506,14 @@
       const tile = btn.closest('.tile');
       const title = tile.querySelector('.t-title').textContent.trim();
       const priceTxt = (tile.querySelector('.t-price') || { textContent: '' }).textContent.trim();
+      let refs = [];
+      try { refs = JSON.parse(btn.dataset.refs || '[]'); } catch (e) { refs = []; }
+      const libs = libsFromRefs(refs);
       openAnnot([{ editPk: btn.dataset.pk, src: btn.dataset.src,
                    isVideo: btn.dataset.video === '1',
-                   libs: [], caption: title, captionEdited: !!title,
-                   price_line: priceTxt, priceEdited: !!priceTxt,
-                   tags: [], tag: '' }]);
+                   libs: libs, caption: title, captionEdited: !!title,
+                   price_line: priceTxt, priceEdited: false,
+                   tags: libs.length ? tagsOf(libs) : [], tag: '' }]);
     });
   });
   const waEl = document.getElementById('wa_view');

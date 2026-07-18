@@ -2090,3 +2090,78 @@ class TenantConfigTests(TestCase):
         bare_cfg = get_config(self.acme)
         self.assertEqual(bare_cfg.plumber_name, '')
         self.assertEqual(bare_cfg.excluded_areas(), [])
+
+
+class PortfolioPriceSyncTests(TestCase):
+    """Portfolio images stay in lockstep with the price list: a photo linked to
+    a job (family/variant) always shows that job's current price, and a price
+    entered/changed in config re-syncs every linked photo."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.tenant = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        TenantProfile.objects.create(tenant=self.tenant, currency='US$')
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+
+    def test_price_line_and_category_pulled_from_the_list(self):
+        from .media_library import price_line_and_tags_for_refs
+        from .models import TenantPriceItem
+        TenantPriceItem.objects.create(
+            tenant=self.tenant, family='geyser', variant='', label='geyser', allin=160)
+        line, tags = price_line_and_tags_for_refs(
+            self.tenant, [{'family': 'geyser', 'variant': ''}])
+        self.assertEqual(line, 'Geyser supply & install from US$160')
+        self.assertEqual(tags, ['geyser'])   # categorised by the job
+
+    def test_unpriced_link_is_blank_but_still_categorised(self):
+        from .media_library import price_line_and_tags_for_refs
+        line, tags = price_line_and_tags_for_refs(
+            self.tenant, [{'family': 'shower', 'variant': ''}])
+        self.assertEqual(line, '')                      # no price yet
+        self.assertEqual(tags, ['bathroom install'])    # category from the item
+
+    def test_price_added_after_the_photo_resyncs_it(self):
+        from .media_library import resync_portfolio_prices
+        from .models import TenantPortfolioItem, TenantPriceItem
+        item = TenantPortfolioItem.objects.create(
+            tenant=self.tenant, item_id='p1',
+            filename='tenant_portfolios/acme/a.jpg', title='Shower job',
+            price_refs=[{'family': 'shower', 'variant': ''}])
+        self.assertEqual(item.price_line, '')           # saved before any price
+        TenantPriceItem.objects.create(
+            tenant=self.tenant, family='shower', variant='',
+            label='shower cubicle', allin=170)
+        self.assertEqual(resync_portfolio_prices(self.tenant), 1)
+        item.refresh_from_db()
+        self.assertIn('US$170', item.price_line)
+        self.assertEqual(item.keywords, ['bathroom install'])
+
+    def test_saving_config_prices_resyncs_linked_photos(self):
+        from .models import TenantPortfolioItem, TenantPriceItem
+        item = TenantPortfolioItem.objects.create(
+            tenant=self.tenant, item_id='p1',
+            filename='tenant_portfolios/acme/a.jpg', title='Geyser job',
+            price_refs=[{'family': 'geyser', 'variant': ''}])
+        data = {
+            'plumber_name': '', 'plumber_contact': '', 'business_whatsapp': '',
+            'location_line': '', 'location_area': '', 'location_city': '',
+            'business_hours': '{}', 'timezone_name': '', 'excluded_areas': '[]',
+            'currency': 'US$', 'packages': '[]', 'faq_facts': '{}', 'scripts': '{}',
+            'email_from_name': '', 'email_sender': '',
+            'form-TOTAL_FORMS': '1', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+            'form-0-family': 'geyser', 'form-0-variant': '', 'form-0-label': 'geyser',
+            'form-0-short_label': '', 'form-0-supply': '', 'form-0-labour': '',
+            'form-0-allin': '160', 'form-0-parts': '[]',
+            'form-0-sort_order': '0', 'form-0-is_active': 'on',
+        }
+        response = self.client.post(
+            reverse('platform_tenant_config_edit', args=['acme']), data)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            TenantPriceItem.objects.filter(tenant=self.tenant, family='geyser').count(), 1)
+        item.refresh_from_db()
+        self.assertIn('US$160', item.price_line)        # photo now shows the new price
