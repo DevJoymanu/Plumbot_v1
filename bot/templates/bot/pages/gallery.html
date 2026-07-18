@@ -248,6 +248,8 @@
                     </div>
                 </div>
             </div>
+            <p class="hint" style="margin-top:12px;">The two shots are combined into one
+                before/after image — that single collage is what the assistant sends on WhatsApp.</p>
             <div class="pair-actions">
                 <button type="button" class="btn-primary" id="pair_continue" disabled>
                     Continue — name it
@@ -567,6 +569,7 @@
     before: '<i class="fas fa-camera"></i><span>Tap to choose the BEFORE photo</span>',
     after: '<i class="fas fa-camera"></i><span>Tap to choose the AFTER photo</span>',
   };
+  const PAIR_CTA = 'Continue — name it';
   function resetPair() {
     pairShots.before = pairShots.after = null;
     [['before', slotBefore], ['after', slotAfter]].forEach(([role, slot]) => {
@@ -574,6 +577,7 @@
       slot.querySelector('.slot-pic').innerHTML = SLOT_PROMPT[role];
     });
     pairContinue.disabled = true;
+    pairContinue.textContent = PAIR_CTA;
   }
   document.getElementById('tile_pair').addEventListener('click', () => {
     resetPair();
@@ -588,28 +592,100 @@
       pairTarget = slot.dataset.role; pairInput.click();
     });
   });
-  pairInput.addEventListener('change', async () => {
+  // Hold the chosen files locally — we upload ONE composited collage, not both.
+  pairInput.addEventListener('change', () => {
     const file = pairInput.files[0];
     pairInput.value = '';
     if (!file || !pairTarget) return;
-    const up = await uploadOne(file);
-    if (!up) return;
-    pairShots[pairTarget] = up;
+    const previewUrl = URL.createObjectURL(file);
+    pairShots[pairTarget] = { file, previewUrl };
     const slot = pairTarget === 'before' ? slotBefore : slotAfter;
     slot.classList.add('filled');
-    slot.querySelector('.slot-pic').innerHTML = `<img src="${up.previewUrl}" alt="">`;
+    slot.querySelector('.slot-pic').innerHTML = `<img src="${previewUrl}" alt="">`;
     pairContinue.disabled = !(pairShots.before && pairShots.after);
   });
-  pairContinue.addEventListener('click', () => {
+  pairContinue.addEventListener('click', async () => {
     if (!(pairShots.before && pairShots.after)) return;
-    const after = pairShots.after, before = pairShots.before;
-    pairPanel.style.display = 'none';
-    // The AFTER shot is the item's main photo; BEFORE rides along as its pair.
-    openAnnot([{ path: after.path, url: after.url, previewUrl: after.previewUrl,
-                 libs: [], caption: '', captionEdited: false, price_line: '',
-                 priceEdited: false, tags: ['general'], tag: 'general',
-                 pair_path: before.path }]);
+    pairContinue.disabled = true;
+    pairContinue.textContent = 'Building collage…';
+    try {
+      // One side-by-side (or stacked) collage image — this is what goes to WhatsApp.
+      const collage = await makeBeforeAfterCollage(pairShots.before.file, pairShots.after.file);
+      const up = await uploadOne(collage);
+      if (!up) { pairContinue.disabled = false; pairContinue.textContent = PAIR_CTA; return; }
+      pairPanel.style.display = 'none';
+      openAnnot([{ path: up.path, url: up.url, previewUrl: up.previewUrl,
+                   libs: [], caption: '', captionEdited: false, price_line: '',
+                   priceEdited: false, tags: ['general'], tag: 'general', pair_path: '' }]);
+    } catch (e) {
+      alert('Could not build the before/after collage — please try different photos.');
+      pairContinue.disabled = false; pairContinue.textContent = PAIR_CTA;
+    }
   });
+
+  // ── Before/after collage (client-side canvas → one JPEG) ────────────────
+  async function loadBitmap(file) {
+    if (window.createImageBitmap) {
+      try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+      catch (e) { /* older browser — fall through */ }
+    }
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function drawLabel(ctx, text, x, yBottom, bg) {
+    const fs = Math.max(22, Math.round(ctx.canvas.width / 45));
+    ctx.font = `700 ${fs}px Arial, sans-serif`;
+    const padX = fs * 0.5, padY = fs * 0.35;
+    const boxW = ctx.measureText(text).width + padX * 2, boxH = fs + padY * 2;
+    const y = yBottom - boxH - 14, xx = x + 14;
+    ctx.fillStyle = bg; roundRect(ctx, xx, y, boxW, boxH, 8); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'top';
+    ctx.fillText(text, xx + padX, y + padY);
+  }
+  async function makeBeforeAfterCollage(beforeFile, afterFile) {
+    const [a, b] = await Promise.all([loadBitmap(beforeFile), loadBitmap(afterFile)]);
+    const gap = 8;
+    const avgAspect = (a.width / a.height + b.width / b.height) / 2;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (avgAspect > 1.15) {
+      // Landscape shots → stack vertically on a common width.
+      const W = Math.min(1400, Math.max(a.width, b.width));
+      const h1 = Math.round(a.height * W / a.width), h2 = Math.round(b.height * W / b.width);
+      canvas.width = W; canvas.height = h1 + gap + h2;
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(a, 0, 0, W, h1);
+      ctx.drawImage(b, 0, h1 + gap, W, h2);
+      drawLabel(ctx, 'BEFORE', 0, h1, '#006591');
+      drawLabel(ctx, 'AFTER', 0, canvas.height, '#1a7f4b');
+    } else {
+      // Portrait / square shots → side by side on a common height.
+      const H = Math.min(1100, Math.max(a.height, b.height));
+      const w1 = Math.round(a.width * H / a.height), w2 = Math.round(b.width * H / b.height);
+      canvas.width = w1 + gap + w2; canvas.height = H;
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(a, 0, 0, w1, H);
+      ctx.drawImage(b, w1 + gap, 0, w2, H);
+      drawLabel(ctx, 'BEFORE', 0, H, '#006591');
+      drawLabel(ctx, 'AFTER', w1 + gap, H, '#1a7f4b');
+    }
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+    if (!blob) throw new Error('collage encode failed');
+    return new File([blob], 'before-after.jpg', { type: 'image/jpeg' });
+  }
 
   // ── Edit / View on existing tiles ──────────────────────────────────────
   document.querySelectorAll('.edit-btn').forEach(btn => {
