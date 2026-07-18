@@ -152,25 +152,51 @@ def price_line_and_tags_for_refs(tenant, refs):
     return '\n'.join(lines), (tags or ['general'])
 
 
+def infer_price_refs(item) -> list:
+    """Best-effort price-list link for a legacy photo saved before refs existed:
+    match the library job labels against the photo's own text — its auto-composed
+    title / description / price line named the jobs it shows. Longest labels
+    first so 'Freestanding tub' wins over a bare 'tub' style match."""
+    haystack = ' '.join(
+        (item.title or '', item.description or '', item.price_line or '')).lower()
+    refs, seen = [], set()
+    for (family, variant), (label, _cat) in sorted(
+            _LIBRARY_INDEX.items(), key=lambda kv: -len(kv[1][0])):
+        if label.lower() in haystack:
+            key = (family, variant)
+            if key not in seen:
+                seen.add(key)
+                refs.append({'family': family, 'variant': variant})
+    return refs
+
+
 def resync_portfolio_prices(tenant) -> int:
     """Re-pull every linked photo's price line (and category) from the current
     price list — called after prices change so images and prices never drift.
-    Only photos with price_refs are touched; hand-typed ones are left alone."""
+    Photos saved before the link existed are back-filled from their own text so
+    they sync too; truly hand-typed photos (no match) are left alone."""
     from .models import TenantPortfolioItem
     updated = 0
     for item in TenantPortfolioItem.objects.filter(tenant=tenant):
-        if not item.price_refs:
-            continue
-        line, tags = price_line_and_tags_for_refs(tenant, item.price_refs)
+        fields = []
+        refs = item.price_refs or []
+        if not refs:
+            refs = infer_price_refs(item)
+            if not refs:
+                continue
+            item.price_refs = refs
+            fields.append('price_refs')          # persist the recovered link
+        line, tags = price_line_and_tags_for_refs(tenant, refs)
         if line is None:
             continue
-        changed = False
         if item.price_line != line[:200]:
-            item.price_line, changed = line[:200], True
+            item.price_line = line[:200]
+            fields.append('price_line')
         if tags and item.keywords != tags:
-            item.keywords, changed = tags, True
-        if changed:
-            item.save(update_fields=['price_line', 'keywords'])
+            item.keywords = tags
+            fields.append('keywords')
+        if fields:
+            item.save(update_fields=fields)
             updated += 1
     return updated
 

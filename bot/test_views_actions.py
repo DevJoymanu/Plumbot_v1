@@ -2150,6 +2150,24 @@ class PortfolioPriceSyncTests(TestCase):
         self.assertIn('US$170', item.price_line)
         self.assertEqual(item.keywords, ['bathroom install'])
 
+    def test_legacy_photo_without_refs_is_linked_and_priced(self):
+        # An image saved BEFORE the price link existed (price_refs empty) still
+        # gets priced: its text ("Geyser supply & install") is matched back to
+        # the price list, the link recovered, and the price pulled in.
+        from .media_library import resync_portfolio_prices
+        from .models import TenantPortfolioItem, TenantPriceItem
+        item = TenantPortfolioItem.objects.create(
+            tenant=self.tenant, item_id='legacy',
+            filename='tenant_portfolios/acme/old.jpg',
+            title='Geyser supply & install', keywords=['geyser'])
+        self.assertEqual(item.price_refs, [])
+        TenantPriceItem.objects.create(
+            tenant=self.tenant, family='geyser', variant='', label='geyser', allin=160)
+        self.assertEqual(resync_portfolio_prices(self.tenant), 1)
+        item.refresh_from_db()
+        self.assertEqual(item.price_refs, [{'family': 'geyser', 'variant': ''}])
+        self.assertIn('US$160', item.price_line)
+
     def test_saving_config_prices_resyncs_linked_photos(self):
         from .models import TenantPortfolioItem, TenantPriceItem
         item = TenantPortfolioItem.objects.create(
