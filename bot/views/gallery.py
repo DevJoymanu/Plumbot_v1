@@ -27,6 +27,7 @@ from ..models import TenantPortfolioItem
 # several tags and is grouped under its first (primary) one.
 GALLERY_CATEGORIES = [
     ('bathroom install', 'Bathroom installs'),
+    ('kitchen', 'Kitchens'),
     ('geyser', 'Geysers'),
     ('drain', 'Drains'),
     ('taps', 'Taps & fixtures'),

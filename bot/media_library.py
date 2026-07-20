@@ -61,6 +61,14 @@ PORTFOLIO_LIBRARY = [
         ('Freestanding tub', 'tub', 'freestanding'),
         ('Side chamber', 'chamber', ''),
     ]),
+    # The whole-room jobs. These are priced (renovation/*, package/*) but were
+    # missing from the picker, so the biggest-ticket photos a tenant owns could
+    # be neither categorised nor price-linked — kitchens had nowhere to go at all.
+    ('Renovations', [
+        ('Kitchen renovation', 'renovation', 'kitchen'),
+        ('Bathroom renovation', 'renovation', 'bathroom'),
+        ('Full bathroom package', 'package', 'full_bathroom'),
+    ]),
 ]
 
 
@@ -87,6 +95,12 @@ def _fam_tag(family: str, variant: str) -> str:
         return 'taps'
     if variant in ('minor_pipe_leak', 'burst_pipe', 'pipe_section'):
         return 'pipes'
+    if family == 'renovation':
+        # Kitchens are their own bucket; a bathroom renovation shows with the
+        # bathroom work rather than opening a near-duplicate group.
+        return 'kitchen' if variant == 'kitchen' else 'bathroom install'
+    if family == 'package' and variant == 'full_bathroom':
+        return 'bathroom install'
     if family in ('shower', 'vanity', 'toilet', 'basin', 'tub', 'chamber'):
         return 'bathroom install'
     return 'general'

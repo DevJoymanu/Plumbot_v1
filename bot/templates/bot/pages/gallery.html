@@ -370,6 +370,8 @@
     if (['drain_simple','drain_severe','jetting'].includes(variant)) return 'drain';
     if (['leaking_tap','toilet_seat_replacement','cistern','full_toilet_replacement'].includes(variant)) return 'taps';
     if (['minor_pipe_leak','burst_pipe','pipe_section'].includes(variant)) return 'pipes';
+    if (family === 'renovation') return variant === 'kitchen' ? 'kitchen' : 'bathroom install';
+    if (family === 'package' && variant === 'full_bathroom') return 'bathroom install';
     if (['shower','vanity','toilet','basin','tub','chamber'].includes(family)) return 'bathroom install';
     return 'general';
   }
@@ -393,8 +395,9 @@
   //           captionEdited, price_line, priceEdited, tags:[], tag, pair_path}
   //   edit:  {editPk, src, isVideo, libs, caption, captionEdited, price_line,
   //           priceEdited, tags, tag}
-  const CAT_LABELS = { 'bathroom install': 'Bathroom install', geyser: 'Geyser',
-    drain: 'Drain', taps: 'Taps & fixtures', pipes: 'Pipes', general: 'General' };
+  const CAT_LABELS = { 'bathroom install': 'Bathroom install', kitchen: 'Kitchen',
+    geyser: 'Geyser', drain: 'Drain', taps: 'Taps & fixtures', pipes: 'Pipes',
+    general: 'General' };
   const annot = document.getElementById('annot');
   const custom = document.getElementById('annot_custom');
   const priceIn = document.getElementById('annot_price');

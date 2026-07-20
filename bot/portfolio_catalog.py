@@ -55,7 +55,7 @@ PORTFOLIO_IMAGES_DIR = os.environ.get(
 PORTFOLIO_ITEMS: list[dict] = [
     {
         'id': 'modern-kitchen-island',
-        'category': 'general',
+        'category': 'kitchen',
         'filename': 'Full_kitchen_renovation.jpeg',
         'title': 'Modern Open-Plan Kitchen',
         'price': 'kitchen renovation from US$600',
@@ -72,7 +72,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'navy-shaker-kitchen',
-        'category': 'general',
+        'category': 'kitchen',
         'filename': 'Kitchen_installation.jpeg',
         'title': 'Navy Shaker Kitchen',
         'price': 'kitchen renovation from US$600',

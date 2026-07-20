@@ -2155,6 +2155,35 @@ class PortfolioPriceSyncTests(TestCase):
         self.assertEqual(line, 'Geyser supply & install from US$160')
         self.assertEqual(tags, ['geyser'])   # categorised by the job
 
+    def test_every_library_job_lands_in_a_real_gallery_category(self):
+        # _fam_tag must only ever emit keys the gallery can render, and every
+        # pickable job must be reachable: a job missing from PORTFOLIO_LIBRARY
+        # can be neither categorised nor price-linked (how kitchens ended up
+        # invisible despite renovation/kitchen being priced).
+        from .media_library import PORTFOLIO_LIBRARY, _fam_tag
+        from .views.gallery import GALLERY_CATEGORIES
+        valid = {key for key, _ in GALLERY_CATEGORIES}
+        for _cat, items in PORTFOLIO_LIBRARY:
+            for label, family, variant in items:
+                self.assertIn(_fam_tag(family, variant), valid, label)
+        self.assertEqual(_fam_tag('renovation', 'kitchen'), 'kitchen')
+        self.assertEqual(_fam_tag('renovation', 'bathroom'), 'bathroom install')
+        # Every priced job the tenant sells should be pickable in the annotator.
+        from .tenant_config import HOMEBASE_PRICE_ITEMS
+        pickable = {(f, v) for _c, items in PORTFOLIO_LIBRARY
+                    for _l, f, v in items}
+        for row in HOMEBASE_PRICE_ITEMS:
+            if row['family'] in ('renovation', 'package'):
+                self.assertIn((row['family'], row.get('variant', '')), pickable,
+                              row['label'])
+
+    def test_kitchen_photos_bucket_under_kitchens(self):
+        from .models import TenantPortfolioItem
+        rows = {r.item_id: r.keywords for r
+                in TenantPortfolioItem.objects.filter(tenant=self.homebase)}
+        self.assertEqual(rows['modern-kitchen-island'], ['kitchen'])
+        self.assertEqual(rows['navy-shaker-kitchen'], ['kitchen'])
+
     def test_unpriced_link_is_blank_but_still_categorised(self):
         from .media_library import price_line_and_tags_for_refs
         line, tags = price_line_and_tags_for_refs(
