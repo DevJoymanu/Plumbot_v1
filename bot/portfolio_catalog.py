@@ -46,10 +46,16 @@ PORTFOLIO_IMAGES_DIR = os.environ.get(
 #   description one-line spec of what's in the photo
 #   story       warm, relatable back-story (1–2 sentences, no emojis)
 #   keywords    lowercase trigger terms (English + Shona) used for matching
+#   category    the gallery bucket the photo shows under in the tenant portal —
+#               MUST be one of bot/views/gallery.GALLERY_CATEGORIES' keys (the
+#               same closed set media_library._fam_tag derives for annotated
+#               photos), so homebase's seeded gallery groups the way every
+#               other tenant's does. Not a matching term; see `keywords`.
 
 PORTFOLIO_ITEMS: list[dict] = [
     {
         'id': 'modern-kitchen-island',
+        'category': 'general',
         'filename': 'Full_kitchen_renovation.jpeg',
         'title': 'Modern Open-Plan Kitchen',
         'price': 'kitchen renovation from US$600',
@@ -66,6 +72,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'navy-shaker-kitchen',
+        'category': 'general',
         'filename': 'Kitchen_installation.jpeg',
         'title': 'Navy Shaker Kitchen',
         'price': 'kitchen renovation from US$600',
@@ -82,6 +89,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'freestanding-tub-hex',
+        'category': 'bathroom install',
         'filename': 'standalone_freestanding_tub(2).jpg',
         'title': 'Freestanding Tub & Wall-Hung Toilet',
         'price': 'freestanding tub from US$670 + wall-hung toilet from US$160; full bathroom renovation from US$900',
@@ -99,6 +107,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'gold-tap-double-vanity',
+        'category': 'bathroom install',
         'filename': 'custom_double_vanity.jpg',
         'title': 'Gold-Tap Double Vanity',
         'price': 'vanity unit from US$180; full bathroom renovation from US$900',
@@ -116,6 +125,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'black-granite-vanity-tub',
+        'category': 'bathroom install',
         'filename': 'standalone_freestanding_tub.jpg',
         'title': 'Black Granite Vanity & Designer Tub',
         'price': 'freestanding tub from US$670 + vanity from US$180; full renovation from US$900',
@@ -133,6 +143,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'backlit-guest-toilet',
+        'category': 'bathroom install',
         'filename': 'backlitGuestToilet.jpeg',
         'title': 'Backlit Guest Toilet',
         'price': 'toilet & cistern from US$70, vanity from US$180',
@@ -149,6 +160,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'classic-toilet-basin',
+        'category': 'bathroom install',
         'filename': 'chamber_and_sink.jpg',
         'title': 'Classic Toilet & Basin Suite',
         'price': 'toilet & cistern from US$70 + pedestal basin from US$70',
@@ -166,6 +178,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'clawfoot-tub-feature-wall',
+        'category': 'bathroom install',
         'filename': 'full_bathroom_renovation.jpg',
         'title': 'Vintage Clawfoot Tub Bathroom',
         'price': 'freestanding tub from US$670 + wall-hung toilet from US$160 + corner basin from US$70; full bathroom renovation from US$900',
@@ -183,6 +196,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'walk-in-rain-shower',
+        'category': 'bathroom install',
         'filename': 'Cubicle.jpg',
         'title': 'Walk-In Rain Shower',
         'price': 'shower cubicle from US$170; full bathroom renovation from US$900',
@@ -199,6 +213,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'marble-builtin-tub',
+        'category': 'bathroom install',
         'filename': 'ordinar_tub(built-in)_2.jpg',
         'title': 'Marble Built-In Bathtub',
         'price': 'standard bathtub from US$160; full bathroom renovation from US$900',
@@ -215,6 +230,7 @@ PORTFOLIO_ITEMS: list[dict] = [
     },
     {
         'id': 'marble-tub-black-tap-vanity',
+        'category': 'bathroom install',
         'filename': 'odinary_tub(built-in).jpg',
         'title': 'Marble Bathtub & Black-Tap Vanity',
         'price': 'standard bathtub from US$160 + vanity from US$180; full renovation from US$900',

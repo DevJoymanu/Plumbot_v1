@@ -2038,6 +2038,21 @@ class TenantConfigTests(TestCase):
             for key in ('filename', 'title', 'price', 'description', 'story', 'keywords'):
                 self.assertEqual(item[key], legacy.get(key, '' if key != 'keywords' else []), f"{item['id']}.{key}")
         self.assertEqual(items_for(self.acme), [])
+        # Homebase's gallery buckets must be the app's own categories, not the
+        # bot's match terms — the seed used to put 'navy' / 'clawfoot' in
+        # `keywords`, giving the portal a bucket per photo.
+        from .models import TenantPortfolioItem
+        from .views.gallery import GALLERY_CATEGORIES
+        valid = {key for key, _ in GALLERY_CATEGORIES}
+        rows = TenantPortfolioItem.objects.filter(tenant=self.homebase)
+        for row in rows:
+            self.assertTrue(set(row.keywords) <= valid,
+                            f'{row.item_id}: {row.keywords} not gallery categories')
+        # ...while the matching synonyms survive the split.
+        self.assertIn('clawfoot', dict(
+            (r.item_id, r.match_terms) for r in rows)['clawfoot-tub-feature-wall'])
+        self.assertIsNotNone(portfolio_catalog.match_portfolio_item(
+            'show me the black tub photo', tenant=self.homebase))
         self.assertIsNone(portfolio_catalog.catalogue_overview(tenant=self.acme))
         self.assertIsNone(portfolio_catalog.match_portfolio_item(
             'show me the black tub photo', tenant=self.acme))

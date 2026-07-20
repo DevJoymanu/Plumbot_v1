@@ -51,7 +51,8 @@ def _seed_test_tenant(sender, **kwargs):
                 price_line=item.get('price', ''),
                 description=item.get('description', ''),
                 story=item.get('story', ''),
-                keywords=list(item.get('keywords', [])),
+                keywords=[item.get('category', 'general')],
+                match_terms=list(item.get('keywords', [])),
                 sort_order=index,
             ),
         )

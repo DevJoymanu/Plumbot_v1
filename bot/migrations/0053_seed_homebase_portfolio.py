@@ -20,6 +20,8 @@ def seed(apps, schema_editor):
                 price_line=item.get('price', ''),
                 description=item.get('description', ''),
                 story=item.get('story', ''),
+                # keywords/match_terms are split by 0062; on a fresh database
+                # that migration runs right after and fixes these rows up.
                 keywords=list(item.get('keywords', [])),
                 sort_order=index,
             ),

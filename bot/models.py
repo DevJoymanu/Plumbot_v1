@@ -292,7 +292,16 @@ class TenantPortfolioItem(models.Model):
     price_refs = models.JSONField(default=list, blank=True)
     description = models.TextField(blank=True, default='')
     story = models.TextField(blank=True, default='')
+    # Gallery category tags — keys from views/gallery.GALLERY_CATEGORIES, the
+    # closed set media_library._fam_tag derives from a photo's price_refs.
     keywords = models.JSONField(default=list, blank=True)
+    # The bot's own trigger terms for "which photo does the customer mean"
+    # (English + Shona synonyms; see portfolio_catalog.match_portfolio_item).
+    # Separate from `keywords` because the two drifted: homebase's seed put
+    # match terms in `keywords`, so its gallery bucketed by 'navy' / 'clawfoot'
+    # instead of the app's categories. Empty = fall back to `keywords`, which
+    # is what portal-uploaded photos (tags only, no synonyms) match on today.
+    match_terms = models.JSONField(default=list, blank=True)
     sort_order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
@@ -316,7 +325,8 @@ class TenantPortfolioItem(models.Model):
             'price': self.price_line,
             'description': self.description,
             'story': self.story,
-            'keywords': list(self.keywords or []),
+            'category': (list(self.keywords or []) or ['general'])[0],
+            'keywords': list(self.match_terms or self.keywords or []),
         }
 
     def __str__(self):
