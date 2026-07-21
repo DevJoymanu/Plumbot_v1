@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service — Plumbot</title>
+    {% include "bot/includes/head_assets.html" %}
+    <style>
+        body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-base); line-height: 1.6; }
+        .doc-wrap { max-width: 760px; margin: 0 auto; padding: 56px 24px 96px; }
+        .doc-header { margin-bottom: 40px; }
+        .doc-header .eyebrow {
+            font-family: var(--font-label); font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-primary);
+        }
+        .doc-header h1 { margin: 6px 0 4px; font-size: 30px; font-weight: 400; }
+        .doc-header .updated { color: var(--color-muted); font-size: 13px; }
+        .doc-body h2 {
+            font-size: 16px; font-weight: 700; color: var(--color-primary);
+            margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(0,101,145,0.12);
+        }
+        .doc-body p, .doc-body li { font-size: 14.5px; color: var(--color-text-2); }
+        .doc-body ul { padding-left: 20px; margin: 10px 0; }
+        .doc-body li { margin-bottom: 6px; }
+        .doc-note {
+            background: var(--color-primary-fixed); border-radius: var(--radius-md);
+            padding: 14px 18px; font-size: 13px; color: var(--color-on-primary-fixed-variant);
+            margin-bottom: 32px;
+        }
+        .doc-footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid rgba(0,101,145,0.1); font-size: 13px; color: var(--color-muted); }
+        a { color: var(--color-primary); }
+    </style>
+</head>
+<body>
+<div class="doc-wrap">
+    <div class="doc-header">
+        <div class="eyebrow">HomeX Media · Plumbot</div>
+        <h1>Terms of Service</h1>
+        <div class="updated">Last updated 21 July 2026</div>
+    </div>
+
+    <div class="doc-note">
+        HomeX Media is currently operating under this trading name while formal business
+        registration is completed. These terms will be updated with our registered
+        company details once that process finishes; they are in effect in the meantime.
+    </div>
+
+    <div class="doc-body">
+        <h2>The service</h2>
+        <p>
+            Plumbot is a WhatsApp-based assistant platform, operated by HomeX Media,
+            that independent service businesses ("client businesses") use to talk
+            with their own customers — answering questions, quoting prices, and
+            booking appointments.
+        </p>
+        <p>
+            If you are messaging a client business's WhatsApp number as a customer,
+            your relationship for the underlying service (e.g. a plumbing job) is
+            with that client business, not with HomeX Media. We provide the
+            technology that powers their WhatsApp conversation.
+        </p>
+
+        <h2>For client businesses</h2>
+        <ul>
+            <li>You must have the right to use the WhatsApp number you connect to
+                the platform, and to message the customers who contact it.</li>
+            <li>You're responsible for the accuracy of the information you configure
+                (pricing, service details, business facts) — the assistant answers
+                customers using what you've provided.</li>
+            <li>You must not use the platform to send unsolicited marketing messages
+                in violation of WhatsApp's own policies, or for any unlawful purpose.</li>
+            <li>We may suspend a connected number if we reasonably believe it's being
+                used in violation of these terms or WhatsApp's own Business Messaging
+                Policy.</li>
+        </ul>
+
+        <h2>Third-party platforms</h2>
+        <p>
+            The service depends on WhatsApp's Business Platform, which is operated by
+            Meta and governed by Meta's own terms and policies. We aren't responsible
+            for outages, policy changes, or account actions taken by Meta or WhatsApp
+            that are outside our control.
+        </p>
+
+        <h2>Availability</h2>
+        <p>
+            We aim to keep the service running reliably but don't guarantee
+            uninterrupted availability. We may perform maintenance, make changes, or
+            temporarily suspend the service with reasonable notice where practical.
+        </p>
+
+        <h2>Liability</h2>
+        <p>
+            The service is provided on an "as is" basis. To the extent permitted by
+            law, HomeX Media is not liable for indirect or consequential losses
+            arising from use of the platform. Nothing here limits liability that
+            cannot be limited by law.
+        </p>
+
+        <h2>Changes to these terms</h2>
+        <p>
+            We may update these terms as the service and business evolve. Material
+            changes will be reflected here with an updated date.
+        </p>
+
+        <h2>Contact</h2>
+        <p>
+            Questions about these terms: <a href="mailto:jones86xi@gmail.com">jones86xi@gmail.com</a>.
+        </p>
+    </div>
+
+    <div class="doc-footer">
+        HomeX Media — Plumbot · <a href="{% url 'legal_privacy' %}">Privacy Policy</a>
+    </div>
+</div>
+</body>
+</html>

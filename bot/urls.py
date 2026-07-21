@@ -4,6 +4,7 @@ from . import views
 from .views import platform as platform_views
 from .views import gallery as gallery_views
 from .views import offer as offer_views
+from .views import legal as legal_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
@@ -40,6 +41,11 @@ urlpatterns = [
 
     # Public click-to-call bridge for the portfolio PDF's Call button.
     path('call/', views.call_redirect, name='call_redirect'),
+
+    # Public legal pages (platform operator — required live URLs for WhatsApp
+    # Cloud API / Meta App Review; no login required).
+    path('legal/privacy/', legal_views.privacy_policy, name='legal_privacy'),
+    path('legal/terms/', legal_views.terms_of_service, name='legal_terms'),
 
     # Authentication URLs
     path('', login_view, name='login'),

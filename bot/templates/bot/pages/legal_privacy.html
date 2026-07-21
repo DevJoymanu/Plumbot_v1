@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — Plumbot</title>
+    {% include "bot/includes/head_assets.html" %}
+    <style>
+        body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-base); line-height: 1.6; }
+        .doc-wrap { max-width: 760px; margin: 0 auto; padding: 56px 24px 96px; }
+        .doc-header { margin-bottom: 40px; }
+        .doc-header .eyebrow {
+            font-family: var(--font-label); font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-primary);
+        }
+        .doc-header h1 { margin: 6px 0 4px; font-size: 30px; font-weight: 400; }
+        .doc-header .updated { color: var(--color-muted); font-size: 13px; }
+        .doc-body h2 {
+            font-size: 16px; font-weight: 700; color: var(--color-primary);
+            margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(0,101,145,0.12);
+        }
+        .doc-body p, .doc-body li { font-size: 14.5px; color: var(--color-text-2); }
+        .doc-body ul { padding-left: 20px; margin: 10px 0; }
+        .doc-body li { margin-bottom: 6px; }
+        .doc-note {
+            background: var(--color-primary-fixed); border-radius: var(--radius-md);
+            padding: 14px 18px; font-size: 13px; color: var(--color-on-primary-fixed-variant);
+            margin-bottom: 32px;
+        }
+        .doc-footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid rgba(0,101,145,0.1); font-size: 13px; color: var(--color-muted); }
+        a { color: var(--color-primary); }
+    </style>
+</head>
+<body>
+<div class="doc-wrap">
+    <div class="doc-header">
+        <div class="eyebrow">HomeX Media · Plumbot</div>
+        <h1>Privacy Policy</h1>
+        <div class="updated">Last updated 21 July 2026</div>
+    </div>
+
+    <div class="doc-note">
+        HomeX Media is currently operating under this trading name while formal business
+        registration is completed. This policy will be updated with our registered company
+        details once that process finishes; it is accurate and in effect in the meantime.
+    </div>
+
+    <div class="doc-body">
+        <h2>Who we are</h2>
+        <p>
+            Plumbot is a WhatsApp-based assistant platform operated by HomeX Media
+            ("we", "us"). We provide the platform to independent service businesses
+            ("client businesses") so they can use WhatsApp to talk to their own
+            customers — answering questions, quoting prices, and booking appointments.
+        </p>
+        <p>
+            When you message a client business's WhatsApp number, HomeX Media processes
+            that conversation on their behalf, as their service provider. The client
+            business is responsible for its own customers and decides what it uses
+            our platform for; we handle the data as instructed by them.
+        </p>
+
+        <h2>What we collect</h2>
+        <ul>
+            <li>Your WhatsApp phone number and profile name.</li>
+            <li>The content of messages you send to a client business's number —
+                text, photos, videos, voice notes, and documents.</li>
+            <li>Information you provide in conversation to get a quote or book an
+                appointment: name, service address/area, job details, preferred
+                date/time, and similar booking information.</li>
+            <li>Basic technical metadata needed to deliver messages (message IDs,
+                timestamps, delivery status).</li>
+        </ul>
+
+        <h2>How we use it</h2>
+        <ul>
+            <li>To understand your message and generate a relevant reply (we use an
+                AI language model provider to help interpret and draft responses).</li>
+            <li>To schedule and remind you about appointments you book.</li>
+            <li>To store any photos or documents you send (e.g. a site plan) so the
+                client business can refer back to them.</li>
+            <li>To send related emails (e.g. booking confirmations) where you've
+                provided an email address.</li>
+        </ul>
+        <p>We do not sell your data, and we do not use your conversations to train
+           third-party AI models beyond generating your own reply.</p>
+
+        <h2>Who we share it with</h2>
+        <p>We use the following providers to operate the service. Each only
+           receives what's needed to perform its function:</p>
+        <ul>
+            <li><strong>Meta / WhatsApp Business Platform</strong> — transports the
+                messages themselves.</li>
+            <li><strong>DeepSeek</strong> (AI provider) — processes message text to
+                classify intent and help generate replies.</li>
+            <li><strong>Cloudflare</strong> — stores photos, documents, and other
+                media you send.</li>
+            <li><strong>Our email provider</strong> — sends transactional emails
+                (e.g. booking confirmations) where an email address is provided.</li>
+            <li><strong>Google Calendar</strong> — only if a client business has
+                enabled calendar sync for its own appointments.</li>
+            <li><strong>Railway</strong> — hosts the application and database.</li>
+        </ul>
+
+        <h2>How long we keep it</h2>
+        <p>
+            We retain conversation and booking data for as long as needed to provide
+            the service to the client business you contacted, and as reasonably
+            required for their own record-keeping (e.g. completed job history). If
+            you'd like your data removed, contact us using the details below and
+            we'll action it, subject to any records the client business is legally
+            required to keep.
+        </p>
+
+        <h2>Your choices</h2>
+        <p>
+            You can ask the client business — or us directly — what data we hold
+            about you, request a copy, or ask for it to be deleted. You can also
+            simply stop messaging the number at any time.
+        </p>
+
+        <h2>Contact</h2>
+        <p>
+            Questions about this policy or your data: <a href="mailto:jones86xi@gmail.com">jones86xi@gmail.com</a>.
+        </p>
+    </div>
+
+    <div class="doc-footer">
+        HomeX Media — Plumbot · <a href="{% url 'legal_terms' %}">Terms of Service</a>
+    </div>
+</div>
+</body>
+</html>
