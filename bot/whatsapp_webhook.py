@@ -410,6 +410,11 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         # and every pre-threading call site).
         from .whatsapp_cloud_api import get_client_for_tenant
         client = get_client_for_tenant(tenant)
+        print(
+            f"🔎 delayed_response client pick — tenant="
+            f"{getattr(tenant, 'slug', None)!r}(pk={getattr(tenant, 'pk', None)!r}) "
+            f"-> client.phone_number_id={client.phone_number_id!r}"
+        )
 
         def _leads():
             qs = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}")
