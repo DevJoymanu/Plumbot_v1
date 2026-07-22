@@ -2641,6 +2641,46 @@ try:
 except Exception as e:
     results.log("send retry", False, got=str(e))
 
+# Every threading.Thread(target=delayed_response, ...) call site MUST thread
+# tenant, or the send silently falls back to the env/homebase client — the
+# exact bug that had tenant jd3's replies going out on homebase's number.
+# Structural (AST) check over the source so a new call site missing the kwarg
+# fails the gate immediately, without needing to reproduce a live send.
+try:
+    import ast as _ast
+    import inspect as _inspect
+
+    import bot.whatsapp_webhook as _wh
+    _src = _inspect.getsource(_wh)
+    _tree = _ast.parse(_src)
+    _bad_sites = []
+    for _node in _ast.walk(_tree):
+        if not (isinstance(_node, _ast.Call)
+                and isinstance(_node.func, _ast.Attribute)
+                and _node.func.attr == 'Thread'):
+            continue
+        _target_kw = next((kw for kw in _node.keywords if kw.arg == 'target'), None)
+        if not (_target_kw and isinstance(_target_kw.value, _ast.Name)
+                and _target_kw.value.id == 'delayed_response'):
+            continue
+        # tenant lives inside the kwargs={...} dict literal, not as a direct
+        # keyword on Thread() itself — check that dict's own keys.
+        _kwargs_kw = next((kw for kw in _node.keywords if kw.arg == 'kwargs'), None)
+        _has_tenant = bool(
+            _kwargs_kw and isinstance(_kwargs_kw.value, _ast.Dict)
+            and any(isinstance(k, _ast.Constant) and k.value == 'tenant'
+                   for k in _kwargs_kw.value.keys)
+        )
+        if not _has_tenant:
+            _bad_sites.append(_node.lineno)
+    results.log(
+        "delayed_response: every threading.Thread call site threads tenant",
+        not _bad_sites,
+        got=f"missing at line(s): {_bad_sites}" if _bad_sites else "all call sites OK",
+    )
+except Exception as e:
+    results.log("delayed_response tenant threading check", False, got=str(e))
+
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The
 # TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality

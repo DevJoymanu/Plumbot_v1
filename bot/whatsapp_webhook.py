@@ -2495,6 +2495,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             threading.Thread(
                 target=delayed_response,
                 args=(sender, _faq_reply, delay, message_id),
+                kwargs={'tenant': tenant},
                 daemon=True,
             ).start()
             return
@@ -2684,6 +2685,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             threading.Thread(
                 target=delayed_response,
                 args=(sender, price_text, delay, message_id),
+                kwargs={'tenant': tenant},
                 daemon=True,
             ).start()
             return
@@ -3028,6 +3030,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         threading.Thread(
             target=delayed_response,
             args=(sender, reply_parts, delay, message_id, cancel_event),
+            kwargs={'tenant': tenant},
             daemon=True,
         ).start()
         print(f"Response scheduled for {delay // 60} minute(s) from now")
