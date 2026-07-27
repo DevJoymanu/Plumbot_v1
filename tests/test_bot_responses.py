@@ -14,10 +14,6 @@ load_dotenv(r'D:\SAAS\CRMs\Plumbing\Plumbing_CRM\.env')
 # ✅ THIS LINE is what fixes "No module named 'Plumbing_CRM'"
 sys.path.insert(0, r'D:\SAAS\CRMs\Plumbing\Plumbing_CRM')
 
-import django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Plumbing_CRM.settings')
-django.setup()
-
 # ── Run modes ────────────────────────────────────────────────────────────────
 # PLUMBOT_GATE=1        → run ONLY the deterministic TEST 0 regression block and
 #                         exit non-zero on any failure. This is the commit gate:
@@ -26,7 +22,27 @@ django.setup()
 #                         so the FULL suite runs offline without flaky live calls.
 # Gate mode implies the mock so it never touches the network.
 GATE_ONLY = os.environ.get('PLUMBOT_GATE') == '1' or '--gate' in sys.argv
-if GATE_ONLY or os.environ.get('PLUMBOT_MOCK_DEEPSEEK') == '1':
+OFFLINE = GATE_ONLY or os.environ.get('PLUMBOT_MOCK_DEEPSEEK') == '1'
+
+# An offline run gets its own throwaway database, decided BEFORE django.setup()
+# because settings keys TEST MODE off `'test' in sys.argv`. Tenant config —
+# prices, FAQ facts, declined areas — lives in the DB since Phase 2, so the
+# deterministic block reads it on most assertions. Left pointing at whatever
+# DATABASE_URL happens to be set, the gate silently grades against the
+# developer's own data and fails wholesale on CI's empty database. TEST MODE
+# gives it in-memory SQLite with the schema built from the models, and
+# bot/apps.py's post_migrate hook seeds the homebase tenant from the same
+# HOMEBASE_* constants the production migrations use.
+if OFFLINE and 'test' not in sys.argv:
+    sys.argv.append('test')
+
+import django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Plumbing_CRM.settings')
+django.setup()
+
+if OFFLINE:
+    from django.db import connection
+    connection.creation.create_test_db(verbosity=0, autoclobber=True, serialize=False)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from deepseek_mock import install as _install_ds_mock
     _install_ds_mock()
@@ -135,7 +151,10 @@ class TestResult:
             self.failed += 1
             error = f"  Expected: {expected}\n  Got: {got}\n  Note: {message}"
             print(error)
-            self.errors.append(f"{test_name}: {message}")
+            # The summary at the bottom is what a CI log gets read for — fall
+            # back to what we actually got (often an exception string) so a
+            # failure isn't just a bare test name.
+            self.errors.append(f"{test_name}: {message or got or 'failed'}")
         else:
             self.passed += 1
             if message:
