@@ -286,6 +286,45 @@ def platform_new_intake(request, slug):
     return redirect('platform_tenant_config', slug=tenant.slug)
 
 
+def _intake_price_parts() -> dict:
+    """Component part-names per catalogue item, keyed "family|variant" — the
+    wizard renders a breakdown line from this instead of keeping its own copy
+    of which items are composed (e.g. freestanding tub = tub + mixer + install)."""
+    return {
+        f"{row['family']}|{row.get('variant', '')}":
+            [p['name'] for p in row['parts'] if p.get('name')]
+        for row in blank_priced_catalog() if row.get('parts')
+    }
+
+
+def _parse_price_parts(raw: str) -> list:
+    """One wizard row's breakdown, posted as a JSON string in the same shape as
+    TenantPriceItem.parts: [{"name": "mixer", "amount": 150}, …]. Amounts are
+    whole-dollar 'from' figures; a part with no amount is dropped."""
+    import json as _json
+    try:
+        parts = _json.loads(raw or '[]')
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(parts, list):
+        return []
+    cleaned = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        name = str(part.get('name') or '').strip()[:60]
+        amount = _to_decimal_or_none(str(part.get('amount', '')))
+        if not name or amount is None:
+            continue
+        cleaned.append({'name': name, 'amount': _as_price_number(amount)})
+    return cleaned
+
+
+def _as_price_number(amount):
+    """Decimal → the int/float the JSON column stores (no trailing .00)."""
+    return int(amount) if amount == int(amount) else float(amount)
+
+
 def _parse_intake_post(request) -> dict:
     """Normalise the wizard's POST into the intake draft shape (v2)."""
     import json as _json
@@ -324,6 +363,7 @@ def _parse_intake_post(request) -> dict:
     supplies = request.POST.getlist('price_supply')
     labours = request.POST.getlist('price_labour')
     allins = request.POST.getlist('price_allin')
+    parts = request.POST.getlist('price_parts')
 
     def at(lst, i):
         return (lst[i] if i < len(lst) else '').strip()
@@ -331,14 +371,18 @@ def _parse_intake_post(request) -> dict:
     for i, label in enumerate(labels):
         if not label.strip():
             continue
-        data['prices'].append({
+        row = {
             'label': label.strip(),
             'family': at(families, i).lower() or 'other',
             'variant': at(variants, i).lower(),
             'supply': at(supplies, i),
             'labour': at(labours, i),
             'allin': at(allins, i),
-        })
+        }
+        components = _parse_price_parts(at(parts, i))
+        if components:
+            row['parts'] = components
+        data['prices'].append(row)
     try:
         photos = _json.loads(request.POST.get('photos_meta') or '[]')
         if isinstance(photos, list):
@@ -387,6 +431,7 @@ def intake_form(request, token):
                 'tenant': intake.tenant,
                 'profile_fields': INTAKE_PROFILE_FIELDS,
                 'existing_json': _json.dumps(intake.data or {}),
+                'price_parts_json': _json.dumps(_intake_price_parts()),
                 'error': 'Please provide names of items for the image.',
             })
         intake.data = data
@@ -400,6 +445,7 @@ def intake_form(request, token):
         'tenant': intake.tenant,
         'profile_fields': INTAKE_PROFILE_FIELDS,
         'existing_json': _json.dumps(intake.data or {}),
+        'price_parts_json': _json.dumps(_intake_price_parts()),
     })
 
 
@@ -598,15 +644,19 @@ def platform_review_intake(request, pk):
             profile.faq_facts = merged
             profile.save()
             for row in data.get('prices') or []:
+                defaults = dict(
+                    label=row.get('label', ''),
+                    supply=_to_decimal_or_none(row.get('supply')),
+                    labour=_to_decimal_or_none(row.get('labour')),
+                    allin=_to_decimal_or_none(row.get('allin')),
+                )
+                # Only overwrite an existing breakdown when the owner priced one.
+                if row.get('parts'):
+                    defaults['parts'] = row['parts']
                 TenantPriceItem.objects.update_or_create(
                     tenant=tenant, family=row.get('family') or 'other',
                     variant=row.get('variant', ''),
-                    defaults=dict(
-                        label=row.get('label', ''),
-                        supply=_to_decimal_or_none(row.get('supply')),
-                        labour=_to_decimal_or_none(row.get('labour')),
-                        allin=_to_decimal_or_none(row.get('allin')),
-                    ),
+                    defaults=defaults,
                 )
             _apply_intake_photos(tenant, data.get('photos') or [])
             intake.status = 'approved'

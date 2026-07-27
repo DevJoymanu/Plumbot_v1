@@ -1127,6 +1127,46 @@ class TenantIntakeTests(TestCase):
         self.assertEqual(int(item.allin), 150)
         self.assertEqual(cfg.price_components().get('geyser'), (90, 60))
 
+    def test_price_rows_carry_the_full_breakdown(self):
+        # The wizard posts the same columns as the platform price sheet:
+        # supply/labour/all-in plus a component breakdown for composed items.
+        import json as _json
+        self._submit({
+            'price_label': ['Geyser supply & install', 'Freestanding tub'],
+            'price_family': ['geyser', 'tub'],
+            'price_variant': ['', 'freestanding'],
+            'price_supply': ['90', ''], 'price_labour': ['60', ''],
+            'price_allin': ['150', '670'],
+            'price_parts': ['[]', _json.dumps([
+                {'name': 'tub', 'amount': 400}, {'name': 'mixer', 'amount': 150},
+                {'name': 'install', 'amount': 120},
+                {'name': 'unpriced', 'amount': ''}])],
+        })
+        self.intake.refresh_from_db()
+        tub_draft = self.intake.data['prices'][1]
+        self.assertEqual(tub_draft['parts'], [
+            {'name': 'tub', 'amount': 400}, {'name': 'mixer', 'amount': 150},
+            {'name': 'install', 'amount': 120}])   # the amount-less part dropped
+        self.assertNotIn('parts', self.intake.data['prices'][0])
+
+        self.client.login(username='root', password='pass12345')
+        self.client.post(reverse('platform_review_intake', args=[self.intake.pk]),
+                         {'decision': 'approve'})
+        from .models import TenantPriceItem
+        tub = TenantPriceItem.objects.get(tenant=self.acme, family='tub', variant='freestanding')
+        self.assertEqual(int(tub.allin), 670)
+        self.assertEqual([p['name'] for p in tub.parts], ['tub', 'mixer', 'install'])
+        geyser = TenantPriceItem.objects.get(tenant=self.acme, family='geyser', variant='')
+        self.assertEqual((int(geyser.supply), int(geyser.labour)), (90, 60))
+        self.assertEqual(geyser.parts, [])
+
+    def test_form_embeds_catalogue_breakdowns(self):
+        # The breakdown lines are driven by the platform catalogue, not a copy
+        # kept in the template.
+        body = self.client.get(f'/intake/{self.intake.token}/').content.decode()
+        self.assertIn('tub|freestanding', body)
+        self.assertIn('mixer', body)
+
     def test_photo_upload_and_pairing(self):
         # Upload two photos via the endpoint, submit as a before/after pair,
         # approve → ONE portfolio item with pair_filename + tag keyword.

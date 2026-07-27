@@ -93,20 +93,38 @@
 
   /* Price library */
   .lib-item {
-    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-    border-radius: 14px; border: 1px solid transparent; transition: all 0.15s ease;
+    padding: 10px 12px; border-radius: 14px;
+    border: 1px solid transparent; transition: all 0.15s ease;
   }
+  .lib-head { display: flex; align-items: center; gap: 10px; }
   .lib-item .lib-name { flex: 1; font-size: 14px; color: var(--muted); cursor: pointer; user-select: none; }
   .lib-item.on { background: rgba(14,165,233,0.06); border-color: rgba(14,165,233,0.25); }
   .lib-item.on .lib-name { color: var(--ink); font-weight: 600; }
-  .lib-prices { display: none; gap: 6px; }
-  .lib-item.on .lib-prices { display: flex; }
-  .lib-prices .money { position: relative; width: 92px; }
-  .lib-prices .money::before {
-    content: attr(data-cur); position: absolute; left: 10px; top: 50%;
-    transform: translateY(-50%); font-size: 12px; color: var(--muted);
+  .lib-prices { display: none; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 0 32px; }
+  .lib-item.on .lib-prices { display: grid; }
+  .money { display: block; position: relative; }
+  .money::after {
+    content: attr(data-cur); position: absolute; left: 10px; bottom: 10px;
+    font-size: 12px; color: var(--muted); pointer-events: none;
   }
-  .lib-prices input { padding: 8px 8px 8px 26px; font-size: 13px; border-radius: 10px; }
+  .money-cap {
+    display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 3px;
+  }
+  .money-cap em { font-style: normal; color: var(--vibrant); }
+  .money input { padding: 8px 8px 8px 26px; font-size: 13px; border-radius: 10px; }
+  .money input.is-auto { background: rgba(14,165,233,0.12); color: var(--primary); font-weight: 700; }
+  /* Component breakdown (e.g. freestanding tub = tub + mixer + install) */
+  .lib-parts { display: none; margin: 12px 0 2px 32px; }
+  .lib-item.on .lib-parts { display: block; }
+  .lib-parts-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  .part-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .part-row .part-name { flex: 1; font-size: 13px; color: var(--ink); }
+  .part-row .money { width: 96px; flex: none; }
+  /* Custom "anything else" rows — same three columns, always open */
+  .cp-row { margin-bottom: 14px; }
+  .cp-row .cp-label { margin-bottom: 8px; }
+  .cp-prices { display: grid !important; margin-left: 0; }
   .lib-toggle {
     width: 22px; height: 22px; border-radius: 999px; border: 2px solid rgba(0,101,145,0.3);
     background: transparent; cursor: pointer; flex: none; padding: 0; position: relative;
@@ -399,7 +417,11 @@
       <p class="step-eyebrow">Step 4 of 6 · the big one</p>
       <h1>Your price list</h1>
       <p class="sub">Tap a job to activate it, then put in YOUR "from" rate.
-        Anything you skip, the assistant deflects to your free quote — it never guesses.</p>
+        Split it into supply and labour and the all-in fills itself — or leave those
+        blank and type a single all-in figure. A few jobs have a breakdown (a
+        freestanding tub is the tub, the mixer and the install); price each part and
+        it adds up for you. Anything you skip, the assistant deflects to your free
+        quote — it never guesses.</p>
 
       <div class="card quiet">
         <h3>Already have a rate sheet?</h3>
@@ -504,6 +526,9 @@
 const EXISTING = {{ existing_json|safe }};
 const TOKEN = "{{ intake.token }}";
 const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+// Component breakdowns straight off the platform catalogue ("family|variant" →
+// part names) so the wizard never keeps its own copy of that list.
+const PARTS = {{ price_parts_json|safe }};
 
 const LIBRARY = [
   {cat: 'Geysers', items: [
@@ -560,16 +585,41 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
   let areas = [];
 
   // ── Build price library ────────────────────────────────────────────────
+  // Same three money columns as the platform price sheet: supply + labour add
+  // up into a read-only all-in; leave them blank to type one all-in figure.
   const lib = document.getElementById('price-library');
+  const moneyBox = (kind, caption) =>
+    `<label class="money" data-cur="$">
+       <span class="money-cap">${caption}</span>
+       <input type="text" inputmode="decimal" data-price="${kind}" placeholder="—">
+     </label>`;
+  const priceColumns = extraClass =>
+    `<div class="lib-prices ${extraClass || ''}">
+       ${moneyBox('supply', 'Supply')}${moneyBox('labour', 'Labour')}${moneyBox('allin', 'All-in <em>auto</em>')}
+     </div>`;
+
   lib.innerHTML = '<h3>Common plumbing jobs — tap to activate</h3>' + LIBRARY.map(group =>
-    `<div class="chip-group-label">${group.cat}</div>` + group.items.map(item => `
+    `<div class="chip-group-label">${group.cat}</div>` + group.items.map(item => {
+      const parts = PARTS[`${item.family}|${item.variant}`] || [];
+      return `
       <div class="lib-item" data-family="${item.family}" data-variant="${item.variant}">
-        <button type="button" class="lib-toggle" aria-label="toggle"></button>
-        <span class="lib-name">${item.label}</span>
-        <span class="lib-prices">
-          <span class="money" data-cur="$"><input type="text" inputmode="decimal" data-price="allin" placeholder="from __"></span>
-        </span>
-      </div>`).join('')
+        <div class="lib-head">
+          <button type="button" class="lib-toggle" aria-label="toggle"></button>
+          <span class="lib-name">${item.label}</span>
+        </div>
+        ${priceColumns()}
+        ${parts.length ? `<div class="lib-parts">
+          <span class="lib-parts-tag">What makes up the price</span>
+          ${parts.map(name => `
+            <div class="part-row">
+              <span class="part-name">${name}</span>
+              <label class="money" data-cur="$">
+                <input type="text" inputmode="decimal" data-part="${name}" placeholder="—">
+              </label>
+            </div>`).join('')}
+        </div>` : ''}
+      </div>`;
+    }).join('')
   ).join('');
 
   lib.addEventListener('click', e => {
@@ -577,21 +627,83 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
     if (!item) return;
     if (e.target.closest('.lib-toggle') || e.target.classList.contains('lib-name')) {
       item.classList.toggle('on');
-      if (item.classList.contains('on')) item.querySelector('input').focus();
+      if (item.classList.contains('on')) item.querySelector('input[data-price]').focus();
       refresh();
     }
   });
 
-  window.addCustomPrice = function (label, price) {
+  // Any figure typed anywhere in a row re-runs that row's all-in maths.
+  [lib, document.getElementById('custom-prices')].forEach(box =>
+    box.addEventListener('input', e => {
+      const row = e.target.closest('.lib-item, .cp-row');
+      if (row) recalcAllin(row);
+    }));
+
+  window.addCustomPrice = function (label, values) {
     const div = document.createElement('div');
-    div.className = 'row';
-    div.style.marginBottom = '8px';
-    div.innerHTML = `
-      <div style="flex:2;"><input type="text" class="cp-label" placeholder="e.g. Borehole pump" value="${label || ''}"></div>
-      <div style="flex:1;"><span class="money" data-cur="$" style="position:relative; display:block;">
-        <input type="text" class="cp-price" inputmode="decimal" placeholder="from __" value="${price || ''}" style="padding-left:26px;"></span></div>`;
+    div.className = 'cp-row';
+    div.innerHTML =
+      `<input type="text" class="cp-label" placeholder="e.g. Borehole pump" value="${label || ''}">` +
+      priceColumns('cp-prices');
     document.getElementById('custom-prices').appendChild(div);
+    fillPriceRow(div, values || {});
   };
+
+  // ── Price row maths (mirrors the platform price sheet) ─────────────────
+  function _num(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+  function priceInput(row, kind) { return row.querySelector(`input[data-price="${kind}"]`); }
+  function partInputs(row) { return Array.from(row.querySelectorAll('input[data-part]')); }
+  function readPrice(row, kind) {
+    const el = priceInput(row, kind);
+    return el ? el.value.trim() : '';
+  }
+
+  function recalcAllin(row) {
+    const allin = priceInput(row, 'allin');
+    if (!allin) return;
+    const supply = readPrice(row, 'supply'), labour = readPrice(row, 'labour');
+    const amounts = partInputs(row).map(i => i.value.trim()).filter(v => v !== '');
+    if (supply === '' && labour === '' && !amounts.length) {
+      if (allin.classList.contains('is-auto')) allin.value = '';
+      allin.readOnly = false;
+      allin.classList.remove('is-auto');
+      allin.title = '';
+      return;
+    }
+    const partsSum = amounts.reduce((sum, v) => sum + _num(v), 0);
+    const total = _num(supply) + _num(labour) + partsSum;
+    allin.value = total ? String(total) : '';
+    allin.readOnly = true;
+    allin.classList.add('is-auto');
+    allin.title = 'Adds up: supply + labour' + (partsSum ? ' + breakdown' : '');
+  }
+
+  function priceRowValues(row) {
+    return {
+      supply: readPrice(row, 'supply'),
+      labour: readPrice(row, 'labour'),
+      allin: readPrice(row, 'allin'),
+      parts: partInputs(row)
+        .map(i => ({ name: i.dataset.part, amount: i.value.trim() }))
+        .filter(p => p.amount !== ''),
+    };
+  }
+  const priceRowFilled = v => !!(v.supply || v.labour || v.allin || v.parts.length);
+  const pricedRows = () => Array.from(
+    document.querySelectorAll('.lib-item.on, #custom-prices .cp-row'))
+    .filter(row => priceRowFilled(priceRowValues(row)));
+
+  function fillPriceRow(row, values) {
+    ['supply', 'labour', 'allin'].forEach(kind => {
+      const el = priceInput(row, kind);
+      if (el && values[kind] != null) el.value = values[kind];
+    });
+    (values.parts || []).forEach(p => {
+      const el = row.querySelector(`input[data-part="${p.name}"]`);
+      if (el && p.amount != null) el.value = p.amount;
+    });
+    recalcAllin(row);
+  }
 
   // ── Chips ──────────────────────────────────────────────────────────────
   document.querySelectorAll('#day-chips .chip, #service-chips .chip, #payment-chips .chip')
@@ -747,7 +859,7 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
     if (!libref) return '';
     const el = document.querySelector(`.lib-item[data-family="${libref.family}"][data-variant="${libref.variant}"]`);
     if (!el || !el.classList.contains('on')) return '';
-    return (el.querySelector('input[data-price]').value || '').trim();
+    return (priceInput(el, 'allin').value || '').trim();
   }
   function photoPriceLabel(p) {
     const val = libPriceVal(p.lib);
@@ -934,10 +1046,7 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
       services: !!document.querySelectorAll('#service-chips .chip.on').length,
       payment: !!document.querySelectorAll('#payment-chips .chip.on:not([data-pay="__other"])').length ||
                !!document.getElementById('payment_other').value.trim(),
-      prices: !!document.querySelectorAll('.lib-item.on input[data-price]').length &&
-              Array.from(document.querySelectorAll('.lib-item.on input[data-price]')).some(i => i.value.trim()) ||
-              Array.from(document.querySelectorAll('.cp-price')).some(i => i.value.trim()) ||
-              !!document.getElementById('pasted').value.trim(),
+      prices: !!pricedRows().length || !!document.getElementById('pasted').value.trim(),
       gallery: photos.length > 0,
     };
   }
@@ -967,23 +1076,29 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
     document.querySelectorAll('#payment-chips .chip.on').forEach(c => {
       if (c.dataset.pay !== '__other') hidden('payment', c.dataset.pay);
     });
-    document.querySelectorAll('.lib-item.on').forEach(item => {
-      const price = item.querySelector('input[data-price]').value.trim();
-      if (!price) return;
-      hidden('price_label', item.querySelector('.lib-name').textContent);
-      hidden('price_family', item.dataset.family);
-      hidden('price_variant', item.dataset.variant);
-      hidden('price_supply', ''); hidden('price_labour', '');
-      hidden('price_allin', price);
-    });
-    document.querySelectorAll('#custom-prices .row').forEach(row => {
-      const label = row.querySelector('.cp-label').value.trim();
-      const price = row.querySelector('.cp-price').value.trim();
-      if (!label) return;
+    // One price_* value per emitted row, in step — the server zips them by index.
+    function priceRow(label, family, variant, values) {
       hidden('price_label', label);
-      hidden('price_family', 'other'); hidden('price_variant', label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40));
-      hidden('price_supply', ''); hidden('price_labour', '');
-      hidden('price_allin', price);
+      hidden('price_family', family);
+      hidden('price_variant', variant);
+      hidden('price_supply', values.supply);
+      hidden('price_labour', values.labour);
+      hidden('price_allin', values.allin);
+      hidden('price_parts', JSON.stringify(
+        values.parts.map(p => ({ name: p.name, amount: Number(p.amount) }))));
+    }
+    document.querySelectorAll('.lib-item.on').forEach(item => {
+      const values = priceRowValues(item);
+      if (!priceRowFilled(values)) return;
+      priceRow(item.querySelector('.lib-name').textContent,
+               item.dataset.family, item.dataset.variant, values);
+    });
+    document.querySelectorAll('#custom-prices .cp-row').forEach(row => {
+      const label = row.querySelector('.cp-label').value.trim();
+      if (!label) return;
+      priceRow(label, 'other',
+               label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40),
+               priceRowValues(row));
     });
   }
   form.addEventListener('submit', materialise);
@@ -1045,9 +1160,9 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
         `.lib-item[data-family="${row.family}"][data-variant="${row.variant || ''}"]`);
       if (item && item.querySelector('.lib-name').textContent === row.label) {
         item.classList.add('on');
-        item.querySelector('input[data-price]').value = row.allin || row.supply || '';
+        fillPriceRow(item, row);
       } else if (row.label) {
-        addCustomPrice(row.label, row.allin || row.supply || '');
+        addCustomPrice(row.label, row);
       }
     });
     photos = (d.photos || []).map(p => ({ ...p, previewUrl: null }));
@@ -1057,8 +1172,7 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
   // ── Review ─────────────────────────────────────────────────────────────
   function buildReview() {
     const state = capState();
-    const priceCount = document.querySelectorAll('.lib-item.on').length +
-      Array.from(document.querySelectorAll('.cp-label')).filter(i => i.value.trim()).length;
+    const priceCount = pricedRows().length;
     const rows = [
       ['Team introduction', state.identity ? (document.getElementById('id_plumber_name').value.trim() || 'Provided') : 'Skipped — generic wording used'],
       ['Working hours', state.hours ? `${document.querySelectorAll('#day-chips .chip.on').length} days, ${document.getElementById('id_open').value}–${document.getElementById('id_close').value}` : 'Skipped'],
