@@ -1630,6 +1630,14 @@
     border: 1px solid rgba(0, 101, 145, 0.12);
   }
   .action-btn.ghost:hover { border-color: rgba(0, 101, 145, 0.40); background: rgba(0, 101, 145, 0.04); }
+  /* Irreversible actions: solid error fill, pushed away from the routine
+     buttons so Delete is never the neighbour of Save. */
+  .action-btn.destructive {
+    margin-left: auto;
+    background: var(--color-error);
+    color: #fff;
+    box-shadow: 0 8px 18px -8px rgba(186, 26, 26, 0.55);
+  }
 
   .mini-stat-grid {
     display: grid;
@@ -2256,6 +2264,20 @@
                     {% if appointment.status != 'cancelled' %}
                     <a href="{% url 'cancel_appointment' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn danger"><i class="fas fa-times"></i> Cancel</a>
                     {% endif %}
+                    {# Delete reuses this form's CSRF token via formaction (same trick as
+                       Complete) — a nested <form> here would be invalid HTML. #}
+                    {% firstof appointment.customer_name appointment.phone_number "this lead" as lead_label %}
+                    <button type="submit"
+                            formaction="{% url 'delete_appointment' appointment.pk %}"
+                            formmethod="post"
+                            formnovalidate
+                            {# This page also renders inside the conversation workspace iframe;
+                               _top keeps the post-delete redirect out of the frame. #}
+                            formtarget="_top"
+                            onclick="return confirm('Delete {{ lead_label|escapejs }} permanently?\n\nThe conversation history, quotations, follow-ups and reminders are deleted with it. This cannot be undone.');"
+                            class="action-btn destructive">
+                      <i class="fas fa-trash-can"></i> Delete Lead
+                    </button>
                   </div>
                 </form>
               </div>

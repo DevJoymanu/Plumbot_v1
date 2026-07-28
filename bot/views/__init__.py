@@ -51,6 +51,7 @@ from .appointments import (
     complete_lead_appointment,
     cancel_appointment,
     unbook_appointment,
+    delete_appointment,
     export_appointments,
     complete_site_visit,
     handle_whatsapp_media,

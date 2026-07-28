@@ -323,6 +323,38 @@ class AppointmentLifecycleActionTests(StaffClientTestCase):
         self.assertEqual(self.lead.follow_up_status, 'completed')
         self.assertFalse(self.lead.is_lead_active)
 
+    def test_delete_lead_requires_post_and_cascades(self):
+        """The dashboard Delete button. GET must never destroy a lead (a
+        prefetched link would be enough), and the delete has to take the child
+        records with it rather than leaving orphans behind."""
+        Quotation.objects.create(appointment=self.lead)
+        ScheduledFollowup.objects.create(
+            appointment=self.lead, channel='whatsapp',
+            scheduled_for=timezone.now() + timedelta(days=1))
+        pk = self.lead.pk
+
+        rejected = self.client.get(reverse('delete_appointment', args=[pk]))
+        self.assertEqual(rejected.status_code, 405)
+        self.assertTrue(Appointment.objects.filter(pk=pk).exists())
+
+        response = self.client.post(reverse('delete_appointment', args=[pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Appointment.objects.filter(pk=pk).exists())
+        self.assertFalse(Quotation.objects.filter(appointment_id=pk).exists())
+        self.assertFalse(ScheduledFollowup.objects.filter(appointment_id=pk).exists())
+
+    def test_delete_lead_honours_only_internal_next(self):
+        target = reverse('conversations_list') + '?status_filter=pending'
+        response = self.client.post(
+            reverse('delete_appointment', args=[self.lead.pk]), {'next': target})
+        self.assertEqual(response['Location'], target)
+
+        other = make_lead(9012)
+        response = self.client.post(
+            reverse('delete_appointment', args=[other.pk]),
+            {'next': '//evil.example.com/'})
+        self.assertEqual(response['Location'], reverse('conversations_list'))
+
     def test_pause_and_resume_chatbot(self):
         response = self.client.post(reverse('pause_chatbot', args=[self.lead.pk]))
         self.assertEqual(response.status_code, 302)
@@ -777,6 +809,10 @@ class TenantViewScopingTests(TestCase):
         self.assertEqual(response.status_code, 404)
         response = self.client.post(reverse('cancel_appointment', args=[self.hb_lead.pk]))
         self.assertEqual(response.status_code, 404)
+        # Deleting across tenants must be impossible, not merely forbidden.
+        response = self.client.post(reverse('delete_appointment', args=[self.hb_lead.pk]))
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Appointment.objects.filter(pk=self.hb_lead.pk).exists())
 
     def test_child_records_inherit_lead_tenant(self):
         # Dashboard-created children belong to the lead's tenant, never the

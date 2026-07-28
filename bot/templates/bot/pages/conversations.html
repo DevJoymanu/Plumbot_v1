@@ -101,6 +101,26 @@
 
   /* Conversation cards */
   .cv-list { display: flex; flex-direction: column; gap: 8px; }
+  /* The card is an <a>; the delete form sits beside it (never nested inside
+     the anchor) so the row stays valid HTML and one click can't do both. */
+  .cv-item { display: flex; align-items: center; gap: 8px; }
+  .cv-item > .cv-card { flex: 1; min-width: 0; }
+  .cv-del { flex: none; display: flex; margin: 0; }
+  .cv-del__btn {
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    border: var(--glass-border);
+    background: var(--color-surface-lowest);
+    color: var(--color-muted);
+    font-size: 13px;
+    cursor: pointer;
+    opacity: 0.4;
+    transition: opacity var(--transition), background var(--transition), color var(--transition), transform var(--transition);
+  }
+  .cv-item:hover .cv-del__btn, .cv-del__btn:focus-visible { opacity: 1; }
+  .cv-del__btn:hover { background: var(--color-error-container); color: var(--color-on-error-container); }
+  .cv-del__btn:active { transform: scale(0.95); }
   .cv-card {
     display: flex;
     align-items: center;
@@ -233,8 +253,10 @@
   <div class="cv-list" id="cvList">
     {% for appointment in appointments %}
     {% with last=appointment.conversation_history|last %}
-    <a class="cv-card" href="{% url 'conversation_detail' appointment.pk %}"
-       data-search="{{ appointment.customer_name|default:''|lower }} {{ appointment.phone_number|default:''|lower }} {{ appointment.project_type|default:''|lower }}">
+    {% firstof appointment.customer_name appointment.phone_number "this lead" as lead_label %}
+    <div class="cv-item"
+         data-search="{{ appointment.customer_name|default:''|lower }} {{ appointment.phone_number|default:''|lower }} {{ appointment.project_type|default:''|lower }}">
+    <a class="cv-card" href="{% url 'conversation_detail' appointment.pk %}">
       <div class="cv-avatar" style="background:{% cycle '#006591' '#4648d4' '#0ea5e9' '#0f766e' '#8a5100' '#576065' %};">
         {{ appointment.customer_name|default:appointment.phone_number|default:"AP"|slice:":2"|upper }}
       </div>
@@ -271,6 +293,16 @@
         </div>
       </div>
     </a>
+    <form class="cv-del" method="post" action="{% url 'delete_appointment' appointment.pk %}"
+          onsubmit="return confirm('Delete {{ lead_label|escapejs }} permanently? The conversation, quotations and follow-ups go with it. This cannot be undone.');">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button type="submit" class="cv-del__btn"
+              title="Delete lead" aria-label="Delete {{ lead_label }}">
+        <i class="fas fa-trash-can"></i>
+      </button>
+    </form>
+    </div>
     {% endwith %}
     {% empty %}
     <div class="cv-empty">
@@ -318,7 +350,8 @@
       });
     }
     var search = document.getElementById('cvSearch');
-    var cards = Array.prototype.slice.call(document.querySelectorAll('#cvList .cv-card'));
+    // Hide the whole row (card + delete control), not just the card.
+    var cards = Array.prototype.slice.call(document.querySelectorAll('#cvList .cv-item'));
     if (search) {
       search.addEventListener('input', function () {
         var term = search.value.trim().toLowerCase();

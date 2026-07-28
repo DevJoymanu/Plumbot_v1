@@ -1033,6 +1033,35 @@ def cancel_appointment(request, pk):
 
 
 @staff_required
+@require_POST
+def delete_appointment(request, pk):
+    """Permanently delete a lead from the dashboard.
+
+    Irreversible: every child record hangs off the appointment with
+    on_delete=CASCADE (conversation messages, quotations, scheduled follow-ups
+    and reminders, notes, jobs), so they go with it. POST-only so a crawled or
+    prefetched link can never destroy a lead, and tenant-scoped like every other
+    action — a foreign lead 404s rather than 403s.
+    """
+    appointment = get_object_or_404(
+        Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
+    label = appointment.customer_name or appointment.phone_number or f'Lead #{appointment.pk}'
+
+    # Deletion leaves no row to audit, so the trail lives in the app log.
+    logger.warning(
+        "Lead %s (%s / %s) deleted by %s",
+        appointment.pk, label, appointment.phone_number, request.user.username,
+    )
+    appointment.delete()
+
+    next_url = request.POST.get('next') or ''
+    if not next_url.startswith('/') or next_url.startswith('//'):
+        next_url = reverse('conversations_list')
+    messages.success(request, f'Deleted {label} and the full conversation history.')
+    return redirect(next_url)
+
+
+@staff_required
 def export_appointments(request):
     from django.http import HttpResponse
     import csv

@@ -78,6 +78,7 @@ urlpatterns = [
     path('appointments/<int:pk>/complete-lead/', complete_lead_appointment, name='complete_lead_appointment'),
     path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),
     path('appointments/<int:pk>/unbook/', unbook_appointment, name='unbook_appointment'),
+    path('appointments/<int:pk>/delete/', views.delete_appointment, name='delete_appointment'),
     path('appointments/<int:pk>/send-image/', views.send_image_to_lead, name='send_image_to_lead'),
     path('appointments/<int:pk>/send-portfolio/',views.send_portfolio_to_lead,name='send_portfolio_to_lead'),
 
