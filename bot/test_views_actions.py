@@ -35,6 +35,7 @@ from django.utils import timezone
 from .models import (
     Appointment,
     Job,
+    PlatformSetting,
     Quotation,
     QuotationTemplate,
     ScheduledFollowup,
@@ -817,6 +818,43 @@ class PlatformConsoleTests(TestCase):
                            ('platform_tenant_config_edit', ['homebase'])]:
             response = self.client.get(reverse(name, args=args))
             self.assertIn(response.status_code, (302, 403), name)
+
+    def test_console_renders_both_timer_switches_on_by_default(self):
+        response = self.client.get(reverse('platform_console'))
+        body = response.content.decode()
+        for key in ('batch_window_enabled', 'reply_delay_enabled'):
+            self.assertIn(reverse('platform_toggle_timer', args=[key]), body)
+        # Both default ON — no rows stored yet.
+        import re
+        switches = re.findall(r'<input type="checkbox" name="enabled"[^>]*>', body)
+        self.assertEqual(len(switches), 2)
+        self.assertTrue(all('checked' in s for s in switches), switches)
+
+    def test_toggle_timer_persists_and_flips_back(self):
+        from .platform_flags import batch_window_enabled, reply_delay_enabled
+        url = reverse('platform_toggle_timer', args=['reply_delay_enabled'])
+        # Unchecked checkbox posts nothing — that's the OFF signal.
+        self.assertEqual(self.client.post(url, {}).status_code, 302)
+        self.assertFalse(reply_delay_enabled())
+        self.assertTrue(batch_window_enabled())        # switches are independent
+        self.client.post(url, {'enabled': '1'})
+        self.assertTrue(reply_delay_enabled())
+        self.assertEqual(PlatformSetting.objects.filter(
+            key='reply_delay_enabled').count(), 1)      # upsert, never duplicates
+
+    def test_unknown_timer_key_404s(self):
+        response = self.client.post(
+            reverse('platform_toggle_timer', args=['not-a-switch']))
+        self.assertEqual(response.status_code, 404)
+
+    def test_plain_staff_cannot_flip_a_timer(self):
+        get_user_model().objects.create_user(
+            username='plainstaff3', password='pass12345', is_staff=True)
+        self.client.login(username='plainstaff3', password='pass12345')
+        response = self.client.post(
+            reverse('platform_toggle_timer', args=['reply_delay_enabled']))
+        self.assertIn(response.status_code, (302, 403))
+        self.assertFalse(PlatformSetting.objects.exists())
 
     def test_create_tenant_with_blank_profile(self):
         response = self.client.post(reverse('platform_create_tenant'),
@@ -2482,3 +2520,36 @@ class TenantChannelEditorTests(TestCase):
         self.assertNotIn('TOPSECRET', body)                          # token not rendered
         self.assertNotIn('fernet:', body)
         self.assertIn('leave blank to keep', body.lower())
+
+
+class BotTimerSwitchTests(TestCase):
+    """The two admin switches actually reach the webhook pipeline: OFF makes
+    that stage instant, ON keeps today's behaviour."""
+
+    def test_reply_delay_switch_controls_the_send_wait(self):
+        from .whatsapp_webhook import get_random_delay
+        self.assertIn(get_random_delay(), range(60, 301))   # default ON: 1-5 min
+        PlatformSetting.set_flag('reply_delay_enabled', False)
+        self.assertEqual(get_random_delay(), 0)
+
+    def test_batch_switch_off_flushes_immediately_without_a_timer(self):
+        import threading
+
+        from . import whatsapp_webhook as ww
+        PlatformSetting.set_flag('batch_window_enabled', False)
+        flushed = threading.Event()
+        with patch.object(ww, '_flush_text_batch', side_effect=lambda s: flushed.set()):
+            ww._enqueue_for_response('263771000111', 'how much for a geyser?', 'wamid.1')
+        self.assertTrue(flushed.wait(timeout=5))
+        self.assertNotIn('263771000111', ww._pending_batch_timers)
+
+    def test_batch_switch_on_debounces_instead_of_answering_now(self):
+        from . import whatsapp_webhook as ww
+        with patch.object(ww, '_flush_text_batch') as flush:
+            ww._enqueue_for_response('263771000222', 'hi', 'wamid.2')
+        try:
+            flush.assert_not_called()
+            self.assertIn('263771000222', ww._pending_batch_timers)
+        finally:
+            ww._pending_batch_timers.pop('263771000222').cancel()
+            ww._pending_batches.pop('263771000222', None)

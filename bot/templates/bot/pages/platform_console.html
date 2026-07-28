@@ -45,6 +45,55 @@
     padding: 8px 18px; font-size: 14px; outline: none;
   }
   .create-row input:focus { box-shadow: 0 0 0 2px rgba(0, 101, 145, 0.2); }
+
+  /* ── Bot timing switches ───────────────────────────────────────────── */
+  .timer-row {
+    display: flex; align-items: flex-start; gap: 16px;
+    padding: 16px 0; border-top: 1px solid rgba(0, 101, 145, 0.05);
+  }
+  .timer-row:first-of-type { border-top: none; padding-top: 0; }
+  .timer-row__text { flex: 1; min-width: 0; }
+  .timer-row__label {
+    font-size: 15px; font-weight: 600; color: #0b1c30;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .timer-row__summary { font-size: 13px; color: #5b7285; margin-top: 2px; }
+  .timer-info { display: inline; }
+  .timer-info > summary {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 999px; cursor: pointer;
+    border: 1px solid rgba(0, 101, 145, 0.15); color: #006591;
+    font-size: 11px; list-style: none; transition: all 0.2s ease;
+  }
+  .timer-info > summary::-webkit-details-marker { display: none; }
+  .timer-info > summary:hover { background: rgba(0, 101, 145, 0.08); border-color: rgba(0, 101, 145, 0.4); }
+  .timer-info[open] > summary { background: #006591; color: #fff; border-color: #006591; }
+  .timer-info__body {
+    margin-top: 10px; padding: 14px 16px; border-radius: 14px;
+    background: rgba(0, 101, 145, 0.04); font-size: 13px; line-height: 1.6;
+    color: #33475b;
+  }
+  /* Pill switch */
+  .switch { position: relative; display: inline-block; width: 50px; height: 28px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch__track {
+    position: absolute; inset: 0; cursor: pointer; border-radius: 999px;
+    background: rgba(11, 28, 48, 0.18); transition: background 0.2s ease;
+  }
+  .switch__track::before {
+    content: ""; position: absolute; height: 22px; width: 22px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  .switch input:checked + .switch__track { background: #0ea5e9; }
+  .switch input:checked + .switch__track::before { transform: translateX(22px); }
+  .switch input:focus-visible + .switch__track { box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.3); }
+  .switch__state {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: #5b7285; text-align: center;
+    margin-top: 4px; width: 50px;
+  }
+  .timer-row__control { display: flex; flex-direction: column; align-items: center; }
 </style>
 {% endblock %}
 
@@ -122,6 +171,43 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+
+  <div class="platform-card">
+    <div class="platform-card__title">Bot timing</div>
+    {% for flag in timer_flags %}
+    <div class="timer-row">
+      <div class="timer-row__text">
+        <div class="timer-row__label">
+          {{ flag.label }}
+          <details class="timer-info">
+            <summary title="What does this do?" aria-label="About {{ flag.label }}">
+              <i class="fas fa-info"></i>
+            </summary>
+            <div class="timer-info__body">{{ flag.info|linebreaksbr }}</div>
+          </details>
+        </div>
+        <div class="timer-row__summary">{{ flag.summary }}</div>
+      </div>
+      <div class="timer-row__control">
+        <form method="post" action="{% url 'platform_toggle_timer' flag.key %}">
+          {% csrf_token %}
+          <label class="switch">
+            <input type="checkbox" name="enabled" value="1"
+                   {% if flag.enabled %}checked{% endif %}
+                   onchange="this.form.submit();">
+            <span class="switch__track"></span>
+          </label>
+        </form>
+        <div class="switch__state">{% if flag.enabled %}On{% else %}Off{% endif %}</div>
+      </div>
+    </div>
+    {% endfor %}
+    <p style="margin:16px 0 0; font-size:13px; color:#5b7285;">
+      These switches apply to every tenant and take effect on the next incoming
+      message. Turning one off makes that stage instant — handy for testing or a
+      live demo, but leave both on for real customers.
+    </p>
   </div>
 
   <div class="platform-card">

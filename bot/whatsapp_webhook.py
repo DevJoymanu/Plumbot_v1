@@ -397,6 +397,11 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
 
 
 def get_random_delay() -> int:
+    # Admin switch (platform console): off = send the reply as soon as it's ready.
+    from .platform_flags import reply_delay_enabled
+    if not reply_delay_enabled():
+        print("? Reply delay OFF (admin switch) - sending immediately")
+        return 0
     minutes = random.randint(1, 5)
     seconds = minutes * 60
     print(f"?? Random delay: {minutes} minute(s)")
@@ -2131,6 +2136,22 @@ def _enqueue_for_response(sender: str, message_body: str, message_id, quoted_tex
                 existing.cancel()
             _pending_batches[sender] = [(message_body, message_id, quoted_text, tenant)]
         _flush_text_batch(sender)
+        return
+
+    # Admin switch (platform console): batching off = answer this message on its
+    # own, right now. Anything already queued rides along so nothing is stranded.
+    # The flush runs on its own thread — generation must not block the webhook
+    # response back to Meta.
+    from .platform_flags import batch_window_enabled
+    if not batch_window_enabled():
+        with _pending_batch_lock:
+            existing = _pending_batch_timers.pop(sender, None)
+            if existing is not None:
+                existing.cancel()
+            _pending_batches.setdefault(sender, []).append(
+                (message_body, message_id, quoted_text, tenant))
+        print(f"⚡ Batch window OFF (admin switch) — replying to {sender} immediately")
+        threading.Thread(target=_flush_text_batch, args=(sender,), daemon=True).start()
         return
 
     with _pending_batch_lock:

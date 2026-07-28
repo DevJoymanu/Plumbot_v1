@@ -20,7 +20,8 @@ from django.views.decorators.http import require_POST
 from django.utils import timezone
 
 from ..middleware import TENANT_SESSION_KEY
-from ..models import Tenant, TenantIntake, TenantPriceItem, TenantProfile
+from ..models import PlatformSetting, Tenant, TenantIntake, TenantPriceItem, TenantProfile
+from ..platform_flags import TIMER_FLAGS
 from ..tenant_config import blank_priced_catalog
 
 
@@ -66,9 +67,33 @@ def platform_console(request):
         })
     return render(request, 'bot/pages/platform_console.html', {
         'rows': rows,
+        'timer_flags': _timer_flag_rows(),
         'active_nav': 'platform',
         'current_tenant': getattr(request, 'tenant', None),
     })
+
+
+def _timer_flag_rows():
+    """The bot's timing switches with their current state — admin-only, and
+    global (they govern the shared webhook pipeline, not one tenant)."""
+    return [dict(flag, enabled=PlatformSetting.get_flag(flag['key'], True))
+            for flag in TIMER_FLAGS]
+
+
+@require_POST
+@superuser_required
+def platform_toggle_timer(request, key):
+    """Flip one timing switch. The checkbox posts `enabled` only when it is on,
+    so its absence is the off state."""
+    flag = next((f for f in TIMER_FLAGS if f['key'] == key), None)
+    if flag is None:
+        raise Http404
+    enabled = bool(request.POST.get('enabled'))
+    PlatformSetting.set_flag(key, enabled)
+    messages.success(
+        request,
+        f"{flag['label']} turned {'ON' if enabled else 'OFF'} for all tenants.")
+    return redirect('platform_console')
 
 
 @require_POST

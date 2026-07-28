@@ -2659,3 +2659,41 @@ class TestScenario(models.Model):
         if not self.last_result:
             return 'never'
         return 'fail' if self.last_result.get('failed') else 'pass'
+
+
+class PlatformSetting(models.Model):
+    """Platform-wide operator switches, set from the superuser console.
+
+    Deliberately key/value: every future switch is a new row, never a new
+    column/migration. Values are JSON so a flag can grow from a bool into a
+    dict without a schema change. NOT tenant-scoped — these are global
+    behaviour toggles for the bot runtime.
+    """
+    key = models.CharField(max_length=64, unique=True)
+    value = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['key']
+
+    def __str__(self):
+        return f"{self.key}={self.value}"
+
+    @classmethod
+    def get_flag(cls, key, default=True) -> bool:
+        """Read a boolean switch. Any DB trouble (missing table on a fresh
+        deploy, connection blip) falls back to `default` — a toggle must never
+        be able to take the webhook down."""
+        try:
+            row = cls.objects.filter(key=key).values_list('value', flat=True).first()
+        except Exception:
+            return default
+        if row is None:
+            return default
+        if isinstance(row, dict):
+            return bool(row.get('enabled', default))
+        return bool(row)
+
+    @classmethod
+    def set_flag(cls, key, enabled: bool):
+        cls.objects.update_or_create(key=key, defaults={'value': bool(enabled)})
