@@ -1,4 +1,4 @@
-"""Platform-wide runtime switches (superuser console -> bot behaviour).
+"""Per-tenant runtime switches (superuser console -> bot behaviour).
 
 Two timers shape how the bot answers on WhatsApp:
 
@@ -8,20 +8,21 @@ Two timers shape how the bot answers on WhatsApp:
 * the **reply delay** — hold the finished reply 1-5 minutes so it lands like a
   person typing rather than an instant bot.
 
-Switching either off makes that stage immediate; nothing else in the pipeline
-changes. Off is a demo/testing convenience (you see answers straight away) —
-both should stay ON for live traffic.
+Switching either off makes that stage immediate for THAT tenant only; nothing
+else in the pipeline changes. Off is a demo/testing convenience (you see
+answers straight away) — both should stay ON for live traffic.
 
-Storage is `PlatformSetting` (key/value), so adding a switch here is a row,
-never a migration. Reads are fail-open: any DB trouble returns the default.
+Storage is `TenantSetting` (tenant + key/value), so adding a switch here is a
+row, never a migration. Reads are fail-open: any DB trouble returns the
+default, and an unknown tenant falls back to the homebase seed.
 """
 
-from .models import PlatformSetting
+from .models import TenantSetting
 
 REPLY_DELAY_KEY = 'reply_delay_enabled'
 BATCH_WINDOW_KEY = 'batch_window_enabled'
 
-# Rendered by the platform console (label + the info-button copy), so the
+# Rendered by the tenant config page (label + the info-button copy), so the
 # explanation of what a switch does lives next to the switch itself.
 TIMER_FLAGS = [
     {
@@ -56,11 +57,17 @@ TIMER_FLAGS = [
 ]
 
 
-def reply_delay_enabled() -> bool:
-    """False = send each reply as soon as it is generated."""
-    return PlatformSetting.get_flag(REPLY_DELAY_KEY, default=True)
+def reply_delay_enabled(tenant=None) -> bool:
+    """False = send this tenant's replies as soon as they are generated."""
+    return TenantSetting.get_flag(REPLY_DELAY_KEY, tenant, default=True)
 
 
-def batch_window_enabled() -> bool:
+def batch_window_enabled(tenant=None) -> bool:
     """False = answer every inbound message on its own, no debounce wait."""
-    return PlatformSetting.get_flag(BATCH_WINDOW_KEY, default=True)
+    return TenantSetting.get_flag(BATCH_WINDOW_KEY, tenant, default=True)
+
+
+def timer_flag_rows(tenant):
+    """The timing switches with this tenant's current state — for the console."""
+    return [dict(flag, enabled=TenantSetting.get_flag(flag['key'], tenant, True))
+            for flag in TIMER_FLAGS]

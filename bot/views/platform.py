@@ -20,8 +20,8 @@ from django.views.decorators.http import require_POST
 from django.utils import timezone
 
 from ..middleware import TENANT_SESSION_KEY
-from ..models import PlatformSetting, Tenant, TenantIntake, TenantPriceItem, TenantProfile
-from ..platform_flags import TIMER_FLAGS
+from ..models import Tenant, TenantIntake, TenantPriceItem, TenantProfile, TenantSetting
+from ..platform_flags import TIMER_FLAGS, timer_flag_rows
 from ..tenant_config import blank_priced_catalog
 
 
@@ -56,6 +56,15 @@ def platform_console(request):
         .prefetch_related('whatsapp_channels')
         .order_by('name')
     )
+    # One query for every tenant's switched-off timers, so the list can flag the
+    # exceptions without a per-row lookup.
+    off_by_tenant = {}
+    for tenant_id, key in TenantSetting.objects.filter(
+            key__in=[f['key'] for f in TIMER_FLAGS], value=False
+    ).values_list('tenant_id', 'key'):
+        off_by_tenant.setdefault(tenant_id, []).append(key)
+    labels = {f['key']: f['label'] for f in TIMER_FLAGS}
+
     rows = []
     for tenant in tenants:
         channel = next(iter(tenant.whatsapp_channels.all()), None)
@@ -64,36 +73,30 @@ def platform_console(request):
             'lead_count': tenant.lead_count,
             'channel': channel,
             'has_profile': TenantProfile.objects.filter(tenant=tenant).exists(),
+            'timers_off': [labels[k] for k in off_by_tenant.get(tenant.pk, [])],
         })
     return render(request, 'bot/pages/platform_console.html', {
         'rows': rows,
-        'timer_flags': _timer_flag_rows(),
         'active_nav': 'platform',
         'current_tenant': getattr(request, 'tenant', None),
     })
 
 
-def _timer_flag_rows():
-    """The bot's timing switches with their current state — admin-only, and
-    global (they govern the shared webhook pipeline, not one tenant)."""
-    return [dict(flag, enabled=PlatformSetting.get_flag(flag['key'], True))
-            for flag in TIMER_FLAGS]
-
-
 @require_POST
 @superuser_required
-def platform_toggle_timer(request, key):
-    """Flip one timing switch. The checkbox posts `enabled` only when it is on,
-    so its absence is the off state."""
+def platform_toggle_timer(request, slug, key):
+    """Flip one of a tenant's timing switches. The checkbox posts `enabled`
+    only when it is on, so its absence is the off state."""
+    tenant = get_object_or_404(Tenant, slug=slug)
     flag = next((f for f in TIMER_FLAGS if f['key'] == key), None)
     if flag is None:
         raise Http404
     enabled = bool(request.POST.get('enabled'))
-    PlatformSetting.set_flag(key, enabled)
+    TenantSetting.set_flag(key, tenant, enabled)
     messages.success(
         request,
-        f"{flag['label']} turned {'ON' if enabled else 'OFF'} for all tenants.")
-    return redirect('platform_console')
+        f"{flag['label']} turned {'ON' if enabled else 'OFF'} for {tenant.name}.")
+    return redirect('platform_tenant_config', slug=tenant.slug)
 
 
 @require_POST
@@ -866,6 +869,7 @@ def platform_tenant_config(request, slug):
         'profile': profile,
         'cfg': get_config(tenant),
         'currency': cur,
+        'timer_flags': timer_flag_rows(tenant),
         'priced_items': priced_items,
         'faq_topics': faq_topics,
         'lead_magnet_design': design_for(tenant)['key'],

@@ -306,7 +306,7 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
 
         fresh.add_conversation_message("assistant", customer_reply)
 
-        delay = get_random_delay()
+        delay = get_random_delay(appointment.tenant)
         print(f"?? Sending single media ack to {sender} after {delay // 60}m delay")
         time.sleep(delay)
         try:
@@ -396,10 +396,13 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         print(f"? Plumber alert timer reset for {sender} (accumulated {len(_plumber_alert_pending[sender])} file(s))")
 
 
-def get_random_delay() -> int:
-    # Admin switch (platform console): off = send the reply as soon as it's ready.
+def get_random_delay(tenant=None) -> int:
+    # Per-tenant admin switch: off = send as soon as the reply is ready. Call
+    # sites that sleep on the delay themselves must pass their tenant; the ones
+    # that hand it to delayed_response are covered there (it always has the
+    # tenant, even when the delay was computed without one).
     from .platform_flags import reply_delay_enabled
-    if not reply_delay_enabled():
+    if not reply_delay_enabled(tenant):
         print("? Reply delay OFF (admin switch) - sending immediately")
         return 0
     minutes = random.randint(1, 5)
@@ -442,6 +445,13 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         # with a fake WAMID.
         from .test_console import is_test_sender
         if is_test_sender(sender):
+            delay_seconds = 0
+
+        # This tenant's reply-delay switch is the authority on the wait, whoever
+        # computed delay_seconds — the call sites resolve the tenant AFTER the
+        # delay, so re-checking here is what makes the switch reliable per tenant.
+        from .platform_flags import reply_delay_enabled
+        if delay_seconds and not reply_delay_enabled(tenant):
             delay_seconds = 0
 
         # Sleep in short chunks so a cancel_event can interrupt the wait quickly.
@@ -2138,12 +2148,12 @@ def _enqueue_for_response(sender: str, message_body: str, message_id, quoted_tex
         _flush_text_batch(sender)
         return
 
-    # Admin switch (platform console): batching off = answer this message on its
-    # own, right now. Anything already queued rides along so nothing is stranded.
-    # The flush runs on its own thread — generation must not block the webhook
-    # response back to Meta.
+    # This tenant's batch switch: off = answer this message on its own, right
+    # now. Anything already queued rides along so nothing is stranded. The flush
+    # runs on its own thread — generation must not block the webhook response
+    # back to Meta.
     from .platform_flags import batch_window_enabled
-    if not batch_window_enabled():
+    if not batch_window_enabled(tenant):
         with _pending_batch_lock:
             existing = _pending_batch_timers.pop(sender, None)
             if existing is not None:

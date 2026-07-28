@@ -68,6 +68,36 @@
   .cfg-price__right { text-align: right; flex-shrink: 0; }
   .cfg-price__headline { font-size: 14px; font-weight: 600; color: var(--color-primary); font-variant-numeric: tabular-nums; }
   .cfg-price__sub { font-size: 11.5px; color: var(--color-muted); margin-top: 2px; }
+  /* Bot timing switches */
+  .cfg-timer { display: flex; align-items: flex-start; gap: 16px; padding: 14px 0; border-top: 1px solid rgba(0,101,145,0.06); }
+  .cfg-timer:first-of-type { border-top: none; padding-top: 0; }
+  .cfg-timer__text { flex: 1; min-width: 0; }
+  .cfg-timer__label { font-size: 14px; font-weight: 600; color: var(--color-text); display: flex; align-items: center; gap: 8px; }
+  .cfg-timer__summary { font-size: 12.5px; color: var(--color-muted); margin-top: 2px; }
+  .cfg-info { display: inline; }
+  .cfg-info > summary {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: var(--radius-pill); cursor: pointer;
+    border: 1px solid rgba(0,101,145,0.15); color: var(--color-primary);
+    font-size: 10px; list-style: none; transition: all var(--transition);
+  }
+  .cfg-info > summary::-webkit-details-marker { display: none; }
+  .cfg-info > summary:hover { background: rgba(0,101,145,0.08); border-color: rgba(0,101,145,0.4); }
+  .cfg-info[open] > summary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+  .cfg-info__body { margin-top: 10px; padding: 13px 15px; border-radius: var(--radius-md); background: var(--color-surface-low); font-size: 12.5px; line-height: 1.65; color: var(--color-text-2); }
+  .cfg-switch { position: relative; display: inline-block; width: 46px; height: 26px; flex: none; }
+  .cfg-switch input { opacity: 0; width: 0; height: 0; }
+  .cfg-switch__track { position: absolute; inset: 0; cursor: pointer; border-radius: var(--radius-pill); background: rgba(11,28,48,0.18); transition: background var(--transition); }
+  .cfg-switch__track::before {
+    content: ""; position: absolute; height: 20px; width: 20px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform var(--transition);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .cfg-switch input:checked + .cfg-switch__track { background: var(--color-primary-container); }
+  .cfg-switch input:checked + .cfg-switch__track::before { transform: translateX(20px); }
+  .cfg-switch input:focus-visible + .cfg-switch__track { box-shadow: 0 0 0 3px rgba(14,165,233,0.3); }
+  .cfg-switch__state { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--color-muted); text-align: center; margin-top: 4px; width: 46px; }
+  .cfg-timer__control { display: flex; flex-direction: column; align-items: center; }
   /* Empty states */
   .cfg-empty { padding: 34px 20px; text-align: center; border: 2px dashed rgba(0,101,145,0.1); border-radius: var(--radius-md); color: rgba(62,72,80,0.6); font-size: 13.5px; }
   .cfg-empty i { font-size: 32px; color: rgba(0,101,145,0.2); display: block; margin-bottom: 10px; }
@@ -246,6 +276,43 @@
           (registered under the platform Business Manager).
         </div>
         {% endif %}
+      </section>
+
+      <section class="cfg-glass cfg-card">
+        <div class="cfg-card__head"><span class="cfg-label">Bot timing</span></div>
+        {% for flag in timer_flags %}
+        <div class="cfg-timer">
+          <div class="cfg-timer__text">
+            <div class="cfg-timer__label">
+              {{ flag.label }}
+              <details class="cfg-info">
+                <summary title="What does this do?" aria-label="About {{ flag.label }}">
+                  <i class="fas fa-info"></i>
+                </summary>
+                <div class="cfg-info__body">{{ flag.info|linebreaksbr }}</div>
+              </details>
+            </div>
+            <div class="cfg-timer__summary">{{ flag.summary }}</div>
+          </div>
+          <div class="cfg-timer__control">
+            <form method="post" action="{% url 'platform_toggle_timer' tenant.slug flag.key %}">
+              {% csrf_token %}
+              <label class="cfg-switch">
+                <input type="checkbox" name="enabled" value="1"
+                       {% if flag.enabled %}checked{% endif %}
+                       onchange="this.form.submit();">
+                <span class="cfg-switch__track"></span>
+              </label>
+            </form>
+            <div class="cfg-switch__state">{% if flag.enabled %}On{% else %}Off{% endif %}</div>
+          </div>
+        </div>
+        {% endfor %}
+        <p class="cfg-note">
+          These apply to {{ tenant.name }} only and take effect on their next
+          incoming message. Turning one off makes that stage instant — handy for
+          testing or a live demo, but leave both on for real customers.
+        </p>
       </section>
 
       <section class="cfg-glass cfg-card">

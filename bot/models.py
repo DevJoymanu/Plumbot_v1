@@ -2661,31 +2661,46 @@ class TestScenario(models.Model):
         return 'fail' if self.last_result.get('failed') else 'pass'
 
 
-class PlatformSetting(models.Model):
-    """Platform-wide operator switches, set from the superuser console.
+class TenantSetting(models.Model):
+    """Per-tenant runtime switches, set from the superuser console.
 
     Deliberately key/value: every future switch is a new row, never a new
     column/migration. Values are JSON so a flag can grow from a bool into a
-    dict without a schema change. NOT tenant-scoped — these are global
-    behaviour toggles for the bot runtime.
+    dict without a schema change. Scoped per tenant (§6) — one company turning
+    a timer off must never change how the bot answers for another.
     """
-    key = models.CharField(max_length=64, unique=True)
+    tenant = _tenant_fk(related_name='settings')
+    key = models.CharField(max_length=64)
     value = models.JSONField(default=dict)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['key']
+        ordering = ['tenant_id', 'key']
+        constraints = [
+            models.UniqueConstraint(fields=['tenant', 'key'],
+                                    name='uniq_setting_per_tenant'),
+        ]
 
     def __str__(self):
-        return f"{self.key}={self.value}"
+        return f"{self.tenant_id}:{self.key}={self.value}"
 
     @classmethod
-    def get_flag(cls, key, default=True) -> bool:
-        """Read a boolean switch. Any DB trouble (missing table on a fresh
-        deploy, connection blip) falls back to `default` — a toggle must never
-        be able to take the webhook down."""
+    def _tenant_id(cls, tenant):
+        """Accepts a Tenant, a pk, or None (None → the homebase seed, the same
+        fallback for_tenant_or_seed uses for pre-Phase-1 call paths)."""
+        if tenant is None:
+            return get_default_tenant_id()
+        return tenant.pk if hasattr(tenant, 'pk') else tenant
+
+    @classmethod
+    def get_flag(cls, key, tenant=None, default=True) -> bool:
+        """Read one tenant's boolean switch. Any DB trouble (missing table on a
+        fresh deploy, connection blip) falls back to `default` — a toggle must
+        never be able to take the webhook down."""
         try:
-            row = cls.objects.filter(key=key).values_list('value', flat=True).first()
+            row = (cls.objects
+                   .filter(tenant_id=cls._tenant_id(tenant), key=key)
+                   .values_list('value', flat=True).first())
         except Exception:
             return default
         if row is None:
@@ -2695,5 +2710,7 @@ class PlatformSetting(models.Model):
         return bool(row)
 
     @classmethod
-    def set_flag(cls, key, enabled: bool):
-        cls.objects.update_or_create(key=key, defaults={'value': bool(enabled)})
+    def set_flag(cls, key, tenant, enabled: bool):
+        cls.objects.update_or_create(
+            tenant_id=cls._tenant_id(tenant), key=key,
+            defaults={'value': bool(enabled)})
