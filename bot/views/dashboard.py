@@ -70,7 +70,12 @@ def _due_followup_leads(now=None, tenant=None):
     now = now or timezone.now()
     cmd = _FollowupCmd()
     due = []
-    for lead in cmd._get_eligible_leads(now, force=False):
+    # The cron's _get_eligible_leads spans ALL tenants (it sends for everyone);
+    # the dashboard/workspace must show only the active tenant, so scope it with
+    # the same seed-fallback rule the rest of the workspace uses. Without this,
+    # one tenant's follow-up list leaks every tenant's due leads (and those rows
+    # then 404 on click, since the detail views are tenant-scoped).
+    for lead in cmd._get_eligible_leads(now, force=False).for_tenant_or_seed(tenant):
         if lead.followup_count >= MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 4):
             continue
         ready, _reason = cmd._is_ready_for_followup(lead, now, force=False)
@@ -331,10 +336,17 @@ def _followups_workspace_data(response_age='1w_minus', tenant=None):
             _lead.fu_info = None
 
     # ── Per-channel follow-up views (WhatsApp / Emails tabs) ──
-    from ..models import ScheduledFollowup
+    # ScheduledFollowup carries its own tenant FK — scope by it (mirroring
+    # for_tenant_or_seed: None → the homebase seed) so one tenant's queued
+    # follow-ups never bleed into another's tabs.
+    from ..models import ScheduledFollowup, get_default_tenant_id
+    _fu_tenant_id = (
+        tenant.pk if hasattr(tenant, 'pk')
+        else (tenant if tenant is not None else get_default_tenant_id())
+    )
     scheduled_whatsapp = list(
         ScheduledFollowup.objects
-        .filter(channel='whatsapp', status__in=['pending', 'failed'])
+        .filter(tenant_id=_fu_tenant_id, channel='whatsapp', status__in=['pending', 'failed'])
         .select_related('appointment').order_by('scheduled_for')[:50]
     )
 
@@ -345,7 +357,7 @@ def _followups_workspace_data(response_age='1w_minus', tenant=None):
     upcoming_email = []
     for sf in (
         ScheduledFollowup.objects
-        .filter(channel='email', status__in=['pending', 'failed'])
+        .filter(tenant_id=_fu_tenant_id, channel='email', status__in=['pending', 'failed'])
         .select_related('appointment').order_by('scheduled_for')[:50]
     ):
         upcoming_email.append({

@@ -646,6 +646,41 @@ class TenantIsolationTests(TestCase):
         self.assertFalse(profile.licensed_claim_enabled)
         self.assertEqual(profile.excluded_areas, [])
 
+    def test_due_followups_never_leak_across_tenants(self):
+        # Regression: _due_followup_leads(tenant=…) must scope to that tenant.
+        # The cron's _get_eligible_leads spans ALL tenants (it sends for
+        # everyone); the dashboard/workspace helper forgot to re-scope it, so
+        # one tenant's follow-up list showed every tenant's due leads — and each
+        # leaked row then 404'd on click, since the detail views are scoped.
+        from unittest.mock import patch
+        from datetime import timedelta
+        from django.utils import timezone
+        from bot.views.dashboard import _due_followup_leads
+        from bot.management.commands.send_followups import Command as FCmd
+
+        old = timezone.now() - timedelta(hours=2)
+        for lead in (self.hb_lead, self.acme_lead):
+            lead.is_lead_active = True
+            lead.status = 'pending'
+            lead.is_delayed = False
+            lead.followup_stage = 'none'
+            lead.last_customer_response = old
+            lead.save()
+
+        # Isolate the tenant-scoping seam: force readiness + open window so the
+        # only variable left is which tenant's leads come back.
+        with patch.object(FCmd, '_is_ready_for_followup', return_value=(True, 'ok')), \
+             patch.object(Appointment, 'messaging_window_open',
+                          property(lambda self: True)):
+            hb_due = _due_followup_leads(tenant=self.homebase)
+            acme_due = _due_followup_leads(tenant=self.acme)
+
+        self.assertTrue(all(l.tenant_id == self.homebase.pk for l in hb_due))
+        self.assertTrue(all(l.tenant_id == self.acme.pk for l in acme_due))
+        # The acme lead surfaces under acme and NEVER under homebase.
+        self.assertIn(self.acme_lead.pk, [l.pk for l in acme_due])
+        self.assertNotIn(self.acme_lead.pk, [l.pk for l in hb_due])
+
 
 class TenantSwitcherTests(TestCase):
     """The Phase-0 platform console: superuser-only session tenant switch."""
