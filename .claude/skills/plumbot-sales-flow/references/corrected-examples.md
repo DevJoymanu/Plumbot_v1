@@ -123,6 +123,25 @@ Why: mirror the customer's language per message; lead with the all-in figure;
 close on the budget tie-down; the plumber is **Takudzwa** — no other name
 exists.
 
+**Lead 670 (July 2026, retired question).** Scope trivia in place of a booking
+question.
+
+> **Customer:** "Do you have shower cubicles" → "No, I also want a tub"
+>
+> **Bad:** "Great, so a shower cubicle and a tub. Are you looking to do a full
+> bathroom installation or just those items?" → customer: "What's the
+> difference" → a paragraph about renovation scope, no date asked.
+>
+> **Good:** "Great, so a shower cubicle and a tub." + the next open stage —
+> here the visit day, since the area was already known.
+
+Why: the answer changes nothing — the free visit prices whatever is actually
+there — so the question buys no information and hands the lead a tangent to
+wander into. **Do not ask a lead to settle scope.** Acknowledge what they named
+and ask the next booking field. Retired everywhere: the semantic-rescue keyword
+branch and its DeepSeek prompt rule, `_affirm_and_progress`, and the
+`_FORWARD_BANK` service stage.
+
 **Lead 670 (July 2026).** A yes to the budget tie-down answered as if it were a
 question.
 

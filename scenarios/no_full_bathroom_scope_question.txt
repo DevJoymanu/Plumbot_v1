@@ -1,0 +1,24 @@
+# The "full bathroom or just those items?" scope question is retired
+# (owner call, 2026-07-29, lead +27610318200).
+#
+# The lead named a second fixture and got:
+#   "Great, so a shower cubicle and a tub. Are you looking to do a full bathroom
+#    installation or just those items?"
+# which produced "What's the difference" and a tangent about renovation scope —
+# on a lead whose next open stage was the visit DATE. The answer changes nothing:
+# the free visit prices whatever is actually there.
+#
+# Four surfaces could emit it (semantic_rescue keyword branch + its DeepSeek
+# prompt rule, _affirm_and_progress, and the _FORWARD_BANK service stage); none
+# may now. Naming a fixture gets an acknowledgement and the flow's next question.
+
+> Do you have shower cubicles
+expect: shower cubicle
+reject: full bathroom or just
+reject: full bathroom installation or
+
+> No, I also want a tub
+reject: full bathroom or just
+reject: full bathroom installation or
+reject: full bathroom setup
+reject: just those items

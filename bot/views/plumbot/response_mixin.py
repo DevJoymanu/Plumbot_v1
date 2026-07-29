@@ -782,6 +782,26 @@ class ResponseMixin:
             return (f"Yes, we handle {it} and all related plumbing work.\n\n"
                     f"Is a {it} the only thing you're looking to get sorted?")
 
+        @staticmethod
+        def _is_substantive_faq_answer(answer: str) -> bool:
+            """True when an AI FAQ answer actually answers something.
+
+            A bare "No" / "yes" is not an answer to a business question — it carries
+            no fact, and it is exactly what a lead cannot act on ("Is the quote
+            free" came back "No", then "yes" two minutes later). The prompt asks for
+            1-2 sentences; when the model ignores that, the caller falls back to the
+            canned fact, which is always complete and always the same."""
+            ans = (answer or '').strip().strip('.!,')
+            if not ans:
+                return False
+            if ResponseMixin._is_bare_affirmation(ans):
+                return False
+            if ans.lower() in {'no', 'nope', 'nah', 'not really', 'negative',
+                               'kwete', 'aiwa'}:
+                return False
+            # Under four words it cannot carry the fact it was asked to convey.
+            return len(ans.split()) >= 4
+
         def ai_answer_faq(self, message: str, fact: str, language: str = "english",
                           service_question: bool = False):
             """AI-primary, contextual answer to a business FAQ, GROUNDED in `fact`
@@ -827,8 +847,18 @@ class ResponseMixin:
                         {"role": "system", "content": sys},
                         {"role": "user", "content": f'Reference fact: "{fact}"\n\nCustomer: "{message}"'},
                     ],
-                    temperature=0.4, max_tokens=120, retries=1, timeout=8,
+                    # temperature 0: a business fact must come back the SAME every
+                    # time. At 0.4 the identical question ("Is the quote free")
+                    # answered "No" on one turn and "yes" on the next — the lead was
+                    # told the opposite thing twice in two minutes (prod 2026-07-29).
+                    temperature=0, max_tokens=120, retries=1, timeout=8,
                 ).strip().replace('**', '').replace('__', '')
+                if not self._is_substantive_faq_answer(ans):
+                    logger.warning(
+                        "ai_answer_faq returned a bare %r for %r — using the canned fact",
+                        ans, message[:40],
+                    )
+                    return None
                 # For a service question the AI already ends with a '?', so
                 # _append_tiedown is a no-op (its '?' guard); other answers get the
                 # deterministic qualifying close.
@@ -1644,11 +1674,14 @@ class ResponseMixin:
         # (text, signature) — the signature is a stable fragment used to detect
         # whether that phrasing has already gone out, so we never repeat wording.
         _FORWARD_BANK = {
+            # "full bathroom or just the one fixture?" was removed here: it makes the
+            # lead resolve scope that changes nothing (the free visit prices whatever
+            # is there), and it reliably spawns a tangent instead of a booking.
             'service': [
-                ("What's the setup you're working with — full bathroom or just the one fixture?",
-                 "the setup you're working"),
                 ("Is this a fresh install or replacing something that's already there?",
                  "fresh install"),
+                ("Is it in use at the moment, or is the space still being built?",
+                 "in use at the moment"),
             ],
             'detail': [
                 ("What accessories are you after with the {fixture} — screens, rails, mixers?",
@@ -1705,8 +1738,11 @@ class ResponseMixin:
 
             service_covered = (
                 bool(getattr(appt, 'project_type', None)) or bool(scope)
+                # The first two fragments are retired wording — kept so a lead who
+                # already got the old scope question doesn't get asked again.
                 or asked_any(["the setup you're working", "full bathroom or just",
-                              "fresh install", "replacing something"])
+                              "fresh install", "replacing something",
+                              "in use at the moment", "still being built"])
             )
             detail_covered = has_accessories or asked_any(
                 ["accessories are you after", "brand or finish", "standard range"]
@@ -2460,12 +2496,17 @@ class ResponseMixin:
                     _m    = _re.search(r'\[EXCLUDED_AREA:([^\]]+)\]',
                                        self.appointment.internal_notes or '')
                     _city = _m.group(1) if _m else 'that area'
+                    # `{_city(self)}` used to sit in the second line — calling a str
+                    # raised "'str' object is not callable", the whole reply blew up
+                    # in the outer except, and an out-of-area lead got "Sorry, dropped
+                    # that on our end" instead of a decline (prod 2026-07-29,
+                    # Bulawayo). It also read wrong: work "closer to Bulawayo" is the
+                    # opposite of what we mean — nearer US.
                     reply = (
-                        f"Thanks for reaching out! Unfortunately *{_city}* is a bit too "
-                        f"far for us to travel to at the moment, so we wouldn't be able "
-                        f"to take this one on.\n\n"
-                        f"If you've got plumbing work closer to {_city(self)} though, we'd be "
-                        "glad to help!"
+                        f"Ah, sorry — {_city} is a bit far for our team to travel to, "
+                        f"so we can't take this one on properly.\n\n"
+                        f"If you've got a project nearer our side in future, we'd be "
+                        f"glad to help."
                     )
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
@@ -3258,16 +3299,23 @@ class ResponseMixin:
 
                 logger.info("semantic_rescue: returning rescue reply for input_type=%s", input_type)
 
+                try:
+                    from bot.repeated_question_detector import detect_language
+                    _lang = detect_language(message)
+                except Exception:
+                    _lang = 'english'
+
                 # Ask for a yes first: close the free-form answer with a soft
                 # value-check tie-down (signed so the next turn detects it and won't
                 # stack a second). Skip if our last turn was already a tie-down.
                 if reply and not self._last_assistant_was_tiedown():
-                    try:
-                        from bot.repeated_question_detector import detect_language
-                        _lang = detect_language(message)
-                    except Exception:
-                        _lang = 'english'
                     reply = self._append_tiedown(reply, _lang)
+                elif reply and '?' not in reply:
+                    # A product_mention acknowledgement no longer carries a question
+                    # of its own (the "full renovation or just that item?" close was
+                    # removed), and the tie-down was already spent — so close on the
+                    # flow's next open stage rather than leaving a dead end.
+                    reply = f"{reply.rstrip()}\n\n{self._next_forward_question(_lang)}"
                 return reply
 
             except Exception as exc:
@@ -3905,14 +3953,18 @@ class ResponseMixin:
                 'standalone_tub':       'freestanding tubs',
             }
             name = names.get(intent, 'that')
+            # Confirm, then hand to the flow's real next question. The old close
+            # ("Are you after just that, or a full bathroom setup?") asked the lead
+            # to settle scope we don't need settled — the free visit prices what's
+            # there either way — and it stalled the booking.
             if language == 'shona':
                 return (
                     f"Hongu, tinacho uye tinoita kuiswa kwe{name}.\n\n"
-                    "Uri kuda ichi chete, kana full bathroom?"
+                    f"{self._next_forward_question('shona')}"
                 )
             return (
                 f"Yes — we supply and install {name}.\n\n"
-                "Are you after just that, or a full bathroom setup?"
+                f"{self._next_forward_question(language)}"
             )
 
         @staticmethod

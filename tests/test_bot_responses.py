@@ -1377,6 +1377,147 @@ try:
 except Exception as e:
     results.log("add_conversation_message empty guard", False, got=str(e))
 
+# The "full bathroom or just that item?" scope question is retired (owner call,
+# 2026-07-29). It made the lead settle scope that changes nothing — the free visit
+# prices whatever is there — and in production it spawned "What's the difference?"
+# and a tangent instead of a booking date. Four surfaces could emit it; none may.
+_RETIRED_SCOPE_PHRASES = (
+    'full bathroom or just', "the setup you're working", 'full bathroom setup',
+    'full bathroom renovation or', 'or are you just looking at pricing for',
+    'kana full bathroom',
+)
+def _has_retired_scope_question(text):
+    low = (text or '').lower()
+    return [p for p in _RETIRED_SCOPE_PHRASES if p in low]
+try:
+    from bot.semantic_rescue import _keyword_rescue as _kr
+    _kr_out = _kr("I want a freestanding tub")
+    results.log(
+        "retired scope Q: semantic_rescue product_mention acknowledges only",
+        (_kr_out is not None
+         and not _has_retired_scope_question(_kr_out.get('suggested_reply'))
+         and '?' not in (_kr_out.get('suggested_reply') or '')),
+        got=str(_kr_out and _kr_out.get('suggested_reply')),
+    )
+except Exception as e:
+    results.log("retired scope Q: semantic_rescue product_mention", False, got=str(e))
+try:
+    import bot.semantic_rescue as _sr_mod
+    import inspect as _inspect
+    _prompt_src = _inspect.getsource(_sr_mod._deepseek_rescue)
+    results.log(
+        "retired scope Q: rescue prompt no longer instructs it",
+        'ask if full renovation or just that item' not in _prompt_src.lower(),
+        got="prompt still instructs the scope question"
+            if 'ask if full renovation or just that item' in _prompt_src.lower() else "clean",
+    )
+except Exception as e:
+    results.log("retired scope Q: rescue prompt", False, got=str(e))
+try:
+    _bank_texts = " ".join(
+        t for bank in ResponseMixin._FORWARD_BANK.values() for t, _ in bank
+    )
+    results.log(
+        "retired scope Q: not in the forward-question bank",
+        not _has_retired_scope_question(_bank_texts),
+        got=str(_has_retired_scope_question(_bank_texts)),
+    )
+except Exception as e:
+    results.log("retired scope Q: forward bank", False, got=str(e))
+class _FakeSelfAffirmProgress:
+    _affirm_and_progress = ResponseMixin._affirm_and_progress
+    def _next_forward_question(self, language="english", scope=None, has_accessories=False):
+        return "Whereabouts are you based?"
+try:
+    _fap = _FakeSelfAffirmProgress()
+    _en = _fap._affirm_and_progress('shower_cubicle', 'english')
+    _sn = _fap._affirm_and_progress('shower_cubicle', 'shona')
+    results.log(
+        "retired scope Q: availability affirm progresses instead (EN + Shona)",
+        (not _has_retired_scope_question(_en) and not _has_retired_scope_question(_sn)
+         and 'Whereabouts are you based?' in _en and 'Whereabouts are you based?' in _sn),
+        got=f"EN={_en!r} SN={_sn!r}",
+    )
+except Exception as e:
+    results.log("retired scope Q: _affirm_and_progress", False, got=str(e))
+
+# An out-of-area lead gets a polite decline, not a crash. `{_city(self)}` called a
+# str as a function, so the whole reply raised inside generate_response's outer
+# except and the lead got "Sorry, dropped that on our end" instead — every
+# decline-list town, every time (prod 2026-07-29, Bulawayo).
+class _FakeApptExcluded:
+    internal_notes = '[EXCLUDED_AREA:Bulawayo]'
+    def __init__(self):
+        self.logged = []
+    def add_conversation_message(self, role, content, **kw):
+        self.logged.append((role, content))
+try:
+    import re as _re_x
+    _appt_x = _FakeApptExcluded()
+    _m_x = _re_x.search(r'\[EXCLUDED_AREA:([^\]]+)\]', _appt_x.internal_notes or '')
+    _city_x = _m_x.group(1) if _m_x else 'that area'
+    # Mirrors the reply built in generate_response's EXCLUDED AREA branch.
+    _excl_reply = (
+        f"Ah, sorry — {_city_x} is a bit far for our team to travel to, "
+        f"so we can't take this one on properly.\n\n"
+        f"If you've got a project nearer our side in future, we'd be "
+        f"glad to help."
+    )
+    import inspect as _inspect_x
+    # Comments are part of getsource, and the fix's own comment quotes the old
+    # broken expression — scan executable lines only.
+    _gr_code = "\n".join(
+        line.split('#', 1)[0]
+        for line in _inspect_x.getsource(ResponseMixin.generate_response).splitlines()
+    )
+    results.log(
+        "excluded area: decline no longer calls the city string as a function",
+        '_city(' not in _gr_code,
+        got="_city(...) called in code" if '_city(' in _gr_code else "clean",
+    )
+    results.log(
+        "excluded area: decline names the town and offers the door back",
+        ('Bulawayo' in _excl_reply and 'too far' not in _excl_reply.lower()
+         and 'nearer our side' in _excl_reply
+         and 'dropped that on our end' not in _excl_reply),
+        got=_excl_reply,
+    )
+except Exception as e:
+    results.log("excluded area decline", False, got=str(e))
+
+# A business fact must never come back as a bare yes/no. "Is the quote free" was
+# answered "No", then "yes" two minutes later (prod 2026-07-29) — the AI rephrase
+# ran at temperature 0.4 with no substance check. Degenerate answers now fall back
+# to the canned fact, which is complete and identical every time.
+FAQ_SUBSTANCE_CASES = [
+    ("No",                                              False),   # the bug
+    ("yes",                                             False),   # the contradiction
+    ("Yes.",                                            False),
+    ("nope",                                            False),
+    ("kwete",                                           False),
+    ("ok",                                              False),
+    ("",                                                False),
+    ("Yes, the quote is completely free.",              True),
+    ("No charge at all — the assessment is on us.",      True),
+    ("Hongu, quote yedu ndeye mahara zvachose.",         True),
+]
+for _ans, _expected in FAQ_SUBSTANCE_CASES:
+    try:
+        _got = ResponseMixin._is_substantive_faq_answer(_ans)
+        results.log(f"_is_substantive_faq_answer: {_ans[:28]!r}", _got == _expected,
+                    expected=str(_expected), got=str(_got))
+    except Exception as e:
+        results.log(f"_is_substantive_faq_answer: {_ans[:28]!r}", False, got=str(e))
+try:
+    _faq_src = _inspect_x.getsource(ResponseMixin.ai_answer_faq)
+    results.log(
+        "ai_answer_faq: facts answered deterministically (temperature 0)",
+        'temperature=0,' in _faq_src and 'temperature=0.4' not in _faq_src,
+        got="still non-deterministic" if 'temperature=0.4' in _faq_src else "temperature=0",
+    )
+except Exception as e:
+    results.log("ai_answer_faq temperature", False, got=str(e))
+
 # _asks_about_labour fires on labour/install/fit questions, not plain how-much.
 LABOUR_ASK_CASES = [
     ("How much is labour",          True),

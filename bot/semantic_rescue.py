@@ -91,15 +91,17 @@ def _keyword_rescue(message: str) -> dict | None:
     # Product mention
     for keyword, svc, label in _PRODUCT_SERVICE_MAP:
         if keyword in msg_lower:
-            room = "bathroom" if "bathroom" in svc else "kitchen" if "kitchen" in svc else "space"
             return {
                 "input_type": "product_mention",
                 "plumbing_mapping": keyword,
                 "service_type": svc,
-                "suggested_reply": (
-                    f"{label} — great choice! Is this for a full {room} renovation "
-                    f"or are you just looking at pricing for the {label.lower()} itself?"
-                ),
+                # Acknowledge only — no question. Asking "full renovation or just
+                # that item?" is scope trivia the lead doesn't need to settle: the
+                # free visit prices whatever is there either way, and it derails
+                # the booking (prod 2026-07-29: it produced "What's the
+                # difference?" and a tangent instead of a date). The caller closes
+                # with the flow's real next question.
+                "suggested_reply": f"{label} — great choice.",
             }
 
     # Price query without a service
@@ -154,7 +156,9 @@ input_type rules:
 - unclear: genuinely unintelligible
 
 For suggested_reply:
-- product_mention → confirm the product, ask if full renovation or just that item
+- product_mention → confirm the product back to them in ONE short sentence and stop.
+  Do NOT ask whether it is a full renovation or just that item, and do not ask any
+  other scope question — the booking flow asks the next question itself.
 - reference_link  → acknowledge briefly, redirect to booking question
 - price_query     → note pricing depends on job, ask which service
 - partial_answer  → confirm interpretation, ask for confirmation

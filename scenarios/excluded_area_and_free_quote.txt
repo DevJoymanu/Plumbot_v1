@@ -1,0 +1,28 @@
+# Two ungraceful handlings from one production transcript
+# (2026-07-29, +27610318200, tenant jd3).
+#
+# 1. "I'm in Bulawayo" (a decline-list town) → the decline reply interpolated
+#    `{_city(self)}`, calling a str, so it raised inside generate_response's
+#    outer except and the lead got "Sorry, dropped that on our end — could you
+#    send that again?". Every out-of-area lead, every time. The decline must go
+#    out: name the town, say it's too far, leave the door open. Never
+#    "Harare only" — Homebase is mobile.
+#
+# 2. "Is the quote free" was answered "No", then "yes" two minutes later — the
+#    AI FAQ rephrase ran at temperature 0.4 with no substance check, so the same
+#    question got opposite one-word answers. A business fact must be identical
+#    every time and must actually carry the fact.
+
+> Is the quote free
+expect: free
+reject: dropped that on our end
+
+> How much tub
+expect: US$
+
+> I'm in Bulawayo
+expect: Bulawayo
+expect: nearer our side
+reject: dropped that on our end
+reject: Harare only
+reject: what works better for you
