@@ -1033,6 +1033,73 @@ for msg, expected in PROD_AVAIL_CASES:
     except Exception as e:
         results.log(f"_is_product_availability_question: '{msg[:28]}'", False, got=str(e))
 
+# A bare affirmation ANSWERS our tie-down; it never asks a new question. The
+# unified classifier keeps product_intent alive across turns, and that stale intent
+# routed a bare "Yes" into the services-availability answer — the lead agreed the
+# tub price and got "Yes, we handle tub and all related plumbing work" back
+# (prod 2026-07-29, lead 670). This resolver is the gate on that AI route, so it
+# must fire on a pure yes and stay off anything carrying real content.
+BARE_AFFIRM_CASES = [
+    ("Yes",              True),    # the bug
+    ("yes",              True),
+    ("Yes.",             True),
+    ("yeah",             True),
+    ("sure",             True),
+    ("that works",       True),
+    ("hongu",            True),
+    ("ok",               True),    # bare ack counts — it asks nothing either
+    ("noted",            True),
+    ("yes I need a tub", False),   # names a product = real content, route it
+    ("yes how much",     False),   # a price ask rides along
+    ("do you have tubs", False),   # a genuine availability question
+    ("tubs",             False),
+    ("no",               False),   # a decline is not an affirmation
+    ("",                 False),
+]
+for msg, expected in BARE_AFFIRM_CASES:
+    try:
+        got = ResponseMixin._is_bare_affirmation(msg)
+        results.log(f"_is_bare_affirmation: '{msg[:28]}'", got == expected,
+                    expected=str(expected), got=str(got))
+    except Exception as e:
+        results.log(f"_is_bare_affirmation: '{msg[:28]}'", False, got=str(e))
+
+# The AI service-question route (whatsapp_webhook `_ai_service_q`) must never fire
+# on that bare affirmation, no matter what product_intent the classifier carried
+# over — but must still catch the typo'd availability question it exists for.
+class _FakeSelfAiRoute:
+    # _asks_price_figure takes self; the other two are staticmethods, called
+    # straight off ResponseMixin below.
+    _asks_price_figure = ResponseMixin._asks_price_figure
+_far = _FakeSelfAiRoute()
+
+def _ai_service_route_fires(msg, product_intent, next_question='project_description'):
+    """Mirrors the `_ai_service_q` gate's message-level conditions."""
+    _PRODUCT_LABEL_KEYS = ('shower_cubicle', 'geyser', 'vanity', 'toilet',
+                           'chamber', 'tub_sales', 'standalone_tub',
+                           'bathtub_installation')
+    return (
+        product_intent in _PRODUCT_LABEL_KEYS
+        and not _far._asks_price_figure(msg)
+        and not ResponseMixin._is_size_spec_question(msg)
+        and not ResponseMixin._is_bare_affirmation(msg)
+        and next_question in ('service_type', 'project_description')
+    )
+AI_SERVICE_ROUTE_CASES = [
+    ("Yes",                  'tub_sales',      False),   # the bug
+    ("ok",                   'shower_cubicle', False),
+    ("Do you for shower rooms", 'shower_cubicle', True),  # why the route exists
+    ("do you have geysers",  'geyser',         True),
+    ("how much for a tub",   'tub_sales',      False),   # price ask, not availability
+]
+for msg, intent, expected in AI_SERVICE_ROUTE_CASES:
+    try:
+        got = _ai_service_route_fires(msg, intent)
+        results.log(f"_ai_service_q gate: '{msg[:28]}' [{intent}]", got == expected,
+                    f"fires={got}", expected=f"fires={expected}", got=f"fires={got}")
+    except Exception as e:
+        results.log(f"_ai_service_q gate: '{msg[:28]}' [{intent}]", False, got=str(e))
+
 # A corner tub is a built-in tub (same price, from US$160) — not freestanding.
 class _FakeSelfTubType:
     _tub_type_in_message = ResponseMixin._tub_type_in_message
@@ -2367,6 +2434,41 @@ try:
     )
 except Exception as e:
     results.log("_capture_named_products_as_description", False, got=str(e))
+
+# A SINGLE-product price ask must capture too. It didn't, so after "How much tub"
+# the description stayed empty, the flow still sat on project_description, and the
+# carried-over product_intent had an open lane into the availability answer
+# (prod 2026-07-29, lead 670). The multi-item and quote paths always captured;
+# this pins the single-product entry point alongside them.
+class _FakeSelfPriceCapture:
+    _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
+    _product_families_in = ResponseMixin._product_families_in
+    _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
+    handle_service_inquiry = ResponseMixin.handle_service_inquiry
+    def __init__(self, appt):
+        self.appointment = appt
+    def _handle_service_inquiry_impl(self, intent, message):
+        return "Built-in bathtubs from US$160 all-in."
+    def _ensure_price_disclaimer(self, intent, reply):
+        return reply
+try:
+    _ap3 = _FakeApptDesc(desc=None)
+    _reply3 = _FakeSelfPriceCapture(_ap3).handle_service_inquiry('tub_sales', "How much tub")
+    results.log(
+        "price reply: single-product ask captures the item as the description",
+        _ap3.project_description == "tub" and "US$160" in _reply3,
+        expected="desc='tub', reply intact",
+        got=f"desc={_ap3.project_description!r}, reply={_reply3[:40]!r}",
+    )
+    _ap4 = _FakeApptDesc(desc="kitchen sink swap")
+    _FakeSelfPriceCapture(_ap4).handle_service_inquiry('tub_sales', "How much tub")
+    results.log(
+        "price reply: does not overwrite a description already captured",
+        _ap4.project_description == "kitchen sink swap",
+        got=str(_ap4.project_description),
+    )
+except Exception as e:
+    results.log("price reply: single-product capture", False, got=str(e))
 # Job / multi-item quotes route to the free on-site quote (no chat price block);
 # single-product price questions still price. Production bug: "Need a quote to fit
 # tub and shower" dumped a shower-cubicle price block (appt 475). API-free regex.

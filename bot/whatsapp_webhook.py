@@ -2450,6 +2450,13 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             and uc_product_intent(_uclass) in _PRODUCT_LABEL
             and not uc_answered_current_question(_uclass)
             and not plumbot._asks_price_figure(message_body)
+            # A bare "Yes"/"ok" asks nothing — it ANSWERS us, almost always the
+            # tie-down we just closed on. The classifier keeps product_intent alive
+            # across turns, so without this the stale intent answered a question the
+            # lead never asked: they agreed the tub price and got "Yes, we handle tub
+            # and all related plumbing work" (prod 2026-07-29, lead 670). The
+            # customer's own words win over a carried-over intent — see CLAUDE.md.
+            and not plumbot._is_bare_affirmation(message_body)
             # A size/spec ask ("how big are your tubs") is NOT an availability
             # question — it must fall through to the measurements reply.
             and not plumbot._is_size_spec_question(message_body)

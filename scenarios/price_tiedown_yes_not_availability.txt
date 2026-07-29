@@ -1,0 +1,27 @@
+# A "Yes" to the budget tie-down is a micro-yes on price — not a new question
+# (prod 2026-07-29, lead 670, +27610318200).
+#
+# The lead asked "How much tub", got the tub prices closed with the budget
+# tie-down, and answered "Yes". The unified classifier still had
+# product_intent=tub_sales alive from the previous turn, so the AI
+# service-question route in whatsapp_webhook fired on the bare affirmation and
+# answered a question nobody asked: "Yes, we handle tub and all related
+# plumbing work." A lead who has just agreed the price should be moved toward
+# the visit, not told we sell tubs.
+#
+# Fixed by ResponseMixin._is_bare_affirmation gating `_ai_service_q`: a message
+# that asks us nothing can never be routed as an availability question, no
+# matter what intent was carried over.
+
+> how much tub
+expect: US$
+expect: budget
+
+# The tub is now captured as the job off the price ask, so the affirmation moves
+# the lead forward (area / visit) instead of being told we sell tubs — and the
+# description question is never re-asked about something they already named.
+> Yes
+reject: we handle
+reject: all related plumbing work
+reject: US$
+reject: what are you looking to get sorted

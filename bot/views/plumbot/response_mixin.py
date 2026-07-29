@@ -3971,6 +3971,29 @@ class ResponseMixin:
             return msg in acks
 
         @staticmethod
+        def _is_bare_affirmation(message: str) -> bool:
+            """True for a standalone yes ("yes", "sure", "hongu", "that works")
+            carrying no other content.
+
+            Distinct from _is_bare_ack: an ack acknowledges, an affirmation ANSWERS
+            the question we just asked — nearly always our own tie-down. Either way
+            the lead has asked us nothing, so a bare affirmation must never be read
+            as a new question. Deterministic on purpose: the classifier keeps a
+            product_intent alive across turns, and that stale intent turned a "Yes"
+            into an availability question (prod 2026-07-29, lead 670)."""
+            msg = (message or "").strip().lower().strip('.!?,')
+            if not msg:
+                return False
+            yes_words = {
+                'yes', 'yes please', 'yep', 'yeah', 'yah', 'yup', 'ya', 'yebo',
+                'sure', 'sure thing', 'definitely', 'absolutely', 'indeed',
+                'that works', 'sounds good', 'works for me', 'no problem',
+                'please do', 'go ahead', 'correct', 'true',
+                'hongu', 'ehe', 'ehoi', 'zvakanaka', 'zvirinane',
+            }
+            return msg in yes_words or ResponseMixin._is_bare_ack(msg)
+
+        @staticmethod
         def _is_services_overview_question(message: str) -> bool:
             """True for 'what do you specialize in / what services / what do you do' questions."""
             msg = (message or "").lower()
@@ -4389,6 +4412,13 @@ class ResponseMixin:
             """Public entry: build the priced reply, then guarantee the approximate-
             price disclaimer is attached (protected price-clarity behaviour)."""
             reply = self._handle_service_inquiry_impl(intent, message)
+            # The item they asked the price of IS their job — record it, exactly as
+            # the multi-item (_build_combined_price_reply) and quote
+            # (_build_job_quote_reply) paths already do. Without this, a
+            # single-product price ask left project_description empty, so the next
+            # turn re-asked what they wanted after they'd just named it (and left
+            # the stale-intent availability route armed — see _is_bare_affirmation).
+            self._capture_named_products_as_description(message)
             return self._ensure_price_disclaimer(intent, reply)
 
         def _handle_service_inquiry_impl(self, intent, message):

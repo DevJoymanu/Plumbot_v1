@@ -123,6 +123,29 @@ Why: mirror the customer's language per message; lead with the all-in figure;
 close on the budget tie-down; the plumber is **Takudzwa** — no other name
 exists.
 
+**Lead 670 (July 2026).** A yes to the budget tie-down answered as if it were a
+question.
+
+> **Customer:** "How much tub" → priced correctly, closed on the budget
+> tie-down.
+> **Then:** "Yes"
+>
+> **Bad:** "Yes, we handle tub and all related plumbing work. Is a tub the only
+> thing you're looking to get sorted?"
+>
+> **Good:** take the yes as the micro-yes it is and move to the next booking
+> field — "Nice one. Whereabouts are you?"
+
+Why: the classifier kept `product_intent=tub_sales` alive from the previous
+turn, so a bare "Yes" was routed into the services-availability answer — the
+carryover bug again, this time answering a question the lead never asked. A
+message that asks nothing can never be read as a question
+(`_is_bare_affirmation` now gates that route). The second half of the reply was
+also a symptom: the priced item wasn't captured as the job, so the flow still
+sat on project_description with nothing to show for a product they had already
+named — single-product price replies now capture like the multi-item and quote
+paths always did.
+
 ---
 
 ## Exits, defers, brush-offs
