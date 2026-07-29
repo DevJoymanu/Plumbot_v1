@@ -78,6 +78,19 @@ def _reset_pk_sequence(model):
     return True
 
 
+def business_name_for(obj, default='the plumbing team') -> str:
+    """The business name to put in front of a customer, from this lead's OWN
+    tenant.
+
+    Accepts an Appointment, a Tenant, or None. Every customer-facing string and
+    LLM prompt should route its company name through here — hardcoding
+    "Homebase Plumbers" meant every other tenant's leads were greeted, signed
+    off and followed up by a business they had never contacted.
+    """
+    tenant = getattr(obj, 'tenant', obj)
+    return (getattr(tenant, 'name', '') or '').strip() or default
+
+
 def _append_admin_note(appointment, message):
     timestamp = timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M')
     existing = appointment.admin_notes or ''

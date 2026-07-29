@@ -397,6 +397,7 @@ def generate_repeat_clarification(
     matched_answer: str,
     plumber_number: str = '',
     language_hint: str = 'english',
+    business_name: str = '',
 ) -> str:
     """
     Generate a warm, reassuring response for a repeated question.
@@ -410,7 +411,7 @@ def generate_repeat_clarification(
         else 'Respond in English.'
     )
 
-    prompt = f"""You are a friendly WhatsApp assistant for Homebase Plumbers in Zimbabwe.
+    prompt = f"""You are a friendly WhatsApp assistant for {business_name or "the plumbing team"} in Zimbabwe.
 
 The customer asked essentially the same question twice (different wording).
 

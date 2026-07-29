@@ -36,7 +36,7 @@ def get_plumber_notification_emails():
 def send_email_to_recipients(
     recipients, subject, message, *, dry_run=False,
     html_message=None, attachment=None, attachment_name="attachment.pdf",
-    from_name=None, message_id=None,
+    from_name=None, message_id=None, tenant=None,
 ):
     """
     Send email to an explicit list of recipients via the configured SMTP
@@ -44,9 +44,22 @@ def send_email_to_recipients(
 
     attachment: bytes object (e.g. PDF) to attach, or None.
     attachment_name: filename for the attachment.
+    tenant: the tenant this mail belongs to. Every tenant-scoped send passes it,
+        and the tenant's outbound-email switch is honoured here — this is the one
+        choke point all mail goes through, so the gate cannot be sidestepped by a
+        new caller. Omit it only for PLATFORM mail (dashboard password resets),
+        which belongs to no tenant and is always allowed.
     """
     if not recipients:
         logger.warning("send_email_to_recipients: no recipients for '%s'.", subject)
+        return False
+
+    from .platform_flags import email_sending_enabled
+    if not email_sending_enabled(tenant):
+        logger.info(
+            "Email OFF for tenant=%s — skipped '%s' to %s",
+            getattr(tenant, 'slug', None), subject, ", ".join(recipients),
+        )
         return False
 
     if dry_run:
@@ -121,11 +134,13 @@ def send_email_to_recipients(
         return False
 
 
-def send_plumber_notification_email(subject, message, *, dry_run=False, html_message=None):
+def send_plumber_notification_email(subject, message, *, dry_run=False,
+                                    html_message=None, tenant=None):
     """
     Send a notification email to the configured plumber team inbox(es).
     Delegates to send_email_to_recipients so all deliverability headers
-    (Reply-To, X-Entity-Ref-ID) are applied consistently.
+    (Reply-To, X-Entity-Ref-ID) are applied consistently — and so the tenant's
+    outbound-email switch is honoured. Pass the tenant the alert is about.
     """
     recipients = get_plumber_notification_emails()
     if not recipients:
@@ -136,6 +151,7 @@ def send_plumber_notification_email(subject, message, *, dry_run=False, html_mes
         recipients, subject, message,
         dry_run=dry_run,
         html_message=html_message,
+        tenant=tenant,
     )
 
 
@@ -189,7 +205,9 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
         f"Project: {desc}"
         f"{when_line}{sched_line}\n"
     )
-    return send_plumber_notification_email(subject, message, dry_run=dry_run)
+    return send_plumber_notification_email(
+        subject, message, dry_run=dry_run,
+        tenant=getattr(appointment, 'tenant', None))
 
 
 def _send_via_brevo(

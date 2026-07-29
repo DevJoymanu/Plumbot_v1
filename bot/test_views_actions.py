@@ -855,18 +855,58 @@ class PlatformConsoleTests(TestCase):
             response = self.client.get(reverse(name, args=args))
             self.assertIn(response.status_code, (302, 403), name)
 
-    def test_tenant_config_renders_both_timer_switches_on_by_default(self):
+    def test_tenant_config_renders_every_switch_on_for_homebase(self):
         response = self.client.get(
             reverse('platform_tenant_config', args=['homebase']))
         body = response.content.decode()
-        for key in ('batch_window_enabled', 'reply_delay_enabled'):
+        for key in ('batch_window_enabled', 'reply_delay_enabled',
+                    'email_sending_enabled'):
             self.assertIn(
                 reverse('platform_toggle_timer', args=['homebase', key]), body)
-        # Both default ON — no rows stored yet.
+        # Timers default ON everywhere; email defaults ON for homebase only.
         import re
         switches = re.findall(r'<input type="checkbox" name="enabled"[^>]*>', body)
-        self.assertEqual(len(switches), 2)
+        self.assertEqual(len(switches), 3)
         self.assertTrue(all('checked' in s for s in switches), switches)
+
+    def test_email_switch_defaults_off_for_every_other_tenant(self):
+        from .platform_flags import email_sending_enabled
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.assertTrue(email_sending_enabled(self.homebase))
+        self.assertFalse(email_sending_enabled(acme))
+        # ...and the console shows it off, ready to be switched on per tenant.
+        body = self.client.get(
+            reverse('platform_tenant_config', args=['acme'])).content.decode()
+        import re
+        email_url = reverse('platform_toggle_timer',
+                            args=['acme', 'email_sending_enabled'])
+        self.assertIn(email_url, body)
+        form = body.split(email_url, 1)[1]
+        switch = re.search(r'<input type="checkbox" name="enabled"[^>]*>', form)
+        self.assertNotIn('checked', switch.group(0))
+        # "unless stated otherwise" — the switch turns it on for that tenant only.
+        self.client.post(email_url, {'enabled': '1'})
+        self.assertTrue(email_sending_enabled(acme))
+
+    def test_no_email_leaves_the_platform_for_a_disabled_tenant(self):
+        """The gate sits at the single choke point every send goes through, so a
+        tenant with email off cannot mail anyone — however the send was reached."""
+        from .plumber_notifications import send_email_to_recipients
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        with patch('bot.plumber_notifications._send_via_brevo') as brevo, \
+             patch('bot.plumber_notifications._send_via_sendgrid') as sendgrid:
+            sent = send_email_to_recipients(
+                ['lead@example.com'], 'Booking confirmed', 'body', tenant=acme)
+            self.assertFalse(sent)
+            brevo.assert_not_called()
+            sendgrid.assert_not_called()
+        # Platform mail (password resets) carries no tenant and still goes out.
+        with patch('bot.plumber_notifications._send_via_brevo',
+                   return_value=True) as brevo:
+            with self.settings(BREVO_API_KEY='x'):
+                self.assertTrue(send_email_to_recipients(
+                    ['staff@example.com'], 'Reset your password', 'body'))
+            brevo.assert_called_once()
 
     def test_toggle_timer_persists_and_flips_back(self):
         from .platform_flags import batch_window_enabled, reply_delay_enabled
@@ -2081,6 +2121,32 @@ class TenantConfigTests(TestCase):
         self.assertEqual(_from_name(acme_lead), 'Acme Plumbing')
         self.assertNotIn('263774819901', _wrap('<p>x</p>', acme_lead))
         self.assertIn('Acme Plumbing · Zimbabwe', _wrap('<p>x</p>', acme_lead))
+
+    def test_customer_facing_copy_never_signs_another_tenant_as_homebase(self):
+        """Every string a customer reads names THEIR plumber. Hardcoded
+        "Homebase Plumbers" reached other tenants' leads through the booking
+        confirmation sign-off, the reminder email footer and the WhatsApp
+        confirmation signature."""
+        from .customer_emails import build_booking_confirmation_email
+        from .management.commands.send_reminders import _html_email
+        from .utils import business_name_for
+
+        acme_lead = make_lead(9703, tenant=self.acme,
+                              customer_name='Acme Customer')
+        _, html = build_booking_confirmation_email(acme_lead)
+        self.assertIn('Acme Plumbing', html)
+        self.assertNotIn('HomeBase Plumbers', html)
+        self.assertNotIn('Homebase Plumbers', html)
+
+        reminder = _html_email('#1a73e8', 'Reminder', '<p>x</p>', acme_lead)
+        self.assertIn('Acme Plumbing · Automated Reminder', reminder)
+        self.assertNotIn('HomeBase Plumbers', reminder)
+
+        # The shared resolver reads the lead's own tenant, and degrades to a
+        # neutral phrase rather than any business name.
+        self.assertEqual(business_name_for(acme_lead), 'Acme Plumbing')
+        self.assertEqual(business_name_for(self.homebase), 'Homebase Plumbers')
+        self.assertEqual(business_name_for(None), 'the plumbing team')
 
     def test_price_accessors_match_legacy_response_mixin_tables(self):
         # Phase 2.3 parity pins: the cfg price shapes must equal the tables

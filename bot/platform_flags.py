@@ -21,6 +21,11 @@ from .models import TenantSetting
 
 REPLY_DELAY_KEY = 'reply_delay_enabled'
 BATCH_WINDOW_KEY = 'batch_window_enabled'
+EMAIL_SENDING_KEY = 'email_sending_enabled'
+
+# The tenant whose email identity is established. Every other tenant starts with
+# email OFF (see email_sending_enabled) until its owner asks for it.
+_EMAIL_DEFAULT_ON_SLUG = 'homebase'
 
 # Rendered by the tenant config page (label + the info-button copy), so the
 # explanation of what a switch does lives next to the switch itself.
@@ -57,6 +62,31 @@ TIMER_FLAGS = [
 ]
 
 
+EMAIL_FLAGS = [
+    {
+        'key': EMAIL_SENDING_KEY,
+        'label': 'Outbound email',
+        'summary': 'Lets this tenant send email to customers and its own team.',
+        'info': (
+            'OFF (the default for every tenant except Homebase): nothing is '
+            'emailed for this tenant - no booking confirmations, quote or '
+            'portfolio emails, reminders, or plumber alerts. The WhatsApp side is '
+            'untouched and keeps running normally; email is simply skipped and '
+            'logged.\n\n'
+            'ON: turn this on once the tenant\'s email identity is actually theirs '
+            '- from-name, reply-to address and the sending domain - so nothing '
+            'goes out to their customers under the wrong business name.\n\n'
+            'Dashboard password-reset mail is platform mail, not tenant mail, and '
+            'is never affected by this switch.'
+        ),
+    },
+]
+
+# Everything the tenant console can toggle. The toggle view resolves a posted key
+# against this, so a new switch is one entry here plus its reader below.
+TENANT_FLAGS = TIMER_FLAGS + EMAIL_FLAGS
+
+
 def reply_delay_enabled(tenant=None) -> bool:
     """False = send this tenant's replies as soon as they are generated."""
     return TenantSetting.get_flag(REPLY_DELAY_KEY, tenant, default=True)
@@ -67,7 +97,37 @@ def batch_window_enabled(tenant=None) -> bool:
     return TenantSetting.get_flag(BATCH_WINDOW_KEY, tenant, default=True)
 
 
+def email_sending_enabled(tenant=None) -> bool:
+    """False = send NO email for this tenant.
+
+    Unlike the timers this defaults OFF for everyone but the homebase seed: a new
+    tenant's email identity (from-name, reply-to, sending domain) is Homebase's
+    until someone sets it up, so mailing their customers would sign the message
+    with the wrong business. WhatsApp is unaffected — only email is skipped.
+
+    `tenant=None` means platform mail (dashboard password resets), which this
+    switch does not govern; callers pass a tenant only for tenant-scoped mail.
+    """
+    if tenant is None:
+        return True
+    default = (getattr(tenant, 'slug', '') or '').lower() == _EMAIL_DEFAULT_ON_SLUG
+    return TenantSetting.get_flag(EMAIL_SENDING_KEY, tenant, default=default)
+
+
+def _flag_rows(tenant, flags, default_for):
+    return [dict(flag, enabled=TenantSetting.get_flag(
+        flag['key'], tenant, default_for(flag['key'], tenant)))
+        for flag in flags]
+
+
 def timer_flag_rows(tenant):
     """The timing switches with this tenant's current state — for the console."""
-    return [dict(flag, enabled=TenantSetting.get_flag(flag['key'], tenant, True))
-            for flag in TIMER_FLAGS]
+    return _flag_rows(tenant, TIMER_FLAGS, lambda key, t: True)
+
+
+def email_flag_rows(tenant):
+    """The email switch with this tenant's current state — for the console."""
+    return _flag_rows(
+        tenant, EMAIL_FLAGS,
+        lambda key, t: (getattr(t, 'slug', '') or '').lower() == _EMAIL_DEFAULT_ON_SLUG,
+    )

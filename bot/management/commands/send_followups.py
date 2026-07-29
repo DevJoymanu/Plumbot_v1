@@ -19,6 +19,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 from bot.models import Appointment, LeadStatus
+from bot.utils import business_name_for
 from bot.whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 import os
 import re
@@ -1189,7 +1190,7 @@ class Command(BaseCommand):
             else '1 to 2 sentences only — keep it short and human.'
         )
 
-        prompt = f"""You are writing a WhatsApp follow-up message for Homebase Plumbers — a professional plumbing company in Zimbabwe.
+        prompt = f"""You are writing a WhatsApp follow-up message for {business_name_for(lead)} — a professional plumbing company in Zimbabwe.
 
 LEAD CONTEXT:
 - Interest: {service}

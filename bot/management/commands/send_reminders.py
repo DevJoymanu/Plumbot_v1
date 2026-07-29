@@ -462,7 +462,15 @@ def _apt_html_blocks(apts):
     return "\n".join(_apt_html_block(a) for a in apts)
 
 
-def _html_email(header_color, header_title, body_html):
+def _reminder_footer_name(apt=None):
+    """The business signing this reminder — the lead's own tenant. Hardcoded
+    "HomeBase Plumbers" here meant another tenant's customers were reminded by a
+    company they had never dealt with."""
+    from bot.utils import business_name_for
+    return business_name_for(apt, default='Our team') if apt is not None else 'Our team'
+
+
+def _html_email(header_color, header_title, body_html, apt=None):
     """Wrap body_html in a clean, mobile-friendly HTML email shell."""
     return (
         '<!DOCTYPE html><html lang="en"><head>'
@@ -480,7 +488,7 @@ def _html_email(header_color, header_title, body_html):
         '</div>'
         '<div style="background:#f8f8f8;padding:14px 28px;border-top:1px solid #e8e8e8;'
         'text-align:center;">'
-        '<p style="margin:0;color:#aaa;font-size:12px;">HomeBase Plumbers · Automated Reminder</p>'
+        f'<p style="margin:0;color:#aaa;font-size:12px;">{_reminder_footer_name(apt)} · Automated Reminder</p>'
         '</div>'
         '</div></body></html>'
     )
@@ -494,10 +502,17 @@ def _send_email(recipients, subject, html, dry_run, apt=None):
     if dry_run:
         logger.info("DRY RUN email '%s' → %s", subject, recipients)
         return True
-    # TODO(Phase 4 per-tenant cron loop): footer/identity from the lead's
-    # tenant profile — homebase-correct until then.
-    plain = f"{subject}\n\nHomeBase Plumbers\nWhatsApp: +263776255077"
-    return send_email_to_recipients(recipients, subject, plain, html_message=html)
+    # Identity comes from the lead's own tenant. This used to sign every
+    # reminder "HomeBase Plumbers" with Homebase's WhatsApp number, so another
+    # tenant's customers were reminded by a business they had never contacted.
+    from bot.customer_emails import _business_name, _wa_number
+    signature = _business_name(apt) if apt is not None else 'Our team'
+    wa = _wa_number(apt) if apt is not None else ''
+    plain = f"{subject}\n\n{signature}" + (f"\nWhatsApp: +{wa}" if wa else "")
+    return send_email_to_recipients(
+        recipients, subject, plain, html_message=html,
+        tenant=getattr(apt, 'tenant', None),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -952,6 +967,7 @@ class Command(BaseCommand):
                     "#1a73e8",
                     f"Next week — {n} appointment{'s' if n != 1 else ''} scheduled",
                     body_html,
+                    apt,
                 )
                 ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                 if ok:
@@ -1003,6 +1019,7 @@ class Command(BaseCommand):
                         "#e65c00",
                         f"🗓️ Tomorrow's Jobs — {n} Appointment{'s' if n != 1 else ''}",
                         body_html,
+                        apt,
                     )
                     ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                     if ok:
@@ -1053,6 +1070,7 @@ class Command(BaseCommand):
                         "#e65c00",
                         f"☀️ Today's Jobs — {n} Appointment{'s' if n != 1 else ''}",
                         body_html,
+                        apt,
                     )
                     ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                     if ok:
@@ -1143,6 +1161,7 @@ class Command(BaseCommand):
                         "#e53935",
                         f"⏰ Job in 2 Hours — {_service(apt)} in {_area(apt)}",
                         body_html,
+                        apt,
                     )
                     ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                     if ok:
@@ -1176,6 +1195,7 @@ class Command(BaseCommand):
                         "#b71c1c",
                         f"🚨 30 Minutes Away — {_service(apt)} in {_area(apt)}",
                         body_html,
+                        apt,
                     )
                     ok = _send_email(email_recipients, subject, html, dry_run, apt=apt)
                     if ok:

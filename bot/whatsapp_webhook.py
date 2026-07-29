@@ -20,6 +20,7 @@ import os
 from .whatsapp_cloud_api import whatsapp_api, get_extension_for_mime, MEDIA_SIZE_LIMITS
 from .models import Appointment, WhatsAppInboundEvent, LeadStatus, Tenant, TenantWhatsAppChannel
 from .plumber_notifications import send_plumber_notification_email
+from .utils import business_name_for
 from django.utils import timezone
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -277,6 +278,7 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
     send_plumber_notification_email(
         subject=f"Priority lead update for {customer_name}",
         message=message,
+        tenant=getattr(appointment, 'tenant', None),
     )
 
 
@@ -1254,7 +1256,8 @@ def send_catalogue_images(sender, appointment=None) -> bool:
             media_index = {}
             _tenant = appointment.tenant if appointment else None
             for index, image_path in enumerate(images):
-                caption = "HomeBase Plumbers — product catalogue" if index == 0 else None
+                caption = (f"{business_name_for(appointment)} — product catalogue"
+                           if index == 0 else None)
                 local_path, is_temp = _materialize_image(image_path)
                 try:
                     result = _send_local_media(client, sender, image_path, local_path, caption=caption)
@@ -1401,8 +1404,9 @@ def generate_photo_followup(appointment=None) -> str:
         reply = deepseek_call(
             messages=[
                 {"role": "system", "content": (
-                    "You are Plumbot, a warm WhatsApp assistant for Homebase Plumbers in "
-                    "Harare, Zimbabwe. You have JUST sent the customer a gallery of our "
+                    f"You are Plumbot, a warm WhatsApp assistant for "
+                    f"{business_name_for(appointment)} in Harare, Zimbabwe. You have JUST "
+                    "sent the customer a gallery of our "
                     "previous-work photos. Write ONE short follow-up message (max 2 "
                     "sentences) that:\n"
                     "- refers to what THIS customer has actually been discussing\n"
@@ -3042,6 +3046,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     matched_answer=repeat_info['matched_answer'],
                     plumber_number=plumber_contact,
                     language_hint=lang,
+                    business_name=business_name_for(appointment),
                 )
 
         # -- STEP 4: Normal Plumbot processing ---------------------------------

@@ -21,7 +21,9 @@ from django.utils import timezone
 
 from ..middleware import TENANT_SESSION_KEY
 from ..models import Tenant, TenantIntake, TenantPriceItem, TenantProfile, TenantSetting
-from ..platform_flags import TIMER_FLAGS, timer_flag_rows
+from ..platform_flags import (
+    TIMER_FLAGS, TENANT_FLAGS, timer_flag_rows, email_flag_rows,
+)
 from ..tenant_config import blank_priced_catalog
 
 
@@ -88,7 +90,7 @@ def platform_toggle_timer(request, slug, key):
     """Flip one of a tenant's timing switches. The checkbox posts `enabled`
     only when it is on, so its absence is the off state."""
     tenant = get_object_or_404(Tenant, slug=slug)
-    flag = next((f for f in TIMER_FLAGS if f['key'] == key), None)
+    flag = next((f for f in TENANT_FLAGS if f['key'] == key), None)
     if flag is None:
         raise Http404
     enabled = bool(request.POST.get('enabled'))
@@ -870,6 +872,7 @@ def platform_tenant_config(request, slug):
         'cfg': get_config(tenant),
         'currency': cur,
         'timer_flags': timer_flag_rows(tenant),
+        'email_flags': email_flag_rows(tenant),
         'priced_items': priced_items,
         'faq_topics': faq_topics,
         'lead_magnet_design': design_for(tenant)['key'],

@@ -316,6 +316,44 @@
       </section>
 
       <section class="cfg-glass cfg-card">
+        <div class="cfg-card__head"><span class="cfg-label">Email</span></div>
+        {% for flag in email_flags %}
+        <div class="cfg-timer">
+          <div class="cfg-timer__text">
+            <div class="cfg-timer__label">
+              {{ flag.label }}
+              <details class="cfg-info">
+                <summary title="What does this do?" aria-label="About {{ flag.label }}">
+                  <i class="fas fa-info"></i>
+                </summary>
+                <div class="cfg-info__body">{{ flag.info|linebreaksbr }}</div>
+              </details>
+            </div>
+            <div class="cfg-timer__summary">{{ flag.summary }}</div>
+          </div>
+          <div class="cfg-timer__control">
+            <form method="post" action="{% url 'platform_toggle_timer' tenant.slug flag.key %}">
+              {% csrf_token %}
+              <label class="cfg-switch">
+                <input type="checkbox" name="enabled" value="1"
+                       {% if flag.enabled %}checked{% endif %}
+                       onchange="this.form.submit();">
+                <span class="cfg-switch__track"></span>
+              </label>
+            </form>
+            <div class="cfg-switch__state">{% if flag.enabled %}On{% else %}Off{% endif %}</div>
+          </div>
+        </div>
+        {% endfor %}
+        <p class="cfg-note">
+          Off by default for every tenant except Homebase. Leave it off until
+          {{ tenant.name }}'s own from-name, reply-to address and sending domain
+          are in place — otherwise their customers get email signed by the wrong
+          business. WhatsApp is unaffected either way.
+        </p>
+      </section>
+
+      <section class="cfg-glass cfg-card">
         <div class="cfg-card__head">
           <span class="cfg-label">Lead magnet</span>
           <span class="cfg-chip">{{ lead_magnet_design }} design</span>

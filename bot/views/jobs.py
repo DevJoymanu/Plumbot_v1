@@ -288,6 +288,7 @@ View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         send_plumber_notification_email(
             subject=f"New job scheduled for {job_appointment.customer_name or 'customer'}",
             message=team_message,
+            tenant=getattr(job_appointment, 'tenant', None),
         )
         
     except Exception as e:

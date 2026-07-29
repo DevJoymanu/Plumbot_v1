@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.utils import timezone
+
+from ...utils import business_name_for
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
@@ -156,7 +158,7 @@ class NotificationMixin:
                     f"🔧 Service: {service_name}\n\n"
                     f"We will contact you before arrival.\n\n"
                     f"Questions? Just reply here.\n"
-                    f"— Homebase Plumbers"
+                    f"— {business_name_for(self.appointment)}"
                 )
 
                 clean_phone = clean_phone_number(self.phone_number)
@@ -273,6 +275,7 @@ class NotificationMixin:
                         subject=f"New booking — {appointment_info.get('name', 'Unknown')}",
                         message=team_message,
                         html_message=booking_html,
+                        tenant=getattr(self.appointment, 'tenant', None),
                     )
 
                 except Exception as e:

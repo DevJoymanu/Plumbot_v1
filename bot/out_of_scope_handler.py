@@ -42,6 +42,8 @@ import pytz
 from django.conf import settings
 from openai import OpenAI
 
+from .utils import business_name_for
+
 logger = logging.getLogger(__name__)
 
 _DEEPSEEK_KEY = os.environ.get("DEEPSEEK_API_KEY")
@@ -370,7 +372,7 @@ def classify_message(message: str, appointment) -> dict:
     project_type = appointment.project_type or "not yet specified"
     area = appointment.customer_area or "not yet specified"
 
-    prompt = f"""You are a message classifier for Plumbot, the WhatsApp chatbot for Homebase Plumbers in Zimbabwe.
+    prompt = f"""You are a message classifier for Plumbot, the WhatsApp chatbot for {business_name_for(appointment)} in Zimbabwe.
 
 Our services: {OUR_SERVICES}
 
@@ -544,7 +546,7 @@ def _generate_clarifying_question(
         "Ask ONE short question to understand what the customer means.",
     )
 
-    prompt = f"""You are writing a WhatsApp message for Homebase Plumbers.
+    prompt = f"""You are writing a WhatsApp message for {business_name_for(appointment)}.
 
 SITUATION:
 {guidance}

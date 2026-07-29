@@ -5417,7 +5417,7 @@ class ResponseMixin:
                     recent_lines.append(f"{role}: {content[:200]}")
                 context_block = "\n".join(recent_lines) if recent_lines else "No prior conversation."
 
-                prompt = f"""You are a knowledgeable WhatsApp assistant for Homebase Plumbers — a professional plumbing and renovation company based in Harare, Zimbabwe.
+                prompt = f"""You are a knowledgeable WhatsApp assistant for {_biz(self)} — a professional plumbing and renovation company based in Harare, Zimbabwe.
 
         CRITICAL RULE — GENERIC OPENERS:
         If the customer's message is a generic greeting, a vague request for more information, or an opening message with no specific question, you MUST reply with ONLY this exact text and nothing else:
@@ -5535,7 +5535,7 @@ class ResponseMixin:
             name_part = f", {self.appointment.customer_name}" if self.appointment.customer_name else ""
 
             system_prompt = (
-                f"You are a WhatsApp assistant for Homebase Plumbers in Harare, Zimbabwe. "
+                f"You are a WhatsApp assistant for {_biz(self)} in Harare, Zimbabwe. "
                 f"The plumber's name is Takudzwa. "
                 f"The customer's appointment is CONFIRMED for {appt_str}. "
                 f"They have just sent a follow-up message. "

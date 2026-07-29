@@ -261,6 +261,7 @@ def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfol
         attachment_name=attachment_name,
         from_name=_from_name(apt),
         message_id=message_id,
+        tenant=getattr(apt, 'tenant', None),
     )
 
 
@@ -631,7 +632,7 @@ def build_booking_confirmation_email(apt):
         '<p>Our plumber will call you 30 minutes before arrival. '
         'Please ensure someone is home and the work area is accessible.</p>'
         f'{_wa_nudge(apt)}'
-        '<p>See you then! <br><strong>HomeBase Plumbers</strong></p>'
+        f'<p>See you then! <br><strong>{_business_name(apt)}</strong></p>'
     )
     return subject, _wrap(body, apt)
 
@@ -1071,7 +1072,9 @@ def send_email_reply_notification_to_plumber(apt, customer_reply_text):
         )
         html  = _wrap(body, apt)
         plain = f"Email reply from {name} (apt #{apt.pk}):\n\n{customer_reply_text}"
-        return send_plumber_notification_email(subject, plain, html_message=html)
+        return send_plumber_notification_email(
+            subject, plain, html_message=html,
+            tenant=getattr(apt, 'tenant', None))
     except Exception:
         logger.exception("send_email_reply_notification_to_plumber failed — apt %s", apt.pk)
         return False
