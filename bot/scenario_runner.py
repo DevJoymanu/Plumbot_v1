@@ -49,7 +49,7 @@ def send_message(sender, message, media_wait: float = 60.0, tenant=None):
 
     def _new_replies(before_count):
         entries = history(sender)[before_count:]
-        return [e.get("content", "") for e in entries
+        return [(e.get("content") or "") for e in entries
                 if isinstance(e, dict) and e.get("role") == "assistant"]
 
     before = len(history(sender))

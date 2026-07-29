@@ -1206,7 +1206,7 @@ class Appointment(models.Model):
             return "No conversation yet"
         
         messages = len(self.conversation_history)
-        last_message = self.conversation_history[-1].get('content', '')[:50] + '...' if self.conversation_history else ''
+        last_message = (self.conversation_history[-1].get('content') or '')[:50] + '...' if self.conversation_history else ''
         return f"{messages} messages. Last: {last_message}"
 
     def add_conversation_message(self, role, content, message_id=None, quoted=None):
@@ -1222,6 +1222,18 @@ class Appointment(models.Model):
             # Ensure conversation_history is a list
             if not isinstance(self.conversation_history, list):
                 self.conversation_history = []
+
+            # An empty/None turn is not a transcript entry — it is poison. A
+            # handler that failed to build a reply once stored content=None here,
+            # and every later read that did `.get('content', '').lower()` blew up
+            # on it (the default only applies to a MISSING key, not a None value),
+            # so the lead stopped getting replies entirely (prod 2026-07-29,
+            # +27610318200). Drop it at the door; readers are None-safe too.
+            if content is None or not str(content).strip():
+                print(f"⚠️ Refused empty {role} message — not written to "
+                      f"conversation_history")
+                return
+            content = str(content)
 
             # Idempotency guard (conv 369): the webhook logs the inbound user
             # message on arrival and generate_response logs it again on its reply

@@ -50,7 +50,7 @@ def _serialize_history(appointment):
             continue
         out.append({
             "role": entry.get("role", "assistant"),
-            "content": entry.get("content", ""),
+            "content": (entry.get("content") or ""),
             "timestamp": entry.get("timestamp", ""),
             "is_media": bool(entry.get("media_index")),
         })

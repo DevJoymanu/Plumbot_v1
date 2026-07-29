@@ -1078,7 +1078,7 @@ class Command(BaseCommand):
         for msg in reversed(history):
             if msg.get('role') != 'assistant':
                 continue
-            content = msg.get('content', '').strip()
+            content = (msg.get('content') or '').strip()
             for prefix in ('[AUTO FOLLOW-UP] ', '[AUTOMATIC FOLLOW-UP] ',
                            '[MANUAL FOLLOW-UP] ', '[BULK MANUAL FOLLOW-UP] '):
                 if content.startswith(prefix):

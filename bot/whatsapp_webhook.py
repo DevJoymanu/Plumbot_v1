@@ -2473,6 +2473,18 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         if _faq_topic is not None:
             _faq_fact = faq_fact(_faq_topic, tenant=tenant)
+            # This tenant's profile has no fact for the topic. Never dead-end on
+            # that: the FAQ block used to build a None reply from it, store the
+            # None in conversation_history and send nothing, so the lead's
+            # question got pure silence (prod 2026-07-29: tenant jd3 has no
+            # location fact — "Where are you located" went unanswered). Fall
+            # through to the normal pipeline, which still answers.
+            if not (_faq_fact or '').strip():
+                print(f"⚠️ No FAQ fact for topic={_faq_topic} on tenant="
+                      f"{getattr(tenant, 'slug', None)} — falling through")
+                _faq_topic = None
+
+        if _faq_topic is not None:
             # AI-primary: answer contextually, grounded in the fact so it stays
             # accurate but never sounds copy-pasted; canned fact (+ qualifying close)
             # is the fallback. When the lead asked whether we do a SPECIFIC service
@@ -2994,7 +3006,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 }
                 _recent = appointment.conversation_history or []
                 _recent_text = ' '.join(
-                    m.get('content', '') for m in _recent[-6:]
+                    (m.get('content') or '') for m in _recent[-6:]
                     if m.get('role') == 'user'
                 ).lower()
                 for _keyword, _intent in _ITEM_CONTEXT.items():
@@ -3212,7 +3224,7 @@ def generate_conversation_summary(appointment) -> str:
         transcript_lines = []
         for msg in recent_messages:
             role = msg.get('role', '')
-            content = msg.get('content', '').strip()
+            content = (msg.get('content') or '').strip()
             if not content or content.startswith('[Sent '):
                 continue
             content = (
@@ -3272,7 +3284,7 @@ def generate_conversation_summary(appointment) -> str:
             fallback_lines = []
             for msg in appointment.conversation_history[-3:]:
                 role = "Customer" if msg.get('role') == 'user' else "Bot"
-                content = msg.get('content', '')[:150]
+                content = (msg.get('content') or '')[:150]
                 fallback_lines.append(f"{role}: {content}")
             return "Summary unavailable. Last messages:\n" + "\n".join(fallback_lines)
         except Exception:

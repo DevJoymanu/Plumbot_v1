@@ -1302,6 +1302,81 @@ try:
 except Exception as e:
     results.log("_build_combined_price_reply labour scope", False, got=str(e))
 
+# A None content in conversation_history must never crash a history reader.
+# Production 2026-07-29 (+27610318200): a handler failed to build a reply, the
+# None was stored as an assistant turn, and the next inbound message died on
+# `.get('content', '').lower()` — the default only covers a MISSING key, not a
+# None value — so _generate_and_schedule_reply raised and the lead got no reply
+# at all, permanently. Readers coalesce with `or ''`; the writer refuses empties.
+class _FakeApptPoisoned:
+    project_description = "tub"
+    project_type = "bathroom_renovation"
+    conversation_history = [
+        {'role': 'user', 'content': 'Where are you located'},
+        {'role': 'assistant'},                        # key missing entirely
+        # The poison must be the LAST assistant turn: the readers below take the
+        # most recent one, so any earlier ordering lets them dodge the None.
+        {'role': 'assistant', 'content': None},
+        {'role': 'user', 'content': 'Do you have shower cubicles'},
+    ]
+    def save(self, update_fields=None):
+        pass
+class _FakeSelfHistory:
+    _TIEDOWN_VALUE_CHECK = ResponseMixin._TIEDOWN_VALUE_CHECK
+    _TIEDOWN_OPENER = ResponseMixin._TIEDOWN_OPENER
+    _EXTRA_TIEDOWN_SIGNATURES = ResponseMixin._EXTRA_TIEDOWN_SIGNATURES
+    _tiedown_signatures = ResponseMixin._tiedown_signatures
+    _assistant_history_text = ResponseMixin._assistant_history_text
+    _last_assistant_was_tiedown = ResponseMixin._last_assistant_was_tiedown
+    _last_assistant_was_value_check = ResponseMixin._last_assistant_was_value_check
+    _last_assistant_was_price_tiedown = ResponseMixin._last_assistant_was_price_tiedown
+    def __init__(self, appt):
+        self.appointment = appt
+try:
+    _fh = _FakeSelfHistory(_FakeApptPoisoned())
+    _readers = {
+        '_last_assistant_was_value_check': _fh._last_assistant_was_value_check,
+        '_last_assistant_was_tiedown': _fh._last_assistant_was_tiedown,
+        '_last_assistant_was_price_tiedown': _fh._last_assistant_was_price_tiedown,
+        '_assistant_history_text': _fh._assistant_history_text,
+    }
+    for _name, _fn in _readers.items():
+        try:
+            _fn()
+            results.log(f"history reader survives a None content: {_name}", True)
+        except Exception as e:
+            results.log(f"history reader survives a None content: {_name}", False,
+                        got=f"{type(e).__name__}: {e}")
+except Exception as e:
+    results.log("history readers vs None content", False, got=str(e))
+
+# The writer side: an empty/None turn is refused, so the poison never lands.
+class _FakeApptWrite:
+    def __init__(self):
+        self.conversation_history = []
+        self.saves = 0
+    def save(self, update_fields=None):
+        self.saves += 1
+try:
+    from bot.models import Appointment as _Appt
+    _aw = _FakeApptWrite()
+    for _bad in (None, '', '   '):
+        _Appt.add_conversation_message(_aw, 'assistant', _bad)
+    results.log(
+        "add_conversation_message: refuses None/empty content",
+        _aw.conversation_history == [],
+        got=str(_aw.conversation_history),
+    )
+    _Appt.add_conversation_message(_aw, 'assistant', 'Real reply')
+    results.log(
+        "add_conversation_message: still stores a real message",
+        len(_aw.conversation_history) == 1
+        and _aw.conversation_history[0]['content'] == 'Real reply',
+        got=str(_aw.conversation_history),
+    )
+except Exception as e:
+    results.log("add_conversation_message empty guard", False, got=str(e))
+
 # _asks_about_labour fires on labour/install/fit questions, not plain how-much.
 LABOUR_ASK_CASES = [
     ("How much is labour",          True),

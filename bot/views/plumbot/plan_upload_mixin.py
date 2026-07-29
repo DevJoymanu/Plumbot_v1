@@ -50,7 +50,7 @@ class PlanUploadMixin:
                 history = self.appointment.conversation_history or []
                 for msg in reversed(history):
                     if msg.get('role') == 'assistant':
-                        content = msg.get('content', '').lower()
+                        content = (msg.get('content') or '').lower()
                         plan_phrases = [
                             'do you have a plan',
                             'have a plan',
@@ -410,7 +410,7 @@ class PlanUploadMixin:
             
                 for msg in recent_messages:
                     if msg.get('role') == 'assistant':
-                        content = msg.get('content', '').lower()
+                        content = (msg.get('content') or '').lower()
                         if any(keyword.lower() in content for keyword in plan_keywords):
                             return True  # We asked recently
             

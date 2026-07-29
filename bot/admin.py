@@ -315,7 +315,7 @@ class AppointmentAdmin(admin.ModelAdmin):
             conversation_html = []
             for message in conversation_data:
                 role = message.get('role', 'unknown')
-                content = message.get('content', '')
+                content = (message.get('content') or '')
                 
                 if role == 'user':
                     conversation_html.append(

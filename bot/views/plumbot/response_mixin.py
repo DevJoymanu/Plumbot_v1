@@ -486,7 +486,7 @@ class ResponseMixin:
             appt = getattr(self, 'appointment', None)
             history = (getattr(appt, 'conversation_history', None) or []) if appt else []
             last = next(
-                (m.get('content', '') for m in reversed(history)
+                (m.get('content') or '' for m in reversed(history)
                  if m.get('role') == 'assistant'),
                 '',
             ).lower()
@@ -698,7 +698,7 @@ class ResponseMixin:
             appt = getattr(self, 'appointment', None)
             history = (getattr(appt, 'conversation_history', None) or []) if appt else []
             last = next(
-                (m.get('content', '') for m in reversed(history)
+                (m.get('content') or '' for m in reversed(history)
                  if m.get('role') == 'assistant'),
                 '',
             ).lower()
@@ -713,7 +713,7 @@ class ResponseMixin:
             appt = getattr(self, 'appointment', None)
             history = (getattr(appt, 'conversation_history', None) or []) if appt else []
             last = next(
-                (m.get('content', '') for m in reversed(history)
+                (m.get('content') or '' for m in reversed(history)
                  if m.get('role') == 'assistant'),
                 '',
             ).lower()
@@ -1031,7 +1031,7 @@ class ResponseMixin:
                 "mangwana ndichauya", "ill reach out",
             )
             customer_messages = [
-                m.get('content', '').lower()
+                (m.get('content') or '').lower()
                 for m in history[-20:]
                 if m.get('role') == 'user'
             ][-10:]
@@ -2192,7 +2192,7 @@ class ResponseMixin:
                         and len(self.appointment.conversation_history or []) > 2):
                     _history = self.appointment.conversation_history or []
                     _last_bot = next(
-                        (m.get('content', '') for m in reversed(_history)
+                        (m.get('content') or '' for m in reversed(_history)
                          if m.get('role') == 'assistant'),
                         '',
                     ).lower()
@@ -4917,7 +4917,7 @@ class ResponseMixin:
             }
             recent = self.appointment.conversation_history or []
             recent_text = ' '.join(
-                m.get('content', '') for m in recent[-6:]
+                (m.get('content') or '') for m in recent[-6:]
                 if m.get('role') == 'user'
             ).lower()
             for keyword, intent in _ITEM_CONTEXT.items():

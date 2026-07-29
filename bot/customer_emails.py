@@ -851,7 +851,7 @@ def _extract_conversation_context(apt):
     """
     history = getattr(apt, 'conversation_history', None) or []
     customer_text = ' '.join(
-        m.get('content', '').lower()
+        (m.get('content') or '').lower()
         for m in history
         if m.get('role') == 'user'
     )
