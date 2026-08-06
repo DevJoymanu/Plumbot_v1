@@ -22,6 +22,7 @@ from .models import Appointment, WhatsAppInboundEvent, LeadStatus, Tenant, Tenan
 from .plumber_notifications import send_plumber_notification_email
 from .utils import business_name_for
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.conf import settings
@@ -75,6 +76,15 @@ MESSAGE_BATCH_WINDOW_SECONDS = 45 # wait this long after the LAST message before
 # instead of sending a now-stale reply. The next batch covers everything.
 _pending_send_events: dict = {}     # sender -> threading.Event
 _pending_send_lock = threading.Lock()
+
+# Reply pacing — we answer at the lead's own tempo. How long they took to reply
+# to our last message sets how long we take to reply to theirs, measured on top
+# of the batch window (which has always elapsed by the time a delay is picked).
+LEAD_FAST_REPLY_SECONDS = 5 * 60   # under this = they're live in the chat
+FAST_REPLY_DELAY_MINUTES = (1, 2)  # live lead: batch window + 1-2 min
+SLOW_REPLY_DELAY_MINUTES = 5       # slow lead: batch window + 5 min
+_lead_reply_latency: dict = {}     # sender -> seconds the lead took to reply
+_lead_latency_lock = threading.Lock()
 
 # DeepSeek client for translation (optional)
 _DEEPSEEK_KEY = os.environ.get('DEEPSEEK_API_KEY')
@@ -308,7 +318,7 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
 
         fresh.add_conversation_message("assistant", customer_reply)
 
-        delay = get_random_delay(appointment.tenant)
+        delay = get_random_delay(appointment.tenant, sender=sender)
         print(f"?? Sending single media ack to {sender} after {delay // 60}m delay")
         time.sleep(delay)
         try:
@@ -398,7 +408,48 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         print(f"? Plumber alert timer reset for {sender} (accumulated {len(_plumber_alert_pending[sender])} file(s))")
 
 
-def get_random_delay(tenant=None) -> int:
+def _record_lead_reply_latency(sender: str, appointment) -> None:
+    """Note how long this lead took to answer our last outbound message.
+
+    Only the message that OPENS a batch counts — the rest of a burst are part of
+    the same reply, not separate response times. Read back by get_random_delay.
+    """
+    with _pending_batch_lock:
+        if _pending_batches.get(sender):
+            return
+
+    gap = None
+    try:
+        _spoke_before = False
+        for entry in reversed(appointment.conversation_history or []):
+            if not isinstance(entry, dict) or entry.get('role') != 'assistant':
+                continue
+            _spoke_before = True
+            sent_at = parse_datetime(entry.get('timestamp') or '')
+            if sent_at is None:
+                break
+            if timezone.is_naive(sent_at):
+                sent_at = timezone.make_aware(sent_at)
+            gap = max(0.0, (timezone.now() - sent_at).total_seconds())
+            break
+        if gap is None and not _spoke_before:
+            # We've never messaged them — this is the lead opening the conversation.
+            # They're as live as a lead ever gets, so pace it like a fast reply
+            # rather than leaving them on the old up-to-5-minute wait.
+            gap = 0.0
+    except Exception as exc:
+        print(f"Lead reply latency check failed for {sender}: {exc}")
+
+    with _lead_latency_lock:
+        if gap is None:
+            # We spoke, but the timestamp was unusable — fall back to the old pacing.
+            _lead_reply_latency.pop(sender, None)
+        else:
+            _lead_reply_latency[sender] = gap
+            print(f"Lead {sender} replied after {int(gap)}s")
+
+
+def get_random_delay(tenant=None, sender=None) -> int:
     # Per-tenant admin switch: off = send as soon as the reply is ready. Call
     # sites that sleep on the delay themselves must pass their tenant; the ones
     # that hand it to delayed_response are covered there (it always has the
@@ -407,10 +458,22 @@ def get_random_delay(tenant=None) -> int:
     if not reply_delay_enabled(tenant):
         print("? Reply delay OFF (admin switch) - sending immediately")
         return 0
-    minutes = random.randint(1, 5)
-    seconds = minutes * 60
-    print(f"?? Random delay: {minutes} minute(s)")
-    return seconds
+
+    # Match the lead's tempo. The batch window has already elapsed by the time a
+    # delay is picked, so these minutes land on top of it.
+    with _lead_latency_lock:
+        latency = _lead_reply_latency.get(sender) if sender else None
+
+    if latency is None:
+        minutes = random.randint(1, 5)
+        print(f"Random delay: {minutes} minute(s)")
+    elif latency < LEAD_FAST_REPLY_SECONDS:
+        minutes = random.randint(*FAST_REPLY_DELAY_MINUTES)
+        print(f"Lead replied in {int(latency)}s - answering {minutes} min after the batch window")
+    else:
+        minutes = SLOW_REPLY_DELAY_MINUTES
+        print(f"Lead took {int(latency)}s - answering {minutes} min after the batch window")
+    return minutes * 60
 
 
 def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event=None, tenant=None):
@@ -1468,7 +1531,7 @@ def send_previous_work_photos(sender, appointment=None):
             from .test_console import is_test_sender
             from .whatsapp_cloud_api import get_client_for_tenant
             client = get_client_for_tenant(appointment.tenant if appointment else None)
-            delay_seconds = 0 if is_test_sender(sender) else get_random_delay()
+            delay_seconds = 0 if is_test_sender(sender) else get_random_delay(sender=sender)
             print(f"Waiting {delay_seconds // 60} minute(s) before sending images to {sender}")
             time.sleep(delay_seconds)
             client.send_text_message(sender, intro)
@@ -1884,7 +1947,7 @@ def handle_location_message(sender, location_data, tenant=None):
             appointment = leads.get()
         except Appointment.DoesNotExist:
             response_msg = "Thanks for the location! To get started, please tell me about your plumbing needs."
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
             return
 
@@ -1902,7 +1965,7 @@ def handle_location_message(sender, location_data, tenant=None):
                 appointment.save()
                 refresh_lead_score(appointment)
                 reply = plumbot.generate_response(f"My location is {address}")
-                delay = get_random_delay()
+                delay = get_random_delay(sender=sender)
                 threading.Thread(target=delayed_response, args=(sender, reply, delay), kwargs={'tenant': tenant}, daemon=True).start()
             else:
                 response_msg = (
@@ -1910,11 +1973,11 @@ def handle_location_message(sender, location_data, tenant=None):
                     "Could you also type the area name? (e.g., Harare Hatfield, Harare Avondale)\n\n"
                     "This helps us serve you better."
                 )
-                delay = get_random_delay()
+                delay = get_random_delay(sender=sender)
                 threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
         else:
             response_msg = "Thanks for sharing your location! ??\n\nI've noted it. Let me continue with your appointment details..."
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
 
     except Exception as e:
@@ -1951,7 +2014,7 @@ def handle_unsupported_media(sender, media_type, tenant=None):
         )
         # (fixed: `delay` was previously never assigned here, so this reply
         # silently failed with a swallowed NameError for every sticker/contact)
-        delay = get_random_delay()
+        delay = get_random_delay(sender=sender)
         threading.Thread(
             target=delayed_response,
             args=(sender, response_msg, delay),
@@ -1979,7 +2042,7 @@ def handle_audio_message(sender, audio_data, tenant=None):
             response_msg = (
                 "Voice notes we can't read unfortunately — just type it out and we'll get you sorted"
             )
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
             return
 
@@ -1993,7 +2056,7 @@ def handle_audio_message(sender, audio_data, tenant=None):
                 "Voice notes we can't read — just type it out and we'll carry on from where we were"
             )
 
-        delay = get_random_delay()
+        delay = get_random_delay(sender=sender)
         threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
 
     except Exception as e:
@@ -2116,6 +2179,11 @@ def handle_text_message(sender, text_data, message_id=None, quoted_id=None, refe
         _, new_status = refresh_lead_score(appointment)
         if new_status != previous_status and new_status in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
             notify_admin_of_priority_lead(appointment, sender)
+
+        # How long they took to come back to us sets how long we take to come
+        # back to them — recorded before the queue so only the batch-opening
+        # message counts.
+        _record_lead_reply_latency(sender, appointment)
 
         # Queue the message — if another arrives within MESSAGE_BATCH_WINDOW_SECONDS the
         # timer resets, and one combined reply handles both concerns together.
@@ -2347,7 +2415,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 _adv = plumbot._advance_after_scope(detect_language_simple(message_body))
                 if _adv:
                     appointment.add_conversation_message("assistant", _adv)
-                    delay = get_random_delay()
+                    delay = get_random_delay(sender=sender)
                     threading.Thread(
                         target=delayed_response, args=(sender, _adv, delay, message_id), kwargs={'tenant': tenant},
                         daemon=True,
@@ -2368,7 +2436,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     _reply = ("No problem — what else would you like sorted while "
                               "we're there?")
                     appointment.add_conversation_message("assistant", _reply)
-                    delay = get_random_delay()
+                    delay = get_random_delay(sender=sender)
                     threading.Thread(
                         target=delayed_response, args=(sender, _reply, delay, message_id), kwargs={'tenant': tenant},
                         daemon=True,
@@ -2396,7 +2464,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             _adv = plumbot._advance_after_scope(detect_language_simple(message_body))
             if _adv:
                 appointment.add_conversation_message("assistant", _adv)
-                delay = get_random_delay()
+                delay = get_random_delay(sender=sender)
                 threading.Thread(
                     target=delayed_response, args=(sender, _adv, delay, message_id), kwargs={'tenant': tenant},
                     daemon=True,
@@ -2419,7 +2487,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             )
             if _pivot_reply is not None:
                 appointment.add_conversation_message("assistant", _pivot_reply)
-                delay = get_random_delay()
+                delay = get_random_delay(sender=sender)
                 threading.Thread(
                     target=delayed_response, args=(sender, _pivot_reply, delay, message_id), kwargs={'tenant': tenant},
                     daemon=True,
@@ -2545,7 +2613,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 _faq_reply = plumbot._append_tiedown(_faq_fact, _faq_lang)
             appointment._add_notes_tag(_faq_done_tag)
             appointment.add_conversation_message("assistant", _faq_reply)
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(
                 target=delayed_response,
                 args=(sender, _faq_reply, delay, message_id),
@@ -2657,7 +2725,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(
                 target=delayed_response, args=(sender, reply_text, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
@@ -2710,7 +2778,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(
                 target=delayed_response, args=(sender, _menu_text, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
@@ -2735,7 +2803,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.save(update_fields=[
                 'pricing_overview_sent', 'last_outbound_at', 'last_contacted_at'
             ])
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(
                 target=delayed_response,
                 args=(sender, price_text, delay, message_id),
@@ -2762,7 +2830,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 "Please ask our team and we will send them shortly."
             )
             appointment.add_conversation_message("assistant", fallback_reply)
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), kwargs={'tenant': tenant}, daemon=True).start()
             return
 
@@ -2782,7 +2850,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(
                 target=delayed_response, args=(sender, _budget_reply, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
@@ -2799,7 +2867,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
             appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
-            delay = get_random_delay()
+            delay = get_random_delay(sender=sender)
             threading.Thread(
                 target=delayed_response, args=(sender, oos_reply, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
@@ -3077,7 +3145,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
         print("Assistant reply saved to conversation history")
 
-        delay = get_random_delay()
+        delay = get_random_delay(sender=sender)
         cancel_event = threading.Event()
         with _pending_send_lock:
             _pending_send_events[sender] = cancel_event

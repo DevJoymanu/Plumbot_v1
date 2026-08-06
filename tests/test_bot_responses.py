@@ -3018,6 +3018,136 @@ try:
 except Exception as e:
     results.log("delayed_response tenant threading check", False, got=str(e))
 
+# Reply pacing mirrors the lead's own tempo: a lead who came back inside 5 min
+# gets an answer 1-2 min after the batch window; a slower lead gets 5 min. The
+# delay is picked AFTER the batch window has elapsed, so these sit on top of it.
+try:
+    import bot.whatsapp_webhook as _wh_pace
+
+    _pace_sender = '263771000999'
+    _orig_latency = dict(_wh_pace._lead_reply_latency)
+    try:
+        _wh_pace._lead_reply_latency[_pace_sender] = 30  # replied in 30s
+        _fast = {_wh_pace.get_random_delay(sender=_pace_sender) for _ in range(30)}
+        results.log(
+            "reply pacing: fast lead (<5 min) gets batch window + 1-2 min",
+            _fast <= {60, 120} and _fast,
+            got=f"delays={sorted(_fast)}",
+        )
+
+        _wh_pace._lead_reply_latency[_pace_sender] = 40 * 60  # replied after 40 min
+        _slow = {_wh_pace.get_random_delay(sender=_pace_sender) for _ in range(10)}
+        results.log(
+            "reply pacing: slow lead (>5 min) gets batch window + 5 min",
+            _slow == {300},
+            got=f"delays={sorted(_slow)}",
+        )
+
+        # Exactly 5 min counts as slow — the boundary must not fall into fast.
+        _wh_pace._lead_reply_latency[_pace_sender] = 5 * 60
+        results.log(
+            "reply pacing: the 5-minute boundary is slow, not fast",
+            _wh_pace.get_random_delay(sender=_pace_sender) == 300,
+            got=str(_wh_pace.get_random_delay(sender=_pace_sender)),
+        )
+
+        # No recorded latency (first contact) falls back to the old 1-5 min.
+        _wh_pace._lead_reply_latency.pop(_pace_sender, None)
+        _unknown = {_wh_pace.get_random_delay(sender=_pace_sender) for _ in range(40)}
+        results.log(
+            "reply pacing: unknown latency falls back to 1-5 min",
+            _unknown and all(60 <= d <= 300 for d in _unknown),
+            got=f"delays={sorted(_unknown)}",
+        )
+    finally:
+        _wh_pace._lead_reply_latency.clear()
+        _wh_pace._lead_reply_latency.update(_orig_latency)
+except Exception as e:
+    results.log("reply pacing by lead latency", False, got=str(e))
+
+# _record_lead_reply_latency reads the gap off conversation_history. The opening
+# message of a conversation has no gap to measure — it must still pace fast, not
+# fall back to the old up-to-5-minute wait.
+try:
+    import datetime as _dt
+    import types as _types_p
+
+    import bot.whatsapp_webhook as _wh_rec
+
+    def _pace_appt(history):
+        return _types_p.SimpleNamespace(conversation_history=history)
+
+    _rec_sender = '263771000998'
+    _orig_rec = dict(_wh_rec._lead_reply_latency)
+
+    def _latency_for(history):
+        _wh_rec._lead_reply_latency.pop(_rec_sender, None)
+        _wh_rec._record_lead_reply_latency(_rec_sender, _pace_appt(history))
+        return _wh_rec._lead_reply_latency.get(_rec_sender)
+
+    try:
+        # Conversation opener: no assistant turn anywhere in history.
+        _opener = _latency_for([{'role': 'user', 'content': 'hi',
+                                 'timestamp': _dt.datetime.now(_dt.timezone.utc).isoformat()}])
+        results.log(
+            "reply pacing: conversation opener paces fast (no assistant turn yet)",
+            _opener == 0.0
+            and _wh_rec.get_random_delay(sender=_rec_sender) in (60, 120),
+            got=f"latency={_opener}",
+        )
+        # Empty history (brand-new appointment) is the same case.
+        results.log(
+            "reply pacing: empty history paces fast",
+            _latency_for([]) == 0.0,
+            got=str(_latency_for([])),
+        )
+        # A real gap since our last message is measured, not assumed.
+        _then = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=30)
+        _measured = _latency_for([
+            {'role': 'assistant', 'content': 'When suits you?', 'timestamp': _then.isoformat()},
+            {'role': 'user', 'content': 'sorry, was busy'},
+        ])
+        results.log(
+            "reply pacing: measures the gap since our last message",
+            _measured is not None and 1750 < _measured < 1850
+            and _wh_rec.get_random_delay(sender=_rec_sender) == 300,
+            got=f"latency={_measured}",
+        )
+        # We spoke but the timestamp is unusable — fall back, don't guess fast.
+        results.log(
+            "reply pacing: unusable timestamp falls back rather than guessing",
+            _latency_for([{'role': 'assistant', 'content': 'hi', 'timestamp': 'not-a-date'}]) is None,
+            got=str(_latency_for([{'role': 'assistant', 'content': 'hi', 'timestamp': 'not-a-date'}])),
+        )
+    finally:
+        _wh_rec._lead_reply_latency.clear()
+        _wh_rec._lead_reply_latency.update(_orig_rec)
+except Exception as e:
+    results.log("reply pacing latency recorder", False, got=str(e))
+
+# Pacing only works if the sender reaches get_random_delay — a new call site that
+# forgets it silently reverts that lead to the old random 1-5 min.
+try:
+    import ast as _ast_d
+    import inspect as _inspect_d
+
+    import bot.whatsapp_webhook as _wh_d
+    _tree_d = _ast_d.parse(_inspect_d.getsource(_wh_d))
+    _no_sender = [
+        n.lineno for n in _ast_d.walk(_tree_d)
+        if isinstance(n, _ast_d.Call)
+        and isinstance(n.func, _ast_d.Name)
+        and n.func.id == 'get_random_delay'
+        and not any(kw.arg == 'sender' for kw in n.keywords)
+    ]
+    results.log(
+        "get_random_delay: every call site passes sender",
+        not _no_sender,
+        got=f"missing at line(s): {_no_sender}" if _no_sender else "all call sites OK",
+    )
+except Exception as e:
+    results.log("get_random_delay sender threading check", False, got=str(e))
+
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The
 # TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality
