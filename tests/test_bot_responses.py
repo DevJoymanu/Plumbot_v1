@@ -3148,6 +3148,30 @@ try:
 except Exception as e:
     results.log("get_random_delay sender threading check", False, got=str(e))
 
+# Half-hour opening times must survive every hours rendering (Harare Plumbing
+# Solutions opens 07:30 — the short/tiny clocks used to drop the minutes and
+# state "7am", a wrong business fact). Homebase's 08:00 hid this.
+try:
+    from bot.tenant_config import TenantConfig as _TC
+
+    class _FakeHoursProfile:
+        business_hours = {'days': 'Monday-Sunday', 'open': '07:30',
+                          'close': '18:00', 'closed': []}
+
+    _hcfg = _TC()
+    _hcfg._profile = _FakeHoursProfile()
+    _hcfg._profile_loaded = True
+    _rendered = (_hcfg.hours_sentence(), _hcfg.hours_medium(), _hcfg.hours_compact())
+    results.log(
+        "hours rendering: 07:30 keeps its minutes in every format",
+        _rendered == ('Monday to Sunday, 7:30 AM – 6:00 PM',
+                      'Monday–Sunday, 7:30 AM–6 PM',
+                      'Mon–Sun 7:30am–6pm'),
+        got=str(_rendered),
+    )
+except Exception as e:
+    results.log("hours rendering: half-hour opening time", False, got=str(e))
+
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The
 # TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality

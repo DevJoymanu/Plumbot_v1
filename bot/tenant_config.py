@@ -227,9 +227,11 @@ class TenantConfig:
             suffix = 'AM' if int(hh) < 12 else 'PM'
             if style == 'long':       # "8:00 AM"
                 return f"{hour12}:{mm or '00'} {suffix}"
-            if style == 'short':      # "8 AM"
-                return f"{hour12} {suffix}"
-            return f"{hour12}{suffix.lower()}"  # "8am"
+            if style == 'short':      # "8 AM" / "7:30 AM" on a half hour
+                return f"{hour12}{':' + mm if mm and mm != '00' else ''} {suffix}"
+            # "8am", but "7:30am" when the tenant opens on the half hour —
+            # dropping the minutes states the wrong hours as a fact.
+            return f"{hour12}{':' + mm if mm and mm != '00' else ''}{suffix.lower()}"
         return day_start.strip(), day_end.strip(), clock(hours['open'], 'long'), clock(hours['close'], 'long'), \
             clock(hours['open'], 'short'), clock(hours['close'], 'short'), \
             clock(hours['open'], 'tiny'), clock(hours['close'], 'tiny')
