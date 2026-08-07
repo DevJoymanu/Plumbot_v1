@@ -21,9 +21,7 @@ from ...models import (
     QuotationTemplate, QuotationTemplateItem, ConversationMessage,
 )
 from ...services.clients import (
-    twilio_client, deepseek_client,
-    TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
-    DEEPSEEK_API_KEY,
+    deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
 )
 from ...utils import (
     _to_decimal, _to_float,

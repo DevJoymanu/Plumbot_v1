@@ -2,22 +2,16 @@ import logging
 import os
 import time
 
-from twilio.rest import Client
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
-TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
-TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER')
+# WhatsApp is sent exclusively through the Meta Cloud API, per tenant — see
+# bot/whatsapp_cloud_api.get_client_for_tenant. Twilio was removed entirely;
+# credentials now live on TenantWhatsAppChannel, not in env vars.
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
-# Backward-compatible aliases used in older code paths.
-ACCOUNT_SID = TWILIO_ACCOUNT_SID
-AUTH_TOKEN = TWILIO_AUTH_TOKEN
 
 GOOGLE_CALENDAR_CREDENTIALS = {}
-
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 deepseek_client = OpenAI(
     api_key=DEEPSEEK_API_KEY,

@@ -40,9 +40,7 @@ from ..forms import (
 from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
 from ..whatsapp_cloud_api import whatsapp_api
 from ..services.clients import (
-    twilio_client, deepseek_client,
-    TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
-    DEEPSEEK_API_KEY,
+    deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
 )
 from ..utils import (
     _to_decimal, _to_float, _safe_logo_url, _safe_logo_data_uri,

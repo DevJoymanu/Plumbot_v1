@@ -19,9 +19,7 @@ from ...models import (
     QuotationTemplate, QuotationTemplateItem, ConversationMessage,
 )
 from ...services.clients import (
-    twilio_client, deepseek_client,
-    TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
-    DEEPSEEK_API_KEY,
+    deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
 )
 from ...utils import (
     _to_decimal, _to_float,
@@ -379,12 +377,16 @@ class PlanUploadMixin:
 
     View details: http://127.0.0.1:8000/appointments/{self.appointment.id}/"""
 
-                # Send to plumber
-                twilio_client.messages.create(
-                    body=urgent_message,
-                    from_=TWILIO_WHATSAPP_NUMBER,
-                    to='whatsapp:+0774819901'
-                )
+                # Send to this tenant's own plumber, from this tenant's own
+                # number. Was a shared Twilio sender hardcoded to one number, so
+                # every tenant's urgent plans landed with Homebase's plumber.
+                from ...whatsapp_cloud_api import get_client_for_tenant
+                plumber = (self.appointment.plumber_contact() or '')
+                plumber = plumber.replace('whatsapp:', '').replace('+', '').strip()
+                if plumber:
+                    get_client_for_tenant(
+                        getattr(self.appointment, 'tenant', None)
+                    ).send_text_message(plumber, urgent_message)
             
                 return """ I've marked your plan review as URGENT and notified our plumber immediately.
 

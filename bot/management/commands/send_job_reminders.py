@@ -6,8 +6,15 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 import pytz
-from bot.models import Appointment  # Replace with your actual app name
-from bot.views import twilio_client, TWILIO_WHATSAPP_NUMBER  # Replace with your actual app name
+import logging
+
+from bot.models import Appointment
+from bot.plumber_notifications import send_email_to_recipients
+from bot.utils import business_name_for
+from bot.whatsapp_cloud_api import get_client_for_tenant
+from bot.whatsapp_window import is_window_open
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -125,86 +132,130 @@ class Command(BaseCommand):
         
         job.save()
 
+    def _send_whatsapp(self, job, message):
+        """Send as the job's own tenant. Returns True on success."""
+        try:
+            clean = (job.phone_number or '').replace('whatsapp:', '').replace('+', '').strip()
+            if not clean:
+                return False
+            get_client_for_tenant(getattr(job, 'tenant', None)).send_text_message(clean, message)
+            return True
+        except Exception as e:
+            logger.error('WhatsApp job reminder failed for appointment %s: %s', job.id, e)
+            return False
+
     def send_job_reminder(self, job, reminder_type, dry_run=False):
-        """Send job appointment reminder"""
+        """Send job appointment reminder on WhatsApp, and by email when we have one."""
         try:
             customer_name = job.customer_name or "Customer"
             job_date = job.job_scheduled_datetime.strftime('%A, %B %d, %Y')
             job_time = job.job_scheduled_datetime.strftime('%I:%M %p')
             plumber_name = job.assigned_plumber.get_full_name() if job.assigned_plumber else "Our team"
-            
+            # The business signing off is the job's own tenant, never a hardcoded
+            # name — another tenant's customer must not be reminded by a company
+            # they have never dealt with.
+            signature = business_name_for(job, default='Our team')
+            blank = '\n\n'
+            work_line = f"Work: {job.job_description}{blank}" if job.job_description else ""
+
+            subjects = {
+                '1_day':   f"Reminder: your plumbing job tomorrow, {job_date}",
+                'morning': f"Your plumbing job is today at {job_time}",
+                '2_hours': f"Your plumbing job starts in about 2 hours",
+            }
+
             if reminder_type == '1_day':
-                message = f"""🔧 JOB REMINDER - Tomorrow
+                message = f"""Hi {customer_name}, a quick reminder that your plumbing job is booked for tomorrow.
 
-Hi {customer_name},
+Date: {job_date}
+Time: {job_time}
+Location: {job.customer_area}
+Plumber: {plumber_name}
+Expected duration: {job.job_duration_hours} hours
 
-Your plumbing job is scheduled for tomorrow:
+{work_line}Please make sure someone can let us in at the property.
 
-📅 Date: {job_date}
-🕐 Time: {job_time}
-📍 Location: {job.customer_area}
-👷 Plumber: {plumber_name}
-⏱️ Duration: {job.job_duration_hours} hours
+Need to move it? Just reply here.
 
-{f"Work: {job.job_description}" if job.job_description else ""}
-
-Please ensure someone is available at the location.
-
-Need to reschedule? Reply to this message.
-
-- Plumbing Team"""
+{signature}"""
 
             elif reminder_type == 'morning':
-                message = f"""🌅 JOB TODAY
+                message = f"""Good morning {customer_name}, your plumbing job is today.
 
-Good morning {customer_name},
+Time: {job_time}
+Location: {job.customer_area}
+Plumber: {plumber_name}
 
-Your plumbing job is scheduled for today:
+{plumber_name} will contact you about 30 minutes before arriving.
 
-🕐 Time: {job_time}
-📍 Location: {job.customer_area}
-👷 Plumber: {plumber_name}
+{work_line}Any questions, just reply here.
 
-{plumber_name} will contact you 30 minutes before arrival.
-
-{f"Work planned: {job.job_description}" if job.job_description else ""}
-
-Questions? Reply to this message.
-
-- Plumbing Team"""
+{signature}"""
 
             elif reminder_type == '2_hours':
-                message = f"""⏰ JOB IN 2 HOURS
+                message = f"""Hi {customer_name}, your plumbing job starts in about 2 hours.
 
-Hi {customer_name},
+Time: {job_time}
+Location: {job.customer_area}
+Plumber: {plumber_name}
 
-Your plumbing job starts in approximately 2 hours:
+{plumber_name} will call shortly to confirm arrival time. Please have the work area accessible.
 
-🕐 Time: {job_time}
-📍 Location: {job.customer_area}
-👷 Plumber: {plumber_name}
-
-{plumber_name} will call you shortly to confirm arrival time.
-
-Please have the work area accessible.
-
-- Plumbing Team"""
+{signature}"""
 
             else:
                 return False
 
+            subject = subjects.get(reminder_type, 'Job reminder')
+
             if dry_run:
-                self.stdout.write(f"Would send {reminder_type} reminder to {job.phone_number}")
+                if is_window_open(job):
+                    where = f"[WhatsApp] {job.phone_number}"
+                elif job.customer_email:
+                    where = f"[email] {job.customer_email}"
+                else:
+                    where = "[skipped - window closed, no email on file]"
+                self.stdout.write(f"Would send {reminder_type} reminder {where}")
                 self.stdout.write(f"Message: {message[:100]}...")
                 return True
-            else:
-                # Send actual message
-                twilio_client.messages.create(
-                    body=message,
-                    from_=TWILIO_WHATSAPP_NUMBER,
-                    to=job.phone_number
+
+            # Channel choice is strictly one-or-the-other, never both:
+            #
+            #   window OPEN  -> WhatsApp only. Free-form, inside the 24h (or 72h
+            #                   CTWA) window. This is the channel customers
+            #                   actually read, so it always wins when available.
+            #   window SHUT  -> email only, and only if we hold an address.
+            #
+            # We deliberately do NOT fall back to a paid template / utility
+            # message to reach someone outside the window. Reminders are never
+            # worth per-message spend; if there's no open window and no email on
+            # file, the reminder is skipped.
+            if is_window_open(job):
+                sent = self._send_whatsapp(job, message)
+                if sent:
+                    self.stdout.write(f"  {reminder_type} reminder [WhatsApp] -> {job.phone_number}")
+                return sent
+
+            if not job.customer_email:
+                logger.info(
+                    'Job %s: WhatsApp window closed and no email on file - '
+                    '%s reminder skipped (no paid template)', job.id, reminder_type
                 )
-                return True
+                return False
+
+            try:
+                ok = send_email_to_recipients(
+                    [job.customer_email], subject, message,
+                    tenant=getattr(job, 'tenant', None),
+                )
+                if ok:
+                    self.stdout.write(f"  {reminder_type} reminder [email] -> {job.customer_email}")
+                return bool(ok)
+            except Exception as mail_err:
+                logger.warning(
+                    'Job reminder email failed for appointment %s: %s', job.id, mail_err
+                )
+                return False
 
         except Exception as e:
             self.stdout.write(

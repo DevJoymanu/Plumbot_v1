@@ -19,7 +19,6 @@ django-cron==0.6.0
 python-crontab==3.3.0
 
 # Twilio for WhatsApp
-twilio==9.6.1
 PyJWT==2.10.1
 
 # Google Calendar API

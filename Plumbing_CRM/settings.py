@@ -132,9 +132,7 @@ DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-v4-flash')
 
 # Twilio Configuration
-ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
-AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
-TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
+# Twilio removed — WhatsApp goes through the Meta Cloud API per tenant.
 
 # Email configuration
 # IPv4-forcing backend avoids "Network is unreachable" on hosts without

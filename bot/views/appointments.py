@@ -48,9 +48,7 @@ from ..forms import (
 from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
 from ..whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 from ..services.clients import (
-    twilio_client, deepseek_client,
-    TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
-    DEEPSEEK_API_KEY,
+    deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
 )
 from ..utils import (
     _to_decimal, _to_float, _safe_logo_url, _safe_logo_data_uri,
@@ -1120,154 +1118,8 @@ def complete_site_visit(request, pk):
     })
 
 
-@csrf_exempt
-def handle_whatsapp_media(request):
-    """FIXED: Handle incoming media files from WhatsApp"""
-    if request.method == 'POST':
-        try:
-            # Get message details
-            sender = request.POST.get('From', '')
-            num_media = int(request.POST.get('NumMedia', 0))
-            
-            if not sender or num_media == 0:
-                return HttpResponse(status=200)
-            
-            print(f"📎 Processing {num_media} media files from {sender}")
-            
-            # Get the appointment
-            try:
-                appointment = Appointment.objects.get(phone_number=sender)
-            except Appointment.DoesNotExist:
-                print(f"❌ No appointment found for {sender}")
-                # Send helpful message
-                twilio_client.messages.create(
-                    body="I don't have an active appointment for this number. Please start by telling me about your plumbing needs.",
-                    from_=TWILIO_WHATSAPP_NUMBER,
-                    to=sender
-                )
-                return HttpResponse(status=200)
-            
-            # Check if we should accept media based on appointment state
-            # (local import — Plumbot is not a module-level name here)
-            from .plumbot.base import Plumbot
-            plumbot = Plumbot(sender)
-            
-            # If they have a plan and we have basic info, initiate upload flow
-            if (appointment.has_plan is True and 
-                appointment.customer_area and 
-                appointment.property_type and
-                appointment.plan_status is None):
-                
-                # Start the plan upload process
-                appointment.plan_status = 'pending_upload'
-                appointment.save()
-                print(f"🔄 Initiated plan upload flow for {sender}")
-            
-            # Only process media if we're in upload flow
-            if appointment.plan_status != 'pending_upload':
-                print(f"ℹ️ Ignoring media - not in upload flow. Status: {appointment.plan_status}")
-                
-                # Send helpful message
-                if appointment.has_plan is True:
-                    response_msg = "I'll need you to send your plan once we collect some basic information first. Let me continue with a few questions."
-                else:
-                    response_msg = "I see you sent a file, but I'm not currently expecting any documents. Let me continue with your appointment details."
-                
-                twilio_client.messages.create(
-                    body=response_msg,
-                    from_=TWILIO_WHATSAPP_NUMBER,
-                    to=sender
-                )
-                return HttpResponse(status=200)
-            
-            # Process each media file
-            uploaded_files = []
-            for i in range(num_media):
-                media_url = request.POST.get(f'MediaUrl{i}', '')
-                media_content_type = request.POST.get(f'MediaContentType{i}', '')
-                
-                if media_url:
-                    file_info = download_and_save_media(
-                        media_url, 
-                        media_content_type, 
-                        appointment, 
-                        i
-                    )
-                    if file_info:
-                        uploaded_files.append(file_info)
-            
-            if uploaded_files:
-                # Update plan upload timestamp
-                appointment.plan_uploaded_at = timezone.now()
-                appointment.save()
-                
-                # Send acknowledgment using the plumbot's handle_plan_upload_flow
-                ack_message = plumbot.handle_plan_upload_flow("file received")
-                
-                twilio_client.messages.create(
-                    body=ack_message,
-                    from_=TWILIO_WHATSAPP_NUMBER,
-                    to=sender
-                )
-            
-            return HttpResponse(status=200)
-            
-        except Exception as e:
-            print(f"❌ Media handling error: {str(e)}")
-            return HttpResponse(status=500)
-    
-    return HttpResponse(status=405)
+# NOTE: handle_whatsapp_media / download_and_save_media were removed with Twilio.
+# Both were Twilio-native — they read Twilio's `MediaUrl{i}` POST params and
+# downloaded with Twilio basic auth — so neither could work once Twilio was gone.
+# Inbound media now arrives through the Meta Cloud API in whatsapp_webhook.py.
 
-
-def download_and_save_media(media_url, content_type, appointment, file_index):
-    """Download media from Twilio and save to Django storage - FIXED"""
-    try:
-        # FIXED: Use correct variable names from top of file
-        auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)  # ✅ Changed from ACCOUNT_SID
-        response = requests.get(media_url, auth=auth)
-        
-        if response.status_code != 200:
-            print(f"❌ Failed to download media: {response.status_code}")
-            return None
-        
-        # Determine file extension
-        extension_map = {
-            'image/jpeg': '.jpg',
-            'image/png': '.png', 
-            'image/webp': '.webp',
-            'application/pdf': '.pdf',
-            'image/gif': '.gif'
-        }
-        
-        extension = extension_map.get(content_type, '.bin')
-        
-        # Generate filename
-        timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-        customer_name = appointment.customer_name or 'customer'
-        safe_name = ''.join(c for c in customer_name if c.isalnum())
-        filename = f"plan_{safe_name}_{appointment.id}_{timestamp}_{file_index}{extension}"
-        
-        # Save file (per-tenant subfolder, same shape as the webhook saves)
-        from ..media_library import customer_media_path
-        file_path = customer_media_path(appointment.tenant, 'document', filename)
-        file_content = ContentFile(response.content, name=filename)
-        
-        saved_path = default_storage.save(file_path, file_content)
-        
-        # Update appointment record if this is the first file
-        if not getattr(appointment, 'plan_file', None):
-            appointment.plan_file = saved_path
-            appointment.save()
-        
-        print(f"✅ Saved media file: {saved_path}")
-        
-        return {
-            'name': filename,
-            'path': saved_path,
-            'size': len(response.content),
-            'content_type': content_type
-        }
-        
-    except Exception as e:
-        print(f"❌ Error downloading/saving media: {str(e)}")
-        return None

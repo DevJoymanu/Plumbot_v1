@@ -21,22 +21,9 @@ class AppointmentForm(forms.ModelForm):
         ]
 
 class SettingsForm(forms.Form):
-    twilio_account_sid = forms.CharField(
-        label='Twilio Account SID',
-        max_length=100,
-        required=True
-    )
-    twilio_auth_token = forms.CharField(
-        label='Twilio Auth Token',
-        max_length=100,
-        required=True,
-        widget=forms.PasswordInput()
-    )
-    twilio_whatsapp_number = forms.CharField(
-        label='Twilio WhatsApp Number',
-        max_length=20,
-        required=True
-    )
+    # WhatsApp credentials are per-tenant and live on TenantWhatsAppChannel
+    # (Meta Cloud API), not in this global form — the Twilio SID/token/number
+    # fields were removed with Twilio.
     team_numbers = forms.CharField(
         label='Team Notification Numbers',
         widget=forms.Textarea,

@@ -54,8 +54,6 @@ from .appointments import (
     delete_appointment,
     export_appointments,
     complete_site_visit,
-    handle_whatsapp_media,
-    download_and_save_media,
 )
 
 from .settings_views import (
@@ -139,16 +137,9 @@ from .scenario_lab import (
 from ..auth_views import (login_view, logout_view, profile_view,
                           change_password_view, password_reset_request)
 
-# Shared clients re-exported for management commands that do:
-#   from bot.views import twilio_client, TWILIO_WHATSAPP_NUMBER
+# Shared clients re-exported for code that imports from bot.views.
 from ..services.clients import (
-    twilio_client,
     deepseek_client,
-    TWILIO_ACCOUNT_SID,
-    TWILIO_AUTH_TOKEN,
-    TWILIO_WHATSAPP_NUMBER,
-    ACCOUNT_SID,
-    AUTH_TOKEN,
     GOOGLE_CALENDAR_CREDENTIALS,
     DEEPSEEK_API_KEY,
 )

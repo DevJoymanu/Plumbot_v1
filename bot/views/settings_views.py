@@ -40,9 +40,7 @@ from ..forms import (
 from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
 from ..whatsapp_cloud_api import whatsapp_api
 from ..services.clients import (
-    twilio_client, deepseek_client,
-    TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
-    DEEPSEEK_API_KEY,
+    deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
 )
 from ..utils import (
     _to_decimal, _to_float, _safe_logo_url, _safe_logo_data_uri,
@@ -63,9 +61,6 @@ def settings_view(request):
             return redirect('settings')
     else:
         initial_data = {
-            'twilio_account_sid': getattr(settings, 'TWILIO_ACCOUNT_SID', ''),
-            'twilio_auth_token': getattr(settings, 'TWILIO_AUTH_TOKEN', ''),
-            'twilio_whatsapp_number': getattr(settings, 'TWILIO_WHATSAPP_NUMBER', ''),
             'team_numbers': '\n'.join(getattr(settings, 'TEAM_NUMBERS', [])),
         }
         form = SettingsForm(initial=initial_data)
@@ -123,54 +118,45 @@ def ai_settings_view(request):
 
 @staff_required
 def test_whatsapp(request):
+    """Send a test WhatsApp message to the team numbers via the Meta Cloud API.
+
+    Was a direct Twilio client call; now goes out on the active tenant's own
+    channel, the same path every real message uses.
+    """
     results = None
     if request.method == 'POST':
+        from ..whatsapp_cloud_api import get_client_for_tenant
+        tenant = getattr(request, 'tenant', None)
+        stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        test_message = (
+            "Test notification\n\n"
+            "This is a test message to verify WhatsApp notifications are working.\n"
+            f"Time: {stamp}\n\n"
+            "If you received this, notifications are working."
+        )
         try:
-            client = Client(
-                settings.TWILIO_ACCOUNT_SID,
-                settings.TWILIO_AUTH_TOKEN
-            )
-            
-            test_message = """🧪 TEST NOTIFICATION
-
-This is a test message to verify WhatsApp notifications are working.
-Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-If you receive this, notifications are working! ✅"""
-
-            team_numbers = getattr(settings, 'TEAM_NUMBERS', [])
-            results = {
-                'success': True,
-                'results': []
-            }
-            
-            for number in team_numbers:
+            client = get_client_for_tenant(tenant)
+            results = {'success': True, 'results': []}
+            for number in getattr(settings, 'TEAM_NUMBERS', []):
+                clean = (number or '').replace('whatsapp:', '').replace('+', '').strip()
                 try:
-                    message = client.messages.create(
-                        body=test_message,
-                        from_=settings.TWILIO_WHATSAPP_NUMBER,
-                        to=number
-                    )
+                    resp = client.send_text_message(clean, test_message)
+                    try:
+                        wamid = (resp.get('messages') or [{}])[0].get('id', '')
+                    except Exception:
+                        wamid = ''
                     results['results'].append({
-                        'number': number,
-                        'status': 'success',
-                        'sid': message.sid,
-                        'error': None
+                        'number': number, 'status': 'success',
+                        'sid': wamid, 'error': None,
                     })
                 except Exception as e:
                     results['results'].append({
-                        'number': number,
-                        'status': 'failed',
-                        'sid': None,
-                        'error': str(e)
+                        'number': number, 'status': 'failed',
+                        'sid': None, 'error': str(e),
                     })
-            
         except Exception as e:
-            results = {
-                'success': False,
-                'error': str(e)
-            }
-    
+            results = {'success': False, 'error': str(e)}
+
     return render(request, 'bot/pages/test_whatsapp.html', {
         'results': results
     })

@@ -10,7 +10,7 @@ from .views import (
     settings_view, calendar_settings_view, ai_settings_view,
     update_appointment, send_followup, confirm_appointment,
     complete_lead_appointment,
-    cancel_appointment, unbook_appointment, test_whatsapp, export_appointments, CalendarView, handle_whatsapp_media,
+    cancel_appointment, unbook_appointment, test_whatsapp, export_appointments, CalendarView,
     # Import the new document views
     AppointmentDocumentsView, download_document, serve_document,
     # Import the new quotation views
@@ -194,7 +194,6 @@ urlpatterns = [
     path('scenario-lab/<int:pk>/', views.scenario_lab_detail, name='scenario_lab_detail'),
 
     path('calendar/', CalendarView.as_view(), name='calendar'),
-    path('media/', handle_whatsapp_media, name='whatsapp_media'),
 
         # Template Items API
     path('api/quotation-templates/<int:template_id>/items/', 

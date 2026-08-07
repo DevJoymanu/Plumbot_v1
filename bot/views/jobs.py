@@ -40,9 +40,7 @@ from ..forms import (
 from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
 from ..whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 from ..services.clients import (
-    twilio_client, deepseek_client,
-    TWILIO_WHATSAPP_NUMBER, GOOGLE_CALENDAR_CREDENTIALS,
-    DEEPSEEK_API_KEY,
+    deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
 )
 from ..utils import (
     _to_decimal, _to_float, _safe_logo_url, _safe_logo_data_uri,
@@ -295,21 +293,31 @@ View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         print(f"Error sending job appointment notifications: {str(e)}")
 
 
+def _notify_customer(job_appointment, message):
+    """Send a customer WhatsApp message as the job's OWN tenant.
+
+    Replaces the shared Twilio sender: every tenant's customers used to be
+    messaged from one number that was not the business they had dealt with.
+    """
+    from ..whatsapp_cloud_api import get_client_for_tenant
+    clean = (job_appointment.phone_number or '').replace('whatsapp:', '').replace('+', '').strip()
+    if not clean:
+        return False
+    get_client_for_tenant(getattr(job_appointment, 'tenant', None)).send_text_message(clean, message)
+    return True
+
+
 def send_job_status_update_notification(job_appointment, new_status):
     """Send notification when job status changes"""
     try:
         status_messages = {
-            'in_progress': f"🔧 Your plumbing job at {job_appointment.customer_area} has started. Our plumber is on-site working on your {job_appointment.project_type}.",
-            'completed': f"✅ Your plumbing job at {job_appointment.customer_area} has been completed! Thank you for choosing our services. If you have any questions, please let us know.",
-            'cancelled': f"❌ Your scheduled plumbing job for {job_appointment.job_scheduled_datetime.strftime('%B %d, %Y')} has been cancelled. We'll contact you to reschedule.",
+            'in_progress': f"Your plumbing job at {job_appointment.customer_area} has started. Our plumber is on-site working on your {job_appointment.project_type}.",
+            'completed': f"Your plumbing job at {job_appointment.customer_area} is complete. Thank you for choosing us. Any questions, just reply here.",
+            'cancelled': f"Your plumbing job booked for {job_appointment.job_scheduled_datetime.strftime('%B %d, %Y')} has been cancelled. We'll be in touch to reschedule.",
         }
-        
+
         if new_status in status_messages:
-            twilio_client.messages.create(
-                body=status_messages[new_status],
-                from_=TWILIO_WHATSAPP_NUMBER,
-                to=job_appointment.phone_number
-            )
+            _notify_customer(job_appointment, status_messages[new_status])
             
     except Exception as e:
         print(f"Error sending status update: {str(e)}")
@@ -372,30 +380,24 @@ def send_job_reschedule_notification(job_appointment, old_datetime, new_datetime
         old_date_str = old_datetime.strftime('%A, %B %d at %I:%M %p')
         new_date_str = new_datetime.strftime('%A, %B %d at %I:%M %p')
         
-        message = f"""📅 JOB RESCHEDULED
+        from ..utils import business_name_for
+        signature = business_name_for(job_appointment, default='Our team')
+        work = job_appointment.job_description or job_appointment.project_type
 
-Hi {job_appointment.customer_name},
+        message = f"""Hi {job_appointment.customer_name}, your plumbing job has been rescheduled.
 
-Your plumbing job has been rescheduled:
+Previous: {old_date_str}
+New: {new_date_str}
 
-❌ Previous: {old_date_str}
-✅ New: {new_date_str}
+Location: {job_appointment.customer_area}
+Work: {work}
 
-📍 Location: {job_appointment.customer_area}
-🔨 Work: {job_appointment.job_description or job_appointment.project_type}
+Our plumber will contact you before the new appointment time. Any questions, just reply here.
 
-Our plumber will contact you before the new appointment time.
+{signature}"""
 
-Questions? Reply to this message.
+        _notify_customer(job_appointment, message)
 
-- Plumbing Team"""
-        
-        twilio_client.messages.create(
-            body=message,
-            from_=TWILIO_WHATSAPP_NUMBER,
-            to=job_appointment.phone_number
-        )
-        
     except Exception as e:
         print(f"Error sending reschedule notification: {str(e)}")
 

@@ -77,13 +77,29 @@ def window_expires_at(appointment):
 
 def is_window_open(appointment) -> bool:
     """
-    Return True if we are currently inside the 24-hour free-messaging window
-    for this appointment (i.e. the customer messaged us within the last 24h).
+    Return True if a FREE-FORM message may be sent right now.
 
-    Returns False if:
-    - The customer has never messaged us.
-    - The last inbound message was more than 24 hours ago (minus safety buffer).
+    Defers to Appointment.messaging_window_open, which is the only place that
+    knows all three rules: the standard 24h window, the extended 72h CTWA window
+    for ad-originated leads, and Meta's authoritative 131047 verdict (a bounced
+    send closes the window no matter what our own clock says). This helper used
+    to do a bare 24h subtraction, which both under- and over-reported: a CTWA
+    lead still inside its 72h window was treated as closed, and a lead Meta had
+    already refused was treated as open.
+
+    The 5-minute safety buffer is kept on top, so we never send into the last
+    few minutes of a window and have it land outside.
+
+    Returns False if the customer has never messaged us.
     """
+    closes_at = getattr(appointment, 'messaging_window_closes_at', None)
+    if closes_at is not None:
+        # The model property covers the 131047 flag and the 24h/72h choice.
+        if not getattr(appointment, 'messaging_window_open', False):
+            return False
+        return timezone.now() <= closes_at - timedelta(seconds=SAFETY_BUFFER_SECONDS)
+
+    # Fallback for objects that aren't Appointments (or have never been messaged).
     last = _last_inbound(appointment)
     if last is None:
         return False

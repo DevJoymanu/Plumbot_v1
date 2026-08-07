@@ -519,7 +519,6 @@ class Appointment(models.Model):
 
     # External Integration IDs
     google_calendar_event_id = models.CharField(max_length=200, blank=True, null=True)
-    twilio_conversation_sid = models.CharField(max_length=100, blank=True, null=True)
     
     # Additional Information
     is_emergency = models.BooleanField(default=False)

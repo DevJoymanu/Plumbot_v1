@@ -242,9 +242,18 @@ def _is_genuine_pricing_question(message: str, appointment: Appointment) -> bool
 # Unchanged helpers
 # -----------------------------------------------------------------------------
 
-def is_chatbot_paused_for_sender(sender: str) -> bool:
+def is_chatbot_paused_for_sender(sender: str, tenant=None) -> bool:
+    """Is the bot paused for this lead, on this tenant?
+
+    Must be tenant-scoped: pausing is a per-conversation decision. Unscoped, one
+    tenant taking a lead over by hand silenced every other tenant's bot for the
+    same handset (and vice versa — a stale row could un-pause a live handover).
+    """
     phone_number = f"whatsapp:+{sender}"
-    appointment = Appointment.objects.filter(phone_number=phone_number).only('chatbot_paused').first()
+    leads = Appointment.objects.filter(phone_number=phone_number)
+    if tenant is not None:
+        leads = leads.for_tenant(tenant)
+    appointment = leads.only('chatbot_paused').first()
     return bool(appointment and appointment.chatbot_paused)
 
 
@@ -1703,10 +1712,14 @@ def process_webhook_in_background(body):
 def _resolve_tenant_for_value(value):
     """Phase 1 tenant routing (docs/MULTI_TENANT_PLAN.md §3.2): every Meta
     webhook event carries metadata.phone_number_id — look up the owning
-    TenantWhatsAppChannel. A route miss falls back to the homebase seed with a
-    loud log rather than dropping the message: while Homebase is the only live
-    tenant, a miss means a config problem, not another tenant's traffic.
-    TODO(before tenant #2 goes live): flip route-miss to log-and-drop."""
+    TenantWhatsAppChannel.
+
+    A route miss returns None and the event is DROPPED. This used to fall back to
+    the homebase seed, which was safe only while homebase was the sole live
+    tenant; with tenant #2 live a miss is another business's traffic, and the
+    fallback answered their lead in homebase's voice, from homebase's number,
+    judged against homebase's conversation history. Dropping is the lesser harm:
+    a missing/inactive channel row is a config bug to fix, not traffic to guess at."""
     phone_number_id = (value.get('metadata') or {}).get('phone_number_id', '')
     if phone_number_id:
         channel = (
@@ -1717,21 +1730,24 @@ def _resolve_tenant_for_value(value):
         )
         if channel is not None:
             return channel.tenant
-        print(f"🚨 TENANT ROUTE MISS: unknown phone_number_id={phone_number_id} — falling back to homebase")
+        print(f"🚨 TENANT ROUTE MISS: unknown phone_number_id={phone_number_id} — dropping event (register this channel)")
     else:
-        print("🚨 TENANT ROUTE MISS: event has no metadata.phone_number_id — falling back to homebase")
-    return Tenant.objects.filter(slug='homebase').first()
+        print("🚨 TENANT ROUTE MISS: event has no metadata.phone_number_id — dropping event")
+    return None
 
 
 def process_message_change(value):
     try:
-        # Phase 1: resolve the owning tenant once per event, thread it down.
+        # Resolve the owning tenant once per event, thread it down. No tenant =
+        # unroutable event; drop it rather than attribute it to the wrong business.
         tenant = _resolve_tenant_for_value(value)
+        if tenant is None:
+            return
 
         # ✅ 1. HANDLE STATUSES FIRST AND EXIT
         statuses = value.get('statuses', [])
         if statuses:
-            process_status_updates(statuses)
+            process_status_updates(statuses, tenant=tenant)
             return  # CRITICAL FIX — stops the loop
 
         # ✅ 2. HANDLE MESSAGES ONLY
@@ -1822,14 +1838,24 @@ def _clean_phone(raw_phone: str) -> str:
     return (raw_phone or "").replace("whatsapp:", "").replace("+", "").strip()
 
 
-def _find_appointment_by_recipient(recipient_id: str) -> Optional[Appointment]:
+def _find_appointment_by_recipient(recipient_id: str, tenant=None) -> Optional[Appointment]:
     """
     Best-effort lookup from webhook status recipient_id (usually digits only)
     to our stored appointment phone formats.
+
+    MUST be tenant-scoped: one lead can talk to several tenants from the same
+    handset, so a phone number alone identifies a person, not a conversation.
+    Without `tenant` the `-updated_at` tiebreak returns whichever tenant's row
+    was touched last, and a delivery verdict (notably 131047) gets written onto
+    another business's lead — silently freezing that lead's follow-ups.
     """
     cleaned = _clean_phone(recipient_id)
     if not cleaned:
         return None
+
+    base = Appointment.objects.all()
+    if tenant is not None:
+        base = base.filter(tenant=tenant)
 
     direct_candidates = {
         cleaned,
@@ -1838,7 +1864,7 @@ def _find_appointment_by_recipient(recipient_id: str) -> Optional[Appointment]:
         f"whatsapp:+{cleaned}",
     }
     appointment = (
-        Appointment.objects.filter(phone_number__in=direct_candidates)
+        base.filter(phone_number__in=direct_candidates)
         .order_by('-updated_at')
         .first()
     )
@@ -1846,7 +1872,7 @@ def _find_appointment_by_recipient(recipient_id: str) -> Optional[Appointment]:
         return appointment
 
     return (
-        Appointment.objects.annotate(
+        base.annotate(
             clean_phone=Replace(
                 Replace(
                     Replace('phone_number', Value('whatsapp:+'), Value('')),
@@ -1878,10 +1904,14 @@ def _format_status_errors(errors: list) -> str:
     return " | ".join(parts)
 
 
-def process_status_updates(statuses):
+def process_status_updates(statuses, tenant=None):
     """
     Handle asynchronous WhatsApp outbound delivery state updates.
     This is the source of truth for delivered/read/failed, not send-time logs.
+
+    `tenant` is the owner of the phone_number_id the event arrived on; it scopes
+    the recipient lookup so a status only ever resolves within the conversation
+    it belongs to (see _find_appointment_by_recipient).
     """
     for status_obj in statuses:
         try:
@@ -1895,7 +1925,7 @@ def process_status_updates(statuses):
             errors = status_obj.get('errors') or []
             error_text = _format_status_errors(errors)
 
-            appointment = _find_appointment_by_recipient(recipient_id) if recipient_id else None
+            appointment = _find_appointment_by_recipient(recipient_id, tenant=tenant) if recipient_id else None
             appointment_ref = f"appointment_id={appointment.id}" if appointment else "appointment_id=unknown"
 
 
@@ -1986,7 +2016,7 @@ def handle_location_message(sender, location_data, tenant=None):
 
 def handle_unsupported_media(sender, media_type, tenant=None):
     try:
-        if is_chatbot_paused_for_sender(sender):
+        if is_chatbot_paused_for_sender(sender, tenant=tenant):
             print(f"Chatbot paused for whatsapp:+{sender}; skipping unsupported media auto response.")
             return
         print(f"?? Unsupported media type from {sender}: '{media_type}'")
@@ -2027,7 +2057,7 @@ def handle_unsupported_media(sender, media_type, tenant=None):
 
 def handle_audio_message(sender, audio_data, tenant=None):
     try:
-        if is_chatbot_paused_for_sender(sender):
+        if is_chatbot_paused_for_sender(sender, tenant=tenant):
             print(f"Chatbot paused for whatsapp:+{sender}; skipping audio auto response.")
             return
         print(f"?? Audio message from {sender}")

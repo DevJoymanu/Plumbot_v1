@@ -23,6 +23,7 @@ or the R2 bucket and runs fully offline.
 
 import os
 import unittest
+from io import StringIO
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -1563,9 +1564,9 @@ class SelfServiceAccountTests(TestCase):
 
 
 class TenantWebhookRoutingTests(TestCase):
-    """Phase 1: inbound events route to a tenant by metadata.phone_number_id.
-    Route-miss falls back to homebase (single-tenant transition safety) —
-    flips to log-and-drop before tenant #2 goes live."""
+    """Inbound events route to a tenant by metadata.phone_number_id.
+    Route-miss is log-and-drop: with more than one live tenant, an unroutable
+    event is another business's traffic, not homebase's."""
 
     def setUp(self):
         from .models import TenantWhatsAppChannel
@@ -1587,18 +1588,29 @@ class TenantWebhookRoutingTests(TestCase):
         self.assertEqual(
             self._resolve({'metadata': {'phone_number_id': '111000111'}}), self.homebase)
 
-    def test_unknown_id_falls_back_to_homebase(self):
-        self.assertEqual(
-            self._resolve({'metadata': {'phone_number_id': 'nope-999'}}), self.homebase)
+    def test_unknown_id_is_dropped_not_given_to_homebase(self):
+        self.assertIsNone(self._resolve({'metadata': {'phone_number_id': 'nope-999'}}))
 
-    def test_missing_metadata_falls_back_to_homebase(self):
-        self.assertEqual(self._resolve({}), self.homebase)
+    def test_missing_metadata_is_dropped(self):
+        self.assertIsNone(self._resolve({}))
 
     def test_inactive_channel_is_not_routable(self):
         from .models import TenantWhatsAppChannel
         TenantWhatsAppChannel.objects.filter(phone_number_id='222000222').update(is_active=False)
-        self.assertEqual(
-            self._resolve({'metadata': {'phone_number_id': '222000222'}}), self.homebase)
+        self.assertIsNone(self._resolve({'metadata': {'phone_number_id': '222000222'}}))
+
+    def test_unroutable_event_is_not_processed(self):
+        """A route miss must not reach message handling at all — the old
+        homebase fallback answered another tenant's lead in homebase's voice."""
+        from unittest.mock import patch
+        from .whatsapp_webhook import process_message_change
+        with patch('bot.whatsapp_webhook.handle_text_message') as handler:
+            process_message_change({
+                'metadata': {'phone_number_id': 'nope-999'},
+                'messages': [{'type': 'text', 'id': 'wamid.X',
+                              'from': '27610318200', 'text': {'body': 'Hi'}}],
+            })
+        self.assertFalse(handler.called)
 
     def test_get_or_create_lead_scopes_by_tenant(self):
         phone = 'whatsapp:+15550007777'
@@ -1614,6 +1626,179 @@ class TenantWebhookRoutingTests(TestCase):
     def test_get_or_create_lead_defaults_to_homebase(self):
         lead, _ = Appointment.objects.get_or_create_lead('whatsapp:+15550008888')
         self.assertEqual(lead.tenant_id, self.homebase.pk)
+
+    # ── Delivery statuses are per (tenant, lead), never per phone number ──────
+    # One handset can talk to several tenants. Meta's 131047 verdict applies to
+    # the business number it bounced on; applying it to whichever row happened to
+    # be updated last froze an unrelated tenant's follow-ups (prod, 2026-08-06).
+
+    def _status_payload(self, phone_number_id, recipient):
+        return {
+            'metadata': {'phone_number_id': phone_number_id},
+            'statuses': [{
+                'id': 'wamid.STATUS', 'status': 'failed', 'recipient_id': recipient,
+                'timestamp': '1754480000',
+                'errors': [{'code': 131047, 'title': 'Re-engagement message'}],
+            }],
+        }
+
+    def test_131047_only_closes_the_window_on_its_own_tenants_lead(self):
+        from .whatsapp_webhook import process_message_change
+        phone = 'whatsapp:+27610318200'
+        hb, _ = Appointment.objects.get_or_create_lead(phone, tenant=self.homebase)
+        acme, _ = Appointment.objects.get_or_create_lead(phone, tenant=self.acme)
+        # Homebase's row is decisively the most recently touched — the old
+        # phone-number-only lookup's `-updated_at` tiebreak would pick it.
+        Appointment.objects.filter(pk=hb.pk).update(
+            updated_at=timezone.now() + timedelta(hours=1))
+
+        process_message_change(self._status_payload('222000222', '27610318200'))
+
+        hb.refresh_from_db()
+        acme.refresh_from_db()
+        self.assertTrue(acme.FREEFORM_CLOSED_TAG in (acme.internal_notes or ''))
+        self.assertFalse(hb.FREEFORM_CLOSED_TAG in (hb.internal_notes or ''))
+        self.assertTrue(hb.messaging_window_open or hb.messaging_window_closes_at is None)
+
+    def test_chatbot_pause_does_not_leak_across_tenants(self):
+        """Pausing is per conversation: one tenant taking a lead over by hand
+        must not silence another tenant's bot for the same handset."""
+        from .whatsapp_webhook import is_chatbot_paused_for_sender
+        phone = 'whatsapp:+27610318200'
+        hb, _ = Appointment.objects.get_or_create_lead(phone, tenant=self.homebase)
+        acme, _ = Appointment.objects.get_or_create_lead(phone, tenant=self.acme)
+        hb.pause_chatbot()
+
+        self.assertTrue(is_chatbot_paused_for_sender('27610318200', tenant=self.homebase))
+        self.assertFalse(is_chatbot_paused_for_sender('27610318200', tenant=self.acme))
+
+    def test_failure_note_is_not_written_to_another_tenants_lead(self):
+        from .whatsapp_webhook import process_message_change
+        phone = 'whatsapp:+27610318200'
+        hb, _ = Appointment.objects.get_or_create_lead(phone, tenant=self.homebase)
+        acme, _ = Appointment.objects.get_or_create_lead(phone, tenant=self.acme)
+        # Acme's row is decisively the most recently touched — the old
+        # phone-number-only lookup's `-updated_at` tiebreak would pick it.
+        Appointment.objects.filter(pk=acme.pk).update(
+            updated_at=timezone.now() + timedelta(hours=1))
+
+        process_message_change(self._status_payload('111000111', '27610318200'))
+
+        acme.refresh_from_db()
+        self.assertNotIn('WA Delivery Failure', acme.internal_notes or '')
+        hb.refresh_from_db()
+        self.assertIn('WA Delivery Failure', hb.internal_notes or '')
+
+
+class ReminderChannelWindowTests(TestCase):
+    """Reminders are WhatsApp-first, email-as-fallback, never a paid template.
+
+    The rule: if the free-form window is open, send on WhatsApp and stop. Only
+    once it has closed do we look for an email address. We never spend on a
+    utility/template message to reach someone outside the window.
+    """
+
+    def setUp(self):
+        self.tenant, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+
+    def _job(self, **kw):
+        defaults = dict(
+            phone_number='whatsapp:+263771000111',
+            customer_name='Test Customer',
+            appointment_type='job_appointment',
+            job_status='scheduled',
+            job_scheduled_datetime=timezone.now() + timedelta(hours=24),
+            tenant=self.tenant,
+        )
+        defaults.update(kw)
+        return Appointment.objects.create(**defaults)
+
+    # ── the gate itself ──────────────────────────────────────────────────────
+
+    def test_window_open_within_24h(self):
+        from .whatsapp_window import is_window_open
+        job = self._job(last_customer_response=timezone.now() - timedelta(hours=2))
+        self.assertTrue(is_window_open(job))
+
+    def test_window_closed_after_24h(self):
+        from .whatsapp_window import is_window_open
+        job = self._job(last_customer_response=timezone.now() - timedelta(hours=30))
+        self.assertFalse(is_window_open(job))
+
+    def test_ctwa_lead_still_open_at_30h(self):
+        """A CTWA ad lead gets 72h. The old bare-24h check called this closed
+        and needlessly dropped to email."""
+        from .whatsapp_window import is_window_open
+        job = self._job(
+            last_customer_response=timezone.now() - timedelta(hours=30),
+            ctwa_entry_at=timezone.now() - timedelta(hours=30),
+        )
+        self.assertTrue(is_window_open(job))
+
+    def test_131047_flag_closes_window_even_inside_24h(self):
+        """Meta is authoritative: a bounced send closes the window regardless
+        of our own clock, so we must not keep trying WhatsApp."""
+        from .whatsapp_window import is_window_open
+        job = self._job(last_customer_response=timezone.now() - timedelta(hours=1))
+        job.mark_freeform_window_closed()
+        self.assertFalse(is_window_open(job))
+
+    def test_safety_buffer_closes_window_just_before_expiry(self):
+        from .whatsapp_window import is_window_open
+        job = self._job(
+            last_customer_response=timezone.now() - timedelta(hours=24) + timedelta(minutes=2))
+        self.assertFalse(is_window_open(job))
+
+    # ── channel selection ────────────────────────────────────────────────────
+
+    def _send(self, job, rtype='1_day'):
+        from bot.management.commands.send_job_reminders import Command
+        cmd = Command()
+        cmd.stdout = StringIO()
+        with patch.object(Command, '_send_whatsapp', return_value=True) as wa,              patch('bot.management.commands.send_job_reminders.send_email_to_recipients',
+                   return_value=True) as mail:
+            result = cmd.send_job_reminder(job, rtype, dry_run=False)
+        return result, wa, mail
+
+    def test_open_window_sends_whatsapp_and_no_email(self):
+        job = self._job(
+            last_customer_response=timezone.now() - timedelta(hours=1),
+            customer_email='customer@example.com',
+        )
+        ok, wa, mail = self._send(job)
+        self.assertTrue(ok)
+        self.assertTrue(wa.called)
+        self.assertFalse(mail.called, 'must not also email while the window is open')
+
+    def test_closed_window_falls_back_to_email_only(self):
+        job = self._job(
+            last_customer_response=timezone.now() - timedelta(hours=48),
+            customer_email='customer@example.com',
+        )
+        ok, wa, mail = self._send(job)
+        self.assertTrue(ok)
+        self.assertFalse(wa.called, 'must not send WhatsApp outside the window')
+        self.assertTrue(mail.called)
+
+    def test_closed_window_without_email_sends_nothing(self):
+        """No open window and no address = no reminder. We never pay for a
+        template to reach them."""
+        job = self._job(last_customer_response=timezone.now() - timedelta(hours=48))
+        ok, wa, mail = self._send(job)
+        self.assertFalse(ok)
+        self.assertFalse(wa.called)
+        self.assertFalse(mail.called)
+
+    def test_ctwa_lead_at_30h_still_uses_whatsapp_not_email(self):
+        job = self._job(
+            last_customer_response=timezone.now() - timedelta(hours=30),
+            ctwa_entry_at=timezone.now() - timedelta(hours=30),
+            customer_email='customer@example.com',
+        )
+        ok, wa, mail = self._send(job)
+        self.assertTrue(wa.called)
+        self.assertFalse(mail.called)
 
 
 class TenantCredentialTests(TestCase):
