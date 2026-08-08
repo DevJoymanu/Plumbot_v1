@@ -80,10 +80,16 @@ _pending_send_lock = threading.Lock()
 # Reply pacing — we answer at the lead's own tempo. How long they took to reply
 # to our last message sets how long we take to reply to theirs, measured on top
 # of the batch window (which has always elapsed by the time a delay is picked).
+LEAD_INSTANT_REPLY_SECONDS = 60    # under this = they're typing at us in real time
 LEAD_FAST_REPLY_SECONDS = 5 * 60   # under this = they're live in the chat
-FAST_REPLY_DELAY_MINUTES = (1, 2)  # live lead: batch window + 1-2 min
+FAST_REPLY_DELAY_MINUTES = (1, 2)  # live lead: batch window + 1 min, then 2, alternating
 SLOW_REPLY_DELAY_MINUTES = 5       # slow lead: batch window + 5 min
+# An opener is not a reply — there is nothing to measure it against. Pace it in
+# the fast band but never the instant one, so a first contact still reads as a
+# person answering rather than an auto-responder firing back.
+OPENER_LATENCY_SECONDS = float(LEAD_INSTANT_REPLY_SECONDS)
 _lead_reply_latency: dict = {}     # sender -> seconds the lead took to reply
+_fast_reply_turn: dict = {}        # sender -> count of fast replies paced so far
 _lead_latency_lock = threading.Lock()
 
 # DeepSeek client for translation (optional)
@@ -461,7 +467,7 @@ def _record_lead_reply_latency(sender: str, appointment) -> None:
             # We've never messaged them — this is the lead opening the conversation.
             # They're as live as a lead ever gets, so pace it like a fast reply
             # rather than leaving them on the old up-to-5-minute wait.
-            gap = 0.0
+            gap = OPENER_LATENCY_SECONDS
     except Exception as exc:
         print(f"Lead reply latency check failed for {sender}: {exc}")
 
@@ -492,8 +498,20 @@ def get_random_delay(tenant=None, sender=None) -> int:
     if latency is None:
         minutes = random.randint(1, 5)
         print(f"Random delay: {minutes} minute(s)")
+    elif latency < LEAD_INSTANT_REPLY_SECONDS:
+        # They answered inside a minute — they are sitting in the chat right now.
+        # The batch window alone is the whole wait; adding to it would stall a
+        # conversation that is moving at speed.
+        print(f"Lead replied in {int(latency)}s - batch window only, no added delay")
+        return 0
     elif latency < LEAD_FAST_REPLY_SECONDS:
-        minutes = random.randint(*FAST_REPLY_DELAY_MINUTES)
+        # Alternate 1, 2, 1, 2 rather than picking at random: a live back-and-forth
+        # reads more naturally when our turnaround varies on a steady beat than
+        # when it can land on the same number several exchanges running.
+        with _lead_latency_lock:
+            turn = _fast_reply_turn.get(sender, 0)
+            _fast_reply_turn[sender] = turn + 1
+        minutes = FAST_REPLY_DELAY_MINUTES[turn % len(FAST_REPLY_DELAY_MINUTES)]
         print(f"Lead replied in {int(latency)}s - answering {minutes} min after the batch window")
     else:
         minutes = SLOW_REPLY_DELAY_MINUTES

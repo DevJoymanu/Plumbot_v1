@@ -3027,12 +3027,43 @@ try:
     _pace_sender = '263771000999'
     _orig_latency = dict(_wh_pace._lead_reply_latency)
     try:
-        _wh_pace._lead_reply_latency[_pace_sender] = 30  # replied in 30s
-        _fast = {_wh_pace.get_random_delay(sender=_pace_sender) for _ in range(30)}
+        _wh_pace._lead_reply_latency[_pace_sender] = 150  # replied in 2.5 min
+        _wh_pace._fast_reply_turn.pop(_pace_sender, None)
+        _fast = [_wh_pace.get_random_delay(sender=_pace_sender) for _ in range(6)]
         results.log(
-            "reply pacing: fast lead (<5 min) gets batch window + 1-2 min",
-            _fast <= {60, 120} and _fast,
-            got=f"delays={sorted(_fast)}",
+            "reply pacing: fast lead alternates 1, 2, 1, 2 min (not random)",
+            _fast == [60, 120, 60, 120, 60, 120],
+            got=f"delays={_fast}",
+        )
+        # Each lead keeps its own beat — one lead's turn must not shunt another's.
+        _other = '263771000997'
+        _wh_pace._lead_reply_latency[_other] = 150
+        _wh_pace._fast_reply_turn.pop(_other, None)
+        results.log(
+            "reply pacing: the 1/2 alternation is tracked per lead",
+            _wh_pace.get_random_delay(sender=_other) == 60
+            and _wh_pace.get_random_delay(sender=_pace_sender) == 60,
+            got=f"other={_wh_pace._fast_reply_turn.get(_other)} main={_wh_pace._fast_reply_turn.get(_pace_sender)}",
+        )
+        _wh_pace._lead_reply_latency.pop(_other, None)
+        _wh_pace._fast_reply_turn.pop(_other, None)
+
+        # Under a minute: they are in the chat right now, so the batch window is
+        # the entire wait — no added delay on top.
+        for _instant in (0, 5, 30, 59):
+            _wh_pace._lead_reply_latency[_pace_sender] = _instant
+            results.log(
+                f"reply pacing: {_instant}s reply = batch window only, no added delay",
+                _wh_pace.get_random_delay(sender=_pace_sender) == 0,
+                got=str(_wh_pace.get_random_delay(sender=_pace_sender)),
+            )
+        # 60s exactly is no longer instant — it starts the 1/2 alternating band.
+        _wh_pace._lead_reply_latency[_pace_sender] = 60
+        _wh_pace._fast_reply_turn.pop(_pace_sender, None)
+        results.log(
+            "reply pacing: the 1-minute boundary leaves the instant band",
+            _wh_pace.get_random_delay(sender=_pace_sender) == 60,
+            got=str(_wh_pace.get_random_delay(sender=_pace_sender)),
         )
 
         _wh_pace._lead_reply_latency[_pace_sender] = 40 * 60  # replied after 40 min
@@ -3090,15 +3121,15 @@ try:
         _opener = _latency_for([{'role': 'user', 'content': 'hi',
                                  'timestamp': _dt.datetime.now(_dt.timezone.utc).isoformat()}])
         results.log(
-            "reply pacing: conversation opener paces fast (no assistant turn yet)",
-            _opener == 0.0
+            "reply pacing: conversation opener paces fast, never instant",
+            _opener == _wh_rec.OPENER_LATENCY_SECONDS
             and _wh_rec.get_random_delay(sender=_rec_sender) in (60, 120),
             got=f"latency={_opener}",
         )
         # Empty history (brand-new appointment) is the same case.
         results.log(
             "reply pacing: empty history paces fast",
-            _latency_for([]) == 0.0,
+            _latency_for([]) == _wh_rec.OPENER_LATENCY_SECONDS,
             got=str(_latency_for([])),
         )
         # A real gap since our last message is measured, not assumed.
@@ -3126,7 +3157,7 @@ try:
         results.log(
             "reply pacing: measures from send time, not generation time (conv 678)",
             _real is not None and _real < 90
-            and _wh_rec.get_random_delay(sender=_rec_sender) in (60, 120),
+            and _wh_rec.get_random_delay(sender=_rec_sender) == 0,
             got=f"latency={_real} (must be ~54s, not ~354s)",
         )
         # A reply logged but never sent (cancelled mid-wait) is skipped — the
