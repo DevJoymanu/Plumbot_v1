@@ -430,17 +430,33 @@ def _record_lead_reply_latency(sender: str, appointment) -> None:
     gap = None
     try:
         _spoke_before = False
+        _fallback_ts = None
         for entry in reversed(appointment.conversation_history or []):
             if not isinstance(entry, dict) or entry.get('role') != 'assistant':
                 continue
             _spoke_before = True
-            sent_at = parse_datetime(entry.get('timestamp') or '')
+            # sent_at is when the customer actually SAW the message. `timestamp`
+            # is when we generated it — minutes earlier, because the reply then
+            # waited out its own send delay. Measuring from `timestamp` charges
+            # our delay to the lead's thinking time and drags every lead into
+            # the slow branch, so it is only a last-resort fallback for history
+            # written before sent_at existed.
+            sent_at = parse_datetime(entry.get('sent_at') or '')
             if sent_at is None:
-                break
+                # Logged but never sent (a reply cancelled mid-wait by this very
+                # message) — keep looking back for one that actually went out.
+                if _fallback_ts is None:
+                    _fallback_ts = parse_datetime(entry.get('timestamp') or '')
+                continue
             if timezone.is_naive(sent_at):
                 sent_at = timezone.make_aware(sent_at)
             gap = max(0.0, (timezone.now() - sent_at).total_seconds())
             break
+        if gap is None and _fallback_ts is not None:
+            if timezone.is_naive(_fallback_ts):
+                _fallback_ts = timezone.make_aware(_fallback_ts)
+            gap = max(0.0, (timezone.now() - _fallback_ts).total_seconds())
+            print(f"Lead {sender}: no sent_at in history yet - measuring from generation time")
         if gap is None and not _spoke_before:
             # We've never messaged them — this is the lead opening the conversation.
             # They're as live as a lead ever gets, so pace it like a fast reply
@@ -586,18 +602,19 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
             preview = part.replace('\n', ' ')[:120]
             print(f"🤖 Bot → +{sender}: {preview}{'…' if len(part) > 120 else ''}")
 
-            # Record the outbound WAMID against this message so that if the customer
-            # later replies to (highlights) it, we can resolve their quote back to
-            # this text. Each part was logged as its own turn before the send, so we
-            # stamp the now-known WAMID onto the matching entry.
+            # Stamp the send. Two things ride on this: the outbound WAMID, so a
+            # later customer reply that highlights this message resolves back to
+            # it; and sent_at, so reply-pacing measures the lead's thinking time
+            # from when they actually SAW this — the entry was logged before the
+            # delay above, so its timestamp is minutes too early. Unconditional:
+            # a missing WAMID must not cost us the sent_at stamp.
             try:
                 sent_wamid = (send_result or {}).get('messages', [{}])[0].get('id')
-                if sent_wamid:
-                    appt = _leads().first()
-                    if appt:
-                        appt.attach_message_id("assistant", part, sent_wamid)
+                appt = _leads().first()
+                if appt:
+                    appt.mark_message_sent("assistant", part, sent_wamid)
             except Exception as e:
-                print(f"⚠️ Could not record outbound WAMID: {e}")
+                print(f"⚠️ Could not record outbound send: {e}")
     except Exception as e:
         print(f"❌ Error in delayed response: {str(e)}")
 

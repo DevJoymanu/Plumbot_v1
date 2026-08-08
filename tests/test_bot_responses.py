@@ -3113,6 +3113,36 @@ try:
             and _wh_rec.get_random_delay(sender=_rec_sender) == 300,
             got=f"latency={_measured}",
         )
+        # PROD BUG (conv 678, 8 Aug): assistant turns are logged when GENERATED
+        # but sent after their own delay, so measuring from `timestamp` charged
+        # our 5-min delay to the lead. A lead who came back 54s after seeing the
+        # message was scored 354s and paced slow. Measure from sent_at.
+        _gen = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=354)
+        _sent = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=54)
+        _real = _latency_for([
+            {'role': 'assistant', 'content': 'Can you tell me more?',
+             'timestamp': _gen.isoformat(), 'sent_at': _sent.isoformat()},
+        ])
+        results.log(
+            "reply pacing: measures from send time, not generation time (conv 678)",
+            _real is not None and _real < 90
+            and _wh_rec.get_random_delay(sender=_rec_sender) in (60, 120),
+            got=f"latency={_real} (must be ~54s, not ~354s)",
+        )
+        # A reply logged but never sent (cancelled mid-wait) is skipped — the
+        # lead is answering the last message that actually reached them.
+        _skip = _latency_for([
+            {'role': 'assistant', 'content': 'sent one',
+             'timestamp': _gen.isoformat(), 'sent_at': _sent.isoformat()},
+            {'role': 'user', 'content': 'wait'},
+            {'role': 'assistant', 'content': 'never sent',
+             'timestamp': _dt.datetime.now(_dt.timezone.utc).isoformat()},
+        ])
+        results.log(
+            "reply pacing: skips a reply that was logged but never sent",
+            _skip is not None and 40 < _skip < 90,
+            got=f"latency={_skip}",
+        )
         # We spoke but the timestamp is unusable — fall back, don't guess fast.
         results.log(
             "reply pacing: unusable timestamp falls back rather than guessing",

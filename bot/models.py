@@ -1305,6 +1305,34 @@ class Appointment(models.Model):
         except Exception as e:
             print(f"⚠️ Could not attach message_id {message_id}: {e}")
 
+    def mark_message_sent(self, role, content, message_id=None):
+        """Stamp the moment an outbound message actually reached the customer.
+
+        Assistant replies are logged to history when they are GENERATED, but they
+        go out after a deliberate send delay — so `timestamp` can be minutes
+        earlier than the customer ever saw the message. Anything measuring how
+        long the lead took to reply must use `sent_at`, not `timestamp`, or it
+        counts our own delay as their thinking time. The WAMID (known only once
+        the send returns) rides along here when it is available.
+        """
+        if not isinstance(self.conversation_history, list):
+            return
+        try:
+            for entry in reversed(self.conversation_history):
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("role") == role
+                    and entry.get("content") == content
+                    and not entry.get("sent_at")
+                ):
+                    entry["sent_at"] = timezone.now().isoformat()
+                    if message_id and not entry.get("message_id"):
+                        entry["message_id"] = message_id
+                    self.save(update_fields=["conversation_history"])
+                    return
+        except Exception as e:
+            print(f"WARNING Could not stamp sent_at for {role} message: {e}")
+
     def record_sent_media(self, media_map, summary):
         """Log a batch of sent images with a {wamid: description} index.
 
@@ -1318,10 +1346,13 @@ class Appointment(models.Model):
         try:
             if not isinstance(self.conversation_history, list):
                 self.conversation_history = []
+            # Logged at the moment of sending, so sent_at == timestamp here.
+            _now_iso = timezone.now().isoformat()
             self.conversation_history.append({
                 "role": "assistant",
                 "content": summary,
-                "timestamp": timezone.now().isoformat(),
+                "timestamp": _now_iso,
+                "sent_at": _now_iso,
                 "media_index": media_map,
             })
             self.save(update_fields=["conversation_history"])
