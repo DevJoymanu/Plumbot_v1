@@ -1,20 +1,29 @@
-
 {
     "deploy": {
-        "startCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn Plumbing_CRM.wsgi"
+        "startCommand": "bash start.sh"
     },
-    "crons": [
+    "_cronsReference": [
         {
             "name": "send-followups",
-            "schedule": "3-59/7 6-19 * * *",
-            "command": "python manage.py send_followups",
-            "description": "Check non-responsive leads ~every 7 min 8 AM – 9 PM CAT, offset so ticks never land on the hour (:03,:10,:17…); each lead fires at its own jittered minute for natural human send times"
+            "service": "superb-tenderness",
+            "schedule": "*/7 * * * * (set on the service in Railway)",
+            "command": "PLUMBOT_CRON=send_followups",
+            "description": "Check non-responsive leads every 7 min; send_followups itself only sends inside CONTACT_WINDOWS (08:21-20:53 CAT), so off-hours ticks are no-ops. Each lead fires at its own jittered minute for natural human send times"
         },
         {
             "name": "send-reminders",
-            "schedule": "*/15 * * * *",
-            "command": "python manage.py send_reminders",
-            "description": "Customer and plumber reminders every 15 min — booking, morning, 2hr, 30min alerts"
+            "service": "Reminders",
+            "schedule": "*/5 * * * * (set on the service in Railway)",
+            "command": "PLUMBOT_CRON=send_reminders",
+            "description": "Customer and plumber reminders - booking, morning, 2hr, 30min alerts"
+        },
+        {
+            "name": "send-scheduled-followups",
+            "service": "delightful-eagerness",
+            "schedule": "*/5 * * * * (set on the service in Railway)",
+            "command": "PLUMBOT_CRON=send_scheduled_followups",
+            "description": "Dispatches staff-queued ScheduledFollowup rows over WhatsApp or email, including the email follow-ups for delayed leads. send_followups also calls this on every tick, so this service is the tighter-cadence path rather than the only one"
         }
-    ]
+    ],
+    "_note": "This file applies to EVERY service in the project and its startCommand overrides each service's own. Cron services therefore share start.sh and pick their job via the PLUMBOT_CRON env var. The list above is documentation only - Railway does not read it."
 }
