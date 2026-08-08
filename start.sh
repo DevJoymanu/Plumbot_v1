@@ -7,18 +7,33 @@
 # stopped every follow-up and reminder for four weeks.
 #
 # The role is chosen by the PLUMBOT_CRON env var, set per service in Railway:
-#   PLUMBOT_CRON unset      -> web service (migrate, collectstatic, gunicorn)
-#   PLUMBOT_CRON=<command>  -> cron service: runs `manage.py <command>` once and exits
+#   PLUMBOT_CRON unset       -> web service (migrate, collectstatic, gunicorn)
+#   PLUMBOT_CRON=<commands>  -> cron service: runs each `manage.py <command>`
+#                               once, in order, then exits. Comma-separated for
+#                               a service that carries several jobs per tick.
 #
-# Cron ticks deliberately skip migrate/collectstatic: they'd race the web service's
-# migration and waste the whole tick on a no-op collectstatic.
-set -euo pipefail
+# Cron ticks deliberately skip migrate/collectstatic: they'd race the web
+# service's migration and waste the whole tick on a no-op collectstatic.
+set -uo pipefail
 
 if [ -n "${PLUMBOT_CRON:-}" ]; then
-    echo "[start.sh] cron role: manage.py ${PLUMBOT_CRON}"
-    exec python manage.py ${PLUMBOT_CRON}
+    status=0
+    # One failing job must not stop the others on the same service, so each runs
+    # in its own guarded block and the worst exit code is reported at the end.
+    IFS=',' read -ra jobs <<< "$PLUMBOT_CRON"
+    for job in "${jobs[@]}"; do
+        job="$(echo "$job" | xargs)"   # trim surrounding whitespace
+        [ -z "$job" ] && continue
+        echo "[start.sh] cron job: manage.py ${job}"
+        if ! python manage.py ${job}; then
+            echo "[start.sh] cron job FAILED: ${job}" >&2
+            status=1
+        fi
+    done
+    exit $status
 fi
 
+set -e
 echo "[start.sh] web role: migrate + collectstatic + gunicorn"
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput

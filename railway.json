@@ -18,12 +18,12 @@
             "description": "Customer and plumber reminders - booking, morning, 2hr, 30min alerts"
         },
         {
-            "name": "send-scheduled-followups",
+            "name": "misc-jobs",
             "service": "delightful-eagerness",
             "schedule": "*/5 * * * * (set on the service in Railway)",
-            "command": "PLUMBOT_CRON=send_scheduled_followups",
-            "description": "Dispatches staff-queued ScheduledFollowup rows over WhatsApp or email, including the email follow-ups for delayed leads. send_followups also calls this on every tick, so this service is the tighter-cadence path rather than the only one"
+            "command": "PLUMBOT_CRON=send_scheduled_followups,process_inbound_emails,send_job_reminders,summarize_unconfirmed_leads",
+            "description": "Carries every job that is not the main follow-up or reminder cron: staff-queued ScheduledFollowup dispatch over WhatsApp or email (including email follow-ups for delayed leads), IMAP inbound-email polling, job reminders, and 24h unconfirmed-lead summaries. All four are idempotent, so a 5-minute tick re-running them is safe."
         }
     ],
-    "_note": "This file applies to EVERY service in the project and its startCommand overrides each service's own. Cron services therefore share start.sh and pick their job via the PLUMBOT_CRON env var. The list above is documentation only - Railway does not read it."
+    "_note": "This file applies to EVERY service in the project and its startCommand overrides each service's own. Cron services therefore share start.sh and pick their job(s) via the PLUMBOT_CRON env var (comma-separated for several jobs per tick). The list above is documentation only - Railway does not read it."
 }
