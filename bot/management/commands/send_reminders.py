@@ -194,6 +194,12 @@ def _mark_sent_plumber(apt, rtype: str) -> None:
 
 def _send_wa(phone: str, message: str, dry_run: bool = False, tenant=None) -> bool:
     """Send a WhatsApp message as the lead's tenant (Phase 4). Returns True on success."""
+    # Synthetic keys (quotation-only stubs, email-only leads) are not phone
+    # numbers; sending to one 400s at the Cloud API. Refuse before the call.
+    if not any(ch.isdigit() for ch in (phone or "")) or (phone or "").startswith(
+            ("email_", "quotation_only_")):
+        logger.info("Skipped WhatsApp send to non-phone recipient %r", phone)
+        return False
     if dry_run:
         print(f"  [DRY RUN] Would send to +{phone}: {message[:80]}…")
         return True
@@ -499,6 +505,14 @@ def _hr():
 
 
 def _send_email(recipients, subject, html, dry_run, apt=None):
+    # This cron sweeps every tenant's leads in one loop, so the recipient list
+    # has to be resolved per lead, not once at the top: each tenant's alerts go
+    # to the address that tenant chose (plus the constant platform inbox).
+    if apt is not None:
+        recipients = (
+            get_plumber_notification_emails(getattr(apt, 'tenant', None))
+            or recipients
+        )
     if dry_run:
         logger.info("DRY RUN email '%s' → %s", subject, recipients)
         return True

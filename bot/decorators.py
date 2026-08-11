@@ -167,3 +167,56 @@ class GroupRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def get_permission_denied_message(self):
         groups_str = ', '.join(self.required_groups)
         return f'Access denied. Required groups: {groups_str}'
+
+# ── Platform owner (single-account gate) ──────────────────────────────────────
+
+def is_platform_owner(user) -> bool:
+    """True only for the platform owner's own login.
+
+    Superuser is not enough for irreversible, history-destroying actions
+    (deleting a past conversation): a second admin account must not be able to
+    wipe transcripts. The owner list is `settings.PLATFORM_OWNER_ACCOUNTS`
+    (usernames or emails, case-insensitive). If it is empty — a mis-set env var
+    — this degrades to "any superuser" rather than locking everyone out.
+    """
+    from django.conf import settings as _settings
+
+    if user is None or not user.is_authenticated or not user.is_superuser:
+        return False
+    owners = {
+        entry.strip().lower()
+        for entry in getattr(_settings, 'PLATFORM_OWNER_ACCOUNTS', [])
+        if entry and entry.strip()
+    }
+    if not owners:
+        return True
+    identities = {
+        (user.get_username() or '').lower(),
+        (getattr(user, 'email', '') or '').lower(),
+    }
+    return bool(identities & owners)
+
+
+def owner_required(view_func=None, *, redirect_url='login', message=None):
+    """Restrict a view to the platform owner account (see is_platform_owner)."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                messages.warning(
+                    request, message or 'Please log in to access this page.')
+                return redirect(redirect_url)
+
+            if not is_platform_owner(request.user):
+                messages.error(
+                    request,
+                    message or 'Only the platform owner can perform this action.',
+                )
+                raise PermissionDenied("Platform owner access required")
+
+            return func(request, *args, **kwargs)
+        return wrapper
+
+    if view_func is None:
+        return decorator
+    return decorator(view_func)

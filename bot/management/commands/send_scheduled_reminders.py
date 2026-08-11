@@ -96,7 +96,8 @@ def dispatch_due_scheduled_reminders(now=None, dry_run=False, log=None):
                     from bot.plumber_notifications import (
                         get_plumber_notification_emails, send_email_to_recipients,
                     )
-                    recipients = get_plumber_notification_emails()
+                    recipients = get_plumber_notification_emails(
+                        getattr(apt, 'tenant', None))
                     if not recipients:
                         raise ValueError('no plumber notification emails configured')
                     subject = r.subject or f'Reminder — {name}'

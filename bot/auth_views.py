@@ -12,10 +12,27 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from .decorators import superuser_required
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _tenant_profile(request):
+    """The active tenant's profile row, created on first use.
+
+    Tenants seeded before their profile existed have no row, so the Profile page
+    would otherwise have nowhere to store the chosen notification address.
+    Returns None when the request carries no tenant at all.
+    """
+    tenant = getattr(request, 'tenant', None)
+    if tenant is None:
+        return None
+    from .models import TenantProfile
+    profile, _ = TenantProfile.objects.get_or_create(tenant=tenant)
+    return profile
 
 
 @sensitive_post_parameters()
@@ -229,6 +246,34 @@ def profile_view(request):
             logger.info(f"User {user.username} renamed to {new_username}")
             user.username = new_username
 
+        # The business's own notification address (per tenant, not per user):
+        # where this business's lead alerts and reminders are emailed. Blank
+        # clears the choice. The platform inbox is added to every send
+        # regardless — see plumber_notifications.PLATFORM_NOTIFICATION_EMAIL.
+        if 'notification_email' in request.POST:
+            profile = _tenant_profile(request)
+            if profile is None:
+                messages.error(
+                    request,
+                    'No business is linked to your account, so the notification '
+                    'email could not be saved.',
+                )
+                return redirect('profile')
+            chosen = (request.POST.get('notification_email') or '').strip()
+            if chosen:
+                try:
+                    validate_email(chosen)
+                except ValidationError:
+                    messages.error(request, f'"{chosen}" is not a valid email address.')
+                    return redirect('profile')
+            if chosen != profile.email_sender:
+                profile.email_sender = chosen
+                profile.save(update_fields=['email_sender'])
+                logger.info(
+                    "User %s set tenant %s notification email to %s",
+                    user.username, profile.tenant.slug, chosen or '(cleared)',
+                )
+
         # Simple profile update
         user.first_name = request.POST.get('first_name', user.first_name)
         user.last_name = request.POST.get('last_name', user.last_name)
@@ -238,12 +283,22 @@ def profile_view(request):
         messages.success(request, 'Profile updated successfully!')
         logger.info(f"User {user.username} updated profile")
         return redirect('profile')
-    
+
+    from .plumber_notifications import (
+        PLATFORM_NOTIFICATION_EMAIL, get_plumber_notification_emails,
+    )
+    tenant = getattr(request, 'tenant', None)
+    profile = _tenant_profile(request)
     context = {
         'user': user,
-        'title': 'My Profile'
+        'title': 'My Profile',
+        'tenant': tenant,
+        'notification_email': getattr(profile, 'email_sender', '') if profile else '',
+        'notification_email_editable': profile is not None,
+        'platform_notification_email': PLATFORM_NOTIFICATION_EMAIL,
+        'notification_recipients': get_plumber_notification_emails(tenant),
     }
-    
+
     return render(request, 'bot/pages/registration/profile.html', context)
 
 

@@ -2265,8 +2265,10 @@
                     <a href="{% url 'cancel_appointment' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn danger"><i class="fas fa-times"></i> Cancel</a>
                     {% endif %}
                     {# Delete reuses this form's CSRF token via formaction (same trick as
-                       Complete) — a nested <form> here would be invalid HTML. #}
+                       Complete) — a nested <form> here would be invalid HTML.
+                       Irreversible, so the control is owner-only. #}
                     {% firstof appointment.customer_name appointment.phone_number "this lead" as lead_label %}
+                    {% if is_platform_owner %}
                     <button type="submit"
                             formaction="{% url 'delete_appointment' appointment.pk %}"
                             formmethod="post"
@@ -2278,6 +2280,7 @@
                             class="action-btn destructive">
                       <i class="fas fa-trash-can"></i> Delete Lead
                     </button>
+                    {% endif %}
                   </div>
                 </form>
               </div>

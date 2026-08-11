@@ -28,8 +28,9 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -324,10 +325,22 @@ class AppointmentLifecycleActionTests(StaffClientTestCase):
         self.assertEqual(self.lead.follow_up_status, 'completed')
         self.assertFalse(self.lead.is_lead_active)
 
+    def _become_owner(self):
+        """Deleting conversations is restricted to the platform OWNER account,
+        so the delete tests run as that account: superuser AND listed in
+        settings.PLATFORM_OWNER_ACCOUNTS."""
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        override = override_settings(
+            PLATFORM_OWNER_ACCOUNTS=[self.user.get_username()])
+        override.enable()
+        self.addCleanup(override.disable)
+
     def test_delete_lead_requires_post_and_cascades(self):
         """The dashboard Delete button. GET must never destroy a lead (a
         prefetched link would be enough), and the delete has to take the child
         records with it rather than leaving orphans behind."""
+        self._become_owner()
         Quotation.objects.create(appointment=self.lead)
         ScheduledFollowup.objects.create(
             appointment=self.lead, channel='whatsapp',
@@ -344,7 +357,54 @@ class AppointmentLifecycleActionTests(StaffClientTestCase):
         self.assertFalse(Quotation.objects.filter(appointment_id=pk).exists())
         self.assertFalse(ScheduledFollowup.objects.filter(appointment_id=pk).exists())
 
+    def test_only_the_owner_can_delete_past_conversations(self):
+        """Tenant staff must not be able to destroy conversation history — the
+        POST is refused and the lead (with its transcript) survives."""
+        pk = self.lead.pk
+        response = self.client.post(reverse('delete_appointment', args=[pk]))
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Appointment.objects.filter(pk=pk).exists())
+
+        # ...and the button is not rendered for them either.
+        body = self.client.get(self.detail_url()).content.decode()
+        self.assertNotIn(reverse('delete_appointment', args=[pk]), body)
+
+        self._become_owner()
+        body = self.client.get(self.detail_url()).content.decode()
+        self.assertIn(reverse('delete_appointment', args=[pk]), body)
+
+    def test_a_second_admin_account_still_cannot_delete(self):
+        """Superuser is deliberately not enough: only the owner account listed in
+        PLATFORM_OWNER_ACCOUNTS may destroy a transcript."""
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        pk = self.lead.pk
+        with self.settings(PLATFORM_OWNER_ACCOUNTS=['adminJ']):
+            response = self.client.post(reverse('delete_appointment', args=[pk]))
+            self.assertEqual(response.status_code, 403)
+            self.assertTrue(Appointment.objects.filter(pk=pk).exists())
+            body = self.client.get(self.detail_url()).content.decode()
+            self.assertNotIn(reverse('delete_appointment', args=[pk]), body)
+
+    def test_owner_matches_on_email_too_and_empty_list_never_locks_out(self):
+        from .decorators import is_platform_owner
+
+        self.user.is_superuser = True
+        self.user.email = 'jones86xi@gmail.com'
+        self.user.save(update_fields=['is_superuser', 'email'])
+        with self.settings(PLATFORM_OWNER_ACCOUNTS=['JONES86XI@GMAIL.COM']):
+            self.assertTrue(is_platform_owner(self.user))
+        # A mis-set env var must not lock the owner out of their own platform.
+        with self.settings(PLATFORM_OWNER_ACCOUNTS=[]):
+            self.assertTrue(is_platform_owner(self.user))
+        # Plain staff are never the owner, whatever the list says.
+        self.user.is_superuser = False
+        self.user.save(update_fields=['is_superuser'])
+        with self.settings(PLATFORM_OWNER_ACCOUNTS=[]):
+            self.assertFalse(is_platform_owner(self.user))
+
     def test_delete_lead_honours_only_internal_next(self):
+        self._become_owner()
         target = reverse('conversations_list') + '?status_filter=pending'
         response = self.client.post(
             reverse('delete_appointment', args=[self.lead.pk]), {'next': target})
@@ -810,8 +870,21 @@ class TenantViewScopingTests(TestCase):
         self.assertEqual(response.status_code, 404)
         response = self.client.post(reverse('cancel_appointment', args=[self.hb_lead.pk]))
         self.assertEqual(response.status_code, 404)
-        # Deleting across tenants must be impossible, not merely forbidden.
+        # Tenant staff cannot delete at all now — owner-only action.
         response = self.client.post(reverse('delete_appointment', args=[self.hb_lead.pk]))
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Appointment.objects.filter(pk=self.hb_lead.pk).exists())
+
+    @override_settings(PLATFORM_OWNER_ACCOUNTS=['root-scoped'])
+    def test_owner_cannot_delete_outside_the_tenant_they_are_viewing(self):
+        """Even for the owner, deleting across tenants is impossible rather than
+        merely forbidden — the tenant lens still scopes it."""
+        get_user_model().objects.create_superuser(
+            username='root-scoped', password='pass12345', email='r@example.com')
+        self.client.login(username='root-scoped', password='pass12345')
+        self.client.post(reverse('switch_tenant'), {'tenant': self.acme.slug})
+        response = self.client.post(
+            reverse('delete_appointment', args=[self.hb_lead.pk]))
         self.assertEqual(response.status_code, 404)
         self.assertTrue(Appointment.objects.filter(pk=self.hb_lead.pk).exists())
 
@@ -2884,3 +2957,239 @@ class BotTimerSwitchTests(TestCase):
         finally:
             ww._pending_batch_timers.pop('263771000222').cancel()
             ww._pending_batches.pop('263771000222', None)
+
+
+class SettingsTabAccessTests(StaffClientTestCase):
+    """The Settings pages are platform configuration (team numbers, calendar
+    credentials, AI keys), not tenant controls — tenant staff neither see the
+    tab nor reach the pages."""
+
+    def test_staff_cannot_reach_settings_pages(self):
+        for name in ('settings', 'calendar_settings', 'ai_settings'):
+            with self.subTest(page=name):
+                response = self.client.get(reverse(name))
+                self.assertIn(response.status_code, (302, 403), name)
+
+    def test_settings_tab_hidden_from_staff_and_shown_to_admin(self):
+        body = self.client.get(reverse('dashboard')).content.decode()
+        self.assertNotIn(reverse('settings'), body)
+
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        body = self.client.get(reverse('dashboard')).content.decode()
+        self.assertIn(reverse('settings'), body)
+
+    def test_admin_can_still_open_settings(self):
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        for name in ('settings', 'calendar_settings', 'ai_settings'):
+            with self.subTest(page=name):
+                self.assertEqual(self.client.get(reverse(name)).status_code, 200)
+
+
+class TenantNotificationEmailTests(TestCase):
+    """Each tenant chooses the inbox its own alerts go to (Profile page →
+    TenantProfile.email_sender); the platform address is on every list."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.user = get_user_model().objects.create_user(
+            username='acme-owner-email', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(
+            user=self.user, tenant=self.acme, role='staff')
+        self.client.force_login(self.user)
+
+    def test_chosen_address_replaces_the_hardcoded_one(self):
+        from .plumber_notifications import (
+            PLATFORM_NOTIFICATION_EMAIL, get_plumber_notification_emails,
+        )
+        # No choice yet: a foreign tenant never inherits Homebase's inbox.
+        self.assertEqual(
+            get_plumber_notification_emails(self.acme),
+            [PLATFORM_NOTIFICATION_EMAIL],
+        )
+        TenantProfile.objects.update_or_create(
+            tenant=self.acme, defaults={'email_sender': 'owner@acme.example'})
+        self.acme.refresh_from_db()
+        self.assertEqual(
+            get_plumber_notification_emails(self.acme),
+            [PLATFORM_NOTIFICATION_EMAIL, 'owner@acme.example'],
+        )
+        # The platform address is never duplicated when a tenant picks it.
+        TenantProfile.objects.update_or_create(
+            tenant=self.acme,
+            defaults={'email_sender': PLATFORM_NOTIFICATION_EMAIL})
+        self.acme.refresh_from_db()
+        self.assertEqual(
+            get_plumber_notification_emails(self.acme),
+            [PLATFORM_NOTIFICATION_EMAIL],
+        )
+
+    def test_platform_and_homebase_keep_the_configured_list(self):
+        from .plumber_notifications import get_plumber_notification_emails
+        for tenant in (None, self.homebase):
+            with self.subTest(tenant=tenant):
+                recipients = get_plumber_notification_emails(tenant)
+                self.assertIn('jones86xi@gmail.com', recipients)
+                self.assertIn('homebsconstruction@gmail.com', recipients)
+
+    def test_profile_page_saves_and_clears_the_address(self):
+        response = self.client.post(
+            reverse('profile'), {'notification_email': 'alerts@acme.example'})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            TenantProfile.objects.get(tenant=self.acme).email_sender,
+            'alerts@acme.example')
+
+        # Blank clears the choice; a malformed address is rejected, not stored.
+        self.client.post(reverse('profile'), {'notification_email': 'not-an-email'})
+        self.assertEqual(
+            TenantProfile.objects.get(tenant=self.acme).email_sender,
+            'alerts@acme.example')
+        self.client.post(reverse('profile'), {'notification_email': ''})
+        self.assertEqual(
+            TenantProfile.objects.get(tenant=self.acme).email_sender, '')
+
+    def test_saving_other_profile_fields_leaves_the_address_alone(self):
+        TenantProfile.objects.update_or_create(
+            tenant=self.acme, defaults={'email_sender': 'alerts@acme.example'})
+        self.client.post(reverse('profile'), {'first_name': 'Blessing'})
+        self.assertEqual(
+            TenantProfile.objects.get(tenant=self.acme).email_sender,
+            'alerts@acme.example')
+
+    def test_alerts_go_to_the_tenants_own_inbox(self):
+        from .plumber_notifications import send_plumber_notification_email
+        TenantProfile.objects.update_or_create(
+            tenant=self.acme, defaults={'email_sender': 'owner@acme.example'})
+        TenantSetting.set_flag('email_sending_enabled', self.acme, True)
+        with patch('bot.plumber_notifications._send_via_brevo',
+                   return_value=True) as brevo:
+            with self.settings(BREVO_API_KEY='x'):
+                send_plumber_notification_email(
+                    'New lead', 'body', tenant=self.acme)
+        recipients = brevo.call_args[0][1]
+        self.assertIn('owner@acme.example', recipients)
+        self.assertNotIn('homebsconstruction@gmail.com', recipients)
+
+
+class InboundEmailIntakeTests(TestCase):
+    """The bot answers email, not just WhatsApp. A reply on a thread we started
+    was already handled; these cover the email that arrives with NO thread
+    reference — a customer writing in cold."""
+
+    def _raw(self, sender='jane@example.com', subject='Quote for a geyser',
+             body='Hi, how much for a 150L geyser in Avondale?', extra_headers=()):
+        headers = [
+            f'From: {sender}',
+            f'Subject: {subject}',
+            'To: team@example.com',
+        ]
+        headers.extend(extra_headers)
+        return ('\r\n'.join(headers) + '\r\n\r\n' + body).encode()
+
+    def _run(self, raws, **opts):
+        """Run the command against a fake IMAP inbox holding `raws`."""
+        from bot.management.commands import process_inbound_emails as mod
+
+        seen = []
+        fake_imap = object()
+        out = StringIO()
+        with patch.object(mod, '_EMAIL_FROM', 'team@example.com'), \
+             patch.object(mod, '_IMAP_PASS', 'secret'), \
+             patch.object(mod, '_connect', return_value=fake_imap), \
+             patch.object(mod, '_fetch_unseen',
+                          return_value=[(str(i).encode(), raw)
+                                        for i, raw in enumerate(raws)]), \
+             patch.object(mod, '_mark_seen',
+                          side_effect=lambda imap, uid: seen.append(uid)), \
+             patch.object(mod, '_classify_intent',
+                          return_value={'intent': 'other', 'date': None}), \
+             patch.object(mod, '_generate_plumbot_email_reply',
+                          return_value='Happy to help — a 150L geyser starts at '
+                                       'US$450 supplied and installed.'), \
+             patch.object(mod, '_send_reply', return_value=True) as send:
+            call_command('process_inbound_emails', stdout=out, **opts)
+        return out.getvalue(), send, seen
+
+    def test_cold_email_creates_a_lead_and_gets_answered(self):
+        output, send, seen = self._run([self._raw()])
+
+        apt = Appointment.objects.get(customer_email='jane@example.com')
+        self.assertEqual(apt.lead_source, 'email')
+        self.assertTrue(apt.phone_number.startswith('email_'))
+        self.assertIn('geyser', apt.project_description.lower())
+        # The customer's turn and the bot's reply are both in the transcript...
+        roles = [m['role'] for m in apt.conversation_history]
+        self.assertEqual(roles, ['user', 'assistant'])
+        # ...and the subject is part of the customer's turn, since on a cold
+        # email the subject often carries the actual request.
+        self.assertIn('Quote for a geyser', apt.conversation_history[0]['content'])
+        # ...and a reply was actually sent.
+        send.assert_called_once()
+        # Freshness fields are stamped, so it does not sort as an ancient lead.
+        self.assertIsNotNone(apt.last_customer_response)
+        self.assertIsNotNone(apt.last_inbound_at)
+        self.assertEqual(len(seen), 1)
+        self.assertIn('NEW email lead', output)
+
+    def test_second_cold_email_reuses_the_same_lead(self):
+        self._run([self._raw()])
+        self._run([self._raw(body='Any update on that geyser?')])
+        self.assertEqual(
+            Appointment.objects.filter(customer_email='jane@example.com').count(), 1)
+
+    def test_email_from_a_known_whatsapp_lead_continues_that_conversation(self):
+        lead = make_lead(7001, customer_name='Known Lead',
+                         customer_email='jane@example.com')
+        self._run([self._raw()])
+        self.assertEqual(
+            Appointment.objects.filter(customer_email='jane@example.com').count(), 1)
+        lead.refresh_from_db()
+        self.assertEqual(len(lead.conversation_history), 2)
+
+    def test_automated_senders_are_never_answered(self):
+        cases = [
+            {'sender': 'no-reply@bank.example'},
+            {'sender': 'mailer-daemon@example.com',
+             'subject': 'Undelivered Mail Returned to Sender'},
+            {'sender': 'jane@example.com', 'subject': 'Automatic reply: Out of office'},
+            {'sender': 'jane@example.com',
+             'extra_headers': ('Auto-Submitted: auto-replied',)},
+            {'sender': 'jane@example.com',
+             'extra_headers': ('List-Id: <news.example.com>',)},
+            # Our own address echoed back must not start a conversation with
+            # ourselves.
+            {'sender': 'team@example.com'},
+        ]
+        for case in cases:
+            with self.subTest(**case):
+                _, send, seen = self._run([self._raw(**case)])
+                send.assert_not_called()
+                self.assertEqual(len(seen), 1)   # still marked read, not retried
+        self.assertFalse(Appointment.objects.exclude(customer_email='').exists())
+
+    def test_dry_run_opens_no_thread(self):
+        _, send, _ = self._run([self._raw()], dry_run=True)
+        send.assert_not_called()
+        self.assertFalse(Appointment.objects.exists())
+
+    def test_email_only_leads_are_never_whatsapped(self):
+        """They have no phone number, so a proactive WhatsApp send would 400."""
+        from bot.management.commands.send_followups import Command as Followups
+        from bot.management.commands.send_reminders import _send_wa
+
+        self._run([self._raw()])
+        apt = Appointment.objects.get(customer_email='jane@example.com')
+        apt.is_lead_active = True
+        apt.status = 'pending'
+        apt.save(update_fields=['is_lead_active', 'status'])
+
+        eligible = Followups()._get_eligible_leads(timezone.now(), force=False)
+        self.assertNotIn(apt.pk, [lead.pk for lead in eligible])
+
+        with patch('bot.whatsapp_cloud_api.get_client_for_tenant') as client:
+            self.assertFalse(_send_wa(apt.phone_number, 'hello'))
+            client.assert_not_called()

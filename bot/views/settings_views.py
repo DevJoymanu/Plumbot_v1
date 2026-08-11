@@ -37,7 +37,9 @@ from ..forms import (
     QuotationForm, QuotationItemFormSet,
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
-from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
+from ..decorators import (
+    staff_required, superuser_required, anonymous_required, StaffRequiredMixin,
+)
 from ..whatsapp_cloud_api import whatsapp_api
 from ..services.clients import (
     deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
@@ -51,7 +53,7 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
-@staff_required
+@superuser_required
 def settings_view(request):
     if request.method == 'POST':
         form = SettingsForm(request.POST)
@@ -71,7 +73,7 @@ def settings_view(request):
     })
 
 
-@staff_required
+@superuser_required
 def calendar_settings_view(request):
     if request.method == 'POST':
         form = CalendarSettingsForm(request.POST)
@@ -95,7 +97,7 @@ def calendar_settings_view(request):
     })
 
 
-@staff_required
+@superuser_required
 def ai_settings_view(request):
     if request.method == 'POST':
         form = AISettingsForm(request.POST)

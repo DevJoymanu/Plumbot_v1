@@ -24,7 +24,12 @@ Flow per incoming email:
   7. Send HTML reply email with contact buttons
   8. Mark email as read (\\Seen)
 
-New emails with no [APT-XXX] tag are logged and skipped (manual handling).
+Emails with no thread reference are NOT skipped: the sender address is matched
+to an existing lead, and when there is no match a new email lead is created
+(phone_number = a synthetic `email_<hash>` key, lead_source='email') so the bot
+answers a customer who writes in cold, exactly as it answers a WhatsApp opener.
+Automated senders (no-reply, bounces, vacation auto-replies, mailing lists) are
+still skipped — replying to those would loop.
 """
 
 import email
@@ -538,6 +543,109 @@ def _generate_plumbot_email_reply(
         )
 
 
+# ── Fresh (unthreaded) emails ─────────────────────────────────────────────────
+
+# A reply to any of these would bounce back or start a loop, so an email from
+# one is read and dropped. Checked against the sender address.
+_AUTOMATED_SENDER_HINTS = (
+    "no-reply", "noreply", "no_reply", "do-not-reply", "donotreply",
+    "mailer-daemon", "postmaster", "bounce", "notifications@", "notification@",
+    "calendar-notification",
+)
+# Bounce / vacation-responder subjects (a human never opens with these).
+_AUTOMATED_SUBJECT_HINTS = (
+    "undelivered mail", "mail delivery", "delivery status notification",
+    "returned mail", "automatic reply", "auto-reply", "autoreply",
+    "out of office", "out-of-office",
+)
+
+
+def _is_automated(msg, sender: str, subject: str) -> bool:
+    """True when this email came from a machine, not a customer.
+
+    Header checks first (RFC 3834 Auto-Submitted, vacation-responder and
+    list-mail headers), then the address and subject. Our own address counts as
+    automated: an alias that echoes our own sends back must never be answered.
+    """
+    auto_submitted = (msg.get("Auto-Submitted", "") or "").strip().lower()
+    if auto_submitted and auto_submitted != "no":
+        return True
+    for header in ("X-Autoreply", "X-Autorespond", "X-Auto-Response-Suppress",
+                   "List-Id", "List-Unsubscribe", "X-Failed-Recipients"):
+        if msg.get(header):
+            return True
+    if (msg.get("Precedence", "") or "").strip().lower() in (
+            "bulk", "list", "auto_reply", "junk"):
+        return True
+
+    addr = (sender or "").strip().lower()
+    if not addr or "@" not in addr:
+        return True
+    if _EMAIL_FROM and addr == _EMAIL_FROM.strip().lower():
+        return True
+    if any(hint in addr for hint in _AUTOMATED_SENDER_HINTS):
+        return True
+
+    subj = (subject or "").strip().lower()
+    return any(hint in subj for hint in _AUTOMATED_SUBJECT_HINTS)
+
+
+def _sender_display_name(msg) -> str:
+    """The human name on the From header ("Jane Moyo" <jane@...>), if any."""
+    raw = _decode_header_value(msg.get("From", ""))
+    name = parseaddr(raw)[0].strip().strip('"').strip()
+    # Some clients put the address in the display slot — that is not a name.
+    if not name or "@" in name:
+        return ""
+    return name[:100]
+
+
+def _email_lead_key(address: str) -> str:
+    """Synthetic phone_number for an email-only lead.
+
+    Deterministic per address, so the same sender can never end up with two lead
+    rows. Mirrors the `quotation_only_` stub convention: a non-WhatsApp key,
+    excluded from every proactive WhatsApp send.
+    """
+    import hashlib
+
+    digest = hashlib.sha1((address or "").strip().lower().encode()).hexdigest()
+    return f"email_{digest[:12]}"
+
+
+def _lead_for_sender(sender: str, display_name: str, subject: str):
+    """Resolve an unthreaded email to a lead. Returns (appointment, created).
+
+    Preference order: a lead that already has this email address (the customer
+    started on WhatsApp and is now emailing), then the synthetic email key from
+    an earlier cold email, then a brand-new email lead. New leads land on the
+    default tenant — an inbound email carries no channel identity to route by,
+    unlike a WhatsApp message with its phone_number_id.
+    """
+    from bot.models import Appointment
+
+    existing = None
+    if sender:
+        existing = (
+            Appointment.objects.filter(customer_email__iexact=sender)
+            .order_by("-updated_at")
+            .first()
+        )
+    if existing is not None:
+        return existing, False
+
+    return Appointment.objects.get_or_create(
+        phone_number=_email_lead_key(sender),
+        defaults={
+            "customer_email": sender,
+            "customer_name": display_name or "",
+            "status": "pending",
+            "lead_source": "email",
+            "project_description": (subject or "")[:200],
+        },
+    )
+
+
 # ── Main command ──────────────────────────────────────────────────────────────
 
 class Command(BaseCommand):
@@ -603,19 +711,33 @@ class Command(BaseCommand):
 
                 out(f"\n  ─ From: {sender} | Subject: {subject[:70]}")
 
-                if not apt_id:
-                    out(f"    SKIP  No appointment reference found — manual handling required")
-                    skipped += 1
-                    _mark_seen(imap, uid)
-                    continue
+                apt = None
+                if apt_id:
+                    try:
+                        apt = Appointment.objects.get(pk=apt_id)
+                    except Appointment.DoesNotExist:
+                        out(f"    Appointment #{apt_id} not found — matching on sender instead")
 
-                try:
-                    apt = Appointment.objects.get(pk=apt_id)
-                except Appointment.DoesNotExist:
-                    out(f"    SKIP  Appointment #{apt_id} not found in DB")
-                    skipped += 1
-                    _mark_seen(imap, uid)
-                    continue
+                # No thread reference (or a dead one): a customer emailing in
+                # cold. Answer it like any other opener rather than leaving it
+                # for manual handling — but never answer a machine.
+                fresh_thread = apt is None
+                if fresh_thread:
+                    if _is_automated(msg, sender, subject):
+                        out("    SKIP  Automated sender / bounce — not answering")
+                        skipped += 1
+                        _mark_seen(imap, uid)
+                        continue
+                    if dry_run:
+                        out(f"    [dry-run] would open an email thread for {sender}")
+                        skipped += 1
+                        _mark_seen(imap, uid)
+                        continue
+                    apt, created = _lead_for_sender(
+                        sender, _sender_display_name(msg), subject)
+                    apt_id = apt.pk
+                    out("    {} → apt #{}".format(
+                        "NEW email lead" if created else "Matched by sender", apt.pk))
 
                 # If the appointment has no email on record (e.g. lead came via
                 # WhatsApp), capture it from the sender so we can reply.
@@ -632,6 +754,20 @@ class Command(BaseCommand):
                     skipped += 1
                     _mark_seen(imap, uid)
                     continue
+
+                if fresh_thread and subject:
+                    # On a cold email the subject often IS the request, so it
+                    # becomes part of the customer's turn, not metadata.
+                    clean = "Subject: {}\n\n{}".format(subject.strip(), clean)
+
+                # An emailed opener is a real inbound response: stamp the same
+                # freshness fields WhatsApp sets, or the lead sorts as ancient on
+                # every dashboard and the follow-up crons misjudge it.
+                if fresh_thread and not dry_run:
+                    _now = timezone.now()
+                    apt.last_customer_response = _now
+                    apt.last_inbound_at = _now
+                    apt.save(update_fields=["last_customer_response", "last_inbound_at"])
 
                 out(f"    APT #{apt_id} | Customer: {apt.customer_name or sender}")
                 out(f"    Body: {clean[:100]}{'…' if len(clean) > 100 else ''}")

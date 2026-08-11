@@ -293,6 +293,8 @@
         </div>
       </div>
     </a>
+    {# Deleting a conversation is irreversible — the platform owner only. #}
+    {% if is_platform_owner %}
     <form class="cv-del" method="post" action="{% url 'delete_appointment' appointment.pk %}"
           onsubmit="return confirm('Delete {{ lead_label|escapejs }} permanently? The conversation, quotations and follow-ups go with it. This cannot be undone.');">
       {% csrf_token %}
@@ -302,6 +304,7 @@
         <i class="fas fa-trash-can"></i>
       </button>
     </form>
+    {% endif %}
     </div>
     {% endwith %}
     {% empty %}

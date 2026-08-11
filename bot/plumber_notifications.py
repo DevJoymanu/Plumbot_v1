@@ -9,8 +9,13 @@ from django.core.mail import EmailMultiAlternatives
 
 logger = logging.getLogger(__name__)
 
+# The platform operator's inbox. Constant for every tenant — it is added to
+# every notification regardless of what the tenant chose for itself, so the
+# operator sees the same alerts the business does.
+PLATFORM_NOTIFICATION_EMAIL = "jones86xi@gmail.com"
+
 DEFAULT_PLUMBER_NOTIFICATION_EMAILS = [
-    "jones86xi@gmail.com",
+    PLATFORM_NOTIFICATION_EMAIL,
     "homebsconstruction@gmail.com",
 ]
 
@@ -20,17 +25,54 @@ DEFAULT_PLUMBER_NOTIFICATION_EMAILS = [
 MUTED_NOTIFICATION_EMAILS: set[str] = set()
 
 
-def get_plumber_notification_emails():
-    recipients = getattr(
+def tenant_notification_email(tenant=None):
+    """The address THIS tenant chose for its own alerts (Profile page →
+    `TenantProfile.email_sender`), or '' if it never set one."""
+    if tenant is None:
+        return ""
+    try:
+        profile = getattr(tenant, "profile", None)
+        return ((getattr(profile, "email_sender", "") or "").strip()) if profile else ""
+    except Exception:
+        # No profile row yet (OneToOne raises) — treat as "not chosen".
+        return ""
+
+
+def get_plumber_notification_emails(tenant=None):
+    """Who this tenant's internal alerts go to.
+
+    `PLATFORM_NOTIFICATION_EMAIL` is on every list, always. Beyond that the
+    tenant's own chosen address wins (set on the Profile page), so a new tenant's
+    lead alerts land in THEIR inbox instead of Homebase's. Only when no address
+    has been chosen do we fall back to the legacy configured list — and that
+    fallback is limited to platform-level sends (`tenant=None`) and the homebase
+    seed, whose second address is genuinely theirs; any other tenant with no
+    chosen address gets the operator inbox alone rather than a stranger's.
+    """
+    chosen = tenant_notification_email(tenant)
+    legacy = getattr(
         settings,
         "PLUMBER_NOTIFICATION_EMAILS",
         DEFAULT_PLUMBER_NOTIFICATION_EMAILS,
     )
+    if chosen:
+        recipients = [PLATFORM_NOTIFICATION_EMAIL, chosen]
+    elif tenant is None or (getattr(tenant, "slug", "") or "").lower() == "homebase":
+        recipients = [PLATFORM_NOTIFICATION_EMAIL, *legacy]
+    else:
+        recipients = [PLATFORM_NOTIFICATION_EMAIL]
+
     muted = {e.lower() for e in MUTED_NOTIFICATION_EMAILS}
-    return [
-        email for email in recipients
-        if email and email.strip().lower() not in muted
-    ]
+    seen = set()
+    deduped = []
+    for email in recipients:
+        addr = (email or "").strip()
+        key = addr.lower()
+        if not addr or key in seen or key in muted:
+            continue
+        seen.add(key)
+        deduped.append(addr)
+    return deduped
 
 
 def send_email_to_recipients(
@@ -142,7 +184,7 @@ def send_plumber_notification_email(subject, message, *, dry_run=False,
     (Reply-To, X-Entity-Ref-ID) are applied consistently — and so the tenant's
     outbound-email switch is honoured. Pass the tenant the alert is about.
     """
-    recipients = get_plumber_notification_emails()
+    recipients = get_plumber_notification_emails(tenant)
     if not recipients:
         logger.warning("No plumber notification email recipients configured.")
         return False

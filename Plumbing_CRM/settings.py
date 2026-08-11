@@ -121,6 +121,20 @@ PLUMBER_NOTIFICATION_EMAILS = [
 
 SITE_URL = os.environ.get('SITE_URL', '').rstrip('/')
 
+# The platform owner account(s) — the ONLY logins allowed to delete past
+# conversations (bot/decorators.py owner_required). Superuser alone is not
+# enough: a second admin account must not be able to destroy transcripts.
+# Comma-separated usernames or email addresses, matched case-insensitively.
+# An empty value falls back to "any superuser" so a mis-set env var can never
+# lock the owner out of their own platform.
+PLATFORM_OWNER_ACCOUNTS = [
+    entry.strip()
+    for entry in os.environ.get(
+        'PLATFORM_OWNER_ACCOUNTS', 'adminJ,jones86xi@gmail.com'
+    ).split(',')
+    if entry.strip()
+]
+
 # DeepSeek API (replacing OpenAI)
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 # Model is env-overridable so it can be switched without a redeploy. Note:

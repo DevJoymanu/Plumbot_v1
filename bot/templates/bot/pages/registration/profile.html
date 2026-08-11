@@ -49,6 +49,42 @@
                         </div>
                     </div>
 
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="card-title mb-0"><i class="fas fa-envelope me-2"></i>Business notification email</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if notification_email_editable %}
+                            <form method="post">
+                                {% csrf_token %}
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold" for="id_notification_email">Send alerts to</label>
+                                    <input type="email" name="notification_email" id="id_notification_email"
+                                           class="form-control" value="{{ notification_email }}"
+                                           placeholder="you@yourbusiness.com">
+                                    <small class="text-muted">
+                                        Your choice of inbox for new-lead alerts, reminders and follow-up
+                                        notices{% if tenant %} for {{ tenant.name }}{% endif %}. Leave blank to use the default.
+                                    </small>
+                                </div>
+                                <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save email</button>
+                            </form>
+                            <hr>
+                            <p class="mb-1 fw-bold small">Alerts currently go to:</p>
+                            <ul class="text-muted small mb-0">
+                                {% for address in notification_recipients %}
+                                <li>{{ address }}{% if address == platform_notification_email %} <span class="badge bg-secondary">platform</span>{% endif %}</li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <p class="text-muted small mb-0">
+                                No business is linked to your account yet, so there is no notification
+                                email to set. Contact your administrator.
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+
                     <div class="card shadow-sm">
                         <div class="card-header bg-primary text-white">
                             <h5 class="card-title mb-0">

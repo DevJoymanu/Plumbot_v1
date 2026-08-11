@@ -77,10 +77,13 @@
             </select>
         </form>
         {% endif %}
+        {# Settings is platform configuration, not a tenant control — admins only. #}
+        {% if user.is_superuser %}
         <a href="{% url 'settings' %}" class="pb-sidenav__item {% if active_nav == 'settings' %}active{% endif %}">
             <i class="fas fa-cog nav-icon"></i>
             Settings
         </a>
+        {% endif %}
         <a href="{% url 'profile' %}" class="pb-sidenav__item {% if active_nav == 'profile' %}active{% endif %}">
             <i class="fas fa-user-circle nav-icon"></i>
             Profile

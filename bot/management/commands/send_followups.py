@@ -781,6 +781,10 @@ class Command(BaseCommand):
             # to them 400s. Never proactively message them. Mirrors the same
             # exclusion already applied in quotation_templates.py.
             .exclude(phone_number__startswith='quotation_only_')
+            # Email-only leads (process_inbound_emails) have the same kind of
+            # synthetic key and no WhatsApp number at all — they are followed up
+            # by email, never by a WhatsApp send that would 400.
+            .exclude(phone_number__startswith='email_')
             .exclude(followup_stage='completed')
             .exclude(last_customer_response__gte=response_window)
             .exclude(internal_notes__contains='[DELAY_SIGNAL]')

@@ -45,7 +45,10 @@ from ..forms import (
     QuotationForm, QuotationItemFormSet,
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
-from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
+from ..decorators import (
+    staff_required, superuser_required, owner_required, anonymous_required,
+    StaffRequiredMixin,
+)
 from ..whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 from ..services.clients import (
     deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
@@ -1030,16 +1033,20 @@ def cancel_appointment(request, pk):
     return _detail_redirect(request, appointment.pk)
 
 
-@staff_required
+@owner_required
 @require_POST
 def delete_appointment(request, pk):
-    """Permanently delete a lead from the dashboard.
+    """Permanently delete a lead from the dashboard. Platform OWNER only.
 
     Irreversible: every child record hangs off the appointment with
     on_delete=CASCADE (conversation messages, quotations, scheduled follow-ups
-    and reminders, notes, jobs), so they go with it. POST-only so a crawled or
-    prefetched link can never destroy a lead, and tenant-scoped like every other
-    action — a foreign lead 404s rather than 403s.
+    and reminders, notes, jobs), so they go with it. Because it destroys the
+    conversation history with no undo, it is restricted to the owner account
+    (settings.PLATFORM_OWNER_ACCOUNTS) — not merely to superusers, so a second
+    admin login cannot wipe transcripts either. The UI control is hidden from
+    everyone else (see conversations.html / appointment_detail.html). POST-only so a
+    crawled or prefetched link can never destroy a lead, and tenant-scoped like
+    every other action — a foreign lead 404s rather than 403s.
     """
     appointment = get_object_or_404(
         Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)

@@ -32,10 +32,15 @@ def plumbot_shell(request):
     match = getattr(request, "resolver_match", None)
     url_name = getattr(match, "url_name", "") or ""
 
+    from .decorators import is_platform_owner
+
     counts = {
         "active_nav": NAV_MAP.get(url_name, ""),
         "hot_lead_count": 0,
         "pending_followup_count": 0,
+        # Templates gate the delete-conversation control on this, matching
+        # @owner_required on the view. Superuser is deliberately NOT enough.
+        "is_platform_owner": is_platform_owner(getattr(request, "user", None)),
     }
 
     try:
