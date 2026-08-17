@@ -180,6 +180,23 @@ SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
 EMAIL_REPLY_TO = os.environ.get('EMAIL_REPLY_TO', _from_address)
 EMAIL_DOMAIN = os.environ.get('EMAIL_DOMAIN', 'homebaseplumbers.co.zw')
 
+# Platform sending domain. INTERNAL notifications (the ones that go to the
+# operator and to the tenant's own inbox) are sent as <tenant-slug>@ this
+# domain, so every tenant's alerts are visibly theirs while the platform owns
+# the sending identity.
+#
+# ONE authenticated domain, per-tenant local part -- deliberately not
+# <slug>.homexmedia.com. Every distinct domain must be separately
+# SPF/DKIM-authenticated with the mail provider, and provider plans cap how
+# many you may authenticate; a per-tenant subdomain would need a new
+# authenticated domain (and new DNS records) for every tenant onboarded.
+# This shape needs exactly one set of records, forever.
+#
+# CUSTOMER-facing mail is sent from the tenant's OWN domain address
+# (TenantProfile.customer_from_email) and only falls back to this sender when
+# the tenant has not configured one.
+PLATFORM_EMAIL_DOMAIN = os.environ.get('PLATFORM_EMAIL_DOMAIN', 'notifications.homexmedia.com')
+
 # Email transport over HTTP (port 443). Railway blocks all outbound SMTP egress,
 # so an HTTPS send API is the only path that delivers from this host; the SMTP
 # block above is a fallback for environments that permit it. Transport

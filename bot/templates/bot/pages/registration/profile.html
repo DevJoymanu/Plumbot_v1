@@ -67,9 +67,24 @@
                                         notices{% if tenant %} for {{ tenant.name }}{% endif %}. Leave blank to use the default.
                                     </small>
                                 </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold" for="id_customer_from_email">Send customer emails from</label>
+                                    <input type="email" name="customer_from_email" id="id_customer_from_email"
+                                           class="form-control" value="{{ customer_from_email }}"
+                                           placeholder="info@yourbusiness.com">
+                                    <small class="text-muted">
+                                        The address your own customers see on quotes, confirmations and
+                                        reminders. Use an address on your business domain. Leave blank and
+                                        we send from {{ platform_sender }} instead.
+                                    </small>
+                                </div>
                                 <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save email</button>
                             </form>
                             <hr>
+                            <p class="mb-1 fw-bold small">Your customers see mail from:</p>
+                            <ul class="text-muted small mb-3">
+                                <li>{{ customer_sender }}</li>
+                            </ul>
                             <p class="mb-1 fw-bold small">Alerts currently go to:</p>
                             <ul class="text-muted small mb-0">
                                 {% for address in notification_recipients %}

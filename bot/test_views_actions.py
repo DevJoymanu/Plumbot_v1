@@ -3075,6 +3075,63 @@ class TenantNotificationEmailTests(TestCase):
         self.assertNotIn('homebsconstruction@gmail.com', recipients)
 
 
+class SenderIdentityTests(TestCase):
+    """Two sending identities per tenant: internal alerts (operator + the
+    tenant's own inbox) leave from the platform subdomain
+    <slug>@notifications.homexmedia.com, while mail to the tenant's CLIENTS
+    leaves from the tenant's own domain address."""
+
+    def setUp(self):
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        TenantSetting.set_flag('email_sending_enabled', self.acme, True)
+
+    def _sent(self, **kwargs):
+        from .plumber_notifications import send_email_to_recipients
+        with patch('bot.plumber_notifications._send_via_brevo',
+                   return_value=True) as brevo:
+            with self.settings(BREVO_API_KEY='x'):
+                send_email_to_recipients(
+                    ['client@example.com'], 'Subject', 'body',
+                    tenant=self.acme, **kwargs)
+        return brevo.call_args.kwargs
+
+    def test_internal_alerts_send_from_the_platform_subdomain(self):
+        from .plumber_notifications import send_plumber_notification_email
+        with patch('bot.plumber_notifications._send_via_brevo',
+                   return_value=True) as brevo:
+            with self.settings(BREVO_API_KEY='x'):
+                send_plumber_notification_email(
+                    'New lead', 'body', tenant=self.acme)
+        self.assertIn(
+            'acme@notifications.homexmedia.com',
+            brevo.call_args.kwargs['from_email'])
+
+    def test_customer_mail_sends_from_the_tenants_own_domain(self):
+        TenantProfile.objects.update_or_create(
+            tenant=self.acme,
+            defaults={'customer_from_email': 'info@acmeplumbing.co.zw',
+                      'email_from_name': 'Acme Plumbing'})
+        self.acme.refresh_from_db()
+        kwargs = self._sent()
+        self.assertEqual(
+            kwargs['from_email'], 'Acme Plumbing <info@acmeplumbing.co.zw>')
+        # Reply-To follows the From identity — a customer's reply must reach
+        # the tenant, never the platform's global inbox.
+        self.assertEqual(kwargs['reply_to'], 'info@acmeplumbing.co.zw')
+
+    def test_customer_mail_falls_back_to_the_platform_subdomain(self):
+        kwargs = self._sent()
+        self.assertIn('acme@notifications.homexmedia.com', kwargs['from_email'])
+
+    def test_customer_mail_never_uses_another_tenants_domain(self):
+        TenantProfile.objects.update_or_create(
+            tenant=self.acme,
+            defaults={'customer_from_email': 'info@acmeplumbing.co.zw'})
+        self.acme.refresh_from_db()
+        self.assertNotIn(
+            'homebaseplumbers', self._sent()['from_email'])
+
+
 class InboundEmailIntakeTests(TestCase):
     """The bot answers email, not just WhatsApp. A reply on a thread we started
     was already handled; these cover the email that arrives with NO thread

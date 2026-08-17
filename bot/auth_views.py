@@ -274,6 +274,26 @@ def profile_view(request):
                     user.username, profile.tenant.slug, chosen or '(cleared)',
                 )
 
+            # The address this business's OWN customers see mail from. Blank
+            # falls back to the platform subdomain sender. Saved on the same
+            # POST as the alerts inbox — the two are different things (a
+            # sending identity vs a recipient inbox), so they are separate
+            # fields.
+            sender = (request.POST.get('customer_from_email') or '').strip()
+            if sender:
+                try:
+                    validate_email(sender)
+                except ValidationError:
+                    messages.error(request, f'"{sender}" is not a valid email address.')
+                    return redirect('profile')
+            if sender != profile.customer_from_email:
+                profile.customer_from_email = sender
+                profile.save(update_fields=['customer_from_email'])
+                logger.info(
+                    "User %s set tenant %s customer-facing sender to %s",
+                    user.username, profile.tenant.slug, sender or '(cleared)',
+                )
+
         # Simple profile update
         user.first_name = request.POST.get('first_name', user.first_name)
         user.last_name = request.POST.get('last_name', user.last_name)
@@ -286,6 +306,7 @@ def profile_view(request):
 
     from .plumber_notifications import (
         PLATFORM_NOTIFICATION_EMAIL, get_plumber_notification_emails,
+        tenant_customer_from_email, tenant_platform_from_email,
     )
     tenant = getattr(request, 'tenant', None)
     profile = _tenant_profile(request)
@@ -297,6 +318,9 @@ def profile_view(request):
         'notification_email_editable': profile is not None,
         'platform_notification_email': PLATFORM_NOTIFICATION_EMAIL,
         'notification_recipients': get_plumber_notification_emails(tenant),
+        'customer_from_email': getattr(profile, 'customer_from_email', '') if profile else '',
+        'customer_sender': tenant_customer_from_email(tenant),
+        'platform_sender': tenant_platform_from_email(tenant),
     }
 
     return render(request, 'bot/pages/registration/profile.html', context)

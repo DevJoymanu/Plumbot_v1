@@ -228,7 +228,15 @@ class TenantProfile(models.Model):
     licensed_claim_enabled = models.BooleanField(default=False)
     # email
     email_from_name = models.CharField(max_length=100, blank=True, default='')
+    # Where this tenant's OWN internal alerts are delivered (a recipient inbox,
+    # not a sending identity) — see get_plumber_notification_emails.
     email_sender = models.EmailField(blank=True, default='')
+    # The address customer-facing mail is sent FROM: the tenant's own domain
+    # (e.g. info@acmeplumbing.co.zw), so their clients only ever see the
+    # tenant's brand. Blank falls back to the platform subdomain sender
+    # (notifications@<slug>.homexmedia.com) — see
+    # plumber_notifications.tenant_customer_from_email.
+    customer_from_email = models.EmailField(blank=True, default='')
 
     def __str__(self):
         return f"Profile · {self.tenant.slug}"

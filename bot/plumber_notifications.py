@@ -38,6 +38,67 @@ def tenant_notification_email(tenant=None):
         return ""
 
 
+def _tenant_profile(tenant):
+    if tenant is None:
+        return None
+    try:
+        return getattr(tenant, "profile", None)
+    except Exception:
+        # No profile row yet (OneToOne raises).
+        return None
+
+
+def _format_sender(address, display_name=None):
+    """'Name <addr>' when we have a name, else the bare address."""
+    if not address:
+        return ""
+    return f"{display_name} <{address}>" if display_name else address
+
+
+def tenant_platform_from_email(tenant=None):
+    """The PLATFORM sending identity for this tenant:
+    <tenant-slug>@notifications.homexmedia.com.
+
+    Used for internal notifications — the mail that goes to the operator and to
+    the tenant's own inbox. The platform owns this domain, so these always
+    deliver regardless of what (if anything) the tenant has set up on their own
+    domain. Platform-level mail with no tenant keeps DEFAULT_FROM_EMAIL.
+
+    One shared domain with a per-tenant local part, NOT a per-tenant subdomain:
+    each distinct domain needs its own SPF/DKIM records and consumes one of the
+    provider's authenticated-domain slots, so a subdomain-per-tenant shape would
+    add DNS work and a plan limit to every onboarding. See settings.
+    """
+    slug = (getattr(tenant, "slug", "") or "").strip().lower()
+    if not slug:
+        return getattr(settings, "DEFAULT_FROM_EMAIL", "") or ""
+    domain = getattr(settings, "PLATFORM_EMAIL_DOMAIN", "notifications.homexmedia.com")
+    profile = _tenant_profile(tenant)
+    display = (getattr(profile, "email_from_name", "") or "").strip() or (
+        getattr(tenant, "name", "") or ""
+    ).strip() or None
+    return _format_sender(f"{slug}@{domain}", display)
+
+
+def tenant_customer_from_email(tenant=None):
+    """The sending identity for mail to the TENANT'S CLIENTS: the tenant's own
+    domain address (`TenantProfile.customer_from_email`), so their customers
+    only ever see the tenant's brand.
+
+    Falls back to the tenant's platform subdomain sender when they have not
+    configured one — always deliverable, still tenant-branded by display name —
+    and to DEFAULT_FROM_EMAIL for platform mail that belongs to no tenant.
+    """
+    profile = _tenant_profile(tenant)
+    own = (getattr(profile, "customer_from_email", "") or "").strip()
+    if own:
+        display = (getattr(profile, "email_from_name", "") or "").strip() or (
+            getattr(tenant, "name", "") or ""
+        ).strip() or None
+        return _format_sender(own, display)
+    return tenant_platform_from_email(tenant)
+
+
 def get_plumber_notification_emails(tenant=None):
     """Who this tenant's internal alerts go to.
 
@@ -78,7 +139,7 @@ def get_plumber_notification_emails(tenant=None):
 def send_email_to_recipients(
     recipients, subject, message, *, dry_run=False,
     html_message=None, attachment=None, attachment_name="attachment.pdf",
-    from_name=None, message_id=None, tenant=None,
+    from_name=None, message_id=None, tenant=None, from_email=None,
 ):
     """
     Send email to an explicit list of recipients via the configured SMTP
@@ -86,6 +147,11 @@ def send_email_to_recipients(
 
     attachment: bytes object (e.g. PDF) to attach, or None.
     attachment_name: filename for the attachment.
+    from_email: explicit From identity ('Name <addr>' or a bare address).
+        Internal notifications pass the tenant's platform subdomain sender; every
+        other caller leaves it None and gets the CUSTOMER identity — the tenant's
+        own domain address — resolved here, so the tenant's clients never see a
+        platform address.
     tenant: the tenant this mail belongs to. Every tenant-scoped send passes it,
         and the tenant's outbound-email switch is honoured here — this is the one
         choke point all mail goes through, so the gate cannot be sidestepped by a
@@ -110,6 +176,19 @@ def send_email_to_recipients(
         )
         return True
 
+    # Sender identity. Explicit `from_email` wins (internal alerts pass the
+    # platform subdomain); otherwise this is customer-facing mail and goes out
+    # from the tenant's own domain.
+    from_email = from_email or tenant_customer_from_email(tenant)
+    _, from_addr_only = parseaddr(from_email or "")
+    # Reply-To must stay on the same identity as From — a tenant-scoped send
+    # replying to the platform's global inbox would route a customer's reply to
+    # the wrong business. Only unscoped platform mail uses EMAIL_REPLY_TO.
+    if tenant is not None and from_addr_only:
+        reply_to = from_addr_only
+    else:
+        reply_to = getattr(settings, "EMAIL_REPLY_TO", None) or from_addr_only
+
     # Primary transport: Brevo HTTP API (port 443). Railway blocks all outbound
     # SMTP, so an HTTPS API is the only path that delivers from production.
     # Precedence: Brevo → SendGrid (legacy fallback) → Django SMTP.
@@ -119,7 +198,7 @@ def send_email_to_recipients(
             brevo_api_key, recipients, subject, message,
             html_message=html_message, attachment=attachment,
             attachment_name=attachment_name, from_name=from_name,
-            message_id=message_id,
+            message_id=message_id, from_email=from_email, reply_to=reply_to,
         )
 
     sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
@@ -128,29 +207,20 @@ def send_email_to_recipients(
             sendgrid_api_key, recipients, subject, message,
             html_message=html_message, attachment=attachment,
             attachment_name=attachment_name, from_name=from_name,
-            message_id=message_id,
+            message_id=message_id, from_email=from_email, reply_to=reply_to,
         )
 
     try:
-        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
-        if from_name:
-            _, addr = parseaddr(from_email or "")
-            from_email = f"{from_name} <{addr}>" if addr else from_email
+        if from_name and from_addr_only:
+            from_email = f"{from_name} <{from_addr_only}>"
 
         # Reply-To routes replies to a real inbox (and aligns DMARC for
         # Gmail's Primary-routing heuristic). Falls back to the From address
         # so we never send without one.
-        _, from_addr_only = parseaddr(from_email or "")
-        reply_to_raw = (
-            getattr(settings, "EMAIL_REPLY_TO", None)
-            or from_addr_only
-            or from_email
-        )
         reply_to_list = None
-        if reply_to_raw:
-            _, reply_to_addr = parseaddr(reply_to_raw)
-            if reply_to_addr:
-                reply_to_list = [reply_to_addr]
+        _, reply_to_addr = parseaddr(reply_to or from_email or "")
+        if reply_to_addr:
+            reply_to_list = [reply_to_addr]
 
         msg = EmailMultiAlternatives(
             subject, message, from_email, recipients,
@@ -194,6 +264,9 @@ def send_plumber_notification_email(subject, message, *, dry_run=False,
         dry_run=dry_run,
         html_message=html_message,
         tenant=tenant,
+        # Internal alerts (operator + the tenant's own inbox) always send from
+        # the platform subdomain, never the tenant's customer-facing domain.
+        from_email=tenant_platform_from_email(tenant),
     )
 
 
@@ -255,7 +328,7 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
 def _send_via_brevo(
     api_key, recipients, subject, message, *, html_message=None,
     attachment=None, attachment_name="attachment.pdf", from_name=None,
-    message_id=None,
+    message_id=None, from_email=None, reply_to=None,
 ):
     """
     Send via the Brevo (ex-Sendinblue) transactional API over HTTPS (port 443).
@@ -269,8 +342,11 @@ def _send_via_brevo(
     free plan does not rewrite links for click-tracking, so tel:/wa.me links stay
     clean without extra settings.
     """
+    # The caller's resolved identity wins — it carries the per-tenant sending
+    # domain. The configured globals are only the platform-mail fallback.
     from_raw = (
-        getattr(settings, "BREVO_FROM_EMAIL", None)
+        from_email
+        or getattr(settings, "BREVO_FROM_EMAIL", None)
         or getattr(settings, "DEFAULT_FROM_EMAIL", None)
         or ""
     )
@@ -295,7 +371,8 @@ def _send_via_brevo(
     # Reply-To: route replies to a real inbox and align DMARC. Mirrors the
     # SendGrid/SMTP EMAIL_REPLY_TO → from-address fallback.
     reply_to_raw = (
-        getattr(settings, "EMAIL_REPLY_TO", None)
+        reply_to
+        or getattr(settings, "EMAIL_REPLY_TO", None)
         or parsed_email
         or from_raw
     )
@@ -347,7 +424,7 @@ def _send_via_brevo(
 def _send_via_sendgrid(
     api_key, recipients, subject, message, *, html_message=None,
     attachment=None, attachment_name="attachment.pdf", from_name=None,
-    message_id=None,
+    message_id=None, from_email=None, reply_to=None,
 ):
     """
     Send via the SendGrid v3 HTTP API over HTTPS (port 443).
@@ -365,8 +442,11 @@ def _send_via_sendgrid(
     if not content:
         content = [{"type": "text/plain", "value": "(no content)"}]
 
+    # The caller's resolved identity wins — it carries the per-tenant sending
+    # domain. The configured globals are only the platform-mail fallback.
     from_raw = (
-        getattr(settings, "SENDGRID_FROM_EMAIL", None)
+        from_email
+        or getattr(settings, "SENDGRID_FROM_EMAIL", None)
         or getattr(settings, "DEFAULT_FROM_EMAIL", None)
         or ""
     )
@@ -388,7 +468,8 @@ def _send_via_sendgrid(
     # Reply-To: route replies to a real inbox and align DMARC. Mirrors the
     # SMTP path's EMAIL_REPLY_TO → from-address fallback.
     reply_to_raw = (
-        getattr(settings, "EMAIL_REPLY_TO", None)
+        reply_to
+        or getattr(settings, "EMAIL_REPLY_TO", None)
         or parsed_email
         or from_raw
     )

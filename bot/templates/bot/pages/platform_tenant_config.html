@@ -198,7 +198,8 @@
           <div><div class="cfg-def__k">Hours</div><div class="cfg-def__v {% if not cfg.hours_sentence %}is-empty{% endif %}">{{ cfg.hours_sentence|default:"—" }}</div></div>
           <div><div class="cfg-def__k">Currency</div><div class="cfg-def__v">{{ currency }}</div></div>
           <div><div class="cfg-def__k">Licensed claim</div><div class="cfg-def__v">{% if profile.licensed_claim_enabled %}Enabled{% else %}<span class="is-empty">Off</span>{% endif %}</div></div>
-          <div><div class="cfg-def__k">Email sender</div><div class="cfg-def__v {% if not profile.email_sender %}is-empty{% endif %}">{{ profile.email_from_name|default:"—" }}{% if profile.email_sender %} · {{ profile.email_sender }}{% endif %}</div></div>
+          <div><div class="cfg-def__k">Customer-facing sender</div><div class="cfg-def__v {% if not profile.customer_from_email %}is-empty{% endif %}">{{ profile.customer_from_email|default:"platform subdomain" }}</div></div>
+          <div><div class="cfg-def__k">Alerts inbox</div><div class="cfg-def__v {% if not profile.email_sender %}is-empty{% endif %}">{{ profile.email_from_name|default:"—" }}{% if profile.email_sender %} · {{ profile.email_sender }}{% endif %}</div></div>
         </div>
         <div class="cfg-subgroup">
           <div>

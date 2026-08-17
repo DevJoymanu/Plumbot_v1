@@ -737,7 +737,18 @@ class TenantProfileForm(forms.ModelForm):
             'location_area', 'location_city', 'location_line',
             'timezone_name', 'currency',
             'licensed_claim_enabled', 'email_from_name', 'email_sender',
+            'customer_from_email',
         ]
+        labels = {
+            'email_sender': 'Alerts inbox (this business receives here)',
+            'customer_from_email': 'Customer-facing sender (their clients see this)',
+        }
+        help_texts = {
+            'customer_from_email': (
+                'An address on their own business domain. Blank sends customer '
+                'mail from their platform subdomain instead.'
+            ),
+        }
 
 
 def _profile_structured_ctx(profile):
