@@ -29,6 +29,9 @@
   /* Structured profile blocks (replace the raw JSON textareas) */
   .cfg-subblock { margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(0,101,145,0.08); }
   .cfg-subhead { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; font-weight: 600; color: var(--color-primary); margin-bottom: 14px; }
+  .cfg-defs-mini { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px 22px; }
+  .cfg-subhead-k { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; color: var(--color-muted); margin-bottom: 6px; }
+  .cfg-preview { font-size: 13.5px; color: var(--color-text); word-break: break-word; }
   .cfg-mini-note { font-size: 12px; color: var(--color-muted); margin: 12px 0 0; }
   .cfg-toggle { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; color: var(--color-text-2); cursor: pointer; }
   .cfg-toggle input { width: auto !important; min-height: 0 !important; }
@@ -137,10 +140,31 @@
           <div class="form-group">
             <label for="{{ field.id_for_label }}">{{ field.label }}</label>
             {{ field }}
+            {% if field.help_text %}<small class="cfg-mini-note">{{ field.help_text }}</small>{% endif %}
             {% for error in field.errors %}<small>{{ error }}</small>{% endfor %}
           </div>
           {% endif %}
         {% endfor %}
+      </div>
+
+      <div class="cfg-subblock">
+        <div class="cfg-subhead">Email identity — preview</div>
+        <div class="cfg-defs-mini">
+          <div>
+            <div class="cfg-subhead-k">Their customers see mail from</div>
+            <div class="cfg-preview" id="preview-customer-sender" data-fallback="{{ platform_sender }}" data-tenant="{{ tenant.name }}">{{ customer_sender|default:"—" }}</div>
+          </div>
+          <div>
+            <div class="cfg-subhead-k">Internal alerts sender (platform domain)</div>
+            <div class="cfg-preview">{{ platform_sender|default:"—" }}</div>
+          </div>
+          <div>
+            <div class="cfg-subhead-k">Alerts go to</div>
+            <div class="cfg-preview" id="preview-alerts" data-platform="{% for a in alert_bcc %}{{ a }}{% endfor %}">{% for a in alert_recipients %}{{ a }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</div>
+          </div>
+        </div>
+        <p class="cfg-mini-note">Updates as you type; it becomes real once you save. A blank
+          customer-facing sender falls back to the platform address above.</p>
       </div>
 
       <div class="cfg-subblock">
@@ -301,6 +325,31 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('.parts-editor').forEach(initPartsEditor);
+
+  // Email identity — mirror the server-side resolution live as the owner types
+  // (blank customer sender falls back to the platform address).
+  const senderOut = document.getElementById('preview-customer-sender');
+  const alertsOut = document.getElementById('preview-alerts');
+  const fromField = document.getElementById('id_customer_from_email');
+  const nameField = document.getElementById('id_email_from_name');
+  const inboxField = document.getElementById('id_email_sender');
+  function renderEmailPreview() {
+    if (senderOut) {
+      const addr = fromField ? fromField.value.trim() : '';
+      const display = ((nameField && nameField.value.trim()) || senderOut.dataset.tenant || '').trim();
+      senderOut.textContent = addr
+        ? (display ? display + ' <' + addr + '>' : addr)
+        : (senderOut.dataset.fallback || '—');
+    }
+    if (alertsOut) {
+      const inbox = inboxField ? inboxField.value.trim() : '';
+      alertsOut.textContent = inbox || alertsOut.dataset.platform || '—';
+    }
+  }
+  [fromField, nameField, inboxField].forEach(function (f) {
+    if (f) f.addEventListener('input', renderEmailPreview);
+  });
+  renderEmailPreview();
 
   // Business hours — day toggle pills reflect their checkbox.
   document.querySelectorAll('.cfg-day input').forEach(function (inp) {

@@ -88,7 +88,7 @@
                             <p class="mb-1 fw-bold small">Alerts currently go to:</p>
                             <ul class="text-muted small mb-0">
                                 {% for address in notification_recipients %}
-                                <li>{{ address }}{% if address == platform_notification_email %} <span class="badge bg-secondary">platform</span>{% endif %}</li>
+                                <li>{{ address }}</li>
                                 {% endfor %}
                             </ul>
                             {% else %}

@@ -55,6 +55,7 @@
   .cfg-def__v.is-empty { color: var(--color-outline-variant); font-weight: 400; }
   .cfg-subgroup { margin-top: 20px; padding-top: 18px; border-top: 1px solid rgba(0,101,145,0.06); display: flex; flex-direction: column; gap: 14px; }
   .cfg-subgroup__k { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; color: var(--color-muted); margin-bottom: 8px; }
+  .cfg-mini-note { font-size: 12px; color: var(--color-muted); margin: 6px 0 0; }
   .cfg-tagrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .cfg-tag { font-size: 12px; background: var(--color-surface-low); border: 1px solid rgba(0,101,145,0.08); border-radius: var(--radius-pill); padding: 4px 12px; color: var(--color-text-2); }
   .cfg-tag--muted { color: var(--color-outline-variant); }
@@ -200,6 +201,27 @@
           <div><div class="cfg-def__k">Licensed claim</div><div class="cfg-def__v">{% if profile.licensed_claim_enabled %}Enabled{% else %}<span class="is-empty">Off</span>{% endif %}</div></div>
           <div><div class="cfg-def__k">Customer-facing sender</div><div class="cfg-def__v {% if not profile.customer_from_email %}is-empty{% endif %}">{{ profile.customer_from_email|default:"platform subdomain" }}</div></div>
           <div><div class="cfg-def__k">Alerts inbox</div><div class="cfg-def__v {% if not profile.email_sender %}is-empty{% endif %}">{{ profile.email_from_name|default:"—" }}{% if profile.email_sender %} · {{ profile.email_sender }}{% endif %}</div></div>
+        </div>
+        <div class="cfg-subgroup">
+          <div>
+            <div class="cfg-subgroup__k">Their customers see mail from</div>
+            <div class="cfg-def__v">{{ customer_sender|default:"—" }}</div>
+            {% if not profile.customer_from_email %}
+            <p class="cfg-mini-note">No own-domain address set — falling back to the platform sender.</p>
+            {% endif %}
+          </div>
+          <div>
+            <div class="cfg-subgroup__k">Internal alerts sender</div>
+            <div class="cfg-def__v">{{ platform_sender|default:"—" }}</div>
+          </div>
+          <div>
+            <div class="cfg-subgroup__k">Alerts go to</div>
+            <div class="cfg-tagrow">
+              {% for address in alert_recipients %}<span class="cfg-tag">{{ address }}</span>
+              {% empty %}<span class="cfg-tag cfg-tag--muted">Nobody</span>{% endfor %}
+              {% for address in alert_bcc %}<span class="cfg-tag cfg-tag--muted">{{ address }} (bcc)</span>{% endfor %}
+            </div>
+          </div>
         </div>
         <div class="cfg-subgroup">
           <div>

@@ -136,10 +136,31 @@ def get_plumber_notification_emails(tenant=None):
     return deduped
 
 
+def split_notification_recipients(tenant=None):
+    """(visible, hidden) for this tenant's internal alerts.
+
+    The tenant's own addresses go in To; `PLATFORM_NOTIFICATION_EMAIL` goes in
+    Bcc, so the operator still receives every alert but tenants never see the
+    platform address -- it is on the To line of an email they read, which no
+    dashboard change could hide.
+
+    If the tenant chose no address of their own there is nobody else to put in
+    To, so the platform address stays visible rather than sending a message with
+    no recipient at all.
+    """
+    recipients = get_plumber_notification_emails(tenant)
+    platform = PLATFORM_NOTIFICATION_EMAIL.lower()
+    visible = [a for a in recipients if a.lower() != platform]
+    hidden = [a for a in recipients if a.lower() == platform]
+    if not visible:
+        return hidden, []
+    return visible, hidden
+
+
 def send_email_to_recipients(
     recipients, subject, message, *, dry_run=False,
     html_message=None, attachment=None, attachment_name="attachment.pdf",
-    from_name=None, message_id=None, tenant=None, from_email=None,
+    from_name=None, message_id=None, tenant=None, from_email=None, bcc=None,
 ):
     """
     Send email to an explicit list of recipients via the configured SMTP
@@ -147,6 +168,9 @@ def send_email_to_recipients(
 
     attachment: bytes object (e.g. PDF) to attach, or None.
     attachment_name: filename for the attachment.
+    bcc: recipients that must receive the mail without appearing on it -- the
+        platform operator on tenant alerts. Never put an address here that the
+        visible recipients are meant to see.
     from_email: explicit From identity ('Name <addr>' or a bare address).
         Internal notifications pass the tenant's platform subdomain sender; every
         other caller leaves it None and gets the CUSTOMER identity — the tenant's
@@ -158,6 +182,7 @@ def send_email_to_recipients(
         new caller. Omit it only for PLATFORM mail (dashboard password resets),
         which belongs to no tenant and is always allowed.
     """
+    bcc = [a for a in (bcc or []) if a]
     if not recipients:
         logger.warning("send_email_to_recipients: no recipients for '%s'.", subject)
         return False
@@ -199,6 +224,7 @@ def send_email_to_recipients(
             html_message=html_message, attachment=attachment,
             attachment_name=attachment_name, from_name=from_name,
             message_id=message_id, from_email=from_email, reply_to=reply_to,
+            bcc=bcc,
         )
 
     sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
@@ -208,6 +234,7 @@ def send_email_to_recipients(
             html_message=html_message, attachment=attachment,
             attachment_name=attachment_name, from_name=from_name,
             message_id=message_id, from_email=from_email, reply_to=reply_to,
+            bcc=bcc,
         )
 
     try:
@@ -224,7 +251,7 @@ def send_email_to_recipients(
 
         msg = EmailMultiAlternatives(
             subject, message, from_email, recipients,
-            reply_to=reply_to_list,
+            reply_to=reply_to_list, bcc=bcc or None,
         )
         if message_id:
             msg.extra_headers["Message-ID"] = message_id
@@ -254,13 +281,14 @@ def send_plumber_notification_email(subject, message, *, dry_run=False,
     (Reply-To, X-Entity-Ref-ID) are applied consistently — and so the tenant's
     outbound-email switch is honoured. Pass the tenant the alert is about.
     """
-    recipients = get_plumber_notification_emails(tenant)
+    recipients, hidden = split_notification_recipients(tenant)
     if not recipients:
         logger.warning("No plumber notification email recipients configured.")
         return False
 
     return send_email_to_recipients(
         recipients, subject, message,
+        bcc=hidden,
         dry_run=dry_run,
         html_message=html_message,
         tenant=tenant,
@@ -328,7 +356,7 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
 def _send_via_brevo(
     api_key, recipients, subject, message, *, html_message=None,
     attachment=None, attachment_name="attachment.pdf", from_name=None,
-    message_id=None, from_email=None, reply_to=None,
+    message_id=None, from_email=None, reply_to=None, bcc=None,
 ):
     """
     Send via the Brevo (ex-Sendinblue) transactional API over HTTPS (port 443).
@@ -361,6 +389,8 @@ def _send_via_brevo(
         "to": [{"email": email} for email in recipients],
         "subject": subject,
     }
+    if bcc:
+        payload["bcc"] = [{"email": email} for email in bcc]
     if html_message:
         payload["htmlContent"] = html_message
     if message:
@@ -424,7 +454,7 @@ def _send_via_brevo(
 def _send_via_sendgrid(
     api_key, recipients, subject, message, *, html_message=None,
     attachment=None, attachment_name="attachment.pdf", from_name=None,
-    message_id=None, from_email=None, reply_to=None,
+    message_id=None, from_email=None, reply_to=None, bcc=None,
 ):
     """
     Send via the SendGrid v3 HTTP API over HTTPS (port 443).
@@ -458,7 +488,10 @@ def _send_via_sendgrid(
 
     payload = {
         "personalizations": [
-            {"to": [{"email": email} for email in recipients]}
+            dict(
+                {"to": [{"email": email} for email in recipients]},
+                **({"bcc": [{"email": email} for email in bcc]} if bcc else {}),
+            )
         ],
         "from": sender,
         "subject": subject,

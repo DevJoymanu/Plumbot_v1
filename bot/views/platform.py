@@ -863,6 +863,24 @@ def _price_line(item, cur):
             'headline': headline, 'sub': sub, 'is_active': item.is_active}
 
 
+def _email_identity_ctx(tenant):
+    """How this tenant's mail is addressed today — the resolved sending
+    identities and where their internal alerts land. Read-only preview: it is
+    the same resolution `send_email_to_recipients` performs, so the owner sees
+    exactly what a customer would, not just the raw field."""
+    from ..plumber_notifications import (
+        split_notification_recipients,
+        tenant_customer_from_email, tenant_platform_from_email,
+    )
+    visible, hidden = split_notification_recipients(tenant)
+    return {
+        'customer_sender': tenant_customer_from_email(tenant),
+        'platform_sender': tenant_platform_from_email(tenant),
+        'alert_recipients': visible,
+        'alert_bcc': hidden,
+    }
+
+
 @superuser_required
 def platform_tenant_config(request, slug):
     """Read-only tenant overview: channel, profile, configured prices, staff,
@@ -877,7 +895,7 @@ def platform_tenant_config(request, slug):
     faq_topics = [key.replace('_', ' ').title()
                   for key in (profile.faq_facts if profile else {}) or {}]
     from ..lead_magnet import design_for
-    return render(request, 'bot/pages/platform_tenant_config.html', {
+    ctx = {
         'tenant': tenant,
         'profile': profile,
         'cfg': get_config(tenant),
@@ -891,7 +909,9 @@ def platform_tenant_config(request, slug):
         'intakes': tenant.intakes.all()[:10],
         'staff': tenant.memberships.select_related('user').order_by('user__username'),
         'active_nav': 'platform',
-    })
+    }
+    ctx.update(_email_identity_ctx(tenant))
+    return render(request, 'bot/pages/platform_tenant_config.html', ctx)
 
 
 @superuser_required
@@ -1024,4 +1044,5 @@ def platform_tenant_config_edit(request, slug):
         'active_nav': 'platform',
     }
     ctx.update(_profile_structured_ctx(profile))
+    ctx.update(_email_identity_ctx(tenant))
     return render(request, 'bot/pages/platform_tenant_config_edit.html', ctx)

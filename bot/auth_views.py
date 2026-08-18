@@ -248,8 +248,7 @@ def profile_view(request):
 
         # The business's own notification address (per tenant, not per user):
         # where this business's lead alerts and reminders are emailed. Blank
-        # clears the choice. The platform inbox is added to every send
-        # regardless — see plumber_notifications.PLATFORM_NOTIFICATION_EMAIL.
+        # clears the choice.
         if 'notification_email' in request.POST:
             profile = _tenant_profile(request)
             if profile is None:
@@ -305,7 +304,7 @@ def profile_view(request):
         return redirect('profile')
 
     from .plumber_notifications import (
-        PLATFORM_NOTIFICATION_EMAIL, get_plumber_notification_emails,
+        split_notification_recipients,
         tenant_customer_from_email, tenant_platform_from_email,
     )
     tenant = getattr(request, 'tenant', None)
@@ -316,8 +315,9 @@ def profile_view(request):
         'tenant': tenant,
         'notification_email': getattr(profile, 'email_sender', '') if profile else '',
         'notification_email_editable': profile is not None,
-        'platform_notification_email': PLATFORM_NOTIFICATION_EMAIL,
-        'notification_recipients': get_plumber_notification_emails(tenant),
+        # Only the tenant's own recipients. The platform operator is bcc'd on
+        # every alert and is deliberately not shown here or on the mail itself.
+        'notification_recipients': split_notification_recipients(tenant)[0],
         'customer_from_email': getattr(profile, 'customer_from_email', '') if profile else '',
         'customer_sender': tenant_customer_from_email(tenant),
         'platform_sender': tenant_platform_from_email(tenant),

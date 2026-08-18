@@ -1176,6 +1176,44 @@ class PlatformConsoleTests(TestCase):
         self.assertEqual(profile.business_hours['closed'], ['sat'])        # unpicked day
         self.assertEqual(profile.faq_facts['payment'], 'Cash and EcoCash — all good.')
 
+    def test_owner_sets_and_previews_the_clients_customer_sender(self):
+        """The platform owner sets a tenant's customer-facing sender from the
+        config editor and sees the resolved identity previewed on both pages —
+        the same resolution the send path performs, not just the raw field."""
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        TenantProfile.objects.create(tenant=acme)
+        # Editor previews the fallback while no own-domain address is set.
+        body = self.client.get(
+            reverse('platform_tenant_config_edit', args=['acme'])).content.decode()
+        self.assertIn('name="customer_from_email"', body)
+        self.assertIn('id="preview-customer-sender"', body)
+        self.assertIn('acme@notifications.homexmedia.com', body)
+
+        data = {
+            'plumber_name': '', 'plumber_contact': '', 'business_whatsapp': '',
+            'location_line': '', 'location_area': '', 'location_city': '',
+            'timezone_name': '', 'currency': 'US$',
+            'email_from_name': 'Acme Plumbing',
+            'email_sender': 'alerts@acmeplumbing.co.zw',
+            'customer_from_email': 'info@acmeplumbing.co.zw',
+            'form-TOTAL_FORMS': '0', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+        }
+        response = self.client.post(
+            reverse('platform_tenant_config_edit', args=['acme']), data)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            TenantProfile.objects.get(tenant=acme).customer_from_email,
+            'info@acmeplumbing.co.zw')
+
+        body = self.client.get(
+            reverse('platform_tenant_config', args=['acme'])).content.decode()
+        self.assertIn('Acme Plumbing &lt;info@acmeplumbing.co.zw&gt;', body)
+        self.assertIn('acme@notifications.homexmedia.com', body)  # internal sender
+        self.assertIn('alerts@acmeplumbing.co.zw', body)          # alerts inbox
+        # The platform operator inbox stays a bcc, never a To recipient.
+        self.assertIn('(bcc)', body)
+
     def test_new_tenant_sheet_prefills_catalogue_prices_blank(self):
         from .models import TenantPriceItem
         from .tenant_config import blank_priced_catalog
@@ -3073,6 +3111,58 @@ class TenantNotificationEmailTests(TestCase):
         recipients = brevo.call_args[0][1]
         self.assertIn('owner@acme.example', recipients)
         self.assertNotIn('homebsconstruction@gmail.com', recipients)
+
+
+class PlatformAddressIsHiddenTests(TestCase):
+    """The operator is copied on every tenant alert but must never be visible
+    to the tenant -- not on the mail, not on the dashboard."""
+
+    def setUp(self):
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        TenantProfile.objects.update_or_create(
+            tenant=self.acme, defaults={'email_sender': 'owner@acme.example'})
+        TenantSetting.set_flag('email_sending_enabled', self.acme, True)
+        self.user = get_user_model().objects.create_user(
+            username='acme-owner-hidden', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(
+            user=self.user, tenant=self.acme, role='staff')
+        self.client.force_login(self.user)
+
+    def _alert(self):
+        from .plumber_notifications import send_plumber_notification_email
+        with patch('bot.plumber_notifications._send_via_brevo',
+                   return_value=True) as brevo:
+            with self.settings(BREVO_API_KEY='x'):
+                send_plumber_notification_email('New lead', 'body', tenant=self.acme)
+        return brevo.call_args
+
+    def test_platform_address_is_bcc_not_to(self):
+        from .plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
+        call = self._alert()
+        self.assertEqual(call[0][1], ['owner@acme.example'])
+        self.assertEqual(call.kwargs['bcc'], [PLATFORM_NOTIFICATION_EMAIL])
+
+    def test_platform_address_is_absent_from_the_profile_page(self):
+        from .plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
+        body = self.client.get(reverse('profile')).content.decode()
+        self.assertIn('owner@acme.example', body)
+        self.assertNotIn(PLATFORM_NOTIFICATION_EMAIL, body)
+
+    def test_operator_still_receives_the_alert(self):
+        from .plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
+        call = self._alert()
+        everyone = list(call[0][1]) + list(call.kwargs['bcc'])
+        self.assertIn(PLATFORM_NOTIFICATION_EMAIL, everyone)
+
+    def test_a_tenant_with_no_address_still_gets_a_deliverable_message(self):
+        """Nobody to put in To, so the platform address stays visible rather
+        than sending a message with no recipient at all."""
+        from .plumber_notifications import (
+            PLATFORM_NOTIFICATION_EMAIL, split_notification_recipients)
+        bare = Tenant.objects.create(name='Bare', slug='bare')
+        visible, hidden = split_notification_recipients(bare)
+        self.assertEqual(visible, [PLATFORM_NOTIFICATION_EMAIL])
+        self.assertEqual(hidden, [])
 
 
 class SenderIdentityTests(TestCase):
