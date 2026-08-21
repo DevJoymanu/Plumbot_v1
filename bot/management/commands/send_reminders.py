@@ -598,10 +598,19 @@ class Command(BaseCommand):
         all_apts = list(base_qs)
         self.stdout.write(f"  Confirmed appointments found: {len(all_apts)}\n")
 
-        # TODO(Phase 4 per-tenant cron loop): per-lead apt.plumber_contact().
-        # Phase 4: the tenant's own plumber line per lead; env is homebase's
-        # global fallback. (Resolved per-apt below where one is in scope.)
+        # This cron sweeps every tenant's appointments, so any number that
+        # reaches a customer must come from THEIR lead's tenant. The env var is
+        # homebase's legacy fallback only — never another tenant's default.
         plumber_contact = f"+{PLUMBER_PHONE}" if PLUMBER_PHONE else ''
+
+        def _lead_plumber_contact(apt):
+            """The number a customer should be given for this lead: the
+            per-lead override, else their own tenant's line. Falls back to the
+            env var only when the lead has no tenant (pre-threading rows)."""
+            own = apt.plumber_contact() if hasattr(apt, 'plumber_contact') else ''
+            if not own and getattr(apt, 'tenant_id', None) is None:
+                own = plumber_contact
+            return (own or '').replace('+', '')
 
         # ─────────────────────────────────────────────────────────────────────
         # CUSTOMER REMINDERS
@@ -639,7 +648,7 @@ class Command(BaseCommand):
                         customer_skipped += 1
                         self.stdout.write(f"    SKIP  {label} → {apt_label}")
                     elif window_open:
-                        msg = builder(apt, plumber_contact.replace("+", ""))
+                        msg = builder(apt, _lead_plumber_contact(apt))
                         ok  = _send_wa(phone, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
                         if ok:
                             if not dry_run:
@@ -676,7 +685,7 @@ class Command(BaseCommand):
                     customer_skipped += 1
                     self.stdout.write(f"    SKIP  2 Hours Before → {apt_label}")
                 elif window_open:
-                    _pc = (apt.plumber_contact() or plumber_contact).replace("+", "")
+                    _pc = _lead_plumber_contact(apt)
                     msg = _msg_2hours(apt, _pc)
                     ok  = _send_wa(phone, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
                     if ok:
@@ -832,87 +841,104 @@ class Command(BaseCommand):
 
         plumber_sent = 0
 
-        if not PLUMBER_PHONE:
-            self.stdout.write(
-                self.style.WARNING(
-                    "    PLUMBER_PHONE_NUMBER env var not set — skipping plumber reminders."
-                )
+        # Each tenant's briefings go to THAT tenant's plumber. This block used
+        # to send every tenant's jobs to the PLUMBER_PHONE_NUMBER env var —
+        # Homebase's line — so another tenant's schedule was WhatsApped to
+        # Homebase's plumber and their own plumber got nothing. The env var
+        # survives only as homebase's fallback (its profile carries the number
+        # now, so it is rarely used).
+        def _tenant_plumber(apt):
+            """(number, name) for this lead's plumber; ('', name) when the
+            tenant has no number on file → we skip rather than borrow one."""
+            number = ''
+            if hasattr(apt, 'plumber_contact'):
+                number = (apt.plumber_contact() or '')
+            number = number.replace('+', '').replace('whatsapp:', '').strip()
+            name = (
+                apt.plumber_display_name()
+                if hasattr(apt, 'plumber_display_name') else PLUMBER_NAME
             )
-        else:
-            self.stdout.write(f"    Recipient: {PLUMBER_NAME}  |  +{PLUMBER_PHONE}\n")
+            return number, (name or PLUMBER_NAME)
 
-            # Evening briefing: tomorrow's appointments @ 20:00
-            if _in_window(now_local, 20):
-                tomorrow_apts = [a for a in all_apts if a.scheduled_datetime.date() == tomorrow]
-                if tomorrow_apts:
-                    marker = tomorrow_apts[0]
-                    rtype  = f"plumber_nextday_{tomorrow.isoformat()}"
-                    if _already_sent_plumber(marker, rtype):
-                        self.stdout.write(f"    SKIP  Tomorrow's Jobs ({len(tomorrow_apts)} apts) [already sent]")
-                    else:
-                        msg = _msg_plumber_next_day(tomorrow_apts, PLUMBER_NAME)
-                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run, tenant=getattr(marker, 'tenant', None))
-                        if ok:
-                            if not dry_run:
-                                _mark_sent_plumber(marker, rtype)
-                            plumber_sent += 1
-                            self.stdout.write(
-                                self.style.SUCCESS(
-                                    f"    SENT  Tomorrow's Jobs  |  {len(tomorrow_apts)} appointment(s)"
-                                )
-                            )
-                        else:
-                            self.stdout.write(self.style.ERROR("    FAIL  Tomorrow's Jobs"))
+        def _by_tenant(apts):
+            grouped = {}
+            for a in apts:
+                grouped.setdefault(getattr(a, 'tenant_id', None), []).append(a)
+            return grouped
+
+        # Evening briefing: tomorrow's appointments @ 20:00 — one per tenant
+        if _in_window(now_local, 20):
+            tomorrow_apts = [a for a in all_apts if a.scheduled_datetime.date() == tomorrow]
+            if not tomorrow_apts:
+                self.stdout.write("    INFO  No appointments tomorrow — evening briefing skipped.")
+            for _tid, apts in _by_tenant(tomorrow_apts).items():
+                marker = apts[0]
+                number, pname = _tenant_plumber(marker)
+                rtype = f"plumber_nextday_{tomorrow.isoformat()}"
+                label = f"{getattr(marker.tenant, 'slug', '?')} ({len(apts)} apt(s))"
+                if not number:
+                    self.stdout.write(f"    SKIP  Tomorrow's Jobs → {label} [no plumber number on file]")
+                elif _already_sent_plumber(marker, rtype):
+                    self.stdout.write(f"    SKIP  Tomorrow's Jobs → {label} [already sent]")
                 else:
-                    self.stdout.write("    INFO  No appointments tomorrow — evening briefing skipped.")
-
-            # Morning briefing @ 07:00
-            if _in_window(now_local, 7):
-                today_apts = [a for a in all_apts if a.scheduled_datetime.date() == today]
-                if today_apts:
-                    marker = today_apts[0]
-                    rtype  = f"plumber_morning_{today.isoformat()}"
-                    if _already_sent_plumber(marker, rtype):
-                        self.stdout.write(f"    SKIP  Morning Briefing ({len(today_apts)} apts) [already sent]")
+                    msg = _msg_plumber_next_day(apts, pname)
+                    ok = _send_wa(number, msg, dry_run=dry_run, tenant=getattr(marker, 'tenant', None))
+                    if ok:
+                        if not dry_run:
+                            _mark_sent_plumber(marker, rtype)
+                        plumber_sent += 1
+                        self.stdout.write(self.style.SUCCESS(f"    SENT  Tomorrow's Jobs → {label}"))
                     else:
-                        msg = _msg_plumber_morning(today_apts, PLUMBER_NAME)
-                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run, tenant=getattr(marker, 'tenant', None))
-                        if ok:
-                            if not dry_run:
-                                _mark_sent_plumber(marker, rtype)
-                            plumber_sent += 1
-                            self.stdout.write(
-                                self.style.SUCCESS(
-                                    f"    SENT  Morning Briefing  |  {len(today_apts)} appointment(s)"
-                                )
-                            )
-                        else:
-                            self.stdout.write(self.style.ERROR("    FAIL  Morning Briefing"))
+                        self.stdout.write(self.style.ERROR(f"    FAIL  Tomorrow's Jobs → {label}"))
+
+        # Morning briefing @ 07:00 — one per tenant
+        if _in_window(now_local, 7):
+            today_apts = [a for a in all_apts if a.scheduled_datetime.date() == today]
+            if not today_apts:
+                self.stdout.write("    INFO  No appointments today — morning briefing skipped.")
+            for _tid, apts in _by_tenant(today_apts).items():
+                marker = apts[0]
+                number, pname = _tenant_plumber(marker)
+                rtype = f"plumber_morning_{today.isoformat()}"
+                label = f"{getattr(marker.tenant, 'slug', '?')} ({len(apts)} apt(s))"
+                if not number:
+                    self.stdout.write(f"    SKIP  Morning Briefing → {label} [no plumber number on file]")
+                elif _already_sent_plumber(marker, rtype):
+                    self.stdout.write(f"    SKIP  Morning Briefing → {label} [already sent]")
                 else:
-                    self.stdout.write("    INFO  No appointments today — morning briefing skipped.")
-
-            # 2-hour alerts for plumber
-            for apt in all_apts:
-                apt_u = _appt_utc(apt)
-                if not apt_u:
-                    continue
-                if _is_2h_window(apt_u, now_utc):
-                    name  = apt.customer_name or "?"
-                    rtype = f"plumber_2hours_{apt.id}"
-                    if _already_sent_plumber(apt, rtype):
-                        self.stdout.write(f"    SKIP  2-Hour Alert → {name} [already sent]")
+                    msg = _msg_plumber_morning(apts, pname)
+                    ok = _send_wa(number, msg, dry_run=dry_run, tenant=getattr(marker, 'tenant', None))
+                    if ok:
+                        if not dry_run:
+                            _mark_sent_plumber(marker, rtype)
+                        plumber_sent += 1
+                        self.stdout.write(self.style.SUCCESS(f"    SENT  Morning Briefing → {label}"))
                     else:
-                        msg = _msg_plumber_2hours(apt, PLUMBER_NAME)
-                        ok = _send_wa(PLUMBER_PHONE, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
-                        if ok:
-                            if not dry_run:
-                                _mark_sent_plumber(apt, rtype)
-                            plumber_sent += 1
-                            self.stdout.write(
-                                self.style.SUCCESS(f"    SENT  2-Hour Alert → {name}")
-                            )
-                        else:
-                            self.stdout.write(self.style.ERROR(f"    FAIL  2-Hour Alert → {name}"))
+                        self.stdout.write(self.style.ERROR(f"    FAIL  Morning Briefing → {label}"))
+
+        # 2-hour alerts — to the plumber who owns that job
+        for apt in all_apts:
+            apt_u = _appt_utc(apt)
+            if not apt_u:
+                continue
+            if _is_2h_window(apt_u, now_utc):
+                name = apt.customer_name or "?"
+                number, pname = _tenant_plumber(apt)
+                rtype = f"plumber_2hours_{apt.id}"
+                if not number:
+                    self.stdout.write(f"    SKIP  2-Hour Alert → {name} [no plumber number on file]")
+                elif _already_sent_plumber(apt, rtype):
+                    self.stdout.write(f"    SKIP  2-Hour Alert → {name} [already sent]")
+                else:
+                    msg = _msg_plumber_2hours(apt, pname)
+                    ok = _send_wa(number, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
+                    if ok:
+                        if not dry_run:
+                            _mark_sent_plumber(apt, rtype)
+                        plumber_sent += 1
+                        self.stdout.write(self.style.SUCCESS(f"    SENT  2-Hour Alert → {name}"))
+                    else:
+                        self.stdout.write(self.style.ERROR(f"    FAIL  2-Hour Alert → {name}"))
 
         # ─────────────────────────────────────────────────────────────────────
         # PLUMBER EMAIL REMINDERS  (5 email types — all sent to both recipients)

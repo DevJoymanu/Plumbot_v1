@@ -92,15 +92,17 @@ def schedule_job(request, pk):
                     'site_visit': site_visit,
                 })
             
-            # Check business hours (8 AM - 6 PM, Monday-Friday)
-            if job_datetime.weekday() == 5:  # Saturday only
-                messages.error(request, 'Jobs can only be scheduled Sunday-Friday (closed Saturdays)')
+            # Check business days/hours against THIS tenant's own schedule
+            _cfg = site_visit._schedule_cfg()
+            if not _cfg.is_open_on(job_datetime.weekday()):
+                _phrase = _cfg.closed_days_phrase() or 'that day'
+                messages.error(request, f'Jobs cannot be scheduled on {_phrase} — the business is closed')
                 return render(request, 'bot/pages/schedule_job.html', {
                     'site_visit': site_visit,
                 })
-            
-            if job_datetime.hour < 8 or job_datetime.hour >= 18:
-                messages.error(request, 'Jobs must be scheduled between 8 AM and 6 PM')
+
+            if job_datetime.hour < _cfg.open_hour() or job_datetime.hour >= _cfg.close_hour():
+                messages.error(request, f'Jobs must be scheduled between {_cfg.open_hour()}:00 and {_cfg.close_hour()}:00')
                 return render(request, 'bot/pages/schedule_job.html', {
                     'site_visit': site_visit,
                 })
@@ -183,14 +185,21 @@ def update_job_status(request, pk):
     })
 
 
-def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=None):
-    """Check if job time slot is available"""
+def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=None,
+                           appointment=None):
+    """Check if job time slot is available.
+
+    `appointment` supplies the tenant whose diary and working week we check
+    against (it used to reach for a `request` that isn't in scope here, so every
+    call raised NameError and reported 'not available')."""
     try:
         # Calculate job end time
         job_end_time = job_datetime + timedelta(hours=duration_hours)
-        
-        # Check for overlapping job appointments
-        overlapping_jobs = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).filter(
+
+        tenant = getattr(appointment, 'tenant', None)
+
+        # Check for overlapping job appointments (this tenant's diary only)
+        overlapping_jobs = Appointment.objects.for_tenant_or_seed(tenant).filter(
             appointment_type='job_appointment',
             job_status__in=['scheduled', 'in_progress'],
             job_scheduled_datetime__isnull=False,
@@ -206,11 +215,13 @@ def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=
             if (job_datetime < existing_end and job_end_time > job.job_scheduled_datetime):
                 return False
         
-        # Check business hours (8 AM - 6 PM, Sunday-Friday)
-        if job_datetime.weekday() == 5:  # Saturday only
+        # Check business days/hours against the tenant's own schedule
+        from ..tenant_config import get_config
+        cfg = get_config(tenant)
+        if not cfg.is_open_on(job_datetime.weekday()):
             return False
 
-        if job_datetime.hour < 8 or job_end_time.hour > 18:
+        if job_datetime.hour < cfg.open_hour() or job_end_time.hour > cfg.close_hour():
             return False
         
         # Check if it's not in the past
@@ -348,7 +359,8 @@ def reschedule_job(request, pk):
             is_available = check_job_availability(
                 new_datetime, 
                 job_appointment.job_duration_hours,
-                exclude_appointment_id=job_appointment.id
+                exclude_appointment_id=job_appointment.id,
+                appointment=job_appointment,
             )
             
             if not is_available:

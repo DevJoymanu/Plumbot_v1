@@ -2306,6 +2306,20 @@ def _build_complaint_reply(message: str, appointment) -> str:
     )
     plumber_name = appointment.plumber_display_name() if appointment else 'the plumber'
 
+    # Location and the cheapest labour figure come from the lead's own tenant.
+    # These were hardcoded to "based in Harare" and "as little as US$20" —
+    # Homebase's city and Homebase's rate, quoted to every tenant's customers.
+    from .tenant_config import get_config
+    _cfg = get_config(getattr(appointment, 'tenant', None))
+    _place = _cfg.location_short()
+    _based_in = f" based in {_place}" if _place else ""
+    _cheapest = _cfg.cheapest_labour_rate()
+    _labour_line = (
+        f" Labour on its own can start from as little as {_cfg.currency}{_cheapest} "
+        "for a simple fitting."
+        if _cheapest is not None else ""
+    )
+
     msg_lower = (message or "").lower()
 
     # Price-specific complaint
@@ -2328,8 +2342,7 @@ def _build_complaint_reply(message: str, appointment) -> str:
             "something you'd want to go ahead with?\n\n"
             "I ask because those figures were just general guides — every job is "
             "different, and the real cost comes down to your specific setup, the "
-            "fixtures you choose, and the scope. Labour on its own can start from "
-            "as little as US$20 for a simple fitting.\n\n"
+            f"fixtures you choose, and the scope.{_labour_line}\n\n"
             "The way we land a fair, fixed price is a free on-site visit — the "
             "plumber sees the space and gives you a number on the spot, no "
             f"surprises. Shall I set that up for you?{_talk_line}"
@@ -2344,8 +2357,8 @@ def _build_complaint_reply(message: str, appointment) -> str:
             "Completely fair question — and let me ask you one back: if you're "
             "happy we're the real deal, is this a job you're looking to get "
             "moving on soon?\n\n"
-            "We're a real plumbing company based in Harare, mobile across "
-            "Zimbabwe. I'm the booking assistant handling initial enquiries, and "
+            f"We're a real plumbing company{_based_in}, and we travel to you. "
+            "I'm the booking assistant handling initial enquiries, and "
             "the quickest way to put any doubt to rest is a free on-site visit — "
             "you meet the plumber and see how we work, no obligation.\n\n"
             "Want me to line that up?"

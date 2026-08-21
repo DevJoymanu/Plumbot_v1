@@ -322,15 +322,19 @@ def _combined_service_description(types: list[str]) -> str:
     return combined[:1].upper() + combined[1:]
 
 
-def _deepseek_classify(message: str) -> str | None:
+def _deepseek_classify(message: str, business: str = '') -> str | None:
     """
     Ask DeepSeek to classify the message.
     Returns one of the three service type strings, or None if unclassifiable.
     Only called when keyword matching yields no result.
+
+    `business` is the lead's own company name — this prompt used to name
+    Homebase Plumbers for every tenant.
     """
     from bot.services.clients import deepseek_call
 
-    prompt = f"""You are a classification assistant for a plumbing company in Zimbabwe called Homebase Plumbers.
+    business = business or 'a plumbing company'
+    prompt = f"""You are a classification assistant for a plumbing company in Zimbabwe called {business}.
 
 A customer sent this message:
 \"\"\"
@@ -401,7 +405,7 @@ INSTRUCTIONS:
 # PUBLIC API
 # ─────────────────────────────────────────────────────────────────────────────
 
-def classify_service_type(message: str) -> str | None:
+def classify_service_type(message: str, business: str = '') -> str | None:
     """
     Classify a customer message into a service type.
 
@@ -434,7 +438,7 @@ def classify_service_type(message: str) -> str | None:
         return result
 
     # 2. AI fallback for edge cases
-    result = _deepseek_classify(message)
+    result = _deepseek_classify(message, business)
     if result:
         logger.debug(f'Service type classified by DeepSeek: {result}')
     else:
@@ -478,8 +482,10 @@ def classify_and_save(lead, message: str) -> str | None:
         logger.info(f'Lead {lead.id} project_type set to "{primary}" from message: {message[:80]!r}')
         return primary
 
-    # No keyword hit — fall back to DeepSeek single-type classification.
-    service_type = classify_service_type(message)
+    # No keyword hit — fall back to DeepSeek single-type classification,
+    # naming the lead's own business in the prompt.
+    from bot.utils import business_name_for
+    service_type = classify_service_type(message, business_name_for(lead))
     if service_type:
         lead.project_type = service_type
         lead.save(update_fields=['project_type'])

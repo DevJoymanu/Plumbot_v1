@@ -154,19 +154,21 @@ class AvailabilityMixin:
 
         def _normalize_business_hour(self, hour, am_pm):
             """
-            Resolve a bare/clock hour to a 24h business hour (8–17), or None if
-            it can't sit inside the 8 AM–6 PM window.
+            Resolve a bare/clock hour to a 24h hour inside the tenant's own
+            opening window, or None if it can't sit inside it.
 
-            With no am/pm given, applies a plumbing-hours heuristic: 8–11 read as
-            AM, 12 as noon, and 1–7 as PM (so "at 2" → 14:00, "at 8" → 08:00).
+            With no am/pm given, applies a plumbing-hours heuristic: morning
+            hours read as AM and 1–7 as PM (so "at 2" → 14:00, "at 8" → 08:00).
             """
+            open_hour  = self.tenant_cfg.open_hour()
+            close_hour = self.tenant_cfg.close_hour()
             if am_pm == 'pm' and hour != 12:
                 hour += 12
             elif am_pm == 'am' and hour == 12:
                 hour = 0
             elif am_pm is None and 1 <= hour <= 7:
                 hour += 12  # afternoon by default for ambiguous low hours
-            return hour if 8 <= hour < 18 else None
+            return hour if open_hour <= hour < close_hour else None
 
 
         def _slot_for_part_of_day(self, selected_date, part):
@@ -215,7 +217,7 @@ class AvailabilityMixin:
         def _get_next_two_available_days(self) -> list:
             """
             Return the next two calendar dates (as datetime.date objects) that:
-            - Are not Saturday (our only closed day)
+            - Fall on a day this tenant actually works
             - Are in the future (from tomorrow onwards)
             """
             import pytz
@@ -224,8 +226,11 @@ class AvailabilityMixin:
             today = timezone.now().astimezone(sa_tz).date()
             results = []
             check = today + timedelta(days=1)
-            while len(results) < 2:
-                if check.weekday() != 5:   # 5 = Saturday
+            # Bounded: a tenant closed every day would otherwise spin forever.
+            for _ in range(14):
+                if len(results) >= 2:
+                    break
+                if self.tenant_cfg.is_open_on(check.weekday()):
                     results.append(check)
                 check += timedelta(days=1)
             return results
@@ -276,32 +281,37 @@ class AvailabilityMixin:
                     print(f"Requested time is too soon: {requested_datetime} vs minimum {min_booking_time}")
                     return False, "too_soon"
             
-                # 2. Check business days (Monday-Friday)
-                # Check business days (Sunday-Friday, Saturday closed)
+                # 2. Check the day against THIS tenant's closed days (a tenant
+                # open all week has none — never assume Saturday).
                 weekday = requested_datetime.weekday()  # 0=Monday, 6=Sunday
-                if weekday == 5:  # Only Saturday (5) is closed
-                    print(f"Requested time is on Saturday (closed): weekday {weekday}")
+                if not self.tenant_cfg.is_open_on(weekday):
+                    print(f"Requested time is on a closed day: weekday {weekday}")
                     # ✅ Clear the invalid datetime so it doesn't loop on every message
                     self.appointment.scheduled_datetime = None
                     if self._appointment_has_field('retry_count'):
                         self.appointment.save(update_fields=['retry_count'])
-                    return False, "saturday_closed"
+                    return False, "closed_day"
 
-                # 3. Check business hours (8 AM - 6 PM)
+                # 3. Check business hours (the tenant's own open/close)
+                open_hour  = self.tenant_cfg.open_hour()
+                close_hour = self.tenant_cfg.close_hour()
                 hour = requested_datetime.hour
-                if hour < 8 or hour >= 18:
-                    print(f"Outside business hours: {hour}:00 (business hours: 8 AM - 6 PM)")
+                if hour < open_hour or hour >= close_hour:
+                    print(f"Outside business hours: {hour}:00 (business hours: {open_hour}:00 - {close_hour}:00)")
                     return False, "outside_business_hours"
-            
+
                 # 4. Check if appointment would end after business hours
-                if requested_end.hour > 18 or (requested_end.hour == 18 and requested_end.minute > 0):
+                if requested_end.hour > close_hour or (requested_end.hour == close_hour and requested_end.minute > 0):
                     print(f"Appointment would end after business hours: {requested_end}")
                     return False, "ends_after_hours"
-            
-                # 5. Check for conflicts with other confirmed appointments
+
+                # 5. Check for conflicts with other confirmed appointments.
+                # Tenant-scoped: another tenant's diary must never make this
+                # tenant's slot look taken.
                 conflicting_appointments = Appointment.objects.filter(
                     status='confirmed',
-                    scheduled_datetime__isnull=False
+                    scheduled_datetime__isnull=False,
+                    tenant=self.appointment.tenant,
                 ).exclude(
                     id=self.appointment.id  # Exclude current appointment for reschedules
                 )
@@ -345,18 +355,16 @@ class AvailabilityMixin:
                 # Get the requested date and time
                 requested_date = requested_datetime.date()
             
-                # Business time slots (8am, 10am, 12pm, 2pm, 4pm)
-                business_time_slots = [8, 10, 12, 14, 16]
-            
+                # Business time slots inside the tenant's own day
+                business_time_slots = self.tenant_cfg.booking_hours()
+
                 print(f"Looking for alternatives near {requested_datetime}")
-            
+
                 # Try same day first, then next few business days
                 for day_offset in range(0, 5):  # Check today + next 4 days
                     check_date = requested_date + timedelta(days=day_offset)
-                
-                    # This one is actually correct already — but double-check the one
-                    # inside find_next_available_slots which has:
-                    if check_date.weekday() == 5:   # ← Skip Saturday only
+
+                    if not self.tenant_cfg.is_open_on(check_date.weekday()):
                         continue
                     
                     for hour in business_time_slots:
@@ -426,15 +434,13 @@ class AvailabilityMixin:
                 max_days_ahead = 14  # Look up to 2 weeks ahead
             
                 # Time slots to check (every 2 hours during business hours)
-                business_hours = [8, 10, 12, 14, 16]  # 8am, 10am, 12pm, 2pm, 4pm
-            
+                business_hours = self.tenant_cfg.booking_hours()
+
                 days_checked = 0
                 while len(suggestions) < num_suggestions and days_checked < max_days_ahead:
                     check_date = current_check.date()
-                
-                    # Skip weekends
-                    # Skip Saturday only (Sunday is open)
-                    if check_date.weekday() != 5:
+
+                    if self.tenant_cfg.is_open_on(check_date.weekday()):
                         for hour in business_hours:
                             check_datetime = datetime.combine(check_date, datetime.min.time().replace(hour=hour))
                             sa_timezone = pytz.timezone('Africa/Johannesburg')
@@ -465,34 +471,63 @@ class AvailabilityMixin:
                 return []
 
 
+        def _hours_phrase(self) -> str:
+            """'Sunday to Friday, 8:00 AM – 6:00 PM' for this tenant, with a
+            plain fallback when the tenant has no hours on file."""
+            return self.tenant_cfg.hours_sentence() or 'our normal working hours'
+
+
+        def _closed_day_message(self, day_name: str = None) -> str:
+            """Tenant-correct 'we're closed then' line. Never names a day this
+            tenant actually works — a tenant open all week gets a neutral line
+            instead of the old hardcoded Saturday copy."""
+            phrase = self.tenant_cfg.closed_days_phrase()
+            if not phrase:
+                return (
+                    f"That time doesn't work on our side. "
+                    f"Our working hours are {self._hours_phrase()}. "
+                    "Could you suggest a different day and time?"
+                )
+            if day_name:
+                return (
+                    f"We unfortunately don't operate on {day_name}s. \n\n"
+                    f"Our working hours are {self._hours_phrase()}.\n\n"
+                )
+            return (
+                f"We unfortunately don't operate on {phrase}. \n\n"
+                f"Our working hours are {self._hours_phrase()}.\n\n"
+            )
+
+
         def is_business_day(self, check_date):
-            """Check if a given date is a business day (Sunday-Friday)"""
-            weekday = check_date.weekday()
-            return weekday != 5  # All days except Saturday (5)
+            """Check if a given date is a working day for this tenant"""
+            return self.tenant_cfg.is_open_on(check_date.weekday())
 
 
         def is_business_hours(self, check_time):
-            """Check if a given time is within business hours (8 AM - 6 PM)"""
+            """Check if a given time is within this tenant's business hours"""
             hour = check_time.hour
-            return 8 <= hour < 18
+            return self.tenant_cfg.open_hour() <= hour < self.tenant_cfg.close_hour()
 
 
         def get_business_day_name(self, date_obj):
             """Get user-friendly day name with business context"""
             weekday = date_obj.weekday()
             day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        
-            if weekday < 5:
+
+            if self.tenant_cfg.is_open_on(weekday):
                 return day_names[weekday]
-            else:
-                    return f"{day_names[weekday]} (Weekend - Closed)"
+            return f"{day_names[weekday]} (Closed)"
 
 
         def format_availability_response(self, alternatives, requested_time_str=None):
             """Format alternative time suggestions into a user-friendly message"""
             try:
                 if not alternatives:
-                    return "I'm having trouble finding available alternatives. Could you suggest a different day or time? Our hours are 8 AM - 6 PM, Monday to Friday."
+                    return (
+                        "I'm having trouble finding available alternatives. "
+                        f"Could you suggest a different day or time? Our hours are {self._hours_phrase()}."
+                    )
             
                 # Group by day type for better formatting
                 same_day = [alt for alt in alternatives if alt['day_type'] == 'same_day']
@@ -535,17 +570,17 @@ class AvailabilityMixin:
                 if error_type == "past_time":
                     return "That time has already passed. Please choose a future time."
                 #
-                elif error_type == "saturday_closed":
-                    return "We're closed on Saturdays. Please choose Sunday through Friday."
+                elif error_type in ("closed_day", "saturday_closed"):
+                    return self._closed_day_message()
 
                 elif error_type == "outside_business_hours":
-                    return "We're only available 8 AM to 6 PM, Monday through Friday. Please choose a time within business hours."
-            
+                    return f"We're only available {self._hours_phrase()}. Please choose a time within business hours."
+
                 elif error_type == "ends_after_hours":
-                    return "That appointment would run past our closing time (6 PM). Please choose an earlier time slot."
+                    return f"That appointment would run past our closing time. Our hours are {self._hours_phrase()}. Please choose an earlier time slot."
             
-                elif error_type == "insufficient_notice":
-                    return "We need at least 2 hours advance notice for appointments. Please choose a time further in the future."
+                elif error_type in ("too_soon", "insufficient_notice"):
+                    return "We need a little advance notice for appointments. Please choose a time further in the future."
             
                 elif error_type == "too_far_ahead":
                     return "We can only book appointments up to 3 months in advance. Please choose a sooner date."

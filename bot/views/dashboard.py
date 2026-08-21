@@ -63,7 +63,7 @@ def _due_followup_leads(now=None, tenant=None):
     all of those suppressions.
     """
     from bot.management.commands.send_followups import (
-        Command as _FollowupCmd, MAX_FOLLOWUPS_PER_STATUS,
+        Command as _FollowupCmd, max_followups_for,
     )
     now = now or timezone.now()
     cmd = _FollowupCmd()
@@ -74,7 +74,7 @@ def _due_followup_leads(now=None, tenant=None):
     # one tenant's follow-up list leaks every tenant's due leads (and those rows
     # then 404 on click, since the detail views are tenant-scoped).
     for lead in cmd._get_eligible_leads(now, force=False).for_tenant_or_seed(tenant):
-        if lead.followup_count >= MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 4):
+        if lead.followup_count >= max_followups_for(lead):
             continue
         ready, _reason = cmd._is_ready_for_followup(lead, now, force=False)
         if ready and lead.messaging_window_open:

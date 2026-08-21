@@ -23,6 +23,8 @@ import os
 from django.conf import settings
 from openai import OpenAI
 
+from .utils import business_name_for
+
 logger = logging.getLogger(__name__)
 
 _client = None
@@ -38,7 +40,7 @@ def _get_client():
 
 
 _SYSTEM = """\
-You are a message classifier for HomeBase Plumbers (Zimbabwe).
+You are a message classifier for {business} (Zimbabwe).
 Customers write in English, Shona, or a mix. TODAY = {today}.
 Return ONLY valid JSON — no markdown, no explanation.
 
@@ -276,7 +278,17 @@ def unified_classify(
         from bot.services.clients import deepseek_call
         raw = deepseek_call(
             messages=[
-                {"role": "system", "content": _SYSTEM.replace("{today}", today_date)},
+                {
+                    "role": "system",
+                    # The lead's OWN business name. This prompt used to name
+                    # HomeBase for every tenant, priming the model with the
+                    # wrong company on every classification.
+                    "content": (
+                        _SYSTEM
+                        .replace("{today}", today_date)
+                        .replace("{business}", business_name_for(appointment))
+                    ),
+                },
                 {"role": "user",   "content": user_content},
             ],
             temperature=0.0,

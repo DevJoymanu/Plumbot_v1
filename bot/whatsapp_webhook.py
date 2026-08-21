@@ -263,6 +263,20 @@ def is_chatbot_paused_for_sender(sender: str, tenant=None) -> bool:
     return bool(appointment and appointment.chatbot_paused)
 
 
+def _plumber_wa_number(appointment) -> str:
+    """The digits to WhatsApp this lead's plumber on: the per-lead override,
+    else the OWNING TENANT's number. '' when neither is set — the caller skips
+    the WhatsApp alert (the email alert still goes out).
+
+    Both alert paths used to fall back to a hardcoded 263774819901, so every
+    tenant's hot leads and plan uploads pinged Homebase's plumber.
+    """
+    number = ''
+    if appointment is not None:
+        number = (appointment.plumber_contact() or '') if hasattr(appointment, 'plumber_contact')             else (getattr(appointment, 'plumber_contact_number', '') or '')
+    return number.replace('+', '').replace('whatsapp:', '').strip()
+
+
 def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
     from .test_console import is_test_sender
     if is_test_sender(sender):
@@ -271,8 +285,7 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
     if appointment.lead_status not in {LeadStatus.HOT, LeadStatus.VERY_HOT}:
         return
 
-    plumber_number = (appointment.plumber_contact_number or '263774819901')
-    plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
+    plumber_number = _plumber_wa_number(appointment)
     customer_name = appointment.customer_name or 'Unknown customer'
 
     # CTWA ad lead: tell the plumber they can reply free-form until the 72h window
@@ -296,8 +309,14 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
         f"Lead: https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"
     )
     try:
-        from .whatsapp_cloud_api import get_client_for_tenant
-        get_client_for_tenant(appointment.tenant).send_text_message(plumber_number, message)
+        if plumber_number:
+            from .whatsapp_cloud_api import get_client_for_tenant
+            get_client_for_tenant(appointment.tenant).send_text_message(plumber_number, message)
+        else:
+            print(
+                f"No plumber WhatsApp number for tenant "
+                f"{getattr(appointment.tenant, 'slug', None)!r} — priority-lead alert by email only"
+            )
     except Exception as exc:
         print(f"Failed to notify admin for appointment {appointment.id}: {exc}")
     send_plumber_notification_email(
@@ -372,8 +391,7 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         except Appointment.DoesNotExist:
             fresh = appointment
 
-        plumber_number = (getattr(fresh, 'plumber_contact_number', None) or '263774819901')
-        plumber_number = plumber_number.replace('+', '').replace('whatsapp:', '')
+        plumber_number = _plumber_wa_number(fresh)
 
         customer_name = fresh.customer_name or "A customer"
 
@@ -398,6 +416,12 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         )
 
         try:
+            if not plumber_number:
+                print(
+                    f"No plumber WhatsApp number for tenant "
+                    f"{getattr(fresh.tenant, 'slug', None)!r} — media alert skipped"
+                )
+                return
             from .whatsapp_cloud_api import get_client_for_tenant
             get_client_for_tenant(appointment.tenant).send_text_message(plumber_number, alert_message)
             print(f"? Consolidated plumber alert sent ({len(urls)} file(s)) for {sender}")
@@ -889,12 +913,13 @@ _AVAILABILITY_DAY_PATTERNS = [
 ]
 
 
-def _keyword_availability_date(message: str):
+def _keyword_availability_date(message: str, closed_weekdays=None):
     """
     Deterministic day-name → next-future-date resolver. Mirrors
     _keyword_product_intent: conservative, no LLM round-trip. Returns a
     'YYYY-MM-DDT00:00' string (date only, midnight) for a bare weekday,
-    'tomorrow', or 'today' token, else None. Saturday (closed) → None.
+    'tomorrow', or 'today' token, else None. A day the tenant is closed on
+    (passed in — never assumed) → None.
 
     Used to backfill the unified classifier's availability when the LLM misses
     the date math on partial inputs like "out of town but Wed I'm available".
@@ -909,6 +934,9 @@ def _keyword_availability_date(message: str):
     if not msg:
         return None
 
+    # Default kept for the pre-tenant callers: the legacy Homebase week.
+    closed = frozenset({5}) if closed_weekdays is None else frozenset(closed_weekdays)
+
     now = timezone.now().astimezone(pytz.timezone('Africa/Johannesburg'))
 
     def _fmt(d):
@@ -918,11 +946,11 @@ def _keyword_availability_date(message: str):
         return _fmt(now)
     if re.search(r'\b(?:tomorrow|tmrw|tmr|2moro)\b', msg):
         candidate = now + timedelta(days=1)
-        return None if candidate.weekday() == 5 else _fmt(candidate)
+        return None if candidate.weekday() in closed else _fmt(candidate)
 
     for weekday_idx, pattern in _AVAILABILITY_DAY_PATTERNS:
         if re.search(r'\b' + pattern + r'\b', msg):
-            if weekday_idx == 5:          # Saturday — business is closed
+            if weekday_idx in closed:     # business is closed that day
                 return None
             days_ahead = (weekday_idx - now.weekday()) % 7
             if days_ahead == 0:
@@ -1221,25 +1249,33 @@ CATALOGUE_IMAGES_DIR = os.environ.get(
 SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
 
 
-# Single source of truth for the product price list shown alongside the
-# catalogue. "from" rates mirror bot/sales_profiles/homebase.md.
-CATALOGUE_PRICE_LINES = (
-    "• Toilet: Supply from US$50 | Install from US$20\n"
-    "• Tub (built-in): Supply from US$80 | Install from US$80\n"
-    "• Free-standing tub: Supply from US$400 | Mixer from US$150 | Install from US$120\n"
-    "• Shower cubicle: Supply from US$130 | Install from US$40\n"
-    "• Vanity unit: Supply from US$150 | Install from US$30\n"
-    "• Geyser: Supply from US$80 | Install from US$80\n"
-    "• Side chamber: Supply from US$130 | Install from US$30"
-)
+def catalogue_price_lines(tenant=None) -> str:
+    """This tenant's product price list, rendered from their own price rows.
+
+    Was a hardcoded copy of Homebase's sheet, which meant another tenant's
+    customer got THEIR photos with HOMEBASE's prices. Empty string when the
+    tenant has no prices on file — the caller then sends the catalogue without
+    a price list rather than quoting figures that aren't theirs.
+    """
+    from .tenant_config import get_config
+    return get_config(tenant).catalogue_price_lines()
 
 
-def build_catalogue_price_text(followup: str) -> str:
+def build_catalogue_price_text(followup: str, tenant=None) -> str:
     """Text price list sent alongside the catalogue images."""
+    lines = catalogue_price_lines(tenant)
+    if not lines:
+        # No price sheet on file — show the work, quote nothing.
+        return (
+            "Here's our product catalogue. "
+            "The plumber gives a fixed quote on the spot after seeing the space, "
+            "and the site visit is free.\n\n"
+            f"{followup}"
+        )
     return (
         "Here's our product catalogue — rough supply + install prices "
         "(final cost confirmed after a free site visit):\n\n"
-        f"{CATALOGUE_PRICE_LINES}\n\n"
+        f"{lines}\n\n"
         "Bundling items can get you a discount. "
         "The plumber gives a fixed quote on the spot after seeing the space.\n\n"
         f"{followup}"
@@ -2445,7 +2481,9 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if _uclass is not None:
             _ext = _uclass.get('extracted') or {}
             if not _ext.get('availability') or _ext.get('availability') == 'null':
-                _kw_date = _keyword_availability_date(message_body)
+                _kw_date = _keyword_availability_date(
+                    message_body, plumbot.tenant_cfg.closed_weekdays()
+                )
                 if _kw_date:
                     _ext['availability'] = _kw_date
                     _uclass['extracted'] = _ext
@@ -2859,7 +2897,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             if not images_queued:
                 images_queued = send_previous_work_photos(sender, appointment)
             price_text = build_catalogue_price_text(
-                plumbot._get_pricing_followup_prompt('english')
+                plumbot._get_pricing_followup_prompt('english'),
+                tenant=getattr(appointment, 'tenant', None),
             )
             appointment.add_conversation_message("assistant", price_text)
             appointment.pricing_overview_sent = True

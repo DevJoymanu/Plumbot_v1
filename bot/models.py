@@ -842,7 +842,14 @@ class Appointment(models.Model):
         return False
 
     # ===== AVAILABILITY CHECKING METHODS =====
-    
+
+    def _schedule_cfg(self):
+        """This lead's tenant config — the source of working days/hours. Never
+        assume the Homebase week here; tenants set their own."""
+        from .tenant_config import get_config
+        return get_config(self.tenant)
+
+
     def check_appointment_availability(self, requested_datetime):
         """Check if the requested datetime is available (no conflicts)"""
         try:
@@ -863,28 +870,31 @@ class Appointment(models.Model):
                 print(f"Requested time is in the past: {requested_datetime} vs {now}")
                 return False, "past_time"
             
-            # 2. Check business hours (8 AM - 6 PM, Monday to Friday)
+            # 2. Check the tenant's own working days and hours
+            cfg = self._schedule_cfg()
             weekday = requested_datetime.weekday()  # 0=Monday, 6=Sunday
             hour = requested_datetime.hour
-            
-            # Check if it's Saturday (closed day)
-            if weekday == 5:  # Saturday only
-                print(f"Requested time is on Saturday (closed): weekday {weekday}")
-                return False, "saturday_closed"            
+
+            if not cfg.is_open_on(weekday):
+                print(f"Requested time is on a closed day: weekday {weekday}")
+                return False, "closed_day"
             # Check business hours
-            if hour < 8 or hour >= 18:
-                print(f"Outside business hours: {hour}:00 (business hours: 8 AM - 6 PM)")
+            open_hour, close_hour = cfg.open_hour(), cfg.close_hour()
+            if hour < open_hour or hour >= close_hour:
+                print(f"Outside business hours: {hour}:00 (business hours: {open_hour}:00 - {close_hour}:00)")
                 return False, "outside_business_hours"
-            
+
             # Check if appointment would end after business hours
-            if requested_end.hour > 18:
+            if requested_end.hour > close_hour:
                 print(f"Appointment would end after business hours: {requested_end}")
                 return False, "ends_after_hours"
-            
-            # 3. Check for conflicts with other confirmed appointments
+
+            # 3. Check for conflicts with other confirmed appointments (this
+            # tenant's diary only — another tenant's booking never blocks ours)
             conflicting_appointments = Appointment.objects.filter(
                 status='confirmed',
-                scheduled_datetime__isnull=False
+                scheduled_datetime__isnull=False,
+                tenant=self.tenant,
             ).exclude(
                 id=self.id  # Exclude current appointment for reschedules
             )
@@ -925,23 +935,29 @@ class Appointment(models.Model):
             print(f"Error checking availability: {str(e)}")
             return False, "error"
 
+    def _hours_phrase(self) -> str:
+        return self._schedule_cfg().hours_sentence() or 'our normal working hours'
+
     def get_availability_error_message(self, error_type, conflict_appointment=None):
         """Generate user-friendly error messages for availability issues"""
         try:
             if error_type == "past_time":
                 return "That time has already passed. Please choose a future time."
             
-            elif error_type == "weekend":
-                return "We're closed on weekends. Please choose Monday through Friday."
-            
+            elif error_type in ("closed_day", "saturday_closed", "weekend"):
+                phrase = self._schedule_cfg().closed_days_phrase()
+                if phrase:
+                    return f"We're closed on {phrase}. Please choose another day."
+                return "That day doesn't work on our side. Please choose another day."
+
             elif error_type == "outside_business_hours":
-                return "We're only available 8 AM to 6 PM, Monday through Friday. Please choose a time within business hours."
-            
+                return f"We're only available {self._hours_phrase()}. Please choose a time within business hours."
+
             elif error_type == "ends_after_hours":
-                return "That appointment would run past our closing time (6 PM). Please choose an earlier time slot."
-            
+                return f"That appointment would run past our closing time. Our hours are {self._hours_phrase()}. Please choose an earlier time slot."
+
             elif error_type == "insufficient_notice":
-                return "We need at least 2 hours advance notice for appointments. Please choose a time further in the future."
+                return "We need a couple of hours advance notice for appointments. Please choose a time further in the future."
             
             elif error_type == "too_far_ahead":
                 return "We can only book appointments up to 3 months in advance. Please choose a sooner date."
@@ -968,15 +984,15 @@ class Appointment(models.Model):
             current_check = preferred_datetime
             max_days_ahead = 14  # Look up to 2 weeks ahead
             
-            # Time slots to check (every 2 hours during business hours)
-            business_hours = [8, 10, 12, 14, 16]  # 8am, 10am, 12pm, 2pm, 4pm
-            
+            # Time slots to check (every 2 hours inside the tenant's own day)
+            cfg = self._schedule_cfg()
+            business_hours = cfg.booking_hours()
+
             days_checked = 0
             while len(suggestions) < num_suggestions and days_checked < max_days_ahead:
                 check_date = current_check.date()
-                
-                # Skip Saturday only (Sunday=6 is a working day)
-                if check_date.weekday() != 5:  # 5=Saturday
+
+                if cfg.is_open_on(check_date.weekday()):
                     for hour in business_hours:
                         check_datetime = datetime.combine(check_date, datetime.min.time().replace(hour=hour))
                         sa_timezone = pytz.timezone('Africa/Johannesburg')
@@ -1007,19 +1023,19 @@ class Appointment(models.Model):
             return []
 
     def is_business_day(self, check_date):
-        """Check if a given date is a business day (Sunday–Friday, Saturday closed)"""
-        return check_date.weekday() != 5  # 5 = Saturday
-    
+        """Check if a given date is a working day for this lead's tenant"""
+        return self._schedule_cfg().is_open_on(check_date.weekday())
+
     def is_business_hours(self, check_time):
-        """Check if a given time is within business hours (8 AM - 6 PM)"""
-        hour = check_time.hour
-        return 8 <= hour < 18
+        """Check if a given time is within this tenant's business hours"""
+        cfg = self._schedule_cfg()
+        return cfg.open_hour() <= check_time.hour < cfg.close_hour()
 
     def get_business_day_name(self, date_obj):
-        """Get user-friendly day name — only Saturday is closed"""
+        """Get user-friendly day name, flagging this tenant's closed days"""
         weekday = date_obj.weekday()
         day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        if weekday == 5:
+        if not self._schedule_cfg().is_open_on(weekday):
             return f"{day_names[weekday]} (Closed)"
         return day_names[weekday]
         
@@ -1032,9 +1048,10 @@ class Appointment(models.Model):
             requested_date = requested_datetime.date()
             requested_hour = requested_datetime.hour
             
-            # Time slots to suggest (business hours: 8, 10, 12, 14, 16)
-            business_time_slots = [8, 10, 12, 14, 16]
-            
+            # Time slots to suggest, inside the tenant's own opening window
+            cfg = self._schedule_cfg()
+            business_time_slots = cfg.booking_hours()
+
             print(f"Looking for alternatives near {requested_datetime}")
             
             # 1. First try same day, different times
@@ -1065,11 +1082,10 @@ class Appointment(models.Model):
                 for day_offset in range(1, days_to_check + 1):
                     check_date = requested_date + timedelta(days=day_offset)
                     
-                    # Skip Saturday only
-                    if check_date.weekday() == 5:  # Saturday closed
+                    if not cfg.is_open_on(check_date.weekday()):
                         continue
 
-                    
+
                     # Try to find slots on this day
                     for hour in business_time_slots:
                         candidate_time = datetime.combine(check_date, datetime.min.time().replace(hour=hour))

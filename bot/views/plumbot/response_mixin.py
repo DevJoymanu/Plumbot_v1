@@ -66,6 +66,35 @@ def _working_hours_line(mixin) -> str:
     return f"Our working hours are {sentence}.\n\n" if sentence else ""
 
 
+# Word-boundary patterns per weekday. Bare 'sat'/'sun' must be whole words —
+# a substring match fired "we don't operate on Saturdays" on words like
+# "satisfied" and, worse, on unrelated text in a batched message.
+_DAY_WORD_PATTERNS = {
+    'Monday':    r'\bmon(?:day)?s?\b',
+    'Tuesday':   r'\btue(?:s|sday)?s?\b',
+    'Wednesday': r'\bwed(?:s|nesday)?s?\b',
+    'Thursday':  r'\bthu(?:r|rs|rsday)?s?\b',
+    'Friday':    r'\bfri(?:day)?s?\b',
+    'Saturday':  r'\bsat(?:urday)?s?\b|\bmugovera\b',
+    'Sunday':    r'\bsun(?:day)?s?\b|\bsvondo\b',
+}
+
+
+def _named_closed_day(mixin, message: str):
+    """The closed day this customer just named, or None.
+
+    Tenant-aware on both sides: a day only counts when THIS tenant is actually
+    closed on it. A tenant working seven days never gets a closed-day reply."""
+    closed_days = mixin.tenant_cfg.closed_day_names()
+    if not closed_days or not message:
+        return None
+    text = message.lower()
+    for day in closed_days:
+        if re.search(_DAY_WORD_PATTERNS[day], text):
+            return day
+    return None
+
+
 def _hours_clause(mixin) -> str:
     sentence = mixin.tenant_cfg.hours_sentence()
     return f" Our hours are {sentence}." if sentence else ""
@@ -86,8 +115,8 @@ def _grounding_facts(mixin) -> str:
         bits.append(place)
     compact = cfg.hours_compact()
     if compact:
-        hours = mixin.tenant_cfg._field('business_hours', None) or {}
-        closed = " (closed Sat)" if 'sat' in (hours.get('closed') or []) else ""
+        names = mixin.tenant_cfg.closed_day_names()
+        closed = f" (closed {', '.join(n[:3] for n in names)})" if names else ""
         bits.append(f"open {compact}{closed}")
     return ", ".join(bits) + "."
 
@@ -108,8 +137,8 @@ def _hours_days(mixin) -> str:
     p = mixin.tenant_cfg._hours_parts()
     if p is None:
         return "by appointment"
-    hours = mixin.tenant_cfg._field('business_hours', None) or {}
-    closed = " (closed Saturdays)" if 'sat' in (hours.get('closed') or []) else ""
+    phrase = mixin.tenant_cfg.closed_days_phrase()
+    closed = f" (closed {phrase})" if phrase else ""
     return f"{p[0]} to {p[1]}{closed}"
 
 
@@ -216,48 +245,77 @@ class ResponseMixin:
                 return "Ndiyo here mari yamaitarisira kuti tigadzirise izvi nemazvo?"
             return "Is that around what you were looking to invest to get it sorted properly?"
 
+        def _tub_line(self, kind: str, language: str):
+            """One tub's price sentence built from THIS tenant's figures, or
+            None when they don't price that tub. These used to be hardcoded to
+            Homebase's US$160 / US$670 with its component split, so every other
+            tenant quoted Homebase's tub prices."""
+            cur = self.tenant_cfg.currency
+            if kind == 'built_in':
+                parts = self._price_components_map().get('tub')
+                if not parts:
+                    return None
+                supply, install = parts
+                allin = supply + install
+                if language == 'shona':
+                    return (f"Standard built-in tubs dzinotangira pa{cur}{allin} all-in "
+                            f"(tub {cur}{supply} + install {cur}{install}).")
+                return (f"Standard built-in tubs are from {cur}{allin} all-in "
+                        f"(tub {cur}{supply} + install {cur}{install}).")
+
+            fs = self._freestanding_tub_price()
+            if not fs:
+                return None
+            allin, split = fs
+            if language == 'shona':
+                return f"Freestanding tubs dzinotangira pa{cur}{allin} all-in ({split})."
+            return f"Freestanding tubs start from {cur}{allin} all-in ({split})."
+
         def _tub_price_reply(self, tub_type, language):
             """Tub price reply that leads with the type the customer asked about
             (conv 427). When the customer has already named a type, close with a
             Hormozi-styled budget-fit qualifier (`_budget_fit_close`) before the
             booking close; only when the type is still unspecified do we ask the
-            open "which one?" question."""
-            if tub_type == 'built_in':
-                if language == 'shona':
-                    return (
-                        "Standard built-in tubs dzinotangira paUS$160 all-in (tub US$80 + install US$80).\n\n"
-                        "Kana uchida freestanding, idzo dzinotangira paUS$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
-                        f"{self._budget_fit_close('shona')}"
-                    )
-                return (
-                    "Standard built-in tubs are from US$160 all-in (tub US$80 + install US$80).\n\n"
-                    "If you'd prefer a freestanding one, those start from US$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
-                    f"{self._budget_fit_close('english')}"
-                )
+            open "which one?" question.
+
+            Every figure comes from the tenant's own price rows; a tub they
+            don't price is simply left out, and a tenant with no tub prices at
+            all gets the free-visit deflection instead of another tenant's
+            numbers (the nullability rule)."""
+            built_in = self._tub_line('built_in', language)
+            freestanding = self._tub_line('freestanding', language)
+
             if tub_type == 'freestanding':
-                if language == 'shona':
-                    return (
-                        "Freestanding tubs dzinotangira paUS$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
-                        "Standard built-in tubs kubva paUS$160 all-in (tub US$80 + install US$80).\n\n"
-                        f"{self._budget_fit_close('shona')}"
-                    )
-                return (
-                    "Freestanding tubs start from US$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
-                    "Standard built-in tubs from US$160 all-in (tub US$80 + install US$80).\n\n"
-                    f"{self._budget_fit_close('english')}"
-                )
-            # Unspecified — ask for a yes first (value-check), then narrow down
-            # which tub on the next turn (via _product_price_close).
+                ordered = [freestanding, built_in]
+            else:
+                ordered = [built_in, freestanding]
+            lines = [line for line in ordered if line]
+
+            if not lines:
+                return self._no_price_on_file_reply(language)
+
+            close = (
+                self._budget_fit_close(language)
+                if tub_type in ('built_in', 'freestanding')
+                # Unspecified — ask for a yes first (value-check), then narrow
+                # down which tub on the next turn (via _product_price_close).
+                else self._product_price_close(language)
+            )
+            return "\n\n".join(lines + [close])
+
+        def _no_price_on_file_reply(self, language: str = 'english') -> str:
+            """Asked for a price we don't hold for this tenant. Never borrow
+            another tenant's figure — answer with the free visit instead."""
             if language == 'shona':
                 return (
-                    "Freestanding tubs dzinotangira paUS$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
-                    "Standard built-in tubs kubva paUS$160 all-in (tub US$80 + install US$80).\n\n"
-                    f"{self._product_price_close('shona')}"
+                    "Mitengo inosiyana zvichienderana nezvamunoda chaizvo. "
+                    "Tinogona kuuya tozoona nzvimbo mahara toku pai mutengo wakazara ipapo. "
+                    "Zvingakunakirai here?"
                 )
             return (
-                "Freestanding tubs start from US$670 all-in (tub US$400 + mixer US$150 + install US$120).\n\n"
-                "Standard built-in tubs from US$160 all-in (tub US$80 + install US$80).\n\n"
-                f"{self._product_price_close('english')}"
+                "Pricing depends on exactly what you're after. "
+                "We can come through, have a quick look at the space and give you "
+                "a fixed price on the spot, free of charge. Would that work for you?"
             )
 
         def _parse_name_from_reply(self, message: str):
@@ -2292,7 +2350,8 @@ class ResponseMixin:
                         send_previous_work_photos(clean_phone, self.appointment)
                     # Always send the price list alongside the catalogue images.
                     reply = build_catalogue_price_text(
-                        self._get_pricing_followup_prompt('english')
+                        self._get_pricing_followup_prompt('english'),
+                        tenant=getattr(self.appointment, 'tenant', None),
                     )
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
@@ -2558,16 +2617,24 @@ class ResponseMixin:
                         )
                     else:
                         error        = booking_result.get('error', '')
+                        reason       = (booking_result.get('reason') or '').lower()
                         alternatives = booking_result.get('alternatives', [])
-                        if 'saturday' in error.lower() or not alternatives:
-                            alt_text = (
-                                "\n".join([f"• {alt['display']}" for alt in alternatives])
-                                if alternatives else ""
+                        alt_text = (
+                            "\n".join([f"• {alt['display']}" for alt in alternatives])
+                            if alternatives else ""
+                        )
+                        # Only claim a closed day when the availability check
+                        # actually said so — every other failure gets its own
+                        # honest line. Never infer "closed" from empty
+                        # alternatives.
+                        if reason in ('closed_day', 'saturday_closed'):
+                            requested = self._get_selected_local_date()
+                            day_name = (
+                                requested.strftime('%A')
+                                if requested and not self.tenant_cfg.is_open_on(requested.weekday())
+                                else None
                             )
-                            reply = (
-                                "We unfortunately don't operate on Saturdays. \n\n"
-                                f"{_working_hours_line(self)}"
-                            )
+                            reply = self._closed_day_message(day_name)
                             if alt_text:
                                 reply += (
                                     f"Here are some available slots:\n{alt_text}\n\n"
@@ -2575,6 +2642,19 @@ class ResponseMixin:
                                 )
                             else:
                                 reply += "Could you suggest a different day and time?"
+                        elif reason in ('outside_business_hours', 'ends_after_hours', 'too_soon', 'too_far_ahead'):
+                            reply = self.get_availability_error_message(reason)
+                            if alt_text:
+                                reply += (
+                                    f"\n\nHere are some available slots:\n{alt_text}\n\n"
+                                    "Which works better for you?"
+                                )
+                        elif not alternatives:
+                            reply = (
+                                "That time isn't available on our side. "
+                                f"Our working hours are {self.tenant_cfg.hours_sentence() or 'flexible'}. "
+                                "Could you suggest a different day and time?"
+                            )
                         else:
                             alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
                             reply = (
@@ -2740,8 +2820,10 @@ class ResponseMixin:
                 retry_count = self._get_question_retry_count(next_question)
                 sa_tz = _pytz.timezone('Africa/Johannesburg')
 
-                saturday_indicators = ['saturday', 'sat']
-                if any(s in incoming_message.lower() for s in saturday_indicators):
+                # Closed-day guard — only for a day THIS tenant is actually
+                # closed on, and only when the customer names it as a word.
+                closed_day = _named_closed_day(self, incoming_message)
+                if closed_day:
                     alternatives = self.get_alternative_time_suggestions(
                         timezone.now() + timedelta(days=1)
                     )
@@ -2750,7 +2832,7 @@ class ResponseMixin:
                         if alternatives else ""
                     )
                     reply = (
-                        "We unfortunately don't operate on Saturdays. \n\n"
+                        f"We unfortunately don't operate on {closed_day}s. \n\n"
                         f"{_working_hours_line(self)}"
                     )
                     if alt_text:
@@ -5080,14 +5162,14 @@ class ResponseMixin:
                 retry_count = self._get_question_retry_count(next_question)
                 sa_tz       = _pytz.timezone('Africa/Johannesburg')
     
-                # ── Saturday guard ────────────────────────────────────────────────────
-                saturday_indicators = ['saturday', 'sat']
-                if any(s in incoming_message.lower() for s in saturday_indicators):
+                # ── Closed-day guard (this tenant's own closed days) ──────────────────
+                closed_day = _named_closed_day(self, incoming_message)
+                if closed_day:
                     alternatives = self.get_alternative_time_suggestions(
                         timezone.now() + timedelta(days=1)
                     )
                     alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
-                    reply = f"We unfortunately don't operate on Saturdays. \n\n{_working_hours_line(self)}"
+                    reply = f"We unfortunately don't operate on {closed_day}s. \n\n{_working_hours_line(self)}"
                     if alt_text:
                         reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
                     else:
@@ -5415,7 +5497,7 @@ class ResponseMixin:
                     recent_lines.append(f"{role}: {content[:200]}")
                 context_block = "\n".join(recent_lines) if recent_lines else "No prior conversation."
 
-                prompt = f"""You are a knowledgeable WhatsApp assistant for {_biz(self)} — a professional plumbing and renovation company based in Harare, Zimbabwe.
+                prompt = f"""You are a knowledgeable WhatsApp assistant for {_biz(self)} — a professional plumbing and renovation company based in {_city(self)}, Zimbabwe.
 
         CRITICAL RULE — GENERIC OPENERS:
         If the customer's message is a generic greeting, a vague request for more information, or an opening message with no specific question, you MUST reply with ONLY this exact text and nothing else:
@@ -5533,12 +5615,15 @@ class ResponseMixin:
             name_part = f", {self.appointment.customer_name}" if self.appointment.customer_name else ""
 
             system_prompt = (
-                f"You are a WhatsApp assistant for {_biz(self)} in Harare, Zimbabwe. "
-                f"The plumber's name is Takudzwa. "
+                f"You are a WhatsApp assistant for {_biz(self)} in {_city(self)}, Zimbabwe. "
+                # The plumber's name comes from the lead's own tenant — this
+                # line used to name Takudzwa to every tenant's customers.
+                f"The plumber's name is {self.appointment.plumber_display_name()}. "
                 f"The customer's appointment is CONFIRMED for {appt_str}. "
                 f"They have just sent a follow-up message. "
                 f"Reply warmly in 1-3 sentences. Acknowledge what they said. "
-                f"If they ask who will come or who they are speaking to, say the plumber's name is Takudzwa. "
+                f"If they ask who will come or who they are speaking to, say the plumber's name is "
+                f"{self.appointment.plumber_display_name()}. "
                 f"If it is extra context about their job, acknowledge it positively. "
                 f"If it mentions a time or date, confirm it matches their booking at {appt_str}. "
                 f"Close with a friendly line such as 'See you on {appt_str}{name_part}!'. "

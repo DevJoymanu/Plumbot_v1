@@ -55,29 +55,34 @@ class BookingMixin:
                         days_ahead = 7
                     next_days[name] = (now + timedelta(days=days_ahead)).strftime('%B %d, %Y')
 
+                # The tenant's real week — telling the model "Saturday closed"
+                # when this tenant works Saturdays made it reject valid days.
+                cfg = self.tenant_cfg
+                closed_idx = cfg.closed_weekdays()
+                working_line = cfg.hours_sentence() or 'every day'
+                day_lines = "\n".join(
+                    f"        - {name.capitalize()}: {next_days[name]}"
+                    + (" ← CLOSED, do not use" if i in closed_idx else "")
+                    for i, name in enumerate(day_names)
+                )
+
                 prompt = f"""You are a datetime extraction assistant.
 
-        The customer was shown a list of available appointment slots and is replying to choose one, 
+        The customer was shown a list of available appointment slots and is replying to choose one,
         or suggesting a new time. Extract the date and time they want.
 
         CURRENT DATETIME: {now.strftime('%Y-%m-%d %H:%M')} (Africa/Johannesburg)
-        WORKING DAYS: Sunday–Friday (Saturday CLOSED)
+        WORKING HOURS: {working_line}
 
         NEXT OCCURRENCE OF EACH DAY:
-        - Monday: {next_days['monday']}
-        - Tuesday: {next_days['tuesday']}
-        - Wednesday: {next_days['wednesday']}
-        - Thursday: {next_days['thursday']}
-        - Friday: {next_days['friday']}
-        - Saturday: {next_days['saturday']} ← CLOSED, do not use
-        - Sunday: {next_days['sunday']}
+{day_lines}
         - Tomorrow: {(now + timedelta(days=1)).strftime('%B %d, %Y')}
 
         CUSTOMER MESSAGE: "{message}"
 
         Return ONLY one of:
         - YYYY-MM-DDTHH:MM  (if both date and time are clear)
-        - SATURDAY_CLOSED   (if they picked Saturday)
+        - CLOSED_DAY        (only if they picked a day marked CLOSED above)
         - NOT_FOUND         (if no clear selection)
 
         No other text."""
@@ -87,7 +92,7 @@ class BookingMixin:
                     messages=[
                         {
                             "role": "system",
-                            "content": "Return only a datetime string YYYY-MM-DDTHH:MM, SATURDAY_CLOSED, or NOT_FOUND."
+                            "content": "Return only a datetime string YYYY-MM-DDTHH:MM, CLOSED_DAY, or NOT_FOUND."
                         },
                         {"role": "user", "content": prompt}
                     ],
@@ -98,19 +103,19 @@ class BookingMixin:
                 ai_response = response.choices[0].message.content.strip()
                 print(f"🤖 DeepSeek alternative selection: '{message}' → {ai_response}") 
 
-                if ai_response in ("SATURDAY_CLOSED", "NOT_FOUND"):
+                if ai_response in ("CLOSED_DAY", "SATURDAY_CLOSED", "NOT_FOUND"):
                     msg = (message or '').strip().lower()
 
                     if 'tomorrow' in msg:
                         candidate = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-                        if candidate.weekday() == 5:
+                        if not cfg.is_open_on(candidate.weekday()):
                             return None
                         print(f"✅ Manual day selection captured from 'tomorrow': {candidate}")
                         return candidate
 
                     for i, name in enumerate(day_names):
-                        if name in msg:
-                            if name == 'saturday':
+                        if re.search(rf'\b{name}\b', msg):
+                            if i in closed_idx:
                                 return None
                             days_ahead = (i - now.weekday()) % 7
                             if days_ahead == 0:
@@ -241,10 +246,15 @@ class BookingMixin:
                 if not is_available:
                     print(f"❌ Time slot not available: {conflict_info}")
                     alternatives = self.get_alternative_time_suggestions(appointment_datetime)
-                
+
+                    # Surface WHY. Callers used to infer "closed day" from an
+                    # empty alternatives list, which told a lead their Sunday
+                    # slot was a Saturday whenever booking failed for any other
+                    # reason.
                     return {
-                        'success': False, 
-                        'error': 'Time not available', 
+                        'success': False,
+                        'error': 'Time not available',
+                        'reason': conflict_info if isinstance(conflict_info, str) else 'conflict',
                         'alternatives': alternatives
                     }
             

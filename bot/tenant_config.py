@@ -257,6 +257,75 @@ class TenantConfig:
             return ''
         return f"{p[0][:3]}–{p[1][:3]} {p[6]}–{p[7]}"
 
+    # ── Scheduling (the same business_hours JSON, read as numbers so the
+    # availability engine books the tenant's real week instead of Homebase's).
+    # No hours on file → the legacy Homebase week (closed Saturdays, 8–18) so
+    # pre-profile tenants keep behaving exactly as before. ──────────────────
+    DEFAULT_CLOSED_WEEKDAYS = frozenset({5})   # Saturday
+    DEFAULT_OPEN_HOUR = 8
+    DEFAULT_CLOSE_HOUR = 18
+
+    # Python weekday() index per short token as stored in business_hours['closed'].
+    _WEEKDAY_INDEX = {'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6}
+    _WEEKDAY_NAME = ['Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                     'Friday', 'Saturday', 'Sunday']
+
+    def _hours_json(self) -> dict:
+        return self._field('business_hours', None) or {}
+
+    def closed_weekdays(self) -> frozenset:
+        """Python weekday() indexes the tenant is closed on. A tenant open all
+        week returns an empty set — never assume Saturday."""
+        hours = self._hours_json()
+        if not hours:
+            return self.DEFAULT_CLOSED_WEEKDAYS
+        closed = hours.get('closed') or []
+        return frozenset(
+            self._WEEKDAY_INDEX[str(d).strip().lower()[:3]]
+            for d in closed
+            if str(d).strip().lower()[:3] in self._WEEKDAY_INDEX
+        )
+
+    def is_open_on(self, weekday: int) -> bool:
+        return weekday not in self.closed_weekdays()
+
+    def closed_day_names(self) -> list:
+        """['Saturday'] — in week order, for copy."""
+        return [self._WEEKDAY_NAME[i] for i in sorted(self.closed_weekdays())]
+
+    def closed_days_phrase(self) -> str:
+        """'Saturdays' / 'Saturdays or Sundays' / '' when open all week."""
+        names = [f"{n}s" for n in self.closed_day_names()]
+        if not names:
+            return ''
+        if len(names) == 1:
+            return names[0]
+        return ', '.join(names[:-1]) + f" or {names[-1]}"
+
+    def _clock_hour(self, key, default):
+        raw = self._hours_json().get(key)
+        if not raw:
+            return default
+        try:
+            hh, _, mm = str(raw).partition(':')
+            hour = int(hh)
+        except (TypeError, ValueError):
+            return default
+        if not 0 <= hour <= 23:
+            return default
+        # A close time past the hour ("18:30") still only starts jobs at 18.
+        return hour
+
+    def open_hour(self) -> int:
+        return self._clock_hour('open', self.DEFAULT_OPEN_HOUR)
+
+    def close_hour(self) -> int:
+        return self._clock_hour('close', self.DEFAULT_CLOSE_HOUR)
+
+    def booking_hours(self) -> list:
+        """Two-hourly start slots inside the tenant's own day, e.g. 8,10,12,14,16."""
+        return list(range(self.open_hour(), max(self.open_hour() + 1, self.close_hour()), 2))
+
     @property
     def currency(self) -> str:
         return self._field('currency', 'US$')
@@ -346,6 +415,66 @@ class TenantConfig:
                     f"labour from {self.currency}{_as_int(item.labour)}"
                 )
         return out
+
+    def cheapest_labour_rate(self):
+        """The lowest labour-only figure this tenant charges, for the "labour
+        can start from as little as X" reassurance on a price objection. None
+        when they price nothing that way — the copy then omits the claim rather
+        than quoting another tenant's rate."""
+        rates = [
+            _as_int(item.labour) for item in self.price_items()
+            if item.labour is not None
+        ]
+        return min(rates) if rates else None
+
+    # The fitting families the product catalogue covers — the photo gallery
+    # shows things you buy and have installed, so renovations, packages,
+    # repairs and geyser services are deliberately left out of its price list.
+    CATALOGUE_FAMILIES = ('toilet', 'tub', 'shower', 'vanity', 'geyser',
+                          'chamber', 'basin')
+
+    def catalogue_price_lines(self) -> str:
+        """The bullet price list sent alongside the catalogue photos, rendered
+        from THIS tenant's rows — '' when they have no prices on file (callers
+        then send the photos without a price sheet rather than another
+        tenant's figures).
+
+        Only the fitting families the catalogue photos actually show — a
+        product list, not the whole price sheet (renovations, packages, repairs
+        and service jobs are quoted elsewhere). Split rows render 'Supply from
+        X | Install from Y'; multi-part builds (freestanding tub = tub + mixer
+        + install) itemise their parts; single-figure rows render 'From X'.
+        """
+        lines = []
+        for item in self.price_items():
+            if item.family not in self.CATALOGUE_FAMILIES:
+                continue
+            name = item.label or item.short_label or item.family
+            # Prefix the variant only when the label doesn't already say it
+            # ('freestanding tub' stays as it is; a bare 'tub' row on the
+            # 'corner' variant becomes 'Corner tub').
+            variant_words = [w for w in (item.variant or '').split('_') if w]
+            if variant_words and not all(w in name.lower() for w in variant_words):
+                name = f"{' '.join(variant_words)} {name}"
+            name = name.strip().capitalize()
+
+            parts = [
+                f"{p.get('name', '').capitalize()} from {self.currency}{_as_int(p.get('amount'))}"
+                for p in (item.parts or [])
+                if p.get('name') and p.get('amount') is not None
+            ]
+            if parts:
+                lines.append(f"• {name}: " + " | ".join(parts))
+            elif item.supply is not None and item.labour is not None:
+                lines.append(
+                    f"• {name}: Supply from {self.currency}{_as_int(item.supply)}"
+                    f" | Install from {self.currency}{_as_int(item.labour)}"
+                )
+            else:
+                figure = item.allin if item.allin is not None else item.flat
+                if figure is not None:
+                    lines.append(f"• {name}: From {self.currency}{_as_int(figure)}")
+        return "\n".join(lines)
 
     def tub_size_blocks(self) -> dict:
         """{'built_in'|'freestanding'|'corner': rendered measurement block} —

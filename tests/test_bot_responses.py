@@ -2771,14 +2771,17 @@ for msg, expected in WA_DELIVERY_CASES:
     except Exception as e:
         results.log(f"wants_whatsapp_delivery: '{msg[:30]}'", False, got=str(e))
 
-# CTWA (Click-to-WhatsApp ad) follow-up cadence. Ad leads must use the longer
-# 72h schedule — absolute offsets from the lead's last response: FU1 4h, FU2 8h,
-# FU3 24h, FU4 48h (2 in 0-24h, 1 in 24-48h, 1 in 48-72h) — while non-ad leads
-# keep the original tier cadence. Pinned API-free with a stub lead.
+# CTWA (Facebook/Instagram click-to-WhatsApp ad) follow-up cadence. An ad tap
+# opens a 72h free-form window instead of 24h, so ad leads get SIX touches on
+# absolute offsets from their last response — 4h, 8h, 20h (day 1), 32h, 48h
+# (day 2), 66h (day 3) — while non-ad leads keep the tier cadence over 24h. The
+# earlier schedule stopped at 48h and wasted the whole third day of the window.
+# Pinned API-free with a stub lead.
 from datetime import timedelta as _td
 from django.utils import timezone as _tz
 from bot.management.commands.send_followups import (
     Command as _FollowupCmd, CTWA_FOLLOWUP_OFFSETS as _CTWA_OFFS,
+    max_followups_for as _max_fu_ctwa,
 )
 from bot.models import LeadStatus as _LS
 
@@ -2807,10 +2810,16 @@ _CTWA_CADENCE_CASES = [
     ("CTWA FU1 after 4h",   True, 0, 6.0,  True),
     ("CTWA FU2 before 8h",  True, 1, 6.0,  False),
     ("CTWA FU2 after 8h",   True, 1, 10.0, True),
-    ("CTWA FU3 before 24h", True, 2, 22.0, False),
-    ("CTWA FU3 after 24h",  True, 2, 26.0, True),
-    ("CTWA FU4 before 48h", True, 3, 46.0, False),
-    ("CTWA FU4 after 48h",  True, 3, 50.0, True),
+    ("CTWA FU3 before 20h", True, 2, 18.0, False),
+    ("CTWA FU3 after 20h",  True, 2, 22.0, True),
+    ("CTWA FU4 before 32h", True, 3, 30.0, False),
+    ("CTWA FU4 after 32h",  True, 3, 34.0, True),
+    ("CTWA FU5 before 48h", True, 4, 46.0, False),
+    ("CTWA FU5 after 48h",  True, 4, 50.0, True),
+    # The touch that only exists because the window is 72h: day three, the last
+    # chance to reach an ad lead before free-form sending shuts off.
+    ("CTWA FU6 before 66h", True, 5, 64.0, False),
+    ("CTWA FU6 after 66h",  True, 5, 68.0, True),
     # Non-ad COLD lead must NOT use the 72h offsets: at 26h with 2 prior sends
     # it'd be "after 24h" under CTWA, but the tier path measures from the last
     # send (here = last response) with a 6h step, so it IS ready — proving the
@@ -2834,11 +2843,26 @@ for label, ctwa, cnt, hrs, expected in _CTWA_CADENCE_CASES:
 # Offsets themselves are the contract — pin them so a refactor can't silently
 # change the schedule.
 results.log(
-    "followup cadence: CTWA offsets are (4, 8, 24, 48)",
-    _CTWA_OFFS == (4, 8, 24, 48),
+    "followup cadence: CTWA offsets are (4, 8, 20, 32, 48, 66)",
+    _CTWA_OFFS == (4, 8, 20, 32, 48, 66),
     f"offsets={_CTWA_OFFS}",
-    expected="(4, 8, 24, 48)",
+    expected="(4, 8, 20, 32, 48, 66)",
     got=str(_CTWA_OFFS),
+)
+# The 72h window must actually be worked: touches on all three days, and the
+# last one late enough to use the final day without crowding the close.
+results.log(
+    "followup cadence: CTWA works all three days of the 72h window",
+    (len([o for o in _CTWA_OFFS if o < 24]) >= 2 and
+     any(24 <= o < 48 for o in _CTWA_OFFS) and
+     any(48 <= o <= 70 for o in _CTWA_OFFS)),
+    got=str(_CTWA_OFFS),
+)
+results.log(
+    "followup cadence: an ad lead gets more touches than an organic one",
+    _max_fu_ctwa(_StubLead(True, 0, 0.0)) > _max_fu_ctwa(_StubLead(False, 0, 0.0)),
+    got=f"ctwa={_max_fu_ctwa(_StubLead(True, 0, 0.0))} "
+        f"organic={_max_fu_ctwa(_StubLead(False, 0, 0.0))}",
 )
 
 # next_followup_due_at powers the UI "next follow-up" chip. It must agree with the
@@ -2850,7 +2874,7 @@ def _due(lead):
 _info = _due(_StubLead(True, 0, 0.0))
 results.log(
     "next_followup_due_at: CTWA FU1 attempt+flag",
-    bool(_info) and _info['attempt'] == 1 and _info['max'] == 4 and _info['is_ctwa'] is True,
+    bool(_info) and _info['attempt'] == 1 and _info['max'] == 6 and _info['is_ctwa'] is True,
     got=str(_info),
 )
 # The displayed due time is clamped to the daily contact window (it only sends
@@ -2882,8 +2906,10 @@ results.log(
     got=str(_info2),
 )
 # Retired / not-in-flow leads return None.
+results.log("next_followup_due_at: an ad lead is NOT retired at 4 — the 72h window has more",
+            _due(_StubLead(True, 4, 0.0)) is not None, got=str(_due(_StubLead(True, 4, 0.0))))
 results.log("next_followup_due_at: None when count>=max",
-            _due(_StubLead(True, 4, 0.0)) is None, got=str(_due(_StubLead(True, 4, 0.0))))
+            _due(_StubLead(True, 6, 0.0)) is None, got=str(_due(_StubLead(True, 6, 0.0))))
 results.log("next_followup_due_at: None when inactive",
             _due(_StubLead(True, 0, 0.0, is_lead_active=False)) is None)
 results.log("next_followup_due_at: None when booked",
@@ -3232,6 +3258,600 @@ try:
     )
 except Exception as e:
     results.log("hours rendering: half-hour opening time", False, got=str(e))
+
+# ── Closed days are the TENANT's, never hardcoded Saturday ───────────────────
+# Production (Barmak, 2026-08-21, lead on +27610318200): the lead picked one of
+# the slots we had just offered — "Sunday at 12" — and got back "We unfortunately
+# don't operate on Saturdays. Our working hours are Monday to Sunday, 8:00 AM –
+# 8:00 PM." Two bugs in one line: the closed-day copy was hardcoded to Homebase's
+# Saturday while the hours line was tenant-aware (so the reply contradicted
+# itself), and the branch fired on ANY booking failure with no alternatives.
+try:
+    from bot.tenant_config import TenantConfig as _TCd
+    from bot.views.plumbot.response_mixin import _named_closed_day as _ncd
+
+    def _cfg_for(closed, days='Monday-Sunday', open_='08:00', close='20:00'):
+        class _P:
+            business_hours = {'days': days, 'open': open_, 'close': close, 'closed': closed}
+        c = _TCd()
+        c._profile = _P()
+        c._profile_loaded = True
+        return c
+
+    class _FakeMixinDays:
+        def __init__(self, cfg):
+            self.tenant_cfg = cfg
+
+    _seven_day = _FakeMixinDays(_cfg_for([]))            # Barmak: open all week
+    _sat_closed = _FakeMixinDays(_cfg_for(['sat'], days='Sunday-Friday', close='18:00'))
+    _weekend_closed = _FakeMixinDays(_cfg_for(['sat', 'sun'], days='Monday-Friday'))
+
+    CLOSED_DAY_CASES = [
+        # (mixin, message, expected closed-day name or None)
+        (_seven_day,      "Sunday at 12",            None),   # the bug
+        (_seven_day,      "Saturday at 12",          None),   # tenant works Saturdays
+        (_seven_day,      "Yes\nSunday at 12",       None),   # batched reply
+        (_sat_closed,     "Sunday at 12",            None),   # Sunday IS a working day
+        (_sat_closed,     "Saturday at 12",          'Saturday'),
+        (_sat_closed,     "can you come sat?",       'Saturday'),
+        (_sat_closed,     "I'm satisfied with that", None),   # 'sat' inside a word
+        (_sat_closed,     "we can do that on mugovera", 'Saturday'),
+        (_weekend_closed, "Sunday at 12",            'Sunday'),
+        (_weekend_closed, "Tuesday morning",         None),
+    ]
+    for _mx, _msg, _expected in CLOSED_DAY_CASES:
+        _got = _ncd(_mx, _msg)
+        results.log(
+            f"_named_closed_day (closed={sorted(_mx.tenant_cfg.closed_weekdays())}): '{_msg[:24]}'",
+            _got == _expected, expected=str(_expected), got=str(_got),
+        )
+
+    # The config layer itself: a tenant open all week has NO closed days and no
+    # closed-day phrase to put in copy.
+    results.log("closed_weekdays: open all week → empty",
+                _seven_day.tenant_cfg.closed_weekdays() == frozenset(),
+                got=str(_seven_day.tenant_cfg.closed_weekdays()))
+    results.log("closed_days_phrase: open all week → '' (no Saturday copy)",
+                _seven_day.tenant_cfg.closed_days_phrase() == '',
+                got=repr(_seven_day.tenant_cfg.closed_days_phrase()))
+    results.log("closed_days_phrase: two closed days reads naturally",
+                _weekend_closed.tenant_cfg.closed_days_phrase() == 'Saturdays or Sundays',
+                got=repr(_weekend_closed.tenant_cfg.closed_days_phrase()))
+    results.log("is_open_on: seven-day tenant is open on Saturday",
+                _seven_day.tenant_cfg.is_open_on(5) is True,
+                got=str(_seven_day.tenant_cfg.is_open_on(5)))
+    # Booking slots follow the tenant's own window, not a hardcoded 8–18.
+    results.log("booking_hours: 08:00–20:00 tenant offers a 6 PM slot",
+                _seven_day.tenant_cfg.booking_hours() == [8, 10, 12, 14, 16, 18],
+                got=str(_seven_day.tenant_cfg.booking_hours()))
+    results.log("booking_hours: 08:00–18:00 tenant stops at 4 PM",
+                _sat_closed.tenant_cfg.booking_hours() == [8, 10, 12, 14, 16],
+                got=str(_sat_closed.tenant_cfg.booking_hours()))
+    # No hours on file → the legacy Homebase week, so untouched tenants behave
+    # exactly as before this change.
+    _bare = _TCd()
+    results.log("no profile → legacy week (closed Sat, 8–18)",
+                _bare.closed_weekdays() == frozenset({5}) and
+                (_bare.open_hour(), _bare.close_hour()) == (8, 18),
+                got=f"{_bare.closed_weekdays()} {_bare.open_hour()}-{_bare.close_hour()}")
+except Exception as e:
+    results.log("closed days are tenant-scoped", False, got=str(e))
+
+# The deterministic availability backfill must not drop a day the tenant works.
+# Same root cause: it hardcoded "Saturday → None".
+try:
+    from bot.whatsapp_webhook import _keyword_availability_date as _kad
+    _sat_only = frozenset({5})
+    _none_closed = frozenset()
+    results.log("_keyword_availability_date: Saturday kept for a 7-day tenant",
+                _kad("saturday works", _none_closed) is not None,
+                got=str(_kad("saturday works", _none_closed)))
+    results.log("_keyword_availability_date: Saturday dropped when closed then",
+                _kad("saturday works", _sat_only) is None,
+                got=str(_kad("saturday works", _sat_only)))
+    results.log("_keyword_availability_date: Sunday always resolves for a 7-day tenant",
+                _kad("sunday at 12", _none_closed) is not None,
+                got=str(_kad("sunday at 12", _none_closed)))
+except Exception as e:
+    results.log("_keyword_availability_date closed-day handling", False, got=str(e))
+
+# ── Follow-up cadence: at least 4, spread across the messaging window ────────
+# Every lead gets a minimum of four touches, and the spacing is derived from the
+# lead's own WhatsApp free-form window (24h standard, 72h CTWA) rather than a
+# fixed hour count. The old fixed cadence (COLD: 4+6+6+6 = 22h, plus up to ~1h
+# of jitter per step) could push the fourth touch past the 24h close, where a
+# free-form send bounces with 131047 — so the lead silently got three.
+try:
+    from bot.management.commands.send_followups import (
+        Command as _FuCmd2, max_followups_for as _max_fu,
+        FOLLOWUP_MIN_COUNT as _FU_MIN,
+        FOLLOWUP_WINDOW_MARGIN_HOURS as _FU_MARGIN,
+        FOLLOWUP_MIN_GAP_HOURS as _FU_GAP,
+    )
+    from datetime import timedelta as _td2
+    from django.utils import timezone as _tz2
+    from bot.models import LeadStatus as _LS2
+
+    class _WindowLead:
+        """Duck-typed lead carrying a real messaging window (no DB)."""
+        CTWA_WINDOW_HOURS = 72
+
+        def __init__(self, status=_LS2.COLD, ctwa=False, count=0, hours_ago=0.0,
+                     last_followup_hours_ago=None, entry_hours_ago=None):
+            self.id = 4242
+            self.lead_status = status
+            self.followup_count = count
+            ref = _tz2.now() - _td2(hours=hours_ago)
+            self.last_customer_response = ref
+            self.last_inbound_at = ref
+            self.created_at = ref
+            self.last_followup_sent = (
+                None if last_followup_hours_ago is None
+                else _tz2.now() - _td2(hours=last_followup_hours_ago)
+            )
+            self.ctwa_entry_at = (
+                None if not ctwa
+                else (ref if entry_hours_ago is None
+                      else _tz2.now() - _td2(hours=entry_hours_ago))
+            )
+            self.is_lead_active = True
+            self.status = 'pending'
+            self.followup_stage = None
+
+        @property
+        def messaging_window_closes_at(self):
+            closes = [self.last_inbound_at + _td2(hours=24)]
+            if self.ctwa_entry_at:
+                closes.append(self.ctwa_entry_at + _td2(hours=self.CTWA_WINDOW_HOURS))
+            return max(closes)
+
+    _fu2 = _FuCmd2()
+
+    results.log("followup minimum: FOLLOWUP_MIN_COUNT is 4", _FU_MIN == 4, got=str(_FU_MIN))
+
+    # Every tier gets at least four attempts, and the whole schedule fits the window.
+    for _st in (_LS2.VERY_HOT, _LS2.HOT, _LS2.WARM, _LS2.COLD):
+        _lead = _WindowLead(status=_st)
+        _offs = _fu2._followup_offsets(_lead)
+        _win = _fu2._messaging_window_hours(_lead)
+        results.log(f"followup cadence [{_st}]: at least 4 touches",
+                    len(_offs) >= 4 and _max_fu(_lead) >= 4,
+                    got=f"{len(_offs)} offsets, max={_max_fu(_lead)}")
+        results.log(f"followup cadence [{_st}]: strictly increasing",
+                    all(b > a for a, b in zip(_offs, _offs[1:])),
+                    got=str([round(o, 1) for o in _offs]))
+        # +1h covers the worst-case jitter on the final touch.
+        results.log(f"followup cadence [{_st}]: last touch lands inside the 24h window",
+                    _offs[-1] + 1.0 <= _win - 0.5,
+                    expected=f"<= {_win - 0.5:.1f}h", got=f"{_offs[-1]:.1f}h")
+        results.log(f"followup cadence [{_st}]: first touch is not instant",
+                    _offs[0] >= 1.0, got=f"{_offs[0]:.1f}h")
+
+    # Hotter leads are chased sooner than colder ones.
+    _hot_offs = _fu2._followup_offsets(_WindowLead(status=_LS2.VERY_HOT))
+    _cold_offs = _fu2._followup_offsets(_WindowLead(status=_LS2.COLD))
+    results.log("followup cadence: very hot is chased sooner than cold",
+                all(h < c for h, c in zip(_hot_offs, _cold_offs)),
+                got=f"hot={[round(o,1) for o in _hot_offs]} cold={[round(o,1) for o in _cold_offs]}")
+
+    # A 72h CTWA window spreads wider than a 24h one — the spacing follows the
+    # window, which is the whole point.
+    _ctwa_offs = _fu2._followup_offsets(_WindowLead(ctwa=True))
+    results.log("followup cadence: a 72h window spreads further than a 24h one",
+                _ctwa_offs[-1] > _cold_offs[-1] * 2,
+                got=f"ctwa={[round(o,1) for o in _ctwa_offs]}")
+    results.log("followup cadence: CTWA keeps its tuned band offsets on a full window",
+                tuple(round(o, 1) for o in _ctwa_offs) == (4.0, 8.0, 20.0, 32.0, 48.0, 66.0),
+                got=str([round(o, 1) for o in _ctwa_offs]))
+    results.log("followup cadence: the 72h window earns extra touches (6 vs 4)",
+                len(_ctwa_offs) == 6 and _max_fu(_WindowLead(ctwa=True)) == 6,
+                got=f"{len(_ctwa_offs)} offsets")
+    results.log("followup cadence: the last CTWA touch still clears the 72h close",
+                _ctwa_offs[-1] + 1.0 <= 72 - 1.5,
+                got=f"{_ctwa_offs[-1]:.1f}h")
+    # A CTWA lead whose last message left less than the full 72h ahead gets the
+    # same shape, squeezed — never a schedule that runs past the close.
+    # Ad tapped 60h ago, lead last messaged 30h ago → only ~12h of the ad window
+    # is left ahead of us, so the six touches must compress into what remains.
+    _short = _WindowLead(ctwa=True, hours_ago=30.0, entry_hours_ago=60.0)
+    _short_offs = _fu2._followup_offsets(_short)
+    _short_win = _fu2._messaging_window_hours(_short)
+    results.log("followup cadence: a partly-spent ad window is scaled, not overrun",
+                len(_short_offs) == 6 and _short_offs[-1] <= _short_win - 1.0,
+                got=f"window={_short_win:.1f}h offsets={[round(o,1) for o in _short_offs]}")
+
+    # A per-status override below four is floored back up to four.
+    class _OddStatus:
+        lead_status = 'made_up_status'
+    results.log("followup minimum: unknown status still gets 4",
+                _max_fu(_OddStatus()) == 4, got=str(_max_fu(_OddStatus())))
+
+    # Offsets are ABSOLUTE from the window opening, so a late attempt never
+    # pushes the rest past the close (the old per-send reference drifted).
+    _late = _WindowLead(status=_LS2.COLD, count=1, hours_ago=12.0,
+                        last_followup_hours_ago=9.0)
+    _idx, _wait, _ref = _fu2._followup_wait_and_reference(_late)
+    results.log("followup cadence: reference is the window start, not the last send",
+                _ref == _late.last_customer_response, got=str(_ref))
+    results.log("followup cadence: attempt 2 sits at its window position, so a "
+                "12h-old lead is due now",
+                _wait < 12.0, got=f"wait={_wait:.1f}h")
+
+    # ── Sending hours: nothing is left stranded for the lead's next message ──
+    # Production complaint: a follow-up that came due during the nightly quiet
+    # hours sat unsent — and by the time we could send again the 24h messaging
+    # window had closed, so it went out only once the lead messaged again,
+    # landing as a stale "just checking in" on top of their live message. The
+    # schedule is now reconciled with the hours we can actually send in, and a
+    # touch that cannot survive the night is brought forward instead.
+    # Frozen clock so the roll-forward/pull-back maths is deterministic.
+    import datetime as _dt_fz
+    from unittest import mock as _mock_fz
+    import pytz as _pytz_fz
+    from bot.management.commands.send_followups import (
+        LAST_CALL_GRACE_MINUTES as _LC_GRACE,
+        LAST_CALL_MIN_GAP_HOURS as _LC_GAP,
+        FOLLOWUP_LIVE_CONVERSATION_MINUTES as _LIVE_MIN,
+        FOLLOWUP_QUIET_AFTER_OUTBOUND_HOURS as _QUIET_OUT,
+    )
+    _sast_fz = _pytz_fz.timezone('Africa/Johannesburg')
+
+    def _at(h, m=0, day=23):
+        return _sast_fz.localize(_dt_fz.datetime(2026, 6, day, h, m))
+
+    class _ClockLead:
+        """Lead with explicit timestamps and a real 24h window (no DB, no now())."""
+        def __init__(self, last_msg, count=0, last_followup=None, last_outbound=None,
+                     status=_LS2.COLD):
+            self.id = 4242
+            self.lead_status = status
+            self.followup_count = count
+            self.last_customer_response = last_msg
+            self.last_inbound_at = last_msg
+            self.created_at = last_msg
+            self.last_followup_sent = last_followup
+            self.last_outbound_at = last_outbound
+            self.ctwa_entry_at = None
+            self._now = None
+
+        @property
+        def messaging_window_closes_at(self):
+            return self.last_inbound_at + _td2(hours=24)
+
+        @property
+        def messaging_window_open(self):
+            return self.messaging_window_closes_at > (self._now or _tz2.now())
+
+    def _frozen(now_dt):
+        return _mock_fz.patch(
+            'bot.management.commands.send_followups.timezone.now',
+            side_effect=lambda: now_dt,
+        )
+
+    # The mirror of _next_window_open: the last minute we may still send.
+    results.log("sending hours: 06:00 rolls BACK to the previous evening 20:52",
+                _fu2._window_moment_before(_at(6, 0)).strftime('%d %H:%M') == '22 20:52',
+                got=str(_fu2._window_moment_before(_at(6, 0))))
+    results.log("sending hours: a midday deadline stays where it is",
+                _fu2._window_moment_before(_at(12, 0)).strftime('%d %H:%M') == '23 12:00',
+                got=str(_fu2._window_moment_before(_at(12, 0))))
+    results.log("sending hours: 22:30 rolls back to the same evening's 20:52",
+                _fu2._window_moment_before(_at(22, 30)).strftime('%d %H:%M') == '23 20:52',
+                got=str(_fu2._window_moment_before(_at(22, 30))))
+
+    # A lead who wrote at 09:00: the last touch would naturally land ~04:00, in
+    # the quiet hours, and the window shuts at 09:00 before the next opening.
+    # It must be scheduled for the evening BEFORE, not left for 08:21.
+    _stranded = _ClockLead(_at(9, 0, day=22), count=3,
+                           last_followup=_at(17, 0, day=22))
+    with _frozen(_at(19, 0, day=22)):
+        _stranded._now = _at(19, 0, day=22)
+        _due_fz = _fu2._scheduled_due_at(_stranded)
+        _deadline = _fu2._last_sendable_moment(_stranded)
+    results.log("sending hours: the last touch is pulled back before the window shuts",
+                _due_fz is not None and _due_fz <= _at(20, 53, day=22),
+                expected="on the 22nd, before 20:53",
+                got=str(_due_fz.astimezone(_sast_fz)) if _due_fz else 'None')
+    results.log("sending hours: the pull-back leaves the cron room to catch it",
+                _deadline is not None and _due_fz <= _deadline - _td2(minutes=_LC_GRACE - 1),
+                got=f"due={_due_fz} deadline={_deadline}")
+
+    # In that final stretch the spacing rule relaxes — a touch that must go now
+    # or never is worth a tighter gap than one with a day of window ahead.
+    with _frozen(_at(20, 30, day=22)):
+        _stranded._now = _at(20, 30, day=22)
+        results.log("sending hours: the final stretch counts as a last call",
+                    _fu2._is_last_call(_stranded) is True)
+        results.log("sending hours: last call relaxes the spacing rule",
+                    _fu2._min_gap_hours(_stranded) == _LC_GAP,
+                    got=str(_fu2._min_gap_hours(_stranded)))
+    _roomy = _ClockLead(_at(9, 0, day=23), count=1, last_followup=_at(12, 0, day=23))
+    with _frozen(_at(13, 0, day=23)):
+        _roomy._now = _at(13, 0, day=23)
+        results.log("sending hours: mid-window is NOT a last call",
+                    _fu2._is_last_call(_roomy) is False)
+        results.log("sending hours: normal spacing applies mid-window",
+                    _fu2._min_gap_hours(_roomy) == _FU_GAP,
+                    got=str(_fu2._min_gap_hours(_roomy)))
+        # Two touches never fire back to back: a touch whose own slot has
+        # passed is still held until the gap since the last send has elapsed.
+        _crowded = _ClockLead(_at(9, 0, day=22), count=1,
+                              last_followup=_at(12, 40, day=23))
+        _crowded._now = _at(13, 0, day=23)
+        _ready, _why = _fu2._is_ready_for_followup(_crowded, None, force=True)
+        _crowded_due = _fu2._scheduled_due_at(_crowded)
+        results.log("followup cadence: min gap blocks back-to-back sends",
+                    _ready is False and
+                    _crowded_due >= _at(12, 40, day=23) + _td2(hours=_FU_GAP),
+                    expected=f"held until at least {_FU_GAP}h after the last send",
+                    got=f"ready={_ready} due={_crowded_due} ({_why})")
+        # ...and one that is properly spaced does fire.
+        _spaced = _ClockLead(_at(9, 0, day=22), count=1,
+                             last_followup=_at(10, 0, day=23))
+        _spaced._now = _at(13, 0, day=23)
+        results.log("followup cadence: a properly spaced attempt still fires",
+                    _fu2._is_ready_for_followup(_spaced, None, force=True)[0] is True,
+                    got=str(_fu2._is_ready_for_followup(_spaced, None, force=True)))
+
+        # A follow-up never lands on top of a live exchange: not right after the
+        # lead's own message, and not right after ours. This is what made the
+        # stranded touch read as redundant when it finally went out.
+        # (Forced overdue, so the guard is what's under test — not the clock.)
+        _live = _ClockLead(_at(12, 55, day=23), count=2,
+                           last_followup=_at(9, 0, day=23))
+        _live._now = _at(13, 0, day=23)
+        with _mock_fz.patch.object(_fu2, '_scheduled_due_at',
+                                   return_value=_at(9, 30, day=23)):
+            _ready_live, _why_live = _fu2._is_ready_for_followup(_live, None, force=True)
+        results.log("sending hours: no follow-up while the lead is mid-conversation",
+                    _ready_live is False and 'live' in _why_live,
+                    got=f"ready={_ready_live} ({_why_live})")
+        _just_replied = _ClockLead(_at(9, 0, day=22), count=2,
+                                   last_followup=_at(8, 30, day=23),
+                                   last_outbound=_at(12, 50, day=23))
+        _just_replied._now = _at(13, 0, day=23)
+        with _mock_fz.patch.object(_fu2, '_scheduled_due_at',
+                                   return_value=_at(9, 30, day=23)):
+            _ready_out, _why_out = _fu2._is_ready_for_followup(
+                _just_replied, None, force=True)
+        results.log("sending hours: no follow-up right after our own message",
+                    _ready_out is False and 'we last messaged' in _why_out,
+                    got=f"ready={_ready_out} ({_why_out})")
+    results.log("sending hours: the live-conversation guard is minutes, not seconds",
+                _LIVE_MIN >= 15 and _QUIET_OUT >= 1.0,
+                got=f"live={_LIVE_MIN}min quiet_after_outbound={_QUIET_OUT}h")
+
+    # The whole schedule is planned against sendable hours, so a lead whose
+    # window tail falls in the quiet hours still gets every touch.
+    _tight = _ClockLead(_at(7, 0, day=23))
+    with _frozen(_at(7, 0, day=23)):
+        _tight._now = _at(7, 0, day=23)
+        _tight_offs = _fu2._followup_offsets(_tight)
+        _tight_sendable = _fu2._sendable_hours(_tight)
+    results.log("sending hours: the schedule fits the SENDABLE span, not just the window",
+                _tight_offs[-1] <= _tight_sendable,
+                expected=f"last offset <= {_tight_sendable:.1f}h of sendable time",
+                got=str([round(o, 1) for o in _tight_offs]))
+
+    # Delay-flow and parked nudges follow the same window rule and also do 4.
+    _dl = _fu2._delay_nudge_offsets(_WindowLead())
+    results.log("delay nudges: 4 touches, all inside the window",
+                len(_dl) >= 4 and _dl[-1] <= 24 - _FU_MARGIN,
+                got=str([round(o, 1) for o in _dl]))
+    _pk = _fu2._parked_nudge_offsets(_WindowLead())
+    results.log("parked nudges: 4 touches, all inside the window",
+                len(_pk) >= 4 and _pk[-1] <= 24 - _FU_MARGIN,
+                got=str([round(o, 1) for o in _pk]))
+    results.log("parked nudges: sit in the back half (they asked for space)",
+                _pk[0] >= 24 * 0.3, got=f"first={_pk[0]:.1f}h")
+    results.log("parked nudges: enough copy for every touch",
+                len(_FuCmd2._PARKED_NUDGE_MESSAGES) >= 4,
+                got=str(len(_FuCmd2._PARKED_NUDGE_MESSAGES)))
+
+    # An ad lead only earns the six-touch cadence while the long window is
+    # genuinely still ahead of us. One who replied late — most of the 72h spent,
+    # a standard 24h left — falls back to the four-touch tier schedule that is
+    # tuned for 24h, rather than cramming six touches into one day.
+    from bot.management.commands.send_followups import (
+        has_extended_window as _has_ext, CTWA_EXTENDED_MIN_HOURS as _EXT_MIN,
+    )
+    _late_ad = _WindowLead(ctwa=True, hours_ago=2.0, entry_hours_ago=50.0)
+    results.log("ad window: a nearly-spent ad window drops back to the 24h cadence",
+                _has_ext(_late_ad) is False and _max_fu(_late_ad) == 4,
+                got=f"window={_fu2._messaging_window_hours(_late_ad):.1f}h "
+                    f"extended={_has_ext(_late_ad)} touches={_max_fu(_late_ad)}")
+    results.log("ad window: a fresh ad lead is on the extended cadence",
+                _has_ext(_WindowLead(ctwa=True)) is True and _max_fu(_WindowLead(ctwa=True)) == 6)
+    results.log("ad window: an organic lead is never on the extended cadence",
+                _has_ext(_WindowLead()) is False, got=str(_has_ext(_WindowLead())))
+    # Half the ad window left is still worth the extra touches.
+    _mid_ad = _WindowLead(ctwa=True, hours_ago=30.0, entry_hours_ago=60.0)
+    results.log("ad window: 42h of ad window left still earns 6 touches",
+                _has_ext(_mid_ad) is True and _max_fu(_mid_ad) == 6,
+                got=f"window={_fu2._messaging_window_hours(_mid_ad):.1f}h")
+    results.log("ad window: the extended threshold sits above a standard window",
+                _EXT_MIN > 24, got=str(_EXT_MIN))
+    # Whatever the shape, consecutive touches never breach the minimum gap.
+    for _lbl, _ld in (("fresh ad", _WindowLead(ctwa=True)),
+                      ("mid ad", _mid_ad),
+                      ("late ad", _late_ad),
+                      ("organic", _WindowLead())):
+        _o = _fu2._followup_offsets(_ld)
+        results.log(f"ad window [{_lbl}]: touches respect the minimum gap",
+                    all(b - a >= _FU_GAP for a, b in zip(_o, _o[1:])),
+                    got=str([round(x, 1) for x in _o]))
+
+    # A lead with no usable timestamps must not crash or schedule at zero.
+    class _BareLead:
+        id = 7
+        lead_status = _LS2.COLD
+        followup_count = 0
+        last_customer_response = None
+        last_inbound_at = None
+        last_followup_sent = None
+        created_at = None
+        ctwa_entry_at = None
+        messaging_window_closes_at = None
+    _bare_offs = _fu2._followup_offsets(_BareLead())
+    results.log("followup cadence: no timestamps → assumes a 24h window",
+                len(_bare_offs) >= 4 and _bare_offs[-1] < 24,
+                got=str([round(o, 1) for o in _bare_offs]))
+    results.log("followup cadence: no reference time → not ready (never sends blind)",
+                _fu2._is_ready_for_followup(_BareLead(), None, force=True)[0] is False,
+                got=str(_fu2._is_ready_for_followup(_BareLead(), None, force=True)))
+except Exception as e:
+    results.log("followup cadence: window-derived spacing", False, got=str(e))
+
+# ── No Homebase data on another tenant's messages ────────────────────────────
+# Every figure, number, place and business name a customer sees must come from
+# THEIR lead's tenant. These five paths were still hardcoded to Homebase, so a
+# second tenant's customers were quoted Homebase's prices, given Homebase's
+# plumber and told the company was based in Homebase's city.
+try:
+    from bot.tenant_config import TenantConfig as _TCl
+
+    class _PricedProfile:
+        """A tenant with its own (deliberately different) figures."""
+        business_hours = {'days': 'Monday-Sunday', 'open': '08:00', 'close': '18:00', 'closed': []}
+        plumber_contact = '+263700000001'
+        plumber_name = 'Rudo'
+        location_area = 'Kensington'
+        location_city = 'Bulawayo'
+        currency = 'US$'
+        faq_facts = {}
+        excluded_areas = []
+        licensed_claim_enabled = False
+
+    class _Row:
+        def __init__(self, family, variant='', label='', supply=None, labour=None,
+                     flat=None, allin=None, parts=None, short_label=''):
+            self.family, self.variant, self.label = family, variant, label
+            self.short_label = short_label
+            self.supply, self.labour, self.flat, self.allin = supply, labour, flat, allin
+            self.parts, self.sizes = parts or [], []
+
+    def _cfg_with_rows(rows):
+        c = _TCl()
+        c._profile = _PricedProfile()
+        c._profile_loaded = True
+        c._price_items = rows
+        return c
+
+    _other = _cfg_with_rows([
+        _Row('toilet', '', 'toilet seat', supply=11, labour=12, allin=23),
+        _Row('tub', '', 'tub', supply=13, labour=14, allin=27),
+        _Row('tub', 'freestanding', 'freestanding tub', allin=99,
+             parts=[{'name': 'tub', 'amount': 50}, {'name': 'mixer', 'amount': 25},
+                    {'name': 'install', 'amount': 24}]),
+        _Row('repair', 'leaking_tap', 'Leaking Tap', labour=7),   # cheapest labour
+        _Row('renovation', 'bathroom', 'Bathroom Renovation', flat=1234),
+    ])
+    _empty = _cfg_with_rows([])
+
+    # 1. Catalogue price list — was a hardcoded copy of Homebase's sheet sent
+    # alongside the (correctly tenant-scoped) catalogue photos.
+    _cat = _other.catalogue_price_lines()
+    results.log("tenant data: catalogue prices come from the tenant's own rows",
+                'US$11' in _cat and 'US$13' in _cat and 'US$50' in _cat,
+                got=_cat.replace('\n', ' | '))
+    results.log("tenant data: catalogue prices carry no Homebase figures",
+                not any(f'US${n}' in _cat for n in (160, 170, 180, 130, 150, 400, 670)),
+                got=_cat.replace('\n', ' | '))
+    results.log("tenant data: catalogue list is products only, not renovations",
+                'US$1234' not in _cat, got=_cat.replace('\n', ' | '))
+    results.log("tenant data: no prices on file → no price list at all",
+                _empty.catalogue_price_lines() == '',
+                got=repr(_empty.catalogue_price_lines()))
+
+    from bot.whatsapp_webhook import build_catalogue_price_text as _bcpt
+    _txt_none = _bcpt('Shall I book you in?', tenant=None)
+    results.log("tenant data: a tenant with no price sheet gets no invented prices",
+                'US$' not in _txt_none and 'catalogue' in _txt_none.lower(),
+                got=_txt_none[:120])
+
+    # 2. Tub pricing — was US$160/US$670 hardcoded, in English and Shona.
+    class _FakeTub(ResponseMixin):
+        def __init__(self, cfg):
+            self._tenant_cfg = cfg
+            self.appointment = None
+        def _last_assistant_was_tiedown(self):
+            return False
+
+    _tubbot = _FakeTub(_other)
+    for _kind in ('built_in', 'freestanding', None):
+        _reply = _tubbot._tub_price_reply(_kind, 'english')
+        results.log(f"tenant data: tub price [{_kind}] uses the tenant's figures",
+                    'US$27' in _reply and 'US$99' in _reply,
+                    got=_reply.replace('\n', ' ')[:150])
+        results.log(f"tenant data: tub price [{_kind}] never quotes Homebase",
+                    'US$160' not in _reply and 'US$670' not in _reply,
+                    got=_reply.replace('\n', ' ')[:150])
+    _sn = _tubbot._tub_price_reply('built_in', 'shona')
+    results.log("tenant data: the Shona tub reply is tenant-priced too",
+                'US$27' in _sn and 'US$160' not in _sn, got=_sn.replace('\n', ' ')[:150])
+    _no_tub = _FakeTub(_empty)._tub_price_reply('built_in', 'english')
+    results.log("tenant data: no tub prices on file → free-visit deflection, not a borrowed price",
+                'US$' not in _no_tub and 'free' in _no_tub.lower(),
+                got=_no_tub[:140])
+
+    # 3. Plumber alerts — both fell back to a hardcoded 263774819901.
+    from bot.whatsapp_webhook import _plumber_wa_number
+
+    class _LeadWithPlumber:
+        def __init__(self, override='', tenant_number='+263700000001'):
+            self.plumber_contact_number = override
+            self._tenant_number = tenant_number
+        def plumber_contact(self):
+            return self.plumber_contact_number or self._tenant_number
+
+    results.log("tenant data: plumber alert uses the tenant's number",
+                _plumber_wa_number(_LeadWithPlumber()) == '263700000001',
+                got=_plumber_wa_number(_LeadWithPlumber()))
+    results.log("tenant data: a per-lead plumber override still wins",
+                _plumber_wa_number(_LeadWithPlumber('+263711111111')) == '263711111111',
+                got=_plumber_wa_number(_LeadWithPlumber('+263711111111')))
+    results.log("tenant data: no number on file → no number, never Homebase's",
+                _plumber_wa_number(_LeadWithPlumber('', '')) == '',
+                got=repr(_plumber_wa_number(_LeadWithPlumber('', ''))))
+
+    # 4. Classifier prompts named HomeBase for every tenant.
+    from bot.unified_classifier import _SYSTEM as _UC_SYSTEM
+    results.log("tenant data: the unified classifier prompt is not hardwired to HomeBase",
+                'HomeBase' not in _UC_SYSTEM and '{business}' in _UC_SYSTEM,
+                got=_UC_SYSTEM.splitlines()[0] if _UC_SYSTEM else '')
+    import inspect as _inspect_l
+
+    def _code_lines(fn):
+        """Source minus comment lines — a comment ABOUT the old hardcoded value
+        must not read as the value still being in the copy."""
+        return "\n".join(
+            line for line in _inspect_l.getsource(fn).splitlines()
+            if not line.strip().startswith('#')
+        )
+
+    from bot.service_type_classifier import _deepseek_classify as _dsc
+    _dsc_src = _code_lines(_dsc)
+    _dsc_prompt = _dsc_src[_dsc_src.index('prompt = f'):] if 'prompt = f' in _dsc_src else _dsc_src
+    results.log("tenant data: the service-type prompt takes the business name",
+                'Homebase' not in _dsc_prompt and '{business}' in _dsc_prompt)
+
+    # 5. Customer-facing copy carried Homebase's city and cheapest labour rate.
+    results.log("tenant data: cheapest labour rate comes from the tenant's rows",
+                _other.cheapest_labour_rate() == 7, got=str(_other.cheapest_labour_rate()))
+    results.log("tenant data: no labour rows → no 'starts from' claim to make",
+                _empty.cheapest_labour_rate() is None,
+                got=str(_empty.cheapest_labour_rate()))
+    results.log("tenant data: the tenant's own location is available for the copy",
+                _other.location_short() == 'Kensington, Bulawayo',
+                got=_other.location_short())
+    import bot.out_of_scope_handler as _oos_l
+    _complaint_src = _code_lines(_oos_l._build_complaint_reply)
+    results.log("tenant data: the legitimacy reply no longer hardcodes Harare",
+                'based in Harare' not in _complaint_src and '_based_in' in _complaint_src)
+    results.log("tenant data: the price-objection reply no longer hardcodes US$20 labour",
+                'as little as US$20' not in _complaint_src and '_labour_line' in _complaint_src)
+except Exception as e:
+    results.log("tenant data: no Homebase values reach other tenants", False, got=str(e))
 
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The

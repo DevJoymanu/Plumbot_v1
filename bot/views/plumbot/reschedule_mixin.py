@@ -169,30 +169,40 @@ class RescheduleMixin:
                         days_ahead = 7
                     next_days[name] = (current_time + timedelta(days=days_ahead)).strftime('%B %d, %Y')
 
+                # This tenant's real week — a hardcoded "Saturday closed" made
+                # the model reject days the tenant actually works.
+                cfg = self.tenant_cfg
+                closed_idx = cfg.closed_weekdays()
+                closed_names = cfg.closed_day_names()
+                day_lines = "\n".join(
+                    f"        - {name.capitalize()}: {next_days[name]}"
+                    + (" (CLOSED — do NOT use)" if i in closed_idx else " (open)")
+                    for i, name in enumerate(day_names)
+                )
+                closed_rule = (
+                    f'2. {" / ".join(closed_names)} → return CLOSED_DAY (we are closed then)'
+                    if closed_names else
+                    '2. Every day of the week is a working day — never reject a day'
+                )
+
                 datetime_extraction_prompt = f"""You are a datetime extraction assistant for appointment scheduling.
 
         TASK: Extract a complete date and time from the customer's message and convert it to YYYY-MM-DDTHH:MM format.
 
         CURRENT CONTEXT:
         - Current datetime: {current_time.strftime('%Y-%m-%d %H:%M')} (Africa/Johannesburg, UTC+2)
-        - Business hours: 08:00–18:00
-        - Working days: Sunday through Friday (Saturday is CLOSED)
+        - Business hours: {cfg.open_hour():02d}:00–{cfg.close_hour():02d}:00
+        - Working days: {cfg.hours_sentence() or 'every day'}
         - Today is: {today_date_str} ({current_time.strftime('%A')})
 
         NEXT OCCURRENCE OF EACH DAY:
-        - Monday: {next_days['monday']}
-        - Tuesday: {next_days['tuesday']}
-        - Wednesday: {next_days['wednesday']}
-        - Thursday: {next_days['thursday']}
-        - Friday: {next_days['friday']}
-        - Saturday: {next_days['saturday']} (CLOSED — do NOT use)
-        - Sunday: {next_days['sunday']}
+{day_lines}
         - Tomorrow: {tomorrow_date_str}
 
         EXTRACTION RULES:
         1. Return a complete datetime ONLY if BOTH date AND time are clearly specified.
-        2. "Saturday" → return UNAVAILABLE (we are closed Saturdays)
-        3. "Sunday" → use Sunday date above, valid working day
+        {closed_rule}
+        3. A day marked "(open)" above is a valid working day — use its date.
         4. "tomorrow" → {tomorrow_date_str}
         5. "today" → {today_date_str}
         6. Time formats: "2pm"=14:00, "10am"=10:00, "2:30pm"=14:30, "14:00"=14:00
@@ -201,7 +211,7 @@ class RescheduleMixin:
 
         RESPONSE FORMAT (return ONLY one of these, no other text):
         - Complete datetime: YYYY-MM-DDTHH:MM
-        - Saturday requested: SATURDAY_CLOSED
+        - Closed day requested: CLOSED_DAY
         - Only partial info (missing date OR time): PARTIAL_INFO
         - No datetime found: NOT_FOUND
 
@@ -213,7 +223,7 @@ class RescheduleMixin:
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are a precise datetime extraction assistant. Return ONLY the format specified — a datetime string like 2025-11-03T14:00, or one of: SATURDAY_CLOSED, PARTIAL_INFO, NOT_FOUND."
+                            "content": "You are a precise datetime extraction assistant. Return ONLY the format specified — a datetime string like 2025-11-03T14:00, or one of: CLOSED_DAY, PARTIAL_INFO, NOT_FOUND."
                         },
                         {"role": "user", "content": datetime_extraction_prompt}
                     ],
@@ -224,8 +234,8 @@ class RescheduleMixin:
                 ai_response = response.choices[0].message.content.strip()
                 print(f"🤖 DeepSeek datetime extraction: '{message}' → {ai_response}")
 
-                if ai_response == "SATURDAY_CLOSED":
-                    print("⚠️ Customer requested Saturday — closed")
+                if ai_response in ("CLOSED_DAY", "SATURDAY_CLOSED"):
+                    print("⚠️ Customer requested a day we're closed")
                     return None  # Caller will handle with alternatives
 
                 if ai_response in ("PARTIAL_INFO", "NOT_FOUND"):

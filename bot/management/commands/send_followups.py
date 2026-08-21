@@ -2,17 +2,30 @@
 #
 # HIGH-CONVERTING FOLLOW-UP SYSTEM
 #
-# 4 follow-ups within 24 hours:
-#   Attempt 1 → 0h  (first message, sent as soon as lead goes cold)
-#   Attempt 2 → 6h  after attempt 1
-#   Attempt 3 → 12h after attempt 1
-#   Attempt 4 → 18h after attempt 1
+# EVERY lead gets AT LEAST 4 follow-ups (FOLLOWUP_MIN_COUNT), and they are spread
+# across the lead's own WhatsApp free-form messaging window rather than a fixed
+# hour count. The window is the hard deadline: once it shuts, a free-form send
+# bounces with 131047 and we don't pay for templates, so a touch scheduled past
+# the close is a touch the lead never gets.
 #
-# Total spread: 18 hours, all 4 messages land within a single day.
+#   Standard lead → 24h window (from the lead's last message)
+#   CTWA ad lead  → 72h window (from the ad click)
 #
-# CTWA (Click-to-WhatsApp ad) leads use a longer 72-hour cadence instead — see
-# CTWA_FOLLOWUP_OFFSETS below: FU1 4h, FU2 8h, FU3 24h, FU4 48h (absolute offsets
-# from the lead's last response), matching the 72h ad messaging window.
+# Attempts are placed at fixed FRACTIONS of that window (TIER_WINDOW_FRACTIONS),
+# measured absolutely from the window's start, minus a safety margin at the end.
+# Hotter leads are front-loaded; colder ones get more room to breathe. Because
+# the offsets are absolute, a touch delayed by the nightly contact-window pause
+# never pushes the later ones out past the close — they self-correct.
+#
+# On a 24h window that works out roughly: FU1 ~2-4h, FU2 ~7-9h, FU3 ~12-14h,
+# FU4 ~17-19h — the old fixed cadence, but now guaranteed to finish inside the
+# window instead of spilling past it.
+#
+# CTWA leads (a tap on a Facebook/Instagram click-to-WhatsApp ad) open a 72h
+# window, so they get SIX touches on their own hand-tuned offsets
+# (CTWA_FOLLOWUP_OFFSETS: 4h, 8h, 20h, 32h, 48h, 66h) — three on day one while
+# ad intent is hottest, then day two, then a last call on day three. Those are
+# scaled down only if the real window turns out shorter than 72h.
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -41,18 +54,11 @@ CONTACT_WINDOWS = [
     (8, 21, 20, 53),
 ]
 
-# ─── Intervals (hours since last customer response OR last follow-up) ─────────
-# 4 follow-ups spread across ~18 hours:
-#   Attempt 1: 2h  after going silent
-#   Attempt 2: 6h  after attempt 1
-#   Attempt 3: 6h  after attempt 2  (12h total)
-#   Attempt 4: 6h  after attempt 3  (18h total)
-TIER_INTERVALS = {
-    LeadStatus.VERY_HOT: (2, 4, 4, 6),
-    LeadStatus.HOT:      (2, 6, 6, 6),
-    LeadStatus.WARM:     (3, 6, 6, 6),
-    LeadStatus.COLD:     (4, 6, 6, 6),
-}
+# ─── How many follow-ups ──────────────────────────────────────────────────────
+# Never fewer than four attempts, whatever a per-status override says. Three
+# touches leave conversions on the table, and the old fixed cadence could push
+# the fourth past the messaging window, silently retiring leads on three.
+FOLLOWUP_MIN_COUNT = 4
 
 MAX_FOLLOWUPS_PER_STATUS = {
     LeadStatus.VERY_HOT: 4,
@@ -61,15 +67,131 @@ MAX_FOLLOWUPS_PER_STATUS = {
     LeadStatus.COLD:     4,
 }
 
-# ─── CTWA (Click-to-WhatsApp ad) cadence ──────────────────────────────────────
-# Ad leads get a longer 72h follow-up window to match the ad messaging window.
-# Unlike the tier intervals above (step deltas from the previous send), these are
-# ABSOLUTE offsets measured from the lead's last response, so each touch lands at
-# a fixed point in the window no matter when the earlier ones actually went out:
-#   FU1 → 4h, FU2 → 8h   (0–24h: 2 sends)
-#   FU3 → 24h            (24–48h: 1 send)
-#   FU4 → 48h            (48–72h: 1 send)
-CTWA_FOLLOWUP_OFFSETS = (4, 8, 24, 48)
+
+def followup_window_start(lead):
+    """When this lead's messaging window opened — their last message to us,
+    which is also what WhatsApp measures the free-form window from."""
+    return (
+        getattr(lead, 'last_customer_response', None)
+        or getattr(lead, 'last_inbound_at', None)
+        or getattr(lead, 'last_followup_sent', None)
+        or getattr(lead, 'created_at', None)
+    )
+
+
+def is_ctwa_lead(lead) -> bool:
+    """True for a lead that arrived by tapping a Facebook/Instagram
+    click-to-WhatsApp ad — those open the extended 72h free-form window."""
+    return bool(getattr(lead, 'ctwa_entry_at', None))
+
+
+def messaging_window_hours(lead) -> float:
+    """Hours we actually have to work with: from the window opening to the
+    moment free-form sending shuts off (24h standard, up to 72h for an ad
+    lead). Falls back to a plain 24h when the lead has no usable timestamp."""
+    default = (
+        float(getattr(lead, 'CTWA_WINDOW_HOURS', CTWA_WINDOW_HOURS))
+        if is_ctwa_lead(lead) else DEFAULT_WINDOW_HOURS
+    )
+    start = followup_window_start(lead)
+    closes = getattr(lead, 'messaging_window_closes_at', None)
+    if start is None or closes is None:
+        return default
+    hours = (closes - start).total_seconds() / 3600
+    # A window already (nearly) spent still needs a positive span to divide.
+    return hours if hours > 1 else default
+
+
+def has_extended_window(lead) -> bool:
+    """True when the lead's ad window is genuinely still long — the condition
+    for the six-touch ad cadence. An ad lead who replied late can have most of
+    the 72h behind them; once what's left is no bigger than a standard window
+    there is nothing extra to use, so they fall back to the four-touch tier
+    schedule that's tuned for 24h."""
+    return is_ctwa_lead(lead) and messaging_window_hours(lead) >= CTWA_EXTENDED_MIN_HOURS
+
+
+def max_followups_for(lead) -> int:
+    """Attempts this lead gets — the per-status setting, floored at four.
+
+    A CTWA lead still sitting on a long window gets one touch per offset in
+    CTWA_FOLLOWUP_OFFSETS instead: 72h is three times the room, so four touches
+    would leave two thirds of it unused.
+    """
+    if has_extended_window(lead):
+        return max(len(CTWA_FOLLOWUP_OFFSETS), FOLLOWUP_MIN_COUNT)
+    configured = MAX_FOLLOWUPS_PER_STATUS.get(
+        getattr(lead, 'lead_status', None), FOLLOWUP_MIN_COUNT
+    )
+    return max(int(configured or 0), FOLLOWUP_MIN_COUNT)
+
+
+# ─── Spacing: fractions of the lead's own messaging window ────────────────────
+# Cumulative positions, measured absolutely from the moment the window opened
+# (the lead's last message). Hotter = front-loaded; colder = more breathing room.
+# The last fraction stays well under 1.0 so the final touch clears the close even
+# after jitter and a contact-window roll.
+TIER_WINDOW_FRACTIONS = {
+    LeadStatus.VERY_HOT: (0.08, 0.25, 0.45, 0.70),
+    LeadStatus.HOT:      (0.10, 0.30, 0.52, 0.76),
+    LeadStatus.WARM:     (0.13, 0.34, 0.56, 0.80),
+    LeadStatus.COLD:     (0.16, 0.38, 0.60, 0.84),
+}
+
+# Reserved at the end of the window: the last follow-up must land before the
+# free-form window shuts, not on its doorstep.
+FOLLOWUP_WINDOW_MARGIN_HOURS = 1.5
+
+# No two follow-ups back-to-back, even if the cron is catching up after an
+# outage or a long nightly pause.
+FOLLOWUP_MIN_GAP_HOURS = 1.5
+
+# We just spoke to this lead (a reply, a nudge, anything) — hold off, whatever
+# the schedule says. Without this a follow-up can land minutes after our own
+# message and read as if nobody is reading the conversation.
+FOLLOWUP_QUIET_AFTER_OUTBOUND_HOURS = 1.5
+
+# The lead is typing to us right now: their message is the live conversation and
+# the bot's own reply is the touch. A follow-up on top of it is noise.
+FOLLOWUP_LIVE_CONVERSATION_MINUTES = 20
+
+# How close to the last sendable moment counts as "last call" — a pending touch
+# inside this stretch goes out now rather than waiting for a tomorrow that the
+# messaging window will not survive.
+LAST_CALL_GRACE_MINUTES = 30
+
+# On a last call the usual spacing yields: a touch that must go now or never is
+# worth a tighter gap than one with a whole day of window ahead of it.
+LAST_CALL_MIN_GAP_HOURS = 0.75
+
+# Below this there isn't enough sendable time left to plan a schedule around —
+# fall back to the plain window span and let the last-call rule do what it can.
+MIN_SENDABLE_SPAN_HOURS = 4.0
+
+# Assumed window length when the lead has no usable inbound timestamp yet.
+DEFAULT_WINDOW_HOURS = 24.0
+
+# ─── CTWA (Click-to-WhatsApp / Facebook ad) cadence ───────────────────────────
+# A lead who taps a Facebook or Instagram "Send message" ad opens a 72-hour
+# free-form window instead of the standard 24 — three times the room, so they get
+# SIX touches instead of four, placed to work all three days. The old four-touch
+# schedule stopped at 48h and left the last day of the window (the final chance
+# to reach them before it shuts for good) completely unused.
+#
+# Absolute offsets from the lead's last response, so each touch lands at a fixed
+# point in the window no matter when the earlier ones actually went out:
+#   FU1 →  4h, FU2 →  8h, FU3 → 20h   (day 1: strike while ad intent is hot)
+#   FU4 → 32h, FU5 → 48h              (day 2)
+#   FU6 → 66h                         (day 3: last call before the window shuts)
+# _followup_offsets scales these down if the lead's real window is shorter than
+# 72h (their last message can leave less than the full span ahead of us).
+CTWA_FOLLOWUP_OFFSETS = (4, 8, 20, 32, 48, 66)
+
+# The nominal ad window, and the shortest remaining window that still earns the
+# extended six-touch cadence. Below this there is no extra room to use, so an ad
+# lead falls back to the standard four touches over what's left.
+CTWA_WINDOW_HOURS = 72.0
+CTWA_EXTENDED_MIN_HOURS = 36.0
 
 # Hours between the first delay re-engagement email (sent on the agreed
 # follow-up date) and the second/final "last check" email. Keep this on the
@@ -79,7 +201,7 @@ DELAY_SECOND_TOUCH_HOURS = 96  # 4 days
 
 # ─────────────────────────────────────────────────────────────────────────────
 class Command(BaseCommand):
-    help = '4 follow-ups within 24 hours — Hormozi timing, value-first messaging'
+    help = 'At least 4 follow-ups, spread across the lead messaging window — Hormozi timing, value-first messaging'
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true',
@@ -174,13 +296,25 @@ class Command(BaseCommand):
         ],
     }
 
-    # Spacing between nudges: 2 h before first, then 6 h between each.
-    _DELAY_NUDGE_INTERVALS = (2, 6, 6, 6)
+    # Where each nudge sits in the lead's messaging window, as a fraction of the
+    # usable span — on a 24h window that's roughly 2h, 7.5h, 13.5h and 19h.
+    # Fractions rather than fixed steps for the same reason as the main cadence:
+    # a nudge deferred overnight by the contact window used to push the last one
+    # past the window close, so a ghost quietly got three nudges instead of four.
+    _DELAY_NUDGE_FRACTIONS = (0.09, 0.34, 0.60, 0.85)
+
+    def _delay_nudge_offsets(self, lead):
+        """Absolute hours-from-last-inbound for each delay nudge."""
+        usable = max(
+            self._messaging_window_hours(lead) - FOLLOWUP_WINDOW_MARGIN_HOURS,
+            self._messaging_window_hours(lead) * 0.5,
+        )
+        return tuple(f * usable for f in self._DELAY_NUDGE_FRACTIONS)
 
     def _nudge_delay_flow_ghosts(self, now_local, dry_run):
         """
-        Sends up to 4 contextual WhatsApp follow-ups within the 24-hour window
-        to leads that ghosted at any step of the delay flow:
+        Sends at least 4 contextual WhatsApp follow-ups inside the lead's own
+        messaging window to leads that ghosted at any step of the delay flow:
           - Step 1 (delay_timeframe): asked "roughly when will you be back?"
           - Step 2 (delay_confirm):   asked "is it okay if we reach out on {date}?"
           - Step 3 (delay_email):     asked "what email should we send your quote to?"
@@ -188,8 +322,12 @@ class Command(BaseCommand):
         Nudge count and last-sent time are stored in internal_notes so the
         cron can resume correctly across multiple runs.
         """
-        now                = timezone.now()
-        window_open_cutoff = now - timedelta(hours=23)
+        now = timezone.now()
+        # Widest window any lead can have (72h for a click-to-WhatsApp ad lead) —
+        # a hardcoded 23h dropped ad leads out of the nudge flow on day two, half
+        # their window unused. The per-lead messaging_window_open check below is
+        # what actually decides; this is only a cheap prefilter.
+        window_open_cutoff = now - timedelta(hours=Appointment.CTWA_WINDOW_HOURS - 1)
         min_wait_cutoff    = now - timedelta(hours=1)
 
         candidates = (
@@ -220,17 +358,34 @@ class Command(BaseCommand):
 
                 nudge_count, last_nudge_at = self._read_delay_nudge_state(notes)
 
-                if nudge_count >= 4:
+                # At least four nudges, bounded by the copy we actually have.
+                max_nudges = min(
+                    max(FOLLOWUP_MIN_COUNT, len(self._DELAY_NUDGE_FRACTIONS)),
+                    len(self._DELAY_NUDGE_MESSAGES[step]),
+                )
+                if nudge_count >= max_nudges:
                     continue
 
-                # Determine reference time and required wait
-                interval_hours = self._DELAY_NUDGE_INTERVALS[nudge_count]
-                reference      = last_nudge_at if last_nudge_at else lead.last_inbound_at
+                # A free-form send outside the window bounces with 131047 and
+                # flags the lead's window closed for every other send path.
+                if not lead.messaging_window_open:
+                    continue
+
+                # Absolute offset into the messaging window, measured from the
+                # lead's last message — never from the previous nudge, so a
+                # delayed nudge can't push the rest out of the window.
+                reference = lead.last_inbound_at
                 if not reference:
                     continue
+                offset_hours = self._delay_nudge_offsets(lead)[nudge_count]
                 elapsed = (now - reference).total_seconds() / 3600
-                if elapsed < interval_hours:
+                if elapsed < offset_hours and not self._is_last_call(lead, now):
                     continue
+                # ...but still never two nudges back to back.
+                if last_nudge_at:
+                    since_last = (now - last_nudge_at).total_seconds() / 3600
+                    if since_last < self._min_gap_hours(lead, now):
+                        continue
 
                 # Build message
                 name    = lead.customer_name or ''
@@ -339,13 +494,27 @@ class Command(BaseCommand):
         "just checking in — no pressure at all. If it helps while you decide, I can "
         "send over our portfolio of past projects and full pricing. Or whenever you "
         "are ready, a free on-site visit and fixed quote is one message away.",
+        "one thing worth knowing while you think it over: the on-site visit and the "
+        "written quote are free, and the price we put on paper is the price you pay.",
+        "if it is easier, we can put the quote in an email so you have it on hand "
+        "for whenever you are ready. Just send us the address and we will do the rest.",
         "we will leave this with you. Whenever the time is right, just send us a "
         "message and we will pick up right where we left off.",
     ]
 
-    # Days to wait before each parked nudge: 3 days before the first, then 7 more
-    # before the second. Spaced over days (not hours) — they asked to be left alone.
-    _PARKED_NUDGE_INTERVALS_DAYS = (3, 7)
+    # Parked leads asked for space, so their touches sit in the BACK half of the
+    # messaging window — but inside it. They used to be spaced 3 and 7 DAYS out,
+    # which is past the 24h free-form window: every one of those sends bounced
+    # with 131047 (and the first bounce flags the lead's window closed, blocking
+    # everything else). Four gentle touches that actually arrive beat two that
+    # cannot. Fractions of the usable window, absolute from the last inbound.
+    _PARKED_NUDGE_FRACTIONS = (0.38, 0.56, 0.72, 0.88)
+
+    def _parked_nudge_offsets(self, lead):
+        """Absolute hours-from-last-inbound for each parked re-engagement nudge."""
+        window = self._messaging_window_hours(lead)
+        usable = max(window - FOLLOWUP_WINDOW_MARGIN_HOURS, window * 0.5)
+        return tuple(f * usable for f in self._PARKED_NUDGE_FRACTIONS)
 
     # Don't re-engage leads who have been cold for more than this — at that point
     # they are genuinely dormant and a nudge is just spam.
@@ -354,8 +523,9 @@ class Command(BaseCommand):
     def _nudge_parked_leads(self, now_local, dry_run):
         """
         Gently re-engage leads who soft brushed off ("I'll get back to you") and
-        were parked via mark_parked() ([PARKED] tag). Sends up to 2 spaced
-        WhatsApp nudges (3 days, then 7 days), then leaves them fully alone.
+        were parked via mark_parked() ([PARKED] tag). Sends at least four spaced
+        WhatsApp nudges across the back half of the lead's messaging window,
+        then leaves them fully alone.
 
         Count and last-sent time live in internal_notes so the cron resumes
         across runs. Leads still mid delay-flow ([OOS_PENDING] category=delay_)
@@ -388,7 +558,18 @@ class Command(BaseCommand):
                 notes = lead.internal_notes or ''
                 nudge_count, last_nudge_at = self._read_parked_nudge_state(notes)
 
-                if nudge_count >= len(self._PARKED_NUDGE_INTERVALS_DAYS):
+                # At least four touches, bounded by the copy we have.
+                max_nudges = min(
+                    max(FOLLOWUP_MIN_COUNT, len(self._PARKED_NUDGE_FRACTIONS)),
+                    len(self._PARKED_NUDGE_MESSAGES),
+                )
+                if nudge_count >= max_nudges:
+                    continue
+
+                # A free-form send outside the window bounces with 131047 and
+                # flags the lead's window closed, which would block every other
+                # send path too. Never attempt one.
+                if not lead.messaging_window_open:
                     continue
 
                 # The customer replied after our last nudge → they re-engaged;
@@ -396,13 +577,20 @@ class Command(BaseCommand):
                 if last_nudge_at and lead.last_inbound_at and lead.last_inbound_at > last_nudge_at:
                     continue
 
-                interval_days = self._PARKED_NUDGE_INTERVALS_DAYS[nudge_count]
-                reference     = last_nudge_at if last_nudge_at else lead.last_inbound_at
+                # Absolute offset into the window from the lead's last message,
+                # so a nudge deferred overnight doesn't push the rest past the
+                # close — the reference never shifts to the previous nudge.
+                reference = lead.last_inbound_at
                 if not reference:
                     continue
-                elapsed_days = (now - reference).total_seconds() / 86400
-                if elapsed_days < interval_days:
+                offset_hours = self._parked_nudge_offsets(lead)[nudge_count]
+                elapsed_hours = (now - reference).total_seconds() / 3600
+                if elapsed_hours < offset_hours and not self._is_last_call(lead, now):
                     continue
+                if last_nudge_at:
+                    since_last = (now - last_nudge_at).total_seconds() / 3600
+                    if since_last < self._min_gap_hours(lead, now):
+                        continue
 
                 name = lead.customer_name or ''
                 hi   = f'Hi {name}' if name else 'Hi there'
@@ -426,7 +614,7 @@ class Command(BaseCommand):
 
                 self.stdout.write(self.style.SUCCESS(
                     f'✅ Parked nudge #{nudge_count + 1}/'
-                    f'{len(self._PARKED_NUDGE_INTERVALS_DAYS)} → lead {lead.id}'
+                    f'{max_nudges} → lead {lead.id}'
                 ))
 
             except Exception as exc:
@@ -770,8 +958,10 @@ class Command(BaseCommand):
     def _get_eligible_leads(self, now_local, force):
         from django.db.models import Q
 
-        # Don't interrupt a customer who engaged very recently (2 minutes)
-        response_window = now_local - timedelta(minutes=2)  # ← must be defined FIRST
+        # Don't interrupt a live conversation. Two minutes was nowhere near
+        # enough — a lead mid-exchange kept getting an auto follow-up dropped on
+        # top of the bot's own reply.
+        response_window = now_local - timedelta(minutes=FOLLOWUP_LIVE_CONVERSATION_MINUTES)
         #
         leads = (
             Appointment.objects.real()
@@ -802,7 +992,7 @@ class Command(BaseCommand):
     def _print_eligibility_breakdown(self, now_local, force):
         from django.db.models import Q
 
-        response_window = now_local - timedelta(minutes=2)
+        response_window = now_local - timedelta(minutes=FOLLOWUP_LIVE_CONVERSATION_MINUTES)
         plan_block_q = Q(plan_status__in=['plan_uploaded', 'plan_reviewed', 'ready_to_book'])
 
         q0 = Appointment.objects.real().filter(is_lead_active=True, status='pending')
@@ -820,7 +1010,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.WARNING('🔎 Eligibility breakdown'))
         self.stdout.write(f'  active_pending: {c0}')
         self.stdout.write(f'  excluded_completed_stage: {c0 - c1}')
-        self.stdout.write(f'  excluded_recent_response_2min: {c1 - c2}')
+        self.stdout.write(f'  excluded_live_conversation: {c1 - c2}')
         self.stdout.write(f'  excluded_plan_flow: {c2 - c3}')
         self.stdout.write(f'  eligible_after_filters: {c3}')
 
@@ -841,7 +1031,7 @@ class Command(BaseCommand):
             logger.debug(f'Lead {lead.id} skipped: WhatsApp free-form window closed')
             return {'status': 'skipped', 'reason': 'window_closed'}
 
-        max_followups = MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 4)
+        max_followups = max_followups_for(lead)
         if lead.followup_count >= max_followups:
             if not dry_run:
                 lead.followup_stage = 'completed'
@@ -902,25 +1092,119 @@ class Command(BaseCommand):
         """
         Determine whether this lead is due for its next follow-up.
 
-        Wait times (hours since last activity):
-          Attempt 1: TIER_INTERVALS[status][0]
-          Attempt 2: TIER_INTERVALS[status][1]  (measured from attempt 1 sent time)
-          Attempt 3: TIER_INTERVALS[status][2]  (measured from attempt 2 sent time)
-          Attempt 4: TIER_INTERVALS[status][3]  (measured from attempt 3 sent time)
-
-        The reference point shifts after each follow-up:
-          - Before any follow-up was sent: reference = last_customer_response or created_at
-          - After a follow-up was sent:    reference = last_followup_sent
+        Every attempt sits at an absolute offset from the moment the lead's
+        messaging window opened (their last message), then that moment is moved
+        into a time we can actually send: forward past the nightly quiet hours,
+        or — when the messaging window would shut before the next opening —
+        BACK to the last sendable moment, so the touch goes out this evening
+        instead of being stranded until the lead writes again.
         """
-        attempt_index, wait_hours, reference = self._followup_wait_and_reference(lead)
-        if reference is None:
+        due_at = self._scheduled_due_at(lead)
+        if due_at is None:
             return False, 'no reference time'
 
-        elapsed = (timezone.now() - reference).total_seconds() / 3600
+        now = timezone.now()
+        if now < due_at:
+            return False, f'due at {due_at.astimezone(SA_TIMEZONE):%Y-%m-%d %H:%M} SAST'
 
-        if elapsed < wait_hours:
-            return False, f'{elapsed:.1f}h elapsed, need {wait_hours:.1f}h (attempt #{attempt_index + 1})'
+        # We spoke to this lead very recently — a follow-up on top of our own
+        # message (or on top of theirs, mid-conversation) reads as if nobody is
+        # watching the thread. The live conversation IS the follow-up.
+        last_out = getattr(lead, 'last_outbound_at', None)
+        if last_out:
+            # Relaxed on a last call: the window is minutes from shutting, so a
+            # slightly closer touch beats no touch at all.
+            quiet_hours = (
+                LAST_CALL_MIN_GAP_HOURS if self._is_last_call(lead, now)
+                else FOLLOWUP_QUIET_AFTER_OUTBOUND_HOURS
+            )
+            since_out = (now - last_out).total_seconds() / 3600
+            if since_out < quiet_hours:
+                return False, (
+                    f'{since_out:.1f}h since we last messaged them, '
+                    f'need {quiet_hours:.1f}h'
+                )
+        last_in = getattr(lead, 'last_customer_response', None)
+        if last_in:
+            since_in = (now - last_in).total_seconds() / 60
+            if since_in < FOLLOWUP_LIVE_CONVERSATION_MINUTES:
+                return False, f'lead messaged {since_in:.0f} min ago — conversation is live'
+
+        # Absolute offsets mean a lead that went quiet mid-schedule (or a cron
+        # catching up after an outage) can have two attempts due at once. Keep a
+        # minimum gap so we never fire them back to back — tighter on a last
+        # call, where the alternative is not sending at all.
+        last_sent = getattr(lead, 'last_followup_sent', None)
+        if (lead.followup_count or 0) > 0 and last_sent:
+            required = self._min_gap_hours(lead, now)
+            since_last = (now - last_sent).total_seconds() / 3600
+            if since_last < required:
+                return False, (
+                    f'{since_last:.1f}h since the last follow-up, '
+                    f'need {required:.1f}h'
+                )
         return True, ''
+
+    def _min_gap_hours(self, lead, now=None):
+        """Spacing required before the next touch — relaxed in the final
+        sendable stretch, where waiting the full gap means never sending."""
+        return (
+            LAST_CALL_MIN_GAP_HOURS if self._is_last_call(lead, now)
+            else FOLLOWUP_MIN_GAP_HOURS
+        )
+
+    # Thin wrappers so the cron, the UI helper and the module-level functions
+    # can never drift apart on what a lead's window is.
+    def _followup_window_start(self, lead):
+        return followup_window_start(lead)
+
+    def _messaging_window_hours(self, lead):
+        return messaging_window_hours(lead)
+
+    def _followup_offsets(self, lead):
+        """Absolute hours-from-window-open for each attempt this lead will get.
+
+        The whole schedule is derived from the lead's own messaging window, minus
+        a safety margin, so the last touch always lands while we can still send.
+        """
+        count = max_followups_for(lead)
+        window_hours = self._messaging_window_hours(lead)
+        usable = max(window_hours - FOLLOWUP_WINDOW_MARGIN_HOURS, window_hours * 0.5)
+
+        # Spread over the hours we can actually SEND in, not just the hours the
+        # window is open. If the tail of the window falls in the nightly quiet
+        # hours, the whole schedule tightens to finish before we go quiet —
+        # otherwise the last touches pile up against the deadline and one of
+        # them ends up stranded until the lead writes again.
+        sendable = self._sendable_hours(lead)
+        if sendable is not None and MIN_SENDABLE_SPAN_HOURS <= sendable < usable:
+            usable = sendable
+
+        if has_extended_window(lead):
+            # Ad leads keep their hand-tuned band placement across the 72h ad
+            # window (three touches day one, two day two, a last call day
+            # three), scaled down only if the real window is shorter.
+            offsets = list(CTWA_FOLLOWUP_OFFSETS)
+            while len(offsets) < count:               # extra attempts, if ever
+                offsets.append(offsets[-1] + 12)
+            span = offsets[len(offsets) - 1]
+            if span > usable:
+                scale = usable / span
+                offsets = [o * scale for o in offsets]
+            return tuple(offsets[:count])
+
+        fractions = list(
+            TIER_WINDOW_FRACTIONS.get(
+                getattr(lead, 'lead_status', None),
+                TIER_WINDOW_FRACTIONS[LeadStatus.COLD],
+            )
+        )
+        # More attempts than the shape defines → keep spreading evenly to 0.95.
+        while len(fractions) < count:
+            remaining = count - len(fractions) + 1
+            step = (0.95 - fractions[-1]) / remaining
+            fractions.append(fractions[-1] + step)
+        return tuple(f * usable for f in fractions[:count])
 
     def _followup_wait_and_reference(self, lead):
         """Shared timing core — returns (attempt_index, wait_hours, reference) for
@@ -931,32 +1215,10 @@ class Command(BaseCommand):
         datetime the wait is measured from (None only if the lead has no usable
         timestamps).
         """
-        attempt_index = min(lead.followup_count or 0, 3)
-
-        if self._is_ctwa_lead(lead):
-            # Ad leads: absolute offsets from the lead's last response (the
-            # reference does NOT shift to the last follow-up), so FU3/FU4 land at
-            # a fixed 24h/48h into the 72h window regardless of earlier timing.
-            wait_hours = CTWA_FOLLOWUP_OFFSETS[attempt_index]
-            reference = (
-                lead.last_customer_response
-                or lead.last_followup_sent
-                or lead.created_at
-            )
-        else:
-            intervals = TIER_INTERVALS.get(lead.lead_status, TIER_INTERVALS[LeadStatus.COLD])
-            wait_hours = intervals[attempt_index]
-
-            # After the first follow-up, measure from when the LAST follow-up was sent.
-            # Before any follow-up, measure from when the customer last responded (or created_at).
-            if (lead.followup_count or 0) > 0 and lead.last_followup_sent:
-                reference = lead.last_followup_sent
-            else:
-                reference = (
-                    lead.last_customer_response
-                    or lead.last_followup_sent
-                    or lead.created_at
-                )
+        offsets = self._followup_offsets(lead)
+        attempt_index = min(lead.followup_count or 0, len(offsets) - 1)
+        wait_hours = offsets[attempt_index]
+        reference = self._followup_window_start(lead)
 
         # Human-timing jitter: shift the due moment by a stable per-lead,
         # per-attempt offset (3–57 min) so follow-ups land at natural minutes
@@ -965,6 +1227,116 @@ class Command(BaseCommand):
         # lead's due moment doesn't jump around between minute-by-minute checks.
         jitter_hours = self._send_jitter_minutes(lead, attempt_index) / 60.0
         return attempt_index, wait_hours + jitter_hours, reference
+
+    def _scheduled_due_at(self, lead):
+        """When the next follow-up should actually GO OUT — the schedule after
+        it has been reconciled with the hours we are allowed to send in.
+
+        Three moves, in order:
+          1. the raw position in the messaging window (_followup_wait_and_reference)
+          2. rolled FORWARD out of the nightly quiet hours, and
+          3. if that roll would land after the messaging window has closed,
+             pulled BACK to the last moment we can still send.
+
+        Step 3 is the one that matters: without it a touch due at 02:00 on a
+        window that shuts at 06:00 waited for 08:21, by which time free-form
+        sending was dead — so it sat there and went out only when the lead
+        messaged again, arriving as a stale "just checking in" on top of their
+        live message. Sending it at 20:52 the evening before is both timely and
+        deliverable.
+
+        Returns an aware datetime, or None when the lead has no usable
+        timestamps to schedule from.
+        """
+        attempt_index, wait_hours, reference = self._followup_wait_and_reference(lead)
+        if reference is None:
+            return None
+
+        raw_due = reference + timedelta(hours=wait_hours)
+        due = self._next_window_open(raw_due)
+
+        deadline = self._last_sendable_moment(lead)
+        if deadline is not None and due > deadline:
+            # Last call. Leave the cron room to catch it: the deadline is the
+            # very last sendable minute, and the job only runs every few
+            # minutes, so aim a grace period earlier.
+            due = deadline - timedelta(minutes=LAST_CALL_GRACE_MINUTES)
+
+        # Never before the previous touch — the pull-back must not create a
+        # back-to-back pair (the readiness check enforces this too).
+        last_sent = getattr(lead, 'last_followup_sent', None)
+        if attempt_index > 0 and last_sent:
+            floor = last_sent + timedelta(hours=self._min_gap_hours(lead))
+            if due < floor:
+                due = self._next_window_open(floor)
+        return due
+
+    def _sendable_hours(self, lead):
+        """Hours between the lead's window opening and the last moment we can
+        still send them something — the messaging window intersected with the
+        daily contact hours. None when either end is unknown."""
+        start = followup_window_start(lead)
+        deadline = self._last_sendable_moment(lead)
+        if start is None or deadline is None:
+            return None
+        hours = (deadline - start).total_seconds() / 3600
+        return hours if hours > 0 else None
+
+    def _is_last_call(self, lead, now=None):
+        """True when we are in the final stretch of sendable time before this
+        lead's messaging window shuts. A touch that is merely 'not due yet' but
+        cannot survive the night is better sent now than never — after the
+        window closes it can only reach them once they message again, arriving
+        as a stale nudge on top of their live message.
+        """
+        deadline = self._last_sendable_moment(lead)
+        if deadline is None:
+            return False
+        now = now or timezone.now()
+        if not getattr(lead, 'messaging_window_open', True):
+            return False
+        return now >= deadline - timedelta(minutes=LAST_CALL_GRACE_MINUTES)
+
+    def _last_sendable_moment(self, lead):
+        """The last instant we could still send this lead a free-form message:
+        inside the contact hours AND before their messaging window shuts (with
+        the safety margin). None when the window is unknown."""
+        closes = getattr(lead, 'messaging_window_closes_at', None)
+        if closes is None:
+            return None
+        return self._window_moment_before(
+            closes - timedelta(hours=FOLLOWUP_WINDOW_MARGIN_HOURS)
+        )
+
+    def _window_moment_before(self, dt):
+        """Latest moment <= dt that falls inside a contact window (SAST).
+
+        The mirror of _next_window_open: where that rolls a due time forward to
+        the next opening, this walks backwards to the last minute we were still
+        allowed to send. Returns None if no contact window precedes dt.
+        """
+        if not CONTACT_WINDOWS:
+            return dt
+        local = dt.astimezone(SA_TIMEZONE)
+        for _ in range(8):  # safety bound: at most a week of day rolls
+            mins = local.hour * 60 + local.minute
+            closes_today = []
+            for oh, om, ch, cm in CONTACT_WINDOWS:
+                if (oh * 60 + om) <= mins < (ch * 60 + cm):
+                    return local  # already inside a window
+                if mins >= (ch * 60 + cm):
+                    # Window shut earlier today — its last sendable minute.
+                    closes_today.append(
+                        local.replace(hour=ch, minute=cm, second=0, microsecond=0)
+                        - timedelta(minutes=1)
+                    )
+            if closes_today:
+                return max(closes_today)
+            # Before every window today → step back to the end of yesterday.
+            local = (local - timedelta(days=1)).replace(
+                hour=23, minute=59, second=0, microsecond=0
+            )
+        return None
 
     def next_followup_due_at(self, lead):
         """Schedule info for the NEXT automatic follow-up, for UI display.
@@ -978,25 +1350,25 @@ class Command(BaseCommand):
             return None
         if lead.followup_stage == 'completed':
             return None
-        max_fu = MAX_FOLLOWUPS_PER_STATUS.get(lead.lead_status, 4)
+        max_fu = max_followups_for(lead)
         if (lead.followup_count or 0) >= max_fu:
             return None
 
-        attempt_index, wait_hours, reference = self._followup_wait_and_reference(lead)
-        if reference is None:
+        attempt_index, _wait_hours, reference = self._followup_wait_and_reference(lead)
+        due_at = self._scheduled_due_at(lead)
+        if reference is None or due_at is None:
             return None
 
         now = timezone.now()
-        raw_due = reference + timedelta(hours=wait_hours)
-        # Follow-ups only send inside the daily contact window, so roll the due
-        # moment forward to when it can actually go out (e.g. a 01:52 due time
-        # shows as 08:21). Clamp against now too — can't send in the past.
-        send_at = self._next_window_open(max(raw_due, now))
+        # The cron sends at _scheduled_due_at (already reconciled with the
+        # contact hours and the messaging-window close), so show exactly that —
+        # clamped forward only so an overdue lead doesn't display a past time.
+        send_at = due_at if due_at > now else self._next_window_open(now)
         return {
             'attempt': attempt_index + 1,
             'max': max_fu,
             'due_at': send_at,
-            'overdue': send_at <= now,  # in-window and due → sends this cron cycle
+            'overdue': due_at <= now,  # due already — sends on the next in-window cycle
             'is_ctwa': self._is_ctwa_lead(lead),
         }
 
@@ -1032,7 +1404,7 @@ class Command(BaseCommand):
     def _is_ctwa_lead(lead):
         """True if the lead originated from a Click-to-WhatsApp ad (has a referral
         entry time). These get the longer 72h CTWA follow-up cadence."""
-        return bool(getattr(lead, 'ctwa_entry_at', None))
+        return is_ctwa_lead(lead)
 
     @staticmethod
     def _send_jitter_minutes(lead, attempt_index):
@@ -1200,7 +1572,7 @@ LEAD CONTEXT:
 - Interest: {service}
 - Area: {area or 'not yet shared'}
 - Last heard from them: {time_ref}
-- This is follow-up attempt #{attempt} of 4 (all within {'72 hours' if self._is_ctwa_lead(lead) else '24 hours'})
+- This is follow-up attempt #{attempt} of {max_followups_for(lead)} (all within {'72 hours — they came from a Facebook ad' if has_extended_window(lead) else '24 hours'})
 
 ALREADY COLLECTED (do NOT ask for any of these again):
 {already_collected}
@@ -1277,6 +1649,11 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
         """
         service = self._service_label(lead)
         area    = f' in {lead.customer_area}' if lead.customer_area else ''
+        # Where WE work, from this lead's own tenant — the fallback used to be
+        # a hardcoded 'around Harare' (Homebase's city) in every tenant's copy.
+        from bot.tenant_config import get_config
+        _city = get_config(getattr(lead, 'tenant', None)).location_city
+        area_or_ours = area or (f' around {_city}' if _city else '')
 
         templates = {
             'service_type': [
@@ -1321,7 +1698,7 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                     f"which suburb are you based in?"
                 ),
                 (
-                    f"Hi there, we've done a number of renovations{area or ' around Harare'} recently — "
+                    f"Hi there, we've done a number of renovations{area_or_ours} recently — "
                     f"just need your suburb to match you with the right team."
                 ),
                 (
