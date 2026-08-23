@@ -26,26 +26,61 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 # Canonical public host. The Railway-generated *.up.railway.app host stays in
 # the list so the app keeps answering there while DNS propagates and so
 # Railway's internal health checks never 400.
-PRIMARY_HOST = os.environ.get('PRIMARY_HOST', 'plumbot.homexmedia.com')
+PRIMARY_HOST = os.environ.get('PRIMARY_HOST', 'plumbot.homexmedia.com').strip()
 
-ALLOWED_HOSTS = [
-    h.strip()
-    for h in os.environ.get(
-        'ALLOWED_HOSTS',
-        f'{PRIMARY_HOST},.homexmedia.com,.railway.app,localhost,127.0.0.1',
-    ).split(',')
-    if h.strip()
+
+def _clean_host(value):
+    """Normalise one ALLOWED_HOSTS entry.
+
+    Django matches the bare Host header, so an entry copied from a browser
+    ('https://plumbot.homexmedia.com/') never matches and the site 400s with
+    no clue why. Strip the scheme, any path and any port.
+    """
+    host = value.strip()
+    if '//' in host:
+        host = host.split('//', 1)[1]
+    host = host.split('/', 1)[0]
+    if host.count(':') == 1:  # host:port, not a bare IPv6 literal
+        host = host.split(':', 1)[0]
+    return host.strip().lower()
+
+
+# Hosts we must answer on no matter what the environment says. A wrong or
+# stale ALLOWED_HOSTS variable in Railway used to take the canonical domain
+# offline (every request 400'd with DisallowedHost); the env var may now only
+# ADD hosts, never remove these.
+_REQUIRED_HOSTS = [
+    PRIMARY_HOST,
+    '.homexmedia.com',
+    '.railway.app',
+    '.up.railway.app',
+    'localhost',
+    '127.0.0.1',
 ]
+
+ALLOWED_HOSTS = []
+for _h in _REQUIRED_HOSTS + os.environ.get('ALLOWED_HOSTS', '').split(','):
+    _h = _clean_host(_h)
+    if _h and _h not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_h)
 
 # Django 4 requires the scheme here; a bare host is rejected at startup.
-CSRF_TRUSTED_ORIGINS = [
-    o.strip()
-    for o in os.environ.get(
-        'CSRF_TRUSTED_ORIGINS',
-        f'https://{PRIMARY_HOST},https://*.homexmedia.com,https://*.railway.app',
-    ).split(',')
-    if o.strip()
-]
+# Same rule as ALLOWED_HOSTS: the environment may add origins, not drop ours.
+CSRF_TRUSTED_ORIGINS = []
+for _o in [
+    f'https://{PRIMARY_HOST}',
+    'https://*.homexmedia.com',
+    'https://*.railway.app',
+] + os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(','):
+    _o = _o.strip().rstrip('/')
+    if _o and '://' not in _o:
+        _o = f'https://{_o}'
+    if _o and _o not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_o)
+
+# Printed on every boot so a deploy log shows what the process actually
+# resolved -- the fastest way to tell a bad env var from a proxy problem.
+print(f'[settings] ALLOWED_HOSTS={ALLOWED_HOSTS}', flush=True)
 
 # Application definition
 INSTALLED_APPS = [
