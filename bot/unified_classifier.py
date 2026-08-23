@@ -147,10 +147,45 @@ offered_date      If the message implies a specific calendar day, resolve it to 
 offered_timeframe A soft, non-specific timeframe when NO hard date is given, e.g.
                   "sometime next week", "end of the month", "in a couple of weeks",
                   "kupera kwemwedzi". Else null.
+speech_act        WHAT KIND of message this is — what the customer is DOING, not
+                  what it is about. Pick exactly one:
+                  "quote_request"  asking us to price a JOB, or asking us to come
+                                   and do work: "I'd like a quote for plumbing
+                                   services", "can you renovate my bathroom",
+                                   "I need someone to fit a tub and shower".
+                  "capability"     asking WHETHER we do something, not for a price:
+                                   "do you do bathroom renovations?", "do you
+                                   install geysers?", "mune tub here?".
+                  "price_ask"      asking what something COSTS: "how much is a
+                                   shower cubicle", "marii", "mutengo weshower".
+                  "logistics"      asking WHO comes, WHEN, HOW LONG it takes, or
+                                   about guarantees/payment: "who would be coming
+                                   to do the work?", "how long does it take?",
+                                   "is your work guaranteed?".
+                  "booking_answer" answering a question we asked (an area, a day,
+                                   a name, a yes/no to our question).
+                  "other"          anything else.
+                  A message can mention work WITHOUT being a quote_request —
+                  "who would be coming to do the work?" is logistics, and "do you
+                  do bathroom renovations?" is capability. Read the verb that
+                  belongs to the CUSTOMER, not the words about the job.
 
 ─── WORKED EXAMPLES (input → output) ─────────────────────────────────────────
 These show the EXACT reasoning for the cases that get misclassified most often.
 Match the pattern, do not copy values blindly.
+
+# Asking WHO comes is logistics, never a request for a quote. The words "do the
+# work" describe the job, but the customer is asking about people:
+"who would be coming to do the work?"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"logistics","extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# Asking WHETHER we do something is capability, not a quote request:
+"Do you do bathroom renovations?"
+{"intent":"in_scope","confidence":"HIGH","service_type":"bathroom_renovation","product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"capability","extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# Asking us to DO the work is a quote request:
+"I need someone to renovate my bathroom"
+{"intent":"in_scope","confidence":"HIGH","service_type":"bathroom_renovation","product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"quote_request","extracted":{"area":null,"availability":null,"customer_name":null,"project_description":"renovate my bathroom"}}
 
 # Short product price ask — map the product word, even with typos:
 "standalone tub hw much"
@@ -214,6 +249,7 @@ Match the pattern, do not copy values blindly.
   "pivoted_to_timeline": false,
   "offered_date": null,
   "offered_timeframe": null,
+  "speech_act": "other",
   "extracted": {
     "area": null,
     "availability": null,
@@ -348,6 +384,21 @@ def uc_offered_date(r: dict | None) -> str | None:
 
 def uc_offered_timeframe(r: dict | None) -> str | None:
     v = (r or {}).get("offered_timeframe")
+    return v or None
+
+
+def uc_speech_act(r: dict | None) -> str | None:
+    """What KIND of message this is — see the speech_act block in the prompt.
+
+    Returns None when the classifier did not run or gave nothing usable, which
+    is the signal for the caller to fall back to its keyword resolver. Never
+    guesses a default: "no answer" and "other" must stay distinguishable, or a
+    failed call would silently read as a definite classification.
+    """
+    v = (r or {}).get("speech_act")
+    if not isinstance(v, str):
+        return None
+    v = v.strip().lower()
     return v or None
 
 def uc_as_service_inquiry(r: dict | None) -> dict:

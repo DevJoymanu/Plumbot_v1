@@ -6,6 +6,10 @@ from pathlib import Path
 import os
 from django.contrib.messages import constants as messages
 import dj_database_url
+from dotenv import load_dotenv
+
+# Local .env values must land in os.environ before anything below reads them.
+load_dotenv()
 
 
 
@@ -19,7 +23,29 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-CHANGE-THIS-IN-PRODUC
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '.railway.app,localhost,127.0.0.1').split(',')
+# Canonical public host. The Railway-generated *.up.railway.app host stays in
+# the list so the app keeps answering there while DNS propagates and so
+# Railway's internal health checks never 400.
+PRIMARY_HOST = os.environ.get('PRIMARY_HOST', 'plumbot.homexmedia.com')
+
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get(
+        'ALLOWED_HOSTS',
+        f'{PRIMARY_HOST},.homexmedia.com,.railway.app,localhost,127.0.0.1',
+    ).split(',')
+    if h.strip()
+]
+
+# Django 4 requires the scheme here; a bare host is rejected at startup.
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        'CSRF_TRUSTED_ORIGINS',
+        f'https://{PRIMARY_HOST},https://*.homexmedia.com,https://*.railway.app',
+    ).split(',')
+    if o.strip()
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -68,15 +94,10 @@ TEMPLATES = [
 WSGI_APPLICATION = 'Plumbing_CRM.wsgi.application'
 
 # Database - Use Railway's DATABASE_URL if available, otherwise use environment variables
-import os
-from dotenv import load_dotenv
-import dj_database_url
-
-load_dotenv()
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-DEBUG = os.getenv("DEBUG", "False") == "True"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
+# NOTE: SECRET_KEY / DEBUG / ALLOWED_HOSTS are defined once at the top of this
+# file. They used to be re-read here, which silently overwrote the host list
+# with [''] whenever ALLOWED_HOSTS was unset in the environment -> every
+# request 400'd with DisallowedHost. Never redefine them below this point.
 
 DATABASES = {
     "default": dj_database_url.config(default=os.getenv("DATABASE_URL"))
@@ -119,7 +140,8 @@ PLUMBER_NOTIFICATION_EMAILS = [
     'homebsconstruction@gmail.com',
 ]
 
-SITE_URL = os.environ.get('SITE_URL', '').rstrip('/')
+# Absolute base for every link we put in a WhatsApp message or email.
+SITE_URL = os.environ.get('SITE_URL', f'https://{PRIMARY_HOST}').rstrip('/')
 
 # The platform owner account(s) — the ONLY logins allowed to delete past
 # conversations (bot/decorators.py owner_required). Superuser alone is not

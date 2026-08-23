@@ -32,6 +32,12 @@ _orig_completions_create = deepseek_client.chat.completions.create
 
 
 def _completions_create_no_thinking(*args, **kwargs):
+    # Applies to the VISION model too. DeepSeek's pricing page says vision has
+    # no thinking mode, but measured 2026-08-22 it emits 450-700 reasoning
+    # tokens when left alone — which on a 150-token budget consumed the whole
+    # allowance and returned empty content (finish_reason=length) for four of
+    # five test photos. It accepts thinking:disabled and then answers in ~40
+    # tokens. Trust the measurement, not the doc.
     extra = dict(kwargs.get("extra_body") or {})
     extra.setdefault("thinking", {"type": _DEEPSEEK_THINKING})
     kwargs["extra_body"] = extra

@@ -1,0 +1,29 @@
+# A photo caption is the customer's own words and must be answered.
+#
+# Before Phase 0, handle_media_message never read media_data['caption'], so a
+# lead who photographed a burst pipe and typed "how much to fix this?" had the
+# question silently discarded and got the canned media ack back — asking them
+# to describe what they had just described. The ack also fired even when
+# project_description was already captured, and went out via a direct
+# send_text_message so no WAMID was stamped.
+#
+# The scenario runner drives the TEXT path, so these turns stand in for the
+# caption once it has been routed through handle_text_message. The state-aware
+# ack branches themselves are pinned API-free in TEST 0 (_compose_media_ack).
+#
+# Assertions are behavioural, not phrasal: the area question comes from a bank
+# with several wordings ("Whereabouts are you based?", "Which area are you
+# in?"), so pinning one of them tests the dice, not the bot.
+
+> Hi, I need a shower cubicle fitted in the main bathroom
+reject: describe what you'd like done
+reject: US$
+
+> how much to fix this?
+expect: US$
+reject: describe what you'd like done
+reject: Takudzwa
+
+> Borrowdale
+reject: describe what you'd like done
+reject: US$

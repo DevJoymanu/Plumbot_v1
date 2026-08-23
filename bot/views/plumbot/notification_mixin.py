@@ -81,7 +81,7 @@ class NotificationMixin:
                 print("🧪 Test lead — plan-received plumber alert muted")
                 return
             try:
-                base_url = os.getenv("SITE_URL", "http://127.0.0.1:8000")
+                base_url = getattr(settings, "SITE_URL", "") or "http://127.0.0.1:8000"
 
                 service_name = self.appointment.project_type.replace('_', ' ').title()
                 customer_name = self.appointment.customer_name or "Customer"
@@ -211,7 +211,7 @@ class NotificationMixin:
                         f"  🏠 Property: {appointment_info.get('property_type', 'Not specified')}\n"
                         f"  ⏰ Timeline: {appointment_info.get('timeline', 'Not specified')}\n"
                         f"  📐 Plan: {plan_status}\n\n"
-                        f"🔗 View: https://plumbotv1-production.up.railway.app/appointments/{self.appointment.id}/"
+                        f"🔗 View: {settings.SITE_URL}/appointments/{self.appointment.id}/"
                     )
 
                     # Build recipient list from env var → appointment field → hardcoded fallback
@@ -252,8 +252,7 @@ class NotificationMixin:
                     booking_html = None
                     try:
                         from ...customer_emails import build_plumber_booking_email_html
-                        site_url = (getattr(settings, 'SITE_URL', '') or
-                                    'https://plumbotv1-production.up.railway.app').rstrip('/')
+                        site_url = getattr(settings, 'SITE_URL', '').rstrip('/')
                         booking_html = build_plumber_booking_email_html(
                             customer_name=appointment_info.get('name', 'Unknown'),
                             customer_phone_digits=customer_phone,

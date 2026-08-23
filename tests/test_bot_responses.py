@@ -938,6 +938,16 @@ class _FakeSelfPricing:
     _product_families_in = ResponseMixin._product_families_in
     _names_multiple_products = ResponseMixin._names_multiple_products
     _is_job_quote_request = ResponseMixin._is_job_quote_request
+    # AI-primary: _is_job_quote_request now consults the classifier first and
+    # only then this keyword resolver. These fakes pass no classification, so
+    # every case below exercises the FALLBACK — which is exactly what the
+    # offline gate should be pinning.
+    _job_quote_request_fallback = ResponseMixin._job_quote_request_fallback
+    # First contact keeps its scripted greeting: a vague opener is never a
+    # quote request, whatever the classifier says.
+    _conversation_underway = ResponseMixin._conversation_underway
+    _is_greeting_or_opener = staticmethod(ResponseMixin._is_greeting_or_opener)
+    _asks_for_quote = ResponseMixin._asks_for_quote
     _asks_price_figure = ResponseMixin._asks_price_figure
     _asks_for_quote = ResponseMixin._asks_for_quote
     _should_volunteer_pricing = ResponseMixin._should_volunteer_pricing
@@ -1122,6 +1132,16 @@ for msg, expected in TUB_TYPE_CASES:
 class _FakeSelfBuy:
     _is_purchase_commitment = ResponseMixin._is_purchase_commitment
     _is_job_quote_request = ResponseMixin._is_job_quote_request
+    # AI-primary: _is_job_quote_request now consults the classifier first and
+    # only then this keyword resolver. These fakes pass no classification, so
+    # every case below exercises the FALLBACK — which is exactly what the
+    # offline gate should be pinning.
+    _job_quote_request_fallback = ResponseMixin._job_quote_request_fallback
+    # First contact keeps its scripted greeting: a vague opener is never a
+    # quote request, whatever the classifier says.
+    _conversation_underway = ResponseMixin._conversation_underway
+    _is_greeting_or_opener = staticmethod(ResponseMixin._is_greeting_or_opener)
+    _asks_for_quote = ResponseMixin._asks_for_quote
     _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
     _product_families_in = ResponseMixin._product_families_in
     _names_multiple_products = ResponseMixin._names_multiple_products
@@ -1190,6 +1210,9 @@ class _FakeSelfCombined:
     _product_families_in = ResponseMixin._product_families_in
     _quantity_for_family = ResponseMixin._quantity_for_family
     _active_scope = ResponseMixin._active_scope
+    # _build_combined_price_reply asks what the customer's photo showed before
+    # deciding freestanding-vs-built-in tub money. No photo in this fake.
+    _recent_image_description = ResponseMixin._recent_image_description
     _num_word = ResponseMixin._num_word
     _scope_allin_phrase = ResponseMixin._scope_allin_phrase
     _format_labour_scope = ResponseMixin._format_labour_scope
@@ -1589,8 +1612,17 @@ try:
     ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
     results.log(
         "forward Q: all stages covered -> timeframe question, no visit pitch, area not re-asked",
-        _fq == "When were you hoping to get this done?"
+        _fq in [t for t, _sig in ResponseMixin._FORWARD_BANK['booking']]
         and "assessment" not in _fq and "visit" not in _fq,
+        got=str(_fq),
+    )
+    # Phase 2 (assumptive close everywhere): the FIRST ask of the booking stage
+    # is the closed this-or-that; the open "when were you hoping" survives as the
+    # retry variant, and its fragment stays in the asked-detection list so a lead
+    # who already heard either wording is never asked again.
+    results.log(
+        "forward Q: the booking stage opens with a closed this-or-that",
+        _fq == "Are you looking to start soon, or still planning it out?",
         got=str(_fq),
     )
     # Area genuinely open (not asked, not answered) -> ask it (after the tie-down).
@@ -2784,6 +2816,28 @@ from bot.management.commands.send_followups import (
     max_followups_for as _max_fu_ctwa,
 )
 from bot.models import LeadStatus as _LS
+import bot.management.commands.send_followups as _fu_mod
+from datetime import datetime as _dt
+
+# The cadence helpers read the wall clock, and every due moment is rolled into
+# CONTACT_WINDOWS (08:21-20:53). Run against the REAL clock these cases pass by
+# day and fail every night, because a touch due at 02:00 is pushed to the next
+# window opening. Freeze the clock at a fixed in-window moment so the schedule
+# is what is under test, not the hour the suite happens to run.
+_FU_NOW = _fu_mod.SA_TIMEZONE.localize(_dt(2026, 8, 19, 14, 0))  # Wednesday
+
+
+class _FrozenClock:
+    """Stands in for the `timezone` module inside send_followups only."""
+    def __init__(self, real, frozen):
+        self._real, self._frozen = real, frozen
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def now(self):
+        return self._frozen
+
 
 class _StubLead:
     """Minimal duck-typed lead for the follow-up timing helpers (no DB)."""
@@ -2795,7 +2849,7 @@ class _StubLead:
         self.is_lead_active = is_lead_active
         self.status = status
         self.followup_stage = followup_stage
-        ref = _tz.now() - _td(hours=hours_since_resp)
+        ref = _FU_NOW - _td(hours=hours_since_resp)
         self.last_customer_response = ref
         self.last_followup_sent = ref
         self.created_at = ref
@@ -2827,18 +2881,23 @@ _CTWA_CADENCE_CASES = [
     ("non-CTWA FU1 before 4h", False, 0, 2.0, False),  # COLD tier[0]=4h
     ("non-CTWA FU1 after 4h",  False, 0, 6.0, True),
 ]
-for label, ctwa, cnt, hrs, expected in _CTWA_CADENCE_CASES:
-    try:
-        got, _reason = _fu._is_ready_for_followup(_StubLead(ctwa, cnt, hrs), None, force=True)
-        results.log(
-            f"followup cadence: {label}",
-            got == expected,
-            f"ready={got}",
-            expected=f"ready={expected}",
-            got=f"ready={got}",
-        )
-    except Exception as e:
-        results.log(f"followup cadence: {label}", False, got=str(e))
+_real_tz = _fu_mod.timezone
+try:
+    _fu_mod.timezone = _FrozenClock(_real_tz, _FU_NOW)
+    for label, ctwa, cnt, hrs, expected in _CTWA_CADENCE_CASES:
+        try:
+            got, _reason = _fu._is_ready_for_followup(_StubLead(ctwa, cnt, hrs), None, force=True)
+            results.log(
+                f"followup cadence: {label}",
+                got == expected,
+                f"ready={got}",
+                expected=f"ready={expected}",
+                got=f"ready={got} ({_reason})",
+            )
+        except Exception as e:
+            results.log(f"followup cadence: {label}", False, got=str(e))
+finally:
+    _fu_mod.timezone = _real_tz
 
 # Offsets themselves are the contract — pin them so a refactor can't silently
 # change the schedule.
@@ -3381,7 +3440,11 @@ try:
             self.id = 4242
             self.lead_status = status
             self.followup_count = count
-            ref = _tz2.now() - _td2(hours=hours_ago)
+            # Fixed reference, not the wall clock: reading now() here and again
+            # inside _followup_offsets left the window a few ms short of 72h, so
+            # the proportional scaling fired and the tuned offsets came back as
+            # 31.9/47.9/65.9. Latent flake — it passed or failed on timing.
+            ref = _FU_NOW - _td2(hours=hours_ago)
             self.last_customer_response = ref
             self.last_inbound_at = ref
             self.created_at = ref
@@ -3392,7 +3455,7 @@ try:
             self.ctwa_entry_at = (
                 None if not ctwa
                 else (ref if entry_hours_ago is None
-                      else _tz2.now() - _td2(hours=entry_hours_ago))
+                      else _FU_NOW - _td2(hours=entry_hours_ago))
             )
             self.is_lead_active = True
             self.status = 'pending'
@@ -3406,6 +3469,10 @@ try:
             return max(closes)
 
     _fu2 = _FuCmd2()
+    # Freeze the module clock for the whole block so the schedule under test is
+    # the schedule, not the millisecond the suite happened to run.
+    _real_tz2 = _fu_mod.timezone
+    _fu_mod.timezone = _FrozenClock(_real_tz2, _FU_NOW)
 
     results.log("followup minimum: FOLLOWUP_MIN_COUNT is 4", _FU_MIN == 4, got=str(_FU_MIN))
 
@@ -3699,7 +3766,12 @@ try:
     results.log("followup cadence: no reference time → not ready (never sends blind)",
                 _fu2._is_ready_for_followup(_BareLead(), None, force=True)[0] is False,
                 got=str(_fu2._is_ready_for_followup(_BareLead(), None, force=True)))
+    _fu_mod.timezone = _real_tz2
 except Exception as e:
+    try:
+        _fu_mod.timezone = _real_tz2   # never leave the clock frozen for later blocks
+    except NameError:
+        pass
     results.log("followup cadence: window-derived spacing", False, got=str(e))
 
 # ── No Homebase data on another tenant's messages ────────────────────────────
@@ -3852,6 +3924,779 @@ try:
                 'as little as US$20' not in _complaint_src and '_labour_line' in _complaint_src)
 except Exception as e:
     results.log("tenant data: no Homebase values reach other tenants", False, got=str(e))
+
+# ---- Media uploads: the ack must respect what we already know ----------
+# The media path used to be a SECOND reply path with hardcoded copy and no
+# state awareness: it asked "could you describe what you'd like done" even when
+# project_description was already captured, dropped the WhatsApp caption
+# entirely, and sent via a direct send_text_message (so no WAMID was stamped).
+try:
+    from bot.whatsapp_webhook import _compose_media_ack, _MEDIA_ACK_QUESTIONS
+    from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER as _SPLIT
+
+    _ack_no_desc = _compose_media_ack('project_description', 'pending', 'image')
+    results.log("media ack: no description yet still asks for one",
+                "describe what you'd like done" in _ack_no_desc,
+                got=_ack_no_desc)
+
+    _ack_have_desc = _compose_media_ack('area', 'pending', 'image')
+    results.log("media ack: description already captured is never re-asked",
+                "describe what you'd like done" not in _ack_have_desc
+                and "Whereabouts are you based?" in _ack_have_desc,
+                got=_ack_have_desc)
+
+    _ack_confirmed = _compose_media_ack('area', 'confirmed', 'image')
+    results.log("media ack: a confirmed booking gets no question at all",
+                '?' not in _ack_confirmed and _SPLIT not in _ack_confirmed,
+                got=_ack_confirmed)
+
+    _ack_complete = _compose_media_ack('complete', 'pending', 'image')
+    results.log("media ack: nothing outstanding gets no question at all",
+                '?' not in _ack_complete, got=_ack_complete)
+
+    _ack_plan = _compose_media_ack('area', 'pending', 'document',
+                                   is_plan_document=True)
+    results.log("media ack: a PDF is acknowledged as the plan, not as a photo",
+                _ack_plan.startswith("Got the plan"), got=_ack_plan)
+
+    _ack_split = _compose_media_ack('availability_date', 'pending', 'image')
+    results.log("media ack: ack and question go as two messages, not one block",
+                _ack_split.count(_SPLIT) == 1, got=_ack_split)
+
+    # No plumber name may appear in ack copy: a literal is a homebase value and
+    # would reach another tenant's customer (CLAUDE.md: absent means omit).
+    _all_acks = [
+        _compose_media_ack(q, s, m, p)
+        for q in list(_MEDIA_ACK_QUESTIONS) + ['complete', 'name', None]
+        for s in ('pending', 'confirmed')
+        for m in ('image', 'video', 'document')
+        for p in (True, False)
+    ]
+    results.log("media ack: no acknowledgement ever names the plumber",
+                not any('takudzwa' in a.lower() for a in _all_acks))
+    results.log("media ack: no acknowledgement carries an emoji",
+                all(all(ord(c) < 0x2190 for c in a) for a in _all_acks))
+except Exception as e:
+    results.log("media ack: state-aware acknowledgement", False, got=str(e))
+
+# ---- Media uploads: a caption is the customer's own words ---------------
+try:
+    import inspect as _inspect_m
+    import bot.whatsapp_webhook as _wh
+    _hmm_src = _inspect_m.getsource(_wh.handle_media_message)
+    results.log("media caption: the WhatsApp caption is read, not discarded",
+                "media_data.get('caption')" in _hmm_src)
+    results.log("media caption: a captioned upload routes through the dispatcher",
+                'handle_text_message(' in _hmm_src)
+    # A PDF must never reach a vision describe call — DeepSeek accepts
+    # JPEG/PNG/GIF/WebP only.
+    results.log("media: PDFs are flagged so they never reach a vision call",
+                "mime_type == 'application/pdf'" in _hmm_src)
+    # Defect C: any image used to mark the lead as having architectural plans.
+    results.log("media: only a requested plan or a PDF claims the plan slot",
+                'if is_plan_document or _was_pending_upload:' in _hmm_src)
+    _ack_src = _inspect_m.getsource(_wh._schedule_media_ack)
+    results.log("media ack: goes out via delayed_response so the WAMID is stamped",
+                'delayed_response(' in _ack_src
+                and 'send_text_message' not in _ack_src)
+except Exception as e:
+    results.log("media caption: routed through the main dispatcher", False, got=str(e))
+
+# ---- Vision: the photo is evidence, the customer's words are testimony --
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM
+    _csi = _RM._correct_service_intent
+
+    # Gap-fill: they named nothing, the LLM misfired to a tub, the photo shows
+    # a cubicle. Before vision this dropped to 'none' and pitched nothing.
+    _v1 = _csi("how much for this?", "tub_sales",
+               vision_context="A shower cubicle with a glass door, tiled tray.")
+    results.log("vision: a photo fills the gap when the customer named nothing",
+                _v1.get("intent") == "shower_cubicle"
+                and _v1.get("confidence") == "MEDIUM", got=str(_v1))
+
+    # Testimony beats evidence: they said toilet, the photo shows a cubicle.
+    _v2 = _csi("how much for the toilet", "tub_sales",
+               vision_context="A shower cubicle with a glass door.")
+    results.log("vision: a named product always beats what the photo shows",
+                _v2.get("intent") == "toilet", got=str(_v2))
+
+    # Real descriptions from bot/previous_work_photos, captured 2026-08-22.
+    # Freestanding is named explicitly whenever it is one (3/3), never on a
+    # built-in (0/2), so the word carries the US$670-vs-US$160 decision.
+    _v3a = _csi("how much for this?", "tub_sales",
+                vision_context="A freestanding bath with a floor-standing mixer "
+                               "tap is visible.")
+    results.log("vision: a freestanding tub in a photo prices as freestanding",
+                _v3a.get("intent") == "standalone_tub", got=str(_v3a))
+
+    _v3b = _csi("how much for this?", "tub_sales",
+                vision_context="A white bath is visible, fitted into a tiled "
+                               "surround, with a wall-mounted mixer tap.")
+    results.log("vision: a bath in a tiled surround prices as the built-in job",
+                _v3b.get("intent") == "tub_sales", got=str(_v3b))
+
+    # A bath the description cannot place: abstain. A 4x price gap is not worth
+    # a guess, and the free visit prices it properly.
+    _v3c = _csi("how much for this?", "tub_sales",
+                vision_context="A white bath with chrome taps against a wall.")
+    results.log("vision: an unplaceable bath abstains rather than guess",
+                _v3c.get("intent") == "none", got=str(_v3c))
+
+    # A whole-bathroom photo names several fixtures; pricing one is picking for
+    # them. This is the real shape of most portfolio photos.
+    _v3d = _csi("how much for this?", "tub_sales",
+                vision_context="Two white vessel basins sit on a dark floating "
+                               "vanity, alongside a black freestanding bath.")
+    results.log("vision: a photo naming several fixtures prices none of them",
+                _v3d.get("intent") == "none", got=str(_v3d))
+
+    # No photo at all behaves exactly as before.
+    _v4 = _csi("how much for this?", "tub_sales")
+    results.log("vision: with no photo the resolver is unchanged",
+                _v4.get("intent") == "none", got=str(_v4))
+    _v5 = _csi("Did you sell bathroom cubicles", "tub_sales")
+    results.log("vision: the original cubicle misfire fix still holds",
+                _v5.get("intent") == "shower_cubicle", got=str(_v5))
+except Exception as e:
+    results.log("vision: photo feeds intent without overriding the customer", False, got=str(e))
+
+try:
+    from bot.models import Appointment as _Appt
+
+    class _FakeAppt:
+        conversation_history = [
+            {"role": "user", "content": "[Sent image] a shower cubicle",
+             "image_description": "a shower cubicle"},
+            {"role": "assistant", "content": "Got the photo, thanks."},
+            {"role": "user", "content": "how much for this?"},
+        ]
+    results.log("vision: the stored description is read back off history",
+                _Appt.latest_image_description(_FakeAppt()) == "a shower cubicle")
+
+    class _StaleAppt:
+        conversation_history = (
+            [{"role": "user", "content": "[Sent image] a geyser",
+              "image_description": "a geyser"}]
+            + [{"role": "user", "content": "later turn"} for _ in range(8)]
+        )
+    results.log("vision: a photo from earlier in the thread goes stale",
+                _Appt.latest_image_description(_StaleAppt()) is None)
+except Exception as e:
+    results.log("vision: description storage and staleness", False, got=str(e))
+
+try:
+    from bot.services.vision import describe_customer_image, VISION_IMAGE_MIMES, VISION_MODEL
+    results.log("vision: a PDF is refused before any API call",
+                describe_customer_image(b"%PDF-1.4", "application/pdf") is None)
+    results.log("vision: empty bytes are refused before any API call",
+                describe_customer_image(b"", "image/jpeg") is None)
+    results.log("vision: only DeepSeek's four image formats are accepted",
+                VISION_IMAGE_MIMES == {"image/jpeg", "image/jpg", "image/png",
+                                       "image/webp", "image/gif"})
+    results.log("vision: the model id is the vision model, not flash",
+                VISION_MODEL == "deepseek-v4-flash-vision-exp")
+
+    # The vision model has NO thinking mode; the shared patch must not send it
+    # one. Exercise the wrapper directly: in gate mode the DeepSeek stub has
+    # replaced client.chat.completions.create, so going through the client would
+    # measure the mock rather than this logic.
+    import bot.services.clients as _clients
+    _seen = {}
+
+    def _capture(*a, **kw):
+        _seen.clear()
+        _seen.update(kw)
+        return None
+    _real = _clients._orig_completions_create
+    try:
+        _clients._orig_completions_create = _capture
+        for _m in (VISION_MODEL, "deepseek-v4-flash"):
+            _clients._completions_create_no_thinking(model=_m, messages=[])
+            _has_thinking = "thinking" in (_seen.get("extra_body") or {})
+            results.log(
+                "vision: thinking is disabled for the vision model too"
+                if "vision" in _m else
+                "vision: thinking is still disabled for the text models",
+                _has_thinking,
+                got=f"{_m} -> {_seen.get('extra_body')}")
+    finally:
+        _clients._orig_completions_create = _real
+except Exception as e:
+    results.log("vision: describe helper guards and the thinking patch", False, got=str(e))
+
+# ---- Vision: a photo of a whole bathroom prices every fixture in it -----
+# _active_scope skipped ANY history turn starting with "[", which is exactly the
+# "[Sent image] ..." format the vision description rides on — so a photo showing
+# a tub, a vanity and basins put none of them in scope.
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM2
+    from bot.models import Appointment as _Appt2
+
+    _WHOLE_ROOM = ("Two white vessel basins sit on a dark floating vanity with "
+                   "wall-mounted black mixer taps, alongside a black "
+                   "freestanding bath with a floor-standing tap.")
+
+    class _PhotoAppt:
+        project_description = ''
+        conversation_history = [
+            {"role": "user", "content": "[Sent image] " + _WHOLE_ROOM,
+             "image_description": _WHOLE_ROOM},
+            {"role": "user", "content": "how much for this?"},
+        ]
+
+        def latest_image_description(self, within=6):
+            return _Appt2.latest_image_description(self, within)
+
+    class _PhotoBot(_RM2):
+        appointment = _PhotoAppt()
+
+    _pb = _PhotoBot()
+    _scope, _ = _pb._active_scope("how much for this?")
+    _fams = {f for f, _q in _scope}
+    results.log("vision: every fixture in a whole-room photo lands in scope",
+                {'tub', 'vanity', 'basin'} <= _fams, got=str(_scope))
+    results.log("vision: a photo puts 2+ families in play, so all get priced",
+                len(_pb._context_product_families("how much for this?")) >= 2)
+    results.log("vision: a freestanding tub in a photo carries freestanding money",
+                _pb._tub_type_in_message(_WHOLE_ROOM) == 'freestanding')
+
+    # Precedence: anything the customer typed still outranks the picture.
+    class _SaidAppt(_PhotoAppt):
+        project_description = 'I need a geyser'
+    class _SaidBot(_RM2):
+        appointment = _SaidAppt()
+    results.log("vision: what they typed still beats what the photo showed",
+                _SaidBot()._context_product_families("") == {'geyser'},
+                got=str(_SaidBot()._context_product_families("")))
+
+    # Other bracket markers must still be ignored — only [Sent x] is unwrapped.
+    class _NoteAppt:
+        project_description = ''
+        conversation_history = [
+            {"role": "user", "content": "[FILE UPLOADED] tub_plan.pdf | URL: x"},
+            {"role": "user", "content": "how much for this?"},
+        ]
+        def latest_image_description(self, within=6):
+            return None
+    class _NoteBot(_RM2):
+        appointment = _NoteAppt()
+    _nscope, _ = _NoteBot()._active_scope("how much for this?")
+    results.log("vision: internal bracket markers are still not read as scope",
+                _nscope == [], got=str(_nscope))
+except Exception as e:
+    results.log("vision: whole-room photo scope", False, got=str(e))
+
+# ---- Media: "how much" then a photo 20s later must not double-reply ----
+# Batch window is 45s, media debounce 8s. The ack fired at ~28s and the batch
+# reply at ~45s, each with its own 1-5 min delay, so the lead got two messages
+# in random order with a question stacked across them. The batch reply is
+# generated after the description lands in history, so it already covers the
+# photo.
+try:
+    import inspect as _inspect_r
+    import bot.whatsapp_webhook as _wh_r
+    _src_r = _inspect_r.getsource(_wh_r.handle_media_message)
+    results.log("media race: an open text batch suppresses the duplicate ack",
+                '_pending_batches.get(sender)' in _src_r
+                and 'batch_open' in _src_r)
+    results.log("media race: the batch window still outlasts the media debounce",
+                _wh_r.MESSAGE_BATCH_WINDOW_SECONDS > _wh_r.MEDIA_DEBOUNCE_SECONDS,
+                got=f"batch={_wh_r.MESSAGE_BATCH_WINDOW_SECONDS}s "
+                    f"media={_wh_r.MEDIA_DEBOUNCE_SECONDS}s")
+except Exception as e:
+    results.log("media race: text then photo does not double-reply", False, got=str(e))
+
+# ---- A bare photo: name back what we saw, do not ask them to describe it --
+# We just looked at the picture. Asking "could you describe what you'd like
+# done" after seeing a freestanding tub is the same absurdity as asking it after
+# they send the plan.
+try:
+    from bot.whatsapp_webhook import _compose_media_ack as _cma2
+    from bot.views.plumbot.response_mixin import (
+        ResponseMixin as _RM3, MESSAGE_SPLIT_MARKER as _S3)
+
+    class _SeeBot(_RM3):
+        appointment = None
+
+    def _seen_q(desc):
+        _b = _SeeBot()
+        _f = {x for x in _b._product_families_in(desc) if x in _b._FAMILY_DISPLAY}
+        _q = _b._confirm_intent_question(_f)
+        if _q is None and len(_f) == 1:
+            _q = (f"Is it the {_b._FAMILY_DISPLAY[next(iter(_f))]} "
+                  f"you're looking to get sorted?")
+        return _q
+
+    _one = _cma2('service_type', 'pending', 'image',
+                 seen_question=_seen_q("A shower cubicle with a glass panel, a "
+                                       "shower tray, a mixer and a shower head."))
+    results.log("bare photo: one fixture is named back, not re-asked",
+                "Is it the shower" in _one
+                and "describe what you'd like done" not in _one, got=_one)
+
+    _two = _cma2('service_type', 'pending', 'image',
+                 seen_question=_seen_q("A freestanding bath with a floor-standing "
+                                       "mixer tap and a standard close-coupled "
+                                       "toilet are visible."))
+    results.log("bare photo: two fixtures get the scope confirm, not a describe ask",
+                "both the tub and toilet" in _two
+                and "describe what you'd like done" not in _two, got=_two)
+
+    # A cubicle photo also matches the 'tap' family. That must not read as two
+    # items — the customer sees one thing in that picture.
+    _b3 = _SeeBot()
+    results.log("bare photo: accessory families never inflate the fixture count",
+                {x for x in _b3._product_families_in(
+                    "A shower cubicle with a mixer and a shower head.")
+                 if x in _b3._FAMILY_DISPLAY} == {'shower'})
+
+    # Nothing plumbing-related in frame: fall back to the generic ask.
+    _none = _cma2('service_type', 'pending', 'image', seen_question=_seen_q("A garden fence."))
+    results.log("bare photo: an unreadable photo still asks the generic question",
+                "describe what you'd like done" in _none, got=_none)
+
+    # The picture cannot answer where they live or when they are free.
+    _area = _cma2('area', 'pending', 'image', seen_question="Is it the tub you're looking to get sorted?")
+    results.log("bare photo: a seen fixture never displaces the area question",
+                "Whereabouts are you based?" in _area, got=_area)
+
+    # Still no price: they showed us a tub, they did not ask what it costs.
+    results.log("bare photo: showing us a fixture never volunteers a price",
+                'US$' not in _one and 'US$' not in _two)
+except Exception as e:
+    results.log("bare photo: names back what vision saw", False, got=str(e))
+
+# ---- An inbound photo must carry its WAMID, or quoting it breaks silently -
+try:
+    import inspect as _inspect_w
+    import bot.whatsapp_webhook as _wh_w
+    _hm = _inspect_w.getsource(_wh_w.handle_media_message)
+    results.log("photo quote: the inbound photo turn is stamped with its WAMID",
+                'message_id=message_id' in _hm)
+    results.log("photo quote: a media message resolves its own quoted reference",
+                'resolve_quoted_message' in _hm)
+    # The resolve must happen BEFORE the turn is logged or it is always None.
+    results.log("photo quote: the quote is resolved before the turn is logged",
+                _hm.index('resolve_quoted_message')
+                < _hm.index('add_conversation_message'))
+except Exception as e:
+    results.log("photo quote: inbound photos carry their WAMID", False, got=str(e))
+
+# ---- The free-form answer prompt must not pitch or name-drop -----------
+# Live run 2026-08-23: the opener came back as "our plumber Takudzwa can come
+# out for a free site assessment to give you a fixed quote on the spot" —
+# naming the plumber unprompted and pitching the visit formally, against both
+# the no-name rule and the casual-visit rule.
+try:
+    import inspect as _inspect_p
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM4
+    _dyn = _inspect_p.getsource(_RM4._answer_standalone_question)
+
+    results.log("dynamic answer: the visit is described casually, not pitched",
+                'quick look at the space' in _dyn)
+    results.log("dynamic answer: the formal assessment pitch is ruled out",
+                'NEVER pitch it as a "free site assessment"' in _dyn)
+    results.log("dynamic answer: the plumber is not named unprompted",
+                'ONLY say it if they ask who is coming' in _dyn)
+    results.log("dynamic answer: the direct number is not volunteered",
+                'ONLY give this out if they ask for a number' in _dyn)
+    # The name itself must still RESOLVE per tenant — never a literal.
+    results.log("dynamic answer: the name still comes from the lead's own tenant",
+                'plumber_display_name()' in _dyn and 'Takudzwa' not in _dyn)
+except Exception as e:
+    results.log("dynamic answer: no name-drop, no formal pitch", False, got=str(e))
+
+# ---- "who is coming?" is a question about people, not a quote request ---
+# The labour marker r'do\s+(?:my|the|a|up)' matched "do THE work", so
+# "who would be coming to do the work?" got the on-site-quote pitch — a price
+# answer to a question about who, with the cold-open greeting stapled on after
+# it via an unsplit MESSAGE_SPLIT_MARKER (probe 2026-08-23).
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM5
+
+    class _JobQAppt:
+        project_type = None
+        project_description = None
+        customer_area = None
+        # Two customer turns = the conversation is underway, which is the regime
+        # where the classifier decides on its own.
+        conversation_history = [
+            {"role": "user", "content": "good afternoon"},
+            {"role": "assistant", "content": "Hello,"},
+            {"role": "user", "content": "..."},
+        ]
+
+    class _JobQ(_RM5):
+        appointment = _JobQAppt()
+
+    _jq = _JobQ()
+    results.log("who-question: asking who is coming is not a quote request",
+                _jq._is_job_quote_request("who would be coming to do the work?") is False)
+    results.log("who-question: 'who is doing the job' is not a quote request",
+                _jq._is_job_quote_request("who will be doing the job?") is False)
+    # Naming a product still reads as a job — the guard must not swallow those.
+    results.log("who-question: naming a product still routes as a job quote",
+                _jq._is_job_quote_request("who can fit my shower cubicle?") is True)
+    results.log("who-question: the ordinary job request is unchanged",
+                _jq._is_job_quote_request("I need someone to do my bathroom") is True)
+    # "Do you do X?" asks whether we OFFER it. 'renovat' matched the labour
+    # markers and pitched the on-site quote at a lead who had asked for nothing.
+    results.log("capability: 'do you do bathroom renovations' is not a quote ask",
+                _jq._is_job_quote_request("Do you do bathroom renovations?") is False)
+    results.log("capability: 'do you install geysers' is not a quote ask",
+                _jq._is_job_quote_request("Do you install geysers?") is False)
+    results.log("capability: an actual request to do the work still is one",
+                _jq._is_job_quote_request("Can you renovate my bathroom") is True)
+
+    # AI-primary: the classifier decides the speech act; the regex above is only
+    # the fallback. No extra API call — the result is already computed per turn.
+    def _uc(act):
+        return {"speech_act": act}
+    results.log("ai-primary: a classified quote_request routes to the visit",
+                _jq._is_job_quote_request("anything at all", _uc("quote_request")) is True)
+    results.log("ai-primary: a classified capability question does not",
+                _jq._is_job_quote_request("I need someone to do my bathroom",
+                                          _uc("capability")) is False)
+    results.log("ai-primary: a classified logistics question does not",
+                _jq._is_job_quote_request("I need someone to do my bathroom",
+                                          _uc("logistics")) is False)
+    # The classifier OVERRIDES the keyword layer — that is the whole point of
+    # demoting it. "do my bathroom" trips the labour marker and must still lose.
+    results.log("ai-primary: the classifier outranks the keyword marker",
+                _jq._job_quote_request_fallback("I need someone to do my bathroom") is True
+                and _jq._is_job_quote_request("I need someone to do my bathroom",
+                                              _uc("capability")) is False)
+    # A failed call, or "other", must fall back rather than read as a decision.
+    results.log("ai-primary: a failed classification falls back to keywords",
+                _jq._is_job_quote_request("Can you renovate my bathroom", None) is True)
+    results.log("ai-primary: speech_act 'other' falls back rather than deciding",
+                _jq._is_job_quote_request("Can you renovate my bathroom",
+                                          _uc("other")) is True)
+    results.log("ai-primary: a junk speech_act value falls back safely",
+                _jq._is_job_quote_request("Can you renovate my bathroom",
+                                          {"speech_act": 12345}) is True)
+
+    # FIRST CONTACT is stricter: with no context at all, both signals must agree
+    # before we abandon the scripted opener. "Hi, I need a plumber" reads as a
+    # quote_request to the classifier and pitched an all-in figure at someone who
+    # had asked for nothing (scenarios/wall_hung_toilet_chamber_price).
+    class _ColdAppt:
+        project_type = None
+        project_description = None
+        customer_area = None
+        conversation_history = [{"role": "user", "content": "Hi, I need a plumber"}]
+
+    class _ColdJobQ(_RM5):
+        appointment = _ColdAppt()
+    _cjq = _ColdJobQ()
+
+    results.log("first contact: a stated need alone does not pitch the quote",
+                _cjq._is_job_quote_request("Hi, I need a plumber",
+                                           _uc("quote_request")) is False)
+    results.log("first contact: a named job still pitches on the opening message",
+                _cjq._is_job_quote_request("can you renovate my bathroom",
+                                           _uc("quote_request")) is True)
+    results.log("first contact: the keyword layer alone is not enough either",
+                _cjq._is_job_quote_request("can you renovate my bathroom",
+                                           _uc("capability")) is False)
+except Exception as e:
+    results.log("who-question: not mistaken for a quote request", False, got=str(e))
+
+# ---- The cold opener belongs to first contact only ---------------------
+# The greeting rule was unconditional in BOTH the user prompt and the system
+# message, so the model answered "I would like to request a quote for plumbing
+# services" with "Hello, How may we assist you..." and answered an AREA reply
+# ("We are in Chitungwiza") with it too — restarting a live conversation, and in
+# one case arriving as a second reply on top of a real one.
+try:
+    import inspect as _inspect_g
+    from bot.views.plumbot.response_mixin import (
+        ResponseMixin as _RM9, COLD_OPENER as _CO, _COLD_OPENER_RULE as _COR)
+    _sq2 = _inspect_g.getsource(_RM9._answer_standalone_question)
+
+    results.log("cold opener: the greeting rule is chosen per conversation state",
+                'opener_rule' in _sq2 and '_prior_turns' in _sq2)
+    results.log("cold opener: an underway conversation gets a NO-GREETING rule",
+                'NO GREETING' in _sq2)
+    results.log("cold opener: the system message no longer repeats it blindly",
+                'How may we assist you on plumbing services' not in _sq2.split(
+                    '"role": "system"')[-1])
+    # A system message outranks the user prompt, so the two must not disagree.
+    results.log("cold opener: the system message defers to the computed rule",
+                'CRITICAL RULE in the user message' in _sq2)
+    # The deterministic short-circuit stays: a real greeting at the very start
+    # still answers instantly with no API call at all.
+    results.log("cold opener: a genuine first-contact greeting still short-circuits",
+                '_is_greeting_or_opener(message)' in _sq2
+                and 'get_next_question_to_ask() == "service_type"' in _sq2)
+    results.log("cold opener: the opener text is one shared constant",
+                _CO.startswith('Hello,') and 'How may we assist' in _CO
+                and 'How may we assist' in _COR)
+except Exception as e:
+    results.log("cold opener: first contact only", False, got=str(e))
+
+# ---- A general quote request must not fall back to the greeting slot ----
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM10
+
+    class _ApptQ:
+        project_type = None
+        project_description = None
+        customer_area = None
+        scheduled_datetime = None
+        conversation_history = []
+        def save(self, *a, **kw):
+            pass
+
+    class _UnderwayBot(_RM10):
+        def __init__(self, **kw):
+            self.appointment = _ApptQ()
+            for k, v in kw.items():
+                setattr(self.appointment, k, v)
+
+    # The service_type FIRST-PASS script is the cold-open greeting, so any turn
+    # falling back to service_type mid-conversation re-greeted the lead.
+    _cold = _UnderwayBot()
+    _cold.appointment.conversation_history = [{"role": "user", "content": "hi"}]
+    results.log("greeting: genuine first contact still gets the cold opener",
+                _cold._conversation_underway() is False
+                and _cold._get_first_pass_question("service_type").startswith("Hello,"))
+
+    _warm = _UnderwayBot()
+    _warm.appointment.conversation_history = [
+        {"role": "user", "content": "good afternoon"},
+        {"role": "assistant", "content": "Hello,"},
+        {"role": "user", "content": "I would like a quote"},
+    ]
+    results.log("greeting: an underway conversation is never re-greeted",
+                _warm._conversation_underway() is True
+                and "Hello," not in _warm._get_first_pass_question("service_type"))
+    results.log("greeting: mid-conversation it asks the service, as a choice",
+                " or " in _warm._get_first_pass_question("service_type"))
+
+    # Any captured field means they have engaged, whatever the transcript holds.
+    for _f in ("project_type", "project_description", "customer_area"):
+        results.log(f"greeting: a captured {_f} counts as underway",
+                    _UnderwayBot(**{_f: "x"})._conversation_underway() is True)
+
+    # A photo turn is not the customer speaking — bracket markers do not count.
+    _photo = _UnderwayBot()
+    _photo.appointment.conversation_history = [
+        {"role": "user", "content": "hi"},
+        {"role": "user", "content": "[Sent image] a shower cubicle"},
+    ]
+    results.log("greeting: a bracket marker turn does not count as speaking",
+                _photo._conversation_underway() is False)
+except Exception as e:
+    results.log("greeting: cold opener is first contact only", False, got=str(e))
+
+# ---- Assumptive close at EVERY stage (AI-primary refactor, Phase 2) -----
+# Every stage that CAN close on a this-or-that now does. Area and name are the
+# deliberate exceptions: we cannot enumerate suburbs or guess a name, so those
+# stay open questions rather than a fake choice.
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM8
+
+    class _ApptStage:
+        is_delayed = False
+        conversation_history = []
+        project_type = None
+        customer_area = None
+        scheduled_datetime = None
+
+    class _StageBot(_RM8):
+        def __init__(self, nq):
+            self.appointment = _ApptStage()
+            self._nq = nq
+        def get_next_question_to_ask(self):
+            return self._nq
+        def _last_assistant_was_tiedown(self):
+            return True   # skip the tie-down gate; we are testing the stage copy
+        def _confirm_intent_question(self, items, is_shona=False):
+            return None
+        def _get_contextual_description_question(self):
+            return "What are you looking to get sorted?"
+        def _get_next_two_available_days(self):
+            return []
+
+    def _ask(nq, lang="english"):
+        return _StageBot(nq)._get_pricing_followup_prompt(lang)
+
+    _svc = _ask("service_type")
+    results.log("assumptive: service_type offers a choice, not an open ask",
+                ' or ' in _svc and 'which service are you looking at' not in _svc.lower(),
+                got=_svc)
+    _time = _ask("availability_time")
+    results.log("assumptive: availability_time offers morning or afternoon",
+                'morning' in _time.lower() and 'afternoon' in _time.lower(),
+                got=_time)
+
+    # The stage fallback asked a yes/no AND pitched the visit formally — against
+    # the presumptive-close rule and the casual-visit rule at the same time.
+    _fb = _ask("complete")
+    results.log("assumptive: the fallback closes on a choice, not a yes/no",
+                ' or ' in _fb and not _fb.lower().startswith('want me to'),
+                got=_fb)
+    results.log("assumptive: the fallback drops the formal assessment pitch",
+                'assessment' not in _fb.lower()
+                and 'quick look at the space' in _fb.lower(), got=_fb)
+
+    # Shona must close the same way, not fall back to an English-only improvement.
+    for _nq in ("service_type", "availability_time", "complete"):
+        _sn = _ask(_nq, "shona")
+        results.log(f"assumptive: shona closes on a choice at {_nq}",
+                    ' kana ' in _sn, got=_sn)
+
+    # Never a fake choice where we genuinely need free text.
+    _area = _ask("area")
+    results.log("assumptive: area stays an open question, no invented choice",
+                'whereabouts' in _area.lower() and ' or ' not in _area, got=_area)
+    _name = _ask("name")
+    results.log("assumptive: the name ask stays open too",
+                'name' in _name.lower() and ' or ' not in _name, got=_name)
+
+    # Rulebook: one question per reply, never two stacked.
+    for _nq in ("service_type", "availability_time", "complete", "area", "name"):
+        _q = _ask(_nq)
+        results.log(f"assumptive: {_nq} asks exactly one question",
+                    _q.count('?') == 1, got=_q)
+except Exception as e:
+    results.log("assumptive: every stage closes on a choice", False, got=str(e))
+
+# ---- The price gate: AI may WIDEN it, never close it --------------------
+# Pricing is the most-regressed area here and the two failure directions are
+# not symmetric. Missing a price question costs one awkward turn; wrongly
+# deciding someone asked leads with money at a lead who never mentioned it,
+# which is the rule that keeps getting broken. So the classifier can add a
+# price ask the keywords missed, but an explicit "how much" must survive a
+# flaky or failed call.
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM7
+
+    class _PriceGate(_RM7):
+        appointment = None
+    _pg = _PriceGate()
+
+    results.log("price gate: an explicit ask needs no classifier at all",
+                _pg._asks_price_figure("how much is a shower cubicle") is True)
+    results.log("price gate: an explicit ask survives a FAILED classification",
+                _pg._asks_price_figure("how much is a shower cubicle", None) is True)
+    # The classifier must not be able to talk us out of a stated price ask.
+    results.log("price gate: the classifier cannot close the gate on 'how much'",
+                _pg._asks_price_figure("how much is a shower cubicle",
+                                       {"speech_act": "capability"}) is True)
+    results.log("price gate: Shona 'marii' still works with no classification",
+                _pg._asks_price_figure("marii yeshower") is True)
+
+    # Widening: a price ask carrying none of the markers.
+    results.log("price gate: AI catches a price ask with no marker in it",
+                _pg._asks_price_figure("what would that set me back?",
+                                       {"speech_act": "price_ask"}) is True)
+    results.log("price gate: that same message is missed without the classifier",
+                _pg._asks_price_figure("what would that set me back?") is False)
+
+    # And it must NOT fire on the acts that are not price questions.
+    for _act in ("capability", "logistics", "booking_answer", "quote_request", "other"):
+        results.log(f"price gate: '{_act}' is not treated as a price ask",
+                    _pg._asks_price_figure("I need a shower cubicle",
+                                           {"speech_act": _act}) is False)
+except Exception as e:
+    results.log("price gate: AI widens but never closes", False, got=str(e))
+
+# ---- The unified call carries the speech act, so routing need not guess ---
+try:
+    from bot.unified_classifier import uc_speech_act as _ucsa, _SYSTEM as _UCS
+    results.log("speech act: the one existing call now returns it",
+                '"speech_act"' in _UCS and 'quote_request' in _UCS
+                and 'capability' in _UCS and 'logistics' in _UCS)
+    results.log("speech act: the misrouted cases are worked examples in the prompt",
+                'who would be coming to do the work?' in _UCS
+                and 'Do you do bathroom renovations?' in _UCS)
+    results.log("speech act: a missing value reads as 'no answer', not a default",
+                _ucsa(None) is None and _ucsa({}) is None)
+    results.log("speech act: values are normalised, not trusted raw",
+                _ucsa({"speech_act": "  Capability  "}) == 'capability')
+except Exception as e:
+    results.log("speech act: classifier carries the routing signal", False, got=str(e))
+
+# ---- A split reply is stored as its parts, never as one marked-up blob ----
+try:
+    from bot.models import Appointment as _Appt3
+    from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER as _S5
+
+    class _LogAppt:
+        def __init__(self):
+            self.conversation_history = []
+        def save(self, *a, **kw):
+            pass
+        add_conversation_message = _Appt3.add_conversation_message
+
+    _la = _LogAppt()
+    _la.add_conversation_message("assistant", f"Got it.{_S5}What area are you in?")
+    results.log("split log: the marker is split into separate turns",
+                len(_la.conversation_history) == 2, got=str(_la.conversation_history))
+    results.log("split log: no control character survives into the transcript",
+                all(_S5 not in e["content"] for e in _la.conversation_history))
+
+    # generate_response logs the parts, then the webhook logs them AGAIN. A
+    # last-entry-only dedup let part one back in, because by then part two was
+    # the final entry.
+    _la.add_conversation_message("assistant", "Got it.")
+    _la.add_conversation_message("assistant", "What area are you in?")
+    results.log("split log: re-logging the same split reply does not double it",
+                len(_la.conversation_history) == 2,
+                got=str([e["content"] for e in _la.conversation_history]))
+
+    # A genuine repeat separated by the customer's turn is still preserved.
+    _la.add_conversation_message("user", "sorry, what?")
+    _la.add_conversation_message("assistant", "What area are you in?")
+    results.log("split log: a genuine repeat after the customer speaks is kept",
+                len(_la.conversation_history) == 4,
+                got=str([e["content"] for e in _la.conversation_history]))
+except Exception as e:
+    results.log("split log: split replies stored as parts", False, got=str(e))
+
+# ---- Photo turns feed the same machinery a typed message does ----------
+try:
+    import inspect as _inspect_c
+    import bot.whatsapp_webhook as _wh_c
+    _hm_c = _inspect_c.getsource(_wh_c.handle_media_message)
+    results.log("photo: service type is classified from what vision saw",
+                'classify_and_save(appointment, image_description)' in _hm_c)
+    # A photo landing on a running exchange must not produce a SECOND reply on
+    # top of one generated before the photo existed.
+    results.log("photo: a photo mid-exchange re-enters the batch, not a 2nd reply",
+                'send_in_flight' in _hm_c and '_enqueue_for_response(' in _hm_c)
+    results.log("photo: a cold photo still gets the acknowledgement path",
+                '_schedule_media_ack(sender, appointment, media_type' in _hm_c)
+except Exception as e:
+    results.log("photo: feeds classification and batching", False, got=str(e))
+
+# ---- The free-form answer prompt shows the register instead of naming it -
+try:
+    import inspect as _inspect_h
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM6
+    _sq = _inspect_h.getsource(_RM6._answer_standalone_question)
+    results.log("humanness: the prompt carries worked examples, not adjectives",
+                'HOW IT SHOULD SOUND' in _sq and 'Weak:' in _sq and 'Good:' in _sq)
+    results.log("humanness: assistant-register tells are banned outright",
+                'NEVER WRITE' in _sq and "I'd be happy to" in _sq
+                and 'Feel free to' in _sq)
+    results.log("humanness: no greeting is stapled onto a running conversation",
+                'No greeting unless this is their first message' in _sq)
+    # The worked examples came from HOMEBASE transcripts, and this prompt is
+    # served to every tenant. A figure in an example is a figure the model can
+    # reuse for someone else's customer — the leak class CLAUDE.md forbids.
+    # Every price must come from the tenant's own pricing guide instead.
+    _examples = _sq[_sq.index('HOW IT SHOULD SOUND'):] if 'HOW IT SHOULD SOUND' in _sq else ''
+    results.log("humanness: the worked examples carry no hardcoded prices",
+                'US$' not in _examples,
+                got=[ln.strip() for ln in _examples.splitlines() if 'US$' in ln])
+    results.log("humanness: the examples say where a real price must come from",
+                'Never reuse a number from an example' in _sq)
+except Exception as e:
+    results.log("humanness: prompt shows the register", False, got=str(e))
 
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The

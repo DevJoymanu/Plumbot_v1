@@ -306,7 +306,7 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
         f"Timeline: {appointment.timeline or 'Not specified'}\n"
         f"Site visit: {appointment.scheduled_datetime or 'Not set'}\n"
         f"{ad_line}"
-        f"Lead: https://plumbotv1-production.up.railway.app/appointments/{appointment.id}/"
+        f"Lead: {settings.SITE_URL}/appointments/{appointment.id}/"
     )
     try:
         if plumber_number:
@@ -326,7 +326,115 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
     )
 
 
-def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str):
+# Question scripts for the media acknowledgement, keyed by
+# get_next_question_to_ask(). Wording is reused from ResponseMixin._FORWARD_BANK
+# so a lead never hears two different phrasings of the same question.
+_MEDIA_ACK_QUESTIONS = {
+    'service_type':      "Could you describe what you'd like done? Just a few words is fine.",
+    'project_description': "Could you describe what you'd like done? Just a few words is fine.",
+    'area':              "Whereabouts are you based?",
+    # Static dict, so the two-concrete-days close is not available here — use
+    # the this-or-that timeframe pair instead of an open "when".
+    'availability_date': "Are you looking to get this done this week, or a bit further out?",
+    'availability_time': "What works better for you, morning or afternoon?",
+}
+
+
+def _media_ack_reply(appointment: "Appointment", media_type: str,
+                     is_plan_document: bool = False) -> str:
+    """
+    Acknowledgement for an uploaded file plus the next OUTSTANDING booking
+    question — never one we already have the answer to.
+
+    The old copy was a fixed string that asked "could you describe what you'd
+    like done" even when project_description was already captured, because it
+    never consulted booking state. It also bypassed the semantic duplicate
+    detector (that runs on the text path only) and then polluted the next turn,
+    since the ack is logged as an assistant turn that _last_assistant_was_tiedown
+    reads.
+
+    Copy rules: no plumber name (a literal one is a homebase value that would
+    reach another tenant's customer), casual visit framing, no emojis.
+    """
+    try:
+        from .views import Plumbot
+        plumbot = Plumbot(appointment.phone_number, tenant=appointment.tenant)
+        # One Appointment instance per turn — a second copy saving later
+        # resurrects state this handler already changed.
+        plumbot.appointment = appointment
+        next_q = plumbot.get_next_question_to_ask()
+    except Exception as exc:
+        print(f"Media ack could not resolve the next question: {exc}")
+        next_q = None
+
+    # We just LOOKED at their photo. Asking "could you describe what you'd like
+    # done" after seeing a freestanding tub is the same absurdity as asking it
+    # after they send the plan: name the fixtures back and confirm scope instead.
+    seen_question = None
+    try:
+        seen = appointment.latest_image_description()
+        if seen and next_q in ('service_type', 'project_description'):
+            # Only fixtures we can NAME count. A photo of a cubicle also matches
+            # 'tap', which would read as two items and bounce us to the generic
+            # question — the customer sees one thing in that picture, not two.
+            fams = {f for f in plumbot._product_families_in(seen)
+                    if f in plumbot._FAMILY_DISPLAY}
+            seen_question = plumbot._confirm_intent_question(fams)
+            if seen_question is None and len(fams) == 1:
+                only = plumbot._FAMILY_DISPLAY.get(next(iter(fams)))
+                if only:
+                    seen_question = (
+                        f"Is it the {only} you're looking to get sorted?"
+                    )
+    except Exception as exc:
+        print(f"Media ack could not read the photo description: {exc}")
+
+    return _compose_media_ack(
+        next_q, appointment.status, media_type, is_plan_document,
+        seen_question=seen_question,
+    )
+
+
+def _compose_media_ack(next_question, status: str, media_type: str,
+                       is_plan_document: bool = False,
+                       seen_question: str = None) -> str:
+    """
+    Pure copy builder — no DB, no network — so every branch is pinned in the
+    TEST 0 gate. See _media_ack_reply for why the state matters.
+    """
+    if is_plan_document:
+        ack = "Got the plan, thanks."
+    elif media_type == 'video':
+        ack = "Got the video, thanks."
+    else:
+        ack = "Got the photo, thanks."
+
+    # Already committed, or nothing left to ask: acknowledge and stop. Never
+    # re-pitch someone who has already booked.
+    # A question built from what the photo actually showed beats the generic
+    # "describe what you'd like done" — but only for the scope questions, never
+    # for area/date/time, which the picture cannot answer.
+    question = _MEDIA_ACK_QUESTIONS.get(next_question)
+    if seen_question and next_question in ('service_type', 'project_description'):
+        question = seen_question
+    if status == 'confirmed' or next_question in (None, 'complete', 'name')             or not question:
+        return f"{ack} I'll have it ready for when we come round."
+
+    # Two messages, not one block: acknowledgement, a beat, then the question.
+    return f"{ack}{MESSAGE_SPLIT_MARKER}{question}"
+
+
+def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str,
+                        is_plan_document: bool = False):
+    """
+    Debounced acknowledgement for an upload that arrived with NO caption.
+
+    Goes out through delayed_response so each part is logged, WAMID-stamped and
+    cancellable exactly like a normal reply. The old direct send left the ack
+    unstamped, so a customer quoting it resolved to None.
+
+    A CAPTIONED upload never reaches here; it routes through the main dispatcher.
+    """
     def _send_ack():
         with _media_ack_lock:
             _media_ack_timers.pop(sender, None)
@@ -337,42 +445,38 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
         except Appointment.DoesNotExist:
             fresh = appointment
 
-        if media_type == 'video':
-            customer_reply = (
-                "Got that, thanks for sharing! \n\n"
-                "Could you describe what you're looking to get done? "
-                "The more detail the better — even a rough idea helps us plan the visit."
-            )
-        else:
-            customer_reply = (
-                "Got it, thanks for sharing that! \n\n"
-                "Could you describe what you'd like done, or is there something specific "
-                "you'd like to change? Just a few words is fine."
-            )
+        reply = _media_ack_reply(fresh, media_type, is_plan_document)
+        parts = [p.strip() for p in reply.split(MESSAGE_SPLIT_MARKER)]             if MESSAGE_SPLIT_MARKER in reply else [reply]
+        parts = [p for p in parts if p]
+        if not parts:
+            return
 
-        fresh.add_conversation_message("assistant", customer_reply)
+        for _part in parts:
+            fresh.add_conversation_message("assistant", _part)
+        fresh.last_outbound_at = timezone.now()
+        fresh.last_contacted_at = fresh.last_outbound_at
+        fresh.save(update_fields=['last_outbound_at', 'last_contacted_at'])
 
         delay = get_random_delay(appointment.tenant, sender=sender)
-        print(f"?? Sending single media ack to {sender} after {delay // 60}m delay")
-        time.sleep(delay)
-        try:
-            from .whatsapp_cloud_api import get_client_for_tenant
-            get_client_for_tenant(appointment.tenant).send_text_message(sender, customer_reply)
-            print(f"? Media ack sent to {sender}")
-        except Exception as e:
-            print(f"? Failed to send media ack to {sender}: {e}")
+        cancel_event = threading.Event()
+        with _pending_send_lock:
+            _pending_send_events[sender] = cancel_event
+        print(f"Sending media ack to {sender} after {delay // 60}m delay "
+              f"({len(parts)} part(s))")
+        delayed_response(sender, parts, delay, None, cancel_event,
+                         tenant=appointment.tenant)
 
     with _media_ack_lock:
         existing = _media_ack_timers.get(sender)
         if existing is not None:
             existing.cancel()
-            print(f"?? Reset media ack timer for {sender}")
+            print(f"Reset media ack timer for {sender}")
 
         timer = threading.Timer(MEDIA_DEBOUNCE_SECONDS, _send_ack)
         timer.daemon = True
         _media_ack_timers[sender] = timer
         timer.start()
-        print(f"? Media ack timer set for {sender} ({MEDIA_DEBOUNCE_SECONDS}s)")
+        print(f"Media ack timer set for {sender} ({MEDIA_DEBOUNCE_SECONDS}s)")
 
 
 def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "Optional[str]", media_type: str):
@@ -412,7 +516,7 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
             f"  Service: {fresh.project_type or 'Not specified'}\n"
             f"  Area: {fresh.customer_area or 'Not specified'}\n\n"
             f"?? View appointment:\n"
-            f"https://plumbotv1-production.up.railway.app/appointments/{fresh.id}/"
+            f"{settings.SITE_URL}/appointments/{fresh.id}/"
         )
 
         try:
@@ -1880,16 +1984,25 @@ def process_message_change(value):
                 )
 
             elif message_type == 'image':
-                handle_media_message(sender, message.get('image', {}), 'image', tenant=tenant)
+                handle_media_message(
+                    sender, message.get('image', {}), 'image',
+                    message_id=message_id, quoted_id=quoted_id, tenant=tenant,
+                )
 
             elif message_type == 'document':
-                handle_media_message(sender, message.get('document', {}), 'document', tenant=tenant)
+                handle_media_message(
+                    sender, message.get('document', {}), 'document',
+                    message_id=message_id, quoted_id=quoted_id, tenant=tenant,
+                )
 
             elif message_type in ('audio', 'voice'):
                 handle_audio_message(sender, message.get('audio') or message.get('voice') or {}, tenant=tenant)
 
             elif message_type == 'video':
-                handle_media_message(sender, message.get('video', {}), 'video', tenant=tenant)
+                handle_media_message(
+                    sender, message.get('video', {}), 'video',
+                    message_id=message_id, quoted_id=quoted_id, tenant=tenant,
+                )
 
             elif message_type == 'sticker':
                 handle_unsupported_media(sender, 'sticker', tenant=tenant)
@@ -2624,7 +2737,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             and _faq_topic in (None, 'services')
             and uc_product_intent(_uclass) in _PRODUCT_LABEL
             and not uc_answered_current_question(_uclass)
-            and not plumbot._asks_price_figure(message_body)
+            and not plumbot._asks_price_figure(message_body, classification=_uclass)
             # A bare "Yes"/"ok" asks nothing — it ANSWERS us, almost always the
             # tie-down we just closed on. The classifier keeps product_intent alive
             # across turns, so without this the stale intent answered a question the
@@ -2745,7 +2858,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # multiple items, trust it so the customer gets prices for everything.
         _multi_item_combined = (
             _quick_service_check.get('intent') == 'combined_pricing'
-            and plumbot._is_job_quote_request(message_body)
+            and plumbot._is_job_quote_request(message_body, classification=_uclass)
         )
         if not quoted_text and not _multi_item_combined:
             _kw_intent = _keyword_product_intent(message_body)
@@ -3034,7 +3147,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # gets approximate prices; asking for *a quote* leans to the free site
         # visit (the quote is delivered there), per business policy. A quoted-
         # photo "this one?" is treated as a figure ask.
-        asks_figure = plumbot._asks_price_figure(message_body) or quoted_photo_price_ref
+        asks_figure = (plumbot._asks_price_figure(message_body, classification=_uclass)
+                       or quoted_photo_price_ref)
         asks_quote = plumbot._asks_for_quote(message_body)
 
         _is_specific_product_inquiry = (
@@ -3077,7 +3191,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             print("Skipping service inquiry reply - mid-conversation and no explicit info/price request")
         elif ((intent in PRICING_AUTO_REPLY_INTENTS or intent == 'combined_pricing')
                 and not asks_figure
-                and (asks_quote or plumbot._is_job_quote_request(message_body))):
+                and (asks_quote or plumbot._is_job_quote_request(
+                    message_body, classification=_uclass))):
             # A QUOTE request ("need a quote to fit tub and shower"), or a job /
             # multi-item request, with NO explicit how-much/price ask routes to the
             # free on-site quote — not a chat price block. Applies to combined_pricing
@@ -3282,15 +3397,30 @@ IMAGE_DOC_EXT_MAP = {
 }
 
 
-def handle_media_message(sender, media_data, media_type, tenant=None):
+def handle_media_message(sender, media_data, media_type, message_id=None,
+                         quoted_id=None, tenant=None):
     try:
         media_id = media_data.get('id')
         mime_type = media_data.get('mime_type', '')
+        # WhatsApp lets the customer type under a photo. That caption is the
+        # customer's own words and must be answered like any other message,
+        # never swallowed by the canned ack (CLAUDE.md: the customer's words
+        # override any holding state).
+        caption = (media_data.get('caption') or '').strip()
+        # A PDF is the one upload that genuinely IS a plan. It is also the one
+        # format DeepSeek vision cannot read (JPEG/PNG/GIF/WebP only), so it
+        # must never reach a describe call.
+        is_plan_document = mime_type == 'application/pdf'
         phone_number = f"whatsapp:+{sender}"
 
         appointment, created = Appointment.objects.get_or_create_lead(
             phone_number, tenant=tenant,
         )
+
+        # Resolve the highlighted-message reference before anything is logged,
+        # exactly as handle_text_message does — a media message can quote an
+        # earlier turn too ("like this one" + their own photo).
+        quoted_text = appointment.resolve_quoted_message(quoted_id) if quoted_id else None
 
         file_bytes = None
         if media_id:
@@ -3338,6 +3468,13 @@ def handle_media_message(sender, media_data, media_type, tenant=None):
                     # sent mid-conversation) must NOT flip the state to plan_uploaded,
                     # because that routes all future text messages to handle_post_upload_messages
                     # and produces the wrong canned "Your plan has been sent" reply.
+                    # Read BEFORE the update below: afterwards plan_status is
+                    # 'plan_uploaded' either way, so a second, unrelated image
+                    # would look like a plan we asked for.
+                    _was_pending_upload = Appointment.objects.filter(
+                        pk=appointment.pk, plan_status='pending_upload'
+                    ).exists()
+
                     Appointment.objects.filter(
                         pk=appointment.pk, plan_status='pending_upload'
                     ).update(
@@ -3345,12 +3482,20 @@ def handle_media_message(sender, media_data, media_type, tenant=None):
                         plan_uploaded_at=timezone.now(),
                     )
 
-                    # Only set plan_file if still empty (first image wins)
-                    Appointment.objects.filter(pk=appointment.pk, plan_file='').update(plan_file=saved_path)
-                    Appointment.objects.filter(pk=appointment.pk, plan_file__isnull=True).update(plan_file=saved_path)
+                    # An upload only counts as THE PLAN when we actually asked
+                    # for one, or when it is a PDF drawing. Previously ANY image
+                    # set has_plan/plan_file, so a photo of a leak marked the
+                    # lead as having architectural plans and took the plan slot.
+                    # plan_status is deliberately NOT advanced for an unprompted
+                    # PDF: that flag routes all later messages to
+                    # handle_post_upload_messages.
+                    if is_plan_document or _was_pending_upload:
+                        # Only set plan_file if still empty (first upload wins)
+                        Appointment.objects.filter(pk=appointment.pk, plan_file='').update(plan_file=saved_path)
+                        Appointment.objects.filter(pk=appointment.pk, plan_file__isnull=True).update(plan_file=saved_path)
 
-                    # Only set has_plan=True if it hasn't been answered yet
-                    Appointment.objects.filter(pk=appointment.pk, has_plan__isnull=True).update(has_plan=True)
+                        # Only set has_plan=True if it hasn't been answered yet
+                        Appointment.objects.filter(pk=appointment.pk, has_plan__isnull=True).update(has_plan=True)
 
                 elif media_type == 'video':
                     video_note = f"\n[VIDEO UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
@@ -3379,12 +3524,92 @@ def handle_media_message(sender, media_data, media_type, tenant=None):
                 import traceback
                 traceback.print_exc()
 
-        appointment.add_conversation_message("user", f"[Sent {media_type}]")
+        # Look at the photo. Fails open: describe_customer_image returns None on
+        # an unsupported format (a PDF plan), a missing key or any API error, and
+        # the flow below is identical to the blind behaviour in that case.
+        image_description = None
+        if file_bytes and not is_plan_document:
+            try:
+                from .services.vision import describe_customer_image
+                image_description = describe_customer_image(
+                    file_bytes, mime_type, tenant=tenant,
+                )
+            except Exception as vision_err:
+                print(f"Vision describe raised, continuing blind: {vision_err}")
 
-        if not appointment.chatbot_paused:
-            _schedule_media_ack(sender, appointment, media_type)
+        # Stamp the inbound WAMID on the photo turn. Without it a customer who
+        # highlights their OWN photo to ask "this one, how much?" resolves to
+        # None and the reply loses the picture they were pointing at — the
+        # silent-quote-break CLAUDE.md warns every new send path about.
+        if image_description:
+            print(f"Vision saw: {image_description[:120]}")
+            appointment.add_conversation_message(
+                "user", f"[Sent {media_type}] {image_description}",
+                message_id=message_id, quoted=quoted_text,
+                image_description=image_description,
+            )
         else:
+            appointment.add_conversation_message(
+                "user", f"[Sent {media_type}]",
+                message_id=message_id, quoted=quoted_text,
+            )
+
+        # Classify the service type off what we saw, exactly as the text path
+        # does off what they typed. Without this a lead who only ever sends a
+        # photo keeps a blank service type on the dashboard.
+        if image_description and not appointment.project_type:
+            try:
+                from .service_type_classifier import classify_and_save
+                classify_and_save(appointment, image_description)
+            except Exception as cls_err:
+                print(f"Could not classify service type from the photo: {cls_err}")
+
+        if appointment.chatbot_paused:
             print(f"Chatbot paused for whatsapp:+{sender}; skipped media acknowledgment.")
+            return
+
+        if caption:
+            # Answer the caption through the SAME path as any other text —
+            # lead source, delay signals, scoring, batching and the full
+            # router — instead of the canned ack, which would ask them to
+            # describe what they just described.
+            print(f"Caption on {media_type} from {sender}: {caption[:80]}")
+            handle_text_message(
+                sender, {'body': caption}, message_id=message_id,
+                quoted_id=quoted_id, tenant=tenant,
+            )
+        else:
+            # An uncaptioned photo arriving while a text batch is still open (the
+            # lead typed "how much", then sent the picture 20s later): the batch
+            # reply is generated AFTER this description lands in history, so it
+            # already covers the photo. Sending the ack as well double-messages
+            # and stacks a second question, and the two 1-5 min delays land them
+            # in random order. Media never joined the cancellation protocol that
+            # _enqueue_for_response uses, so nothing stopped this. Let the batch
+            # answer. (photo-then-text was always fine: the next text cancels a
+            # pending ack.)
+            with _pending_batch_lock:
+                batch_open = bool(_pending_batches.get(sender))
+            with _pending_send_lock:
+                send_in_flight = _pending_send_events.get(sender) is not None
+
+            if batch_open:
+                print(f"Media ack skipped for {sender} — a text batch is still "
+                      f"open and its reply will cover the photo")
+            elif send_in_flight and image_description:
+                # The batch already flushed and a reply is sleeping out its
+                # send delay — but it was generated BEFORE this photo existed,
+                # so it answers blind, and the ack would arrive as a second
+                # message in random order. Re-enter the batch with what we saw:
+                # that cancels the stale send and produces ONE reply covering
+                # their question and the picture together.
+                print(f"Photo joined the running exchange for {sender} — "
+                      f"replacing the reply generated before we saw it")
+                _enqueue_for_response(
+                    sender, image_description, None, tenant=tenant,
+                )
+            else:
+                _schedule_media_ack(sender, appointment, media_type, is_plan_document)
 
     except Exception as e:
         print(f"? Error handling media: {str(e)}")

@@ -1232,7 +1232,8 @@ class Appointment(models.Model):
         last_message = (self.conversation_history[-1].get('content') or '')[:50] + '...' if self.conversation_history else ''
         return f"{messages} messages. Last: {last_message}"
 
-    def add_conversation_message(self, role, content, message_id=None, quoted=None):
+    def add_conversation_message(self, role, content, message_id=None, quoted=None,
+                                 image_description=None):
         """Add a message to conversation history.
 
         message_id — the WhatsApp WAMID for this message. Stored so that a later
@@ -1240,6 +1241,10 @@ class Appointment(models.Model):
         resolved back to its text via ``resolve_quoted_message``.
         quoted — text of the earlier message this one is replying to (when the
         customer used WhatsApp's reply-to feature). Kept as transcript metadata.
+        image_description — what the vision model saw in an inbound photo. An
+        optional JSON key (never a column, per CLAUDE.md); read back by
+        latest_image_description so a later "how much is this?" can resolve to
+        the fixture in the picture.
         """
         try:
             # Ensure conversation_history is a list
@@ -1258,13 +1263,46 @@ class Appointment(models.Model):
                 return
             content = str(content)
 
+            # A reply may carry MESSAGE_SPLIT_MARKER, meaning "send this as two
+            # messages". Logged whole it puts a control character in the
+            # transcript and denies each half its own WAMID, so a customer
+            # quoting either one resolves to nothing. Split here, once, rather
+            # than at the ~20 call sites that log a reply. Only the first part
+            # inherits the WAMID; the rest are stamped per-part on send.
+            from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
+            if MESSAGE_SPLIT_MARKER in content:
+                for _i, _part in enumerate(
+                    p.strip() for p in content.split(MESSAGE_SPLIT_MARKER) if p.strip()
+                ):
+                    self.add_conversation_message(
+                        role, _part,
+                        message_id=message_id if _i == 0 else None,
+                        quoted=quoted if _i == 0 else None,
+                        image_description=image_description if _i == 0 else None,
+                    )
+                return
+
             # Idempotency guard (conv 369): the webhook logs the inbound user
             # message on arrival and generate_response logs it again on its reply
-            # paths. Skip a back-to-back duplicate of the same role+content so one
-            # inbound line is never doubled in the transcript. Genuine repeats are
-            # separated by the assistant's reply, so they are preserved.
+            # paths. Skip a duplicate of the same role+content so one line is
+            # never doubled in the transcript. Genuine repeats are separated by
+            # the other party's turn, so they are preserved.
+            #
+            # The look-back walks back over the CURRENT speaker's unbroken run,
+            # not just the final entry: a split reply is logged as its parts by
+            # generate_response and then AGAIN by the webhook dispatcher, and on
+            # the second pass part one is no longer last — so a last-entry-only
+            # check let every split reply into the transcript twice. Stopping at
+            # the first turn by the other party is what keeps a GENUINE repeat
+            # ("sorry, what?" -> the same question again) intact.
             if self.conversation_history:
                 last = self.conversation_history[-1]
+                for _prev in reversed(self.conversation_history[-6:]):
+                    if not isinstance(_prev, dict) or _prev.get("role") != role:
+                        break  # the other party spoke — anything before is a genuine repeat
+                    if _prev.get("content") == content:
+                        last = _prev
+                        break
                 if isinstance(last, dict) and last.get("role") == role and last.get("content") == content:
                     # Backfill the WAMID/quote onto the existing entry if the
                     # arrival log had them and this re-log carries new detail.
@@ -1290,6 +1328,8 @@ class Appointment(models.Model):
                 message["message_id"] = message_id
             if quoted:
                 message["quoted"] = quoted
+            if image_description:
+                message["image_description"] = image_description
 
             # Append to history
             self.conversation_history.append(message)
@@ -1304,6 +1344,28 @@ class Appointment(models.Model):
             import traceback
             traceback.print_exc()
             raise  # Re-raise so errors aren't silently ignored
+
+    def latest_image_description(self, within=6):
+        """
+        What the vision model saw in the customer's most recent photo, or None.
+
+        Scans back over the last `within` turns only: a photo from earlier in a
+        long conversation is stale context, and letting it steer intent would
+        recreate the carried-over-intent bug this codebase keeps fixing. The
+        customer's CURRENT words always outrank this — see
+        ResponseMixin._correct_service_intent, which uses it to fill a gap and
+        never to override a product the customer named.
+        """
+        history = self.conversation_history
+        if not isinstance(history, list):
+            return None
+        for entry in reversed(history[-within:] if within else history):
+            if not isinstance(entry, dict):
+                continue
+            description = entry.get("image_description")
+            if description:
+                return str(description)
+        return None
 
     def attach_message_id(self, role, content, message_id):
         """Stamp an outbound WAMID onto the matching conversation entry.

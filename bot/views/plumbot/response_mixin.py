@@ -181,6 +181,22 @@ LANGUAGE — understand the customer's language, then reply in it:
 # Never reaches the customer — it's always split out before sending.
 MESSAGE_SPLIT_MARKER = "\x1fSPLIT\x1f"
 
+# The cold-open reply, and the rule that produces it. Applies ONLY to a genuine
+# first contact — see _answer_standalone_question, which swaps in a no-greeting
+# rule once the conversation is underway.
+COLD_OPENER = "Hello,\nHow may we assist you on plumbing services"
+
+_COLD_OPENER_RULE = """CRITICAL RULE — GENERIC OPENERS:
+        If the customer's message is a generic greeting, a vague request for more information, or an opening message with no specific question, you MUST reply with ONLY this exact text and nothing else:
+        Hello,
+        How may we assist you on plumbing services
+
+        This applies to ALL of the following (and any equivalent):
+        - Greetings: hi, hello, hey, hie, good morning, good afternoon, good evening, sawubona, mhoro, makadii, masikati, mangwanani, howzit, sharp, eita
+        - Vague info requests: "more information", "more info", "tell me more", "how can you help", "what do you do", "I need help", "can you help me", "I saw your ad", "I'm interested"
+        - Any combo of the above: "hello, I need more info", "hi, can I get more information on this", "good morning, tell me about your services"
+        - Any language variant (Shona, Ndebele, informal Zim English) that is a greeting or vague opener with no specific question"""
+
 
 class ResponseMixin:
         def _build_retry_context_line(self, updated_fields, next_question) -> str:
@@ -959,7 +975,7 @@ class ResponseMixin:
                 return self._price_tiedown(language)
 
             if next_question == "service_type":
-                return "Uri kuda service ipi chaizvo?" if is_shona else "Which service are you looking at exactly?"
+                return self._service_type_question(is_shona)
             if next_question == "project_description":
                 confirm = self._confirm_intent_question(items, is_shona)
                 if confirm:
@@ -985,16 +1001,20 @@ class ResponseMixin:
                     "Which day would suit you best?"
                 )
             if next_question == "availability_time":
-                return "Nguva ipi ingakukodzerai?" if is_shona else "What time works best for you?"
+                return ("Mangwanani kana masikati — ndeipi inokukodzerai?"
+                        if is_shona else
+                        "Morning or afternoon — which suits you better?")
             if next_question == "area":
                 return ("Muri munzvimbo ipi?" if is_shona
                         else "Whereabouts are you based?")
             if next_question == "name":
                 return "Tingaisa zita ripi pabhooking?" if is_shona else "What name should we put on the booking?"
             return (
-                "Ndokubhukirai free on-site assessment here?"
+                "Svondo rino kana svondo rinouya — ndeipi yakanakira kuti "
+                "tiuye kuzotarisa nzvimbo?"
                 if is_shona else
-                "Want me to set up the free on-site assessment?"
+                "Would this week or next suit better for us to come round and "
+                "have a quick look at the space?"
             )
 
 
@@ -1273,7 +1293,7 @@ class ResponseMixin:
             return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
 
 
-        def _asks_price_figure(self, message: str) -> bool:
+        def _asks_price_figure(self, message: str, classification=None) -> bool:
             """
             Narrow, deterministic: did the customer ask for a PRICE FIGURE right now
             — "how much / price / cost / rate" (incl. Shona 'marii'/'mutengo')?
@@ -1295,7 +1315,22 @@ class ResponseMixin:
             )
             if any(m in msg for m in figure_markers):
                 return True
-            return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
+            if re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg):
+                return True
+
+            # AI catches the price asks that carry no marker at all — "what would
+            # that set me back?", "what am I looking at for a cubicle?".
+            #
+            # Deliberately ADD-ONLY, unlike _is_job_quote_request: the classifier
+            # can widen this gate but can never close it. Pricing is the
+            # most-regressed area in this codebase and the two failure directions
+            # are not symmetric — missing a price question costs one awkward turn,
+            # while wrongly deciding someone asked leads with money on a lead who
+            # never mentioned it, which is the one rule that keeps getting broken.
+            # So an explicit "how much" still works even when the call flakes or
+            # fails, and the offline gate still pins every keyword case.
+            from bot.unified_classifier import uc_speech_act
+            return uc_speech_act(classification) == 'price_ask'
 
 
         def _asks_for_quote(self, message: str) -> bool:
@@ -1540,6 +1575,23 @@ class ResponseMixin:
                 if any(re.search(p, msg) for p in pats)
             }
 
+        def _recent_image_description(self):
+            """What vision saw in the customer's recent photo, or None.
+
+            Defensive on purpose: this runs on live reply paths, and not every
+            object handed to these helpers is a full Appointment (test fakes,
+            pre-vision rows). A missing description must read as "no photo",
+            never as an AttributeError mid-reply.
+            """
+            appt = getattr(self, 'appointment', None)
+            getter = getattr(appt, 'latest_image_description', None)
+            if not callable(getter):
+                return None
+            try:
+                return getter()
+            except Exception:
+                return None
+
         def _names_multiple_products(self, message: str) -> bool:
             """True when the message names 2+ distinct product families."""
             return len(self._product_families_in(message)) >= 2
@@ -1557,7 +1609,12 @@ class ResponseMixin:
                 return fams
             appt = getattr(self, 'appointment', None)
             desc = (getattr(appt, 'project_description', None) or '') if appt else ''
-            return self._product_families_in(desc)
+            fams = self._product_families_in(desc)
+            if fams:
+                return fams
+            # Still nothing in words. What did their photo show? Last in the
+            # order deliberately: anything they typed outranks the picture.
+            return self._product_families_in(self._recent_image_description() or '')
 
         def _confirm_intent_question(self, items, is_shona: bool = False):
             """
@@ -1624,7 +1681,14 @@ class ResponseMixin:
                     if m.get('role') != 'user':
                         continue
                     content = (m.get('content') or '')
-                    if content.strip().startswith('[') or content == message:
+                    # A photo turn is logged as "[Sent image] <what vision saw>".
+                    # The marker names no fixture but the description does, so
+                    # strip the marker instead of skipping the turn — otherwise
+                    # every fixture in the customer's photo is invisible to scope
+                    # and a whole-bathroom picture prices nothing. Other bracket
+                    # markers ([FILE UPLOADED] etc.) are still skipped below.
+                    content = re.sub(r'^\[Sent \w+\]\s*', '', content).strip()
+                    if not content or content.startswith('[') or content == message:
                         continue
                     if self._product_families_in(content):
                         source = content
@@ -1754,8 +1818,8 @@ class ResponseMixin:
             # (see the near/far split in out_of_scope_handler). Over-mentioning the
             # visit reads pushy, so it is kept out of this question entirely.
             'booking': [
-                ("When were you hoping to get this done?", "hoping to get this done"),
                 ("Are you looking to start soon, or still planning it out?", "start soon"),
+                ("When were you hoping to get this done?", "hoping to get this done"),
             ],
         }
 
@@ -1835,7 +1899,53 @@ class ResponseMixin:
                 return pick(self._FORWARD_BANK['area'])
             return pick(self._FORWARD_BANK['booking'])
 
-        def _is_job_quote_request(self, message: str) -> bool:
+        def _is_job_quote_request(self, message: str, classification=None) -> bool:
+            """AI-primary: the classifier decides WHAT KIND of message this is;
+            the keyword resolver below is the fallback (CLAUDE.md / the
+            AI-primary refactor — demoted, never removed, so the offline TEST 0
+            gate keeps working and an API blip still routes).
+
+            Deciding whether someone is ASKING FOR a quote is a judgement about
+            what they are doing, which regex is structurally bad at: the labour
+            marker 'do (my|the|a|up)' read "who would be coming to do THE work?"
+            as a quote request and answered a question about people with a price.
+            Product-word mapping stays deterministic — that is a lookup, and the
+            model is measurably worse at it (see _correct_service_intent).
+
+            `classification` is an already-computed unified_classify result;
+            nothing here makes an extra API call.
+            """
+            # FIRST CONTACT keeps the approved script. "Hi, I need a plumber" is
+            # reasonably read as asking us to come and work, so the classifier
+            # calls it quote_request — and that pitched an all-in figure at
+            # someone who had not asked for a quote, a price, or named a job,
+            # skipping the scripted opener entirely (regression caught by
+            # scenarios/wall_hung_toilet_chamber_price).
+            #
+            # On an opening message, pitching the visit needs them to have
+            # actually asked for a quote or named what the job is. Stating a need
+            # is not either of those. Once the conversation is underway the
+            # classifier decides, as everywhere else.
+            # On an opening message we have no context, so require BOTH signals to
+            # agree before abandoning the script. Once the conversation is
+            # underway the classifier decides alone, as everywhere else.
+            # ("can you renovate my bathroom" satisfies both and still pitches;
+            # a bare quote request is caught by _asks_for_quote at the call sites.)
+            if (not self._conversation_underway()
+                    and not self._job_quote_request_fallback(message)):
+                return False
+
+            from bot.unified_classifier import uc_speech_act
+            act = uc_speech_act(classification)
+            if act == 'quote_request':
+                return True
+            if act in ('capability', 'logistics', 'price_ask', 'booking_answer'):
+                return False
+            # act is None ('other', a failed call, or no classification passed) —
+            # fall through to the keyword resolver.
+            return self._job_quote_request_fallback(message)
+
+        def _job_quote_request_fallback(self, message: str) -> bool:
             """
             True when the customer wants a quote for WORK to be done — a
             fit/install/renovate job, or a request spanning multiple items
@@ -1851,6 +1961,24 @@ class ResponseMixin:
             """
             msg = (message or '').lower().strip()
             if not msg:
+                return False
+            # A question about WHO is coming asks about people, not money.
+            # "who would be coming to do the work?" matched the labour marker
+            # 'do the' and got the on-site-quote pitch — a price answer to a
+            # question about who, with the cold-open greeting stapled on after
+            # it (probe 2026-08-23). Naming a product still reads as a job
+            # ("who can fit my shower cubicle"), so only an unqualified who
+            # bails out here.
+            if re.search(r'\b(who|whom)\b', msg) and not self._product_families_in(msg):
+                return False
+            # "Do you do bathroom renovations?" asks whether we OFFER the work,
+            # not for a quote on it — but 'renovat' matched the labour markers
+            # and pitched the on-site quote at a lead who had asked for nothing
+            # (probe 2026-08-23). Confirm we do it first; the quote comes later.
+            if re.search(
+                r'\b(do|does)\s+(you|your\s+\w+)\s+'
+                r'(do|offer|handle|install|fit|supply|cover|sell)\b', msg
+            ):
                 return False
             labour_markers = (
                 r'\bfit\b', r'\bfitting\b', r'\binstal', r'\brenovat', r'\bremodel',
@@ -1956,7 +2084,16 @@ class ResponseMixin:
             # Customer explicitly said standalone/freestanding → the tub line must
             # carry freestanding money (US$670), never built-in (US$160). Real
             # lead: "fit a standalone tab, chamber and sink" was quoted built-in.
-            fs_tub = self._tub_type_in_message(message) == 'freestanding'
+            tub_type = self._tub_type_in_message(message)
+            if tub_type is None:
+                # They pointed at a photo instead of naming the type. The picture
+                # decides the US$670-vs-US$160 line only when the customer said
+                # nothing — measured 2026-08-22, vision writes "freestanding"
+                # on every freestanding tub and on no built-in.
+                tub_type = self._tub_type_in_message(
+                    self._recent_image_description() or ''
+                )
+            fs_tub = tub_type == 'freestanding'
 
             # Tenant with no price sheet → not handled here; the router falls
             # through and the flow deflects to the free site visit instead of
@@ -2042,6 +2179,22 @@ class ResponseMixin:
             )
             if message:
                 self._capture_named_products_as_description(message)
+            if (message and self.get_next_question_to_ask() == "service_type"
+                    and not self.appointment.project_description):
+                # A GENERAL quote request ("a quote for plumbing services") names
+                # no product, so the capture above stores nothing and the flow
+                # falls back to the service question — whose scripted slot is the
+                # cold-open greeting. That is how this turn used to RE-GREET a
+                # lead who had just asked us for a quote, then ask about scope
+                # again after they gave their area.
+                #
+                # Their request IS their stated scope, so record it. Pinning the
+                # exact service changes nothing here — the visit prices whatever
+                # is there (the same reasoning that removed the scope question
+                # from _FORWARD_BANK) — and with a description on file the flow
+                # advances to area and then to booking on its own.
+                self.appointment.project_description = message.strip()[:120]
+                self.appointment.save(update_fields=["project_description"])
             followup = (
                 self._get_first_pass_question(self.get_next_question_to_ask())
                 or "All good, what area are you in?"
@@ -2078,7 +2231,8 @@ class ResponseMixin:
             'combined_pricing',
         }
 
-        def _should_volunteer_pricing(self, intent, message, price_requested=None):
+        def _should_volunteer_pricing(self, intent, message, price_requested=None,
+                                      classification=None):
             """
             Should a detected intent trigger a PRICED auto-reply for THIS message
             right now? The rule, in plain terms: only volunteer a price when the
@@ -2097,7 +2251,8 @@ class ResponseMixin:
             if intent not in self.PRICING_AUTO_REPLY_INTENTS:
                 return False
             if price_requested is None:
-                price_requested = self._asks_price_figure(message)
+                price_requested = self._asks_price_figure(
+                    message, classification=classification)
             # An explicit how-much/price/cost wins: give the approximate prices even
             # for a job / multi-item ("how much to fit tub and shower").
             if price_requested:
@@ -2105,7 +2260,8 @@ class ResponseMixin:
             # No price-figure ask: a quote request, or a job / multi-item
             # description, routes to the free on-site quote — never an unprompted
             # chat price block.
-            if self._asks_for_quote(message) or self._is_job_quote_request(message):
+            if self._asks_for_quote(message) or self._is_job_quote_request(
+                    message, classification=classification):
                 return False
             # Priceable product named with no explicit price ask → only volunteer
             # a price when it isn't a buying / project statement.
@@ -2667,7 +2823,8 @@ class ResponseMixin:
                     # just the one a single-intent classifier picks. (Defense; the
                     # webhook usually catches this first.) 'quote' does NOT count
                     # as a how-much — that leans to the visit (handled below).
-                    _asks_figure = self._asks_price_figure(incoming_message)
+                    _asks_figure = self._asks_price_figure(
+                        incoming_message, classification=precomputed_classification)
                     if _asks_figure and self._names_multiple_products(incoming_message):
                         print("🧾 Multi-item price ask — combined approximate prices for each item")
                         try:
@@ -2714,7 +2871,8 @@ class ResponseMixin:
                             quoted_context=quoted_context,
                         )
                     elif ((self._asks_for_quote(incoming_message)
-                            or self._is_job_quote_request(incoming_message))
+                            or self._is_job_quote_request(
+                                incoming_message, classification=precomputed_classification))
                             and not _asks_figure):
                         # A quote request, or a job / multi-item request, with no
                         # how-much/price ask routes to the free on-site quote (the
@@ -2994,6 +3152,36 @@ class ResponseMixin:
             return None
 
 
+        def _conversation_underway(self) -> bool:
+            """True once the customer has said more than their opening message.
+
+            The service_type first-pass script IS the greeting, so any turn that
+            falls back to service_type mid-conversation re-greets someone who has
+            already spoken. In prod it restarted the conversation right after a
+            quote request and then swallowed an area reply
+            (scenarios/quote_pitch_no_repeat).
+            """
+            appt = getattr(self, 'appointment', None)
+            if appt is None:
+                return False
+            if (getattr(appt, 'project_type', None)
+                    or getattr(appt, 'project_description', None)
+                    or getattr(appt, 'customer_area', None)):
+                return True
+            history = getattr(appt, 'conversation_history', None) or []
+            turns = sum(
+                1 for m in history
+                if isinstance(m, dict) and m.get('role') == 'user'
+                and not str(m.get('content') or '').startswith('[')
+            )
+            # The current turn is already logged, so >1 means they spoke before.
+            return turns > 1
+
+        def _service_type_question(self, is_shona: bool = False) -> str:
+            """The service question WITHOUT a greeting, closed this-or-that."""
+            return ("Muri kuda kugadzirisa bathroom kana kitchen?" if is_shona
+                    else "Is it a bathroom or a kitchen you're looking to get sorted?")
+
         def _get_first_pass_question(self, next_question: str) -> str:
             """
             Return the exact hardcoded first-pass question for a given question key.
@@ -3001,9 +3189,9 @@ class ResponseMixin:
             These are sent verbatim on retry_count == 0 with no DeepSeek call.
             """
             if next_question == "service_type":
-                return (
-                    "Hello,\nHow may we assist you on plumbing services"
-                )
+                if self._conversation_underway():
+                    return self._service_type_question()
+                return COLD_OPENER
 
             if next_question == "project_description":
                 return f"Got it! {self._get_contextual_description_question()}"
@@ -3839,6 +4027,10 @@ class ResponseMixin:
                     message,
                     result.get('intent'),
                     result.get('confidence', 'HIGH'),
+                    vision_context=(
+                        self.appointment.latest_image_description()
+                        if getattr(self, 'appointment', None) else None
+                    ),
                 )
 
                 print(f"🤖 Service inquiry detection: '{message}' → {result}")
@@ -3849,7 +4041,44 @@ class ResponseMixin:
                 return {"intent": "none", "confidence": "LOW"}
 
         @staticmethod
-        def _correct_service_intent(message, intent, confidence='HIGH'):
+        def _vision_product(text, product_in):
+            """Which single fixture does a VISION description name — or None when
+            the picture is not decisive on its own.
+
+            Measured against the portfolio photos on 2026-08-22: the model wrote
+            "freestanding" on 3/3 freestanding tubs and on 0/2 built-ins, so the
+            word itself is a reliable signal. A plain "bath" is only read as the
+            built-in job when the description says so ("fitted into a tiled
+            surround"); otherwise it abstains, because built-in (US$160) and
+            freestanding (US$670) are a 4x gap and a guess is expensive either way.
+
+            A photo of a whole bathroom names several fixtures. Pricing one of
+            them would be picking for the customer, so anything ambiguous falls
+            through to the free visit, which prices the room properly.
+            """
+            if not text:
+                return None
+            found = set()
+            named = product_in(text)
+            if named:
+                found.add(named)
+
+            if re.search(r'\b(freestanding|free[\s-]?standing|standalone)\b', text):
+                found.add('standalone_tub')
+            elif re.search(r'\b(bath|bathtub|baths|tub|tubs)\b', text):
+                if re.search(r'\b(surround|alcove|built[\s-]?in|corner)\b', text) \
+                        or 'fitted into' in text:
+                    found.add('tub_sales')
+                else:
+                    # A bath we cannot place: abstain outright rather than let
+                    # some other fixture in the frame win by default.
+                    return None
+
+            return found.pop() if len(found) == 1 else None
+
+        @staticmethod
+        def _correct_service_intent(message, intent, confidence='HIGH',
+                                    vision_context=None):
             """Deterministically correct an LLM service-intent guess using the
             customer's own product words.
 
@@ -3863,7 +4092,39 @@ class ResponseMixin:
             the misfires actually seen in production. Anything else passes through
             untouched. Pure function (no API) so it can be regression-tested without
             hitting DeepSeek.
+
+            vision_context — what the vision model saw in the customer's recent
+            photo (Appointment.latest_image_description). It fills a GAP ONLY:
+            consulted when neither the customer's words nor the LLM produced a
+            usable product, never to override a product they named. The picture
+            is evidence; their typed words are testimony, and testimony wins —
+            the same precedence that stops a carried-over intent beating the
+            current message.
             """
+            def _product_in(text):
+                """Which product does this text name? Deterministic, and shared by
+                the customer's own words and by a vision description of their
+                photo, so both routes map a fixture the same way."""
+                if not text:
+                    return None
+                if re.search(r'\bcubicles?\b', text) or 'shower' in text:
+                    return "shower_cubicle"
+                if 'chamber' in text:
+                    return "chamber"
+                if 'toilet' in text:
+                    # A wall-mounted/wall-hung toilet is the chamber job (US$160
+                    # all-in), not toilet-seat pricing. Shared resolver; function-
+                    # local import avoids the circular import at module load.
+                    from bot.whatsapp_webhook import _mentions_wall_hung_toilet
+                    if _mentions_wall_hung_toilet(text):
+                        return "wall_hung_toilet"
+                    return "toilet"
+                if any(w in text for w in ('vanity', 'vanitie', 'vanitys')):
+                    return "vanity"
+                if 'geyser' in text:
+                    return "geyser"
+                return None
+
             tub_intents = ('tub_sales', 'standalone_tub', 'bathtub_installation')
             message_lower = (message or '').lower()
             # Word-boundary match so "bathroom" does NOT read as the tub word "bath".
@@ -3877,22 +4138,16 @@ class ResponseMixin:
 
             # Tub intent but no tub word — re-map to whatever product IS named,
             # else drop to none rather than pitch a tub the customer never asked for.
-            if re.search(r'\bcubicles?\b', message_lower) or 'shower' in message_lower:
-                return {"intent": "shower_cubicle", "confidence": confidence}
-            if 'chamber' in message_lower:
-                return {"intent": "chamber", "confidence": confidence}
-            if 'toilet' in message_lower:
-                # A wall-mounted/wall-hung toilet is the chamber job (US$160
-                # all-in), not toilet-seat pricing. Shared resolver; function-
-                # local import avoids the circular import at module load.
-                from bot.whatsapp_webhook import _mentions_wall_hung_toilet
-                if _mentions_wall_hung_toilet(message_lower):
-                    return {"intent": "wall_hung_toilet", "confidence": confidence}
-                return {"intent": "toilet", "confidence": confidence}
-            if any(w in message_lower for w in ('vanity', 'vanitie', 'vanitys')):
-                return {"intent": "vanity", "confidence": confidence}
-            if 'geyser' in message_lower:
-                return {"intent": "geyser", "confidence": confidence}
+            named = _product_in(message_lower)
+            if named:
+                return {"intent": named, "confidence": confidence}
+
+            # The customer named nothing. ONLY now may the photo speak.
+            seen = ResponseMixin._vision_product(
+                (vision_context or '').lower(), _product_in,
+            )
+            if seen:
+                return {"intent": seen, "confidence": "MEDIUM"}
             return {"intent": "none", "confidence": "LOW"}
 
         @staticmethod
@@ -5194,9 +5449,9 @@ class ResponseMixin:
                 if retry_count == 0:
 
                     if next_question == "service_type":
-                        return (
-                            "Hello,\nHow may we assist you on plumbing services"
-                        )
+                        if self._conversation_underway():
+                            return self._service_type_question()
+                        return COLD_OPENER
 
                     if next_question == "project_description":
                         return f"Got it! {self._get_contextual_description_question()}"
@@ -5497,18 +5752,33 @@ class ResponseMixin:
                     recent_lines.append(f"{role}: {content[:200]}")
                 context_block = "\n".join(recent_lines) if recent_lines else "No prior conversation."
 
+                # The greeting rule below must apply ONLY at the start of a
+                # conversation. Left unconditional, the model answered "I would
+                # like to request a quote for plumbing services" with the cold
+                # opener, and answered an AREA reply ("We are in Chitungwiza")
+                # with it too — a greeting stapled onto a live exchange, and in
+                # one case a second reply on top of a real one. The current turn
+                # is already in history, so >1 means they have spoken before.
+                _prior_turns = sum(
+                    1 for m in history
+                    if m.get("role") == "user"
+                    and not str(m.get("content") or "").startswith("[")
+                )
+                if _prior_turns > 1 or service or area or description:
+                    opener_rule = (
+                        "CRITICAL RULE — NO GREETING:\n"
+                        "        This conversation is already underway. NEVER open with a\n"
+                        "        greeting, and NEVER reply with the generic \"How may we assist\n"
+                        "        you on plumbing services\" line — they have already told us what\n"
+                        "        they want. If their message is vague, answer it or ask what they\n"
+                        "        need next; never restart the conversation."
+                    )
+                else:
+                    opener_rule = _COLD_OPENER_RULE
+
                 prompt = f"""You are a knowledgeable WhatsApp assistant for {_biz(self)} — a professional plumbing and renovation company based in {_city(self)}, Zimbabwe.
 
-        CRITICAL RULE — GENERIC OPENERS:
-        If the customer's message is a generic greeting, a vague request for more information, or an opening message with no specific question, you MUST reply with ONLY this exact text and nothing else:
-        Hello,\n
-        How may we assist you on plumbing services
-
-        This applies to ALL of the following (and any equivalent):
-        - Greetings: hi, hello, hey, hie, good morning, good afternoon, good evening, sawubona, mhoro, makadii, masikati, mangwanani, howzit, sharp, eita
-        - Vague info requests: "more information", "more info", "tell me more", "how can you help", "what do you do", "I need help", "can you help me", "I saw your ad", "I'm interested"
-        - Any combo of the above: "hello, I need more info", "hi, can I get more information on this", "good morning, tell me about your services"
-        - Any language variant (Shona, Ndebele, informal Zim English) that is a greeting or vague opener with no specific question
+        {opener_rule}
 
         SERVICES WE OFFER:
         - Bathroom renovation: toilet, shower cubicle, bathtub, vanity unit, basin/sink, geyser, side chamber, tiling, pipe work
@@ -5526,9 +5796,9 @@ class ResponseMixin:
         - Works by appointment (not walk-ins)
         - Working days: {_hours_days(self)}
         - Business hours: {_hours_clock(self)}
-        - Site assessment is free, plumber gives fixed quote on the spot
-        - The plumber's name is {self.appointment.plumber_display_name()}
-        - Plumber direct contact: {self.appointment.plumber_contact() or "not available — offer to have the team call instead"}
+        - The visit is free: we come round, have a quick look at the space (20 minutes or so) and give a fixed quote on the spot
+        - The plumber's name is {self.appointment.plumber_display_name()} — ONLY say it if they ask who is coming or who they are dealing with
+        - Plumber direct contact: {self.appointment.plumber_contact() or "not available — offer to have the team call instead"} — ONLY give this out if they ask for a number
 
         CUSTOMER CONTEXT:
         - Service interest: {service or "not yet specified"}
@@ -5542,11 +5812,29 @@ class ResponseMixin:
 
         If this is NOT a generic opener, answer directly and honestly.
         - Keep it SHORT — 2 sentences maximum, under 45 words. Do NOT list out every service or fixture; give a brief reassurance and move on. A WhatsApp reply, not an essay.
-        - If we can do it: confirm clearly and briefly, then move toward a site visit.
+        - If we can do it: confirm clearly and briefly, then move the conversation forward.
+        - Do NOT name the plumber and do NOT give a phone number unless they asked for one. On a first reply nobody has met anyone yet, so a name is noise — and it is the kind of detail that must come from this business, never a remembered one.
+        - Refer to the visit casually if it comes up at all — "we can come round and have a quick look at the space". NEVER pitch it as a "free site assessment", a "free on-site assessment", or "the first step". That formal pitch reads pushy and puts leads off.
         - If we cannot (electrical, roofing, painting): say so and redirect to what we can help with.
         - ONLY give prices, sizes, or measurements if the customer EXPLICITLY asked about price or size. If they did not ask, do NOT mention any prices, sizes, or specifications — just acknowledge what they want and keep it moving. The pricing guide above is for reference only; never volunteer it unprompted.
         - When you DO quote a price, always show the supply + install split using ONLY the figures in the pricing guide above — e.g. "Shower cubicles from US$170 all-in (supply from US$130 + install from US$40)". Never invent figures.
-        - Zimbabwean English. No bold, no bullets. Do NOT end with a question."""
+        - Zimbabwean English. No bold, no bullets. Do NOT end with a question.
+
+        HOW IT SHOULD SOUND — these show REGISTER only. They deliberately carry no
+        figures: any price must come from the pricing guide above, which belongs to
+        this business alone. Never reuse a number from an example.
+        Customer: "Hello! Do you for shower rooms"
+        Weak: "Yes, we offer shower cubicles for supply and install, including ready-made units and custom builds. What area are you in so we can plan the visit properly?"
+        Good: "Yes, we handle shower cubicles — supply and install, ready-made or custom."
+
+        Customer: "I want to purchase 2x shower cubicles and accessories"
+        Weak: "Shower cubicle: supply plus install, approximate starting prices apply..."
+        Good: "Nice one — two shower cubicles plus accessories, we can sort that."
+
+        NEVER WRITE: "Certainly", "I'd be happy to", "Feel free to", "Let me know if",
+        "I understand that", "Great question", "Rest assured", "Please don't hesitate",
+        "As mentioned". No greeting unless this is their first message. Never restate
+        their question before answering it. Use contractions."""
 
                 response = deepseek_client.chat.completions.create(
                     model=settings.DEEPSEEK_MODEL,
@@ -5555,9 +5843,13 @@ class ResponseMixin:
                             "role": "system",
                             "content": (
                                 "You are a WhatsApp assistant for a plumbing company. "
-                                "IMPORTANT: If the customer message is a generic greeting or vague opener "
-                                "with no specific question, reply with ONLY this exact text: "
-                                "'Hello,\\nHow may we assist you on plumbing services' — nothing else. "
+                                # This repeated the cold-opener rule unconditionally,
+                                # and a system message outranks the user prompt — so
+                                # it re-greeted mid-conversation whatever the prompt
+                                # said. It now defers to the rule computed there.
+                                "Follow the CRITICAL RULE in the user message about "
+                                "whether to greet — it knows whether this conversation "
+                                "has already started, and you do not. "
                                 "For real questions: direct, helpful, human. "
                                 "No bullet points. No markdown. Do not end with a question. "
                                 "Never repeat, quote, or echo the customer's message back — "

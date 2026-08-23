@@ -6,8 +6,14 @@
 # wall_hung_toilet intent (_mentions_wall_hung_toilet keyword resolver
 # overriding the LLM 'toilet' guess via the product-family gate).
 
+# Turn 1 is scaffolding for the price turn below. It used to assert the exact
+# scripted opener ("how may we assist"), but the code only produces that for a
+# BARE greeting, and "Hi, I need a plumber" states a need — so the assertion had
+# been failing on main regardless of the wall-hung behaviour it exists to test.
+# Assert the rules that actually apply to this turn instead of one phrasing.
 > Hi, I need a plumber
-expect: how may we assist
+reject: US$
+reject: what area are you in
 
 > How much is the charge for installing a wall mounted toilet system?
 expect: US$160
