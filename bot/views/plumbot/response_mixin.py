@@ -1746,7 +1746,8 @@ class ResponseMixin:
             if family not in components:
                 return None, None  # not on this tenant's sheet — caller skips
             supply, labour = components[family]
-            return f"supply from US${supply}, labour from US${labour}", supply + labour
+            # "install", not "labour" — plain word the customer already uses.
+            return f"supply from US${supply}, install from US${labour}", supply + labour
 
         def _format_labour_scope(self, scope, has_accessories: bool,
                                  fs_tub: bool = False) -> str:
@@ -1763,12 +1764,12 @@ class ResponseMixin:
                     return ''  # not on this tenant's price sheet
                 short = ('freestanding tub' if (family == 'tub' and fs_tub)
                          else self._SCOPE_SHORT[family])
-                each = " fitted each" if qty > 1 else " fitted"
-                line = (f"Rough starting prices per {short}: {split} — "
-                        f"about US${allin}{each}." if split else
-                        f"Rough starting price per {short}: from US${allin}.")
+                each = " each" if qty > 1 else ""
+                line = (f"Starting price per {short}: {split} — "
+                        f"US${allin} in total{each}." if split else
+                        f"Starting price per {short}: from US${allin}.")
                 if qty > 1:
-                    line += f" For {self._num_word(qty)} that's around US${allin * qty} all-in"
+                    line += f" For {self._num_word(qty)} that's about US${allin * qty} in total"
                     line += (", accessories on top depending on what you go for."
                              if has_accessories else ".")
                     return line
@@ -1783,12 +1784,12 @@ class ResponseMixin:
                 seg = f"{label}"
                 if qty > 1:
                     seg += f" (x{qty})"
-                seg += (f": {split} — about US${allin} fitted" if split
+                seg += (f": {split} — US${allin} in total" if split
                         else f": from US${allin}")
                 if qty > 1:
-                    seg += f" each, {self._num_word(qty)} ≈ US${allin * qty} all-in"
+                    seg += f" each, {self._num_word(qty)} about US${allin * qty} in total"
                 lines.append("• " + seg)
-            return "Rough starting prices (supply + labour):\n" + "\n".join(lines) + acc_sentence
+            return "Starting prices:\n" + "\n".join(lines) + acc_sentence
 
         # Forward-question bank, one stage per booking step. Each entry is
         # (text, signature) — the signature is a stable fragment used to detect
@@ -2107,26 +2108,32 @@ class ResponseMixin:
             if not scope:
                 order = ['shower', 'tub', 'geyser', 'vanity', 'toilet', 'chamber']
                 priced = ", ".join(rough_map[f] for f in order if f in rough_map)
-                intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
-                         if is_shona else "Rough all-in prices (supply + install): ")
+                intro = ("Mitengo yekutanga (supply + install): "
+                         if is_shona else "Starting prices (supply and install): ")
                 body = f"{intro}{priced}."
-            elif labour_breakdown:
+            else:
+                # ALWAYS show supply and install separately — not only when the
+                # customer asked about labour. A single item already gets the
+                # split ("Supply from US$130, Install from US$30"), so a two-item
+                # answer that only gave a combined figure was the odd one out, and
+                # the label said "(supply + install)" without ever showing either.
                 body = self._format_labour_scope(scope, has_accessories, fs_tub=fs_tub)
                 if not body:
-                    return None  # nothing on the sheet for this scope
-            else:
-                priced = ", ".join(p for p in (self._scope_allin_phrase(f, q, fs_tub=fs_tub)
-                                               for f, q in scope) if p)
-                if not priced:
-                    return None  # nothing on the sheet for this scope
-                intro = ("Mitengo inofungidzirwa, yese-yese (supply + install): "
-                         if is_shona else "Rough all-in prices (supply + install): ")
-                body = f"{intro}{priced}."
+                    # Nothing on this tenant's sheet has a split (e.g. flat-priced
+                    # items only) — fall back to the combined figures rather than
+                    # going silent.
+                    priced = ", ".join(p for p in (self._scope_allin_phrase(f, q, fs_tub=fs_tub)
+                                                   for f, q in scope) if p)
+                    if not priced:
+                        return None  # nothing on the sheet for this scope
+                    intro = ("Mitengo yekutanga (supply + install): "
+                             if is_shona else "Starting prices (supply and install): ")
+                    body = f"{intro}{priced}."
 
             disclaimer = (
-                "Idzi ipfungidziro chete; mutengo chaiwo unosimbiswa kana muplumber aona nzvimbo."
+                "Aya ndiwo mapurice ekutanga. Mutengo chaiwo unosimbiswa kana muplumber aona nzvimbo."
                 if is_shona else
-                "These are ballpark; the exact figure is confirmed once the plumber sees the space."
+                "These are starting prices. The exact price is confirmed once the plumber sees the space."
             )
             # Forward question off the CURRENT scope/state — skips stages already
             # asked or answered, rotates wording. Computed before we record the
@@ -4471,7 +4478,9 @@ class ResponseMixin:
                             f"You are a {_biz(self)} assistant. Answer the "
                             "customer's product question in ONE short, warm sentence using ONLY "
                             "the facts given. If the facts don't cover it, say you'll go through "
-                            "it on the free on-site assessment. The customer has NOT asked about "
+                            "it when we come round to look at the space — never call it a "
+                            "\"free on-site assessment\" or any other formal pitch. "
+                            "The customer has NOT asked about "
                             "price — do NOT mention or volunteer any price or cost. NEVER invent "
                             "prices, brands, colours, materials, or specs. Reply in "
                             + ("Shona." if language == 'shona' else "English.")},
@@ -4746,9 +4755,9 @@ class ResponseMixin:
                 'kubva', 'inotangira', 'munoda', 'uri kuda', 'tiuye', 'zvichienda', 'ne install',
             ))
             disclaimer = (
-                "Aya mamapurice ekutanga anenge — mutengo chaiwo unosimbiswa kana muplumber aona nzvimbo."
+                "Aya ndiwo mapurice ekutanga. Mutengo chaiwo unosimbiswa kana muplumber aona nzvimbo."
                 if is_shona else
-                "These are approximate starting prices — your exact quote is confirmed once the plumber sees the space."
+                "These are starting prices. The exact price is confirmed once the plumber sees the space."
             )
             parts = reply.split('\n\n')
             if len(parts) >= 2:
@@ -5111,7 +5120,7 @@ class ResponseMixin:
                                 "The bathroom package from our Facebook ad starts from US$800. \n\n"
                                 "That covers the core fit-out — exact price depends on the size of your bathroom "
                                 "and fixtures you choose.\n\n"
-                                "Want us to come do a free on-site assessment so we can lock in your exact number?"
+                                "Want us to come round and have a quick look at the space so we can lock in your exact number?"
                             ),
                             "en_v": (
                                 "The bathroom package from our Facebook ad starts from US$800. \n\n"
@@ -5138,12 +5147,12 @@ class ResponseMixin:
                         "location_visit": {
                             "en": (
                                 f"We work by appointment rather than walk-ins. We're in {_loc_short(self)}.\n\n"
-                                "Would you like us to come to you instead? We can do a free on-site assessment "
-                                "at your place — saves you the trip and gets you a fixed price on the spot."
+                                "Would you like us to come to you instead? We can come round and have a "
+                                "quick look at the space — saves you the trip and gets you a fixed price on the spot."
                             ),
                             "sn": (
                                 f"Tinoshandisa ne appointment, hatisi kushanda ne walk-ins. Tiri mu{_loc_short(self)}.\n\n"
-                                "Unoda here kuti tiuye kwauri? Tinogona kuita free assessment paimba yako — "
+                                "Unoda here kuti tiuye kwauri? Tinogona kuuya tozotarisa nzvimbo paimba yako — "
                                 "kukuponesa rwendo uye tikupe mutengo wakakwana pasite."
                             ),
                         },

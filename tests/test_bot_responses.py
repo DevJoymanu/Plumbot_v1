@@ -1244,19 +1244,27 @@ try:
     _cr = _FakeSelfCombined()._build_combined_price_reply("How much tab and shower", "english")
     results.log(
         "_build_combined_price_reply: prices BOTH tub and shower",
-        "tub from US$160" in _cr and "shower cubicle from US$170" in _cr,
-        got=_cr[:90],
+        "US$160 in total" in _cr and "US$170 in total" in _cr,
+        got=_cr[:120],
     )
     results.log(
-        "_build_combined_price_reply: ballpark disclaimer, not visit-gated",
-        "ballpark" in _cr and "sees the space" in _cr and "approximate starting" not in _cr,
+        "_build_combined_price_reply: plain-English disclaimer, not visit-gated",
+        "starting prices" in _cr.lower() and "sees the space" in _cr
+        and "ballpark" not in _cr.lower(),
         got=_cr[-90:],
     )
-    # A plain multi-item price ask must NOT dump the supply/labour split.
+    # Owner rule (2026-08-23): supply and install are ALWAYS shown separately,
+    # not only when the customer asks about labour. A single item already split
+    # them, so a two-item answer giving one combined figure was the odd one out —
+    # and its label said "(supply + install)" while showing neither.
     results.log(
-        "_build_combined_price_reply: no labour split unless asked",
-        "fitted" not in _cr and "labour from" not in _cr,
-        got=_cr[:120],
+        "_build_combined_price_reply: supply and install are always split out",
+        "supply from US$" in _cr and "install from US$" in _cr,
+        got=_cr[:160],
+    )
+    results.log(
+        "_build_combined_price_reply: 'labour' is never shown to the customer",
+        "labour" not in _cr.lower(), got=_cr[:160],
     )
     # Real-lead corpus (2026-07-02): "How much is it to fit a standalone tab,
     # chamber and sink in a bathroom." — the tub line must carry FREESTANDING
@@ -1279,7 +1287,7 @@ try:
     )
     results.log(
         "combined reply: plain tub stays built-in; basin flat price shown",
-        "tub from US$160" in _bi and "basin from US$70" in _bi and "US$670" not in _bi,
+        "US$160 in total" in _bi and "US$70" in _bi and "US$670" not in _bi,
         got=_bi,
     )
 except Exception as e:
@@ -1308,18 +1316,19 @@ try:
     )
     results.log(
         "labour scope: prices the cubicle (current scope), drops the tub",
-        ("supply from US$130, labour from US$40" in _lab
+        ("supply from US$130, install from US$40" in _lab
          and "tub" not in _lab.lower() and "US$160" not in _lab and "US$80" not in _lab),
         got=_lab,
     )
     results.log(
         "labour scope: quantity multiplied with a line total",
-        "about US$170 fitted each" in _lab and "For two that's around US$340 all-in" in _lab,
+        "US$170 in total each" in _lab and "For two that's about US$340 in total" in _lab,
         got=_lab,
     )
     results.log(
         "labour scope: accessories noted, ballpark, not gated behind visit",
-        ("accessories on top" in _lab and "ballpark" in _lab and "sees the space" in _lab),
+        ("accessories on top" in _lab and "starting price" in _lab.lower()
+         and "sees the space" in _lab),
         got=_lab,
     )
 except Exception as e:
@@ -4414,6 +4423,47 @@ try:
                                            _uc("capability")) is False)
 except Exception as e:
     results.log("who-question: not mistaken for a quote request", False, got=str(e))
+
+# ---- No formal visit pitch anywhere the customer reads ------------------
+# The rule is to refer to the visit casually ("come round and have a quick look
+# at the space"). Repeated formal pitching reads pushy and puts leads off. A
+# BOOKING CONFIRMATION is the deliberate exception: once they have committed,
+# naming the appointment formally is correct.
+try:
+    import inspect as _inspect_v
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM11
+
+    _pitch = 'free on-site assessment'
+    _offenders = []
+    for _name in ('_answer_standalone_question', '_handle_oos_reply',
+                  '_answer_product_question', 'handle_service_inquiry',
+                  '_get_pricing_followup_prompt', '_build_job_quote_reply'):
+        _fn = getattr(_RM11, _name, None)
+        if _fn is None:
+            continue
+        # Comments and docstrings DESCRIBE the rule ("NOT a repeated 'free
+        # on-site assessment' pitch"); only emitted strings can reach a customer.
+        _src_v = _inspect_v.getsource(_fn)
+        if _fn.__doc__:
+            _src_v = _src_v.replace(_fn.__doc__, '')
+        _code = chr(10).join(
+            ln for ln in _src_v.splitlines()
+            if not ln.strip().startswith('#')
+        )
+        # The free-form prompt names the phrase in order to BAN it.
+        if 'NEVER' in _code and _pitch in _code:
+            continue
+        if _pitch in _code.lower():
+            _offenders.append(_name)
+    results.log("visit copy: no chat path pitches a 'free on-site assessment'",
+                not _offenders, got=str(_offenders))
+
+    # And the casual wording is the one actually used.
+    _sq3 = _inspect_v.getsource(_RM11._answer_standalone_question)
+    results.log("visit copy: the casual wording is what the copy uses",
+                'quick look at the space' in _sq3)
+except Exception as e:
+    results.log("visit copy: no formal pitch in chat", False, got=str(e))
 
 # ---- The cold opener belongs to first contact only ---------------------
 # The greeting rule was unconditional in BOTH the user prompt and the system

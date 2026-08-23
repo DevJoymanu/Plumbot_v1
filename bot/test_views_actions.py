@@ -2279,11 +2279,14 @@ class OfferPageTests(TestCase):
                          (800, 'Bathroom makeover special',
                           'freestanding tub and side chamber'))
         # The page preview is the bot's FULL vague-'how much' reply — anchor,
-        # approximate-price disclaimer, and the budget tie-down close.
+        # price disclaimer, and the budget tie-down close. Assert the stable
+        # half of the disclaimer, not its adjective: the wording was simplified
+        # for customers ("approximate starting prices" -> "starting prices") and
+        # pinning the phrasing broke this test for no behavioural reason.
         page = self.client.get(reverse('offer'))
         self.assertContains(
             page, 'Our Bathroom makeover special is US$800 — a freestanding tub and side chamber.')
-        self.assertContains(page, 'approximate starting prices')
+        self.assertContains(page, 'sees the space')
         self.assertContains(page, 'That sit alright with your budget?')
         # Homebase's own offer row is untouched by acme's edits.
         self.assertTrue(TenantPriceItem.objects.filter(
