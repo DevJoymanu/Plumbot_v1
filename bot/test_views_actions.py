@@ -3228,28 +3228,40 @@ class InboundEmailIntakeTests(TestCase):
     reference — a customer writing in cold."""
 
     def _raw(self, sender='jane@example.com', subject='Quote for a geyser',
-             body='Hi, how much for a 150L geyser in Avondale?', extra_headers=()):
+             body='Hi, how much for a 150L geyser in Avondale?', extra_headers=(),
+             to='team@example.com'):
         headers = [
             f'From: {sender}',
             f'Subject: {subject}',
-            'To: team@example.com',
+            f'To: {to}',
         ]
         headers.extend(extra_headers)
         return ('\r\n'.join(headers) + '\r\n\r\n' + body).encode()
 
-    def _run(self, raws, **opts):
-        """Run the command against a fake IMAP inbox holding `raws`."""
+    def _run(self, raws, polled='team@example.com', lead_env='', **opts):
+        """Run the command against a fake IMAP inbox holding `raws`.
+
+        Headers are handed over first (that is all the gates see); the body is
+        fetched only for the mail the command decides to answer.
+        """
+        import email as _email
+
         from bot.management.commands import process_inbound_emails as mod
 
         seen = []
         fake_imap = object()
+        by_uid = {str(i).encode(): raw for i, raw in enumerate(raws)}
         out = StringIO()
-        with patch.object(mod, '_EMAIL_FROM', 'team@example.com'), \
+        with patch.object(mod, '_EMAIL_FROM', polled), \
+             patch.object(mod, '_LEAD_INBOX_ENV', lead_env), \
              patch.object(mod, '_IMAP_PASS', 'secret'), \
              patch.object(mod, '_connect', return_value=fake_imap), \
-             patch.object(mod, '_fetch_unseen',
-                          return_value=[(str(i).encode(), raw)
-                                        for i, raw in enumerate(raws)]), \
+             patch.object(mod, '_fetch_unseen_headers',
+                          return_value=[(uid, _email.message_from_bytes(raw))
+                                        for uid, raw in by_uid.items()]), \
+             patch.object(mod, '_fetch_message',
+                          side_effect=lambda imap, uid:
+                              _email.message_from_bytes(by_uid[uid])), \
              patch.object(mod, '_mark_seen',
                           side_effect=lambda imap, uid: seen.append(uid)), \
              patch.object(mod, '_classify_intent',
@@ -3307,9 +3319,9 @@ class InboundEmailIntakeTests(TestCase):
              'extra_headers': ('Auto-Submitted: auto-replied',)},
             {'sender': 'jane@example.com',
              'extra_headers': ('List-Id: <news.example.com>',)},
-            # Our own address echoed back must not start a conversation with
-            # ourselves.
-            {'sender': 'team@example.com'},
+            # Transactional mail that reaches a business inbox is not a lead.
+            {'sender': 'invoice+statements@stripe.com',
+             'subject': 'Your receipt from Anthropic, PBC #2946-1044-8181'},
         ]
         for case in cases:
             with self.subTest(**case):
@@ -3317,6 +3329,64 @@ class InboundEmailIntakeTests(TestCase):
                 send.assert_not_called()
                 self.assertEqual(len(seen), 1)   # still marked read, not retried
         self.assertFalse(Appointment.objects.exclude(customer_email='').exists())
+
+    def test_our_own_mail_is_never_answered_and_is_left_unread(self):
+        """Alerts and Bcc copies of our own sends land in this mailbox. The bot
+        must not answer them, and must not mark the operator's mail as read."""
+        cases = [
+            {'sender': 'team@example.com'},                      # the polled box
+            {'sender': 'homebase@notifications.homexmedia.com'},  # platform sender
+            {'sender': 'jones86xi@gmail.com'},                    # operator inbox
+            # A Bcc copy carries the same thread tag the customer's reply does.
+            {'sender': 'homebase@notifications.homexmedia.com',
+             'subject': '[APT-7100] Your booking'},
+        ]
+        for case in cases:
+            with self.subTest(**case):
+                _, send, seen = self._run([self._raw(**case)])
+                send.assert_not_called()
+                self.assertEqual(seen, [])
+        self.assertFalse(Appointment.objects.exclude(customer_email='').exists())
+
+    def test_cold_mail_not_addressed_to_a_lead_inbox_is_ignored(self):
+        """A business address forwards into this mailbox; everything else in it
+        is the operator's own mail and is left alone, unread."""
+        output, send, seen = self._run(
+            [self._raw(sender='stripe@example.com', to='jones86xi@gmail.com')],
+            lead_env='info@homebaseplumbers.co.zw')
+
+        send.assert_not_called()
+        self.assertEqual(seen, [])
+        self.assertFalse(Appointment.objects.exists())
+        self.assertIn('Not addressed to a lead inbox', output)
+
+    def test_cold_mail_to_a_configured_lead_inbox_is_answered(self):
+        _, send, _ = self._run(
+            [self._raw(to='info@homebaseplumbers.co.zw')],
+            lead_env='info@homebaseplumbers.co.zw, sales@homebaseplumbers.co.zw')
+        send.assert_called_once()
+
+    def test_a_personal_mailbox_never_opens_cold_threads(self):
+        """When the polled mailbox IS the operator's own inbox there is nothing
+        that marks a message as a lead, so cold intake stays off."""
+        output, send, seen = self._run(
+            [self._raw(to='jones86xi@gmail.com')], polled='jones86xi@gmail.com')
+
+        send.assert_not_called()
+        self.assertEqual(seen, [])
+        self.assertFalse(Appointment.objects.exists())
+        self.assertIn('not a lead inbox', output)
+
+    def test_a_thread_reply_is_still_answered_from_a_personal_mailbox(self):
+        """The gate is on cold intake only — a customer replying to a thread we
+        started is a real customer wherever the mailbox lives."""
+        lead = make_lead(7101, customer_name='Known Lead',
+                         customer_email='jane@example.com')
+        self._run([self._raw(subject=f'Re: [APT-{lead.pk}] Your visit',
+                             to='jones86xi@gmail.com')],
+                  polled='jones86xi@gmail.com')
+        lead.refresh_from_db()
+        self.assertEqual(len(lead.conversation_history), 2)
 
     def test_dry_run_opens_no_thread(self):
         _, send, _ = self._run([self._raw()], dry_run=True)

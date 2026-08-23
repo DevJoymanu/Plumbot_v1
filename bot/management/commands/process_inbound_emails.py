@@ -28,8 +28,28 @@ Emails with no thread reference are NOT skipped: the sender address is matched
 to an existing lead, and when there is no match a new email lead is created
 (phone_number = a synthetic `email_<hash>` key, lead_source='email') so the bot
 answers a customer who writes in cold, exactly as it answers a WhatsApp opener.
-Automated senders (no-reply, bounces, vacation auto-replies, mailing lists) are
-still skipped — replying to those would loop.
+
+Three gates keep that intake off everything that is not a customer:
+
+  1. Our own mail — a plumber alert, the Bcc copy of a customer email, any
+     tenant sending identity, any address on PLATFORM_EMAIL_DOMAIN — is dropped
+     before the thread tag is even trusted, and is left UNREAD.
+  2. A cold email is only answered when it was addressed (To / Cc /
+     Delivered-To / X-Original-To) to a LEAD INBOX. Lead inboxes come from
+     INBOUND_LEAD_ADDRESSES; with none set the polled mailbox itself counts,
+     unless that mailbox is one of our own inboxes (the operator's personal
+     Gmail, a tenant alert address) — those carry receipts, newsletters and our
+     own notifications, so cold intake stays off there entirely.
+  3. Automated senders (no-reply, bounces, vacation auto-replies, mailing
+     lists, receipts) are skipped — replying to those would loop.
+
+Anything the bot refuses to handle for reason 1 or 2 is left unread: the
+mailbox belongs to the operator, and IMAP fetches use BODY.PEEK so that merely
+polling never marks their mail as read.
+
+Optional environment variable:
+    INBOUND_LEAD_ADDRESSES   comma-separated business addresses that make an
+                             unthreaded email a lead (e.g. info@acme.co.zw)
 """
 
 import email
@@ -40,7 +60,7 @@ import os
 import re
 from datetime import timedelta
 from email.header import decode_header
-from email.utils import parseaddr
+from email.utils import getaddresses, parseaddr
 
 import pytz
 from django.conf import settings
@@ -54,6 +74,10 @@ _EMAIL_FROM  = os.environ.get("IMAP_EMAIL", "")
 _IMAP_HOST   = os.environ.get("IMAP_HOST", "imap.gmail.com")
 _IMAP_PORT   = int(os.environ.get("IMAP_PORT", 993))
 _IMAP_PASS   = os.environ.get("IMAP_PASSWORD", "")
+# Comma-separated addresses that make an unthreaded email a lead. Set this
+# when the polled mailbox is not itself the business inbox — e.g. a business
+# address that forwards into a personal Gmail.
+_LEAD_INBOX_ENV = os.environ.get("INBOUND_LEAD_ADDRESSES", "")
 
 
 # ── IMAP helpers ──────────────────────────────────────────────────────────────
@@ -72,18 +96,33 @@ def _connect():
         return None
 
 
-def _fetch_unseen(imap):
-    """Return list of (uid_bytes, raw_message_bytes) for all UNSEEN emails."""
+def _fetch_unseen_headers(imap):
+    """Return list of (uid_bytes, header-only message) for all UNSEEN emails.
+
+    Headers only, and PEEKed on purpose. A plain RFC822 fetch sets \Seen as a
+    side effect, so merely glancing at the mailbox marked the operator's own
+    unread mail as read; and the body is only worth downloading for the mail we
+    are actually going to answer.
+    """
     imap.select("INBOX")
     status, data = imap.uid("search", None, "UNSEEN")
     if status != "OK" or not data[0]:
         return []
     results = []
     for uid in data[0].split():
-        s, msg_data = imap.uid("fetch", uid, "(RFC822)")
+        s, msg_data = imap.uid("fetch", uid, "(BODY.PEEK[HEADER])")
         if s == "OK" and msg_data and msg_data[0]:
-            results.append((uid, msg_data[0][1]))
+            results.append((uid, email.message_from_bytes(msg_data[0][1])))
     return results
+
+
+def _fetch_message(imap, uid):
+    """The full message for one uid, PEEKed. \Seen is set explicitly, and only
+    once the mail has been handled."""
+    s, msg_data = imap.uid("fetch", uid, "(BODY.PEEK[])")
+    if s != "OK" or not msg_data or not msg_data[0]:
+        return None
+    return email.message_from_bytes(msg_data[0][1])
 
 
 def _mark_seen(imap, uid):
@@ -551,13 +590,128 @@ _AUTOMATED_SENDER_HINTS = (
     "no-reply", "noreply", "no_reply", "do-not-reply", "donotreply",
     "mailer-daemon", "postmaster", "bounce", "notifications@", "notification@",
     "calendar-notification",
+    # Transactional / billing mail: receipts, invoices and service alerts land
+    # in a business inbox too, and a plumbing reply to one reads as a bot loose
+    # in the operator's mailbox.
+    "receipt", "billing@", "invoice", "statements", "@stripe.com",
+    "alerts@", "alert@", "updates@", "newsletter", "digest@",
 )
 # Bounce / vacation-responder subjects (a human never opens with these).
 _AUTOMATED_SUBJECT_HINTS = (
     "undelivered mail", "mail delivery", "delivery status notification",
     "returned mail", "automatic reply", "auto-reply", "autoreply",
     "out of office", "out-of-office",
+    "your receipt", "receipt from", "payment receipt", "your invoice",
+    "verification code", "password reset", "security alert",
 )
+
+
+# Headers that can carry the address the mail was actually delivered to. A
+# business address that forwards into another mailbox shows up in Delivered-To
+# or X-Original-To, not in To.
+_RECIPIENT_HEADERS = (
+    "To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To",
+    "X-Forwarded-To", "X-Delivered-To", "Resent-To",
+)
+
+
+def _addresses_in(value: str) -> set:
+    """Every email address in a header value or a comma-separated setting."""
+    return {addr.strip().lower()
+            for _, addr in getaddresses([value or ""]) if "@" in addr}
+
+
+def _recipient_addresses(msg) -> set:
+    """Every address this message was addressed or delivered to."""
+    found = set()
+    for header in _RECIPIENT_HEADERS:
+        for value in msg.get_all(header, []) or []:
+            found |= _addresses_in(_decode_header_value(value))
+    return found
+
+
+def _owner_addresses() -> set:
+    """Our own inboxes — the operator's and the tenants' alert addresses.
+
+    These mailboxes receive our internal alerts, receipts, newsletters and the
+    operator's personal mail. Nothing arriving in one is a customer writing in.
+    """
+    from bot.plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
+
+    addrs = {PLATFORM_NOTIFICATION_EMAIL.strip().lower()}
+    for value in getattr(settings, "PLUMBER_NOTIFICATION_EMAILS", None) or []:
+        addrs |= _addresses_in(value)
+    for account in getattr(settings, "PLATFORM_OWNER_ACCOUNTS", None) or []:
+        if "@" in (account or ""):
+            addrs.add(account.strip().lower())
+    try:
+        from bot.models import TenantProfile
+
+        addrs |= {(value or "").strip().lower()
+                  for value in TenantProfile.objects
+                  .exclude(email_sender="")
+                  .values_list("email_sender", flat=True)}
+    except Exception:                       # DB not ready / table missing
+        logger.debug("Could not load tenant notification inboxes", exc_info=True)
+    return {a for a in addrs if a}
+
+
+def _our_sending_addresses() -> set:
+    """Every identity WE send from: the polled mailbox, the platform default
+    sender, and each tenant's own customer-facing From address."""
+    addrs = set()
+    if _EMAIL_FROM:
+        addrs.add(_EMAIL_FROM.strip().lower())
+    addrs |= _addresses_in(getattr(settings, "DEFAULT_FROM_EMAIL", ""))
+    try:
+        from bot.models import TenantProfile
+
+        addrs |= {(value or "").strip().lower()
+                  for value in TenantProfile.objects
+                  .exclude(customer_from_email="")
+                  .values_list("customer_from_email", flat=True)}
+    except Exception:                       # DB not ready / table missing
+        logger.debug("Could not load tenant sending identities", exc_info=True)
+    return {a for a in addrs if a}
+
+
+def _is_our_own_mail(sender: str) -> bool:
+    """True when WE sent this: a plumber alert, the Bcc copy of a customer
+    email, or our own address echoed back.
+
+    Checked before the thread tag, because the Bcc copy of a customer email
+    carries the same [APT-id] reference the customer's own reply does — an APT
+    match alone is not proof that a customer wrote.
+    """
+    addr = (sender or "").strip().lower()
+    if not addr or "@" not in addr:
+        # Unparsable From: not ours — let _is_automated drop it, so it gets
+        # marked read instead of being re-examined on every run.
+        return False
+    if addr in _our_sending_addresses() or addr in _owner_addresses():
+        return True
+    platform_domain = (
+        getattr(settings, "PLATFORM_EMAIL_DOMAIN", "") or "").strip().lower()
+    return bool(platform_domain) and addr.rsplit("@", 1)[1] == platform_domain
+
+
+def _lead_inbox_addresses() -> set:
+    """The addresses that make an unthreaded email a customer inquiry.
+
+    INBOUND_LEAD_ADDRESSES wins when set. Otherwise the polled mailbox counts as
+    the lead inbox — unless it is one of our own inboxes (the operator's
+    personal Gmail, a tenant's alert address), where receipts, newsletters and
+    our own notifications land alongside everything else. Nothing in such a
+    mailbox marks a message as a lead, so cold intake stays off there rather
+    than answering the operator's personal mail.
+    """
+    configured = _addresses_in(_LEAD_INBOX_ENV.replace(";", ","))
+    if configured:
+        return configured
+    polled = (_EMAIL_FROM or "").strip().lower()
+    if polled and polled not in _owner_addresses():
+        return {polled}
+    return set()
 
 
 def _is_automated(msg, sender: str, subject: str) -> bool:
@@ -694,7 +848,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR("  Failed to connect to IMAP server."))
             return
 
-        emails = _fetch_unseen(imap)
+        emails = _fetch_unseen_headers(imap)
         self.stdout.write(f"  Unseen emails found: {len(emails)}\n")
 
         processed = skipped = errors = 0
@@ -702,14 +856,21 @@ class Command(BaseCommand):
         def out(msg):
             self.stdout.write(msg)
 
-        for uid, raw in emails:
+        for uid, head in emails:
             try:
-                msg     = email.message_from_bytes(raw)
-                subject = _decode_header_value(msg.get("Subject", ""))
-                sender  = parseaddr(msg.get("From", ""))[1]
-                apt_id  = _extract_apt_id(subject, msg)
+                subject = _decode_header_value(head.get("Subject", ""))
+                sender  = parseaddr(head.get("From", ""))[1]
+                apt_id  = _extract_apt_id(subject, head)
 
                 out(f"\n  ─ From: {sender} | Subject: {subject[:70]}")
+
+                # Our own traffic is dropped first, and left UNREAD: alerts and
+                # Bcc copies are for the operator to read, not for the bot to
+                # answer.
+                if _is_our_own_mail(sender):
+                    out("    SKIP  Our own alert / sending identity — not answering")
+                    skipped += 1
+                    continue
 
                 apt = None
                 if apt_id:
@@ -720,14 +881,34 @@ class Command(BaseCommand):
 
                 # No thread reference (or a dead one): a customer emailing in
                 # cold. Answer it like any other opener rather than leaving it
-                # for manual handling — but never answer a machine.
+                # for manual handling — but only when it was actually sent to
+                # a lead inbox, and never when it came from a machine.
                 fresh_thread = apt is None
                 if fresh_thread:
-                    if _is_automated(msg, sender, subject):
-                        out("    SKIP  Automated sender / bounce — not answering")
+                    lead_inboxes = _lead_inbox_addresses()
+                    if not lead_inboxes:
+                        out("    SKIP  This mailbox is not a lead inbox "
+                            "(set INBOUND_LEAD_ADDRESSES to enable cold intake)")
                         skipped += 1
-                        _mark_seen(imap, uid)
                         continue
+                    if not (_recipient_addresses(head) & lead_inboxes):
+                        out("    SKIP  Not addressed to a lead inbox — leaving it alone")
+                        skipped += 1
+                        continue
+
+                if _is_automated(head, sender, subject):
+                    out("    SKIP  Automated sender / bounce — not answering")
+                    skipped += 1
+                    _mark_seen(imap, uid)
+                    continue
+
+                msg = _fetch_message(imap, uid)
+                if msg is None:
+                    out("    SKIP  Could not fetch the message body")
+                    skipped += 1
+                    continue
+
+                if fresh_thread:
                     if dry_run:
                         out(f"    [dry-run] would open an email thread for {sender}")
                         skipped += 1
