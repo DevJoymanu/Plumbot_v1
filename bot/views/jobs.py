@@ -47,6 +47,10 @@ from ..utils import (
     _reset_pk_sequence, _append_admin_note,
     clean_phone_number, format_phone_number_for_storage,
 )
+# Used by send_job_appointment_notifications — it was called there without
+# ever being imported, so the plumber's job email died on a NameError that the
+# function's own blanket except swallowed.
+from ..plumber_notifications import send_plumber_notification_email
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +61,7 @@ def schedule_job(request, pk):
     site_visit = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     
     # Check if this appointment can have a job scheduled
-    if site_visit.appointment_type == 'job' or site_visit.status != 'confirmed':
+    if site_visit.appointment_type != 'site_visit' or site_visit.status != 'confirmed':
         messages.error(request, 'Cannot schedule job for this appointment')
         return redirect('appointment_detail', pk=site_visit.pk)
     
@@ -107,36 +111,28 @@ def schedule_job(request, pk):
                     'site_visit': site_visit,
                 })
             
-            # FIXED: Create job appointment properly
-            # Generate unique phone number for job (since phone_number is unique)
-            import uuid
-            job_phone = f"job_{uuid.uuid4().hex[:8]}_{site_visit.phone_number}"
-            
-            job_appointment = Appointment.objects.update(
- #               phone_number=site_visit.phone_number,  # Unique identifier for the job
-                customer_name=site_visit.customer_name,
-                customer_email=site_visit.customer_email or '',
-                customer_area=site_visit.customer_area,
-                project_type=site_visit.project_type,
-                property_type=site_visit.property_type,
-                project_description=job_description or site_visit.project_description,
-                scheduled_datetime=job_datetime,
-                appointment_type='job',  # Mark as job appointment
-                status='scheduled',
-                has_plan=site_visit.has_plan,
-                timeline=f'{duration_hours} hours',
-            )
-            
-            # Store reference to original site visit if you have a field for it
-            # job_appointment.related_site_visit_id = site_visit.id
-            # job_appointment.save()
-            
+            # This lead BECOMES the job appointment (see
+            # Appointment.schedule_job_appointment). It used to be written with
+            # `Appointment.objects.update(...)` — a manager-level update with no
+            # filter, which stamped this job onto every lead in every tenant and
+            # flipped them all to VERY_HOT. The manager now refuses that call.
+            try:
+                job_appointment = site_visit.schedule_job_appointment(
+                    job_datetime,
+                    duration_hours=duration_hours,
+                    description=job_description,
+                    materials=materials_needed,
+                )
+            except ValueError:
+                messages.error(request, 'Mark the site visit complete before scheduling the job')
+                return redirect('appointment_detail', pk=site_visit.pk)
+
             # Send notifications
             try:
-                send_job_notifications(job_appointment, materials_needed)
+                send_job_appointment_notifications(job_appointment)
             except Exception as notify_error:
-                print(f"⚠️ Notification error: {notify_error}")
-            
+                print(f"WARNING Notification error: {notify_error}")
+
             messages.success(
                 request, 
                 f'Job scheduled for {job_datetime.strftime("%B %d, %Y at %I:%M %p")}'
@@ -419,8 +415,8 @@ def job_appointments_list(request):
     """List all job appointments"""
     # Get all job appointments
     job_appointments = Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real().filter(
-        appointment_type='job'
-    ).order_by('-scheduled_datetime')
+        appointment_type='job_appointment'
+    ).order_by('-job_scheduled_datetime')
     
     # Calculate statistics (keyed on job_status — the field the row badges
     # display — not the general appointment `status`, which is a different
@@ -433,7 +429,7 @@ def job_appointments_list(request):
     # Filter by status if provided
     status_filter = request.GET.get('status')
     if status_filter:
-        job_appointments = job_appointments.filter(status=status_filter)
+        job_appointments = job_appointments.filter(job_status=status_filter)
     
     # Filter by plumber if provided
     plumber_filter = request.GET.get('plumber')
@@ -443,7 +439,7 @@ def job_appointments_list(request):
     # Filter by date if provided
     date_filter = request.GET.get('date')
     if date_filter:
-        job_appointments = job_appointments.filter(scheduled_datetime__date=date_filter)
+        job_appointments = job_appointments.filter(job_scheduled_datetime__date=date_filter)
     
     context = {
         'job_appointments': job_appointments,

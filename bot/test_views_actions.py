@@ -3410,3 +3410,159 @@ class InboundEmailIntakeTests(TestCase):
         with patch('bot.whatsapp_cloud_api.get_client_for_tenant') as client:
             self.assertFalse(_send_wa(apt.phone_number, 'hello'))
             client.assert_not_called()
+
+
+# ======================================================================
+# Job scheduling — the unfiltered-update regression
+# ======================================================================
+
+class JobSchedulingTests(StaffClientTestCase):
+    """schedule_job used to write with `Appointment.objects.update(...)` — a
+    manager-level update with no filter, so one job's datetime, name and area
+    landed on every lead of every tenant and the whole board went VERY HOT
+    (a `scheduled_datetime` scores 100). The page had only ever been
+    GET-smoke-tested, which is why nothing caught it."""
+
+    def setUp(self):
+        super().setUp()
+        self.site_visit = make_lead(
+            700,
+            customer_name='Site Visit Lead',
+            customer_area='Avondale',
+            status='confirmed',
+            appointment_type='site_visit',
+            site_visit_completed=True,
+            job_status='pending_schedule',
+        )
+        self.bystander = make_lead(
+            701, customer_name='Untouched Lead', customer_area='Borrowdale')
+
+    @staticmethod
+    def _job_slot():
+        """The next Wednesday at 10:00 — inside every default business week."""
+        import pytz
+        sa = pytz.timezone('Africa/Johannesburg')
+        moment = timezone.now().astimezone(sa) + timedelta(days=1)
+        while moment.weekday() != 2:
+            moment += timedelta(days=1)
+        return moment.strftime('%Y-%m-%d'), '10:00'
+
+    def _post_job(self):
+        job_date, job_time = self._job_slot()
+        with patch('bot.views.jobs.get_client_for_tenant'), \
+             patch('bot.views.jobs.send_plumber_notification_email'):
+            return self.client.post(
+                reverse('schedule_job', args=[self.site_visit.pk]),
+                {'job_date': job_date, 'job_time': job_time,
+                 'duration_hours': '4', 'job_description': 'Install the tub',
+                 'materials_needed': 'Tub, waste kit'},
+            )
+
+    def test_scheduling_a_job_converts_only_that_lead(self):
+        response = self._post_job()
+        self.assertEqual(response.status_code, 302)
+
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'job_appointment')
+        self.assertEqual(self.site_visit.job_status, 'scheduled')
+        self.assertIsNotNone(self.site_visit.job_scheduled_datetime)
+        self.assertEqual(self.site_visit.job_duration_hours, 4)
+        self.assertEqual(self.site_visit.job_description, 'Install the tub')
+        # Its own identity survives — the job is the same customer.
+        self.assertEqual(self.site_visit.customer_name, 'Site Visit Lead')
+
+    def test_scheduling_a_job_leaves_every_other_lead_alone(self):
+        """The actual production symptom: every lead in VERY HOT."""
+        self._post_job()
+
+        self.bystander.refresh_from_db()
+        self.assertEqual(self.bystander.customer_name, 'Untouched Lead')
+        self.assertEqual(self.bystander.customer_area, 'Borrowdale')
+        self.assertEqual(self.bystander.appointment_type, 'site_visit')
+        self.assertIsNone(self.bystander.scheduled_datetime)
+
+        from bot.services.lead_scoring import calculate_lead_score
+        score, status = calculate_lead_score(self.bystander)
+        self.assertNotEqual(status, 'very_hot')
+        self.assertNotEqual(score, 100)
+
+    def test_manager_level_update_is_refused(self):
+        """The footgun itself: Django copies update() onto the manager, where
+        it carries no filter. Appointment.objects.update() must never run."""
+        with self.assertRaises(TypeError):
+            Appointment.objects.update(scheduled_datetime=timezone.now())
+
+        self.bystander.refresh_from_db()
+        self.assertIsNone(self.bystander.scheduled_datetime)
+
+        # A filtered update still works — only the unfiltered call is blocked.
+        Appointment.objects.filter(pk=self.bystander.pk).update(
+            customer_area='Mount Pleasant')
+        self.bystander.refresh_from_db()
+        self.assertEqual(self.bystander.customer_area, 'Mount Pleasant')
+
+    def test_incomplete_site_visit_cannot_be_scheduled(self):
+        self.site_visit.site_visit_completed = False
+        self.site_visit.job_status = 'not_applicable'
+        self.site_visit.save(update_fields=['site_visit_completed', 'job_status'])
+
+        self._post_job()
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'site_visit')
+        self.assertIsNone(self.site_visit.job_scheduled_datetime)
+
+    def test_jobs_list_lists_job_appointments(self):
+        """The list filtered on appointment_type='job' — a value no correct
+        path writes — so it was always empty (and showed the whole table once
+        the broken update had stamped 'job' everywhere)."""
+        self._post_job()
+        response = self.client.get(reverse('job_appointments_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Site Visit Lead')
+        self.assertNotContains(response, 'Untouched Lead')
+
+
+class MassJobUpdateRepairTests(StaffClientTestCase):
+    """The repair command for tenants already hit in production."""
+
+    def _damaged(self, suffix, **kwargs):
+        lead = make_lead(suffix, **kwargs)
+        # Reproduce the smear exactly: a manager-level update bypasses save(),
+        # so end_datetime and booked_at keep their pre-incident values.
+        Appointment.objects.filter(pk=lead.pk).update(
+            customer_name='Smeared Name',
+            customer_area='Smeared Area',
+            scheduled_datetime=timezone.now() + timedelta(days=3),
+            appointment_type='job',
+            status='scheduled',
+        )
+        lead.refresh_from_db()
+        return lead
+
+    def test_repair_restores_booked_and_unbooked_leads(self):
+        booked_time = timezone.now() + timedelta(days=2)
+        booked = self._damaged(
+            710, status='confirmed', scheduled_datetime=booked_time)
+        never_booked = self._damaged(711)
+
+        call_command('repair_mass_job_update', '--apply', stdout=StringIO())
+
+        booked.refresh_from_db()
+        self.assertEqual(booked.appointment_type, 'site_visit')
+        self.assertEqual(booked.status, 'confirmed')
+        # end_datetime survived the smear, so the original time comes back.
+        self.assertAlmostEqual(
+            booked.scheduled_datetime, booked_time, delta=timedelta(seconds=2))
+
+        never_booked.refresh_from_db()
+        self.assertEqual(never_booked.appointment_type, 'site_visit')
+        self.assertEqual(never_booked.status, 'pending')
+        self.assertIsNone(never_booked.scheduled_datetime)
+        self.assertNotEqual(never_booked.lead_status, 'very_hot')
+
+    def test_dry_run_writes_nothing(self):
+        lead = self._damaged(712)
+        call_command('repair_mass_job_update', stdout=StringIO())
+        lead.refresh_from_db()
+        self.assertEqual(lead.appointment_type, 'job')
+        self.assertEqual(lead.status, 'scheduled')

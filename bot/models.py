@@ -71,6 +71,25 @@ class LeadQuerySet(models.QuerySet):
         return self.responded_since(timedelta(days=30))
 
 
+class LeadManager(models.Manager.from_queryset(LeadQuerySet)):
+    """Appointment's manager, minus the footgun.
+
+    Django copies `update()` from the queryset onto the manager, so
+    `Appointment.objects.update(...)` is legal and rewrites EVERY lead of
+    EVERY tenant. bot/views/jobs.py once scheduled a job with exactly that
+    call: one job's datetime, name and area landed on the whole table and
+    every lead flipped to VERY_HOT (a `scheduled_datetime` scores 100).
+    Filter first, always.
+    """
+
+    def update(self, *args, **kwargs):
+        raise TypeError(
+            "Appointment.objects.update() rewrites every lead in every tenant. "
+            "Filter first: Appointment.objects.filter(pk=...).update(...), or "
+            "edit the instance and call .save()."
+        )
+
+
 class LeadStatus(models.TextChoices):
     COLD = 'cold', 'Cold'
     WARM = 'warm', 'Warm'
@@ -463,7 +482,7 @@ class Appointment(models.Model):
     # Basic Information
     tenant = _tenant_fk(related_name='appointments')
 
-    objects = LeadQuerySet.as_manager()
+    objects = LeadManager()
 
     # Unique PER TENANT, not globally (plan §6.4): the same customer may talk
     # to two companies on the platform. Enforced by the UniqueConstraint in
@@ -777,39 +796,33 @@ class Appointment(models.Model):
             self.job_status == 'pending_schedule'
         )
     
-    def create_job_appointment(self, job_datetime, duration_hours=4, 
-                             description="", materials="", plumber=None):
-        """Create a job appointment after site visit"""
+    def schedule_job_appointment(self, job_datetime, duration_hours=4,
+                                 description="", materials="", plumber=None):
+        """Turn THIS lead into the scheduled job appointment.
+
+        One row, not two. The job has to keep the customer's real
+        `phone_number` — send_job_reminders and every job notification message
+        that field directly — and phone numbers are unique per tenant, so a
+        child row could only hold a synthetic key no reminder could reach.
+        Keeping the same row also keeps the tenant, the conversation history
+        and the site-visit record with the customer they belong to.
+        """
         if not self.can_schedule_job():
             raise ValueError("Cannot schedule job - site visit not completed")
 
-   #     job_phone = f"{self.phone_number}_job_{timezone.now().strftime('%Y%m%d%H%M%S')}"
-    
-
-
-        job_appointment = Appointment.objects.create(
-    #       phone_number=self.job_phone,  # Use unique phone number,
-            customer_name=self.customer_name,
-            customer_area=self.customer_area,
-            project_type=self.project_type,
-            property_type=self.property_type,
-            appointment_type='job_appointment',
-            parent_site_visit=self,
-            job_scheduled_datetime=job_datetime,
-            job_duration_hours=duration_hours,
-            job_description=description,
-            job_materials_needed=materials,
-            assigned_plumber=plumber,
-            job_status='scheduled',
-            status='confirmed'
-        )
-        
-        # Update parent site visit status
+        self.appointment_type = 'job_appointment'
+        self.job_scheduled_datetime = job_datetime
+        self.job_duration_hours = duration_hours
+        self.job_description = description or self.job_description
+        self.job_materials_needed = materials or self.job_materials_needed
+        if plumber is not None:
+            self.assigned_plumber = plumber
         self.job_status = 'scheduled'
+        self.status = 'confirmed'
         self.save()
-        
-        return job_appointment
-    
+
+        return self
+
     def get_job_appointments(self):
         """Get all job appointments for this site visit"""
         return self.job_appointments.all()
