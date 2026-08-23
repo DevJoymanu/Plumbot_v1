@@ -4200,6 +4200,18 @@ try:
     results.log("media race: an open text batch suppresses the duplicate ack",
                 '_pending_batches.get(sender)' in _src_r
                 and 'batch_open' in _src_r)
+    # The arrival-time guard is not enough on its own: a text landing during the
+    # 8s media debounce opens the batch AFTER that check, and the already-armed
+    # ack timer still fired. Prod 2026-08-23 (barmak-plumbing): a photo then
+    # "How much" a second later sent the lead THREE messages. The ack must
+    # re-check when the timer FIRES.
+    _ack_src_r = _inspect_r.getsource(_wh_r._schedule_media_ack)
+    results.log("media race: the ack re-checks at fire time, not only at arrival",
+                '_pending_batches.get(sender)' in _ack_src_r
+                and '_pending_send_events.get(sender)' in _ack_src_r)
+    results.log("media race: the fire-time check happens before the reply is built",
+                _ack_src_r.index('_pending_batches.get(sender)')
+                < _ack_src_r.index('_media_ack_reply('))
     results.log("media race: the batch window still outlasts the media debounce",
                 _wh_r.MESSAGE_BATCH_WINDOW_SECONDS > _wh_r.MEDIA_DEBOUNCE_SECONDS,
                 got=f"batch={_wh_r.MESSAGE_BATCH_WINDOW_SECONDS}s "

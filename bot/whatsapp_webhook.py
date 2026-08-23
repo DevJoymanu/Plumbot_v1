@@ -439,6 +439,20 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
         with _media_ack_lock:
             _media_ack_timers.pop(sender, None)
 
+        # Re-check at FIRE time, not only when the photo arrived. The guard in
+        # handle_media_message runs the instant the image lands — a text arriving
+        # during this 8s debounce opens a batch AFTER that check, and the ack then
+        # goes out alongside the batch reply. Prod 2026-08-23 (barmak-plumbing):
+        # a lead sent a photo, typed "How much" a second later, and received
+        # THREE messages — the ack, its question, and the price reply.
+        with _pending_batch_lock:
+            batch_open = bool(_pending_batches.get(sender))
+        with _pending_send_lock:
+            send_in_flight = _pending_send_events.get(sender) is not None
+        if batch_open or send_in_flight:
+            print(f"Media ack dropped for {sender} — a reply is already on its way")
+            return
+
         try:
             fresh = Appointment.objects.for_tenant(appointment.tenant).get(
                 phone_number=f"whatsapp:+{sender}")
