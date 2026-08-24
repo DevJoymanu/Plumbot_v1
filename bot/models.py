@@ -951,6 +951,13 @@ class Appointment(models.Model):
     def _hours_phrase(self) -> str:
         return self._schedule_cfg().hours_sentence() or 'our normal working hours'
 
+    def _emergency_offer(self) -> str:
+        """Round-the-clock emergency cover, offered only when this tenant has
+        it on file. Appended to 'that time doesn't work' replies."""
+        if not self._schedule_cfg().emergency_24h():
+            return ''
+        return " If it's an emergency though, we're on call 24/7 — just say the word."
+
     def get_availability_error_message(self, error_type, conflict_appointment=None):
         """Generate user-friendly error messages for availability issues"""
         try:
@@ -960,14 +967,19 @@ class Appointment(models.Model):
             elif error_type in ("closed_day", "saturday_closed", "weekend"):
                 phrase = self._schedule_cfg().closed_days_phrase()
                 if phrase:
-                    return f"We're closed on {phrase}. Please choose another day."
-                return "That day doesn't work on our side. Please choose another day."
+                    return (f"We're closed on {phrase}. Please choose another day."
+                            f"{self._emergency_offer()}")
+                return ("That day doesn't work on our side. Please choose another day."
+                        f"{self._emergency_offer()}")
 
             elif error_type == "outside_business_hours":
-                return f"We're only available {self._hours_phrase()}. Please choose a time within business hours."
+                return (f"We're only available {self._hours_phrase()}. "
+                        f"Please choose a time within business hours.{self._emergency_offer()}")
 
             elif error_type == "ends_after_hours":
-                return f"That appointment would run past our closing time. Our hours are {self._hours_phrase()}. Please choose an earlier time slot."
+                return (f"That appointment would run past our closing time. "
+                        f"Our hours are {self._hours_phrase()}. "
+                        f"Please choose an earlier time slot.{self._emergency_offer()}")
 
             elif error_type == "insufficient_notice":
                 return "We need a couple of hours advance notice for appointments. Please choose a time further in the future."

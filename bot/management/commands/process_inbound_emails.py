@@ -49,7 +49,14 @@ polling never marks their mail as read.
 
 Optional environment variable:
     INBOUND_LEAD_ADDRESSES   comma-separated business addresses that make an
-                             unthreaded email a lead (e.g. info@acme.co.zw)
+                             unthreaded email a lead, each optionally routed to
+                             a tenant with `=slug`:
+                                 info@homebaseplumbers.co.zw=homebase,
+                                 quotes@acmeplumbing.co.zw=acme
+                             Each tenant forwards its own business address into
+                             the polled mailbox; the delivered-to address then
+                             routes the lead. A bare address (no `=slug`) opens
+                             the lead on the default tenant.
 """
 
 import email
@@ -531,6 +538,8 @@ def _generate_plumbot_email_reply(
     _hl_bits = []
     if _hours:
         _hl_bits.append(f"Hours: {_hours}.")
+    if _cfg.emergency_24h():
+        _hl_bits.append("Emergency callouts 24/7, outside those hours.")
     if _loc:
         _hl_bits.append(f"Based in {_loc}.")
     _signature = f"{_from_name(apt)}\\n{_business_name(apt)}" if apt is not None else "The team"
@@ -695,23 +704,67 @@ def _is_our_own_mail(sender: str) -> bool:
     return bool(platform_domain) and addr.rsplit("@", 1)[1] == platform_domain
 
 
-def _lead_inbox_addresses() -> set:
-    """The addresses that make an unthreaded email a customer inquiry.
+def _lead_inbox_map() -> dict:
+    """{lead inbox address: tenant slug or None} — the routing table for cold
+    email.
 
-    INBOUND_LEAD_ADDRESSES wins when set. Otherwise the polled mailbox counts as
-    the lead inbox — unless it is one of our own inboxes (the operator's
-    personal Gmail, a tenant's alert address), where receipts, newsletters and
-    our own notifications land alongside everything else. Nothing in such a
-    mailbox marks a message as a lead, so cold intake stays off there rather
-    than answering the operator's personal mail.
+    INBOUND_LEAD_ADDRESSES entries are `address` or `address=tenant-slug`. The
+    delivered-to address is the email equivalent of WhatsApp's
+    `phone_number_id`: it is the only routing key an inbound email carries, so
+    each tenant forwards its own business address into this mailbox and the
+    address it arrived on decides whose lead it is. A bare address (no
+    `=slug`) opens the lead on the default tenant, which is what a
+    single-tenant install has always done.
+
+    With nothing configured the polled mailbox itself is the lead inbox —
+    unless it is one of our own inboxes (the operator's personal Gmail, a
+    tenant's alert address), where receipts, newsletters and our own
+    notifications land alongside everything else. Nothing in such a mailbox
+    marks a message as a lead, so cold intake stays off there rather than
+    answering the operator's personal mail.
     """
-    configured = _addresses_in(_LEAD_INBOX_ENV.replace(";", ","))
-    if configured:
-        return configured
+    mapping = {}
+    for entry in re.split(r"[,;\n]", _LEAD_INBOX_ENV or ""):
+        raw_address, _, slug = entry.strip().partition("=")
+        for address in _addresses_in(raw_address):
+            mapping[address] = slug.strip().lower() or None
+    if mapping:
+        return mapping
     polled = (_EMAIL_FROM or "").strip().lower()
     if polled and polled not in _owner_addresses():
-        return {polled}
-    return set()
+        return {polled: None}
+    return {}
+
+
+def _lead_inbox_addresses() -> set:
+    """Just the addresses — the gate, without the routing."""
+    return set(_lead_inbox_map())
+
+
+def _lead_inbox_match(msg):
+    """(address, tenant slug or None) for the lead inbox this mail was
+    delivered to, or None when it was not sent to one."""
+    mapping = _lead_inbox_map()
+    matched = sorted(_recipient_addresses(msg) & set(mapping)) if mapping else []
+    if not matched:
+        return None
+    # An address that names a tenant outranks a bare one: mail sent to both a
+    # tenant's own address and a generic catch-all belongs to that tenant.
+    for address in matched:
+        if mapping[address]:
+            return address, mapping[address]
+    return matched[0], None
+
+
+def _tenant_for_slug(slug):
+    """The Tenant a lead inbox routes to, or None when the slug is unknown.
+
+    A miss is never quietly downgraded to the default tenant: that would answer
+    another company's customer with Homebase's prices, name and sender.
+    """
+    from bot.models import Tenant
+
+    return Tenant.objects.filter(slug=slug).first()
 
 
 def _is_automated(msg, sender: str, subject: str) -> bool:
@@ -767,29 +820,35 @@ def _email_lead_key(address: str) -> str:
     return f"email_{digest[:12]}"
 
 
-def _lead_for_sender(sender: str, display_name: str, subject: str):
+def _lead_for_sender(sender: str, display_name: str, subject: str, tenant=None):
     """Resolve an unthreaded email to a lead. Returns (appointment, created).
 
     Preference order: a lead that already has this email address (the customer
     started on WhatsApp and is now emailing), then the synthetic email key from
-    an earlier cold email, then a brand-new email lead. New leads land on the
-    default tenant — an inbound email carries no channel identity to route by,
-    unlike a WhatsApp message with its phone_number_id.
+    an earlier cold email, then a brand-new email lead.
+
+    `tenant` is the tenant the lead inbox routed to (None → the default tenant,
+    what a bare address means). Both the lookup and the create are scoped to
+    it: lead identity is per tenant, so the same person writing to two
+    companies on the platform gets two independent leads, and tenant B's
+    customer is never glued onto tenant A's lead.
     """
     from bot.models import Appointment
 
     existing = None
     if sender:
         existing = (
-            Appointment.objects.filter(customer_email__iexact=sender)
+            Appointment.objects.for_tenant_or_seed(tenant)
+            .filter(customer_email__iexact=sender)
             .order_by("-updated_at")
             .first()
         )
     if existing is not None:
         return existing, False
 
-    return Appointment.objects.get_or_create(
-        phone_number=_email_lead_key(sender),
+    return Appointment.objects.get_or_create_lead(
+        _email_lead_key(sender),
+        tenant=tenant,
         defaults={
             "customer_email": sender,
             "customer_name": display_name or "",
@@ -884,17 +943,31 @@ class Command(BaseCommand):
                 # for manual handling — but only when it was actually sent to
                 # a lead inbox, and never when it came from a machine.
                 fresh_thread = apt is None
+                lead_tenant = None
                 if fresh_thread:
-                    lead_inboxes = _lead_inbox_addresses()
-                    if not lead_inboxes:
+                    if not _lead_inbox_addresses():
                         out("    SKIP  This mailbox is not a lead inbox "
                             "(set INBOUND_LEAD_ADDRESSES to enable cold intake)")
                         skipped += 1
                         continue
-                    if not (_recipient_addresses(head) & lead_inboxes):
+                    match = _lead_inbox_match(head)
+                    if match is None:
                         out("    SKIP  Not addressed to a lead inbox — leaving it alone")
                         skipped += 1
                         continue
+                    inbox_address, tenant_slug = match
+                    if tenant_slug:
+                        lead_tenant = _tenant_for_slug(tenant_slug)
+                        if lead_tenant is None:
+                            logger.error(
+                                "TENANT ROUTE MISS: lead inbox %s maps to unknown "
+                                "tenant '%s' — check INBOUND_LEAD_ADDRESSES",
+                                inbox_address, tenant_slug)
+                            out(f"    SKIP  TENANT ROUTE MISS: {inbox_address} → "
+                                f"unknown tenant '{tenant_slug}' — not answering")
+                            skipped += 1
+                            continue
+                        out(f"    Routed by {inbox_address} → tenant {lead_tenant.slug}")
 
                 if _is_automated(head, sender, subject):
                     out("    SKIP  Automated sender / bounce — not answering")
@@ -915,7 +988,7 @@ class Command(BaseCommand):
                         _mark_seen(imap, uid)
                         continue
                     apt, created = _lead_for_sender(
-                        sender, _sender_display_name(msg), subject)
+                        sender, _sender_display_name(msg), subject, lead_tenant)
                     apt_id = apt.pk
                     out("    {} → apt #{}".format(
                         "NEW email lead" if created else "Matched by sender", apt.pk))

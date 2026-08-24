@@ -3405,6 +3405,80 @@ try:
 except Exception as e:
     results.log("closed days are tenant-scoped", False, got=str(e))
 
+# ── 24/7 emergency cover is a per-tenant opt-in on top of the regular week ──
+# A tenant that answers callouts round the clock ticks it on the profile; it
+# rides on the same business_hours JSON. It must show up in the hours copy and
+# in the "that time doesn't work" replies, and must NEVER appear for a tenant
+# without it on file (no borrowing another tenant's promise).
+try:
+    from bot.tenant_config import TenantConfig as _TCe
+    from bot.views.plumbot.response_mixin import (
+        _emergency_fact as _ef, _hours_clause as _hc, _quick_hours as _qh,
+        _working_hours_line as _whl,
+    )
+    from bot.views.platform import _compose_business_hours as _cbh
+
+    def _ecfg(**extra):
+        class _P:
+            business_hours = dict(
+                {'days': 'Monday-Friday', 'open': '08:00', 'close': '17:00',
+                 'closed': ['sat', 'sun']}, **extra)
+            faq_facts = {'hours': 'We are open Monday to Friday, 8 AM to 5 PM.'}
+            licensed_claim_enabled = False
+        c = _TCe()
+        c._profile = _P()
+        c._profile_loaded = True
+        return c
+
+    class _FakeEmergencyMixin:
+        def __init__(self, cfg):
+            self.tenant_cfg = cfg
+
+    _emerg = _FakeEmergencyMixin(_ecfg(emergency_24h=True))
+    _plain = _FakeEmergencyMixin(_ecfg())
+
+    results.log("emergency_24h: reads the flag off business_hours",
+                _emerg.tenant_cfg.emergency_24h() is True and
+                _plain.tenant_cfg.emergency_24h() is False,
+                got=f"{_emerg.tenant_cfg.emergency_24h()} / {_plain.tenant_cfg.emergency_24h()}")
+    results.log("no flag → no 24/7 claim anywhere in the hours copy",
+                all('24/7' not in text for text in
+                    (_whl(_plain), _hc(_plain), _qh(_plain), _ef(_plain))),
+                got=repr((_whl(_plain), _hc(_plain), _qh(_plain), _ef(_plain))))
+    results.log("flag → working-hours line still states the real week, plus 24/7",
+                'Monday to Friday' in _whl(_emerg) and '24/7' in _whl(_emerg),
+                got=repr(_whl(_emerg)))
+    results.log("flag → quick hours keeps the clock and adds the cover",
+                _qh(_emerg).startswith("We're open Monday to Friday") and
+                '24/7' in _qh(_emerg),
+                got=repr(_qh(_emerg)))
+    results.log("flag → the LLM prompt gets an emergency bullet",
+                '24/7' in _ef(_emerg) and _ef(_plain) == '',
+                got=repr(_ef(_emerg)))
+    # The typed hours FAQ fact gains the cover once, never twice.
+    _already = _ecfg(emergency_24h=True)
+    _already._profile.faq_facts = {'hours': 'Mon-Fri 8-5, and 24/7 for emergencies.'}
+    results.log("hours FAQ fact: cover appended once, not duplicated",
+                _emerg.tenant_cfg.faq_fact('hours').count('24/7') == 1 and
+                _already.faq_fact('hours').count('24/7') == 1,
+                got=f"{_emerg.tenant_cfg.faq_fact('hours')!r} | {_already.faq_fact('hours')!r}")
+    # The editor round-trip: the tick survives, and stands alone when the week
+    # was left blank.
+    _composed = _cbh({'days': ['monday', 'tuesday'], 'open': '08:00',
+                      'close': '17:00', 'emergency_24h': True})
+    results.log("_compose_business_hours: tick rides along with the week",
+                _composed.get('emergency_24h') is True and _composed['open'] == '08:00',
+                got=str(_composed))
+    results.log("_compose_business_hours: tick alone survives an empty week",
+                _cbh({'days': [], 'open': '', 'close': '', 'emergency_24h': True})
+                == {'emergency_24h': True},
+                got=str(_cbh({'days': [], 'open': '', 'close': '', 'emergency_24h': True})))
+    results.log("_compose_business_hours: nothing filled in stays None",
+                _cbh({'days': [], 'open': '', 'close': ''}) is None,
+                got=str(_cbh({'days': [], 'open': '', 'close': ''})))
+except Exception as e:
+    results.log("24/7 emergency cover", False, got=str(e))
+
 # The deterministic availability backfill must not drop a day the tenant works.
 # Same root cause: it hardcoded "Saturday → None".
 try:

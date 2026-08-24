@@ -477,6 +477,16 @@ class AvailabilityMixin:
             return self.tenant_cfg.hours_sentence() or 'our normal working hours'
 
 
+        def _emergency_offer(self) -> str:
+            """' If it is an emergency we are on call 24/7 — just say so.' for a
+            tenant that covers emergencies round the clock, else ''. Only ever
+            appended to a 'that time does not work' reply: turning a refusal
+            into an opening instead of dead-ending the lead."""
+            if not self.tenant_cfg.emergency_24h():
+                return ''
+            return " If it's an emergency though, we're on call 24/7 — just say the word."
+
+
         def _closed_day_message(self, day_name: str = None) -> str:
             """Tenant-correct 'we're closed then' line. Never names a day this
             tenant actually works — a tenant open all week gets a neutral line
@@ -486,16 +496,16 @@ class AvailabilityMixin:
                 return (
                     f"That time doesn't work on our side. "
                     f"Our working hours are {self._hours_phrase()}. "
-                    "Could you suggest a different day and time?"
+                    f"Could you suggest a different day and time?{self._emergency_offer()}"
                 )
             if day_name:
                 return (
                     f"We unfortunately don't operate on {day_name}s. \n\n"
-                    f"Our working hours are {self._hours_phrase()}.\n\n"
+                    f"Our working hours are {self._hours_phrase()}.{self._emergency_offer()}\n\n"
                 )
             return (
                 f"We unfortunately don't operate on {phrase}. \n\n"
-                f"Our working hours are {self._hours_phrase()}.\n\n"
+                f"Our working hours are {self._hours_phrase()}.{self._emergency_offer()}\n\n"
             )
 
 
@@ -574,10 +584,13 @@ class AvailabilityMixin:
                     return self._closed_day_message()
 
                 elif error_type == "outside_business_hours":
-                    return f"We're only available {self._hours_phrase()}. Please choose a time within business hours."
+                    return (f"We're only available {self._hours_phrase()}. "
+                            f"Please choose a time within business hours.{self._emergency_offer()}")
 
                 elif error_type == "ends_after_hours":
-                    return f"That appointment would run past our closing time. Our hours are {self._hours_phrase()}. Please choose an earlier time slot."
+                    return (f"That appointment would run past our closing time. "
+                            f"Our hours are {self._hours_phrase()}. "
+                            f"Please choose an earlier time slot.{self._emergency_offer()}")
             
                 elif error_type in ("too_soon", "insufficient_notice"):
                     return "We need a little advance notice for appointments. Please choose a time further in the future."

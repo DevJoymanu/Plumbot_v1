@@ -370,6 +370,7 @@ def _parse_intake_post(request) -> dict:
         'days': [d for d in request.POST.getlist('days') if d],
         'open': (request.POST.get('hours_open') or '').strip(),
         'close': (request.POST.get('hours_close') or '').strip(),
+        'emergency_24h': bool(request.POST.get('hours_emergency_24h')),
     }
     data['excluded_areas'] = [
         a.strip().lower() for a in
@@ -522,16 +523,24 @@ _WEEK = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'su
 
 def _compose_business_hours(hours: dict):
     """Wizard day-chips + time pickers → the profile's business_hours shape
-    ({'days': 'Monday-Saturday', 'open', 'close', 'closed': ['sun']})."""
+    ({'days': 'Monday-Saturday', 'open', 'close', 'closed': ['sun']}).
+
+    24/7 emergency cover rides along as an optional key on the same JSON (no
+    column) and stands on its own: a business that filled in nothing but the
+    emergency tick still keeps that fact."""
     selected = [d for d in _WEEK if d in (hours.get('days') or [])]
+    emergency = bool(hours.get('emergency_24h'))
     if not selected or not hours.get('open') or not hours.get('close'):
-        return None
-    return {
+        return {'emergency_24h': True} if emergency else None
+    composed = {
         'days': f"{selected[0].title()}-{selected[-1].title()}",
         'open': hours['open'],
         'close': hours['close'],
         'closed': [d[:3] for d in _WEEK if d not in selected],
     }
+    if emergency:
+        composed['emergency_24h'] = True
+    return composed
 
 
 def _join_natural(items):
@@ -756,13 +765,17 @@ def _profile_structured_ctx(profile):
     widgets need them (selected days, times, area chips, per-topic values)."""
     bh = (profile.business_hours if profile else None) or {}
     closed = set(bh.get('closed') or [])
-    selected = [day for day, _ in WEEKDAYS if day[:3] not in closed] if bh else []
+    # Only an actual open/close pair means days were picked — an emergency-only
+    # profile carries no week and must not render as "open every day".
+    has_week = bool(bh.get('open') and bh.get('close'))
+    selected = [day for day, _ in WEEKDAYS if day[:3] not in closed] if has_week else []
     facts = (profile.faq_facts if profile else None) or {}
     return {
         'weekdays': WEEKDAYS,
         'hours_selected': selected,
         'hours_open': bh.get('open', ''),
         'hours_close': bh.get('close', ''),
+        'hours_emergency_24h': bool(bh.get('emergency_24h')),
         'excluded_areas': (profile.excluded_areas if profile else None) or [],
         'faq_fields': [(key, label, facts.get(key, '')) for key, label in FAQ_TOPICS],
     }
@@ -775,6 +788,7 @@ def _apply_structured_profile(request, profile):
         'days': request.POST.getlist('hours_day'),
         'open': (request.POST.get('hours_open') or '').strip(),
         'close': (request.POST.get('hours_close') or '').strip(),
+        'emergency_24h': bool(request.POST.get('hours_emergency_24h')),
     })
     areas, seen = [], set()
     for raw in request.POST.getlist('excluded_area'):

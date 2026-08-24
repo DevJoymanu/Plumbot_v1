@@ -63,7 +63,12 @@ def _city(mixin) -> str:
 
 def _working_hours_line(mixin) -> str:
     sentence = mixin.tenant_cfg.hours_sentence()
-    return f"Our working hours are {sentence}.\n\n" if sentence else ""
+    emergency = mixin.tenant_cfg.emergency_sentence()
+    if sentence:
+        return f"Our working hours are {sentence}." + (f" {emergency}" if emergency else "") + "\n\n"
+    # No regular hours on file, but round-the-clock emergency cover is still a
+    # fact worth stating on its own.
+    return f"{emergency}\n\n" if emergency else ""
 
 
 # Word-boundary patterns per weekday. Bare 'sat'/'sun' must be whole words —
@@ -97,12 +102,16 @@ def _named_closed_day(mixin, message: str):
 
 def _hours_clause(mixin) -> str:
     sentence = mixin.tenant_cfg.hours_sentence()
-    return f" Our hours are {sentence}." if sentence else ""
+    emergency = mixin.tenant_cfg.emergency_sentence()
+    clause = f" Our hours are {sentence}." if sentence else ""
+    return clause + (f" {emergency}" if emergency else "")
 
 
 def _open_hours_clause(mixin) -> str:
     medium = mixin.tenant_cfg.hours_medium()
-    return f" We're open {medium}." if medium else ""
+    emergency = mixin.tenant_cfg.emergency_sentence()
+    clause = f" We're open {medium}." if medium else ""
+    return clause + (f" {emergency}" if emergency else "")
 
 
 def _grounding_facts(mixin) -> str:
@@ -118,6 +127,9 @@ def _grounding_facts(mixin) -> str:
         names = mixin.tenant_cfg.closed_day_names()
         closed = f" (closed {', '.join(n[:3] for n in names)})" if names else ""
         bits.append(f"open {compact}{closed}")
+    tag = cfg.emergency_tag()
+    if tag:
+        bits.append(tag)
     return ", ".join(bits) + "."
 
 
@@ -128,9 +140,11 @@ def _quick_location(mixin) -> str:
 
 def _quick_hours(mixin) -> str:
     p = mixin.tenant_cfg._hours_parts()
+    tag = mixin.tenant_cfg.emergency_tag()
     if p is None:
-        return ""
-    return f"We're open {p[0]} to {p[1]}, {p[4]}–{p[5]}"
+        return "We're available 24/7 for emergencies" if tag else ""
+    line = f"We're open {p[0]} to {p[1]}, {p[4]}–{p[5]}"
+    return f"{line}, {tag}" if tag else line
 
 
 def _hours_days(mixin) -> str:
@@ -142,9 +156,18 @@ def _hours_days(mixin) -> str:
     return f"{p[0]} to {p[1]}{closed}"
 
 
+def _emergency_fact(mixin) -> str:
+    """Prompt bullet for round-the-clock emergency cover; '' when not offered
+    (never let one tenant's 24/7 promise leak into another's prompt)."""
+    if not mixin.tenant_cfg.emergency_24h():
+        return ""
+    return "\n        - Emergency callouts: available 24/7, outside the hours above"
+
+
 def _hours_clock(mixin) -> str:
     p = mixin.tenant_cfg._hours_parts()
-    return f"{p[4]} – {p[5]}" if p is not None else "by appointment"
+    clock = f"{p[4]} – {p[5]}" if p is not None else "by appointment"
+    return f"{clock} (emergencies 24/7)" if mixin.tenant_cfg.emergency_24h() else clock
 
 
 # ── Shona comprehension + reply-in-language directive ────────────────────────
@@ -5804,7 +5827,7 @@ class ResponseMixin:
         - Based in {_loc_short(self)}
         - Works by appointment (not walk-ins)
         - Working days: {_hours_days(self)}
-        - Business hours: {_hours_clock(self)}
+        - Business hours: {_hours_clock(self)}{_emergency_fact(self)}
         - The visit is free: we come round, have a quick look at the space (20 minutes or so) and give a fixed quote on the spot
         - The plumber's name is {self.appointment.plumber_display_name()} — ONLY say it if they ask who is coming or who they are dealing with
         - Plumber direct contact: {self.appointment.plumber_contact() or "not available — offer to have the team call instead"} — ONLY give this out if they ask for a number

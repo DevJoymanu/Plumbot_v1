@@ -1175,6 +1175,42 @@ class PlatformConsoleTests(TestCase):
         self.assertEqual(profile.business_hours['open'], '08:00')          # times composed
         self.assertEqual(profile.business_hours['closed'], ['sat'])        # unpicked day
         self.assertEqual(profile.faq_facts['payment'], 'Cash and EcoCash — all good.')
+        # Not ticked → no 24/7 promise anywhere on the profile.
+        self.assertNotIn('emergency_24h', profile.business_hours)
+
+    def test_config_edit_saves_the_24h_emergency_tick(self):
+        """A business that answers callouts round the clock ticks it on top of
+        its regular week; the flag rides on the same business_hours JSON and
+        reaches the bot's copy."""
+        response = self.client.get(reverse('platform_tenant_config_edit', args=['homebase']))
+        self.assertIn('name="hours_emergency_24h"', response.content.decode())
+        data = {
+            'plumber_name': 'Takudzwa', 'plumber_contact': '+263774819901',
+            'business_whatsapp': '+263776255077',
+            'location_line': "We're in Hatfield, Harare.",
+            'location_area': 'Hatfield', 'location_city': 'Harare',
+            'timezone_name': 'Africa/Johannesburg', 'currency': 'US$',
+            'email_from_name': 'Takudzwa', 'email_sender': '',
+            'hours_day': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+            'hours_open': '08:00', 'hours_close': '17:00',
+            'hours_emergency_24h': 'on',
+            'form-TOTAL_FORMS': '0', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+        }
+        response = self.client.post(
+            reverse('platform_tenant_config_edit', args=['homebase']), data)
+        self.assertEqual(response.status_code, 302)
+        profile = TenantProfile.objects.get(tenant=self.homebase)
+        self.assertTrue(profile.business_hours['emergency_24h'])
+        self.assertEqual(profile.business_hours['open'], '08:00')   # week intact
+        from .tenant_config import get_config
+        cfg = get_config(self.homebase)
+        self.assertTrue(cfg.emergency_24h())
+        self.assertIn('24/7', cfg.emergency_sentence())
+        # And it shows on the read-only page the owner lands back on.
+        body = self.client.get(
+            reverse('platform_tenant_config', args=['homebase'])).content.decode()
+        self.assertIn('On call 24/7', body)
 
     def test_owner_sets_and_previews_the_clients_customer_sender(self):
         """The platform owner sets a tenant's customer-facing sender from the
@@ -1376,6 +1412,19 @@ class TenantIntakeTests(TestCase):
         profile = TenantProfile.objects.filter(tenant=self.acme).first()
         self.assertTrue(profile is None or profile.plumber_name == '')
 
+    def test_intake_carries_the_24h_emergency_tick_through_approval(self):
+        """The wizard's 24/7 chip survives the draft and lands on the live
+        profile at approval, on top of the regular week."""
+        self._submit({'hours_emergency_24h': '1'})
+        self.intake.refresh_from_db()
+        self.assertTrue(self.intake.data['hours']['emergency_24h'])
+        self.client.login(username='root', password='pass12345')
+        self.client.post(reverse('platform_review_intake', args=[self.intake.pk]),
+                         {'decision': 'approve'})
+        profile = TenantProfile.objects.get(tenant=self.acme)
+        self.assertTrue(profile.business_hours['emergency_24h'])
+        self.assertEqual(profile.business_hours['open'], '07:00')
+
     def test_approve_applies_everything(self):
         self._submit()
         self.client.login(username='root', password='pass12345')
@@ -1389,6 +1438,8 @@ class TenantIntakeTests(TestCase):
         self.assertEqual(profile.business_hours['days'], 'Monday-Saturday')
         self.assertEqual(profile.business_hours['open'], '07:00')
         self.assertEqual(profile.business_hours['closed'], ['sun'])
+        # Emergency tick untouched by this business → no borrowed 24/7 promise.
+        self.assertNotIn('emergency_24h', profile.business_hours)
         # …and it renders through the bot's hour formatters.
         from .tenant_config import get_config
         cfg = get_config(self.acme)
@@ -3390,6 +3441,63 @@ class InboundEmailIntakeTests(TestCase):
                   polled='jones86xi@gmail.com')
         lead.refresh_from_db()
         self.assertEqual(len(lead.conversation_history), 2)
+
+    def test_a_tenants_forwarded_address_routes_the_lead_to_that_tenant(self):
+        """Each tenant forwards its own business address into this mailbox; the
+        address the mail was delivered to is the routing key."""
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        _, send, _ = self._run(
+            [self._raw(to='quotes@acmeplumbing.co.zw')],
+            lead_env='info@homebaseplumbers.co.zw=homebase,'
+                     'quotes@acmeplumbing.co.zw=acme')
+
+        apt = Appointment.objects.get(customer_email='jane@example.com')
+        self.assertEqual(apt.tenant_id, acme.pk)
+        send.assert_called_once()
+
+    def test_a_bare_address_still_opens_on_the_default_tenant(self):
+        self._run([self._raw(to='info@homebaseplumbers.co.zw')],
+                  lead_env='info@homebaseplumbers.co.zw')
+        apt = Appointment.objects.get(customer_email='jane@example.com')
+        self.assertEqual(apt.tenant_id, get_default_tenant_id())
+
+    def test_an_unknown_tenant_slug_is_never_downgraded_to_the_default(self):
+        """Answering on the default tenant would send another company's
+        customer Homebase's prices, name and sender."""
+        output, send, seen = self._run(
+            [self._raw(to='quotes@acmeplumbing.co.zw')],
+            lead_env='quotes@acmeplumbing.co.zw=typo-slug')
+
+        send.assert_not_called()
+        self.assertFalse(Appointment.objects.exists())
+        self.assertEqual(seen, [])       # retried once the env var is fixed
+        self.assertIn('TENANT ROUTE MISS', output)
+
+    def test_the_same_customer_writing_to_two_tenants_gets_two_leads(self):
+        """Lead identity is per tenant — tenant B's customer must never be
+        glued onto tenant A's lead."""
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        env = ('info@homebaseplumbers.co.zw,'
+               'quotes@acmeplumbing.co.zw=acme')
+
+        self._run([self._raw(to='info@homebaseplumbers.co.zw')], lead_env=env)
+        self._run([self._raw(to='quotes@acmeplumbing.co.zw')], lead_env=env)
+
+        leads = Appointment.objects.filter(customer_email='jane@example.com')
+        self.assertEqual(leads.count(), 2)
+        self.assertEqual(
+            sorted(lead.tenant_id or 0 for lead in leads),
+            sorted([get_default_tenant_id() or 0, acme.pk]))
+
+    def test_a_tenant_address_outranks_a_generic_one_on_the_same_mail(self):
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self._run(
+            [self._raw(to='info@homebaseplumbers.co.zw',
+                       extra_headers=('Cc: quotes@acmeplumbing.co.zw',))],
+            lead_env='info@homebaseplumbers.co.zw,quotes@acmeplumbing.co.zw=acme')
+
+        apt = Appointment.objects.get(customer_email='jane@example.com')
+        self.assertEqual(apt.tenant_id, acme.pk)
 
     def test_dry_run_opens_no_thread(self):
         _, send, _ = self._run([self._raw()], dry_run=True)

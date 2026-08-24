@@ -322,6 +322,10 @@
             <input type="time" id="id_close" name="hours_close" value="18:00" data-cap="hours">
           </div>
         </div>
+        <div class="chip-group-label" style="margin-top:16px;">Emergencies — tap if you take them outside these hours</div>
+        <div class="chips" id="emergency-chips">
+          <button type="button" class="chip" data-emergency="1">On call 24/7 for emergencies</button>
+        </div>
       </div>
 
       <div class="card quiet">
@@ -706,7 +710,7 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
   }
 
   // ── Chips ──────────────────────────────────────────────────────────────
-  document.querySelectorAll('#day-chips .chip, #service-chips .chip, #payment-chips .chip')
+  document.querySelectorAll('#day-chips .chip, #service-chips .chip, #payment-chips .chip, #emergency-chips .chip')
     .forEach(chip => chip.addEventListener('click', () => {
       chip.classList.toggle('on');
       if (chip.dataset.pay === '__other') {
@@ -1072,6 +1076,7 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
       form.appendChild(el);
     }
     document.querySelectorAll('#day-chips .chip.on').forEach(c => hidden('days', c.dataset.day));
+    if (document.querySelector('#emergency-chips .chip.on')) hidden('hours_emergency_24h', '1');
     document.querySelectorAll('#service-chips .chip.on').forEach(c => hidden('services', c.dataset.service));
     document.querySelectorAll('#payment-chips .chip.on').forEach(c => {
       if (c.dataset.pay !== '__other') hidden('payment', c.dataset.pay);
@@ -1138,6 +1143,8 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
     }
     if (hours.open) document.getElementById('id_open').value = hours.open;
     if (hours.close) document.getElementById('id_close').value = hours.close;
+    document.querySelectorAll('#emergency-chips .chip').forEach(c =>
+      c.classList.toggle('on', !!hours.emergency_24h));
     (d.excluded_areas || []).forEach(a => areas.push(a.replace(/\b\w/g, m => m.toUpperCase())));
     renderAreas();
     document.querySelectorAll('#service-chips .chip').forEach(c =>
@@ -1176,6 +1183,7 @@ const PLACES = ['Avondale','Borrowdale','Hatfield','Highlands','Mount Pleasant',
     const rows = [
       ['Team introduction', state.identity ? (document.getElementById('id_plumber_name').value.trim() || 'Provided') : 'Skipped — generic wording used'],
       ['Working hours', state.hours ? `${document.querySelectorAll('#day-chips .chip.on').length} days, ${document.getElementById('id_open').value}–${document.getElementById('id_close').value}` : 'Skipped'],
+      ['Emergencies', document.querySelector('#emergency-chips .chip.on') ? 'On call 24/7' : 'Working hours only'],
       ['No-go areas', areas.length ? areas.join(', ') : 'None — you go everywhere'],
       ['Services', state.services ? `${document.querySelectorAll('#service-chips .chip.on').length} selected — anything else is politely declined` : 'Skipped'],
       ['Payments', state.payment ? 'Provided' : 'Skipped'],

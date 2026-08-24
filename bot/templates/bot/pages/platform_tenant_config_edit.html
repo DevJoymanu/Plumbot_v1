@@ -181,7 +181,12 @@
           <div class="form-group"><label>Opens</label><input type="time" name="hours_open" value="{{ hours_open }}"></div>
           <div class="form-group"><label>Closes</label><input type="time" name="hours_close" value="{{ hours_close }}"></div>
         </div>
-        <p class="cfg-mini-note">Tap the days worked and set the daily open/close. No days selected = the bot omits hours.</p>
+        <label class="cfg-toggle">
+          <input type="checkbox" name="hours_emergency_24h" {% if hours_emergency_24h %}checked{% endif %}>
+          Also on call 24/7 for emergencies
+        </label>
+        <p class="cfg-mini-note">Tap the days worked and set the daily open/close. No days selected = the bot omits hours.
+          Tick 24/7 and the bot offers the emergency line when someone asks for a time outside those hours.</p>
       </div>
 
       <div class="cfg-subblock">

@@ -257,6 +257,20 @@ class TenantConfig:
             return ''
         return f"{p[0][:3]}–{p[1][:3]} {p[6]}–{p[7]}"
 
+    # ── Emergency cover (a flag on the same business_hours JSON: some tenants
+    # answer callouts round the clock ON TOP of the regular week. Absent or
+    # False means the regular week is all they offer — never assume 24/7).
+    def emergency_24h(self) -> bool:
+        return bool(self._hours_json().get('emergency_24h'))
+
+    def emergency_sentence(self) -> str:
+        """'We also handle emergencies 24/7.' — '' when the tenant doesn't."""
+        return 'We also handle emergencies 24/7.' if self.emergency_24h() else ''
+
+    def emergency_tag(self) -> str:
+        """'plus 24/7 for emergencies' — to join onto an hours string."""
+        return 'plus 24/7 for emergencies' if self.emergency_24h() else ''
+
     # ── Scheduling (the same business_hours JSON, read as numbers so the
     # availability engine books the tenant's real week instead of Homebase's).
     # No hours on file → the legacy Homebase week (closed Saturdays, 8–18) so
@@ -348,7 +362,14 @@ class TenantConfig:
         if topic == 'licensed' and not self.profile.licensed_claim_enabled:
             return None
         fact = (self.profile.faq_facts or {}).get(topic)
-        return fact or None
+        if not fact:
+            return None
+        # The hours fact is typed by the tenant, so a later 24/7 tick would
+        # otherwise never reach the answer. Append it once — never twice, and
+        # never for a tenant without the cover on file.
+        if topic == 'hours' and self.emergency_24h() and '24/7' not in fact:
+            return f"{fact.rstrip()} {self.emergency_sentence()}"
+        return fact
 
 
     # ── Prices (business facts — no fallback; Phase 2.3) ─────────────────────
