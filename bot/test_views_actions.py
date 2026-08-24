@@ -748,21 +748,53 @@ class QuoteMobileLayoutTests(StaffClientTestCase):
                 self.assertIn('pbq-table--edit', self._html(self.quote_pages()[name]),
                               f'{name} keeps a desktop-only item table')
 
+    #: Every screen where the user builds up a list of line items.
+    ITEM_EDITORS = ('create_quotation', 'standalone_quotation', 'edit_quotation',
+                    'create_quotation_template', 'edit_quotation_template')
+
     def test_item_editors_keep_added_items_on_screen(self):
         """Adding an item must not hide the ones already added.
 
         Each item editor wraps its list in a persistent panel: a running
-        count/subtotal bar above, the list itself, and a sticky Add Item
-        below. The list gets its own scrollbar once it is long (`is-capped`,
-        toggled in JS) so Add Item and the totals never scroll away.
+        count/subtotal bar above, the list itself, and Add Item below. The
+        list gets its own scrollbar once it is long (`is-capped`, toggled in
+        JS) rather than pushing everything else off the page.
         """
-        for name in ('create_quotation', 'standalone_quotation', 'edit_quotation'):
+        for name in self.ITEM_EDITORS:
             with self.subTest(page=name):
                 html = self._html(self.quote_pages()[name])
                 for marker in ('pbq-items-panel', 'id="itemsBar"', 'id="itemsCount"',
-                               'id="itemsRunningTotal"', 'id="itemsScroll"',
-                               'pbq-items-foot'):
+                               'id="itemsRunningTotal"', 'id="itemsScroll"'):
                     self.assertIn(marker, html, f'{name} is missing {marker}')
+
+    def test_totals_do_not_scroll_away_with_the_item_list(self):
+        """The template builders kept their totals in the table's <tfoot>, so
+        capping the list into a scroll box would have scrolled the totals out
+        of sight along with the rows. They live in a .pbq-totals block below
+        the scrollable list instead."""
+        for name in ('create_quotation_template', 'edit_quotation_template'):
+            with self.subTest(page=name):
+                html = self._html(self.quote_pages()[name])
+                self.assertNotIn('<tfoot>', html,
+                                 f'{name} still holds its totals inside the table')
+                self.assertIn('pbq-total-row--grand', html,
+                              f'{name} has no totals block below the list')
+                # The rows scroll; the totals must sit outside that box.
+                after_scroll_box = html.split('id="itemsScroll"', 1)[1]
+                self.assertLess(after_scroll_box.index('</table>'),
+                                after_scroll_box.index('pbq-total-row--grand'),
+                                f'{name} renders its totals inside the scroll box')
+
+    def test_cap_constant_is_declared_before_it_is_used(self):
+        """`const` is in the temporal dead zone until its own line runs. The
+        template builder calls calculateAllTotals() — which reads the cap — at
+        the top of its DOMContentLoaded handler, so a later `const` threw a
+        ReferenceError that took the whole handler down: no totals, no delete
+        buttons, no auto-add, on a page still returning 200."""
+        html = self._html(self.quote_pages()['create_quotation_template'])
+        self.assertLess(html.index('const ITEMS_CAP_AT'),
+                        html.index('calculateAllTotals();'),
+                        'the row cap is declared after the code that reads it')
 
     def test_new_item_does_not_recentre_the_page(self):
         """`scrollIntoView({block: 'center'})` on the new row pushed every

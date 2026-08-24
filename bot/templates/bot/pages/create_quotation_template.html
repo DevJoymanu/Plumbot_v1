@@ -377,93 +377,98 @@
 
                 <!-- Template Items -->
                 <div class="card">
-                    <div class="card-header bg-success d-flex justify-content-between align-items-center flex-wrap">
-                        <h5 class="mb-0 mb-md-2"><i class="fas fa-list-ul"></i> Template Items</h5>
-                        <button type="button" class="btn btn-light btn-sm" id="addRowBtn">
-                            <i class="fas fa-plus-circle"></i> Add Item
-                        </button>
+                    <div class="card-header bg-success">
+                        <h5 class="mb-0"><i class="fas fa-list-ul"></i> Template Items</h5>
                     </div>
                     <div class="card-body">
                         {{ formset.management_form }}
 
-                        <div class="table-responsive">
-                            <table class="table table-hover pbq-table--edit" id="itemsTable">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Description *</th>
-                                        <th>Qty *</th>
-                                        <th>Unit Price *</th>
-                                        <th class="d-none d-md-table-cell">Category</th>
-                                        <th>Line Total</th>
-                                        <th class="d-none d-sm-table-cell">Optional</th>
-                                        <th class="d-none d-md-table-cell">Sort</th>
-                                        <th>Delete</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="itemsTableBody">
-                                    {% for item_form in formset %}
-                                    <tr class="item-row" data-item-id="{{ forloop.counter }}" id="row-{{ forloop.counter }}">
-                                        <td class="text-center" data-label="">
-                                            <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
-                                        </td>
-                                        <td data-label="Description">
-                                            {{ item_form.description }}
-                                            {{ item_form.id }}
-                                        </td>
-                                        <td data-label="Qty">
-                                            {{ item_form.quantity }}
-                                        </td>
-                                        <td data-label="Unit Price">
-                                            {{ item_form.unit_price }}
-                                        </td>
-                                        <td class="d-none d-md-table-cell" data-label="Category">
-                                            {{ item_form.category }}
-                                        </td>
-                                        <td class="text-center" data-label="Line Total">
-                                            <input type="text" class="form-control form-control-sm line-total" readonly value="0.00">
-                                        </td>
-                                        <td class="text-center d-none d-sm-table-cell" data-label="Optional">
-                                            <div class="d-flex justify-content-center">
-                                                {{ item_form.is_optional }}
-                                            </div>
-                                        </td>
-                                        <td class="d-none d-md-table-cell" data-label="Sort">
-                                            {{ item_form.sort_order }}
-                                        </td>
-                                        <td class="text-center" data-label="">
-                                            {{ item_form.DELETE }}
-                                            <button type="button" class="delete-btn" data-row-id="{{ forloop.counter }}">
-                                                <i class="fas fa-trash"></i>
-                                                <span class="text d-none d-md-inline">Delete</span>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colspan="5" class="text-end" data-label=""><strong>Items Subtotal:</strong></td>
-                                        <td data-label=""><strong><span id="itemsSubtotal">$ 0.00</span></strong></td>
-                                        <td colspan="3" class="pbq-cell-empty" data-label=""></td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="5" class="text-end" data-label=""><strong>Labor Cost:</strong></td>
-                                        <td data-label=""><strong><span id="laborCost">$ 0.00</span></strong></td>
-                                        <td colspan="3" class="pbq-cell-empty" data-label=""></td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="5" class="text-end" data-label=""><strong>Transport Cost:</strong></td>
-                                        <td data-label=""><strong><span id="transportCost">$ 0.00</span></strong></td>
-                                        <td colspan="3" class="pbq-cell-empty" data-label=""></td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="5" class="text-end" data-label=""><strong>Estimated Total:</strong></td>
-                                        <td data-label=""><strong><span id="grandTotal" style="font-size: 1.1em; color: var(--success);">$ 0.00</span></strong></td>
-                                        <td colspan="3" class="pbq-cell-empty" data-label=""></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
+                        <div class="pbq-items-panel">
+                            <div class="pbq-items-bar" id="itemsBar">
+                                <span class="pbq-items-bar__count" id="itemsCount">No items yet</span>
+                                <span class="pbq-items-bar__total" id="itemsRunningTotal">$ 0.00</span>
+                            </div>
+                            <div class="table-responsive pbq-table-wrap" id="itemsScroll">
+                                <table class="table table-hover pbq-table--edit" id="itemsTable">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Description *</th>
+                                            <th>Qty *</th>
+                                            <th>Unit Price *</th>
+                                            <th class="d-none d-md-table-cell">Category</th>
+                                            <th>Line Total</th>
+                                            <th class="d-none d-sm-table-cell">Optional</th>
+                                            <th class="d-none d-md-table-cell">Sort</th>
+                                            <th>Delete</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="itemsTableBody">
+                                        {% for item_form in formset %}
+                                        <tr class="item-row" data-item-id="{{ forloop.counter }}" id="row-{{ forloop.counter }}">
+                                            <td class="text-center" data-label="">
+                                                <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
+                                            </td>
+                                            <td data-label="Description">
+                                                {{ item_form.description }}
+                                                {{ item_form.id }}
+                                            </td>
+                                            <td data-label="Qty">
+                                                {{ item_form.quantity }}
+                                            </td>
+                                            <td data-label="Unit Price">
+                                                {{ item_form.unit_price }}
+                                            </td>
+                                            <td class="d-none d-md-table-cell" data-label="Category">
+                                                {{ item_form.category }}
+                                            </td>
+                                            <td class="text-center" data-label="Line Total">
+                                                <input type="text" class="form-control form-control-sm line-total" readonly value="0.00">
+                                            </td>
+                                            <td class="text-center d-none d-sm-table-cell" data-label="Optional">
+                                                <div class="d-flex justify-content-center">
+                                                    {{ item_form.is_optional }}
+                                                </div>
+                                            </td>
+                                            <td class="d-none d-md-table-cell" data-label="Sort">
+                                                {{ item_form.sort_order }}
+                                            </td>
+                                            <td class="text-center" data-label="">
+                                                {{ item_form.DELETE }}
+                                                <button type="button" class="delete-btn" data-row-id="{{ forloop.counter }}">
+                                                    <i class="fas fa-trash"></i>
+                                                    <span class="text d-none d-md-inline">Delete</span>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="pbq-items-foot">
+                                <button type="button" class="btn btn-success pbq-add" id="addRowBtn">
+                                    <i class="fas fa-plus-circle"></i> Add Item
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="pbq-totals" style="margin-top: 18px;">
+                            <div class="pbq-total-row">
+                                <span>Items Subtotal</span>
+                                <span id="itemsSubtotal">$ 0.00</span>
+                            </div>
+                            <div class="pbq-total-row">
+                                <span>Labor Cost</span>
+                                <span id="laborCost">$ 0.00</span>
+                            </div>
+                            <div class="pbq-total-row">
+                                <span>Transport Cost</span>
+                                <span id="transportCost">$ 0.00</span>
+                            </div>
+                            <div class="pbq-total-row pbq-total-row--grand">
+                                <span>Estimated Total</span>
+                                <span id="grandTotal">$ 0.00</span>
+                            </div>
                         </div>
 
                         <div class="alert alert-info mt-3">
@@ -497,6 +502,12 @@
         let formIdx = parseInt(totalForms.value);
         let isSubmitting = false;
 
+        // How many rows before the list gets its own scrollbar. Declared before
+        // the first calculateAllTotals() below, which reads it — a `const` is
+        // in the temporal dead zone until its own line runs, and a ReferenceError
+        // here takes the whole handler down with it.
+        const ITEMS_CAP_AT = 4;
+
         // Initialize calculations on load
         calculateAllTotals();
 
@@ -529,9 +540,11 @@
             }
         });
 
-        // Add row button
+        // Add row button — an explicit tap reveals and focuses the new row;
+        // the automatic add below must not, or it would yank the caret out of
+        // the field being typed in.
         document.getElementById('addRowBtn').addEventListener('click', function () {
-            addNewRow();
+            addNewRow(true);
         });
 
 
@@ -566,10 +579,37 @@
             const transportCost = parseFloat(document.querySelector('#id_default_transport_cost').value) || 0;
             const grandTotal = itemsSubtotal + laborCost + transportCost;
 
+            updateItemsBar(rows, itemsSubtotal);
+
             document.getElementById('itemsSubtotal').textContent = '$ ' + itemsSubtotal.toFixed(2);
             document.getElementById('laborCost').textContent = '$ ' + laborCost.toFixed(2);
             document.getElementById('transportCost').textContent = '$ ' + transportCost.toFixed(2);
             document.getElementById('grandTotal').textContent = '$ ' + grandTotal.toFixed(2);
+        }
+
+        /* The running summary above the list, plus the height cap. Both are
+           driven from calculateAllTotals, the one place every edit funnels
+           through, so the summary can never drift from the rows. */
+        function updateItemsBar(rows, subtotal) {
+            const box = document.getElementById('itemsScroll');
+            if (box) box.classList.toggle('is-capped', rows.length > ITEMS_CAP_AT);
+
+            // Count rows the user has actually named — a blank row waiting to
+            // be filled is not yet an item on the template.
+            let filled = 0;
+            rows.forEach(row => {
+                const desc = row.querySelector('input[id$="-description"]');
+                if (desc && desc.value.trim()) filled++;
+            });
+
+            const count = document.getElementById('itemsCount');
+            if (count) {
+                count.textContent = filled
+                    ? filled + ' item' + (filled === 1 ? '' : 's') + ' added'
+                    : 'No items yet';
+            }
+            const running = document.getElementById('itemsRunningTotal');
+            if (running) running.textContent = '$ ' + subtotal.toFixed(2);
         }
 
         function checkIfNewRowNeeded() {
@@ -623,7 +663,7 @@
             return emptyRowsDeleted;
         }
 
-        function addNewRow() {
+        function addNewRow(reveal) {
             const tbody = document.getElementById('itemsTableBody');
             const newRow = tbody.querySelector('tr:first-child').cloneNode(true);
 
@@ -677,13 +717,30 @@
             newRow.classList.add('new-row');
             setTimeout(() => newRow.classList.remove('new-row'), 2000);
 
-            // Append to tbody
+            // Append to tbody — every row already added stays exactly where it
+            // is; the new one goes on the end.
             tbody.appendChild(newRow);
-
-            // Focus on new row
 
             // Recalculate totals
             calculateAllTotals();
+
+            if (reveal) revealRow(newRow);
+        }
+
+        /* Bring the new row into view without displacing the rows already
+           added. `block: 'nearest'` scrolls the least amount that makes it
+           visible; when the list has its own scroll box, park the new row at
+           the bottom edge so the earlier rows stay on screen above it. */
+        function revealRow(row) {
+            const box = document.getElementById('itemsScroll');
+            if (box && box.classList.contains('is-capped')) {
+                box.scrollTop = box.scrollHeight - box.clientHeight;
+            } else {
+                row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            const desc = row.querySelector('input[id$="-description"]');
+            if (desc) desc.focus({ preventScroll: true });
         }
 
 
