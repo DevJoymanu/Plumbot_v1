@@ -94,6 +94,92 @@
 .pbq-grid .pbq-field { margin-bottom: 0; }
 .pbq-field--wide { grid-column: 1 / -1; }
 
+/* ── Items panel ────────────────────────────────────────────────
+   What is already on the quote has to stay on screen while the next
+   item is being typed. Three parts, and the order matters:
+
+     .pbq-items-bar    running count + subtotal, pinned to the top
+     .pbq-items-scroll the list itself; scrolls in its own box once
+                       it passes a few rows (.is-capped, set by JS)
+     .pbq-items-foot   Add Item, pinned to the bottom
+
+   Capping only past a few rows keeps short lists behaving like plain
+   page content — a nested scrollbar under two items is a surprise,
+   not a feature. */
+.pbq-items-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.pbq-items-bar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-low);
+}
+
+.pbq-items-bar__count {
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+}
+
+.pbq-items-bar__total {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--color-primary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.pbq-items-scroll {
+    min-height: 0;
+    /* overscroll-behavior stops a flick at the end of the list from
+       running on into the page scroll and losing the user's place. */
+    overscroll-behavior: contain;
+}
+
+.pbq-items-scroll.is-capped {
+    max-height: 480px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 4px;
+    /* A hairline edge so it reads as a scrollable box, not a cut-off card */
+    border-top: 1px solid rgba(0, 101, 145, 0.07);
+    border-bottom: 1px solid rgba(0, 101, 145, 0.07);
+}
+
+/* Add Item sits directly under the list. It is deliberately NOT stuck to the
+   viewport: the height cap above already keeps it a short scroll away, and a
+   second sticky element would land behind .pbq-actionbar on a phone. */
+.pbq-items-foot { padding-top: 12px; }
+
+.pbq-items-foot .pbq-add { margin-top: 0; }
+
+/* Capped editable table (edit_quotation): rows scroll, header stays */
+.pbq-table-wrap.is-capped {
+    max-height: 460px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-top: 1px solid rgba(0, 101, 145, 0.07);
+    border-bottom: 1px solid rgba(0, 101, 145, 0.07);
+}
+
+.pbq-table-wrap.is-capped thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--color-surface-high);
+}
+
 /* ── Items: one card per line item ── */
 .pbq-items {
     display: flex;
@@ -560,6 +646,17 @@ body.pbq-modal-lock { overflow: hidden; }
     .pbq-page textarea { font-size: 16px; }
 
     .pbq-grid { grid-template-columns: 1fr; gap: 14px; }
+
+    /* Leave room for the entry controls and the on-screen keyboard: the
+       list gets a little over half the viewport, never the whole of it. */
+    .pbq-items-scroll.is-capped { max-height: 58vh; }
+    .pbq-table-wrap.is-capped { max-height: 58vh; }
+
+    /* Tighter item cards so more of what is already added stays in view */
+    .pbq-item { padding: 12px 12px 10px; }
+    .pbq-item label { margin-bottom: 4px; }
+    .pbq-item__row { gap: 8px; margin-top: 8px; }
+    .pbq-item__total { margin-top: 8px; padding: 7px 12px; }
 
     /* Read-only tables become stacked cards */
     .pbq-table--stack,

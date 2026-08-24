@@ -139,13 +139,25 @@
     <!-- Items Section -->
     <div class="pbq-card pbq-no-print">
         <h2 class="pbq-section-title"><i class="fas fa-list"></i> Items & Materials</h2>
-        <div class="pbq-items" id="itemsList">
-            <div class="pbq-empty">
-                <i class="fas fa-inbox"></i>
-                <p>No items added yet</p>
+        <div class="pbq-items-panel">
+            <div class="pbq-items-bar" id="itemsBar">
+                <span class="pbq-items-bar__count" id="itemsCount">No items yet</span>
+                <span class="pbq-items-bar__total" id="itemsRunningTotal">US$0.00</span>
+            </div>
+            <div class="pbq-items-scroll" id="itemsScroll">
+                <div class="pbq-items" id="itemsList">
+                    <div class="pbq-empty">
+                        <i class="fas fa-inbox"></i>
+                        <p>No items added yet</p>
+                    </div>
+                </div>
+            </div>
+            <div class="pbq-items-foot">
+                <button type="button" class="btn btn-outline-primary pbq-add" onclick="addItem()">
+                    <i class="fas fa-plus"></i> Add Item
+                </button>
             </div>
         </div>
-        <button type="button" class="btn btn-outline-primary pbq-add" onclick="addItem()"><i class="fas fa-plus"></i> Add Item</button>
     </div>
 
     <!-- Totals -->
@@ -320,11 +332,11 @@
         } else {
             const projectType = document.getElementById('projectType').value;
             if (projectType === 'bathroom_renovation') {
-                items = defaultBathroomItems.map((item, index) => ({ id: Date.now() + index, name: item.name, qty: item.qty, price: item.price }));
+                items = defaultBathroomItems.map((item, index) => ({ id: nextItemId(), name: item.name, qty: item.qty, price: item.price }));
                 document.getElementById('labourCost').value = 280;
                 document.getElementById('transportCost').value = 20;
             } else {
-                items = [{ id: Date.now(), name: '', qty: 1, price: 0 }];
+                items = [{ id: nextItemId(), name: '', qty: 1, price: 0 }];
             }
             renderItems();
         }
@@ -346,11 +358,11 @@
             document.getElementById('projectNotes').value = appointment.project_description || '';
 
             if (appointment.project_type === 'bathroom_renovation') {
-                items = defaultBathroomItems.map((item, index) => ({ id: Date.now() + index, name: item.name, qty: item.qty, price: item.price }));
+                items = defaultBathroomItems.map((item, index) => ({ id: nextItemId(), name: item.name, qty: item.qty, price: item.price }));
                 document.getElementById('labourCost').value = 280;
                 document.getElementById('transportCost').value = 20;
             } else {
-                items = [{ id: Date.now(), name: '', qty: 1, price: 0 }, { id: Date.now() + 1, name: '', qty: 1, price: 0 }];
+                items = [{ id: nextItemId(), name: '', qty: 1, price: 0 }, { id: nextItemId(), name: '', qty: 1, price: 0 }];
             }
             renderItems();
             showAlert('Appointment data loaded successfully!', 'success');
@@ -360,15 +372,44 @@
         }
     }
 
+    /* Line-item ids: a monotonic counter, never Date.now(). Two items minted
+       in the same millisecond used to share an id, and every lookup here is by
+       id — editing one then edited both, and removing one removed both. */
+    let itemSeq = 0;
+    function nextItemId() { return ++itemSeq; }
+
+    // How many rows before the list gets its own scrollbar. Below this the
+    // list is plain page content; above it, it scrolls in place so Add Item
+    // and the running total stay put.
+    const ITEMS_CAP_AT = 3;
+
     function addItem() {
-        const id = Date.now();
+        const id = nextItemId();
         items.push({ id, name: '', qty: 1, price: 0 });
         renderItems();
-        const input = document.querySelector(`[data-item-id="${id}"] input[data-field="name"]`);
-        if (input) {
-            input.focus();
-            input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        revealItem(id);
+    }
+
+    /* Bring the new row into view without shoving everything already added
+       off the screen. `block: 'nearest'` scrolls the least amount that makes
+       the row visible — `center` was pushing the previous items out of the
+       viewport, which on a phone with the keyboard up left the blank new
+       item as the only thing on screen. */
+    function revealItem(id) {
+        const card = document.querySelector(`[data-item-id="${id}"]`);
+        if (!card) return;
+
+        const box = document.getElementById('itemsScroll');
+        if (box && box.classList.contains('is-capped')) {
+            // Inside its own scroll box: park the new row at the bottom edge,
+            // so the rows before it stay visible above.
+            box.scrollTop = box.scrollHeight - box.clientHeight;
+        } else {
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
+
+        const input = card.querySelector('input[data-field="name"]');
+        if (input) input.focus({ preventScroll: true });
     }
 
     function removeItem(id) { items = items.filter(item => item.id !== id); renderItems(); }
@@ -394,6 +435,14 @@
 
     function renderItems() {
         const container = document.getElementById('itemsList');
+        const box = document.getElementById('itemsScroll');
+
+        // A re-render replaces every row, which would otherwise jump the list
+        // back to the top and lose the user's place mid-edit.
+        const keepScroll = box ? box.scrollTop : 0;
+
+        if (box) box.classList.toggle('is-capped', items.length > ITEMS_CAP_AT);
+
         if (items.length === 0) {
             container.innerHTML = '<div class="pbq-empty"><i class="fas fa-inbox"></i><p>No items added yet</p></div>';
             calculateTotals();
@@ -424,6 +473,9 @@
                 <div class="pbq-item__total">Total: US$${(item.qty * item.price).toFixed(2)}</div>
             </div>
         `).join('');
+
+        if (box) box.scrollTop = keepScroll;
+
         calculateTotals();
     }
 
@@ -434,6 +486,17 @@
         const total = materials + labour + transport;
         document.getElementById('materialsTotal').textContent = `US$${materials.toFixed(2)}`;
         document.getElementById('grandTotal').textContent = `US$${total.toFixed(2)}`;
+
+        // Every recalculation path funnels through here, so the running
+        // summary above the list can never drift from the list itself.
+        const count = document.getElementById('itemsCount');
+        if (count) {
+            count.textContent = items.length
+                ? `${items.length} item${items.length === 1 ? '' : 's'} added`
+                : 'No items yet';
+        }
+        const running = document.getElementById('itemsRunningTotal');
+        if (running) running.textContent = `US$${materials.toFixed(2)}`;
     }
 
     function showPreview() {
@@ -609,7 +672,7 @@
             const itemsData = await itemsResponse.json();
             items = [];
             if (itemsData.success && itemsData.items) {
-                items = itemsData.items.map((item, index) => ({ id: Date.now() + index, name: item.description, qty: parseFloat(item.quantity), price: parseFloat(item.unit_price) }));
+                items = itemsData.items.map((item, index) => ({ id: nextItemId(), name: item.description, qty: parseFloat(item.quantity), price: parseFloat(item.unit_price) }));
             }
             document.getElementById('labourCost').value = template.labor_cost || 0;
             document.getElementById('transportCost').value = template.transport_cost || 0;

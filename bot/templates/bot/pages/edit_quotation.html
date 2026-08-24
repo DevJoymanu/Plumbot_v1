@@ -188,33 +188,40 @@
 
         <!-- Items -->
         <h2 class="pbq-section-title"><i class="fas fa-list"></i> Items &amp; Materials</h2>
-        <div class="pbq-table-wrap">
-            <table class="eq-items-table pbq-table--edit" id="itemsTable">
-                <thead>
-                    <tr>
-                        <th>Item / Description</th>
-                        <th class="eq-col-qty">Qty</th>
-                        <th class="eq-col-unit">Unit Price (US$)</th>
-                        <th class="eq-col-tot">Line Total (US$)</th>
-                        <th class="eq-col-act">Action</th>
-                    </tr>
-                </thead>
-                <tbody id="itemsTableBody">
-                    <tr class="empty-items" id="emptyItemsRow">
-                        <td colspan="5" data-label="">
-                            <div class="pbq-empty">
-                                <i class="fas fa-inbox"></i>
-                                <p>Loading quotation items...</p>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <div class="pbq-items-panel">
+            <div class="pbq-items-bar" id="itemsBar">
+                <span class="pbq-items-bar__count" id="itemsCount">No items yet</span>
+                <span class="pbq-items-bar__total" id="itemsRunningTotal">US$0.00</span>
+            </div>
+            <div class="pbq-table-wrap" id="itemsScroll">
+                <table class="eq-items-table pbq-table--edit" id="itemsTable">
+                    <thead>
+                        <tr>
+                            <th>Item / Description</th>
+                            <th class="eq-col-qty">Qty</th>
+                            <th class="eq-col-unit">Unit Price (US$)</th>
+                            <th class="eq-col-tot">Line Total (US$)</th>
+                            <th class="eq-col-act">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsTableBody">
+                        <tr class="empty-items" id="emptyItemsRow">
+                            <td colspan="5" data-label="">
+                                <div class="pbq-empty">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>Loading quotation items...</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pbq-items-foot">
+                <button type="button" class="btn btn-outline-primary pbq-add" id="addItemBtn">
+                    <i class="fas fa-plus"></i> Add Item
+                </button>
+            </div>
         </div>
-
-        <button type="button" class="btn btn-outline-primary pbq-add" id="addItemBtn">
-            <i class="fas fa-plus"></i> Add Item
-        </button>
 
         <!-- Totals -->
         <div class="eq-totals-wrap">
@@ -468,13 +475,27 @@
         emptyItemsRow.style.display = 'none';
     }
 
+    // How many rows before the list gets its own scrollbar. Below this the
+    // table is plain page content; above it, it scrolls in place so Add Item
+    // and the running total stay put.
+    const ITEMS_CAP_AT = 4;
+
     function renderItems() {
+        const box = document.getElementById('itemsScroll');
+
+        // A re-render replaces every row, which would otherwise jump the list
+        // back to the top and lose the user's place mid-edit.
+        const keepScroll = box ? box.scrollTop : 0;
+
+        if (box) box.classList.toggle('is-capped', items.length > ITEMS_CAP_AT);
+
         // Clear existing rows except empty state
         const rows = itemsTableBody.querySelectorAll('tr:not(.empty-items)');
         rows.forEach(row => row.remove());
 
         if (items.length === 0) {
             showEmptyState();
+            updateItemsBar();
             return;
         }
 
@@ -507,6 +528,25 @@
             `;
             itemsTableBody.appendChild(row);
         });
+
+        if (box) box.scrollTop = keepScroll;
+        updateItemsBar();
+    }
+
+    /* The running summary above the list: what is already on the quote stays
+       readable even when the list is scrolled away from the row being typed. */
+    function updateItemsBar() {
+        const count = document.getElementById('itemsCount');
+        if (count) {
+            count.textContent = items.length
+                ? `${items.length} item${items.length === 1 ? '' : 's'} added`
+                : 'No items yet';
+        }
+        const running = document.getElementById('itemsRunningTotal');
+        if (running) {
+            running.textContent = money(
+                items.reduce((sum, item) => sum + (item.qty * item.unit), 0));
+        }
     }
 
     function updateItemFromInput(input) {
@@ -523,6 +563,7 @@
                 const lineTotal = row.querySelector('.line-total');
                 lineTotal.textContent = money(items[index].qty * items[index].unit);
                 calculateTotals();
+                updateItemsBar();
             }
         }
     }
@@ -536,17 +577,25 @@
         renderItems();
         calculateTotals();
 
-        // Focus on the new item's name input
-        setTimeout(() => {
-            const newRow = itemsTableBody.lastElementChild;
-            if (newRow && !newRow.classList.contains('empty-items')) {
-                const nameInput = newRow.querySelector('input[data-field="name"]');
-                if (nameInput) {
-                    nameInput.focus();
-                    nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-            }
-        }, 100);
+        const newRow = itemsTableBody.lastElementChild;
+        if (!newRow || newRow.classList.contains('empty-items')) return;
+
+        /* Bring the new row into view without shoving everything already
+           added off the screen. `block: 'nearest'` scrolls the least amount
+           that makes the row visible — `center` was pushing the previous
+           items out of the viewport, which on a phone with the keyboard up
+           left the blank new row as the only thing on screen. */
+        const box = document.getElementById('itemsScroll');
+        if (box && box.classList.contains('is-capped')) {
+            // Inside its own scroll box: park the new row at the bottom edge,
+            // so the rows before it stay visible above.
+            box.scrollTop = box.scrollHeight - box.clientHeight;
+        } else {
+            newRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        const nameInput = newRow.querySelector('input[data-field="name"]');
+        if (nameInput) nameInput.focus({ preventScroll: true });
     }
 
     function removeItem(index) {

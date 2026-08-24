@@ -748,6 +748,49 @@ class QuoteMobileLayoutTests(StaffClientTestCase):
                 self.assertIn('pbq-table--edit', self._html(self.quote_pages()[name]),
                               f'{name} keeps a desktop-only item table')
 
+    def test_item_editors_keep_added_items_on_screen(self):
+        """Adding an item must not hide the ones already added.
+
+        Each item editor wraps its list in a persistent panel: a running
+        count/subtotal bar above, the list itself, and a sticky Add Item
+        below. The list gets its own scrollbar once it is long (`is-capped`,
+        toggled in JS) so Add Item and the totals never scroll away.
+        """
+        for name in ('create_quotation', 'standalone_quotation', 'edit_quotation'):
+            with self.subTest(page=name):
+                html = self._html(self.quote_pages()[name])
+                for marker in ('pbq-items-panel', 'id="itemsBar"', 'id="itemsCount"',
+                               'id="itemsRunningTotal"', 'id="itemsScroll"',
+                               'pbq-items-foot'):
+                    self.assertIn(marker, html, f'{name} is missing {marker}')
+
+    def test_new_item_does_not_recentre_the_page(self):
+        """`scrollIntoView({block: 'center'})` on the new row pushed every
+        item already added off the viewport — on a phone with the keyboard up
+        the blank new row was all that was left. Reveal must be 'nearest', or
+        a scroll of the list's own box."""
+        for name in ('create_quotation', 'standalone_quotation', 'edit_quotation'):
+            with self.subTest(page=name):
+                html = self._html(self.quote_pages()[name])
+                self.assertNotIn("block: 'center'", html,
+                                 f'{name} re-centres the page on the new item')
+                self.assertIn("block: 'nearest'", html,
+                              f'{name} has no minimal-scroll reveal')
+
+    def test_line_item_ids_cannot_collide(self):
+        """Line items are looked up by id, and ids came from `Date.now()` —
+        two items added inside the same millisecond shared one, so editing
+        one edited both and removing one removed both. A monotonic counter
+        is the only safe source."""
+        for name in ('create_quotation', 'standalone_quotation'):
+            with self.subTest(page=name):
+                html = self._html(self.quote_pages()[name])
+                items_js = html.split('function renderItems')[0]
+                self.assertNotIn('id: Date.now()', items_js,
+                                 f'{name} mints line-item ids from the clock')
+                self.assertIn('nextItemId()', html,
+                              f'{name} has no monotonic id source')
+
     def test_quotations_list_paginates(self):
         """25-per-page with no controls stranded every quote after the first
         page; the list has to be navigable on a phone."""
