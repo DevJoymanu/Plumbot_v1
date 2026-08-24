@@ -4,352 +4,115 @@
 {% block title %}New Quotation{% endblock %}
 
 {% block extra_css %}
+{% include "bot/includes/quote_responsive_css.html" %}
 <style>
-    body { background: #F0F2F5; }
+    /* New Quotation — page-specific bits only; the shared quote layer
+       carries the responsive behaviour. */
+    .sq-preview { display: none; }
 
-    .topbar {
-        background: #006591;
-        padding: 12px 16px;
-        color: #fff;
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .topbar h1 { font-size: 17px; font-weight: 700; margin: 0; color: #fff; }
-
-    .page-content { padding: 16px; padding-bottom: 90px; }
-
-    .card {
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 14px;
-    }
-
-    .section-title {
-        font-size: 13px;
-        font-weight: 700;
-        color: #006591;
-        margin: 0 0 14px 0;
-        text-transform: uppercase;
-        letter-spacing: 0.4px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #f0f0f0;
-    }
-
-    .form-group { margin-bottom: 14px; }
-    .form-group label {
-        font-size: 11px;
-        color: #6b7280;
-        display: block;
-        margin-bottom: 3px;
-        font-weight: 500;
-    }
-    .form-group input,
-    .form-group textarea,
-    .form-group select {
-        width: 100%;
-        padding: 8px 12px;
-        border: none;
-        background: #F0F2F5;
-        border-radius: 6px;
-        font-size: 14px;
-        font-family: inherit;
-    }
-    .form-group textarea { resize: vertical; min-height: 72px; }
-
-    /* Items */
-    .items-list { display: flex; flex-direction: column; gap: 10px; }
-
-    .item-card {
-        background: #F0F2F5;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 12px;
-        position: relative;
-    }
-    .item-card input {
-        width: 100%;
-        padding: 8px 10px;
-        border: none;
-        background: #fff;
-        border-radius: 6px;
-        font-size: 14px;
-        font-family: inherit;
-        margin-bottom: 8px;
-    }
-    .item-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-bottom: 8px;
-    }
-    .item-row input { margin-bottom: 0; }
-    .item-total {
-        text-align: right;
-        font-weight: 600;
-        color: #006591;
-        padding: 6px 8px;
-        background: #fff;
-        border-radius: 6px;
-        font-size: 13px;
-    }
-    .remove-item {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        background: #ffdad6;
-        color: #ba1a1a;
-        border: none;
-        border-radius: 6px;
-        padding: 5px 9px;
-        cursor: pointer;
-        font-size: 12px;
-        z-index: 10;
-    }
-
-    .empty-state {
+    .sq-preview__doc {
         text-align: center;
-        padding: 28px 15px;
-        color: #9ca3af;
-    }
-    .empty-state i { font-size: 2rem; margin-bottom: 8px; opacity: 0.4; display: block; }
-
-    .add-item-btn {
-        width: 100%;
-        background: #25D366;
-        color: #fff;
-        border: none;
-        padding: 11px;
-        border-radius: 20px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        margin-top: 10px;
-    }
-
-    /* Totals */
-    .totals-card { background: #F0F2F5; border-radius: 8px; padding: 14px; margin-top: 10px; }
-    .totals-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 7px 0;
-        border-bottom: 1px dashed #d1d5db;
-        font-size: 14px;
-    }
-    .totals-row:last-child {
-        border-bottom: none;
-        border-top: 2px solid #d1d5db;
-        font-size: 15px;
-        font-weight: 700;
-        color: #006591;
-        padding-top: 10px;
-        margin-top: 6px;
-    }
-    .totals-row input {
-        width: 110px;
-        padding: 6px 8px;
-        border: none;
-        background: #fff;
-        border-radius: 6px;
-        text-align: right;
-        font-size: 14px;
-        font-family: inherit;
-    }
-
-    /* Action Buttons fixed bottom */
-    .action-buttons {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: #fff;
-        padding: 10px 16px;
-        border-top: 1px solid #e5e7eb;
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        z-index: 100;
-    }
-    .action-buttons .btn {
-        padding: 11px 8px;
-        border: none;
-        border-radius: 20px;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 5px;
-        white-space: nowrap;
-    }
-    .btn-teal   { background: #006591; color: #fff; }
-    .btn-green  { background: #25D366; color: #fff; }
-    .btn-gray   { background: #f3f4f6; color: #374151; }
-    .btn-outline-teal {
-        background: #fff;
-        border: 2px solid #006591 !important;
-        color: #006591;
-    }
-
-    /* Preview Section */
-    .preview-section { display: none; }
-
-    .preview-info {
-        background: #F0F2F5;
-        padding: 12px;
-        border-radius: 8px;
-        margin: 12px 0;
-        font-size: 13px;
-    }
-    .preview-info strong { display: block; margin-bottom: 4px; }
-
-    .preview-table { width: 100%; margin: 12px 0; border-collapse: collapse; }
-    .preview-table th,
-    .preview-table td { padding: 9px 7px; text-align: left; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
-    .preview-table th { background: #f3f4f6; font-weight: 600; }
-    .preview-table td:last-child { text-align: right; }
-
-    /* Alert */
-    .alert { padding: 11px 13px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
-    .alert-success { background: #d1fae5; color: #065f46; border: 1px solid #059669; }
-    .alert-error   { background: #ffdad6; color: #93000a; border: 1px solid #ba1a1a; }
-    .alert-info    { background: #c9e6ff; color: #004c6e; border: 1px solid #006591; }
-
-    .btn.loading { opacity: 0.7; pointer-events: none; }
-    .spinner {
-        display: inline-block;
-        width: 15px; height: 15px;
-        border: 2px solid rgba(255,255,255,0.3);
-        border-top: 2px solid white;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    @media print {
-        body { background: white; }
-        .topbar, .action-buttons, .card:not(.preview-section) { display: none !important; }
-        .preview-section { display: block !important; }
-        .page-content { padding-bottom: 0; }
-    }
-
-    @media (min-width: 768px) {
-        .page-content { max-width: 800px; margin: 0 auto; padding-bottom: 0; }
-        .action-buttons { position: relative; border-top: none; padding: 0; grid-template-columns: repeat(4,1fr); }
-    }
-
-    @media (max-width: 480px) {
-        .item-row { grid-template-columns: 1fr; }
-        .action-buttons .btn { font-size: 12px; padding: 10px 4px; }
-    }
-
-    /* Template Modal */
-    .template-modal {
-        display: none;
-        position: fixed;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        background: rgba(0,0,0,0.5);
-        z-index: 9999;
-    }
-    .template-modal-content {
-        background: #fff;
-        margin: 50px auto;
-        max-width: 800px;
-        border-radius: 12px;
-        padding: 24px;
-        max-height: 80vh;
-        overflow-y: auto;
-        position: relative;
-    }
-    .template-modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
         margin-bottom: 18px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(0, 101, 145, 0.10);
     }
-    .template-modal-header h2 { margin: 0; font-size: 16px; color: #111827; }
-    .template-modal-close { background: none; border: none; font-size: 1.5em; cursor: pointer; color: #6b7280; }
-    .template-card {
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
+
+    .sq-preview__doc img {
+        height: 66px;
+        width: auto;
+        max-width: 180px;
+        display: block;
+        margin: 0 auto 10px;
+    }
+
+    .sq-preview__doc h2 {
+        margin: 0;
+        font-size: clamp(1.05rem, 4.5vw, 1.35rem);
+        font-weight: 500;
+        color: var(--color-text);
+    }
+
+    .sq-preview__doc p { margin: 4px 0 0; font-size: 12px; color: var(--color-muted); }
+
+    .sq-preview__block {
         padding: 14px;
-        cursor: pointer;
-        margin-bottom: 10px;
+        margin: 12px 0;
+        border-radius: var(--radius-md);
+        background: var(--color-surface-low);
+        font-size: 13px;
     }
-    .template-card:hover { border-color: #006591; }
-    .template-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-    .template-card-header h3 { margin: 0 0 4px 0; font-size: 14px; color: #111827; }
-    .template-badge {
-        background: #c9e6ff; color: #004c6e;
-        padding: 3px 8px; border-radius: 12px; font-size: 11px; white-space: nowrap;
+
+    .sq-preview__block strong {
+        display: block;
+        margin-bottom: 6px;
+        font-family: var(--font-label);
+        font-size: 10.5px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-muted);
     }
-    .template-stats {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-        margin-top: 12px;
-        padding-top: 12px;
-        border-top: 1px solid #e5e7eb;
+
+    .sq-fallback-logo {
+        width: 66px;
+        height: 66px;
+        margin: 0 auto 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-md);
+        background: var(--color-primary);
+        color: var(--color-on-primary);
+        font-weight: 700;
     }
-    .template-stat-label { font-size: 11px; color: #6b7280; }
-    .template-stat-value { font-weight: 600; color: #111827; font-size: 13px; }
-    .template-stat-value.success { color: #059669; }
-    .template-stat-value.primary { color: #006591; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="topbar">
-    <i class="fas fa-calculator"></i>
-    <h1>New Quotation</h1>
-</div>
+<div class="pbq-page pbq-page--barred" id="standaloneQuotePage">
 
-<div class="page-content">
-    <div id="alertContainer"></div>
+    <div class="pbq-head pbq-no-print">
+        <div>
+            <h1 class="pbq-head__title">New Quotation</h1>
+            <p class="pbq-head__sub">Build a quote from scratch, or start from a saved template.</p>
+        </div>
+        <div class="pbq-head__actions">
+            <button type="button" class="btn btn-outline-primary" id="useTemplateBtn" onclick="openTemplateModal()">
+                <i class="fas fa-file-invoice"></i> Use Template
+            </button>
+        </div>
+    </div>
+
+    <div id="alertContainer" class="pbq-no-print"></div>
 
     <!-- Client Information -->
-    <div class="card">
-        <h2 class="section-title"><i class="fas fa-user"></i> Client Information</h2>
-        <div class="form-group">
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-user"></i> Client Information</h2>
+        <div class="pbq-field">
             <label for="clientName">Client Name *</label>
             <input type="text" id="clientName" placeholder="Enter client name" required
                 value="{{ appointment.customer_name|default:'' }}">
         </div>
-        <div class="form-group">
+        <div class="pbq-field">
             <label for="clientPhone">Phone Number</label>
             <input type="tel" id="clientPhone" placeholder="Enter phone number"
                 value="{{ appointment.phone_number|default:'' }}">
         </div>
-        <div class="form-group">
+        <div class="pbq-field">
             <label for="clientEmail">Email</label>
             <input type="email" id="clientEmail" placeholder="Enter email address"
                 value="{{ appointment.customer_email|default:'' }}">
         </div>
-        <div class="form-group">
+        <div class="pbq-field">
             <label for="clientAddress">Address</label>
             <textarea id="clientAddress" placeholder="Enter client address">{{ appointment.customer_area|default:'' }}</textarea>
         </div>
     </div>
 
     <!-- Project Information -->
-    <div class="card">
-        <h2 class="section-title"><i class="fas fa-project-diagram"></i> Project Information</h2>
-        <div class="form-group">
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-project-diagram"></i> Project Information</h2>
+        <div class="pbq-field">
             <label for="projectType">Project Type *</label>
             <select id="projectType" required>
                 <option value="">Select project type</option>
@@ -362,119 +125,155 @@
                 <option value="other" {% if appointment.project_type == 'other' %}selected{% endif %}>Other</option>
             </select>
         </div>
-        <div class="form-group">
+        <div class="pbq-field">
             <label for="projectLocation">Project Location</label>
             <input type="text" id="projectLocation" placeholder="Project site address"
                 value="{{ appointment.customer_area|default:'' }}">
         </div>
-        <div class="form-group">
+        <div class="pbq-field">
             <label for="projectNotes">Project Notes</label>
             <textarea id="projectNotes" placeholder="Describe the project scope...">{{ appointment.project_description|default:'' }}</textarea>
         </div>
     </div>
 
     <!-- Items Section -->
-    <div class="card">
-        <h2 class="section-title"><i class="fas fa-list"></i> Items & Materials</h2>
-        <div class="items-list" id="itemsList">
-            <div class="empty-state">
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-list"></i> Items & Materials</h2>
+        <div class="pbq-items" id="itemsList">
+            <div class="pbq-empty">
                 <i class="fas fa-inbox"></i>
                 <p>No items added yet</p>
             </div>
         </div>
-        <button class="add-item-btn" onclick="addItem()"><i class="fas fa-plus"></i> Add Item</button>
+        <button type="button" class="btn btn-outline-primary pbq-add" onclick="addItem()"><i class="fas fa-plus"></i> Add Item</button>
     </div>
 
     <!-- Totals -->
-    <div class="card">
-        <h2 class="section-title"><i class="fas fa-calculator"></i> Totals</h2>
-        <div class="totals-card">
-            <div class="totals-row"><span>Material Cost:</span> <span id="materialsTotal">US$0.00</span></div>
-            <div class="totals-row"><span>Labour Cost:</span> <input type="number" id="labourCost" value="0" min="0" step="0.01" oninput="calculateTotals()"></div>
-            <div class="totals-row"><span>Transport Cost:</span> <input type="number" id="transportCost" value="0" min="0" step="0.01" oninput="calculateTotals()"></div>
-            <div class="totals-row"><span>Total Amount:</span> <span id="grandTotal">US$0.00</span></div>
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-calculator"></i> Totals</h2>
+        <div class="pbq-totals">
+            <div class="pbq-total-row">
+                <span>Material Cost</span>
+                <span id="materialsTotal">US$0.00</span>
+            </div>
+            <div class="pbq-total-row">
+                <span><label for="labourCost" style="margin:0;">Labour Cost</label></span>
+                <input type="number" class="pbq-total-input" id="labourCost" value="0" min="0" step="0.01"
+                       inputmode="decimal" oninput="calculateTotals()">
+            </div>
+            <div class="pbq-total-row">
+                <span><label for="transportCost" style="margin:0;">Transport Cost</label></span>
+                <input type="number" class="pbq-total-input" id="transportCost" value="0" min="0" step="0.01"
+                       inputmode="decimal" oninput="calculateTotals()">
+            </div>
+            <div class="pbq-total-row pbq-total-row--grand">
+                <span>Total Amount</span>
+                <span id="grandTotal">US$0.00</span>
+            </div>
         </div>
     </div>
 
     <!-- Additional Notes -->
-    <div class="card">
-        <h2 class="section-title"><i class="fas fa-sticky-note"></i> Additional Notes</h2>
-        <div class="form-group">
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-sticky-note"></i> Additional Notes</h2>
+        <div class="pbq-field">
             <textarea id="additionalNotes" rows="3" placeholder="Payment terms, warranty info, exclusions…"></textarea>
         </div>
     </div>
 
     <!-- Preview Section -->
-    <div class="card preview-section" id="previewSection">
-        <div style="text-align:center;margin-bottom:16px;">
-            <div class="logo-container" style="margin-bottom:14px;">
-                {% if logo_data_uri %}
-                <img src="{{ logo_data_uri }}" alt="HOMEBASE CONSTRUCTION" style="height:70px;width:auto;max-width:180px;display:block;margin:0 auto 10px;">
-                {% elif logo_url %}
-                <img src="{{ logo_url }}" alt="HOMEBASE CONSTRUCTION" style="height:70px;width:auto;max-width:180px;display:block;margin:0 auto 10px;">
-                {% else %}
-                <div style="width:70px;height:70px;background:#006591;border-radius:8px;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:1.3rem;margin:0 auto 10px;">HC</div>
-                {% endif %}
-                <h2 style="margin:0;color:#111827;font-size:1.2rem;">HOMEBASE CONSTRUCTION</h2>
-                <p style="margin:4px 0 0;font-size:12px;color:#6b7280;">"Quality Is Our Qualification"</p>
+    <div class="pbq-card sq-preview" id="previewSection">
+        <div class="sq-preview__doc">
+            {% if logo_data_uri %}
+            <img src="{{ logo_data_uri }}" alt="HOMEBASE CONSTRUCTION">
+            {% elif logo_url %}
+            <img src="{{ logo_url }}" alt="HOMEBASE CONSTRUCTION">
+            {% else %}
+            <div class="sq-fallback-logo">HC</div>
+            {% endif %}
+            <h2>HOMEBASE CONSTRUCTION</h2>
+            <p>"Quality Is Our Qualification"</p>
+            <p>141 Pritchard St, 2001, Johannesburg</p>
+            <p>Cell: +27610318200</p>
+        </div>
+
+        <div class="sq-preview__block"><strong>Client Information</strong><div id="previewClient"></div></div>
+        <div class="sq-preview__block"><strong>Project Details</strong><div id="previewProject"></div></div>
+
+        <div class="pbq-table-wrap">
+            <table class="pbq-table pbq-table--stack">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th class="pbq-num">Qty</th>
+                        <th class="pbq-num">Price</th>
+                        <th class="pbq-num">Total</th>
+                    </tr>
+                </thead>
+                <tbody id="previewItems"></tbody>
+            </table>
+        </div>
+
+        <div class="pbq-totals" style="margin-top:16px;">
+            <div class="pbq-total-row"><span>Material cost</span><span id="previewMaterials">US$0.00</span></div>
+            <div class="pbq-total-row"><span>Labour</span><span id="previewLabour">US$0.00</span></div>
+            <div class="pbq-total-row"><span>Transport</span><span id="previewTransport">US$0.00</span></div>
+            <div class="pbq-total-row pbq-total-row--grand">
+                <span>Total Amount</span><span id="previewGrandTotal">US$0.00</span>
             </div>
-            <p style="font-size:12px;color:#6b7280;">141 Pritchard St, 2001, Johannesburg</p>
-            <p style="font-size:12px;color:#6b7280;">Cell: +27610318200</p>
         </div>
-        <div class="preview-info"><strong>Client Information</strong><div id="previewClient"></div></div>
-        <div class="preview-info"><strong>Project Details</strong><div id="previewProject"></div></div>
-        <table class="preview-table">
-            <thead>
-                <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>
-            </thead>
-            <tbody id="previewItems"></tbody>
-        </table>
-        <div class="totals-card">
-            <div class="totals-row"><span>Material cost:</span> <span id="previewMaterials">US$0.00</span></div>
-            <div class="totals-row"><span>Labour:</span> <span id="previewLabour">US$0.00</span></div>
-            <div class="totals-row"><span>Transport:</span> <span id="previewTransport">US$0.00</span></div>
-            <div class="totals-row"><span>Total Amount:</span> <span id="previewGrandTotal">US$0.00</span></div>
-        </div>
-        <div id="previewNotes" style="margin-top:12px;padding:11px;background:#F0F2F5;border-radius:8px;font-size:13px;display:none;"></div>
+
+        <div id="previewNotes" class="sq-preview__block" style="display:none;"></div>
     </div>
 
     <!-- Action Buttons -->
-    <div class="action-buttons">
-        <button class="btn btn-gray" onclick="showPreview()"><i class="fas fa-eye"></i> Preview</button>
-        <button class="btn btn-outline-teal" onclick="downloadPDF()"><i class="fas fa-download"></i> Download</button>
-        <button class="btn btn-gray" onclick="clearAll()"><i class="fas fa-trash"></i> Clear</button>
-        <button class="btn btn-teal" onclick="saveQuotation()" id="saveBtn"><i class="fas fa-save"></i> Save</button>
+    <div class="pbq-actionbar pbq-no-print">
+        <button type="button" class="btn btn-outline-primary" onclick="showPreview()">
+            <i class="fas fa-eye"></i> Preview
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="downloadPDF()">
+            <i class="fas fa-download"></i> Download
+        </button>
+        <button type="button" class="btn btn-danger" onclick="clearAll()">
+            <i class="fas fa-trash"></i> Clear
+        </button>
+        <button type="button" class="btn btn-primary" onclick="saveQuotation()" id="saveBtn">
+            <i class="fas fa-save"></i> Save
+        </button>
     </div>
 </div>
 
 <!-- Template Selector Modal -->
-<div class="template-modal" id="templateModal">
-    <div class="template-modal-content">
-        <div class="template-modal-header">
+<div class="pbq-modal pbq-no-print" id="templateModal">
+    <div class="pbq-modal__panel">
+        <div class="pbq-modal__head">
             <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
-            <button class="template-modal-close" onclick="closeTemplateModal()">&times;</button>
+            <button type="button" class="pbq-modal__close" onclick="closeTemplateModal()"
+                    aria-label="Close template picker">&times;</button>
         </div>
-        <div style="margin-bottom:16px;">
-            <input type="text" id="templateSearch" placeholder="Search templates..."
-                style="width:100%;padding:9px 12px;border:none;background:#F0F2F5;border-radius:6px;margin-bottom:8px;font-family:inherit;font-size:14px;"
-                oninput="searchTemplates()">
-            <select id="templateProjectFilter" onchange="filterTemplates()"
-                style="width:100%;padding:9px 12px;border:none;background:#F0F2F5;border-radius:6px;font-family:inherit;font-size:14px;">
-                <option value="">All Project Types</option>
-                <option value="bathroom_renovation">Bathroom Renovation</option>
-                <option value="kitchen_renovation">Kitchen Renovation</option>
-                <option value="new_plumbing_installation">New Plumbing Installation</option>
-                <option value="general_plumbing">General Plumbing</option>
-            </select>
-        </div>
-        <div id="templatesList" style="display:grid;gap:12px;"></div>
-        <div id="templatesLoading" style="text-align:center;padding:40px;color:#6b7280;">
-            <i class="fas fa-spinner fa-spin" style="font-size:2em;"></i>
-            <p>Loading templates...</p>
-        </div>
-        <div id="templatesEmpty" style="display:none;text-align:center;padding:40px;color:#6b7280;">
-            <i class="fas fa-inbox" style="font-size:3em;opacity:0.3;"></i>
-            <p>No templates found</p>
+        <div class="pbq-modal__body">
+            <div class="pbq-modal__filters">
+                <input type="text" id="templateSearch" placeholder="Search templates..." oninput="searchTemplates()">
+                <select id="templateProjectFilter" onchange="filterTemplates()">
+                    <option value="">All Project Types</option>
+                    <option value="bathroom_renovation">Bathroom Renovation</option>
+                    <option value="kitchen_renovation">Kitchen Renovation</option>
+                    <option value="new_plumbing_installation">New Plumbing Installation</option>
+                    <option value="general_plumbing">General Plumbing</option>
+                </select>
+            </div>
+
+            <div id="templatesList"></div>
+
+            <div id="templatesLoading" class="pbq-empty">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading templates...</p>
+            </div>
+
+            <div id="templatesEmpty" class="pbq-empty" style="display:none;">
+                <i class="fas fa-inbox"></i>
+                <p>No templates found</p>
+            </div>
         </div>
     </div>
 </div>
@@ -510,15 +309,9 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        const header = document.querySelector('.topbar');
-        if (header) {
-            const templateBtn = document.createElement('button');
-            templateBtn.className = 'btn btn-green';
-            templateBtn.style.cssText = 'margin-left:auto;padding:8px 14px;font-size:13px;border-radius:20px;border:none;font-weight:600;cursor:pointer;color:#fff;background:#25D366;display:flex;align-items:center;gap:6px;';
-            templateBtn.innerHTML = '<i class="fas fa-file-invoice"></i> Use Template';
-            templateBtn.onclick = openTemplateModal;
-            header.appendChild(templateBtn);
-        }
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeTemplateModal();
+        });
 
         const appointmentId = resolveAppointmentId();
         if (appointmentId) {
@@ -567,7 +360,16 @@
         }
     }
 
-    function addItem() { items.push({ id: Date.now(), name: '', qty: 1, price: 0 }); renderItems(); }
+    function addItem() {
+        const id = Date.now();
+        items.push({ id, name: '', qty: 1, price: 0 });
+        renderItems();
+        const input = document.querySelector(`[data-item-id="${id}"] input[data-field="name"]`);
+        if (input) {
+            input.focus();
+            input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
 
     function removeItem(id) { items = items.filter(item => item.id !== id); renderItems(); }
 
@@ -584,7 +386,7 @@
         if (item) {
             const itemCard = document.querySelector(`[data-item-id="${id}"]`);
             if (itemCard) {
-                const totalEl = itemCard.querySelector('.item-total');
+                const totalEl = itemCard.querySelector('.pbq-item__total');
                 if (totalEl) totalEl.textContent = `Total: US$${(item.qty * item.price).toFixed(2)}`;
             }
         }
@@ -593,19 +395,33 @@
     function renderItems() {
         const container = document.getElementById('itemsList');
         if (items.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-inbox"></i><p>No items added yet</p></div>';
+            container.innerHTML = '<div class="pbq-empty"><i class="fas fa-inbox"></i><p>No items added yet</p></div>';
             calculateTotals();
             return;
         }
-        container.innerHTML = items.map(item => `
-            <div class="item-card" data-item-id="${item.id}">
-                <button class="remove-item" onclick="removeItem(${item.id})"><i class="fas fa-trash"></i></button>
-                <input type="text" placeholder="Item description" value="${escapeHtml(item.name)}" oninput="updateItem(${item.id}, 'name', this.value)">
-                <div class="item-row">
-                    <div><label style="font-size:11px;color:#6b7280;display:block;margin-bottom:3px;">Quantity</label><input type="number" value="${item.qty}" min="0" oninput="updateItem(${item.id}, 'qty', this.value)"></div>
-                    <div><label style="font-size:11px;color:#6b7280;display:block;margin-bottom:3px;">Unit Price (US$)</label><input type="number" value="${item.price}" min="0" step="0.01" oninput="updateItem(${item.id}, 'price', this.value)"></div>
+        container.innerHTML = items.map((item, index) => `
+            <div class="pbq-item" data-item-id="${item.id}">
+                <div class="pbq-item__head">
+                    <span class="pbq-item__index">Item ${index + 1}</span>
+                    <button type="button" class="pbq-item__remove" onclick="removeItem(${item.id})"
+                            aria-label="Remove item ${index + 1}"><i class="fas fa-trash"></i></button>
                 </div>
-                <div class="item-total">Total: US$${(item.qty * item.price).toFixed(2)}</div>
+                <label for="item-name-${item.id}">Description</label>
+                <input type="text" id="item-name-${item.id}" data-field="name" placeholder="Item description"
+                       value="${escapeHtml(item.name)}" oninput="updateItem(${item.id}, 'name', this.value)">
+                <div class="pbq-item__row">
+                    <div>
+                        <label for="item-qty-${item.id}">Quantity</label>
+                        <input type="number" id="item-qty-${item.id}" value="${item.qty}" min="0" inputmode="decimal"
+                               oninput="updateItem(${item.id}, 'qty', this.value)">
+                    </div>
+                    <div>
+                        <label for="item-price-${item.id}">Unit Price (US$)</label>
+                        <input type="number" id="item-price-${item.id}" value="${item.price}" min="0" step="0.01"
+                               inputmode="decimal" oninput="updateItem(${item.id}, 'price', this.value)">
+                    </div>
+                </div>
+                <div class="pbq-item__total">Total: US$${(item.qty * item.price).toFixed(2)}</div>
             </div>
         `).join('');
         calculateTotals();
@@ -639,9 +455,15 @@
         document.getElementById('previewProject').innerHTML = projectInfo.join('<br>');
 
         const itemsHtml = items.filter(i => i.name.trim()).map(item => `
-            <tr><td>${escapeHtml(item.name)}</td><td>${item.qty}</td><td>US$${item.price.toFixed(2)}</td><td>US$${(item.qty * item.price).toFixed(2)}</td></tr>
+            <tr>
+                <td class="pbq-cell-full" data-label="">${escapeHtml(item.name)}</td>
+                <td class="pbq-num" data-label="Qty">${item.qty}</td>
+                <td class="pbq-num" data-label="Price">US$${item.price.toFixed(2)}</td>
+                <td class="pbq-num" data-label="Total">US$${(item.qty * item.price).toFixed(2)}</td>
+            </tr>
         `).join('');
-        document.getElementById('previewItems').innerHTML = itemsHtml || '<tr><td colspan="4" style="text-align:center;color:#9ca3af;">No items</td></tr>';
+        document.getElementById('previewItems').innerHTML = itemsHtml ||
+            '<tr><td class="pbq-cell-full" data-label="" colspan="4" style="text-align:center;color:var(--color-muted);">No items</td></tr>';
 
         const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
         const labour = parseFloat(document.getElementById('labourCost').value) || 0;
@@ -667,8 +489,9 @@
 
     function clearAll() {
         if (confirm('Clear all data? This cannot be undone.')) {
-            document.querySelectorAll('input[type=text], input[type=tel], input[type=email], textarea').forEach(i => i.value = '');
-            document.querySelectorAll('input[type=number]').forEach(i => i.value = 0);
+            const page = document.getElementById('standaloneQuotePage');
+            page.querySelectorAll('input[type=text], input[type=tel], input[type=email], textarea').forEach(i => i.value = '');
+            page.querySelectorAll('input[type=number]').forEach(i => i.value = 0);
             document.getElementById('projectType').value = '';
             items = []; renderItems();
             document.getElementById('previewSection').style.display = 'none';
@@ -687,7 +510,7 @@
         const saveBtn = document.getElementById('saveBtn');
         const originalText = saveBtn.innerHTML;
         saveBtn.classList.add('loading');
-        saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
+        saveBtn.innerHTML = '<span class="pbq-spin"></span> Saving...';
 
         const materials = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
         const labour = parseFloat(document.getElementById('labourCost').value) || 0;
@@ -732,7 +555,8 @@
     }
 
     async function openTemplateModal() {
-        document.getElementById('templateModal').style.display = 'block';
+        document.getElementById('templateModal').classList.add('is-open');
+        document.body.classList.add('pbq-modal-lock');
         document.getElementById('templatesLoading').style.display = 'block';
         document.getElementById('templatesList').innerHTML = '';
         document.getElementById('templatesEmpty').style.display = 'none';
@@ -745,21 +569,30 @@
         finally { document.getElementById('templatesLoading').style.display = 'none'; }
     }
 
-    function closeTemplateModal() { document.getElementById('templateModal').style.display = 'none'; }
+    function closeTemplateModal() {
+        document.getElementById('templateModal').classList.remove('is-open');
+        document.body.classList.remove('pbq-modal-lock');
+    }
 
     function displayTemplates(templates) {
         const container = document.getElementById('templatesList');
         if (templates.length === 0) { showTemplatesEmpty(); return; }
+        document.getElementById('templatesEmpty').style.display = 'none';
         container.innerHTML = templates.map(template => `
-            <div class="template-card" onclick="useTemplate(${template.id})">
-                <div class="template-card-header"><div><h3>${escapeHtml(template.name)}</h3><p style="margin:0;color:#6b7280;font-size:12px;">${escapeHtml(template.description || 'No description')}</p></div>
-                <span class="template-badge">${escapeHtml(template.project_type_display || template.project_type)}</span></div>
-                <div class="template-stats">
-                    <div><div class="template-stat-label">Items</div><div class="template-stat-value">${template.items_count}</div></div>
-                    <div><div class="template-stat-label">Estimated Cost</div><div class="template-stat-value success">US$${template.estimated_cost.toFixed(2)}</div></div>
-                    <div><div class="template-stat-label">Used</div><div class="template-stat-value primary">${template.use_count}x</div></div>
+            <button type="button" class="pbq-pick" onclick="useTemplate(${template.id})">
+                <div class="pbq-pick__head">
+                    <div>
+                        <h3>${escapeHtml(template.name)}</h3>
+                        <p>${escapeHtml(template.description || 'No description')}</p>
+                    </div>
+                    <span class="pbq-status pbq-status--sent">${escapeHtml(template.project_type_display || template.project_type)}</span>
                 </div>
-            </div>
+                <div class="pbq-pick__stats">
+                    <div><div class="pbq-pick__stat-label">Items</div><div class="pbq-pick__stat-value">${template.items_count}</div></div>
+                    <div><div class="pbq-pick__stat-label">Estimated Cost</div><div class="pbq-pick__stat-value">US$${template.estimated_cost.toFixed(2)}</div></div>
+                    <div><div class="pbq-pick__stat-label">Used</div><div class="pbq-pick__stat-value">${template.use_count}x</div></div>
+                </div>
+            </button>
         `).join('');
     }
 
@@ -817,7 +650,7 @@
     function showAlert(message, type) {
         const container = document.getElementById('alertContainer');
         const alert = document.createElement('div');
-        alert.className = `alert alert-${type}`;
+        alert.className = `pbq-alert pbq-alert-${type}`;
         alert.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i> ${escapeHtml(message)}`;
         container.appendChild(alert);
         setTimeout(() => alert.remove(), 4000);

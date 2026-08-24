@@ -24,39 +24,32 @@ Flow per incoming email:
   7. Send HTML reply email with contact buttons
   8. Mark email as read (\\Seen)
 
-Emails with no thread reference are NOT skipped: the sender address is matched
-to an existing lead, and when there is no match a new email lead is created
-(phone_number = a synthetic `email_<hash>` key, lead_source='email') so the bot
-answers a customer who writes in cold, exactly as it answers a WhatsApp opener.
+EMAIL IS REPLY-ONLY. The bot answers people who are ALREADY IN THE SYSTEM with
+a WhatsApp record — nothing else. No email ever creates a lead, and a message
+from an address no WhatsApp lead owns is left unread for a human. That one rule
+does the heavy lifting: a receipt, a support ticket, a newsletter or a stranger
+writing in cold belongs to nobody in the CRM, so it is never answered.
 
-Three gates keep that intake off everything that is not a customer:
+An email with no thread reference is still handled, but only by matching the
+sender to an existing WhatsApp lead (`_known_lead_for_sender`): a customer who
+started on WhatsApp and is now emailing continues the same conversation. Leads
+whose `phone_number` is a synthetic key — the `email_…` rows cold intake used
+to create, `quotation_only_…` quotation stubs — are NOT WhatsApp records and
+are never answered either.
+
+Two more gates sit in front of that:
 
   1. Our own mail — a plumber alert, the Bcc copy of a customer email, any
      tenant sending identity, any address on PLATFORM_EMAIL_DOMAIN — is dropped
-     before the thread tag is even trusted, and is left UNREAD.
-  2. A cold email is only answered when it was addressed (To / Cc /
-     Delivered-To / X-Original-To) to a LEAD INBOX. Lead inboxes come from
-     INBOUND_LEAD_ADDRESSES; with none set the polled mailbox itself counts,
-     unless that mailbox is one of our own inboxes (the operator's personal
-     Gmail, a tenant alert address) — those carry receipts, newsletters and our
-     own notifications, so cold intake stays off there entirely.
-  3. Automated senders (no-reply, bounces, vacation auto-replies, mailing
+     before the thread tag is even trusted, and is left UNREAD. The Bcc copy
+     carries the same [APT-id] reference the customer's reply does, so an APT
+     match alone is not proof a customer wrote.
+  2. Automated senders (no-reply, bounces, vacation auto-replies, mailing
      lists, receipts) are skipped — replying to those would loop.
 
-Anything the bot refuses to handle for reason 1 or 2 is left unread: the
-mailbox belongs to the operator, and IMAP fetches use BODY.PEEK so that merely
-polling never marks their mail as read.
-
-Optional environment variable:
-    INBOUND_LEAD_ADDRESSES   comma-separated business addresses that make an
-                             unthreaded email a lead, each optionally routed to
-                             a tenant with `=slug`:
-                                 info@homebaseplumbers.co.zw=homebase,
-                                 quotes@acmeplumbing.co.zw=acme
-                             Each tenant forwards its own business address into
-                             the polled mailbox; the delivered-to address then
-                             routes the lead. A bare address (no `=slug`) opens
-                             the lead on the default tenant.
+Anything the bot declines to handle is left unread: the mailbox belongs to the
+operator, and IMAP fetches use BODY.PEEK so that merely polling never marks
+their mail as read.
 """
 
 import email
@@ -81,10 +74,6 @@ _EMAIL_FROM  = os.environ.get("IMAP_EMAIL", "")
 _IMAP_HOST   = os.environ.get("IMAP_HOST", "imap.gmail.com")
 _IMAP_PORT   = int(os.environ.get("IMAP_PORT", 993))
 _IMAP_PASS   = os.environ.get("IMAP_PASSWORD", "")
-# Comma-separated addresses that make an unthreaded email a lead. Set this
-# when the polled mailbox is not itself the business inbox — e.g. a business
-# address that forwards into a personal Gmail.
-_LEAD_INBOX_ENV = os.environ.get("INBOUND_LEAD_ADDRESSES", "")
 
 
 # ── IMAP helpers ──────────────────────────────────────────────────────────────
@@ -615,28 +604,10 @@ _AUTOMATED_SUBJECT_HINTS = (
 )
 
 
-# Headers that can carry the address the mail was actually delivered to. A
-# business address that forwards into another mailbox shows up in Delivered-To
-# or X-Original-To, not in To.
-_RECIPIENT_HEADERS = (
-    "To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To",
-    "X-Forwarded-To", "X-Delivered-To", "Resent-To",
-)
-
-
 def _addresses_in(value: str) -> set:
     """Every email address in a header value or a comma-separated setting."""
     return {addr.strip().lower()
             for _, addr in getaddresses([value or ""]) if "@" in addr}
-
-
-def _recipient_addresses(msg) -> set:
-    """Every address this message was addressed or delivered to."""
-    found = set()
-    for header in _RECIPIENT_HEADERS:
-        for value in msg.get_all(header, []) or []:
-            found |= _addresses_in(_decode_header_value(value))
-    return found
 
 
 def _owner_addresses() -> set:
@@ -704,69 +675,6 @@ def _is_our_own_mail(sender: str) -> bool:
     return bool(platform_domain) and addr.rsplit("@", 1)[1] == platform_domain
 
 
-def _lead_inbox_map() -> dict:
-    """{lead inbox address: tenant slug or None} — the routing table for cold
-    email.
-
-    INBOUND_LEAD_ADDRESSES entries are `address` or `address=tenant-slug`. The
-    delivered-to address is the email equivalent of WhatsApp's
-    `phone_number_id`: it is the only routing key an inbound email carries, so
-    each tenant forwards its own business address into this mailbox and the
-    address it arrived on decides whose lead it is. A bare address (no
-    `=slug`) opens the lead on the default tenant, which is what a
-    single-tenant install has always done.
-
-    With nothing configured the polled mailbox itself is the lead inbox —
-    unless it is one of our own inboxes (the operator's personal Gmail, a
-    tenant's alert address), where receipts, newsletters and our own
-    notifications land alongside everything else. Nothing in such a mailbox
-    marks a message as a lead, so cold intake stays off there rather than
-    answering the operator's personal mail.
-    """
-    mapping = {}
-    for entry in re.split(r"[,;\n]", _LEAD_INBOX_ENV or ""):
-        raw_address, _, slug = entry.strip().partition("=")
-        for address in _addresses_in(raw_address):
-            mapping[address] = slug.strip().lower() or None
-    if mapping:
-        return mapping
-    polled = (_EMAIL_FROM or "").strip().lower()
-    if polled and polled not in _owner_addresses():
-        return {polled: None}
-    return {}
-
-
-def _lead_inbox_addresses() -> set:
-    """Just the addresses — the gate, without the routing."""
-    return set(_lead_inbox_map())
-
-
-def _lead_inbox_match(msg):
-    """(address, tenant slug or None) for the lead inbox this mail was
-    delivered to, or None when it was not sent to one."""
-    mapping = _lead_inbox_map()
-    matched = sorted(_recipient_addresses(msg) & set(mapping)) if mapping else []
-    if not matched:
-        return None
-    # An address that names a tenant outranks a bare one: mail sent to both a
-    # tenant's own address and a generic catch-all belongs to that tenant.
-    for address in matched:
-        if mapping[address]:
-            return address, mapping[address]
-    return matched[0], None
-
-
-def _tenant_for_slug(slug):
-    """The Tenant a lead inbox routes to, or None when the slug is unknown.
-
-    A miss is never quietly downgraded to the default tenant: that would answer
-    another company's customer with Homebase's prices, name and sender.
-    """
-    from bot.models import Tenant
-
-    return Tenant.objects.filter(slug=slug).first()
-
-
 def _is_automated(msg, sender: str, subject: str) -> bool:
     """True when this email came from a machine, not a customer.
 
@@ -797,66 +705,44 @@ def _is_automated(msg, sender: str, subject: str) -> bool:
     return any(hint in subj for hint in _AUTOMATED_SUBJECT_HINTS)
 
 
-def _sender_display_name(msg) -> str:
-    """The human name on the From header ("Jane Moyo" <jane@...>), if any."""
-    raw = _decode_header_value(msg.get("From", ""))
-    name = parseaddr(raw)[0].strip().strip('"').strip()
-    # Some clients put the address in the display slot — that is not a name.
-    if not name or "@" in name:
-        return ""
-    return name[:100]
+# Synthetic lead keys: a row that exists in the CRM but has no WhatsApp record
+# behind it. `email_…` came from the cold-email intake this command used to do,
+# `quotation_only_…` from a quotation raised for a walk-in.
+_SYNTHETIC_LEAD_PREFIXES = ("email_", "quotation_only_")
 
 
-def _email_lead_key(address: str) -> str:
-    """Synthetic phone_number for an email-only lead.
+def _is_whatsapp_lead(apt) -> bool:
+    """True when this lead is a real WhatsApp record.
 
-    Deterministic per address, so the same sender can never end up with two lead
-    rows. Mirrors the `quotation_only_` stub convention: a non-WhatsApp key,
-    excluded from every proactive WhatsApp send.
+    The bot answers email only for people already in the system from WhatsApp.
+    A synthetic key is a CRM row, not someone the bot has ever talked to, so
+    mail from one is left for a human.
     """
-    import hashlib
+    phone = (getattr(apt, "phone_number", "") or "").strip().lower()
+    if not phone or phone.startswith(_SYNTHETIC_LEAD_PREFIXES):
+        return False
+    return any(char.isdigit() for char in phone)
 
-    digest = hashlib.sha1((address or "").strip().lower().encode()).hexdigest()
-    return f"email_{digest[:12]}"
 
+def _known_lead_for_sender(sender: str):
+    """The WhatsApp lead that owns this email address, or None.
 
-def _lead_for_sender(sender: str, display_name: str, subject: str, tenant=None):
-    """Resolve an unthreaded email to a lead. Returns (appointment, created).
-
-    Preference order: a lead that already has this email address (the customer
-    started on WhatsApp and is now emailing), then the synthetic email key from
-    an earlier cold email, then a brand-new email lead.
-
-    `tenant` is the tenant the lead inbox routed to (None → the default tenant,
-    what a bare address means). Both the lookup and the create are scoped to
-    it: lead identity is per tenant, so the same person writing to two
-    companies on the platform gets two independent leads, and tenant B's
-    customer is never glued onto tenant A's lead.
+    Email is reply-only: a customer who started on WhatsApp and is now emailing
+    continues the same conversation, and everyone else — a stranger writing in
+    cold, a receipt, a support ticket — is left alone. No email ever creates a
+    lead. The most recently touched match wins; the lead carries its own tenant,
+    so nothing has to route by address.
     """
     from bot.models import Appointment
 
-    existing = None
-    if sender:
-        existing = (
-            Appointment.objects.for_tenant_or_seed(tenant)
-            .filter(customer_email__iexact=sender)
-            .order_by("-updated_at")
-            .first()
-        )
-    if existing is not None:
-        return existing, False
-
-    return Appointment.objects.get_or_create_lead(
-        _email_lead_key(sender),
-        tenant=tenant,
-        defaults={
-            "customer_email": sender,
-            "customer_name": display_name or "",
-            "status": "pending",
-            "lead_source": "email",
-            "project_description": (subject or "")[:200],
-        },
-    )
+    if not sender or "@" not in sender:
+        return None
+    for lead in (Appointment.objects
+                 .filter(customer_email__iexact=sender)
+                 .order_by("-updated_at")[:10]):
+        if _is_whatsapp_lead(lead):
+            return lead
+    return None
 
 
 # ── Main command ──────────────────────────────────────────────────────────────
@@ -938,36 +824,27 @@ class Command(BaseCommand):
                     except Appointment.DoesNotExist:
                         out(f"    Appointment #{apt_id} not found — matching on sender instead")
 
-                # No thread reference (or a dead one): a customer emailing in
-                # cold. Answer it like any other opener rather than leaving it
-                # for manual handling — but only when it was actually sent to
-                # a lead inbox, and never when it came from a machine.
+                # No thread reference (or a dead one): the sender must BE a
+                # known WhatsApp lead. Email is reply-only — nobody writes their
+                # way into the CRM by emailing us.
                 fresh_thread = apt is None
-                lead_tenant = None
                 if fresh_thread:
-                    if not _lead_inbox_addresses():
-                        out("    SKIP  This mailbox is not a lead inbox "
-                            "(set INBOUND_LEAD_ADDRESSES to enable cold intake)")
+                    apt = _known_lead_for_sender(sender)
+                    if apt is None:
+                        out("    SKIP  Not a known WhatsApp lead — leaving it "
+                            "for a human")
                         skipped += 1
                         continue
-                    match = _lead_inbox_match(head)
-                    if match is None:
-                        out("    SKIP  Not addressed to a lead inbox — leaving it alone")
-                        skipped += 1
-                        continue
-                    inbox_address, tenant_slug = match
-                    if tenant_slug:
-                        lead_tenant = _tenant_for_slug(tenant_slug)
-                        if lead_tenant is None:
-                            logger.error(
-                                "TENANT ROUTE MISS: lead inbox %s maps to unknown "
-                                "tenant '%s' — check INBOUND_LEAD_ADDRESSES",
-                                inbox_address, tenant_slug)
-                            out(f"    SKIP  TENANT ROUTE MISS: {inbox_address} → "
-                                f"unknown tenant '{tenant_slug}' — not answering")
-                            skipped += 1
-                            continue
-                        out(f"    Routed by {inbox_address} → tenant {lead_tenant.slug}")
+                    apt_id = apt.pk
+                    out(f"    Matched by sender → apt #{apt.pk}")
+                elif not _is_whatsapp_lead(apt):
+                    # A thread we started with a synthetic-key row (an old
+                    # `email_…` lead, a `quotation_only_…` stub). It has no
+                    # WhatsApp record behind it, so the bot does not answer.
+                    out(f"    SKIP  apt #{apt.pk} has no WhatsApp record — "
+                        "not answering")
+                    skipped += 1
+                    continue
 
                 if _is_automated(head, sender, subject):
                     out("    SKIP  Automated sender / bounce — not answering")
@@ -980,18 +857,6 @@ class Command(BaseCommand):
                     out("    SKIP  Could not fetch the message body")
                     skipped += 1
                     continue
-
-                if fresh_thread:
-                    if dry_run:
-                        out(f"    [dry-run] would open an email thread for {sender}")
-                        skipped += 1
-                        _mark_seen(imap, uid)
-                        continue
-                    apt, created = _lead_for_sender(
-                        sender, _sender_display_name(msg), subject, lead_tenant)
-                    apt_id = apt.pk
-                    out("    {} → apt #{}".format(
-                        "NEW email lead" if created else "Matched by sender", apt.pk))
 
                 # If the appointment has no email on record (e.g. lead came via
                 # WhatsApp), capture it from the sender so we can reply.
@@ -1010,11 +875,11 @@ class Command(BaseCommand):
                     continue
 
                 if fresh_thread and subject:
-                    # On a cold email the subject often IS the request, so it
-                    # becomes part of the customer's turn, not metadata.
+                    # Off-thread the subject often carries the request itself,
+                    # so it becomes part of the customer's turn, not metadata.
                     clean = "Subject: {}\n\n{}".format(subject.strip(), clean)
 
-                # An emailed opener is a real inbound response: stamp the same
+                # An emailed turn is a real inbound response: stamp the same
                 # freshness fields WhatsApp sets, or the lead sorts as ancient on
                 # every dashboard and the follow-up crons misjudge it.
                 if fresh_thread and not dry_run:
@@ -1137,7 +1002,8 @@ class Command(BaseCommand):
                     html_body = _build_email_html(reply_text, apt)
                     _send_reply(apt, subject, html_body)
 
-                _mark_seen(imap, uid)
+                if not dry_run:
+                    _mark_seen(imap, uid)
                 processed += 1
 
             except Exception as e:

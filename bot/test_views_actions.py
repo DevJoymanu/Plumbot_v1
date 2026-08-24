@@ -22,6 +22,7 @@ or the R2 bucket and runs fully offline.
 """
 
 import os
+import re
 import unittest
 from io import StringIO
 from datetime import timedelta
@@ -648,6 +649,112 @@ class QuotationActionTests(StaffClientTestCase):
                     args=[self.template.pk, self.lead.pk]))
         self.assertLess(response.status_code, 500)
         self.assertGreater(self.lead.quotations.count(), before)
+
+
+# ======================================================================
+# 4b. Quote screens on a phone
+#
+# The whole quote workflow has to be usable at 320-430px. These pin the
+# structural facts that made it unusable before, each of which is silent
+# in a normal smoke test because the page still returns 200:
+#   * view/edit rendered a whole second <!DOCTYPE html> document inside
+#     base.html's content block, so the inner body{background} painted
+#     over the shell and the mobile nav was unreachable;
+#   * item tables carried min-width: 800px, forcing a sideways scroll;
+#   * the icon set was Bootstrap Icons, which head_assets never loads, so
+#     icon-only touch targets rendered blank.
+# ======================================================================
+
+class QuoteMobileLayoutTests(StaffClientTestCase):
+    """Every quote screen ships the shared responsive layer and nothing that
+    forces horizontal overflow."""
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(4, customer_name='Mobile Quote Lead')
+        self.quote = Quotation.objects.create(appointment=self.lead)
+        self.template = QuotationTemplate.objects.create(name='Mobile Template')
+
+    def quote_pages(self):
+        return {
+            'quotations_list': reverse('quotations_list'),
+            'view_quotation': reverse('view_quotation', args=[self.quote.pk]),
+            'edit_quotation': reverse('edit_quotation', args=[self.quote.pk]),
+            'create_quotation': reverse('create_quotation', args=[self.lead.pk]),
+            'standalone_quotation': reverse('standalone_quotation'),
+            'quotation_templates_list': reverse('quotation_templates_list'),
+            'quotation_template_detail': reverse('quotation_template_detail',
+                                                 args=[self.template.pk]),
+            'create_quotation_template': reverse('create_quotation_template'),
+            'edit_quotation_template': reverse('edit_quotation_template',
+                                               args=[self.template.pk]),
+        }
+
+    def _html(self, url):
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode('utf-8', 'replace')
+
+    def test_pages_are_a_single_document(self):
+        """No page nests a second full HTML document inside the shell."""
+        for name, url in self.quote_pages().items():
+            with self.subTest(page=name):
+                html = self._html(url)
+                self.assertEqual(html.count('<!DOCTYPE'), 1,
+                                 f'{name} renders a nested document')
+                self.assertEqual(html.count('<html'), 1, f'{name} nests <html>')
+                self.assertEqual(html.count('name="viewport"'), 1,
+                                 f'{name} has a duplicate viewport meta')
+
+    def test_pages_reach_the_mobile_nav(self):
+        """Every quote screen extends the shell, so the bottom nav is there."""
+        for name, url in self.quote_pages().items():
+            with self.subTest(page=name):
+                self.assertIn('pb-bottomnav', self._html(url),
+                              f'{name} has no mobile navigation')
+
+    def test_no_table_forces_horizontal_scroll(self):
+        """A min-width wider than a phone means a sideways-scrolling page."""
+        for name, url in self.quote_pages().items():
+            with self.subTest(page=name):
+                html = self._html(url)
+                # Lookbehind skips `@media (min-width: …)`, which is a
+                # breakpoint, not a declared width.
+                wide = [int(px) for px in re.findall(r'(?<!\()min-width:\s*(\d+)px', html)
+                        if int(px) >= 600]
+                self.assertEqual(wide, [], f'{name} pins a {wide}px minimum width')
+
+    def test_icons_use_the_loaded_icon_set(self):
+        """head_assets ships Font Awesome only; `bi bi-*` renders as nothing."""
+        for name, url in self.quote_pages().items():
+            with self.subTest(page=name):
+                self.assertNotIn('bi bi-', self._html(url),
+                                 f'{name} uses Bootstrap Icons, which never load')
+
+    def test_shared_responsive_layer_is_present(self):
+        """quote_responsive_css.html must actually reach every quote screen —
+        matched on its banner, which appears nowhere else."""
+        for name, url in self.quote_pages().items():
+            with self.subTest(page=name):
+                self.assertIn('Quote workflow — shared responsive layer',
+                              self._html(url),
+                              f'{name} does not include quote_responsive_css.html')
+
+    def test_editable_item_tables_stack_on_mobile(self):
+        """The item editors opt into the stacked-card treatment."""
+        for name in ('edit_quotation', 'create_quotation_template',
+                     'edit_quotation_template'):
+            with self.subTest(page=name):
+                self.assertIn('pbq-table--edit', self._html(self.quote_pages()[name]),
+                              f'{name} keeps a desktop-only item table')
+
+    def test_quotations_list_paginates(self):
+        """25-per-page with no controls stranded every quote after the first
+        page; the list has to be navigable on a phone."""
+        for i in range(30):
+            Quotation.objects.create(appointment=self.lead)
+        html = self._html(reverse('quotations_list'))
+        self.assertIn('?page=2', html)
 
 
 # ======================================================================
@@ -3277,9 +3384,8 @@ class SenderIdentityTests(TestCase):
 
 
 class InboundEmailIntakeTests(TestCase):
-    """The bot answers email, not just WhatsApp. A reply on a thread we started
-    was already handled; these cover the email that arrives with NO thread
-    reference — a customer writing in cold."""
+    """Email is REPLY-ONLY: the bot answers people already in the system with a
+    WhatsApp record, and nobody else. No email ever creates a lead."""
 
     def _raw(self, sender='jane@example.com', subject='Quote for a geyser',
              body='Hi, how much for a 150L geyser in Avondale?', extra_headers=(),
@@ -3292,7 +3398,14 @@ class InboundEmailIntakeTests(TestCase):
         headers.extend(extra_headers)
         return ('\r\n'.join(headers) + '\r\n\r\n' + body).encode()
 
-    def _run(self, raws, polled='team@example.com', lead_env='', **opts):
+    def _lead(self, suffix=7200, **kwargs):
+        """A WhatsApp lead who has emailed us before — the only kind of sender
+        the bot answers."""
+        kwargs.setdefault('customer_email', 'jane@example.com')
+        kwargs.setdefault('customer_name', 'Jane Moyo')
+        return make_lead(suffix, **kwargs)
+
+    def _run(self, raws, polled='team@example.com', **opts):
         """Run the command against a fake IMAP inbox holding `raws`.
 
         Headers are handed over first (that is all the gates see); the body is
@@ -3307,7 +3420,6 @@ class InboundEmailIntakeTests(TestCase):
         by_uid = {str(i).encode(): raw for i, raw in enumerate(raws)}
         out = StringIO()
         with patch.object(mod, '_EMAIL_FROM', polled), \
-             patch.object(mod, '_LEAD_INBOX_ENV', lead_env), \
              patch.object(mod, '_IMAP_PASS', 'secret'), \
              patch.object(mod, '_connect', return_value=fake_imap), \
              patch.object(mod, '_fetch_unseen_headers',
@@ -3327,43 +3439,104 @@ class InboundEmailIntakeTests(TestCase):
             call_command('process_inbound_emails', stdout=out, **opts)
         return out.getvalue(), send, seen
 
-    def test_cold_email_creates_a_lead_and_gets_answered(self):
+    # ── The one rule ────────────────────────────────────────────────────────
+
+    def test_a_known_whatsapp_lead_emailing_in_is_answered(self):
+        lead = self._lead()
         output, send, seen = self._run([self._raw()])
 
-        apt = Appointment.objects.get(customer_email='jane@example.com')
-        self.assertEqual(apt.lead_source, 'email')
-        self.assertTrue(apt.phone_number.startswith('email_'))
-        self.assertIn('geyser', apt.project_description.lower())
-        # The customer's turn and the bot's reply are both in the transcript...
-        roles = [m['role'] for m in apt.conversation_history]
+        lead.refresh_from_db()
+        roles = [m['role'] for m in lead.conversation_history]
         self.assertEqual(roles, ['user', 'assistant'])
-        # ...and the subject is part of the customer's turn, since on a cold
-        # email the subject often carries the actual request.
-        self.assertIn('Quote for a geyser', apt.conversation_history[0]['content'])
-        # ...and a reply was actually sent.
+        # Off-thread the subject often carries the request itself.
+        self.assertIn('Quote for a geyser', lead.conversation_history[0]['content'])
         send.assert_called_once()
         # Freshness fields are stamped, so it does not sort as an ancient lead.
-        self.assertIsNotNone(apt.last_customer_response)
-        self.assertIsNotNone(apt.last_inbound_at)
+        self.assertIsNotNone(lead.last_customer_response)
+        self.assertIsNotNone(lead.last_inbound_at)
         self.assertEqual(len(seen), 1)
-        self.assertIn('NEW email lead', output)
+        self.assertIn('Matched by sender', output)
 
-    def test_second_cold_email_reuses_the_same_lead(self):
-        self._run([self._raw()])
-        self._run([self._raw(body='Any update on that geyser?')])
-        self.assertEqual(
-            Appointment.objects.filter(customer_email='jane@example.com').count(), 1)
+    def test_a_stranger_is_never_answered_and_never_becomes_a_lead(self):
+        """The bug that started this: receipts, support tickets and cold
+        strangers all belong to nobody in the CRM."""
+        cases = [
+            {'sender': 'stranger@example.com'},
+            {'sender': 'invoice+statements@stripe.com',
+             'subject': 'Your receipt from Anthropic, PBC #2946-1044-8181'},
+            {'sender': 'support@somevendor.example',
+             'subject': 'Support Ticket #9616645 Closed'},
+        ]
+        for case in cases:
+            with self.subTest(**case):
+                output, send, seen = self._run([self._raw(**case)])
+                send.assert_not_called()
+                self.assertEqual(seen, [])      # left unread for a human
+                self.assertFalse(Appointment.objects.exists())
 
-    def test_email_from_a_known_whatsapp_lead_continues_that_conversation(self):
-        lead = make_lead(7001, customer_name='Known Lead',
-                         customer_email='jane@example.com')
-        self._run([self._raw()])
-        self.assertEqual(
-            Appointment.objects.filter(customer_email='jane@example.com').count(), 1)
+    def test_a_lead_with_no_whatsapp_record_is_left_for_a_human(self):
+        """Synthetic keys — old `email_…` rows, `quotation_only_…` stubs — are
+        CRM rows, not people the bot has talked to."""
+        for phone in ('email_e62068d37db3', 'quotation_only_44'):
+            with self.subTest(phone=phone):
+                Appointment.objects.all().delete()
+                lead = Appointment.objects.create(
+                    phone_number=phone, customer_email='jane@example.com')
+                _, send, seen = self._run([self._raw()])
+                lead.refresh_from_db()
+                send.assert_not_called()
+                self.assertEqual(seen, [])
+                self.assertEqual(lead.conversation_history or [], [])
+
+    def test_a_thread_reply_from_a_synthetic_lead_is_not_answered_either(self):
+        """Even with our own [APT-id] on it: the rule is about the lead, not
+        about how the mail was matched."""
+        lead = Appointment.objects.create(
+            phone_number='email_e62068d37db3', customer_email='jane@example.com')
+        _, send, seen = self._run(
+            [self._raw(subject=f'Re: [APT-{lead.pk}] Your visit')])
+
+        send.assert_not_called()
+        self.assertEqual(seen, [])
+
+    def test_a_thread_reply_from_a_whatsapp_lead_is_answered(self):
+        lead = self._lead(customer_email='')
+        self._run([self._raw(subject=f'Re: [APT-{lead.pk}] Your visit')])
+
         lead.refresh_from_db()
         self.assertEqual(len(lead.conversation_history), 2)
+        # The address is captured from the sender so we can reply again later.
+        self.assertEqual(lead.customer_email, 'jane@example.com')
+
+    def test_the_reply_goes_to_the_leads_own_tenant(self):
+        """No routing needed: the matched lead carries its own tenant."""
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        lead = self._lead(tenant=acme)
+        self._run([self._raw()])
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.tenant_id, acme.pk)
+        self.assertEqual(len(lead.conversation_history), 2)
+
+    def test_the_most_recently_touched_lead_wins(self):
+        """The same address on two tenants' books answers as the live one."""
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        old = self._lead(7201)
+        recent = self._lead(7202, tenant=acme)
+        Appointment.objects.filter(pk=old.pk).update(
+            updated_at=timezone.now() - timedelta(days=30))
+
+        self._run([self._raw()])
+
+        old.refresh_from_db()
+        recent.refresh_from_db()
+        self.assertEqual(old.conversation_history or [], [])
+        self.assertEqual(len(recent.conversation_history), 2)
+
+    # ── The gates in front of the rule ──────────────────────────────────────
 
     def test_automated_senders_are_never_answered(self):
+        self._lead()
         cases = [
             {'sender': 'no-reply@bank.example'},
             {'sender': 'mailer-daemon@example.com',
@@ -3373,147 +3546,50 @@ class InboundEmailIntakeTests(TestCase):
              'extra_headers': ('Auto-Submitted: auto-replied',)},
             {'sender': 'jane@example.com',
              'extra_headers': ('List-Id: <news.example.com>',)},
-            # Transactional mail that reaches a business inbox is not a lead.
-            {'sender': 'invoice+statements@stripe.com',
-             'subject': 'Your receipt from Anthropic, PBC #2946-1044-8181'},
         ]
         for case in cases:
             with self.subTest(**case):
-                _, send, seen = self._run([self._raw(**case)])
+                _, send, _ = self._run([self._raw(**case)])
                 send.assert_not_called()
-                self.assertEqual(len(seen), 1)   # still marked read, not retried
-        self.assertFalse(Appointment.objects.exclude(customer_email='').exists())
 
     def test_our_own_mail_is_never_answered_and_is_left_unread(self):
         """Alerts and Bcc copies of our own sends land in this mailbox. The bot
         must not answer them, and must not mark the operator's mail as read."""
+        lead = self._lead()
         cases = [
-            {'sender': 'team@example.com'},                      # the polled box
-            {'sender': 'homebase@notifications.homexmedia.com'},  # platform sender
-            {'sender': 'jones86xi@gmail.com'},                    # operator inbox
+            {'sender': 'team@example.com'},                       # the polled box
+            {'sender': 'homebase@notifications.homexmedia.com'},   # platform sender
+            {'sender': 'jones86xi@gmail.com'},                     # operator inbox
             # A Bcc copy carries the same thread tag the customer's reply does.
             {'sender': 'homebase@notifications.homexmedia.com',
-             'subject': '[APT-7100] Your booking'},
+             'subject': f'[APT-{lead.pk}] Your booking'},
         ]
         for case in cases:
             with self.subTest(**case):
                 _, send, seen = self._run([self._raw(**case)])
                 send.assert_not_called()
                 self.assertEqual(seen, [])
-        self.assertFalse(Appointment.objects.exclude(customer_email='').exists())
 
-    def test_cold_mail_not_addressed_to_a_lead_inbox_is_ignored(self):
-        """A business address forwards into this mailbox; everything else in it
-        is the operator's own mail and is left alone, unread."""
-        output, send, seen = self._run(
-            [self._raw(sender='stripe@example.com', to='jones86xi@gmail.com')],
-            lead_env='info@homebaseplumbers.co.zw')
+    def test_a_dry_run_neither_replies_nor_touches_the_mailbox(self):
+        lead = self._lead()
+        _, send, seen = self._run([self._raw()], dry_run=True)
 
-        send.assert_not_called()
-        self.assertEqual(seen, [])
-        self.assertFalse(Appointment.objects.exists())
-        self.assertIn('Not addressed to a lead inbox', output)
-
-    def test_cold_mail_to_a_configured_lead_inbox_is_answered(self):
-        _, send, _ = self._run(
-            [self._raw(to='info@homebaseplumbers.co.zw')],
-            lead_env='info@homebaseplumbers.co.zw, sales@homebaseplumbers.co.zw')
-        send.assert_called_once()
-
-    def test_a_personal_mailbox_never_opens_cold_threads(self):
-        """When the polled mailbox IS the operator's own inbox there is nothing
-        that marks a message as a lead, so cold intake stays off."""
-        output, send, seen = self._run(
-            [self._raw(to='jones86xi@gmail.com')], polled='jones86xi@gmail.com')
-
-        send.assert_not_called()
-        self.assertEqual(seen, [])
-        self.assertFalse(Appointment.objects.exists())
-        self.assertIn('not a lead inbox', output)
-
-    def test_a_thread_reply_is_still_answered_from_a_personal_mailbox(self):
-        """The gate is on cold intake only — a customer replying to a thread we
-        started is a real customer wherever the mailbox lives."""
-        lead = make_lead(7101, customer_name='Known Lead',
-                         customer_email='jane@example.com')
-        self._run([self._raw(subject=f'Re: [APT-{lead.pk}] Your visit',
-                             to='jones86xi@gmail.com')],
-                  polled='jones86xi@gmail.com')
         lead.refresh_from_db()
-        self.assertEqual(len(lead.conversation_history), 2)
-
-    def test_a_tenants_forwarded_address_routes_the_lead_to_that_tenant(self):
-        """Each tenant forwards its own business address into this mailbox; the
-        address the mail was delivered to is the routing key."""
-        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
-        _, send, _ = self._run(
-            [self._raw(to='quotes@acmeplumbing.co.zw')],
-            lead_env='info@homebaseplumbers.co.zw=homebase,'
-                     'quotes@acmeplumbing.co.zw=acme')
-
-        apt = Appointment.objects.get(customer_email='jane@example.com')
-        self.assertEqual(apt.tenant_id, acme.pk)
-        send.assert_called_once()
-
-    def test_a_bare_address_still_opens_on_the_default_tenant(self):
-        self._run([self._raw(to='info@homebaseplumbers.co.zw')],
-                  lead_env='info@homebaseplumbers.co.zw')
-        apt = Appointment.objects.get(customer_email='jane@example.com')
-        self.assertEqual(apt.tenant_id, get_default_tenant_id())
-
-    def test_an_unknown_tenant_slug_is_never_downgraded_to_the_default(self):
-        """Answering on the default tenant would send another company's
-        customer Homebase's prices, name and sender."""
-        output, send, seen = self._run(
-            [self._raw(to='quotes@acmeplumbing.co.zw')],
-            lead_env='quotes@acmeplumbing.co.zw=typo-slug')
-
         send.assert_not_called()
-        self.assertFalse(Appointment.objects.exists())
-        self.assertEqual(seen, [])       # retried once the env var is fixed
-        self.assertIn('TENANT ROUTE MISS', output)
-
-    def test_the_same_customer_writing_to_two_tenants_gets_two_leads(self):
-        """Lead identity is per tenant — tenant B's customer must never be
-        glued onto tenant A's lead."""
-        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
-        env = ('info@homebaseplumbers.co.zw,'
-               'quotes@acmeplumbing.co.zw=acme')
-
-        self._run([self._raw(to='info@homebaseplumbers.co.zw')], lead_env=env)
-        self._run([self._raw(to='quotes@acmeplumbing.co.zw')], lead_env=env)
-
-        leads = Appointment.objects.filter(customer_email='jane@example.com')
-        self.assertEqual(leads.count(), 2)
-        self.assertEqual(
-            sorted(lead.tenant_id or 0 for lead in leads),
-            sorted([get_default_tenant_id() or 0, acme.pk]))
-
-    def test_a_tenant_address_outranks_a_generic_one_on_the_same_mail(self):
-        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
-        self._run(
-            [self._raw(to='info@homebaseplumbers.co.zw',
-                       extra_headers=('Cc: quotes@acmeplumbing.co.zw',))],
-            lead_env='info@homebaseplumbers.co.zw,quotes@acmeplumbing.co.zw=acme')
-
-        apt = Appointment.objects.get(customer_email='jane@example.com')
-        self.assertEqual(apt.tenant_id, acme.pk)
-
-    def test_dry_run_opens_no_thread(self):
-        _, send, _ = self._run([self._raw()], dry_run=True)
-        send.assert_not_called()
-        self.assertFalse(Appointment.objects.exists())
+        self.assertEqual(seen, [])
+        self.assertEqual(lead.conversation_history or [], [])
 
     def test_email_only_leads_are_never_whatsapped(self):
-        """They have no phone number, so a proactive WhatsApp send would 400."""
+        """Legacy `email_` rows have no phone number, so a proactive WhatsApp
+        send would 400."""
         from bot.management.commands.send_followups import Command as Followups
         from bot.management.commands.send_reminders import _send_wa
 
-        self._run([self._raw()])
-        apt = Appointment.objects.get(customer_email='jane@example.com')
-        apt.is_lead_active = True
-        apt.status = 'pending'
-        apt.save(update_fields=['is_lead_active', 'status'])
+        apt = Appointment.objects.create(
+            phone_number='email_e62068d37db3',
+            customer_email='jane@example.com',
+            status='pending', is_lead_active=True,
+        )
 
         eligible = Followups()._get_eligible_leads(timezone.now(), force=False)
         self.assertNotIn(apt.pk, [lead.pk for lead in eligible])
@@ -3522,10 +3598,6 @@ class InboundEmailIntakeTests(TestCase):
             self.assertFalse(_send_wa(apt.phone_number, 'hello'))
             client.assert_not_called()
 
-
-# ======================================================================
-# Job scheduling — the unfiltered-update regression
-# ======================================================================
 
 class JobSchedulingTests(StaffClientTestCase):
     """schedule_job used to write with `Appointment.objects.update(...)` — a

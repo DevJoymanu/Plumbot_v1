@@ -4,6 +4,7 @@
 {% block title %}{{ template.name }} - Template Details{% endblock %}
 
 {% block extra_css %}
+{% include "bot/includes/quote_responsive_css.html" %}
 <style>
     :root {
         --primary: #006591;
@@ -17,32 +18,33 @@
         --dark: #0b1c30;
     }
 
-    body {
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        min-height: 100vh;
-    }
 
+    /* Glass header on the app surface (this page used to sit on a dark
+       gradient, where white type worked; it no longer does). */
     .page-header {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 12px;
-        padding: 15px;
-        margin-bottom: 15px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: white;
+        background: var(--glass-bg);
+        backdrop-filter: blur(var(--glass-blur));
+        -webkit-backdrop-filter: blur(var(--glass-blur));
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-glow);
+        padding: 20px 22px;
+        margin-bottom: 24px;
+        color: var(--color-text);
     }
 
     .page-header h2 {
-        color: white;
-        font-size: 1.3rem;
-        margin-bottom: 5px;
+        color: var(--color-text);
+        font-size: clamp(1.2rem, 5vw, 1.3rem);
+        font-weight: 400;
+        margin-bottom: 4px;
         word-break: break-word;
     }
 
     .page-header p {
-        color: rgba(255, 255, 255, 0.9);
+        color: var(--color-text-2);
         margin-bottom: 0;
-        font-size: 0.9rem;
+        font-size: 13px;
     }
 
     .card {
@@ -444,7 +446,8 @@
 
         .btn {
             font-size: 0.85rem;
-            padding: 8px 16px;
+            padding: 10px 16px;
+            min-height: 44px;
         }
 
         .btn-group {
@@ -476,22 +479,22 @@
             <div class="page-header">
                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
                     <div class="flex-grow-1">
-                        <h2><i class="bi bi-file-earmark-text"></i> {{ template.name }}</h2>
+                        <h2><i class="fas fa-file-alt"></i> {{ template.name }}</h2>
                         <p>Template Details</p>
                     </div>
                 </div>
                 <div class="action-buttons-mobile mt-3">
                     <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-left"></i> Back
+                        <i class="fas fa-arrow-left"></i> Back
                     </a>
                     <a href="{% url 'edit_quotation_template' template.pk %}" class="btn btn-primary">
-                        <i class="bi bi-pencil"></i> Edit Template
+                        <i class="fas fa-pen"></i> Edit Template
                     </a>
                     <a href="{% url 'use_template' template.pk %}" class="btn btn-success">
-                        <i class="bi bi-plus-circle"></i> Use Template
+                        <i class="fas fa-plus-circle"></i> Use Template
                     </a>
                     <a href="{% url 'duplicate_template' template.pk %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-files"></i> Duplicate
+                        <i class="fas fa-copy"></i> Duplicate
                     </a>
                 </div>
             </div>
@@ -501,7 +504,7 @@
                 <div class="col-6 col-md-6">
                     <div class="stat-card primary">
                         <div class="icon">
-                            <i class="bi bi-star-fill"></i>
+                            <i class="fas fa-star"></i>
                         </div>
                         <h3>{{ template.use_count }}</h3>
                         <p>Times Used</p>
@@ -511,7 +514,7 @@
                 <div class="col-6 col-md-6">
                     <div class="stat-card success">
                         <div class="icon">
-                            <i class="bi bi-currency-dollar"></i>
+                            <i class="fas fa-dollar-sign"></i>
                         </div>
                         <h3>US${{ total_cost|floatformat:2 }}</h3>
                         <p>Estimated Total</p>
@@ -522,7 +525,7 @@
             <!-- Template Info -->
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Template Information</h5>
                 </div>
                 <div class="card-body">
                     <div class="info-row">
@@ -576,7 +579,7 @@
             <!-- Cost Breakdown -->
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-calculator"></i> Cost Breakdown</h5>
+                    <h5 class="mb-0"><i class="fas fa-calculator"></i> Cost Breakdown</h5>
                 </div>
                 <div class="card-body">
                     <div class="cost-breakdown-card labor">
@@ -586,7 +589,7 @@
                                 <h4>US${{ template.default_labor_cost|floatformat:2 }}</h4>
                             </div>
                             <div class="icon">
-                                <i class="bi bi-person-workspace"></i>
+                                <i class="fas fa-user-cog"></i>
                             </div>
                         </div>
                     </div>
@@ -598,7 +601,7 @@
                                 <h4>US${{ template.default_transport_cost|floatformat:2 }}</h4>
                             </div>
                             <div class="icon">
-                                <i class="bi bi-truck"></i>
+                                <i class="fas fa-truck"></i>
                             </div>
                         </div>
                     </div>
@@ -610,7 +613,7 @@
                                 <h4>US${{ template.get_total_estimated_cost|floatformat:2 }}</h4>
                             </div>
                             <div class="icon">
-                                <i class="bi bi-box-seam"></i>
+                                <i class="fas fa-box-open"></i>
                             </div>
                         </div>
                     </div>
@@ -621,7 +624,7 @@
             <div class="card">
                 <div class="card-header">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-list-ul"></i> Template Items</h5>
+                        <h5 class="mb-0"><i class="fas fa-list-ul"></i> Template Items</h5>
                         <span class="badge bg-secondary">{{ items.count }} items</span>
                     </div>
                 </div>
@@ -671,13 +674,13 @@
 
                             {% if item.notes %}
                             <div class="item-notes">
-                                <i class="bi bi-info-circle"></i> {{ item.notes }}
+                                <i class="fas fa-info-circle"></i> {{ item.notes }}
                             </div>
                             {% endif %}
                         </div>
                         {% empty %}
                         <div class="text-center py-5 text-muted">
-                            <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                            <i class="fas fa-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
                             <p class="mt-3">No items in this template</p>
                         </div>
                         {% endfor %}
@@ -750,7 +753,7 @@
                                     {% empty %}
                                     <tr>
                                         <td colspan="7" class="text-center py-5 text-muted">
-                                            <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                                            <i class="fas fa-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
                                             <p class="mt-3">No items in this template</p>
                                         </td>
                                     </tr>

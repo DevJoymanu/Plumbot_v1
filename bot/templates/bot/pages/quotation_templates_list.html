@@ -3,25 +3,9 @@
 
 {% block title %}Quotation Templates{% endblock %}
 
-{% block content %}
+{% block extra_css %}
+{% include "bot/includes/quote_responsive_css.html" %}
 <style>
-    body { background: #F0F2F5; }
-
-    .topbar {
-        background: #006591;
-        padding: 12px 16px;
-        color: #fff;
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .topbar h1 { font-size: 17px; font-weight: 700; margin: 0; color: #fff; display: flex; align-items: center; gap: 8px; }
-
-    .page-content { padding: 16px; }
-
     .card {
         background: #fff;
         border: 1px solid var(--color-outline-variant);
@@ -236,16 +220,34 @@
         align-items: center;
         margin-bottom: 14px;
     }
+
+    /* Every control in the card footer is a real touch target */
+    .template-footer a,
+    .template-footer button { min-height: 44px; }
+
+    @media (max-width: 359px) {
+        /* Three stat tiles will not read at 320px — two up, then one */
+        .stats-row { grid-template-columns: 1fr 1fr; }
+        .stats-row .stat-card:last-child { grid-column: 1 / -1; }
+        .template-footer { flex-direction: column; }
+    }
 </style>
+{% endblock %}
 
-<div class="topbar">
-    <h1><i class="bi bi-file-earmark-text"></i> Quotation Templates</h1>
-    <a href="{% url 'create_quotation_template' %}" class="btn-success btn-sm">
-        <i class="bi bi-plus-lg"></i> New Template
-    </a>
-</div>
+{% block content %}
+<div class="pbq-page">
 
-<div class="page-content">
+    <div class="pbq-head">
+        <div>
+            <h1 class="pbq-head__title">Quotation Templates</h1>
+            <p class="pbq-head__sub">Reusable item lists you can drop into any quote.</p>
+        </div>
+        <div class="pbq-head__actions">
+            <a href="{% url 'create_quotation_template' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> New Template
+            </a>
+        </div>
+    </div>
 
     <!-- Stats -->
     <div class="stats-row">
@@ -264,7 +266,7 @@
     </div>
 
     <!-- Filters -->
-    <div class="filters-card">
+    <div class="filters-card pbq-no-print">
         <p class="card-title" style="margin-bottom:12px;">Filters</p>
         <form method="get" id="filterForm">
             <div class="form-group">
@@ -290,7 +292,7 @@
             </div>
             <div style="display:flex;gap:8px;">
                 <button type="submit" class="filter-submit" style="flex:1;">
-                    <i class="bi bi-funnel"></i> Apply Filters
+                    <i class="fas fa-filter"></i> Apply Filters
                 </button>
                 <button type="button" onclick="resetFilters()" class="btn-secondary btn-sm" style="white-space:nowrap;">Reset</button>
             </div>
@@ -317,19 +319,19 @@
                     {% else %}
                     <span class="pill pill-inactive">Inactive</span>
                     {% endif %}
-                    <span class="meta-item"><i class="bi bi-box"></i> {{ template.items.count }} items</span>
-                    <span class="meta-item"><i class="bi bi-currency-dollar"></i> US${{ template.get_total_estimated_cost|floatformat:2 }}</span>
-                    <span class="meta-item"><i class="bi bi-repeat"></i> Used {{ template.use_count }}x</span>
+                    <span class="meta-item"><i class="fas fa-box"></i> {{ template.items.count }} items</span>
+                    <span class="meta-item"><i class="fas fa-dollar-sign"></i> US${{ template.get_total_estimated_cost|floatformat:2 }}</span>
+                    <span class="meta-item"><i class="fas fa-redo"></i> Used {{ template.use_count }}x</span>
                 </div>
                 {% if template.description %}
                 <p style="font-size:12px;color:var(--color-muted);margin:0;">{{ template.description|truncatewords:15 }}</p>
                 {% endif %}
                 <div class="template-footer">
                     <a href="{% url 'edit_quotation_template' template.pk %}" class="btn-primary btn-sm">
-                        <i class="bi bi-pencil-square"></i> Edit
+                        <i class="fas fa-edit"></i> Edit
                     </a>
                     <button type="button" onclick="quickUseTemplate({{ template.pk }})" class="btn-success btn-sm">
-                        <i class="bi bi-plus-circle"></i> Use
+                        <i class="fas fa-plus-circle"></i> Use
                     </button>
                 </div>
             </div>
@@ -338,13 +340,13 @@
 
         <!-- Pagination -->
         {% if is_paginated %}
-        <div class="pagination">
+        <div class="pagination pbq-no-print">
             {% if page_obj.has_previous %}
             <a class="page-btn page-btn-nav" href="?page=1{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
-                <i class="bi bi-chevron-double-left"></i> First
+                <i class="fas fa-angle-double-left"></i> First
             </a>
             <a class="page-btn page-btn-nav" href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
-                <i class="bi bi-chevron-left"></i> Prev
+                <i class="fas fa-chevron-left"></i> Prev
             </a>
             {% endif %}
 
@@ -358,22 +360,21 @@
 
             {% if page_obj.has_next %}
             <a class="page-btn page-btn-nav" href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
-                Next <i class="bi bi-chevron-right"></i>
+                Next <i class="fas fa-chevron-right"></i>
             </a>
             <a class="page-btn page-btn-nav" href="?page={{ page_obj.paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
-                Last <i class="bi bi-chevron-double-right"></i>
+                Last <i class="fas fa-angle-double-right"></i>
             </a>
             {% endif %}
         </div>
         {% endif %}
 
         {% else %}
-        <div class="empty-state">
-            <i class="bi bi-inbox"></i>
-            <h3>No templates found</h3>
-            <p>Get started by creating your first quotation template to streamline your workflow</p>
-            <a href="{% url 'create_quotation_template' %}" class="btn-primary">
-                <i class="bi bi-plus-lg"></i> Create Your First Template
+        <div class="pbq-empty">
+            <i class="fas fa-inbox"></i>
+            <p style="margin-bottom: 18px;">No templates yet. Create one to stop rebuilding the same quote.</p>
+            <a href="{% url 'create_quotation_template' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Create Your First Template
             </a>
         </div>
         {% endif %}

@@ -1,0 +1,817 @@
+<style>
+/* ============================================================
+   Quote workflow — shared responsive layer ("Aetheris Clinical")
+   Used by every quotation screen: create, standalone, edit, view,
+   list, and the template builder pages.
+
+   Namespace: .pbq-*  ·  Mobile behaviour lives behind 767px, which
+   is the same breakpoint the shell uses to swap the sidebar for the
+   bottom nav (plumbot_variables_css.html).
+
+   Tokens only — every colour, radius and shadow below resolves to a
+   variable from the design system. Nothing invented here.
+   ============================================================ */
+
+/* ── Overflow guard ─────────────────────────────────────────────
+   Nothing inside a quote screen may push the page sideways. Grid
+   and flex children default to min-width:auto, which is what lets a
+   long item description or a wide table blow the viewport open. */
+.pbq-page,
+.pbq-page * { min-width: 0; }
+
+.pbq-page {
+    max-width: 100%;
+    padding: 24px 32px 32px;
+}
+
+.pbq-page img { max-width: 100%; height: auto; }
+
+.pbq-page h1, .pbq-page h2, .pbq-page h3,
+.pbq-page p,  .pbq-page td, .pbq-page th,
+.pbq-page a,  .pbq-page li { overflow-wrap: break-word; }
+
+/* ── Page header ── */
+.pbq-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+
+.pbq-head__title {
+    margin: 0 0 4px;
+    font-size: clamp(1.25rem, 4.5vw, 1.75rem);
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    color: var(--color-text);
+}
+
+.pbq-head__sub {
+    margin: 0;
+    color: var(--color-text-2);
+    font-size: 13px;
+}
+
+/* ── Cards (glass surface + ambient glow) ── */
+.pbq-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-glow);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.pbq-section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 20px;
+    font-family: var(--font-label);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-primary);
+}
+
+.pbq-section-title i { font-size: 13px; }
+
+/* ── Forms ─────────────────────────────────────────────────────
+   auto-fit collapses to a single column well before 320px without
+   needing its own media query. */
+.pbq-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 16px 20px;
+}
+
+.pbq-field { margin-bottom: 16px; }
+.pbq-grid .pbq-field { margin-bottom: 0; }
+.pbq-field--wide { grid-column: 1 / -1; }
+
+/* ── Items: one card per line item ── */
+.pbq-items {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.pbq-item {
+    position: relative;
+    padding: 14px 14px 12px;
+    background: var(--color-surface-lowest);
+    border: 1px solid rgba(0, 101, 145, 0.08);
+    border-radius: var(--radius-md);
+}
+
+.pbq-item__index {
+    font-family: var(--font-label);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
+}
+
+.pbq-item__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.pbq-item__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.pbq-item__total {
+    margin-top: 10px;
+    padding: 9px 14px;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-low);
+    color: var(--color-primary);
+    font-weight: 600;
+    font-size: 13px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Remove control — a 44px touch target, never a 24px icon */
+.pbq-item__remove {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(186, 26, 26, 0.18);
+    border-radius: var(--radius-pill);
+    background: var(--color-error-container);
+    color: var(--color-on-error-container);
+    cursor: pointer;
+    padding: 0;
+    transition: transform var(--transition), opacity var(--transition);
+}
+
+.pbq-item__remove:active { transform: scale(0.92); }
+
+.pbq-add {
+    width: 100%;
+    margin-top: 14px;
+    min-height: 48px;
+}
+
+/* ── Totals ────────────────────────────────────────────────────
+   The label may wrap; the figure never does, and never overflows. */
+.pbq-totals {
+    padding: 16px 18px;
+    border-radius: var(--radius-md);
+    background: var(--color-surface-low);
+}
+
+.pbq-total-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid rgba(0, 101, 145, 0.07);
+    font-size: 14px;
+}
+
+.pbq-total-row:last-child { border-bottom: none; }
+
+.pbq-total-row > span:first-child {
+    color: var(--color-text-2);
+    font-family: var(--font-label);
+    font-size: 11.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.pbq-total-row > span:last-child,
+.pbq-total-row .pbq-figure {
+    flex: 0 0 auto;
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.pbq-total-row--grand {
+    margin-top: 8px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(0, 101, 145, 0.14);
+    border-bottom: none;
+}
+
+.pbq-total-row--grand > span:first-child { color: var(--color-text); }
+
+.pbq-total-row--grand > span:last-child {
+    font-size: clamp(1.05rem, 5vw, 1.3rem);
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+/* Editable figures inside the totals block stay inside the card */
+.pbq-page .pbq-total-input {
+    flex: 0 1 130px;
+    width: 130px;
+    max-width: 45%;
+    min-height: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Read-only table → stacked cards on mobile ──────────────────
+   Every <td> carries a data-label; below 768px the row becomes a
+   card and each cell prints its own label. No horizontal scroll. */
+.pbq-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.pbq-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.pbq-table th,
+.pbq-table td {
+    padding: 12px 14px;
+    text-align: left;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(0, 101, 145, 0.07);
+}
+
+.pbq-table th {
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+    background: rgba(0, 101, 145, 0.04);
+    white-space: nowrap;
+}
+
+.pbq-table td.pbq-num,
+.pbq-table th.pbq-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.pbq-table tfoot td {
+    font-weight: 600;
+    background: rgba(0, 101, 145, 0.03);
+}
+
+/* ── Key/value detail list ─────────────────────────────────────
+   For "Customer details" style panels. A list, not a table, so it
+   reads the same at 320px and 1440px without a layout swap. */
+.pbq-kv {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pbq-kv__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-lowest);
+}
+
+.pbq-kv__row:nth-child(odd) { background: var(--color-surface-low); }
+
+.pbq-kv__key {
+    flex: 0 0 auto;
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+}
+
+.pbq-kv__val {
+    text-align: right;
+    font-size: 13px;
+    color: var(--color-text);
+    overflow-wrap: break-word;
+}
+
+/* ── Empty state ── */
+.pbq-empty {
+    text-align: center;
+    padding: 32px 16px;
+    border: 2px dashed rgba(0, 101, 145, 0.10);
+    border-radius: var(--radius-md);
+    color: var(--color-muted);
+}
+
+.pbq-empty i {
+    display: block;
+    font-size: 2rem;
+    margin-bottom: 10px;
+    opacity: 0.4;
+}
+
+.pbq-empty p { margin: 0; font-size: 13px; }
+
+/* ── Action groups ─────────────────────────────────────────────
+   .pbq-actions   — inline wrap on desktop, full-width stack on phone.
+   .pbq-actionbar — the 4-up bar pinned above the mobile bottom nav. */
+.pbq-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.pbq-actions form { display: contents; }
+
+.pbq-page .pbq-actions .btn,
+.pbq-page .pbq-actions button,
+.pbq-page .pbq-actions a.btn { min-height: 44px; }
+
+.pbq-actionbar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.pbq-page .pbq-actionbar .btn { min-height: 46px; }
+
+/* ── Status pills ── */
+.pbq-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 13px;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-label);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.pbq-status--draft    { background: var(--color-amber-bg);        color: #a16207; }
+.pbq-status--sent     { background: var(--color-primary-fixed);   color: var(--color-on-primary-fixed-variant); }
+.pbq-status--accepted { background: var(--color-green-soft);      color: #15803d; }
+.pbq-status--rejected { background: var(--color-error-container); color: var(--color-on-error-container); }
+
+/* ── Modal / sheet ─────────────────────────────────────────────
+   Desktop: centred dialog. Phone: a full-height sheet that can
+   never be taller than the viewport or wider than the screen. */
+.pbq-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    display: none;
+    background: rgba(11, 28, 48, 0.38);
+}
+
+.pbq-modal.is-open { display: block; }
+body.pbq-modal-lock { overflow: hidden; }
+
+.pbq-modal__panel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(720px, calc(100vw - 48px));
+    max-height: min(80vh, 720px);
+    display: flex;
+    flex-direction: column;
+    background: var(--color-surface-lowest);
+    border: var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-glow-lg);
+}
+
+.pbq-modal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid rgba(0, 101, 145, 0.07);
+}
+
+.pbq-modal__head h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 500;
+    font-family: var(--font-label);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-primary);
+}
+
+.pbq-page .pbq-modal__close {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 20px;
+    background: var(--color-surface-low);
+    color: var(--color-text-2);
+    border: none;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+}
+
+.pbq-modal__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 20px 20px;
+}
+
+.pbq-modal__filters {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+/* Template picker cards */
+.pbq-pick {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 14px;
+    margin-bottom: 10px;
+    background: var(--color-surface-lowest);
+    border: 1px solid rgba(0, 101, 145, 0.10);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.pbq-pick:hover { border-color: rgba(0, 101, 145, 0.35); box-shadow: var(--shadow-xs); }
+.pbq-pick:active { transform: scale(0.99); }
+
+.pbq-pick__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.pbq-pick__head h3 { margin: 0 0 3px; font-size: 14px; font-weight: 600; color: var(--color-text); }
+.pbq-pick__head p  { margin: 0; font-size: 12px; color: var(--color-muted); }
+
+.pbq-pick__stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 101, 145, 0.07);
+}
+
+.pbq-pick__stat-label {
+    font-family: var(--font-label);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+}
+
+.pbq-pick__stat-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+/* ── Inline alerts ── */
+.pbq-alert {
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid;
+    font-size: 13px;
+}
+
+.pbq-alert-success { background: var(--color-green-soft);      color: #15803d; border-color: rgba(34, 197, 94, 0.25); }
+.pbq-alert-error   { background: var(--color-error-container); color: var(--color-on-error-container); border-color: rgba(186, 26, 26, 0.22); }
+.pbq-alert-info    { background: var(--color-primary-fixed);   color: var(--color-on-primary-fixed-variant); border-color: rgba(0, 101, 145, 0.18); }
+
+/* ── Spinner ── */
+.pbq-spin {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: pbq-spin 0.9s linear infinite;
+}
+
+@keyframes pbq-spin { to { transform: rotate(360deg); } }
+
+.pbq-page .btn.loading { opacity: 0.7; pointer-events: none; }
+
+/* ============================================================
+   MOBILE  ≤ 767px
+   ============================================================ */
+@media (max-width: 767px) {
+
+    .pbq-page {
+        padding: 16px 14px 24px;
+    }
+
+    .pbq-card {
+        padding: 16px 14px;
+        margin-bottom: 16px;
+        border-radius: var(--radius-md);
+    }
+
+    .pbq-head { margin-bottom: 16px; gap: 10px; }
+    .pbq-head__actions { width: 100%; }
+    .pbq-head__actions .btn { width: 100%; }
+
+    /* 16px kills the iOS focus zoom; the shell only patches inputs
+       that exist at load, and item rows are rendered later. */
+    .pbq-page input:not([type="checkbox"]):not([type="radio"]),
+    .pbq-page select,
+    .pbq-page textarea { font-size: 16px; }
+
+    .pbq-grid { grid-template-columns: 1fr; gap: 14px; }
+
+    /* Read-only tables become stacked cards */
+    .pbq-table--stack,
+    .pbq-table--stack thead,
+    .pbq-table--stack tbody,
+    .pbq-table--stack tfoot,
+    .pbq-table--stack tr,
+    .pbq-table--stack th,
+    .pbq-table--stack td { display: block; width: auto; }
+
+    .pbq-table--stack thead { display: none; }
+
+    .pbq-table--stack tbody tr,
+    .pbq-table--stack tfoot tr {
+        margin-bottom: 10px;
+        padding: 12px 14px;
+        background: var(--color-surface-lowest);
+        border: 1px solid rgba(0, 101, 145, 0.08);
+        border-radius: var(--radius-md);
+    }
+
+    .pbq-table--stack tbody tr:last-child { margin-bottom: 0; }
+
+    .pbq-table--stack td {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 5px 0;
+        border: none;
+        text-align: right;
+    }
+
+    .pbq-table--stack td::before {
+        content: attr(data-label);
+        flex: 0 0 auto;
+        text-align: left;
+        font-family: var(--font-label);
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-muted);
+    }
+
+    /* A cell with no label (the description) spans the card width */
+    .pbq-table--stack td[data-label=""],
+    .pbq-table--stack td.pbq-cell-full {
+        display: block;
+        text-align: left;
+        font-weight: 600;
+        padding-bottom: 8px;
+    }
+
+    .pbq-table--stack td[data-label=""]::before,
+    .pbq-table--stack td.pbq-cell-full::before { content: none; }
+
+    .pbq-table--stack td.pbq-cell-empty { display: none; }
+
+    .pbq-table--stack tfoot td {
+        background: none;
+        padding: 5px 0;
+    }
+
+    /* Editable tables become stacked cards too, with real labels.
+       !important because this layer is applied over legacy page CSS that
+       pins per-column widths with nth-child selectors — those outrank a
+       plain class rule and would keep the row laid out as a table. */
+    .pbq-table--edit,
+    .pbq-table--edit thead,
+    .pbq-table--edit tbody,
+    .pbq-table--edit tfoot,
+    .pbq-table--edit tr,
+    .pbq-table--edit th,
+    .pbq-table--edit td {
+        display: block !important;
+        width: auto !important;
+    }
+
+    .pbq-table--edit thead { display: none !important; }
+
+    .pbq-table--edit { min-width: 0 !important; }
+
+    .pbq-table--edit tbody tr {
+        margin-bottom: 12px;
+        padding: 14px;
+        background: var(--color-surface-lowest);
+        border: 1px solid rgba(0, 101, 145, 0.08);
+        border-radius: var(--radius-md);
+    }
+
+    .pbq-table--edit td {
+        padding: 0 0 10px;
+        border: none;
+    }
+
+    .pbq-table--edit td:last-child { padding-bottom: 0; }
+
+    .pbq-table--edit td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 6px;
+        font-family: var(--font-label);
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-muted);
+    }
+
+    .pbq-table--edit td[data-label=""]::before { content: none; }
+
+    .pbq-table--edit td input,
+    .pbq-table--edit td select { width: 100% !important; min-width: 0 !important; }
+
+    /* Line-total and remove sit side by side at the foot of the card */
+    .pbq-table--edit td.pbq-cell-inline {
+        display: inline-flex !important;
+        align-items: center;
+        gap: 8px;
+        width: auto;
+        margin-right: 14px;
+        padding-bottom: 0;
+        vertical-align: middle;
+    }
+
+    .pbq-table--edit td.pbq-cell-inline::before { margin-bottom: 0; }
+
+    .pbq-table--edit tfoot tr {
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 2px;
+        border-bottom: 1px solid rgba(0, 101, 145, 0.07);
+    }
+
+    .pbq-table--edit tfoot td { padding: 0; text-align: left !important; }
+    .pbq-table--edit tfoot td::before { content: none; }
+    .pbq-table--edit tfoot td.pbq-cell-empty { display: none; }
+
+    /* Actions stack full width — one tap target per row */
+    .pbq-actions { flex-direction: column; gap: 8px; }
+    .pbq-actions form { display: block; }
+
+    .pbq-page .pbq-actions .btn,
+    .pbq-page .pbq-actions button,
+    .pbq-page .pbq-actions a.btn {
+        width: 100%;
+        min-height: 48px;
+        justify-content: center;
+    }
+
+    /* The 4-up bar pins above the bottom nav; 2x2 so labels fit at 320px.
+       Sticky rather than fixed: it stays in flow (so it can never cover the
+       end of the form) and it does not care whether an ancestor has a
+       transform, which is what silently breaks `position: fixed` here. */
+    .pbq-actionbar {
+        position: sticky;
+        bottom: var(--bottom-nav-h);
+        z-index: 90;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin: 16px -14px 0;
+        padding: 10px 12px;
+        background: var(--glass-bg);
+        backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+        border-top: var(--glass-border);
+        box-shadow: 0 -12px 32px -12px rgba(14, 165, 233, 0.14);
+    }
+
+    .pbq-page .pbq-actionbar .btn {
+        width: 100%;
+        min-height: 46px;
+        padding: 10px 8px;
+        font-size: 12.5px;
+    }
+
+    /* Clearance under the pinned bar so the last card is never trapped
+       behind it at the end of the scroll. */
+    .pbq-page--barred { padding-bottom: 24px; }
+
+    .pbq-totals { padding: 14px; }
+
+    .pbq-modal__panel {
+        top: auto;
+        bottom: 0;
+        left: 0;
+        transform: none;
+        width: 100%;
+        max-width: 100%;
+        max-height: 92vh;
+        max-height: 92dvh;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+
+    .pbq-modal__body { padding: 14px 14px calc(20px + env(safe-area-inset-bottom, 0px)); }
+
+    .pbq-pick__stats { grid-template-columns: 1fr; gap: 6px; }
+
+    .pbq-pick__stats > div {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+    }
+}
+
+/* ── Narrowest phones (≈320px) ───────────────────────────────── */
+@media (max-width: 359px) {
+    .pbq-page { padding: 14px 10px 24px; }
+    .pbq-card { padding: 14px 12px; }
+    .pbq-item__row { grid-template-columns: 1fr; }
+    .pbq-actionbar { margin-left: -10px; margin-right: -10px; padding: 8px; gap: 6px; }
+    .pbq-page .pbq-actionbar .btn { font-size: 11.5px; padding: 10px 4px; gap: 5px; }
+    .pbq-page .pbq-total-input { flex-basis: 108px; width: 108px; }
+}
+
+/* ── Print: the quote document only ── */
+@media print {
+    .pb-sidenav,
+    .pb-bottomnav,
+    .pb-sheet,
+    .pbq-actions,
+    .pbq-actionbar,
+    .pbq-no-print { display: none !important; }
+
+    .pb-shell,
+    .pb-main,
+    .pb-content { display: block; height: auto; overflow: visible; }
+
+    .pbq-page { padding: 0; }
+
+    .pbq-card {
+        background: #fff;
+        border: none;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        page-break-inside: avoid;
+    }
+
+    /* A printed quote is a document — keep the real table */
+    .pbq-table--stack,
+    .pbq-table--stack thead,
+    .pbq-table--stack tbody,
+    .pbq-table--stack tfoot,
+    .pbq-table--stack tr { display: revert; }
+
+    .pbq-table--stack th { display: table-cell; }
+    .pbq-table--stack td { display: table-cell; text-align: left; }
+    .pbq-table--stack td::before { content: none; }
+}
+</style>

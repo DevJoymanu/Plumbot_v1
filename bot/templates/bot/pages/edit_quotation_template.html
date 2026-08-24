@@ -4,6 +4,7 @@
 {% block title %}{% if object %}Edit{% else %}Create{% endif %} Quotation Template{% endblock %}
 
 {% block extra_css %}
+{% include "bot/includes/quote_responsive_css.html" %}
 <style>
     :root {
         --primary: #006591;
@@ -17,32 +18,33 @@
         --dark: #0b1c30;
     }
 
-    body {
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        min-height: 100vh;
-        padding-bottom: 20px;
-    }
 
+    /* Glass header on the app surface (this page used to sit on a dark
+       gradient, where white type worked; it no longer does). */
     .page-header {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 12px;
-        padding: 15px;
-        margin-bottom: 15px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: white;
+        background: var(--glass-bg);
+        backdrop-filter: blur(var(--glass-blur));
+        -webkit-backdrop-filter: blur(var(--glass-blur));
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-glow);
+        padding: 20px 22px;
+        margin-bottom: 24px;
+        color: var(--color-text);
     }
 
     .page-header h2 {
-        color: white;
-        font-size: 1.5rem;
-        margin-bottom: 5px;
+        color: var(--color-text);
+        font-size: clamp(1.2rem, 5vw, 1.5rem);
+        font-weight: 400;
+        margin-bottom: 4px;
+        word-break: break-word;
     }
 
     .page-header p {
-        color: rgba(255, 255, 255, 0.9);
+        color: var(--color-text-2);
         margin-bottom: 0;
-        font-size: 0.9rem;
+        font-size: 13px;
     }
 
     .card {
@@ -433,30 +435,19 @@
         }
 
         .table-responsive {
-            font-size: 0.8rem;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            /* Smooth scrolling on iOS */
+            border: none;
+            overflow-x: visible;
         }
 
-        /* Reset table layout for mobile */
+        /* Rows are cards below 768px — no minimum width, no sideways scroll */
         .table {
             table-layout: auto;
-            min-width: 800px;
-            /* Ensure table doesn't get too narrow */
+            min-width: 0;
         }
 
         .table th,
         .table td {
-            white-space: nowrap;
-        }
-
-        .table th:nth-child(2),
-        /* Description */
-        .table td:nth-child(2) {
-            min-width: 150px;
+            white-space: normal;
         }
 
         .btn {
@@ -497,22 +488,12 @@
             flex-direction: column;
         }
 
-        /* Hide less important columns on mobile */
-        .table th:nth-child(5),
-        /* Category */
-        .table td:nth-child(5),
-        .table th:nth-child(8),
-        /* Sort */
-        .table td:nth-child(8) {
-            display: none;
-        }
-
         /* Adjust delete button for mobile */
         .delete-btn {
-            min-height: 40px;
-            min-width: 40px;
+            min-height: 44px;
+            width: 100%;
             padding: 10px;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
         }
 
         /* Make delete button more prominent on mobile */
@@ -531,39 +512,15 @@
     /* Extra small devices */
     @media (max-width: 576px) {
         .page-header {
-            padding: 12px;
+            padding: 16px 14px;
         }
 
         .card-header h5 {
             font-size: 0.95rem;
         }
 
-        /* Hide more columns on very small screens */
-        .table th:nth-child(7),
-        /* Optional */
-        .table td:nth-child(7) {
-            display: none;
-        }
-
-        .table th,
-        .table td {
-            padding: 6px 4px;
-        }
-
-        /* Text-only delete button on very small screens */
-        .delete-btn span.text {
-            display: none;
-        }
-
-        .delete-btn {
-            min-width: 32px;
-            min-height: 32px;
-            padding: 6px;
-        }
-
         .table {
-            min-width: 700px;
-            /* Slightly smaller min-width for very small screens */
+            min-width: 0;
         }
     }
 
@@ -652,14 +609,14 @@
                 <div class="d-flex justify-content-between align-items-center flex-wrap">
                     <div>
                         <h2>
-                            <i class="bi bi-{% if object %}pencil-square{% else %}plus-circle{% endif %}"></i>
+                            <i class="fas fa-{% if object %}edit{% else %}plus-circle{% endif %}"></i>
                             {% if object %}Edit{% else %}Create{% endif %} Template
                         </h2>
                         <p>{% if object %}Update existing template{% else %}Create a new reusable quotation
                             template{%endif %}</p>
                     </div>
                     <a href="{% url 'quotation_templates_list' %}" class="btn btn-outline-secondary mt-2 mt-md-0">
-                        <i class="bi bi-arrow-left"></i> Back to Templates
+                        <i class="fas fa-arrow-left"></i> Back to Templates
                     </a>
                 </div>
             </div>
@@ -670,7 +627,7 @@
                 <!-- Template Basic Info -->
                 <div class="card">
                     <div class="card-header bg-primary">
-                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Template Information</h5>
+                        <h5 class="mb-0"><i class="fas fa-info-circle"></i> Template Information</h5>
                     </div>
                     <div class="card-body">
                         <div class="row">
@@ -713,19 +670,19 @@
                 <!-- Template Items -->
                 <div class="card">
                     <div class="card-header bg-success d-flex justify-content-between align-items-center flex-wrap">
-                        <h5 class="mb-0 mb-md-2"><i class="bi bi-list-ul"></i> Template Items</h5>
+                        <h5 class="mb-0 mb-md-2"><i class="fas fa-list-ul"></i> Template Items</h5>
                         <button type="button" class="btn btn-sm btn-light" onclick="addItem()">
-                            <i class="bi bi-plus-lg"></i> Add Item
+                            <i class="fas fa-plus"></i> Add Item
                         </button>
                     </div>
                     <div class="card-body">
                         {{ formset.management_form }}
                         <div class="min-items-warning alert alert-warning" id="minItemsWarning">
-                            <i class="bi bi-exclamation-triangle"></i> You need at least one item in your template.
+                            <i class="fas fa-exclamation-triangle"></i> You need at least one item in your template.
                         </div>
 
                         <div class="table-responsive">
-                            <table class="table table-hover" id="itemsTable">
+                            <table class="table table-hover pbq-table--edit" id="itemsTable">
                                 <thead>
                                     <tr>
                                         <th>#</th>
@@ -743,39 +700,39 @@
                                     {% for item_form in formset %}
                                     <tr class="item-row" data-item-id="{{ forloop.counter }}"
                                         id="row-{{ forloop.counter }}">
-                                        <td class="text-center">
+                                        <td class="text-center" data-label="">
                                             <span class="badge bg-secondary item-number">{{ forloop.counter }}</span>
                                         </td>
-                                        <td>
+                                        <td data-label="Description">
                                             {{ item_form.description }}
                                             {{ item_form.id }}
                                         </td>
-                                        <td>
+                                        <td data-label="Qty">
                                             {{ item_form.quantity }}
                                         </td>
-                                        <td>
+                                        <td data-label="Unit Price">
                                             {{ item_form.unit_price }}
                                         </td>
-                                        <td class="d-none d-md-table-cell">
+                                        <td class="d-none d-md-table-cell" data-label="Category">
                                             {{ item_form.category }}
                                         </td>
-                                        <td class="text-center">
+                                        <td class="text-center" data-label="Line Total">
                                             <input type="text" class="form-control form-control-sm line-total" readonly
                                                 value="0.00">
                                         </td>
-                                        <td class="text-center d-none d-sm-table-cell">
+                                        <td class="text-center d-none d-sm-table-cell" data-label="Optional">
                                             <div class="d-flex justify-content-center">
                                                 {{ item_form.is_optional }}
                                             </div>
                                         </td>
-                                        <td class="d-none d-md-table-cell">
+                                        <td class="d-none d-md-table-cell" data-label="Sort">
                                             {{ item_form.sort_order }}
                                         </td>
-                                        <td class="text-center">
+                                        <td class="text-center" data-label="">
                                             {{ item_form.DELETE }}
                                             <button type="button" class="delete-btn" data-row-id="{{ forloop.counter }}"
                                                 title="Delete this item">
-                                                <i class="bi bi-trash"></i>
+                                                <i class="fas fa-trash"></i>
                                                 <span class="text d-none d-md-inline">Delete</span>
                                             </button>
                                         </td>
@@ -784,33 +741,33 @@
                                 </tbody>
                                 <tfoot>
                                     <tr>
-                                        <td colspan="5" class="text-end"><strong>Items Subtotal:</strong></td>
-                                        <td><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
+                                        <td colspan="5" class="text-end" data-label=""><strong>Items Subtotal:</strong></td>
+                                        <td data-label=""><strong><span id="itemsSubtotal">R 0.00</span></strong></td>
+                                        <td colspan="3" class="pbq-cell-empty" data-label=""></td>
                                     </tr>
                                     <tr>
-                                        <td colspan="5" class="text-end"><strong>Labor Cost:</strong></td>
-                                        <td><strong><span id="laborCost">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
+                                        <td colspan="5" class="text-end" data-label=""><strong>Labor Cost:</strong></td>
+                                        <td data-label=""><strong><span id="laborCost">R 0.00</span></strong></td>
+                                        <td colspan="3" class="pbq-cell-empty" data-label=""></td>
                                     </tr>
                                     <tr>
-                                        <td colspan="5" class="text-end"><strong>Transport Cost:</strong></td>
-                                        <td><strong><span id="transportCost">R 0.00</span></strong></td>
-                                        <td colspan="3"></td>
+                                        <td colspan="5" class="text-end" data-label=""><strong>Transport Cost:</strong></td>
+                                        <td data-label=""><strong><span id="transportCost">R 0.00</span></strong></td>
+                                        <td colspan="3" class="pbq-cell-empty" data-label=""></td>
                                     </tr>
                                     <tr>
-                                        <td colspan="5" class="text-end"><strong>Estimated Total:</strong></td>
-                                        <td><strong><span id="grandTotal"
+                                        <td colspan="5" class="text-end" data-label=""><strong>Estimated Total:</strong></td>
+                                        <td data-label=""><strong><span id="grandTotal"
                                                     style="font-size: 1.1em; color: var(--success);">R
                                                     0.00</span></strong></td>
-                                        <td colspan="3"></td>
+                                        <td colspan="3" class="pbq-cell-empty" data-label=""></td>
                                     </tr>
                                 </tfoot>
                             </table>
                         </div>
 
                         <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle"></i> <strong>Tip:</strong> Use the "Optional" checkbox for
+                            <i class="fas fa-info-circle"></i> <strong>Tip:</strong> Use the "Optional" checkbox for
                             items that may not be needed in all quotations. Use "Sort" to control the display order.
                         </div>
                     </div>
@@ -821,15 +778,15 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between flex-wrap gap-2">
                             <button type="button" class="btn btn-outline-secondary" onclick="window.history.back()">
-                                <i class="bi bi-x-lg"></i> Cancel
+                                <i class="fas fa-times"></i> Cancel
                             </button>
                             <div class="d-flex gap-2 flex-wrap w-100 w-md-auto">
                                 <button type="submit" name="save_and_continue"
                                     class="btn btn-outline-primary flex-fill">
-                                    <i class="bi bi-save"></i> Save & Continue
+                                    <i class="fas fa-save"></i> Save & Continue
                                 </button>
                                 <button type="submit" class="btn btn-primary flex-fill">
-                                    <i class="bi bi-check-lg"></i> Save Template
+                                    <i class="fas fa-check"></i> Save Template
                                 </button>
                             </div>
                         </div>

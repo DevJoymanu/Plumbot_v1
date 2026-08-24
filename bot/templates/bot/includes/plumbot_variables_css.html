@@ -276,9 +276,14 @@ a { color: inherit; text-decoration: none; }
     animation: pb-fadein 0.25s ease both;
 }
 
+/* The final frame must land on `none`, not `translateY(0)`. The animation
+   fills forwards, and any transform other than `none` makes .pb-content__inner
+   the containing block for its `position: fixed` descendants — which turns
+   every in-content modal and pinned action bar into an absolutely positioned
+   element that scrolls away with the page. */
 @keyframes pb-fadein {
     from { opacity: 0; transform: translateY(5px); }
-    to   { opacity: 1; transform: translateY(0); }
+    to   { opacity: 1; transform: none; }
 }
 
 /* ── Alerts (tinted rounded strips, no hard left border) ── */
