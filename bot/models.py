@@ -256,6 +256,13 @@ class TenantProfile(models.Model):
     # (notifications@<slug>.homexmedia.com) — see
     # plumber_notifications.tenant_customer_from_email.
     customer_from_email = models.EmailField(blank=True, default='')
+    # Everything that appears on this tenant's own quote document: trading
+    # name, the phone numbers on the letterhead, services blurb, banking
+    # details, signatory, default terms — plus `layout`, which selects the
+    # quote template. A JSON blob rather than a dozen columns, matching the
+    # other per-tenant config fields above. Every key is optional: absent
+    # means the quote omits that block, never borrows another tenant's.
+    letterhead = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
         return f"Profile · {self.tenant.slug}"
@@ -2577,6 +2584,10 @@ class Quotation(models.Model):
     labor_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     materials_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     transport_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # ADDED
+    # Both default to 0, so a quote that does not use them totals exactly as
+    # it did before these fields existed.
+    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    vat_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
@@ -2649,17 +2660,40 @@ class Quotation(models.Model):
         self.labor_cost = labor
         self.materials_cost = materials
         self.transport_cost = transport
-        self.total_amount = items_total + labor + materials + transport
-        
+        gross = items_total + labor + materials + transport
+
+        # Discount comes off the gross, VAT goes on what is left — the order a
+        # tax invoice uses. Both default to 0, so this is an identity for every
+        # quote that predates them.
+        discount = self._safe_decimal(self.discount)
+        vat_percent = self._safe_decimal(self.vat_percent)
+        self.discount = discount
+        self.vat_percent = vat_percent
+
+        net = gross - discount
+        self.total_amount = net + (net * vat_percent / Decimal('100'))
+
         super().save(*args, **kwargs)
 
 
 class QuotationItem(models.Model):
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='items')
     description = models.TextField()
+    # The heading this line sits under on a sectioned quote ("PLUMBING
+    # MATERIALS"). Blank on a flat quote, which is the default layout.
+    section = models.CharField(max_length=120, blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    # How the quantity is written on the paper quote — "19 length", "20 ltrs".
+    # `quantity` keeps the number the line total is calculated from; this keeps
+    # the words. Blank falls back to rendering `quantity`.
+    quantity_text = models.CharField(max_length=40, blank=True, default='')
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        # Insertion order is what groups a sectioned quote correctly; without
+        # it the database is free to hand rows back in any order.
+        ordering = ['id']
     
     def save(self, *args, **kwargs):
         self.total_price = self.quantity * self.unit_price

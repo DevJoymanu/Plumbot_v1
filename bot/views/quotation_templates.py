@@ -115,12 +115,24 @@ def quotation_templates_api(request):
 class StandaloneQuotationView(View):
     """Render the standalone quotation creation form."""
     template_name = 'bot/pages/standalone_quotation.html'
- 
+
     def get(self, request, *args, **kwargs):
-        return render(request, self.template_name, {
+        context = {
             'logo_url':      _safe_logo_url(),
             'logo_data_uri': _safe_logo_data_uri(),
-        })
+        }
+
+        # A tenant on the sectioned layout builds even an unattached quote on
+        # their own sheet.
+        from .quotations import _sectioned_form_context
+        from .quote_layout import is_sectioned, tenant_of
+
+        tenant = tenant_of(request)
+        if is_sectioned(tenant):
+            context.update(_sectioned_form_context(request))
+            return render(request, 'bot/pages/quote_sectioned_form.html', context)
+
+        return render(request, self.template_name, context)
 
 
 @csrf_exempt

@@ -1,0 +1,40 @@
+{% comment %}
+The head of a sectioned quote document, rendered entirely from the tenant's
+own letterhead (TenantConfig.letterhead()). Every block is guarded: a tenant
+with no trading name, no blurb or no phone list simply does not get that line
+— a quote must never show another tenant's details.
+
+Expects `lh` (the letterhead dict) in context.
+{% endcomment %}
+<div class="bq-head">
+    <div class="bq-logo">
+        {% if logo_data_uri or logo_url %}
+        <img src="{{ logo_data_uri|default:logo_url }}" alt="{{ lh.business_name }}">
+        {% endif %}
+        <div class="bq-logo__word">
+            <b>{{ lh.business_name }}</b>
+            <div class="bq-logo__sub">DOMESTIC | INDUSTRIAL | COMMERCIAL</div>
+        </div>
+    </div>
+
+    <div class="bq-contact">
+        {% if lh.address %}{{ lh.address }}<br>{% endif %}
+        {% for phone in lh.phones %}{{ phone }}{% if not forloop.last %} / {% endif %}{% if forloop.counter|divisibleby:2 and not forloop.last %}<br>{% endif %}{% endfor %}
+        {% if lh.phones %}<br>{% endif %}
+        {% if lh.public_email %}{{ lh.public_email }}<br>{% endif %}
+        {% if lh.website %}<a href="https://{{ lh.website }}">{{ lh.website }}</a>{% endif %}
+    </div>
+</div>
+
+{% if lh.trading_name %}
+<div class="bq-ta">t / a {{ lh.trading_name }}</div>
+{% endif %}
+
+{% if lh.services_blurb or lh.maintenance_blurb %}
+<p class="bq-blurb">
+    {{ lh.services_blurb }}
+    {% if lh.maintenance_blurb %}<br><span class="bq-blurb__maint">{{ lh.maintenance_blurb }}</span>{% endif %}
+</p>
+{% endif %}
+
+<div class="bq-qtitle">Quotation</div>

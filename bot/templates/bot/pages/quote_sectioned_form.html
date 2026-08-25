@@ -1,0 +1,464 @@
+{% extends "bot/layouts/base.html" %}
+
+{% comment %}
+The sectioned quote editor — used by Create Quote (from a lead), New Quotation
+(standalone) and Edit Quote, for any tenant whose profile sets
+letterhead.layout = "sectioned". The flat layout stays the default for
+everyone else.
+
+One template covers all three because the sheet carries its own client fields:
+with a lead they arrive prefilled, without one they start blank, and on an
+edit they come back from the saved quote.
+{% endcomment %}
+
+{% block title %}{% if quotation %}Edit Quote{% else %}Create Quote{% endif %} — {{ lh.business_name }}{% endblock %}
+
+{% block extra_css %}
+{% include "bot/includes/quote_sectioned_css.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="bq-page" id="bqPage"
+     data-quotation-id="{{ quotation.pk|default:'' }}"
+     data-appointment-id="{{ appointment.pk|default:'' }}">
+
+    <div id="bqAlert" class="bq-alert bq-no-print"></div>
+
+    <!-- Dashboard chrome — never part of the printed sheet -->
+    <div class="bq-actions bq-no-print">
+        <button type="button" class="btn btn-primary" id="bqSave">
+            <i class="fas fa-save"></i> {% if quotation %}Save Changes{% else %}Save Quote{% endif %}
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="window.print()">
+            <i class="fas fa-print"></i> Print / Save PDF
+        </button>
+        {% if quotation %}
+        <a href="{% url 'view_quotation' quotation.pk %}" class="btn btn-outline-primary">
+            <i class="fas fa-eye"></i> View Quote
+        </a>
+        {% elif appointment %}
+        <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-outline-primary">
+            <i class="fas fa-arrow-left"></i> Back to Lead
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="bq-sheet" id="bqSheet">
+
+        {% include "bot/includes/quote_letterhead.html" %}
+
+        <!-- Client / job details -->
+        <div class="bq-meta">
+            <div class="f">
+                <label for="m-date">DATE:</label>
+                <input type="date" id="m-date" value="{{ quote_date|date:'Y-m-d' }}">
+            </div>
+            <div class="f">
+                <label for="m-client">CLIENT:</label>
+                <input type="text" id="m-client" placeholder="Client name"
+                       value="{{ appointment.customer_name|default:'' }}">
+            </div>
+            <div class="f">
+                <label for="m-contact">CONTACT:</label>
+                <input type="text" id="m-contact" placeholder="Phone number"
+                       value="{{ appointment.phone_number|default:'' }}">
+            </div>
+            <div class="f">
+                <label for="m-address">ADDRESS:</label>
+                <input type="text" id="m-address" placeholder="Site address"
+                       value="{{ appointment.customer_area|default:'' }}">
+            </div>
+            <div class="f">
+                <label for="m-email">EMAIL:</label>
+                <input type="text" id="m-email" placeholder="Client email"
+                       value="{{ appointment.customer_email|default:'' }}">
+            </div>
+        </div>
+
+        <!-- Sections and their items -->
+        <table class="bq-table">
+            <colgroup>
+                <col class="bq-c-qty"><col class="bq-c-desc"><col class="bq-c-unit">
+                <col class="bq-c-total"><col class="bq-c-act">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>QTY</th><th>DESCRIPTION</th><th>UNIT PRICE</th><th>TOTAL PRICE</th><th></th>
+                </tr>
+            </thead>
+            <tbody id="bqSections">
+                <tr class="bq-add-section-row bq-no-print" id="bqAddSectionRow">
+                    <td colspan="5">
+                        <button type="button" class="bq-add-section-btn" onclick="addSection()">
+                            <span class="bq-plus">+</span> Add new section
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Totals -->
+        <table class="bq-totals">
+            <colgroup>
+                <col class="bq-c-qty"><col class="bq-c-desc"><col class="bq-c-unit">
+                <col class="bq-c-total"><col class="bq-c-act">
+            </colgroup>
+            <tbody>
+                <tr>
+                    <td class="bq-lbl" colspan="3">MATERIALS SUB-TOTAL</td>
+                    <td class="bq-amt" id="t-materials">{{ lh.currency }}0.00</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3"><sup>ADD:</sup> Labour</td>
+                    <td class="bq-val">
+                        <input type="number" step="0.01" inputmode="decimal" id="t-labour"
+                               value="{{ quotation.labor_cost|default:0 }}" oninput="recalc()">
+                    </td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3">Transport</td>
+                    <td class="bq-val">
+                        <input type="number" step="0.01" inputmode="decimal" id="t-transport"
+                               value="{{ quotation.transport_cost|default:0 }}" oninput="recalc()">
+                    </td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3">Discount</td>
+                    <td class="bq-val">
+                        <input type="number" step="0.01" inputmode="decimal" id="t-discount"
+                               value="{{ quotation.discount|default:0 }}" oninput="recalc()">
+                    </td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="bq-lbl bq-strong" colspan="3">SUB-TOTAL</td>
+                    <td class="bq-amt" id="t-subtotal">{{ lh.currency }}0.00</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3">VAT (<input type="number" step="0.1" inputmode="decimal"
+                        class="bq-pct" id="t-vatpct"
+                        value="{{ vat_percent_initial }}" oninput="recalc()">%)</td>
+                    <td class="bq-amt" id="t-vat">{{ lh.currency }}0.00</td>
+                    <td></td>
+                </tr>
+                <tr class="bq-grand">
+                    <td class="bq-lbl" colspan="3">GRAND TOTAL</td>
+                    <td class="bq-amt" id="t-grand">{{ lh.currency }}0.00</td>
+                    <td></td>
+                </tr>
+                {% for term in terms_initial %}
+                <tr class="bq-terms">
+                    <td colspan="5"><input type="text" class="bq-term" value="{{ term }}"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% include "bot/includes/quote_footer.html" %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ existing_sections|json_script:"bqInitialSections" }}
+{{ lh.currency|json_script:"bqCurrency" }}
+<script>
+    // The currency symbol comes from the tenant, never a hardcoded "US$".
+    const BQ_CURRENCY = JSON.parse(document.getElementById('bqCurrency').textContent) || 'US$';
+    const BQ_PAGE = document.getElementById('bqPage');
+    const BQ_QUOTATION_ID = BQ_PAGE.dataset.quotationId || null;
+    const BQ_APPOINTMENT_ID = BQ_PAGE.dataset.appointmentId || null;
+
+    let sectionSeq = 0;
+    let itemSeq = 0;
+
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function money(n) {
+        return '$' + (isNaN(n) ? 0 : n).toFixed(2);
+    }
+
+    function currency(n) {
+        return BQ_CURRENCY + (isNaN(n) ? 0 : n).toLocaleString('en-US', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+    }
+
+    /* Quantities are written the way the trade writes them — "19 length",
+       "20 ltrs", "3". Take the leading number and keep the words for the
+       printed sheet. */
+    function qtyNum(str) {
+        const m = String(str).match(/-?\d*\.?\d+/);
+        return m ? parseFloat(m[0]) : 0;
+    }
+
+    function addSection(title, items) {
+        const tbody = document.getElementById('bqSections');
+        const anchor = document.getElementById('bqAddSectionRow');
+        const sid = ++sectionSeq;
+
+        const headTr = document.createElement('tr');
+        headTr.className = 'bq-section-head';
+        headTr.dataset.section = sid;
+        headTr.innerHTML = `
+            <td colspan="5">
+                <div class="bq-sec-wrap">
+                    <span class="bq-num">${sid}.</span>
+                    <input class="bq-sec-title" type="text" placeholder="SECTION TITLE" value="${esc(title || '')}">
+                    <button type="button" class="bq-rm bq-no-print" title="Remove section"
+                            onclick="removeSection(${sid})">&times;</button>
+                </div>
+            </td>`;
+        tbody.insertBefore(headTr, anchor);
+
+        const subTr = document.createElement('tr');
+        subTr.className = 'bq-subtotal';
+        subTr.dataset.subFor = sid;
+        subTr.innerHTML = `
+            <td class="bq-lbl" colspan="3">SUB-TOTAL</td>
+            <td class="bq-val" data-sec-total="${sid}">${currency(0)}</td>
+            <td></td>`;
+        tbody.insertBefore(subTr, anchor);
+
+        const addTr = document.createElement('tr');
+        addTr.className = 'bq-add-item bq-no-print';
+        addTr.dataset.addFor = sid;
+        addTr.innerHTML = `<td colspan="5">
+            <button type="button" class="bq-tiny" onclick="addItem(${sid})">+ Add item</button></td>`;
+        tbody.insertBefore(addTr, anchor);
+
+        if (items && items.length) {
+            items.forEach(item => addItem(sid, item));
+        } else {
+            addItem(sid); addItem(sid); addItem(sid);
+            const titleInput = headTr.querySelector('.bq-sec-title');
+            if (titleInput) {
+                titleInput.focus({ preventScroll: true });
+                // 'nearest' so the sections already entered stay on screen.
+                headTr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+        recalc();
+        return sid;
+    }
+
+    function removeSection(sid) {
+        if (!confirm('Remove this section and all of its items?')) return;
+        document.querySelectorAll(
+            `[data-section="${sid}"],[data-item-sec="${sid}"],[data-sub-for="${sid}"],[data-add-for="${sid}"]`
+        ).forEach(el => el.remove());
+        renumberSections();
+        recalc();
+    }
+
+    function addItem(sid, item) {
+        const iid = ++itemSeq;
+        const anchor = document.querySelector(`[data-sub-for="${sid}"]`);
+        if (!anchor) return;
+
+        const tr = document.createElement('tr');
+        tr.className = 'bq-item';
+        tr.dataset.itemSec = sid;
+        tr.dataset.item = iid;
+        tr.innerHTML = `
+            <td><input class="bq-cell bq-qty" type="text" placeholder="0"
+                       value="${esc(item ? item.qty : '')}" oninput="recalc()"></td>
+            <td><input class="bq-cell bq-desc" type="text" placeholder="Description"
+                       value="${esc(item ? item.description : '')}"></td>
+            <td><div class="bq-money"><span class="bq-sym">$</span>
+                <input class="bq-cell bq-unit" type="number" step="0.01" inputmode="decimal"
+                       placeholder="0.00" value="${item ? esc(item.unit) : ''}" oninput="recalc()"></div></td>
+            <td class="bq-total-cell"><span data-line-total="${iid}">${money(0)}</span></td>
+            <td class="bq-act bq-no-print"><button type="button" class="bq-rm" title="Remove item"
+                    onclick="removeItem(${iid})">&times;</button></td>`;
+        anchor.parentNode.insertBefore(tr, anchor);
+        recalc();
+        return tr;
+    }
+
+    function removeItem(iid) {
+        const row = document.querySelector(`[data-item="${iid}"]`);
+        if (row) row.remove();
+        recalc();
+    }
+
+    function renumberSections() {
+        let n = 0;
+        document.querySelectorAll('#bqSections tr.bq-section-head').forEach(tr => {
+            n++;
+            tr.querySelector('.bq-num').textContent = n + '.';
+        });
+    }
+
+    function recalc() {
+        let materials = 0;
+
+        document.querySelectorAll('#bqSections tr.bq-section-head').forEach(head => {
+            const sid = head.dataset.section;
+            let secTotal = 0;
+            document.querySelectorAll(`tr.bq-item[data-item-sec="${sid}"]`).forEach(row => {
+                const q = qtyNum(row.querySelector('.bq-qty').value || 0);
+                const u = parseFloat(row.querySelector('.bq-unit').value) || 0;
+                const line = q * u;
+                row.querySelector('[data-line-total]').textContent = money(line);
+                secTotal += line;
+            });
+            const cell = document.querySelector(`[data-sec-total="${sid}"]`);
+            if (cell) cell.textContent = currency(secTotal);
+            materials += secTotal;
+        });
+
+        const labour    = parseFloat(document.getElementById('t-labour').value)    || 0;
+        const transport = parseFloat(document.getElementById('t-transport').value) || 0;
+        const discount  = parseFloat(document.getElementById('t-discount').value)  || 0;
+        const vatPct    = parseFloat(document.getElementById('t-vatpct').value)    || 0;
+
+        const subtotal = materials + labour + transport - discount;
+        const vat = subtotal * vatPct / 100;
+
+        document.getElementById('t-materials').textContent = currency(materials);
+        document.getElementById('t-subtotal').textContent  = currency(subtotal);
+        document.getElementById('t-vat').textContent       = currency(vat);
+        document.getElementById('t-grand').textContent     = currency(subtotal + vat);
+    }
+
+    /* ── Saving ────────────────────────────────────────────────────────────
+       Items are flattened into the CRM's own item rows, each tagged with its
+       section so the sheet rebuilds exactly on reopen. */
+    function collect() {
+        const items = [];
+        document.querySelectorAll('#bqSections tr.bq-section-head').forEach(head => {
+            const sid = head.dataset.section;
+            const section = head.querySelector('.bq-sec-title').value.trim();
+            document.querySelectorAll(`tr.bq-item[data-item-sec="${sid}"]`).forEach(row => {
+                const name = row.querySelector('.bq-desc').value.trim();
+                if (!name) return;                       // blank rows are scaffolding
+                items.push({
+                    name: name,
+                    section: section,
+                    qty_text: row.querySelector('.bq-qty').value.trim(),
+                    qty: qtyNum(row.querySelector('.bq-qty').value || 0),
+                    unit: parseFloat(row.querySelector('.bq-unit').value) || 0,
+                });
+            });
+        });
+
+        const terms = [...document.querySelectorAll('.bq-term')]
+            .map(i => i.value.trim()).filter(Boolean);
+
+        return {
+            appointment_id: BQ_APPOINTMENT_ID ? parseInt(BQ_APPOINTMENT_ID, 10) : null,
+            client_name: document.getElementById('m-client').value.trim(),
+            client_phone: document.getElementById('m-contact').value.trim(),
+            client_address: document.getElementById('m-address').value.trim(),
+            client_email: document.getElementById('m-email').value.trim(),
+            quotation_date: document.getElementById('m-date').value,
+            items: items,
+            labour_cost: parseFloat(document.getElementById('t-labour').value) || 0,
+            transport_cost: parseFloat(document.getElementById('t-transport').value) || 0,
+            discount: parseFloat(document.getElementById('t-discount').value) || 0,
+            vat_percent: parseFloat(document.getElementById('t-vatpct').value) || 0,
+            // Materials are carried by the item rows themselves; sending them
+            // again would double-count them in the stored total.
+            materials_cost: 0,
+            terms: terms,
+        };
+    }
+
+    function showAlert(message, type) {
+        const box = document.getElementById('bqAlert');
+        const el = document.createElement('div');
+        el.className = 'pbq-alert pbq-alert-' + type;
+        el.textContent = message;
+        box.appendChild(el);
+        setTimeout(() => el.remove(), 5000);
+    }
+
+    function getCookie(name) {
+        const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return match ? decodeURIComponent(match.pop()) : '';
+    }
+
+    async function save() {
+        const payload = collect();
+
+        if (!payload.client_name) {
+            showAlert('Enter the client name before saving.', 'error');
+            document.getElementById('m-client').focus();
+            return;
+        }
+        if (!payload.items.length) {
+            showAlert('Add at least one item with a description before saving.', 'error');
+            return;
+        }
+        if (!BQ_QUOTATION_ID && !payload.appointment_id) {
+            showAlert('This quote is not attached to a lead yet. Open it from a lead to save.', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('bqSave');
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="pbq-spin"></span> Saving...';
+
+        const url = BQ_QUOTATION_ID
+            ? `/quotations/${BQ_QUOTATION_ID}/edit/`
+            : '/api/quotations/create/';
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+                body: JSON.stringify(payload),
+            });
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showAlert('Quote saved.', 'success');
+                if (!BQ_QUOTATION_ID && result.quotation_id) {
+                    setTimeout(() => {
+                        window.location.href = `/quotations/${result.quotation_id}/`;
+                    }, 900);
+                }
+            } else {
+                showAlert('Could not save: ' + (result.error || 'unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Save failed', error);
+            showAlert('Could not save the quote. Please try again.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.getElementById('bqSave').addEventListener('click', save);
+
+        const dateField = document.getElementById('m-date');
+        if (!dateField.value) dateField.valueAsDate = new Date();
+
+        // Rebuild the saved sections, or open with one blank section.
+        let seeded = [];
+        const raw = document.getElementById('bqInitialSections');
+        if (raw) {
+            try { seeded = JSON.parse(raw.textContent) || []; } catch (e) { seeded = []; }
+        }
+
+        if (seeded.length) {
+            seeded.forEach(group => addSection(group.title, group.items));
+        } else {
+            addSection();
+        }
+        recalc();
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% comment %}
+The foot of a sectioned quote: banking details, signature line and tagline.
+Each block renders only if the tenant has that fact on file. Expects `lh`.
+{% endcomment %}
+<div class="bq-foot">
+    {% if lh.bank %}
+    <h3>Banking Details</h3>
+    <div class="bq-bank">
+        {% if lh.bank.account_name %}Account Name: - <b>{{ lh.bank.account_name }}</b><br>{% endif %}
+        {% if lh.bank.bank_name %}Bank Name: - <b>{{ lh.bank.bank_name }}</b><br>{% endif %}
+        {% if lh.bank.branch %}Branch: - <b>{{ lh.bank.branch }}</b><br>{% endif %}
+        {% if lh.bank.account_number %}Account Number: - <b>{{ lh.bank.account_number }}</b>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="bq-sign">
+        <div class="bq-sign__col">Client signature: ...........................</div>
+        {% if lh.signatory %}
+        <div class="bq-sign__col">Authorized by: <u>{{ lh.signatory }}</u></div>
+        {% endif %}
+    </div>
+</div>
+
+{% if lh.tagline or lh.website %}
+<div class="bq-quality">
+    {% if lh.tagline %}<span>{{ lh.tagline }}</span>{% endif %}
+    {% if lh.website %}<span>{{ lh.website }}</span>{% endif %}
+</div>
+{% endif %}

@@ -66,11 +66,55 @@ except ImportError:
     pass
 
 
+from .quote_layout import (
+    document_context, is_sectioned, letterhead_for, quote_terms,
+    sections_payload, tenant_of,
+)
+
+
+def _sectioned_form_context(request, appointment=None, quotation=None):
+    """Shared context for the sectioned quote editor.
+
+    Every value on the sheet resolves through the lead's OWN tenant. A tenant
+    with no letterhead gets empty values and the template omits those blocks
+    outright, rather than borrowing another tenant's address or bank account.
+    """
+    tenant = tenant_of(request, appointment=appointment, quotation=quotation)
+    letterhead = letterhead_for(tenant)
+    return {
+        'lh': letterhead,
+        'appointment': appointment,
+        'quotation': quotation,
+        'existing_sections': sections_payload(quotation) if quotation else [],
+        'quote_date': quotation.created_at if quotation else timezone.localdate(),
+        'vat_percent_initial': (
+            quotation.vat_percent if quotation
+            else letterhead.get('default_vat_percent') or 0
+        ),
+        'terms_initial': (
+            quote_terms(quotation, letterhead) if quotation
+            else list(letterhead.get('terms') or [])
+        ),
+    }
+
+
 @method_decorator(staff_required, name='dispatch')
 class CreateQuotationView(CreateView):
     model = Quotation
     form_class = QuotationForm
     template_name = 'bot/pages/create_quotation.html'
+
+    def _appointment(self):
+        if 'pk' not in self.kwargs:
+            return None
+        return get_object_or_404(
+            Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)),
+            pk=self.kwargs['pk'])
+
+    def get_template_names(self):
+        if is_sectioned(tenant_of(self.request, appointment=self._appointment())):
+            return ['bot/pages/quote_sectioned_form.html']
+        return [self.template_name]
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -82,7 +126,11 @@ class CreateQuotationView(CreateView):
         if 'pk' in self.kwargs:
             appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)), pk=self.kwargs['pk'])
             context['appointment'] = appointment
-        
+
+        if is_sectioned(tenant_of(self.request, appointment=appointment)):
+            context.update(_sectioned_form_context(self.request, appointment=appointment))
+            return context
+
         # Add formset
         if self.request.POST:
             context['formset'] = QuotationItemFormSet(self.request.POST)
@@ -120,6 +168,33 @@ class CreateQuotationView(CreateView):
         return reverse('view_quotation', kwargs={'pk': self.object.pk})
 
 
+def _quote_notes(data, current=''):
+    """What goes in `notes`.
+
+    The flat layout puts the project notes there. The sectioned sheet has no
+    notes box — its `notes` field carries the payment terms instead, one per
+    line, which is what the terms rows on the document are.
+    """
+    if isinstance(data.get('terms'), list):
+        return "\n".join(str(t).strip() for t in data['terms'] if str(t).strip())
+    return data.get('notes', data.get('project_notes', current))
+
+
+def _apply_client_fields(appointment, data):
+    """The sectioned sheet edits the client's own details in place, the way
+    writing on the paper quote would. Only overwrite what was actually sent."""
+    changed = []
+    for key, field in (('client_name', 'customer_name'),
+                       ('client_email', 'customer_email'),
+                       ('client_address', 'customer_area')):
+        value = (data.get(key) or '').strip()
+        if value and value != getattr(appointment, field, ''):
+            setattr(appointment, field, value)
+            changed.append(field)
+    if changed:
+        appointment.save(update_fields=changed)
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_quotation_api(request):
@@ -150,6 +225,8 @@ def create_quotation_api(request):
                 'error': f'Appointment with ID {appointment_id} not found'
             }, status=404)
         
+        _apply_client_fields(appointment, data)
+
         # Create the quotation
         logger.debug("🧾 Creating Quotation record...")
         quotation = None
@@ -161,7 +238,9 @@ def create_quotation_api(request):
                         labor_cost=_to_decimal(data.get('labour_cost', 0)),
                         transport_cost=_to_decimal(data.get('transport_cost', 0)),
                         materials_cost=_to_decimal(data.get('materials_cost', 0)),
-                        notes=data.get('notes', ''),
+                        discount=_to_decimal(data.get('discount', 0)),
+                        vat_percent=_to_decimal(data.get('vat_percent', 0)),
+                        notes=_quote_notes(data),
                         status='draft'
                     )
                 break
@@ -190,7 +269,9 @@ def create_quotation_api(request):
                 QuotationItem.objects.create(
                     quotation=quotation,
                     description=item_data.get('name', ''),
+                    section=(item_data.get('section') or '')[:120],
                     quantity=_to_decimal(item_data.get('qty', 1), default='1.00'),
+                    quantity_text=(item_data.get('qty_text') or '')[:40],
                     unit_price=_to_decimal(item_data.get('unit', 0))
                 )
                 items_created += 1
@@ -237,6 +318,11 @@ class ViewQuotationView(DetailView):
     template_name = 'bot/pages/view_quotation.html'
     context_object_name = 'quotation'
 
+    def get_template_names(self):
+        if is_sectioned(tenant_of(self.request, quotation=self.get_object())):
+            return ['bot/pages/quote_sectioned_view.html']
+        return [self.template_name]
+
 
     def get_queryset(self):
         _t = getattr(self.request, 'tenant', None)
@@ -246,6 +332,13 @@ class ViewQuotationView(DetailView):
         context = super().get_context_data(**kwargs)
         context['logo_url'] = _safe_logo_url()
         context['logo_data_uri'] = _safe_logo_data_uri()
+
+        quotation = context['quotation']
+        tenant = tenant_of(self.request, quotation=quotation)
+        if is_sectioned(tenant):
+            letterhead = letterhead_for(tenant)
+            context['lh'] = letterhead
+            context.update(document_context(quotation, letterhead))
         return context
 
 
@@ -307,6 +400,11 @@ class EditQuotationView(UpdateView):
     model = Quotation
     form_class = QuotationForm
     template_name = 'bot/pages/edit_quotation.html'
+
+    def get_template_names(self):
+        if is_sectioned(tenant_of(self.request, quotation=self.get_object())):
+            return ['bot/pages/quote_sectioned_form.html']
+        return [self.template_name]
     
 
 
@@ -324,6 +422,12 @@ class EditQuotationView(UpdateView):
             context['formset'] = QuotationItemFormSet(self.request.POST, instance=self.object)
         else:
             context['formset'] = QuotationItemFormSet(instance=self.object)
+
+        quotation = self.object
+        if is_sectioned(tenant_of(self.request, quotation=quotation)):
+            context['logo_url'] = _safe_logo_url()
+            context['logo_data_uri'] = _safe_logo_data_uri()
+            context.update(_sectioned_form_context(self.request, quotation=quotation))
         return context
     
     def form_valid(self, form):
@@ -359,10 +463,12 @@ class EditQuotationView(UpdateView):
             appointment.project_description = data.get('project_notes', appointment.project_description)
             appointment.save()
 
-            quotation.notes = data.get('project_notes', quotation.notes or '')
+            quotation.notes = _quote_notes(data, quotation.notes or '')
             quotation.labor_cost = _to_decimal(data.get('labour_cost', quotation.labor_cost))
             quotation.transport_cost = _to_decimal(data.get('transport_cost', quotation.transport_cost))
             quotation.materials_cost = _to_decimal(data.get('materials_cost', quotation.materials_cost))
+            quotation.discount = _to_decimal(data.get('discount', quotation.discount))
+            quotation.vat_percent = _to_decimal(data.get('vat_percent', quotation.vat_percent))
             quotation.save()
 
             items_data = data.get('items', [])
@@ -377,7 +483,9 @@ class EditQuotationView(UpdateView):
                     QuotationItem.objects.create(
                         quotation=quotation,
                         description=name,
+                        section=((item or {}).get('section') or '')[:120],
                         quantity=qty,
+                        quantity_text=((item or {}).get('qty_text') or '')[:40],
                         unit_price=unit,
                     )
                 quotation.save()

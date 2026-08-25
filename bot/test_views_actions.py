@@ -21,9 +21,11 @@ settings.py switches to an in-memory SQLite DB + local file storage when
 or the R2 bucket and runs fully offline.
 """
 
+import json
 import os
 import re
 import unittest
+from decimal import Decimal
 from io import StringIO
 from datetime import timedelta
 from unittest.mock import patch
@@ -39,6 +41,7 @@ from .models import (
     Appointment,
     Job,
     Quotation,
+    QuotationItem,
     QuotationTemplate,
     ScheduledFollowup,
     ScheduledReminder,
@@ -830,6 +833,317 @@ class QuoteMobileLayoutTests(StaffClientTestCase):
             Quotation.objects.create(appointment=self.lead)
         html = self._html(reverse('quotations_list'))
         self.assertIn('?page=2', html)
+
+
+# ======================================================================
+# 4c. The sectioned quote document
+#
+# A tenant whose profile sets letterhead.layout = "sectioned" gets the
+# grouped quote sheet — numbered sections with their own subtotals, plus
+# discount and VAT. Everyone else keeps the flat layout, and no letterhead
+# value may cross between tenants.
+# ======================================================================
+
+SECTIONED_LETTERHEAD = {
+    'layout': 'sectioned',
+    'trading_name': 'ROYAL HARDWARE',
+    'phones': ['+263 77 387 1503', '+263 77 324 0167'],
+    'public_email': 'info@barmakplumbing.co.zw',
+    'website': 'www.barmakplumbing.co.zw',
+    'services_blurb': 'For all: supply & new installation water & sewer reticulation.',
+    'maintenance_blurb': 'Maintenance: water leaks, no water, low pressure & blockages.',
+    'tagline': 'Quality is our mission',
+    'signatory': 'Director K. Marange',
+    'bank': {
+        'account_name': 'Barmak Plumbing Private Limited',
+        'bank_name': 'CABS',
+        'branch': 'Park street',
+        'account_number': '1154714543',
+    },
+    'terms': ['deposit 75%', 'Balance to be paid on completion of 1st stage'],
+}
+
+
+class SectionedQuoteTests(TestCase):
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.barmak = Tenant.objects.create(
+            name='Barmak Plumbing', slug='barmak-plumbing')
+        TenantProfile.objects.create(
+            tenant=self.barmak,
+            location_line='20398 Budiriro 5B Cabs Harare',
+            letterhead=SECTIONED_LETTERHEAD,
+        )
+
+        # One staff member per tenant: the active tenant comes from
+        # membership, and a shared login would blur exactly the boundary
+        # these tests exist to check.
+        self.user = self._staff('barmak-staff', self.barmak)
+        self.client.force_login(self.user)
+
+        from django.test import Client
+        self.hb_client = Client()
+        self.hb_client.force_login(self._staff('homebase-staff', self.homebase))
+
+        self.barmak_lead = make_lead(7101, tenant=self.barmak, customer_name='B Client')
+        self.homebase_lead = make_lead(7102, tenant=self.homebase, customer_name='H Client')
+
+    @staticmethod
+    def _staff(username, tenant):
+        user = get_user_model().objects.create_user(
+            username=username, password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=tenant, role='staff')
+        return user
+
+    def _html(self, url, client=None):
+        response = (client or self.client).get(url)
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode('utf-8', 'replace')
+
+    # ── layout selection ────────────────────────────────────────────────
+    def test_barmak_lead_gets_the_sectioned_sheet(self):
+        for url in (reverse('create_quotation', args=[self.barmak_lead.pk]),):
+            response = self.client.get(url)
+            self.assertIn('bot/pages/quote_sectioned_form.html',
+                          [t.name for t in response.templates])
+
+    def test_other_tenants_keep_the_flat_layout(self):
+        """The switch is one tenant's profile data — another tenant's quote
+        must never pick it up."""
+        response = self.hb_client.get(
+            reverse('create_quotation', args=[self.homebase_lead.pk]))
+        names = [t.name for t in response.templates]
+        self.assertIn('bot/pages/create_quotation.html', names)
+        self.assertNotIn('bot/pages/quote_sectioned_form.html', names)
+
+    def test_no_barmak_letterhead_value_reaches_another_tenant(self):
+        """The hard rule: nothing on Barmak's letterhead may appear on a
+        Homebase quote, whichever screen it is."""
+        pages = [
+            reverse('create_quotation', args=[self.homebase_lead.pk]),
+            reverse('quotations_list'),
+        ]
+        quote = Quotation.objects.create(appointment=self.homebase_lead)
+        QuotationItem.objects.create(
+            quotation=quote, description='Tap', quantity=1, unit_price=Decimal('25'))
+        pages += [reverse('view_quotation', args=[quote.pk]),
+                  reverse('edit_quotation', args=[quote.pk])]
+
+        leaky = ['ROYAL HARDWARE', '1154714543', 'barmakplumbing.co.zw',
+                 'K. Marange', 'Budiriro']
+        for url in pages:
+            html = self._html(url, client=self.hb_client)
+            for value in leaky:
+                self.assertNotIn(value, html, f'{value} leaked onto {url}')
+
+    def test_letterhead_renders_from_the_tenant_profile(self):
+        html = self._html(reverse('create_quotation', args=[self.barmak_lead.pk]))
+        for value in ('Barmak Plumbing', 'ROYAL HARDWARE', '20398 Budiriro 5B Cabs Harare',
+                      '+263 77 387 1503', 'info@barmakplumbing.co.zw',
+                      'CABS', '1154714543', 'Director K. Marange',
+                      'Quality is our mission', 'deposit 75%'):
+            self.assertIn(value, html, f'{value} missing from the sheet')
+
+    def test_a_tenant_without_letterhead_facts_omits_them(self):
+        """Absent means omit, never borrow: layout on, nothing else set."""
+        bare = Tenant.objects.create(name='Bare Plumbing', slug='bare')
+        TenantProfile.objects.create(tenant=bare, letterhead={'layout': 'sectioned'})
+        lead = make_lead(7103, tenant=bare)
+
+        from django.test import Client
+        bare_client = Client()
+        bare_client.force_login(self._staff('bare-staff', bare))
+
+        html = self._html(reverse('create_quotation', args=[lead.pk]), client=bare_client)
+        self.assertIn('Bare Plumbing', html)
+        self.assertNotIn('Banking Details', html)
+        self.assertNotIn('t / a', html)
+        self.assertNotIn('Authorized by', html)
+
+    # ── saving ──────────────────────────────────────────────────────────
+    def _save_payload(self):
+        return {
+            'appointment_id': self.barmak_lead.pk,
+            'client_name': 'B Client',
+            'client_phone': '+263771111111',
+            'client_address': 'Budiriro 5',
+            'client_email': 'b@example.com',
+            'items': [
+                {'name': 'Basin mixer', 'section': 'PLUMBING MATERIALS',
+                 'qty_text': '2 pcs', 'qty': 2, 'unit': 40},
+                {'name': 'PVC pipe', 'section': 'PLUMBING MATERIALS',
+                 'qty_text': '19 length', 'qty': 19, 'unit': 0},
+                {'name': 'Angle valve', 'section': 'FITTINGS',
+                 'qty_text': '3', 'qty': 3, 'unit': 3},
+            ],
+            'labour_cost': 100,
+            'transport_cost': 20,
+            'discount': 9,
+            'vat_percent': 15,
+            'materials_cost': 0,
+            'terms': ['deposit 75%', 'Balance on completion'],
+        }
+
+    def test_saving_keeps_sections_quantities_discount_and_vat(self):
+        response = self.client.post(
+            reverse('create_quotation_api'),
+            data=json.dumps(self._save_payload()),
+            content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+        result = response.json()
+        self.assertTrue(result['success'], result)
+
+        quote = Quotation.objects.get(pk=result['quotation_id'])
+        items = list(quote.items.all())
+        self.assertEqual([i.section for i in items],
+                         ['PLUMBING MATERIALS', 'PLUMBING MATERIALS', 'FITTINGS'])
+        self.assertEqual([i.quantity_text for i in items], ['2 pcs', '19 length', '3'])
+        self.assertEqual(quote.discount, Decimal('9.00'))
+        self.assertEqual(quote.vat_percent, Decimal('15.00'))
+        # terms live in notes, one per line, on a sectioned quote
+        self.assertEqual(quote.notes.splitlines(), ['deposit 75%', 'Balance on completion'])
+
+    def test_the_saved_total_is_what_the_sheet_showed(self):
+        """materials 89 + labour 100 + transport 20 = 209, less 9 discount
+        = 200, plus 15% VAT = 230."""
+        response = self.client.post(
+            reverse('create_quotation_api'),
+            data=json.dumps(self._save_payload()),
+            content_type='application/json')
+        quote = Quotation.objects.get(pk=response.json()['quotation_id'])
+        self.assertEqual(quote.total_amount, Decimal('230.00'))
+
+    def test_reopening_rebuilds_the_same_sections(self):
+        response = self.client.post(
+            reverse('create_quotation_api'),
+            data=json.dumps(self._save_payload()),
+            content_type='application/json')
+        quote = Quotation.objects.get(pk=response.json()['quotation_id'])
+
+        from .views.quote_layout import sections_payload
+        payload = sections_payload(quote)
+        self.assertEqual([g['title'] for g in payload],
+                         ['PLUMBING MATERIALS', 'FITTINGS'])
+        self.assertEqual([i['qty'] for i in payload[0]['items']], ['2 pcs', '19 length'])
+
+    def test_the_saved_sheet_shows_its_section_subtotals(self):
+        response = self.client.post(
+            reverse('create_quotation_api'),
+            data=json.dumps(self._save_payload()),
+            content_type='application/json')
+        quote = Quotation.objects.get(pk=response.json()['quotation_id'])
+
+        html = self._html(reverse('view_quotation', args=[quote.pk]))
+        self.assertIn('PLUMBING MATERIALS', html)
+        self.assertIn('FITTINGS', html)
+        self.assertIn('19 length', html)
+        self.assertIn('230.00', html)          # grand total
+        self.assertIn('SUB-TOTAL', html)
+
+    def test_editing_a_sectioned_quote_uses_the_same_sheet(self):
+        quote = Quotation.objects.create(appointment=self.barmak_lead)
+        response = self.client.get(reverse('edit_quotation', args=[quote.pk]))
+        self.assertIn('bot/pages/quote_sectioned_form.html',
+                      [t.name for t in response.templates])
+
+    # ── the Profile page owns the letterhead ────────────────────────────
+    def test_letterhead_is_editable_on_the_profile_page(self):
+        html = self._html(reverse('profile'))
+        self.assertIn('name="lh_trading_name"', html)
+        self.assertIn('name="lh_bank_account_number"', html)
+        self.assertIn('ROYAL HARDWARE', html)
+
+    def test_saving_the_profile_form_updates_the_quote(self):
+        response = self.client.post(reverse('profile'), {
+            'letterhead_submit': '1',
+            'lh_sectioned': 'on',
+            'lh_trading_name': 'ROYAL HARDWARE',
+            'lh_address': '1 New Road, Harare',
+            'lh_phones': '+263 700 000 001\n+263 700 000 002',
+            'lh_public_email': 'hello@barmakplumbing.co.zw',
+            'lh_website': 'www.barmakplumbing.co.zw',
+            'lh_services_blurb': 'Everything plumbing.',
+            'lh_maintenance_blurb': 'Leaks and blockages.',
+            'lh_bank_account_name': 'Barmak Plumbing Private Limited',
+            'lh_bank_bank_name': 'CABS',
+            'lh_bank_branch': 'Park street',
+            'lh_bank_account_number': '9999999999',
+            'lh_terms': 'deposit 50%',
+            'lh_default_vat_percent': '14.5',
+            'lh_signatory': 'Director K. Marange',
+            'lh_tagline': 'Quality is our mission',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        profile = TenantProfile.objects.get(tenant=self.barmak)
+        self.assertEqual(profile.letterhead['phones'],
+                         ['+263 700 000 001', '+263 700 000 002'])
+        self.assertEqual(profile.letterhead['bank']['account_number'], '9999999999')
+        self.assertEqual(profile.location_line, '1 New Road, Harare')
+
+        # and it reaches the quote sheet
+        html = self._html(reverse('create_quotation', args=[self.barmak_lead.pk]))
+        self.assertIn('9999999999', html)
+        self.assertIn('1 New Road, Harare', html)
+        self.assertIn('deposit 50%', html)
+
+    def test_unticking_the_layout_returns_that_tenant_to_the_flat_quote(self):
+        self.client.post(reverse('profile'), {
+            'letterhead_submit': '1',
+            'lh_trading_name': 'ROYAL HARDWARE',
+        })
+        response = self.client.get(
+            reverse('create_quotation', args=[self.barmak_lead.pk]))
+        self.assertIn('bot/pages/create_quotation.html',
+                      [t.name for t in response.templates])
+
+    # ── the seed migration ──────────────────────────────────────────────
+    def test_seed_migration_only_fills_blanks_and_only_for_barmak(self):
+        """Migration 0070 runs on the live database. Its job is to set Barmak
+        up without trampling anything the operator has since edited, and to
+        leave every other tenant alone."""
+        import importlib
+        module = importlib.import_module('bot.migrations.0070_seed_barmak_letterhead')
+
+        class Apps:
+            @staticmethod
+            def get_model(app_label, name):
+                from django.apps import apps as django_apps
+                return django_apps.get_model(app_label, name)
+
+        # Someone has already edited the bank account on the Profile page.
+        profile = TenantProfile.objects.get(tenant=self.barmak)
+        profile.letterhead = dict(profile.letterhead, bank={'account_number': 'EDITED'})
+        profile.save(update_fields=['letterhead'])
+
+        module.seed(Apps, None)
+
+        profile.refresh_from_db()
+        self.assertEqual(profile.letterhead['bank']['account_number'], 'EDITED',
+                         'the seed overwrote an edit the operator had made')
+        self.assertEqual(profile.letterhead['layout'], 'sectioned')
+
+        # And it touches nobody else. (Homebase is seeded with a profile by
+        # the test-DB post_migrate hook, mirroring migration 0041.)
+        other, _ = TenantProfile.objects.get_or_create(tenant=self.homebase)
+        before = dict(other.letterhead or {})
+        module.seed(Apps, None)
+        other.refresh_from_db()
+        self.assertEqual(other.letterhead or {}, before)
+        self.assertNotIn('layout', other.letterhead or {})
+
+    def test_flat_quotes_still_total_exactly_as_before(self):
+        """discount and vat_percent default to 0, so an untouched quote's
+        total is unchanged by their arrival."""
+        quote = Quotation.objects.create(
+            appointment=self.homebase_lead, labor_cost=Decimal('50'),
+            transport_cost=Decimal('10'), materials_cost=Decimal('40'))
+        # 25 (item) + 50 + 40 + 10 — the pre-existing sum, untouched.
+        QuotationItem.objects.create(
+            quotation=quote, description='Tap', quantity=1, unit_price=Decimal('25'))
+        quote.refresh_from_db()
+        self.assertEqual(quote.total_amount, Decimal('125.00'))
 
 
 # ======================================================================

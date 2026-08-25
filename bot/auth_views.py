@@ -35,6 +35,82 @@ def _tenant_profile(request):
     return profile
 
 
+# Multi-line fields are stored as lists; the form edits them one per line.
+_LETTERHEAD_LISTS = ('phones', 'terms')
+_LETTERHEAD_TEXT = (
+    'trading_name', 'public_email', 'website', 'services_blurb',
+    'maintenance_blurb', 'tagline', 'signatory',
+)
+_LETTERHEAD_BANK = ('account_name', 'bank_name', 'branch', 'account_number')
+
+
+def _letterhead_form_values(profile):
+    """The stored letterhead, flattened into the shapes the form inputs use.
+
+    Every key is present but may be empty — an empty value means the tenant
+    has not supplied that fact, and the quote omits the block rather than
+    borrowing another tenant's.
+    """
+    raw = {}
+    if profile is not None and isinstance(profile.letterhead, dict):
+        raw = profile.letterhead
+
+    bank = raw.get('bank') if isinstance(raw.get('bank'), dict) else {}
+    values = {key: str(raw.get(key) or '') for key in _LETTERHEAD_TEXT}
+    values.update({
+        'sectioned': str(raw.get('layout') or '').lower() == 'sectioned',
+        'address': getattr(profile, 'location_line', '') if profile else '',
+        'default_vat_percent': raw.get('default_vat_percent') or 0,
+        'bank': {key: str(bank.get(key) or '') for key in _LETTERHEAD_BANK},
+    })
+    for key in _LETTERHEAD_LISTS:
+        value = raw.get(key)
+        values[key] = '\n'.join(value) if isinstance(value, (list, tuple)) else str(value or '')
+    return values
+
+
+def _save_letterhead(request, profile):
+    """Write the quote letterhead back, preserving any key the form does not
+    edit. Blank inputs clear their fact — 'absent' is a valid answer."""
+    stored = dict(profile.letterhead) if isinstance(profile.letterhead, dict) else {}
+
+    for key in _LETTERHEAD_TEXT:
+        stored[key] = (request.POST.get(f'lh_{key}') or '').strip()
+
+    for key in _LETTERHEAD_LISTS:
+        stored[key] = [
+            line.strip()
+            for line in (request.POST.get(f'lh_{key}') or '').splitlines()
+            if line.strip()
+        ]
+
+    stored['bank'] = {
+        key: (request.POST.get(f'lh_bank_{key}') or '').strip()
+        for key in _LETTERHEAD_BANK
+    }
+
+    try:
+        stored['default_vat_percent'] = float(request.POST.get('lh_default_vat_percent') or 0)
+    except (TypeError, ValueError):
+        stored['default_vat_percent'] = 0
+
+    # The layout switch: ticked means this business's quotes use their own
+    # sectioned sheet. Unticked drops back to the standard layout.
+    if request.POST.get('lh_sectioned'):
+        stored['layout'] = 'sectioned'
+    else:
+        stored.pop('layout', None)
+
+    fields = ['letterhead']
+    address = (request.POST.get('lh_address') or '').strip()
+    if address != (profile.location_line or ''):
+        profile.location_line = address
+        fields.append('location_line')
+
+    profile.letterhead = stored
+    profile.save(update_fields=fields)
+
+
 @sensitive_post_parameters()
 @csrf_protect
 @never_cache
@@ -293,6 +369,23 @@ def profile_view(request):
                     user.username, profile.tenant.slug, sender or '(cleared)',
                 )
 
+        # The quote letterhead: everything that appears on this business's
+        # own quote document. Posted from its own form on the Profile page.
+        if 'letterhead_submit' in request.POST:
+            profile = _tenant_profile(request)
+            if profile is None:
+                messages.error(
+                    request,
+                    'No business is linked to your account, so the quote '
+                    'letterhead could not be saved.',
+                )
+                return redirect('profile')
+            _save_letterhead(request, profile)
+            messages.success(request, 'Quote letterhead updated.')
+            logger.info("User %s updated tenant %s quote letterhead",
+                        user.username, profile.tenant.slug)
+            return redirect('profile')
+
         # Simple profile update
         user.first_name = request.POST.get('first_name', user.first_name)
         user.last_name = request.POST.get('last_name', user.last_name)
@@ -321,6 +414,8 @@ def profile_view(request):
         'customer_from_email': getattr(profile, 'customer_from_email', '') if profile else '',
         'customer_sender': tenant_customer_from_email(tenant),
         'platform_sender': tenant_platform_from_email(tenant),
+        'letterhead': _letterhead_form_values(profile),
+        'letterhead_editable': profile is not None,
     }
 
     return render(request, 'bot/pages/registration/profile.html', context)

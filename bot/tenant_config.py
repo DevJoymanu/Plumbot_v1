@@ -348,6 +348,59 @@ class TenantConfig:
     def licensed_claim_enabled(self) -> bool:
         return bool(self.profile and self.profile.licensed_claim_enabled)
 
+    # ── Quote document (business facts — no fallback) ───────────────────────
+    def _letterhead(self) -> dict:
+        raw = self._field('letterhead', {}) or {}
+        return raw if isinstance(raw, dict) else {}
+
+    def quote_layout(self) -> str:
+        """Which quote template this tenant's documents use.
+
+        'sectioned' is the grouped layout (numbered sections, per-section
+        subtotals, discount and VAT); anything else uses the flat default.
+        Driven by the tenant's own profile, so a layout can never appear on
+        another tenant's quote."""
+        layout = str(self._letterhead().get('layout') or '').strip().lower()
+        return layout if layout in ('sectioned',) else 'standard'
+
+    def letterhead(self) -> dict:
+        """The tenant's quote-document facts, normalised for templates.
+
+        Every value is optional and every absent one is returned falsy so the
+        template omits that block outright — a quote must never show another
+        tenant's address, phone number or bank account.
+        """
+        raw = self._letterhead()
+
+        def text(key):
+            return str(raw.get(key) or '').strip()
+
+        def lines(key):
+            value = raw.get(key)
+            if isinstance(value, (list, tuple)):
+                return [str(v).strip() for v in value if str(v).strip()]
+            return [line.strip() for line in str(value or '').splitlines() if line.strip()]
+
+        bank = raw.get('bank') if isinstance(raw.get('bank'), dict) else {}
+        bank = {k: str(v or '').strip() for k, v in bank.items()}
+
+        return {
+            'business_name': (getattr(self.tenant, 'name', '') or '').strip(),
+            'trading_name': text('trading_name'),
+            'address': self.location_line or self.location_short(),
+            'phones': lines('phones') or ([self.plumber_contact] if self.plumber_contact else []),
+            'public_email': text('public_email'),
+            'website': text('website'),
+            'services_blurb': text('services_blurb'),
+            'maintenance_blurb': text('maintenance_blurb'),
+            'tagline': text('tagline'),
+            'signatory': text('signatory'),
+            'bank': bank if any(bank.values()) else {},
+            'terms': lines('terms'),
+            'default_vat_percent': raw.get('default_vat_percent') or 0,
+            'currency': self.currency,
+        }
+
     def excluded_areas(self) -> list:
         return list(self._field('excluded_areas', []) or [])
 

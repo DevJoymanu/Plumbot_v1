@@ -100,6 +100,143 @@
                         </div>
                     </div>
 
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="card-title mb-0"><i class="fas fa-file-invoice me-2"></i>Quote letterhead</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if letterhead_editable %}
+                            <p class="text-muted small">
+                                What appears on {% if tenant %}{{ tenant.name }}'s{% else %}your{% endif %}
+                                quote document. Leave a field blank and that block is left off the quote
+                                entirely &mdash; nothing is ever filled in from another business.
+                            </p>
+                            <form method="post">
+                                {% csrf_token %}
+                                <input type="hidden" name="letterhead_submit" value="1">
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" name="lh_sectioned"
+                                           id="id_lh_sectioned" {% if letterhead.sectioned %}checked{% endif %}>
+                                    <label class="form-check-label fw-bold" for="id_lh_sectioned">
+                                        Use our own sectioned quote sheet
+                                    </label>
+                                    <small class="d-block text-muted">
+                                        Groups a quote into numbered sections with their own subtotals,
+                                        and adds discount and VAT rows. Off means the standard layout.
+                                    </small>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_trading_name">Trading as</label>
+                                        <input type="text" class="form-control" id="id_lh_trading_name"
+                                               name="lh_trading_name" value="{{ letterhead.trading_name }}"
+                                               placeholder="ROYAL HARDWARE">
+                                        <small class="text-muted">Shown as &ldquo;t / a &hellip;&rdquo; under the logo.</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_address">Address</label>
+                                        <input type="text" class="form-control" id="id_lh_address"
+                                               name="lh_address" value="{{ letterhead.address }}"
+                                               placeholder="20398 Budiriro 5B Cabs Harare">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_phones">Phone numbers</label>
+                                        <textarea class="form-control" id="id_lh_phones" name="lh_phones"
+                                                  rows="4" placeholder="One per line">{{ letterhead.phones }}</textarea>
+                                        <small class="text-muted">One per line.</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_public_email">Email on the quote</label>
+                                        <input type="text" class="form-control" id="id_lh_public_email"
+                                               name="lh_public_email" value="{{ letterhead.public_email }}"
+                                               placeholder="info@yourbusiness.co.zw">
+                                        <label class="form-label fw-bold mt-3" for="id_lh_website">Website</label>
+                                        <input type="text" class="form-control" id="id_lh_website"
+                                               name="lh_website" value="{{ letterhead.website }}"
+                                               placeholder="www.yourbusiness.co.zw">
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold" for="id_lh_services_blurb">Services line</label>
+                                    <textarea class="form-control" id="id_lh_services_blurb"
+                                              name="lh_services_blurb" rows="3"
+                                              placeholder="For all: supply &amp; new installation&hellip;">{{ letterhead.services_blurb }}</textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold" for="id_lh_maintenance_blurb">Maintenance line</label>
+                                    <input type="text" class="form-control" id="id_lh_maintenance_blurb"
+                                           name="lh_maintenance_blurb" value="{{ letterhead.maintenance_blurb }}"
+                                           placeholder="Maintenance: water leaks, no water&hellip;">
+                                </div>
+
+                                <h6 class="fw-bold mt-4">Banking details</h6>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label" for="id_lh_bank_account_name">Account name</label>
+                                        <input type="text" class="form-control" id="id_lh_bank_account_name"
+                                               name="lh_bank_account_name" value="{{ letterhead.bank.account_name }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label" for="id_lh_bank_bank_name">Bank</label>
+                                        <input type="text" class="form-control" id="id_lh_bank_bank_name"
+                                               name="lh_bank_bank_name" value="{{ letterhead.bank.bank_name }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label" for="id_lh_bank_branch">Branch</label>
+                                        <input type="text" class="form-control" id="id_lh_bank_branch"
+                                               name="lh_bank_branch" value="{{ letterhead.bank.branch }}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label" for="id_lh_bank_account_number">Account number</label>
+                                        <input type="text" class="form-control" id="id_lh_bank_account_number"
+                                               name="lh_bank_account_number" value="{{ letterhead.bank.account_number }}">
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_terms">Default payment terms</label>
+                                        <textarea class="form-control" id="id_lh_terms" name="lh_terms" rows="3"
+                                                  placeholder="One per line">{{ letterhead.terms }}</textarea>
+                                        <small class="text-muted">One per line. A new quote starts with these.</small>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_default_vat_percent">Default VAT %</label>
+                                        <input type="number" step="0.1" min="0" class="form-control"
+                                               id="id_lh_default_vat_percent" name="lh_default_vat_percent"
+                                               value="{{ letterhead.default_vat_percent }}">
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_signatory">Signed by</label>
+                                        <input type="text" class="form-control" id="id_lh_signatory"
+                                               name="lh_signatory" value="{{ letterhead.signatory }}"
+                                               placeholder="Director A. Name">
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold" for="id_lh_tagline">Footer tagline</label>
+                                    <input type="text" class="form-control" id="id_lh_tagline"
+                                           name="lh_tagline" value="{{ letterhead.tagline }}"
+                                           placeholder="Quality is our mission">
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>Save letterhead
+                                </button>
+                            </form>
+                            {% else %}
+                            <p class="text-muted small mb-0">
+                                No business is linked to your account yet, so there is no quote
+                                letterhead to set. Contact your administrator.
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+
                     <div class="card shadow-sm">
                         <div class="card-header bg-primary text-white">
                             <h5 class="card-title mb-0">

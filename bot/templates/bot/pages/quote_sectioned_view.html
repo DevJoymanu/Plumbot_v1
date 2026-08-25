@@ -1,0 +1,164 @@
+{% extends "bot/layouts/base.html" %}
+
+{% comment %}
+The saved sectioned quote, as the client receives it. Read-only; the same
+letterhead, sections and totals as the editor, so what was typed is what
+prints. Used for any tenant whose profile sets letterhead.layout = "sectioned".
+{% endcomment %}
+
+{% block title %}{{ quotation.get_display_name }}{% endblock %}
+
+{% block extra_css %}
+{% include "bot/includes/quote_sectioned_css.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="bq-page">
+
+    <div class="bq-actions bq-no-print">
+        <a href="{% url 'edit_quotation' quotation.pk %}" class="btn btn-primary">
+            <i class="fas fa-edit"></i> Edit Quote
+        </a>
+        <button type="button" class="btn btn-secondary" onclick="window.print()">
+            <i class="fas fa-print"></i> Print / Save PDF
+        </button>
+        <a href="{% url 'appointment_detail' quotation.appointment.pk %}" class="btn btn-outline-primary">
+            <i class="fas fa-arrow-left"></i> Back to Lead
+        </a>
+        {% if quotation.status == 'draft' %}
+        <a href="{% url 'send_quotation' quotation.pk %}" class="btn btn-success">
+            <i class="fab fa-whatsapp"></i> Send via WhatsApp
+        </a>
+        {% endif %}
+        <form method="post" action="{% url 'duplicate_quotation' quotation.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-warning"
+                    onclick="return confirm('Duplicate this quotation?');">
+                <i class="fas fa-copy"></i> Duplicate
+            </button>
+        </form>
+        <form method="post" action="{% url 'delete_quotation' quotation.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger"
+                    onclick="return confirm('Delete this quotation permanently?');">
+                <i class="fas fa-trash"></i> Delete
+            </button>
+        </form>
+    </div>
+
+    <div class="bq-sheet">
+
+        {% include "bot/includes/quote_letterhead.html" %}
+
+        <div class="bq-meta">
+            <div class="f"><label>DATE:</label>
+                <span>{{ quotation.created_at|date:"d M Y" }}</span></div>
+            <div class="f"><label>CLIENT:</label>
+                <span>{{ quotation.appointment.customer_name|default:"—" }}</span></div>
+            <div class="f"><label>CONTACT:</label>
+                <span>{{ quotation.appointment.phone_number|default:"—" }}</span></div>
+            <div class="f"><label>ADDRESS:</label>
+                <span>{{ quotation.appointment.customer_area|default:"—" }}</span></div>
+            <div class="f"><label>EMAIL:</label>
+                <span>{{ quotation.appointment.customer_email|default:"—" }}</span></div>
+        </div>
+
+        <table class="bq-table">
+            <colgroup>
+                <col class="bq-c-qty"><col class="bq-c-desc"><col class="bq-c-unit">
+                <col class="bq-c-total"><col class="bq-c-act">
+            </colgroup>
+            <thead>
+                <tr><th>QTY</th><th>DESCRIPTION</th><th>UNIT PRICE</th><th>TOTAL PRICE</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for group in sections %}
+                <tr class="bq-section-head">
+                    <td colspan="5">
+                        <div class="bq-sec-wrap">
+                            <span class="bq-num">{{ forloop.counter }}.</span>
+                            <span class="bq-sec-title-static">{{ group.title|default:"ITEMS" }}</span>
+                        </div>
+                    </td>
+                </tr>
+                {% for item in group.items %}
+                <tr class="bq-item">
+                    <td>{{ item.qty_text }}</td>
+                    <td>{{ item.description }}</td>
+                    <td>${{ item.unit_price|floatformat:2 }}</td>
+                    <td class="bq-total-cell">${{ item.total_price|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                {% endfor %}
+                <tr class="bq-subtotal">
+                    <td class="bq-lbl" colspan="3">SUB-TOTAL</td>
+                    <td class="bq-val">{{ lh.currency }}{{ group.subtotal|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" style="text-align:center;padding:26px;color:var(--bq-muted);">
+                        No items on this quotation yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <table class="bq-totals">
+            <colgroup>
+                <col class="bq-c-qty"><col class="bq-c-desc"><col class="bq-c-unit">
+                <col class="bq-c-total"><col class="bq-c-act">
+            </colgroup>
+            <tbody>
+                <tr>
+                    <td class="bq-lbl" colspan="3">MATERIALS SUB-TOTAL</td>
+                    <td class="bq-amt">{{ lh.currency }}{{ materials_total|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3"><sup>ADD:</sup> Labour</td>
+                    <td class="bq-amt">{{ lh.currency }}{{ quotation.labor_cost|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3">Transport</td>
+                    <td class="bq-amt">{{ lh.currency }}{{ quotation.transport_cost|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                {% if quotation.discount %}
+                <tr>
+                    <td class="bq-lbl" colspan="3">Discount</td>
+                    <td class="bq-amt">- {{ lh.currency }}{{ quotation.discount|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                {% endif %}
+                <tr>
+                    <td class="bq-lbl bq-strong" colspan="3">SUB-TOTAL</td>
+                    <td class="bq-amt">{{ lh.currency }}{{ net_subtotal|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                {% if quotation.vat_percent %}
+                <tr>
+                    <td class="bq-lbl" colspan="3">VAT ({{ quotation.vat_percent|floatformat:"-2" }}%)</td>
+                    <td class="bq-amt">{{ lh.currency }}{{ vat_amount|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                {% endif %}
+                <tr class="bq-grand">
+                    <td class="bq-lbl" colspan="3">GRAND TOTAL</td>
+                    <td class="bq-amt">{{ lh.currency }}{{ quotation.total_amount|floatformat:2 }}</td>
+                    <td></td>
+                </tr>
+                {% for term in quote_terms %}
+                <tr class="bq-terms">
+                    <td colspan="5">{{ term }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% include "bot/includes/quote_footer.html" %}
+    </div>
+</div>
+{% endblock %}
