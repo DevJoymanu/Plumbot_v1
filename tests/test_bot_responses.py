@@ -5169,7 +5169,57 @@ try:
         _bm.TenantPriceItem.objects = _orig_objects
         _ml._tenant_currency = _orig_cur
 
+    # A highlighted photo we have never looked at is described ON DEMAND, so
+    # photos uploaded before vision existed still answer properly — no backfill.
+    class _Row2:
+        def __init__(self, title, vision='', item_id='p1'):
+            self.title, self.vision_description, self.item_id = title, vision, item_id
+
+    _orig_lookup2 = _wwh._quoted_portfolio_item
+    _orig_ml = _sys_v.modules.get('bot.media_library')
+    _fake_ml = type(_sys_v)('bot.media_library')
+    _calls = []
+
+    def _fake_describe(item):
+        _calls.append(item.item_id)
+        item.vision_description = 'A borehole pump and pressure tank.'
+        return item.vision_description
+    _fake_ml.describe_portfolio_item = _fake_describe
+    _sys_v.modules['bot.media_library'] = _fake_ml
+    try:
+        _undescribed = _Row2('Borehole')
+        _wwh._quoted_portfolio_item = lambda tenant, quoted: _undescribed
+        _out = _wwh._enrich_quoted_photo(type('_A', (), {'tenant': object()})(), 'Borehole')
+        results.log("highlighted photo: an undescribed one is looked at on demand",
+                    _calls == ['p1'] and 'pressure tank' in _out, got=_out)
+        results.log("highlighted photo: the title still leads the quote",
+                    _out.startswith('Borehole -'), got=_out)
+
+        _calls.clear()
+        _already = _Row2('Borehole', vision='Already seen.')
+        _wwh._quoted_portfolio_item = lambda tenant, quoted: _already
+        _wwh._enrich_quoted_photo(type('_A', (), {'tenant': object()})(), 'Borehole')
+        results.log("highlighted photo: a described one is never re-described",
+                    _calls == [])
+
+        _wwh._quoted_portfolio_item = lambda tenant, quoted: None
+        results.log("highlighted photo: a quote that is not ours is untouched",
+                    _wwh._enrich_quoted_photo(
+                        type('_A', (), {'tenant': object()})(), 'hello') == 'hello')
+        results.log("highlighted photo: no quote does nothing",
+                    _wwh._enrich_quoted_photo(
+                        type('_A', (), {'tenant': object()})(), None) is None)
+    finally:
+        _wwh._quoted_portfolio_item = _orig_lookup2
+        if _orig_ml is not None:
+            _sys_v.modules['bot.media_library'] = _orig_ml
+        else:
+            _sys_v.modules.pop('bot.media_library', None)
+
     _src_q = _inspect_r.getsource(_wwh._generate_and_schedule_reply)
+    results.log("highlighted photo: enrichment runs before any reply step",
+                _src_q.find('_enrich_quoted_photo') != -1
+                and _src_q.find('_enrich_quoted_photo') < _src_q.find('STEP 1c'))
     results.log("quoted photo: the price step runs BEFORE the family steps",
                 _src_q.find('STEP 1c') != -1
                 and _src_q.find('STEP 1c') < _src_q.find('STEP 2: Service-specific'))

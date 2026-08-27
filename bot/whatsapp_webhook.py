@@ -1515,6 +1515,41 @@ def _quoted_portfolio_item(tenant, quoted_text):
     return None
 
 
+def _enrich_quoted_photo(appointment, quoted_text):
+    """Look at a highlighted photo NOW, if we never have, and return the richer
+    quote text. Returns quoted_text unchanged when there is nothing to add.
+
+    The media index stores what we knew about a photo at SEND time, which for
+    anything uploaded before vision existed is a bare title — "Borehole". That
+    single word is all the classifiers, the pricing gates and generate_response
+    ever saw for a customer's "how much for this one".
+
+    Describing on demand rather than sweeping the whole gallery: only photos a
+    customer actually asks about cost a call, the description is saved so it is
+    a one-off per photo, and there is no backfill to remember to run. This runs
+    on the batch-flush thread, never the webhook response, and the reply is
+    already held 1-5 minutes — a second or two here is invisible.
+    """
+    quoted = (quoted_text or '').strip()
+    if not quoted:
+        return quoted_text
+    tenant = getattr(appointment, 'tenant', None)
+    item = _quoted_portfolio_item(tenant, quoted)
+    if item is None or (item.vision_description or '').strip():
+        return quoted_text
+    try:
+        from bot.media_library import describe_portfolio_item
+        description = describe_portfolio_item(item)
+    except Exception:
+        return quoted_text
+    if not description:
+        return quoted_text
+    print(f"👁️  Looked at highlighted photo '{item.item_id}': {description[:80]}")
+    # Title first, so the quote still resolves back to this row by its leading
+    # title on this turn and every later one (see _quoted_portfolio_item).
+    return f"{item.title} - {description}"
+
+
 def _quoted_portfolio_price_reply(plumbot, appointment, quoted_text, message_body):
     """Answer a price question about a quoted portfolio photo, or None.
 
@@ -2664,6 +2699,11 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if appointment.status == 'confirmed' and is_post_booking_ack_message(message_body):
             print(f"Post-booking ack detected; no reply sent. sender={sender}, message='{message_body}'")
             return
+
+        # A highlighted photo we have never looked at gets described NOW, so
+        # every step below — classification, the pricing gates, generate_response
+        # — sees what is in it rather than a one-word title.
+        quoted_text = _enrich_quoted_photo(appointment, quoted_text)
 
         from .views import Plumbot
         plumbot = Plumbot(phone_number, tenant=tenant)
