@@ -5078,6 +5078,58 @@ try:
         else:
             _sys_v.modules.pop('bot.models', None)
 
+    # A price entered in the tenant's CONFIG must reach a quoted photo even
+    # when nobody linked the two. Prod 2026-08-27: barmak's sheet carried
+    # borehole at US$500 all-in and their gallery had a "Borehole" photo, but
+    # with price_refs=[] and a blank price_line the customer could not be told.
+    from bot import media_library as _ml
+
+    class _PriceRow:
+        def __init__(self, family, allin=None, label='', variant='',
+                     short_label='', keywords=None, flat=None,
+                     supply=None, labour=None):
+            self.family, self.variant, self.label = family, variant, label
+            self.short_label, self.keywords = short_label, keywords or []
+            self.allin, self.flat = allin, flat
+            self.supply, self.labour = supply, labour
+
+    class _Photo:
+        def __init__(self, title, price_line='', price_refs=None):
+            self.title, self.price_line = title, price_line
+            self.price_refs = price_refs or []
+
+    _rows = [_PriceRow('borehole', allin=500, label='Borehole'),
+             _PriceRow('shower', allin=305, label='Shower cubicle')]
+    _orig_filter = _ml.TenantPriceItem if hasattr(_ml, 'TenantPriceItem') else None
+    import bot.models as _bm
+    _orig_objects = _bm.TenantPriceItem.objects
+    _orig_cur = _ml._tenant_currency
+    _ml._tenant_currency = lambda tenant: 'US$'
+
+    class _Objs:
+        def filter(self, **kw):
+            return _rows
+    _bm.TenantPriceItem.objects = _Objs()
+    try:
+        results.log("photo price: an unlinked photo resolves from the price sheet",
+                    _ml.price_line_for_item(None, _Photo('Borehole'))
+                    == 'Borehole from US$500',
+                    got=_ml.price_line_for_item(None, _Photo('Borehole')))
+        results.log("photo price: a stored line still wins",
+                    _ml.price_line_for_item(
+                        None, _Photo('Borehole', price_line='Borehole from US$650'))
+                    == 'Borehole from US$650')
+        results.log("photo price: an unmatched title stays blank",
+                    _ml.price_line_for_item(None, _Photo('Kitchen renovation')) == '')
+        results.log("photo price: matching is strict, not substring",
+                    _ml.price_line_for_item(None, _Photo('Repairing a shower door')) == '')
+        results.log("photo price: a title with trailing words still matches",
+                    _ml.price_line_for_item(None, _Photo('Borehole installation'))
+                    == 'Borehole from US$500')
+    finally:
+        _bm.TenantPriceItem.objects = _orig_objects
+        _ml._tenant_currency = _orig_cur
+
     _src_q = _inspect_r.getsource(_wwh._generate_and_schedule_reply)
     results.log("quoted photo: the price step runs BEFORE the family steps",
                 _src_q.find('STEP 1c') != -1

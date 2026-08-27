@@ -166,6 +166,60 @@ def price_line_and_tags_for_refs(tenant, refs):
     return '\n'.join(lines), (tags or ['general'])
 
 
+def price_line_for_item(tenant, item) -> str:
+    """The best price line we can produce for one portfolio photo, or ''.
+
+    Three sources, most authoritative first:
+
+      1. the stored `price_line` (written at annotation, kept fresh by
+         resync_portfolio_prices)
+      2. its `price_refs`, resolved LIVE against the price list — so a price
+         added after the photo was annotated still shows
+      3. the photo's own TITLE matched against the tenant's price families
+
+    Step 3 exists because a photo is only linked to the price list if whoever
+    annotated it picked a job from the library, and the library does not offer
+    every family a tenant sells. Prod 2026-08-27: barmak's price sheet had
+    `borehole` at US$500 all-in and their gallery had a photo titled
+    "Borehole", but with `price_refs=[]` and a blank `price_line` — so a
+    customer quoting that photo could not be told the price the tenant had
+    already entered.
+
+    Matching is deliberately strict (whole title, or title starting with the
+    name) — a loose match would price the wrong job, which is the failure this
+    whole path exists to prevent.
+    """
+    stored = (getattr(item, 'price_line', '') or '').strip()
+    if stored:
+        return stored
+
+    live, _ = price_line_and_tags_for_refs(tenant, getattr(item, 'price_refs', None))
+    if live:
+        return live
+
+    title = (getattr(item, 'title', '') or '').strip().lower()
+    if not title:
+        return ''
+    from .models import TenantPriceItem
+    cur = _tenant_currency(tenant)
+    for row in TenantPriceItem.objects.filter(tenant=tenant, is_active=True):
+        value = _price_value(row)
+        if value is None:
+            continue
+        names = {
+            (row.family or '').replace('_', ' ').replace('-', ' ').strip().lower(),
+            (row.variant or '').replace('_', ' ').strip().lower(),
+            (row.label or '').strip().lower(),
+            (row.short_label or '').strip().lower(),
+        }
+        names.update(str(k).strip().lower() for k in (row.keywords or []))
+        names.discard('')
+        if any(title == n or title.startswith(f'{n} ') for n in names):
+            label = row.label or row.short_label or (row.family or '').replace('_', ' ')
+            return f"{label[:1].upper()}{label[1:]} from {cur}{_price_display(value)}"
+    return ''
+
+
 def infer_price_refs(item) -> list:
     """Best-effort price-list link for a legacy photo saved before refs existed:
     match the library job labels against the photo's own text — its auto-composed

@@ -1539,7 +1539,14 @@ def _quoted_portfolio_price_reply(plumbot, appointment, quoted_text, message_bod
         language = 'english'
     language = 'shona' if language == 'shona' else 'english'
 
-    price_line = (getattr(item, 'price_line', '') or '').strip()
+    # Not just the photo's stored line: a tenant may have entered the price in
+    # their config without the photo ever being linked to it (see
+    # price_line_for_item).
+    try:
+        from bot.media_library import price_line_for_item
+        price_line = price_line_for_item(getattr(appointment, 'tenant', None), item)
+    except Exception:
+        price_line = (getattr(item, 'price_line', '') or '').strip()
     if not price_line:
         # Recognised the photo, hold no price for it: name the piece so the
         # customer knows we understood, then the tenant's own visit offer.
