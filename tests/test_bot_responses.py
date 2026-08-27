@@ -5070,6 +5070,55 @@ try:
 except Exception as e:
     results.log("quoted photo pricing", False, got=str(e))
 
+# ── The repeat-price recap is the TENANT's offer, not Homebase's ─────────────
+# It was a hardcoded "Our Facebook package is US$800 - freestanding tub and side
+# chamber" sent to every tenant's customers. Barmak's is US$900 with different
+# contents, so a lead who asked twice got the right figure and then a wrong one.
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _PB_P
+
+    class _Cfg:
+        def __init__(self, amount):
+            self._amount = amount
+
+        def price_item(self, family, variant=''):
+            if self._amount is None:
+                return None
+            return type('_I', (), {
+                'flat': self._amount,
+                'label': 'Facebook package',
+                'parts': [{'name': 'freestanding tub'}, {'name': 'shower cubicle'}],
+            })()
+
+    class _RecapBot:
+        _pricing_overview_recap = _PB_P._pricing_overview_recap
+
+        def __init__(self, amount):
+            self.tenant_cfg = _Cfg(amount)
+
+        def _get_pricing_followup_prompt(self, language='english'):
+            return "What did you have in mind?"
+
+    _recap = _RecapBot(900)._pricing_overview_recap('english')
+    results.log("price recap: uses the tenant's own offer figure",
+                _recap is not None and 'US$900' in _recap, got=_recap)
+    results.log("price recap: never restates Homebase's US$800 package",
+                _recap is not None and 'US$800' not in _recap, got=_recap)
+    results.log("price recap: no tenant offer means no recap at all",
+                _RecapBot(None)._pricing_overview_recap('english') is None)
+    _recap_sn = _RecapBot(900)._pricing_overview_recap('shona')
+    results.log("price recap: mirrors the lead's language",
+                _recap_sn is not None and 'US$900' in _recap_sn
+                and 'fixed price' not in _recap_sn, got=_recap_sn)
+    results.log("price recap: no emojis",
+                _recap is not None and not any(ord(c) > 0x2100 for c in _recap))
+
+    _src_r = _inspect_r.getsource(_wwh._generate_and_schedule_reply)
+    results.log("price recap: the webhook no longer hardcodes a package price",
+                'US$800' not in _src_r and '_pricing_overview_recap(' in _src_r)
+except Exception as e:
+    results.log("price recap tenant-safety", False, got=str(e))
+
 # ── The out-of-scope list is the TENANT's, not Homebase's ────────────────────
 # Same prod incident: "borehole" is hardcoded out-of-scope, but barmak sells
 # borehole work and shows it in their own gallery.

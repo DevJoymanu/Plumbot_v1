@@ -5385,6 +5385,37 @@ class ResponseMixin:
 
             return self._compose_pricing_overview(language, project_context)
 
+        def _pricing_overview_recap(self, language='english'):
+            """Short restatement for a lead who asks price again AFTER the full
+            overview has gone out. Anchored on the tenant's OWN offer row, the
+            same source _compose_pricing_overview uses.
+
+            Returns None when the tenant has no offer set — the router then
+            falls through to its later steps. This used to be a hardcoded
+            "Our Facebook package is US$800 - freestanding tub and side
+            chamber", which is Homebase's offer and was sent to every tenant's
+            customers; barmak's package is US$900 with different contents, so
+            a lead who asked twice got the right figure and then a wrong one
+            (CLAUDE.md: absent means omit, never borrow).
+            """
+            item = self.tenant_cfg.price_item('package', 'facebook')
+            amount = item.flat if item is not None else None
+            if amount is None:
+                return None
+            facts = facebook_package_facts(self.tenant_cfg) or {}
+            label = facts.get('label') or 'package'
+            language = 'shona' if language == 'shona' else 'english'
+            contents = facts.get('sn' if language == 'shona' else 'en') or ''
+            if language == 'shona':
+                head = f"{label} yedu inosvika US${int(amount)}"
+                head += f" — ine {contents}." if contents else "."
+                body = " Tichakupai mutengo chaiwo kana taona nzvimbo. "
+            else:
+                head = f"Our {label} is US${int(amount)}"
+                head += f" — a {contents}." if contents else "."
+                body = " We'll give you a fixed price once we've seen the space. "
+            return f"{head}{body}{self._get_pricing_followup_prompt(language)}"
+
         def _compose_pricing_overview(self, language, project_context=''):
             """The vague-'how much' reply: anchored on the tenant's OWN
             Facebook/social offer (the assumed context for a no-context price

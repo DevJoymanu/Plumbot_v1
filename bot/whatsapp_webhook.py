@@ -3409,11 +3409,14 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 appointment.pricing_overview_sent = True
                 appointment.save(update_fields=['pricing_overview_sent'])
             elif reply is None and objection_type == 'pricing' and getattr(appointment, 'pricing_overview_sent', False):
-                reply = (
-                    "Our Facebook package is US$800 — freestanding tub and side chamber. "
-                    "We'll give you a fixed price once we've seen the space. "
-                    f"{plumbot._get_pricing_followup_prompt('english')}"
-                )
+                # Built from the lead's OWN tenant offer, and None when they
+                # have none — never Homebase's package restated to somebody
+                # else's customer.
+                try:
+                    _recap_lang = detect_language(message_body) or 'english'
+                except Exception:
+                    _recap_lang = 'english'
+                reply = plumbot._pricing_overview_recap(_recap_lang)
 
         # -- STEP 3b: Repeated-question detection ------------------------------
         if reply is None and uc_is_repeat(_uclass):
