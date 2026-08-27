@@ -5216,10 +5216,34 @@ try:
         else:
             _sys_v.modules.pop('bot.media_library', None)
 
+    # Vision writes PROSE, and prose names fixtures incidentally: a storage
+    # tank "on a steel tower structure with pipe" resolved to pipe_repair and
+    # priced pipe work. The deterministic resolver sees the title only.
+    results.log("quoted title: vision sentences are stripped for the keyword resolver",
+                _wwh._quoted_title('Borehole - Storage tank on a tower with pipe')
+                == 'Borehole')
+    results.log("quoted title: a legacy title-only quote is unchanged",
+                _wwh._quoted_title('Borehole') == 'Borehole')
+    results.log("quoted title: incidental prose no longer resolves a product",
+                _wwh._keyword_product_intent(
+                    _wwh._quoted_title('Borehole - Storage tank on a tower with pipe'))
+                is None)
+    results.log("quoted title: the raw prose WOULD have mis-resolved",
+                _wwh._keyword_product_intent(
+                    'Borehole - Storage tank on a tower with pipe') == 'pipe_repair')
+
     _src_q = _inspect_r.getsource(_wwh._generate_and_schedule_reply)
     results.log("highlighted photo: enrichment runs before any reply step",
                 _src_q.find('_enrich_quoted_photo') != -1
                 and _src_q.find('_enrich_quoted_photo') < _src_q.find('STEP 1c'))
+    # Nothing between STEP 1c and STEP 3 guards on `reply is None`, so the
+    # quoted-photo answer must SEND and return, not set a variable for later
+    # steps to overwrite.
+    _step1c = _src_q[_src_q.find('STEP 1c'):_src_q.find('STEP 2: Service-specific')]
+    results.log("quoted photo: the reply is sent and returned, not left to be overwritten",
+                'delayed_response' in _step1c and 'return' in _step1c)
+    results.log("quoted photo: the keyword resolver reads the title only",
+                '_keyword_product_intent(_quoted_title(quoted_text))' in _src_q)
     results.log("quoted photo: the price step runs BEFORE the family steps",
                 _src_q.find('STEP 1c') != -1
                 and _src_q.find('STEP 1c') < _src_q.find('STEP 2: Service-specific'))

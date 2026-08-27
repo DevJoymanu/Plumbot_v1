@@ -1515,6 +1515,19 @@ def _quoted_portfolio_item(tenant, quoted_text):
     return None
 
 
+def _quoted_title(quoted_text):
+    """The tenant's own label out of a quote, dropping any vision sentences.
+
+    A sent photo is indexed as "<title> - <what the bot saw>". The full string
+    is what the LLM and the classifiers should see, but the DETERMINISTIC
+    keyword resolver must see only the title: vision writes prose, and prose
+    names fixtures incidentally.
+    """
+    text = (quoted_text or '').strip()
+    head = text.split(' - ', 1)[0].strip()
+    return head or text
+
+
 def _enrich_quoted_photo(appointment, quoted_text):
     """Look at a highlighted photo NOW, if we never have, and return the richer
     quote text. Returns quoted_text unchanged when there is nothing to add.
@@ -3036,7 +3049,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if quoted_text:
             _det_intent = (
                 _keyword_product_intent(message_body)
-                or _keyword_product_intent(quoted_text)
+                # The TITLE only, never the vision sentences after it. Those are
+                # prose, and prose carries incidental fixture words: a storage
+                # tank photo described as "on a steel tower structure with pipe"
+                # resolved to pipe_repair and priced pipe work (prod, barmak,
+                # 2026-08-28). The tenant's own label is the deliberate signal.
+                or _keyword_product_intent(_quoted_title(quoted_text))
             )
             if _det_intent and _det_intent != _quick_service_check.get('intent'):
                 print(
@@ -3250,9 +3268,26 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # pricing steps — which only know Homebase's product list and would other-
         # wise answer a borehole question with the bathroom package (prod, barmak,
         # 2026-08-27). Only fires when that photo carries the tenant's own price.
-        if reply is None and quoted_text and _explicitly_requests_price(message_body):
-            reply = _quoted_portfolio_price_reply(
+        # Sent-and-returned like STEP 1b, NOT left for the steps below to
+        # respect: nothing between here and STEP 3 guards on `reply is None`,
+        # so setting it merely built the right answer and then watched STEP 2
+        # overwrite it (prod, barmak, 2026-08-28 — the quoted-photo price was
+        # composed and then replaced with pipe-repair rates).
+        if quoted_text and _explicitly_requests_price(message_body):
+            _quoted_reply = _quoted_portfolio_price_reply(
                 plumbot, appointment, quoted_text, message_body)
+            if _quoted_reply is not None:
+                appointment.add_conversation_message("assistant", _quoted_reply)
+                appointment.last_outbound_at = timezone.now()
+                appointment.last_contacted_at = appointment.last_outbound_at
+                appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+                delay = get_random_delay(sender=sender)
+                threading.Thread(
+                    target=delayed_response,
+                    args=(sender, _quoted_reply, delay, message_id),
+                    kwargs={'tenant': tenant}, daemon=True,
+                ).start()
+                return
 
         # -- STEP 2: Service-specific pricing inquiry ---------------------------
         any_pricing_sent = (
