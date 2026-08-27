@@ -46,24 +46,51 @@ _INSTRUCTION = (
 # the fixtures named, not an assessment.
 _PORTFOLIO_INSTRUCTION = (
     "This is a plumbing company's own photo of work they have completed, shown "
-    "to customers as an example. In one or two plain sentences, name the "
-    "plumbing fixtures, fittings or installation visible, in ordinary words a "
-    "plumber would use: bath, corner bath, freestanding bath, shower cubicle, "
-    "shower tray, toilet, wall-hung toilet, basin, vanity, geyser, tap, mixer, "
-    "pipe, borehole pump, pressure tank, storage tank. Describe only what you "
-    "can see. Do not guess, do not price anything, do not praise the work, and "
-    "do not address anyone."
+    "to customers as an example.\n"
+    "Reply with exactly two lines and nothing else.\n"
+    "Line 1: a short name for the main job shown, two to four words, no "
+    "punctuation — for example 'Freestanding tub', 'Shower cubicle', "
+    "'Borehole pump', 'Vanity unit', 'Geyser install'.\n"
+    "Line 2: one or two plain sentences naming the plumbing fixtures, fittings "
+    "or installation visible, in ordinary words a plumber would use: bath, "
+    "corner bath, freestanding bath, shower cubicle, shower tray, toilet, "
+    "wall-hung toilet, basin, vanity, geyser, tap, mixer, pipe, borehole pump, "
+    "pressure tank, storage tank.\n"
+    "Describe only what you can see. Do not guess, do not price anything, do "
+    "not praise the work, and do not address anyone."
 )
+
+# A label longer than this is prose, not a name — the model ignored line 1.
+MAX_VISION_LABEL_CHARS = 40
 
 
 def describe_portfolio_image(file_bytes, mime_type, tenant=None):
-    """One-line description of the tenant's OWN previous-work photo, or None.
+    """Look at the tenant's OWN previous-work photo.
 
-    Same contract as describe_customer_image: never raises, None means "we did
-    not see it". Run once when a photo is added to the gallery, not per send.
+    Returns (label, description) — a short name for the job and one or two
+    sentences about it — or (None, None). The label matters because a tenant
+    may upload a photo WITHOUT naming it, and then vision is the only thing
+    that knows what the photo is: it becomes the row's title, which is what a
+    customer's quoted-photo question resolves against and what the price
+    lookup matches on.
+
+    Same contract as describe_customer_image otherwise: never raises.
     """
-    return _describe(file_bytes, mime_type, _PORTFOLIO_INSTRUCTION,
-                     log_label="a portfolio image")
+    raw = _describe(file_bytes, mime_type, _PORTFOLIO_INSTRUCTION,
+                    log_label="a portfolio image")
+    if not raw:
+        return None, None
+    lines = [ln.strip(' .-*#') for ln in raw.splitlines() if ln.strip()]
+    if not lines:
+        return None, None
+    label = lines[0]
+    description = ' '.join(lines[1:]).strip() or label
+    # The model sometimes answers in one prose block, ignoring the two-line
+    # shape. Then there is no name to trust — keep the prose as the description
+    # and let the caller fall back rather than titling a row with a sentence.
+    if len(label) > MAX_VISION_LABEL_CHARS or len(lines) == 1:
+        return None, raw.strip()
+    return label, description
 
 
 def describe_customer_image(file_bytes, mime_type, tenant=None):

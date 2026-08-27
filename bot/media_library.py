@@ -198,10 +198,13 @@ def price_line_for_item(tenant, item) -> str:
         return live
 
     title = (getattr(item, 'title', '') or '').strip().lower()
-    if not title:
+    vision = (getattr(item, 'vision_description', '') or '').strip().lower()
+    if not title and not vision:
         return ''
     from .models import TenantPriceItem
+
     cur = _tenant_currency(tenant)
+    priced = []
     for row in TenantPriceItem.objects.filter(tenant=tenant, is_active=True):
         value = _price_value(row)
         if value is None:
@@ -214,9 +217,31 @@ def price_line_for_item(tenant, item) -> str:
         }
         names.update(str(k).strip().lower() for k in (row.keywords or []))
         names.discard('')
+        priced.append((row, value, names))
+
+    def _line(row, value):
+        label = row.label or row.short_label or (row.family or '').replace('_', ' ')
+        return f"{label[:1].upper()}{label[1:]} from {cur}{_price_display(value)}"
+
+    # 3a. The title, matched strictly.
+    for row, value, names in priced:
         if any(title == n or title.startswith(f'{n} ') for n in names):
-            label = row.label or row.short_label or (row.family or '').replace('_', ' ')
-            return f"{label[:1].upper()}{label[1:]} from {cur}{_price_display(value)}"
+            return _line(row, value)
+
+    # 3b. What the bot SAW in the photo — the only identity an unnamed upload
+    # has. Prose, so this is a word-boundary search rather than a whole-string
+    # match, and it abstains unless EXACTLY ONE priced job is mentioned: "a
+    # bath and a shower tray are visible" names two, and picking either would
+    # be a coin flip on the customer's money.
+    if not vision:
+        return ''
+    import re
+    hits = []
+    for row, value, names in priced:
+        if any(re.search(rf'\b{re.escape(n)}\b', vision) for n in names if len(n) >= 4):
+            hits.append((row, value))
+    if len(hits) == 1:
+        return _line(*hits[0])
     return ''
 
 
@@ -349,14 +374,30 @@ def save_portfolio_upload(tenant, upload):
 # 2026-08-27). Describing them here — once, when the photo is added, not on
 # every send — gives that quote real text to resolve against.
 
+# Title given to a photo uploaded WITHOUT a name, until vision supplies one.
+# TenantPortfolioItem has a portfolio_title_required check constraint, so the
+# row cannot simply be titled ''.
+PENDING_TITLE = 'Untitled photo'
+
+
+def needs_title(item) -> bool:
+    """True when this row is still waiting for vision to name it."""
+    title = (getattr(item, 'title', '') or '').strip()
+    return not title or title == PENDING_TITLE
+
+
 def describe_portfolio_item(item) -> str:
-    """Fill and save `vision_description` for one portfolio row. Returns it.
+    """Fill `vision_description` for one portfolio row, and its title when the
+    owner didn't give it one. Returns the description.
 
     Best-effort: returns '' and leaves the row untouched on any failure, and
-    never re-describes a row that already has one.
+    never re-describes a row that already has a description.
     """
-    if item is None or getattr(item, 'vision_description', ''):
-        return getattr(item, 'vision_description', '') or ''
+    if item is None:
+        return ''
+    already = getattr(item, 'vision_description', '') or ''
+    if already and not needs_title(item):
+        return already
     name = getattr(item, 'filename', '') or ''
     if not name or is_video_filename(name):
         return ''
@@ -367,15 +408,26 @@ def describe_portfolio_item(item) -> str:
         with default_storage.open(name, 'rb') as handle:
             payload = handle.read()
         mime = mimetypes.guess_type(name)[0] or 'image/jpeg'
-        description = describe_portfolio_image(
+        label, description = describe_portfolio_image(
             payload, mime, tenant=getattr(item, 'tenant', None))
     except Exception:
         return ''
     if not description:
         return ''
+
+    fields = ['vision_description']
     item.vision_description = description
+    # An unnamed photo is titled by what the bot sees. Without this a tenant
+    # who just uploads pictures has rows the customer's quoted-photo question
+    # and the price lookup cannot resolve — both key off the title.
+    if label and needs_title(item):
+        item.title = label[:120]
+        fields.append('title')
+        if not (item.description or '').strip():
+            item.description = description
+            fields.append('description')
     try:
-        item.save(update_fields=['vision_description'])
+        item.save(update_fields=fields)
     except Exception:
         return ''
     return description

@@ -16,7 +16,8 @@ from django.views.decorators.http import require_POST
 
 from .. import portfolio_catalog
 from ..decorators import staff_required
-from ..media_library import (MAX_PORTFOLIO_MEDIA, clean_price_refs,
+from ..media_library import (MAX_PORTFOLIO_MEDIA, PENDING_TITLE,
+                             clean_price_refs,
                              describe_portfolio_items_async, is_video_filename,
                              portfolio_library_with_prices,
                              price_line_and_tags_for_refs,
@@ -160,12 +161,11 @@ def gallery_finalize(request):
         path = str(entry.get('path') or '')
         if not path.startswith(prefix):
             continue  # only files in the tenant's own folder
+        # A caption is OPTIONAL: a tenant may just upload their pictures, and
+        # vision names the row (describe_portfolio_item). PENDING_TITLE holds
+        # the place until it does — the row cannot be titled '' because of the
+        # portfolio_title_required constraint.
         caption = str(entry.get('caption') or '').strip()
-        if not caption:
-            return JsonResponse(
-                {'ok': False,
-                 'error': 'Please provide names of items for the image.'},
-                status=400)
         pair_path = str(entry.get('pair_path') or '')
         if pair_path and not pair_path.startswith(prefix):
             pair_path = ''
@@ -191,7 +191,7 @@ def gallery_finalize(request):
         for c in cleaned:
             fields = dict(
                 pair_filename=c['pair_path'],
-                title=c['caption'][:120],
+                title=(c['caption'] or PENDING_TITLE)[:120],
                 description=c['caption'],
                 price_line=c['price_line'],
                 price_refs=c['refs'],
@@ -232,10 +232,8 @@ def gallery_add(request):
         messages.error(request, 'Choose a photo or video first.')
         return redirect('gallery')
     tag = (request.POST.get('tag') or 'general').strip().lower() or 'general'
+    # Optional — vision names an unnamed photo (see gallery_finalize).
     caption = (request.POST.get('caption') or '').strip()
-    if not caption:
-        messages.error(request, 'Please provide names of items for the image.')
-        return redirect('gallery')
     path, error = save_portfolio_upload(tenant, upload)
     if error:
         messages.error(request, error)
@@ -244,7 +242,7 @@ def gallery_add(request):
         tenant=tenant,
         item_id=_unique_item_id(tenant, tag, path),
         filename=path,
-        title=caption[:120],
+        title=(caption or PENDING_TITLE)[:120],
         description=caption,
         price_line=(request.POST.get('price_line') or '').strip()[:200],
         keywords=[tag],

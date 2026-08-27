@@ -2608,19 +2608,25 @@ class GalleryPortalTests(TestCase):
         self.assertTrue(_is_tenant_owned_file(self.acme, 'tenant_portfolios/acme/x.jpg'))
         self.assertTrue(_is_tenant_owned_file(self.acme, 'intake_photos/acme/x.jpg'))
 
-    def test_title_is_mandatory_everywhere(self):
+    def test_title_optional_on_upload_mandatory_on_rename(self):
         import json
 
         from django.core.files.uploadedfile import SimpleUploadedFile
         from django.db import IntegrityError, transaction
 
         from .models import TenantIntake, TenantPortfolioItem
-        # Portal add without a name: rejected with the message, no row created.
+        # Portal add WITHOUT a name is allowed — the tenant can just upload
+        # their pictures and vision names the row (PENDING_TITLE until it runs).
+        from .media_library import PENDING_TITLE
         res = self.client.post(reverse('gallery_add'),
                                {'media': SimpleUploadedFile('job.jpg', b'x'),
                                 'tag': 'geyser', 'caption': '  '}, follow=True)
-        self.assertContains(res, 'Please provide names of items for the image.')
-        self.assertEqual(TenantPortfolioItem.objects.filter(tenant=self.acme).count(), 0)
+        # (The literal string still appears in the page's own JS, so assert the
+        # DB effect rather than the copy.)
+        added = TenantPortfolioItem.objects.filter(tenant=self.acme)
+        self.assertEqual(added.count(), 1)
+        self.assertEqual(added.first().title, PENDING_TITLE)
+        added.delete()
         # Portal update can't blank an existing title.
         self._upload()
         item = TenantPortfolioItem.objects.get(tenant=self.acme)
@@ -2678,12 +2684,17 @@ class GalleryPortalTests(TestCase):
         self.assertEqual(pair.pair_filename, ups[1]['path'])
         self.assertEqual(items.get(title='Shower cubicle').price_line,
                          'Shower cubicle from US$380')
-        # An unnamed entry rejects the batch with the canonical message.
+        # An unnamed entry is accepted and parked under PENDING_TITLE for
+        # vision to name, rather than rejecting the batch.
+        from .media_library import PENDING_TITLE
+        up4 = self.client.post(reverse('gallery_upload'),
+                               {'media': SimpleUploadedFile('d.jpg', b'x')}).json()
         res = self.client.post(reverse('gallery_finalize'), data=_json.dumps([
-            {'path': ups[0]['path'], 'caption': '  '}]),
+            {'path': up4['path'], 'caption': '  '}]),
             content_type='application/json')
-        self.assertEqual(res.status_code, 400)
-        self.assertIn('Please provide names of items', res.json()['error'])
+        self.assertTrue(res.json()['ok'])
+        self.assertTrue(TenantPortfolioItem.objects.filter(
+            tenant=self.acme, title=PENDING_TITLE).exists())
 
     def test_finalize_is_idempotent_and_atomic(self):
         """Re-finalizing the same upload must not 500 on the unique constraint.
@@ -2730,14 +2741,12 @@ class GalleryPortalTests(TestCase):
                   .values_list('item_id', flat=True))
         self.assertEqual(len(ids), 3)
 
-        # A batch rejected for a missing caption must write NOTHING.
+        # A batch rejected before writing must write NOTHING. A blank caption
+        # is no longer a rejection (vision names it), so malformed JSON is the
+        # rejection that still has to leave the table untouched.
         before = TenantPortfolioItem.objects.filter(tenant=self.acme).count()
-        c = self.client.post(reverse('gallery_upload'),
-                             {'media': SimpleUploadedFile('good.jpg', b'x')}).json()
-        bad = self.client.post(reverse('gallery_finalize'), data=_json.dumps([
-            {'path': c['path'], 'caption': 'Named fine', 'tag': 'general'},
-            {'path': c['path'], 'caption': '   '},
-        ]), content_type='application/json')
+        bad = self.client.post(reverse('gallery_finalize'), data='not json',
+                               content_type='application/json')
         self.assertEqual(bad.status_code, 400)
         self.assertEqual(
             TenantPortfolioItem.objects.filter(tenant=self.acme).count(), before)

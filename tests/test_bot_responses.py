@@ -5039,6 +5039,28 @@ try:
     results.log("sent photo: the description leads with the title",
                 "f\"{item['title']} - {vision}\"" in _src_d)
 
+    # Vision must be able to NAME a photo, not just describe it — an upload
+    # with no caption has no other identity.
+    from bot.services import vision as _vis
+
+    def _parse(raw):
+        _orig = _vis._describe
+        _vis._describe = lambda *a, **k: raw
+        try:
+            return _vis.describe_portfolio_image(b'x', 'image/jpeg')
+        finally:
+            _vis._describe = _orig
+    _lbl, _desc = _parse("Borehole pump\nA borehole pump and pressure tank.")
+    results.log("vision: a two-line answer yields a short name",
+                _lbl == 'Borehole pump' and 'pressure tank' in _desc,
+                got=(_lbl, _desc))
+    _lbl2, _desc2 = _parse("The photo shows a long rambling prose answer that "
+                           "ignored the requested two-line shape entirely.")
+    results.log("vision: prose is never used as a title",
+                _lbl2 is None and _desc2, got=(_lbl2, _desc2))
+    results.log("vision: nothing back means nothing claimed",
+                _parse('') == (None, None))
+
     class _Row:
         def __init__(self, title, price_line='x', item_id='i'):
             self.title, self.price_line, self.item_id = title, price_line, item_id
@@ -5126,6 +5148,23 @@ try:
         results.log("photo price: a title with trailing words still matches",
                     _ml.price_line_for_item(None, _Photo('Borehole installation'))
                     == 'Borehole from US$500')
+
+        # An UNNAMED upload has only what the bot saw. One priced job named in
+        # the description is enough; two is a coin flip, so it abstains.
+        class _Seen(_Photo):
+            def __init__(self, vision, title=_ml.PENDING_TITLE):
+                super().__init__(title)
+                self.vision_description = vision
+        results.log("photo price: vision alone can price an unnamed photo",
+                    _ml.price_line_for_item(
+                        None, _Seen('A borehole pump and pressure tank plumbed '
+                                    'to a storage tank.')) == 'Borehole from US$500')
+        results.log("photo price: two priced jobs in view abstains",
+                    _ml.price_line_for_item(
+                        None, _Seen('A shower cubicle beside a borehole pump.')) == '')
+        results.log("photo price: vision naming nothing priced stays blank",
+                    _ml.price_line_for_item(
+                        None, _Seen('A tiled wall with no fittings.')) == '')
     finally:
         _bm.TenantPriceItem.objects = _orig_objects
         _ml._tenant_currency = _orig_cur
