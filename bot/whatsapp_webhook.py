@@ -1605,7 +1605,9 @@ def _quoted_portfolio_price_reply(plumbot, appointment, quoted_text, message_bod
             _quoted_title(quoted_text), language=language)
     except Exception:
         catalogued = None
-    if catalogued:
+    # Belt and braces on top of the builder's own check: a "pricing" reply
+    # carrying no digit is not a pricing reply, whatever composed it.
+    if catalogued and any(ch.isdigit() for ch in catalogued):
         return plumbot._ensure_price_disclaimer('pricing', catalogued)
 
     if not price_line:

@@ -437,6 +437,13 @@ def build_item_price_guide(title: str, language: str = 'english', tenant=None) -
     item = get_item_by_title(title, tenant=tenant)
     if item is None:
         return None
+    # A catalogued piece with no price on it is not a price guide. This used to
+    # emit the header and a bare "- ", which reads to the customer as a pricing
+    # answer containing no prices (prod, barmak, 2026-08-28: a highlighted
+    # borehole photo answered "…covering everything in the photo:\n- "). None
+    # sends the caller to its fallback, which is what the docstring promises.
+    if not (item.get('price') or '').strip():
+        return None
     if language == 'shona':
         header = "Hezvino mutengo wakazara wechikamu ichi, nezvese zviri mupicture:"
     else:

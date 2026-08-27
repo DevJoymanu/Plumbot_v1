@@ -5044,6 +5044,18 @@ try:
                     _cat is not None and 'Vanity from US$250' in _cat, got=_cat)
         results.log("quoted photo: the catalogued reply still gets the disclaimer",
                     _cat is not None and 'starting prices' in _cat.lower(), got=_cat)
+        # A "pricing" reply with no figure in it is not a pricing reply. Prod
+        # 2026-08-28: the composer emitted its header and a bare "- ", and the
+        # customer got "…covering everything in the photo:\n-" with no price.
+        _fp2 = _FakePlumbot()
+        _fp2.catalogued = ("Here's the full pricing for that piece, covering "
+                           "everything in the photo:\n- \n\nWhat area are you in?")
+        _held['item'] = _FakePortfolioItem('Borehole', 'Borehole from US$500')
+        _empty = _wwh._quoted_portfolio_price_reply(_fp2, _Appt(), 'Borehole', 'How much')
+        results.log("quoted photo: a priceless composer result is rejected",
+                    _empty is not None and 'US$500' in _empty, got=_empty)
+        results.log("quoted photo: the empty bullet never reaches the customer",
+                    _empty is not None and '\n- \n' not in _empty, got=_empty)
         # A recognised photo we hold no price for must NOT invent one — and must
         # NOT fall through either. Prod 2026-08-27: returning None here let the
         # multi-item branch answer a borehole question with shower and tub
@@ -5253,6 +5265,23 @@ try:
     # Vision writes PROSE, and prose names fixtures incidentally: a storage
     # tank "on a steel tower structure with pipe" resolved to pipe_repair and
     # priced pipe work. The deterministic resolver sees the title only.
+    # The builder itself must refuse an unpriced piece — the OTHER caller
+    # (STEP 0b) would emit the same empty bullet otherwise.
+    from bot import portfolio_catalog as _pc
+    _orig_by_title = _pc.get_item_by_title
+    try:
+        _pc.get_item_by_title = lambda title, tenant=None: {
+            'title': 'Borehole', 'price': ''}
+        results.log("price guide: an unpriced piece yields no guide at all",
+                    _pc.build_item_price_guide('Borehole') is None)
+        _pc.get_item_by_title = lambda title, tenant=None: {
+            'title': 'Borehole', 'price': 'Borehole from US$500'}
+        _guide = _pc.build_item_price_guide('Borehole')
+        results.log("price guide: a priced piece still builds its guide",
+                    _guide is not None and 'US$500' in _guide, got=_guide)
+    finally:
+        _pc.get_item_by_title = _orig_by_title
+
     results.log("quoted title: vision sentences are stripped for the keyword resolver",
                 _wwh._quoted_title('Borehole - Storage tank on a tower with pipe')
                 == 'Borehole')
