@@ -4987,6 +4987,12 @@ try:
         def _product_price_close(self, language='english'):
             return "Does that sit where you expected?"
 
+        def _no_price_on_file_reply(self, language='english'):
+            return ("Mitengo inosiyana. Toona nzvimbo mahara?"
+                    if language == 'shona' else
+                    "Pricing depends on exactly what you're after. "
+                    "We can come through and give you a fixed price, free of charge.")
+
     _held = {'item': _FakePortfolioItem('Borehole', 'Borehole installation from US$1 200')}
     _orig_lookup = _wwh._quoted_portfolio_item
     _wwh._quoted_portfolio_item = lambda tenant, quoted: _held['item']
@@ -5004,11 +5010,20 @@ try:
         results.log("quoted photo: no emojis in the reply",
                     _reply is not None and not any(ord(c) > 0x2100 for c in _reply),
                     got=_reply)
-        # A photo with no price on it must NOT invent one — fall through instead.
+        # A recognised photo we hold no price for must NOT invent one — and must
+        # NOT fall through either. Prod 2026-08-27: returning None here let the
+        # multi-item branch answer a borehole question with shower and tub
+        # prices carried over from an earlier photo in the same conversation.
         _held['item'] = _FakePortfolioItem('Borehole', '')
-        results.log("quoted photo: no price on the row means no price reply",
-                    _wwh._quoted_portfolio_price_reply(
-                        _FakePlumbot(), _Appt(), 'Borehole', 'How much') is None)
+        _unpriced = _wwh._quoted_portfolio_price_reply(
+            _FakePlumbot(), _Appt(), 'Borehole', 'How much')
+        results.log("quoted photo: an unpriced photo still answers about THAT photo",
+                    _unpriced is not None and 'Borehole' in _unpriced, got=_unpriced)
+        results.log("quoted photo: an unpriced photo quotes no figure at all",
+                    _unpriced is not None and 'US$' not in _unpriced, got=_unpriced)
+        results.log("quoted photo: an unpriced photo offers the visit instead",
+                    _unpriced is not None and 'free of charge' in _unpriced,
+                    got=_unpriced)
         # Nothing matched → fall through to the existing steps.
         _wwh._quoted_portfolio_item = lambda tenant, quoted: None
         results.log("quoted photo: an unmatched quote falls through",

@@ -1516,10 +1516,21 @@ def _quoted_portfolio_item(tenant, quoted_text):
 
 
 def _quoted_portfolio_price_reply(plumbot, appointment, quoted_text, message_body):
-    """Price reply built from a quoted portfolio photo's own price line, or None."""
+    """Answer a price question about a quoted portfolio photo, or None.
+
+    None means "this quote isn't one of our photos" — only then may the caller
+    fall through to the family/multi-item pricing steps.
+
+    A photo we DO recognise always answers about that photo: its own price line
+    when the tenant priced it, otherwise the free-visit deflection. It must
+    never fall through, because the later steps read the running conversation
+    rather than the quote — prod 2026-08-27: a customer quoted barmak's
+    unpriced "Borehole" photo, this returned None, and the multi-item branch
+    answered with shower cubicle and tub prices carried over from an earlier
+    photo. Wrong prices for the wrong job is worse than no price at all.
+    """
     item = _quoted_portfolio_item(getattr(appointment, 'tenant', None), quoted_text)
-    price_line = (getattr(item, 'price_line', '') or '').strip() if item else ''
-    if not price_line:
+    if item is None:
         return None
     try:
         from bot.repeated_question_detector import detect_language
@@ -1527,6 +1538,14 @@ def _quoted_portfolio_price_reply(plumbot, appointment, quoted_text, message_bod
     except Exception:
         language = 'english'
     language = 'shona' if language == 'shona' else 'english'
+
+    price_line = (getattr(item, 'price_line', '') or '').strip()
+    if not price_line:
+        # Recognised the photo, hold no price for it: name the piece so the
+        # customer knows we understood, then the tenant's own visit offer.
+        print(f"💬 Quoted photo '{item.item_id}' has no price on file — visit deflection")
+        lead_in = ("Iyoyo" if language == 'shona' else "That one") + f" — {item.title}."
+        return f"{lead_in} {plumbot._no_price_on_file_reply(language)}"
     lead_in = ("Iyoyo" if language == 'shona' else "That one") + f" — {item.title}."
     try:
         close = plumbot._product_price_close(language)
