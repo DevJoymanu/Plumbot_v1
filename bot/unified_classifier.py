@@ -52,8 +52,7 @@ in_scope      Normal plumbing inquiry, product question, booking info, or
               "Mutengo weshower chii?" (What's the shower price?),
               "Mune tub here?" (Do you have tubs?),
               "Ndichatumira plan mangwana" (I'll send the plan tomorrow).
-out_of_scope  Service we do NOT offer: painting, electrical, roofing,
-              solar, borehole, gardening, carpentry, pest control, etc.
+out_of_scope  Service we do NOT offer: {out_of_scope_services}, etc.
 delay_signal  Customer is deferring: "call me later", "not ready yet",
               "will come back", "I'm busy", "abroad", "still building".
               Shona examples: "Ndiri kunze kwenyika" (I'm out of the country),
@@ -261,6 +260,21 @@ confidence is HIGH when the classification is clear, LOW when ambiguous.\
 """
 
 
+def _out_of_scope_services(appointment) -> str:
+    """The prompt's 'services we do NOT offer' list, for THIS lead's tenant.
+
+    Falls back to the full list on any error — the safe direction, since an
+    over-broad list only declines work, while an under-broad one would have the
+    bot accept jobs the tenant can't do.
+    """
+    from .out_of_scope_handler import OOS_SERVICE_TERMS, out_of_scope_terms_for
+    try:
+        terms = out_of_scope_terms_for(getattr(appointment, 'tenant', None))
+    except Exception:
+        terms = OOS_SERVICE_TERMS
+    return ", ".join(terms or OOS_SERVICE_TERMS)
+
+
 def unified_classify(
     message: str,
     appointment=None,
@@ -323,6 +337,11 @@ def unified_classify(
                         _SYSTEM
                         .replace("{today}", today_date)
                         .replace("{business}", business_name_for(appointment))
+                        # The out-of-scope list is Homebase's. Naming a service
+                        # THIS tenant advertises would have the model decline
+                        # their own work (prod: barmak sells boreholes).
+                        .replace("{out_of_scope_services}",
+                                 _out_of_scope_services(appointment))
                     ),
                 },
                 {"role": "user",   "content": user_content},

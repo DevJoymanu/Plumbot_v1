@@ -285,3 +285,65 @@ def save_portfolio_upload(tenant, upload):
     path = default_storage.save(
         f'{tenant_prefix(tenant)}/{uuid.uuid4().hex}.{ext}', upload)
     return path, None
+
+
+# ── Vision on our OWN gallery photos ─────────────────────────────────────────
+# The bot describes a CUSTOMER's photo on arrival, but its own previous-work
+# photos carried only a title. A customer who quotes one and asks "how much"
+# therefore gave the classifiers a single word to work with ("Borehole"), which
+# is how a borehole question came back priced as a bathroom package (prod,
+# 2026-08-27). Describing them here — once, when the photo is added, not on
+# every send — gives that quote real text to resolve against.
+
+def describe_portfolio_item(item) -> str:
+    """Fill and save `vision_description` for one portfolio row. Returns it.
+
+    Best-effort: returns '' and leaves the row untouched on any failure, and
+    never re-describes a row that already has one.
+    """
+    if item is None or getattr(item, 'vision_description', ''):
+        return getattr(item, 'vision_description', '') or ''
+    name = getattr(item, 'filename', '') or ''
+    if not name or is_video_filename(name):
+        return ''
+    try:
+        import mimetypes
+
+        from .services.vision import describe_portfolio_image
+        with default_storage.open(name, 'rb') as handle:
+            payload = handle.read()
+        mime = mimetypes.guess_type(name)[0] or 'image/jpeg'
+        description = describe_portfolio_image(
+            payload, mime, tenant=getattr(item, 'tenant', None))
+    except Exception:
+        return ''
+    if not description:
+        return ''
+    item.vision_description = description
+    try:
+        item.save(update_fields=['vision_description'])
+    except Exception:
+        return ''
+    return description
+
+
+def describe_portfolio_items_async(item_ids):
+    """Describe new gallery photos in a daemon thread.
+
+    Off the request path deliberately: a gallery batch is up to 20 photos and
+    each call takes a second or two — the owner should not sit through that.
+    Same pattern as regenerate_lead_magnet_async.
+    """
+    item_ids = [i for i in (item_ids or []) if i]
+    if not item_ids:
+        return
+    import threading
+
+    def _work():
+        from .models import TenantPortfolioItem
+        for item in TenantPortfolioItem.objects.filter(pk__in=item_ids):
+            try:
+                describe_portfolio_item(item)
+            except Exception:
+                pass
+    threading.Thread(target=_work, daemon=True).start()

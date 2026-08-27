@@ -40,6 +40,32 @@ _INSTRUCTION = (
 )
 
 
+# The company's OWN previous-work photo, not a customer's. Different job from
+# _INSTRUCTION: nothing is wrong with this installation, and the description is
+# what a customer's "this one, how much?" gets classified against — so it needs
+# the fixtures named, not an assessment.
+_PORTFOLIO_INSTRUCTION = (
+    "This is a plumbing company's own photo of work they have completed, shown "
+    "to customers as an example. In one or two plain sentences, name the "
+    "plumbing fixtures, fittings or installation visible, in ordinary words a "
+    "plumber would use: bath, corner bath, freestanding bath, shower cubicle, "
+    "shower tray, toilet, wall-hung toilet, basin, vanity, geyser, tap, mixer, "
+    "pipe, borehole pump, pressure tank, storage tank. Describe only what you "
+    "can see. Do not guess, do not price anything, do not praise the work, and "
+    "do not address anyone."
+)
+
+
+def describe_portfolio_image(file_bytes, mime_type, tenant=None):
+    """One-line description of the tenant's OWN previous-work photo, or None.
+
+    Same contract as describe_customer_image: never raises, None means "we did
+    not see it". Run once when a photo is added to the gallery, not per send.
+    """
+    return _describe(file_bytes, mime_type, _PORTFOLIO_INSTRUCTION,
+                     log_label="a portfolio image")
+
+
 def describe_customer_image(file_bytes, mime_type, tenant=None):
     """
     Return a one-line description of a customer's photo, or None.
@@ -49,6 +75,12 @@ def describe_customer_image(file_bytes, mime_type, tenant=None):
     fall back to their existing behaviour: vision is additive and must never be
     able to break the media path.
     """
+    return _describe(file_bytes, mime_type, _INSTRUCTION,
+                     log_label="a customer image")
+
+
+def _describe(file_bytes, mime_type, instruction, log_label):
+    """Shared single multimodal call. See the module docstring."""
     if not file_bytes:
         return None
 
@@ -68,7 +100,7 @@ def describe_customer_image(file_bytes, mime_type, tenant=None):
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": _INSTRUCTION},
+                    {"type": "text", "text": instruction},
                     {
                         "type": "image_url",
                         # detail=low downscales to 512x512: cheaper and faster,
@@ -96,5 +128,5 @@ def describe_customer_image(file_bytes, mime_type, tenant=None):
 
     # Internal metadata, not copy: this is never sent to the customer, so it is
     # only ever read by classifiers and shown to the plumber.
-    logger.info("Vision described a customer image: %s", description[:120])
+    logger.info("Vision described %s: %s", log_label, description[:120])
     return description

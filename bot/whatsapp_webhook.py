@@ -1449,7 +1449,12 @@ def _describe_work_image(filename: str, tenant=None) -> str:
         for item in portfolio_catalog.items_for(tenant):
             item_base = os.path.splitext(os.path.basename(item['filename']))[0].lower()
             if item_base == base.lower():
-                return item['title']
+                # Title first, so a quoted reply still resolves back to the row
+                # by its leading title (see _quoted_portfolio_item); the bot's
+                # own look at the photo follows, giving the classifiers real
+                # text instead of a single word.
+                vision = (item.get('vision') or '').strip()
+                return f"{item['title']} - {vision}" if vision else item['title']
     except Exception:
         pass
 
@@ -1464,6 +1469,75 @@ def _describe_work_image(filename: str, tenant=None) -> str:
     if len(cleaned) < 3:
         return "one of our previous work photos"
     return cleaned
+
+
+def _quoted_portfolio_item(tenant, quoted_text):
+    """The tenant's OWN portfolio row for a photo the customer quoted, or None.
+
+    The media index stores each sent image's description, and for a catalogued
+    piece that description IS its title (see _describe_work_image), so the
+    quoted text maps straight back to the row the tenant annotated.
+
+    This exists because product intent is a fixed family list (tub / shower /
+    geyser / …) that only covers what Homebase sells. A tenant can put ANY work
+    in their gallery — prod 2026-08-27: barmak sent a customer their "Borehole"
+    photo, the customer quoted it and asked "How much", no family matched, and
+    the pricing overview answered with the bathroom package instead. The photo's
+    own price_line is the tenant's own figure for exactly that work, so it
+    answers the question the family list cannot — and cannot leak across
+    tenants, because it is scoped to the row this tenant wrote.
+    """
+    quoted = (quoted_text or '').strip()
+    if not quoted:
+        return None
+    try:
+        from bot.models import TenantPortfolioItem
+        rows = list(TenantPortfolioItem.objects.filter(tenant=tenant, is_active=True))
+    except Exception:
+        return None
+    lowered = quoted.lower()
+    # The stored description is the title alone on older photos, and
+    # "<title> - <what the bot sees>" once vision has run, so match on the
+    # LEADING title either way. Longest title first so "Borehole and tank"
+    # cannot be swallowed by "Borehole".
+    matches = [
+        item for item in sorted(rows, key=lambda i: -len(i.title or ''))
+        if (item.title or '').strip()
+        and (lowered == item.title.strip().lower()
+             or lowered.startswith(item.title.strip().lower()))
+    ]
+    # Exactly one match only: two photos sharing a title cannot tell us which
+    # one the customer meant, and guessing a price is worse than falling through.
+    if len(matches) == 1:
+        return matches[0]
+    if matches and len(matches[0].title) > len(matches[1].title):
+        return matches[0]   # an unambiguous longest-title win
+    return None
+
+
+def _quoted_portfolio_price_reply(plumbot, appointment, quoted_text, message_body):
+    """Price reply built from a quoted portfolio photo's own price line, or None."""
+    item = _quoted_portfolio_item(getattr(appointment, 'tenant', None), quoted_text)
+    price_line = (getattr(item, 'price_line', '') or '').strip() if item else ''
+    if not price_line:
+        return None
+    try:
+        from bot.repeated_question_detector import detect_language
+        language = detect_language(message_body) or 'english'
+    except Exception:
+        language = 'english'
+    language = 'shona' if language == 'shona' else 'english'
+    lead_in = ("Iyoyo" if language == 'shona' else "That one") + f" — {item.title}."
+    try:
+        close = plumbot._product_price_close(language)
+    except Exception:
+        close = ''
+    parts = [lead_in, price_line]
+    if close:
+        parts.append(close)
+    reply = ' '.join(p.strip() for p in parts if p and p.strip())
+    print(f"💬 Quoted-photo price reply from portfolio item '{item.item_id}'")
+    return reply
 
 
 def _tenant_gallery_paths(tenant) -> list:
@@ -3103,6 +3177,16 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 target=delayed_response, args=(sender, oos_reply, delay, message_id), kwargs={'tenant': tenant}, daemon=True
             ).start()
             return
+
+        # -- STEP 1c: Price on a quoted portfolio photo -------------------------
+        # The customer pointing at one of OUR photos and asking the price is the
+        # most specific signal there is, so it is resolved before the family-based
+        # pricing steps — which only know Homebase's product list and would other-
+        # wise answer a borehole question with the bathroom package (prod, barmak,
+        # 2026-08-27). Only fires when that photo carries the tenant's own price.
+        if reply is None and quoted_text and _explicitly_requests_price(message_body):
+            reply = _quoted_portfolio_price_reply(
+                plumbot, appointment, quoted_text, message_body)
 
         # -- STEP 2: Service-specific pricing inquiry ---------------------------
         any_pricing_sent = (

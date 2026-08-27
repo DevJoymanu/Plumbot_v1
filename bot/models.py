@@ -325,6 +325,14 @@ class TenantPortfolioItem(models.Model):
     # when the photo is annotated, re-read whenever prices change.
     price_refs = models.JSONField(default=list, blank=True)
     description = models.TextField(blank=True, default='')
+    # What the bot's OWN eyes make of this photo (bot/services/vision.py), run
+    # once when the photo is added rather than on every send — a gallery send is
+    # 15 images and already takes ~100s. Kept SEPARATE from `description` so it
+    # never overwrites the owner's own caption. Its job is to give a customer's
+    # quoted-photo question something richer than a one-word title to classify
+    # against ("Borehole" → a borehole pump and pressure tank plumbed to a
+    # storage tank). Blank when vision is unavailable — nothing depends on it.
+    vision_description = models.TextField(blank=True, default='')
     story = models.TextField(blank=True, default='')
     # Gallery category tags — keys from views/gallery.GALLERY_CATEGORIES, the
     # closed set media_library._fam_tag derives from a photo's price_refs.
@@ -359,6 +367,7 @@ class TenantPortfolioItem(models.Model):
             'price': self.price_line,
             'description': self.description,
             'story': self.story,
+            'vision': self.vision_description,
             'category': (list(self.keywords or []) or ['general'])[0],
             'keywords': list(self.match_terms or self.keywords or []),
         }

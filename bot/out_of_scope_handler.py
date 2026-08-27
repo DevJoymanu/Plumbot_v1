@@ -306,6 +306,52 @@ _OOS_KEYWORDS = (
     "borehole",
 )
 
+# The prose list the DeepSeek classifier prompt shows as "services we do NOT
+# offer". Homebase's list — every entry here is filtered against what the LEAD'S
+# OWN tenant actually sells before it reaches a prompt or a keyword check.
+OOS_SERVICE_TERMS = (
+    "painting", "electrical", "roofing", "solar", "borehole",
+    "gardening", "carpentry", "pest control",
+)
+
+
+def tenant_sells(tenant, term: str) -> bool:
+    """True when this tenant's own gallery or price list covers `term`.
+
+    Both lists above are Homebase's. Another tenant may well do the work they
+    name — barmak advertises borehole jobs in their own gallery — and telling
+    that tenant's customer "we don't do that" is the same class of bug as
+    quoting them Homebase's prices (CLAUDE.md: no Homebase value may reach
+    another tenant's customer). Absent config means the term stays out of
+    scope, so a tenant who really doesn't do it is unaffected.
+    """
+    term = (term or '').strip().lower()
+    if not term or tenant is None:
+        return False
+    try:
+        from .models import TenantPortfolioItem, TenantPriceItem
+        for title, keywords in TenantPortfolioItem.objects.filter(
+                tenant=tenant, is_active=True).values_list('title', 'keywords'):
+            if term in (title or '').lower():
+                return True
+            if any(term in str(k).lower() for k in (keywords or [])):
+                return True
+        for family, label, keywords in TenantPriceItem.objects.filter(
+                tenant=tenant, is_active=True).values_list('family', 'label', 'keywords'):
+            if term in (family or '').lower() or term in (label or '').lower():
+                return True
+            if any(term in str(k).lower() for k in (keywords or [])):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def out_of_scope_terms_for(tenant) -> tuple:
+    """OOS_SERVICE_TERMS minus anything this tenant demonstrably does."""
+    return tuple(t for t in OOS_SERVICE_TERMS if not tenant_sells(tenant, t))
+
+
 _TRIVIAL_ACKS = {
     "ok", "okay", "k", "kk", "yes", "no", "sure", "thanks",
     "thank you", "noted", "cool", "sharp", "👍", "🙏",
@@ -317,15 +363,19 @@ _TRIVIAL_ACKS = {
 }
 
 
-def _keyword_classify(message: str) -> dict:
+def _keyword_classify(message: str, tenant=None) -> dict:
     """
     Keyword-based classification used ONLY when DeepSeek is unavailable.
     Not called in the primary detection path.
+
+    `tenant` is optional so existing callers keep working; passing it stops a
+    tenant being told they don't do work they advertise (see tenant_sells).
     """
     msg = (message or "").lower()
     if any(phrase in msg for phrase in _DELAY_PHRASES):
         return {"category": "delay_signal", "confidence": "HIGH", "detail": "delay keyword matched"}
-    if any(k in msg for k in _OOS_KEYWORDS):
+    matched = [k for k in _OOS_KEYWORDS if k in msg]
+    if matched and not all(tenant_sells(tenant, k) for k in matched):
         return {"category": "out_of_scope", "confidence": "LOW", "detail": "oos keyword matched"}
     return {"category": "in_scope", "confidence": "LOW", "detail": "keyword fallback default"}
 
@@ -357,7 +407,7 @@ def classify_message(message: str, appointment) -> dict:
 
     # No DeepSeek available — use keyword fallback
     if not _deepseek:
-        return _keyword_classify(message)
+        return _keyword_classify(message, tenant=getattr(appointment, 'tenant', None))
 
     # -- Conversation context for the classifier ------------------------------
     history = appointment.conversation_history or []
@@ -459,7 +509,7 @@ JSON FORMAT:
 
     except Exception as exc:
         logger.warning("OOS classifier failed: %s — falling back to keyword check", exc)
-        return _keyword_classify(message)
+        return _keyword_classify(message, tenant=getattr(appointment, 'tenant', None))
 
 
 # ── Clarifying question generator ────────────────────────────────────────────

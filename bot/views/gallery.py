@@ -8,6 +8,7 @@ from collections import OrderedDict
 
 from django.contrib import messages
 from django.core.files.storage import default_storage
+from django.db import transaction
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
@@ -16,11 +17,35 @@ from django.views.decorators.http import require_POST
 from .. import portfolio_catalog
 from ..decorators import staff_required
 from ..media_library import (MAX_PORTFOLIO_MEDIA, clean_price_refs,
-                             is_video_filename, portfolio_library_with_prices,
+                             describe_portfolio_items_async, is_video_filename,
+                             portfolio_library_with_prices,
                              price_line_and_tags_for_refs,
                              save_portfolio_upload, tenant_media_count,
                              tenant_prefix)
 from ..models import TenantPortfolioItem
+
+
+def _unique_item_id(tenant, tag: str, path: str) -> str:
+    """A per-tenant-unique item_id for a new portfolio row.
+
+    `uniq_portfolio_item_per_tenant` is a DB constraint, so a collision is a
+    500, not a warning. Two things used to collide: the id took only the first
+    EIGHT characters of the filename (two uploads sharing a prefix landed on
+    one id), and nothing checked the id was free before inserting. Widened to
+    16 characters and suffixed until free.
+
+    Note this is only for CREATES — an existing row keeps the id it was given,
+    which is what logs and dedup already refer to.
+    """
+    base = slugify(f'{tag}-{os.path.splitext(os.path.basename(path))[0][:16]}')[:72]
+    if not base:
+        base = 'item'
+    candidate, n = base, 2
+    while TenantPortfolioItem.objects.filter(tenant=tenant, item_id=candidate).exists():
+        suffix = f'-{n}'
+        candidate = f'{base[:80 - len(suffix)]}{suffix}'
+        n += 1
+    return candidate
 
 # Gallery groups, in display order. The annotator's famTag() (gallery.html)
 # maps each library job to one of these keys; a multi-item photo carries
@@ -123,7 +148,12 @@ def gallery_finalize(request):
     if not isinstance(entries, list):
         return JsonResponse({'ok': False, 'error': 'bad payload'}, status=400)
     prefix = f'{tenant_prefix(tenant)}/'
-    created = 0
+
+    # Validate the WHOLE batch before writing anything. This loop used to
+    # validate and insert in one pass, so a batch that failed on entry 3 had
+    # already committed entries 1 and 2 — and the owner's retry then collided
+    # with those on `uniq_portfolio_item_per_tenant`, making every retry worse.
+    cleaned = []
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -150,20 +180,46 @@ def gallery_finalize(request):
             price_line = str(entry.get('price_line') or '').strip()[:200]
             tags = _clean_tags(entry.get('tags')) or [
                 (str(entry.get('tag') or 'general').strip().lower() or 'general')[:40]]
-        TenantPortfolioItem.objects.create(
-            tenant=tenant,
-            item_id=slugify(
-                f'{tags[0]}-{os.path.splitext(os.path.basename(path))[0][:8]}')[:80],
-            filename=path,
-            pair_filename=pair_path,
-            title=caption[:120],
-            description=caption,
-            price_line=(price_line or '')[:200],
-            price_refs=refs,
-            keywords=tags,
-            sort_order=TenantPortfolioItem.objects.filter(tenant=tenant).count() + 1,
-        )
-        created += 1
+        cleaned.append(dict(
+            path=path, pair_path=pair_path, caption=caption,
+            price_line=(price_line or '')[:200], refs=refs, tags=tags,
+        ))
+
+    created = 0
+    fresh_ids = []
+    with transaction.atomic():
+        for c in cleaned:
+            fields = dict(
+                pair_filename=c['pair_path'],
+                title=c['caption'][:120],
+                description=c['caption'],
+                price_line=c['price_line'],
+                price_refs=c['refs'],
+                keywords=c['tags'],
+            )
+            # The stored FILE is a photo's real identity, so re-finalizing the
+            # same upload (a double-click, a retry after a slow request, a
+            # refresh that re-posts) updates that row instead of inserting a
+            # duplicate and 500ing on the unique constraint.
+            existing = TenantPortfolioItem.objects.filter(
+                tenant=tenant, filename=c['path']).first()
+            if existing is not None:
+                for key, value in fields.items():
+                    setattr(existing, key, value)
+                existing.save()
+                continue
+            item = TenantPortfolioItem.objects.create(
+                tenant=tenant,
+                item_id=_unique_item_id(tenant, c['tags'][0], c['path']),
+                filename=c['path'],
+                sort_order=TenantPortfolioItem.objects.filter(tenant=tenant).count() + 1,
+                **fields,
+            )
+            fresh_ids.append(item.pk)
+            created += 1
+    # Let the bot look at what it will be sending — in the background, so the
+    # owner isn't held up by one call per photo.
+    describe_portfolio_items_async(fresh_ids)
     return JsonResponse({'ok': True, 'created': created})
 
 
@@ -184,9 +240,9 @@ def gallery_add(request):
     if error:
         messages.error(request, error)
         return redirect('gallery')
-    TenantPortfolioItem.objects.create(
+    item = TenantPortfolioItem.objects.create(
         tenant=tenant,
-        item_id=slugify(f'{tag}-{os.path.splitext(os.path.basename(path))[0][:8]}')[:80],
+        item_id=_unique_item_id(tenant, tag, path),
         filename=path,
         title=caption[:120],
         description=caption,
@@ -194,6 +250,7 @@ def gallery_add(request):
         keywords=[tag],
         sort_order=TenantPortfolioItem.objects.filter(tenant=tenant).count() + 1,
     )
+    describe_portfolio_items_async([item.pk])
     messages.success(request, 'Added to your gallery.')
     return redirect('gallery')
 

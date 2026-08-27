@@ -2685,6 +2685,63 @@ class GalleryPortalTests(TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn('Please provide names of items', res.json()['error'])
 
+    def test_finalize_is_idempotent_and_atomic(self):
+        """Re-finalizing the same upload must not 500 on the unique constraint.
+
+        Prod (2026-08-27, tenant barmak): gallery_finalize inserted rows one at
+        a time with no transaction and no uniqueness check, so a re-submitted
+        batch hit `uniq_portfolio_item_per_tenant` and returned a 500 — after
+        having already written the entries before the collision, which made
+        every retry collide on more rows than the last.
+        """
+        import json as _json
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from .models import TenantPortfolioItem
+        up = self.client.post(reverse('gallery_upload'),
+                              {'media': SimpleUploadedFile('borehole.jpg', b'x')}).json()
+        payload = _json.dumps([
+            {'path': up['path'], 'caption': 'Borehole', 'tag': 'general'}])
+
+        first = self.client.post(reverse('gallery_finalize'), data=payload,
+                                 content_type='application/json')
+        self.assertTrue(first.json()['ok'])
+        # The same batch again: 200, no duplicate row, no new item.
+        second = self.client.post(reverse('gallery_finalize'), data=payload,
+                                  content_type='application/json')
+        self.assertTrue(second.json()['ok'])
+        self.assertEqual(second.json()['created'], 0)
+        self.assertEqual(
+            TenantPortfolioItem.objects.filter(tenant=self.acme).count(), 1)
+
+        # Two DIFFERENT uploads whose names share the first 8 characters used to
+        # slugify to one id. They must get distinct ids, not a 500.
+        a = self.client.post(reverse('gallery_upload'),
+                             {'media': SimpleUploadedFile('bathroom-install-aaa.jpg', b'x')}).json()
+        b = self.client.post(reverse('gallery_upload'),
+                             {'media': SimpleUploadedFile('bathroom-install-bbb.jpg', b'x')}).json()
+        res = self.client.post(reverse('gallery_finalize'), data=_json.dumps([
+            {'path': a['path'], 'caption': 'Bathroom one', 'tag': 'bathroom install'},
+            {'path': b['path'], 'caption': 'Bathroom two', 'tag': 'bathroom install'},
+        ]), content_type='application/json')
+        self.assertTrue(res.json()['ok'])
+        ids = set(TenantPortfolioItem.objects.filter(tenant=self.acme)
+                  .values_list('item_id', flat=True))
+        self.assertEqual(len(ids), 3)
+
+        # A batch rejected for a missing caption must write NOTHING.
+        before = TenantPortfolioItem.objects.filter(tenant=self.acme).count()
+        c = self.client.post(reverse('gallery_upload'),
+                             {'media': SimpleUploadedFile('good.jpg', b'x')}).json()
+        bad = self.client.post(reverse('gallery_finalize'), data=_json.dumps([
+            {'path': c['path'], 'caption': 'Named fine', 'tag': 'general'},
+            {'path': c['path'], 'caption': '   '},
+        ]), content_type='application/json')
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(
+            TenantPortfolioItem.objects.filter(tenant=self.acme).count(), before)
+
     def test_multi_item_finalize_stores_all_tags_and_groups(self):
         import json as _json
 

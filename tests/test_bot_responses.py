@@ -4971,6 +4971,143 @@ try:
 except Exception as e:
     results.log("reschedule: deterministic half", False, got=str(e))
 
+# ── Quoted portfolio photo prices from the tenant's OWN row ──────────────────
+# Prod 2026-08-27 (barmak): the bot sent its gallery, the customer quoted the
+# "Borehole" photo and asked "How much". No product FAMILY matched (the family
+# list is Homebase's: tub / shower / geyser / …), so it fell through to the
+# pricing overview and answered a borehole question with the bathroom package.
+try:
+    from bot import whatsapp_webhook as _wwh
+
+    class _FakePortfolioItem:
+        def __init__(self, title, price_line, item_id='borehole-1'):
+            self.title, self.price_line, self.item_id = title, price_line, item_id
+
+    class _FakePlumbot:
+        def _product_price_close(self, language='english'):
+            return "Does that sit where you expected?"
+
+    _held = {'item': _FakePortfolioItem('Borehole', 'Borehole installation from US$1 200')}
+    _orig_lookup = _wwh._quoted_portfolio_item
+    _wwh._quoted_portfolio_item = lambda tenant, quoted: _held['item']
+    try:
+        class _Appt:
+            tenant = object()
+        _reply = _wwh._quoted_portfolio_price_reply(
+            _FakePlumbot(), _Appt(), 'Borehole', 'How much')
+        results.log("quoted photo: priced from the photo's own line",
+                    _reply is not None and 'US$1 200' in _reply, got=_reply)
+        results.log("quoted photo: never falls back to the package price",
+                    _reply is not None and 'Facebook package' not in _reply, got=_reply)
+        results.log("quoted photo: names the piece the customer pointed at",
+                    _reply is not None and 'Borehole' in _reply, got=_reply)
+        results.log("quoted photo: no emojis in the reply",
+                    _reply is not None and not any(ord(c) > 0x2100 for c in _reply),
+                    got=_reply)
+        # A photo with no price on it must NOT invent one — fall through instead.
+        _held['item'] = _FakePortfolioItem('Borehole', '')
+        results.log("quoted photo: no price on the row means no price reply",
+                    _wwh._quoted_portfolio_price_reply(
+                        _FakePlumbot(), _Appt(), 'Borehole', 'How much') is None)
+        # Nothing matched → fall through to the existing steps.
+        _wwh._quoted_portfolio_item = lambda tenant, quoted: None
+        results.log("quoted photo: an unmatched quote falls through",
+                    _wwh._quoted_portfolio_price_reply(
+                        _FakePlumbot(), _Appt(), 'Something else', 'How much') is None)
+    finally:
+        _wwh._quoted_portfolio_item = _orig_lookup
+
+    # The bot's own photos get described too, so a quoted reply carries real
+    # text and not just a one-word title — but the TITLE must stay in front, or
+    # _quoted_portfolio_item can no longer resolve the row.
+    _src_d = _inspect_r.getsource(_wwh._describe_work_image)
+    results.log("sent photo: the description leads with the title",
+                "f\"{item['title']} - {vision}\"" in _src_d)
+
+    class _Row:
+        def __init__(self, title, price_line='x', item_id='i'):
+            self.title, self.price_line, self.item_id = title, price_line, item_id
+
+    # Title-prefix resolution: exercised through the real function with a stub
+    # queryset, so the ordering rule (longest title wins) is what is pinned.
+    class _StubManager:
+        rows = []
+
+        def filter(self, **kwargs):
+            return list(self.rows)
+
+    class _StubModel:
+        objects = _StubManager()
+
+    import sys as _sys_v
+    _fake_mod = type(_sys_v)('bot.models')
+    _fake_mod.TenantPortfolioItem = _StubModel
+    _real_models = _sys_v.modules.get('bot.models')
+    _sys_v.modules['bot.models'] = _fake_mod
+    try:
+        _StubModel.objects.rows = [_Row('Borehole'), _Row('Borehole and tank')]
+        _hit = _wwh._quoted_portfolio_item(object(), 'Borehole and tank - a pump')
+        results.log("sent photo: the longest matching title wins",
+                    _hit is not None and _hit.title == 'Borehole and tank',
+                    got=getattr(_hit, 'title', None))
+        _hit = _wwh._quoted_portfolio_item(object(), 'Borehole - a borehole pump')
+        results.log("sent photo: an enriched description still resolves",
+                    _hit is not None and _hit.title == 'Borehole',
+                    got=getattr(_hit, 'title', None))
+        _StubModel.objects.rows = [_Row('Shower'), _Row('Shower')]
+        results.log("sent photo: two identical titles resolve to nothing",
+                    _wwh._quoted_portfolio_item(object(), 'Shower') is None)
+    finally:
+        if _real_models is not None:
+            _sys_v.modules['bot.models'] = _real_models
+        else:
+            _sys_v.modules.pop('bot.models', None)
+
+    _src_q = _inspect_r.getsource(_wwh._generate_and_schedule_reply)
+    results.log("quoted photo: the price step runs BEFORE the family steps",
+                _src_q.find('STEP 1c') != -1
+                and _src_q.find('STEP 1c') < _src_q.find('STEP 2: Service-specific'))
+except Exception as e:
+    results.log("quoted photo pricing", False, got=str(e))
+
+# ── The out-of-scope list is the TENANT's, not Homebase's ────────────────────
+# Same prod incident: "borehole" is hardcoded out-of-scope, but barmak sells
+# borehole work and shows it in their own gallery.
+try:
+    from bot import out_of_scope_handler as _oos
+
+    results.log("oos: borehole is still out of scope with no tenant",
+                'borehole' in _oos.out_of_scope_terms_for(None))
+
+    _orig_sells = _oos.tenant_sells
+    _oos.tenant_sells = lambda tenant, term: term == 'borehole'
+    try:
+        _terms = _oos.out_of_scope_terms_for(object())
+        results.log("oos: a term the tenant sells drops off their list",
+                    'borehole' not in _terms)
+        results.log("oos: everything else stays out of scope",
+                    'painting' in _terms and 'roofing' in _terms, got=_terms)
+        results.log("oos: keyword fallback no longer declines the tenant's own work",
+                    _oos._keyword_classify('do you do borehole', tenant=object()
+                                           )['category'] == 'in_scope')
+        results.log("oos: keyword fallback still declines real out-of-scope work",
+                    _oos._keyword_classify('do you do roofing', tenant=object()
+                                           )['category'] == 'out_of_scope')
+    finally:
+        _oos.tenant_sells = _orig_sells
+
+    results.log("oos: tenant_sells is safe with no tenant",
+                _oos.tenant_sells(None, 'borehole') is False)
+
+    from bot import unified_classifier as _uc
+    results.log("oos: the prompt no longer hardcodes a service list",
+                'borehole' not in _uc._SYSTEM
+                and '{out_of_scope_services}' in _uc._SYSTEM)
+    results.log("oos: the prompt list falls back to the full list",
+                'painting' in _uc._out_of_scope_services(None))
+except Exception as e:
+    results.log("oos tenant-awareness", False, got=str(e))
+
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The
 # TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality
