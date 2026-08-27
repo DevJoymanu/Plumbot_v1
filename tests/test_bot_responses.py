@@ -5167,7 +5167,10 @@ try:
             self.price_refs = price_refs or []
 
     _rows = [_PriceRow('borehole', allin=500, label='Borehole'),
-             _PriceRow('shower', allin=305, label='Shower cubicle')]
+             # A split row, so the live-vs-stored precedence case has a
+             # breakdown to prove came from the price sheet.
+             _PriceRow('shower', allin=305, label='Shower cubicle',
+                       supply=220, labour=85)]
     _orig_filter = _ml.TenantPriceItem if hasattr(_ml, 'TenantPriceItem') else None
     import bot.models as _bm
     _orig_objects = _bm.TenantPriceItem.objects
@@ -5183,10 +5186,31 @@ try:
                     _ml.price_line_for_item(None, _Photo('Borehole'))
                     == 'Borehole from US$500',
                     got=_ml.price_line_for_item(None, _Photo('Borehole')))
-        results.log("photo price: a stored line still wins",
+        results.log("photo price: a hand-typed line is kept when there are no refs",
                     _ml.price_line_for_item(
                         None, _Photo('Borehole', price_line='Borehole from US$650'))
                     == 'Borehole from US$650')
+
+        # Every priced answer shows what the supply and the labour each cost —
+        # a photo's line was the one place quoting a bare all-in figure.
+        _split_row = _PriceRow('borehole', label='Borehole', supply=300, labour=200)
+        results.log("breakdown: a split row prints supply and install",
+                    _ml.price_sentence('Borehole', _split_row, 'US$')
+                    == 'Borehole from US$500 all-in (supply from US$300 + install from US$200)',
+                    got=_ml.price_sentence('Borehole', _split_row, 'US$'))
+        results.log("breakdown: an all-in-only row is never given an invented split",
+                    _ml.price_sentence('Borehole', _PriceRow('borehole', allin=500), 'US$')
+                    == 'Borehole from US$500')
+        results.log("breakdown: the tenant's own currency is used",
+                    _ml.price_sentence('Borehole', _split_row, 'R').startswith('Borehole from R500'))
+        results.log("breakdown: a row with no figure at all prints nothing",
+                    _ml.price_sentence('Borehole', _PriceRow('borehole'), 'US$') == '')
+        # A stored line predating the split must not mask the live one.
+        _stale = _Photo('Shower cubicle', price_line='Shower cubicle from US$305',
+                        price_refs=[{'family': 'shower', 'variant': ''}])
+        _fresh = _ml.price_line_for_item(None, _stale)
+        results.log("breakdown: a stale stored line loses to the live price sheet",
+                    'supply from' in (_fresh or ''), got=_fresh)
         results.log("photo price: an unmatched title stays blank",
                     _ml.price_line_for_item(None, _Photo('Kitchen renovation')) == '')
         results.log("photo price: matching is strict, not substring",

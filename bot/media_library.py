@@ -114,6 +114,32 @@ def _price_value(row):
     return value
 
 
+def price_sentence(label: str, row, cur: str) -> str:
+    """One priced line for a photo, with the supply/install split whenever the
+    tenant's row carries both.
+
+    The split is the house format everywhere else the bot quotes money — it is
+    what the DeepSeek pricing prompt mandates and what the catalogue and
+    labour-scope replies already print. A photo's price line was the one place
+    that showed a bare all-in figure, so a customer asking about a highlighted
+    photo got "Borehole from US$500" while the same job quoted any other way
+    showed what the supply and the labour each cost.
+
+    Falls back to the bare figure when the row has no split to show (a flat or
+    all-in-only price) — never invents a breakdown.
+    """
+    total = _price_value(row)
+    if total is None:
+        return ''
+    supply = getattr(row, 'supply', None)
+    labour = getattr(row, 'labour', None)
+    if supply is not None and labour is not None:
+        return (f"{label} from {cur}{_price_display(total)} all-in "
+                f"(supply from {cur}{_price_display(supply)} + "
+                f"install from {cur}{_price_display(labour)})")
+    return f"{label} from {cur}{_price_display(total)}"
+
+
 def clean_price_refs(raw) -> list:
     """Normalise a photo's price refs to [{family, variant}] — the link to the
     price list. De-duplicated, first-seen order kept."""
@@ -160,9 +186,11 @@ def price_line_and_tags_for_refs(tenant, refs):
         if tag not in seen:
             seen.add(tag)
             tags.append(tag)
-        value = _price_value(rows[key]) if key in rows else None
-        if value is not None:
-            lines.append(f"{label} from {cur}{_price_display(value)}")
+        row = rows.get(key)
+        if row is not None:
+            line = price_sentence(label, row, cur)
+            if line:
+                lines.append(line)
     return '\n'.join(lines), (tags or ['general'])
 
 
@@ -189,13 +217,19 @@ def price_line_for_item(tenant, item) -> str:
     name) — a loose match would price the wrong job, which is the failure this
     whole path exists to prevent.
     """
-    stored = (getattr(item, 'price_line', '') or '').strip()
-    if stored:
-        return stored
-
+    # The LIVE price list first, not the stored snapshot. price_line is written
+    # once at annotation and only refreshed by resync_portfolio_prices, so a
+    # stored line is stale the moment a tenant edits a price — and every line
+    # stored before the supply/install split existed shows a bare all-in figure.
+    # The stored line stays the source for a hand-typed photo, which has no refs
+    # to resolve.
     live, _ = price_line_and_tags_for_refs(tenant, getattr(item, 'price_refs', None))
     if live:
         return live
+
+    stored = (getattr(item, 'price_line', '') or '').strip()
+    if stored:
+        return stored
 
     title = (getattr(item, 'title', '') or '').strip().lower()
     vision = (getattr(item, 'vision_description', '') or '').strip().lower()
@@ -221,7 +255,7 @@ def price_line_for_item(tenant, item) -> str:
 
     def _line(row, value):
         label = row.label or row.short_label or (row.family or '').replace('_', ' ')
-        return f"{label[:1].upper()}{label[1:]} from {cur}{_price_display(value)}"
+        return price_sentence(f"{label[:1].upper()}{label[1:]}", row, cur)
 
     # 3a. The title, matched strictly.
     for row, value, names in priced:
