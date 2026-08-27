@@ -4834,6 +4834,143 @@ try:
 except Exception as e:
     results.log("humanness: prompt shows the register", False, got=str(e))
 
+# ---- Reschedules: the deterministic half --------------------------------
+# Three methods this flow called did not exist anywhere (the keyword fallback,
+# the plumber alert, the calendar move), and every failure was eaten by a bare
+# except: the customer was told the new time was confirmed while the plumber
+# kept the old one. These pin the deterministic pieces.
+try:
+    import re as _re_r
+    import pytz as _pytz_r
+    from datetime import datetime as _dt_r
+    from bot.views.plumbot.reschedule_mixin import RescheduleMixin as _RSM
+
+    _SAST_R = _pytz_r.timezone('Africa/Johannesburg')
+    _EMOJI_R = _re_r.compile('[\U0001F000-\U0001FAFF\u2190-\u21FF\u2300-\u27BF\u2B00-\u2BFF\uFE0F]')
+
+    class _FakeReschedCfg:
+        def hours_sentence(self):    return 'Sunday to Friday, 8am to 6pm'
+        def emergency_sentence(self): return ''
+
+    class _FakeReschedApt:
+        def __init__(self, **kw):
+            self.id = 1
+            self.status = 'confirmed'
+            self.appointment_type = 'site_visit'
+            self.scheduled_datetime = _SAST_R.localize(_dt_r(2026, 9, 6, 9, 30))
+            self.job_scheduled_datetime = None
+            self.job_duration_hours = 4
+            self.customer_name = 'Tinashe'
+            self.customer_area = 'Borrowdale'
+            self.project_type = 'bathroom_renovation'
+            self.job_description = ''
+            self.contact = '+263774819901'
+            self.__dict__.update(kw)
+
+        def plumber_contact(self):
+            return self.contact
+
+    class _FakeResched(_RSM):
+        """Fake self for the reschedule resolvers — carries every attribute the
+        copy builders reach for (language, SAST formatting, tenant hours)."""
+        tenant_cfg = _FakeReschedCfg()
+
+        def __init__(self, apt=None, language='english'):
+            self.appointment = apt or _FakeReschedApt()
+            self.phone_number = 'whatsapp:+263771111111'
+            self._language = language
+
+        def _lead_language(self):
+            return self._language
+
+        def format_datetime_for_display(self, dt):
+            return dt.astimezone(_SAST_R)
+
+    # The keyword fallback: it runs exactly when DeepSeek is unreachable, so it
+    # must be deterministic AND must exist (it was called but never defined).
+    RESCHEDULE_KEYWORD_CASES = [
+        ("Something came up, can we move it?",   True),
+        ("I need to reschedule",                 True),
+        ("can't make Thursday",                  True),
+        ("could we do another day",              True),
+        ("ndinoda kuchinja zuva",                True),
+        ("handikwanisi neChishanu",              True),
+        ("Thanks for confirming",                False),
+        ("How much will it cost?",               False),
+        ("Do you need directions?",              False),
+    ]
+    _rs = _FakeResched()
+    for _msg, _expected in RESCHEDULE_KEYWORD_CASES:
+        _got = _rs.detect_reschedule_request(_msg)
+        results.log(f"reschedule keywords: '{_msg[:34]}'",
+                    _got == _expected, expected=_expected, got=_got)
+
+    # No confirmed slot = nothing to move, whatever the words say.
+    results.log("reschedule keywords: silent without a confirmed appointment",
+                _FakeResched(_FakeReschedApt(status='pending'))
+                .detect_reschedule_request('can we reschedule?') is False)
+
+    # A booked JOB keeps its finished site visit in scheduled_datetime. The bot
+    # quoted and moved THAT, leaving the jobs board on the old job time.
+    _job_apt = _FakeReschedApt(
+        appointment_type='job_appointment',
+        job_scheduled_datetime=_SAST_R.localize(_dt_r(2026, 9, 10, 8, 0)))
+    results.log("reschedule slot: a booked job moves job_scheduled_datetime",
+                _FakeResched(_job_apt)._reschedule_slot()[0] == 'job_scheduled_datetime',
+                got=_FakeResched(_job_apt)._reschedule_slot()[0])
+    results.log("reschedule slot: a site visit moves scheduled_datetime",
+                _rs._reschedule_slot()[0] == 'scheduled_datetime')
+
+    # Copy: no emojis, no placeholder US number, no hardcoded week.
+    _texts = [
+        _rs._build_reschedule_confirmation(
+            _rs.appointment.scheduled_datetime,
+            _SAST_R.localize(_dt_r(2026, 9, 8, 14, 0))),
+        _rs._build_reschedule_clarification('Sunday, September 06 at 09:30 AM'),
+        _rs._build_reschedule_unavailable_reply([]),
+        _rs._build_reschedule_unavailable_reply([{'display': 'Monday at 10:00 AM'}]),
+        _rs._reschedule_breakdown_reply(),
+    ]
+    results.log("reschedule copy: no emojis anywhere",
+                all(_EMOJI_R.search(t) is None for t in _texts),
+                got=[t for t in _texts if _EMOJI_R.search(t)])
+    results.log("reschedule copy: no '(555) PLUMBING' placeholder number",
+                all('555' not in t and 'PLUMBING' not in t for t in _texts),
+                got=[t for t in _texts if '555' in t or 'PLUMBING' in t])
+    results.log("reschedule copy: hours come from the tenant, not a hardcoded week",
+                'Monday to Friday' not in _texts[2] and 'Sunday to Friday' in _texts[2],
+                got=_texts[2])
+    results.log("reschedule copy: the breakdown reply offers the tenant's own line",
+                '263774819901' in _texts[4], got=_texts[4])
+    results.log("reschedule copy: a tenant with no number gets no number",
+                '263774819901' not in _FakeResched(_FakeReschedApt(contact=''))
+                ._reschedule_breakdown_reply())
+    results.log("reschedule copy: Shona lead gets a Shona confirmation",
+                'Tichakufonerai' in _FakeResched(language='shona')
+                ._build_reschedule_confirmation(
+                    _rs.appointment.scheduled_datetime,
+                    _SAST_R.localize(_dt_r(2026, 9, 8, 14, 0))))
+
+    # Every method the reschedule flow calls must actually exist — this is the
+    # bug class that shipped three times over (AttributeError swallowed by an
+    # except, the side effect silently skipped).
+    from bot.views.plumbot.base import Plumbot as _PB_R
+    _REQUIRED = ('detect_reschedule_request', 'notify_team_about_reschedule',
+                 'update_google_calendar_appointment', 'parse_datetime',
+                 '_reschedule_slot', '_reschedule_availability')
+    _missing = [m for m in _REQUIRED if not hasattr(_PB_R, m)]
+    results.log("reschedule: every method the flow calls is defined",
+                not _missing, got=_missing)
+
+    import inspect as _inspect_r
+    _psr = _inspect_r.getsource(_RSM.process_successful_reschedule)
+    results.log("reschedule: the move is written to the RESOLVED slot field",
+                'setattr(self.appointment, field' in _psr)
+    results.log("reschedule: a failed save never claims the move happened",
+                '_reschedule_breakdown_reply()' in _psr)
+except Exception as e:
+    results.log("reschedule: deterministic half", False, got=str(e))
+
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The
 # TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality

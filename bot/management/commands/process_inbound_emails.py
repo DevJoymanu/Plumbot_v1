@@ -241,6 +241,46 @@ def _classify_intent(body: str, appointment=None) -> dict:
         return {"intent": "other", "date": None}
 
 
+# ── Rescheduling ──────────────────────────────────────────────────────────────
+
+def _apply_email_reschedule(apt, new_dt, *, dry_run, out):
+    """Move an appointment the customer rescheduled by email.
+
+    Routed through the same Plumbot pipeline the WhatsApp reschedule uses, so
+    the slot is checked before it's taken, the move writes the RIGHT field (a
+    booked job keeps its completed site visit in scheduled_datetime), the
+    plumber is alerted, the calendar event follows and the change is noted on
+    the lead. Assigning scheduled_datetime here did none of that — the customer
+    got a confirmation and nobody else heard about it.
+
+    Returns the context note for the reply the LLM composes.
+    """
+    from bot.views.plumbot.base import Plumbot
+
+    bot = Plumbot(apt.phone_number, tenant=apt.tenant)
+    field, current = bot._reschedule_slot()
+
+    is_free, _conflict = bot._reschedule_availability(new_dt)
+    if not is_free:
+        out(f"    ⚠️  Slot already taken, apt #{apt.pk} → {new_dt}")
+        return (
+            f"The customer asked to move to {_fmt_dt(new_dt.astimezone(_SAST))}, but that "
+            "slot is already booked. Say briefly that the time has gone and ask them for "
+            "another day and time."
+        )
+
+    if dry_run:
+        out(f"    (dry-run) would reschedule apt #{apt.pk} → {new_dt}")
+    else:
+        bot.process_successful_reschedule(current, new_dt)
+        out(f"    ✅ Rescheduled apt #{apt.pk} ({field}) → {new_dt}")
+
+    return (
+        f"Appointment rescheduled to {_fmt_dt(new_dt.astimezone(_SAST))}. "
+        "Confirm this clearly to the customer."
+    )
+
+
 # ── Date parsing ──────────────────────────────────────────────────────────────
 
 def _parse_date_hint(date_hint: str, appointment=None):
@@ -903,14 +943,8 @@ class Command(BaseCommand):
                 if intent == "reschedule":
                     dt = _parse_date_hint(date_hint)
                     if dt:
-                        if not dry_run:
-                            apt.scheduled_datetime = dt
-                            apt.save(update_fields=["scheduled_datetime"])
-                        context_note = (
-                            f"Appointment rescheduled to {_fmt_dt(dt.astimezone(_SAST))}. "
-                            "Confirm this clearly to the customer."
-                        )
-                        out(f"    ✅ Rescheduled apt #{apt.pk} → {dt}")
+                        context_note = _apply_email_reschedule(
+                            apt, dt, dry_run=dry_run, out=out)
                     else:
                         context_note = (
                             "Customer wants to reschedule but did not give a specific date. "

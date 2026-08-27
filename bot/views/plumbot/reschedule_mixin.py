@@ -39,25 +39,118 @@ logger = logging.getLogger(__name__)
 
 
 class RescheduleMixin:
+        # ── Which appointment are we moving? ──────────────────────────────
+        # schedule_job_appointment keeps ONE row: it flips appointment_type and
+        # fills job_scheduled_datetime, leaving the completed site visit in
+        # scheduled_datetime. So a confirmed lead can hold two datetimes, and
+        # every reschedule path has to resolve the live one. It didn't: a job
+        # customer was quoted their old site-visit time and their move was
+        # written to scheduled_datetime, while the jobs board and
+        # send_job_reminders went on reading job_scheduled_datetime.
+        def _reschedule_slot(self):
+            """(field_name, current_datetime) for the appointment in play."""
+            apt = self.appointment
+            if apt.appointment_type == 'job_appointment' and apt.job_scheduled_datetime:
+                return 'job_scheduled_datetime', apt.job_scheduled_datetime
+            return 'scheduled_datetime', apt.scheduled_datetime
+
+        def _slot_display(self, dt):
+            """The slot as the customer reads it, in SAST."""
+            if not dt:
+                return ''
+            return self.format_datetime_for_display(dt).strftime('%A, %B %d at %I:%M %p')
+
+        def _reschedule_availability(self, new_datetime):
+            """Availability for whichever appointment is being moved — a job
+            occupies hours, not a single slot, so it checks its own duration."""
+            field, _ = self._reschedule_slot()
+            if field == 'scheduled_datetime':
+                return self.check_appointment_availability(new_datetime)
+
+            from ..jobs import check_job_availability
+            is_free = check_job_availability(
+                new_datetime,
+                self.appointment.job_duration_hours or 4,
+                exclude_appointment_id=self.appointment.id,
+                appointment=self.appointment,
+            )
+            return bool(is_free), (None if is_free else 'conflict')
+
+        # Keyword reschedule signals. Deliberately narrow: this list only runs
+        # when DeepSeek is unreachable, and only on an already-confirmed
+        # appointment, so a false positive costs a wrong "what day suits you?".
+        _RESCHEDULE_KEYWORDS = (
+            # English
+            'reschedule', 're-schedule', 'rescheduling',
+            'change the time', 'change the date', 'change the day',
+            'change my appointment', 'change my booking',
+            'move it', 'move the appointment', 'move my appointment',
+            'move the booking', 'push it', 'push it back', 'postpone',
+            'another day', 'another time', 'different day', 'different time',
+            "can't make", 'cant make', 'not going to make', 'not gonna make',
+            "won't be around", 'wont be around', 'something came up',
+            'come later', 'come earlier', 'earlier instead', 'later instead',
+            # Shona
+            'chinja zuva', 'chinja nguva', 'chinja musi', 'kuchinja zuva',
+            'kuchinja nguva', 'rimwe zuva', 'imwe nguva', 'handikwanisi',
+            'handisi kuzokwanisa', 'handizokwanisa', 'sundidza',
+        )
+
+        def detect_reschedule_request(self, message):
+            """Keyword reschedule detection.
+
+            The offline fallback the AI detector reaches for when DeepSeek is
+            down. It was called but never defined, so an API blip raised
+            AttributeError out of the detector instead of degrading. Kept
+            deterministic on purpose: it runs exactly when we cannot make
+            another API call.
+            """
+            _, current = self._reschedule_slot()
+            if self.appointment.status != 'confirmed' or not current:
+                return False
+            text = (message or '').lower()
+            return any(keyword in text for keyword in self._RESCHEDULE_KEYWORDS)
+
+        def _reschedule_breakdown_reply(self):
+            """Last-resort reply when the reschedule machinery falls over.
+
+            Gives the tenant's OWN number when there is one and no number at all
+            when there isn't — the old copy sent every customer of every tenant
+            to "(555) PLUMBING", a placeholder that belongs to nobody.
+            """
+            contact = (self.appointment.plumber_contact() or '').strip()
+            if self._lead_language() == 'shona':
+                if contact:
+                    return ("Ndine urombo, pane dambudziko diki kudivi rangu. Ndinyorerei "
+                            f"zuva nenguva yamunoda, kana kufona pa{contact}.")
+                return ("Ndine urombo, pane dambudziko diki kudivi rangu. Ndinyorerei zuva "
+                        "nenguva yamunoda uye ndichazvigadzirisa.")
+            if contact:
+                return ("Sorry, something's playing up on my side. Send me the day and time "
+                        f"that suit you, or give us a ring on {contact}.")
+            return ("Sorry, something's playing up on my side. Send me the day and time that "
+                    "suit you and I'll get it moved.")
+
         def detect_reschedule_request_with_ai(self, message):
             """Use AI to intelligently detect rescheduling requests"""
             try:
                 # Only check for reschedule if appointment is already confirmed
-                if self.appointment.status != 'confirmed' or not self.appointment.scheduled_datetime:
+                _, current = self._reschedule_slot()
+                if self.appointment.status != 'confirmed' or not current:
                     return False
-                
-                current_appt = self.appointment.scheduled_datetime.strftime('%A, %B %d at %I:%M %p')
-            
+
+                current_appt = self._slot_display(current)
+
                 detection_prompt = f"""
                 You are a rescheduling detection assistant for an appointment system.
-            
+
                 TASK: Determine if the customer's message is requesting to reschedule their existing appointment.
-            
+
                 CONTEXT:
                 - Customer has a CONFIRMED appointment: {current_appt}
                 - Customer message: "{message}"
                 - Phone: {self.phone_number}
-            
+
                 DETECTION CRITERIA:
                 Look for ANY indication the customer wants to:
                 - Change their appointment time/date
@@ -65,7 +158,7 @@ class RescheduleMixin:
                 - Cancel and rebook for a different time
                 - Express they can't make their current appointment
                 - Request a different day or time
-            
+
                 EXAMPLES OF RESCHEDULE REQUESTS:
                 - "Can we reschedule to Monday?"
                 - "I need to change my appointment"
@@ -76,25 +169,25 @@ class RescheduleMixin:
                 - "Can we do it earlier/later?"
                 - "Different day would be better"
                 - "Monday at 2pm instead?"
-            
+
                 EXAMPLES OF NON-RESCHEDULE MESSAGES:
                 - "Thanks for confirming"
                 - "Looking forward to it"
                 - "What should I prepare?"
                 - "Do you need directions?"
                 - "How much will it cost?"
-            
+
                 RESPONSE FORMAT:
                 Reply with ONLY:
                 - "YES" if this is clearly a reschedule request
                 - "NO" if this is not a reschedule request
                 - "MAYBE" if it's ambiguous but could be a reschedule request
-            
+
                 Do not provide explanations, just the single word response.
-            
+
                 CUSTOMER MESSAGE: "{message}"
                 """
-            
+
                 response = deepseek_client.chat.completions.create(
                     model=settings.DEEPSEEK_MODEL,
                     messages=[
@@ -104,9 +197,9 @@ class RescheduleMixin:
                     temperature=0.1,  # Low temperature for consistency
                     max_tokens=10
                 )
-            
+
                 ai_response = response.choices[0].message.content.strip().upper()
-            
+
                 if ai_response in ["YES", "MAYBE"]:
                     print(f"🤖 AI detected reschedule request: {ai_response}")
                     return True
@@ -116,7 +209,7 @@ class RescheduleMixin:
                 else:
                     print(f"🤖 AI gave unexpected response: {ai_response}, defaulting to False")
                     return False
-                
+
             except Exception as e:
                 print(f"❌ AI reschedule detection error: {str(e)}")
                 # Fallback to keyword detection
@@ -127,28 +220,28 @@ class RescheduleMixin:
             """Use AI to handle the complete rescheduling process"""
             try:
                 print(f"🤖 AI processing reschedule request: '{message}'")
-            
-                # Get current appointment info
-                current_appt = self.appointment.scheduled_datetime
-                current_appt_str = current_appt.strftime('%A, %B %d at %I:%M %p')
-            
+
+                # Whichever appointment is live — the job if there is one
+                _, current_appt = self._reschedule_slot()
+                current_appt_str = self._slot_display(current_appt)
+
                 # Try to extract new datetime
                 new_datetime = self.parse_datetime_with_ai(message)
-            
+
                 if new_datetime:
                     # Check availability
-                    is_available, conflict = self.check_appointment_availability(new_datetime)
-                
+                    is_available, conflict = self._reschedule_availability(new_datetime)
+
                     if is_available:
                         return self.process_successful_reschedule(current_appt, new_datetime)
                     else:
                         return self.handle_unavailable_reschedule_with_ai(new_datetime, message)
                 else:
                     return self.request_reschedule_clarification_with_ai(current_appt_str, message)
-                
+
             except Exception as e:
                 print(f"❌ AI reschedule handling error: {str(e)}")
-                return "I'd like to help you reschedule, but I'm having some technical difficulties. Could you call us at (555) PLUMBING to reschedule?"
+                return self._reschedule_breakdown_reply()
 
 
         def parse_datetime_with_ai(self, message):
@@ -256,173 +349,166 @@ class RescheduleMixin:
 
 
         def handle_unavailable_reschedule_with_ai(self, requested_datetime, original_message):
-            """Use AI to generate response when requested time is unavailable"""
-            try:
-                # Get alternative suggestions
-                alternatives = self.get_alternative_time_suggestions(requested_datetime)
-            
-                unavailable_response_prompt = f"""
-                You a professional appointment assistant for a plumbing company.
-            
-                SITUATION: Customer requested to reschedule to a time that's not available.
-            
-                CONTEXT:
-                - Customer requested: {requested_datetime.strftime('%A, %B %d at %I:%M %p')}
-                - This time is unavailable (conflict with another appointment)
-                - Alternative times available: {[alt['display'] for alt in alternatives] if alternatives else 'None immediately available'}
-            
-                TASK: Write a professional, helpful response that:
-                1. Politely explains the requested time isn't available
-                2. Offers the alternative times if available
-                3. Asks customer to choose an alternative or suggest another time
-                4. Maintains friendly, professional tone
-                5. Keep it concise (2-3 sentences max)
-            
-                RESPONSE STYLE:
-                - Professional but warm
-                - No humor or jokes
-                - Direct and clear
-                - Use "That time isn't available" rather than technical explanations
-            
-                Generate the response:"""
-            
-                response = deepseek_client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are a professional appointment assistant. Be helpful and concise."},
-                        {"role": "user", "content": unavailable_response_prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=150
-                )
-            
-                ai_response = response.choices[0].message.content.strip()
-                print(f"🤖 AI generated unavailable response")
-                return ai_response
-            
-            except Exception as e:
-                print(f"❌ AI unavailable response error: {str(e)}")
-                # Fallback response
-                if alternatives:
-                    alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
-                    return f"That time isn't available. Here are some alternatives:\n{alt_text}\n\nWhich works better for you?"
-                else:
-                    return "That time isn't available. Could you suggest another time? Our hours are 8 AM - 6 PM, Monday to Friday."
+            """Reply when the slot they asked for is already taken.
 
+            Deterministic: this is a first ask, so it uses the approved script.
+            The old LLM version wrote in the "professional" register the copy
+            rules ban, and its own except branch read `alternatives` before it
+            was assigned (UnboundLocalError) and then quoted hardcoded
+            "8 AM - 6 PM, Monday to Friday" hours at every tenant.
+            """
+            try:
+                alternatives = self.get_alternative_time_suggestions(requested_datetime)
+            except Exception as e:
+                print(f"❌ Alternative slot lookup failed: {str(e)}")
+                alternatives = []
+            return self._build_reschedule_unavailable_reply(alternatives)
+
+        def _build_reschedule_unavailable_reply(self, alternatives):
+            """"That one's taken — here's what is open." Hours come from the
+            lead's OWN tenant, never a hardcoded week."""
+            from .response_mixin import _hours_clause
+
+            is_shona = self._lead_language() == 'shona'
+            options = [
+                alt.get('display') for alt in (alternatives or [])
+                if isinstance(alt, dict) and alt.get('display')
+            ][:3]
+
+            if options:
+                listed = "\n".join(f"- {option}" for option in options)
+                if is_shona:
+                    return (f"Iyoyo nguva yatotorwa. Idzi dziripo:\n{listed}\n\n"
+                            "Ndeipi iri nani kwamuri?")
+                return (f"That time's already taken. These are open:\n{listed}\n\n"
+                        "Which of those works better for you?")
+
+            hours = _hours_clause(self).strip()
+            if is_shona:
+                return ("Iyoyo nguva yatotorwa. Pane rimwe zuva nenguva zvingakuitirai here?"
+                        + (f" {hours}" if hours else ""))
+            return ("That time's already taken. What other day and time would suit you?"
+                    + (f" {hours}" if hours else ""))
 
         def request_reschedule_clarification_with_ai(self, current_appt_str, message):
-            """Use AI to generate clarification request when datetime parsing fails"""
-            try:
-                clarification_prompt = f"""
-                You are a professional appointment assistant for a plumbing company.
-            
-                SITUATION: Customer wants to reschedule but didn't provide clear date/time information.
-            
-                CONTEXT:
-                - Customer's current appointment: {current_appt_str}
-                - Customer message: "{message}"
-                - Need both date AND time to reschedule
-            
-                TASK: Write a professional response that:
-                1. Acknowledges their reschedule request
-                2. Mentions their current appointment time
-                3. Asks for specific new date AND time
-                4. Provides example format ("Monday at 2pm", "tomorrow at 10am")
-                5. Keep it concise and helpful
-            
-                RESPONSE STYLE:
-                - Professional and clear
-                - No humor or excessive friendliness
-                - Direct request for information
-                - Include current appointment for reference
-            
-                Generate the response:"""
-            
-                response = deepseek_client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are a professional appointment assistant. Be clear and helpful."},
-                        {"role": "user", "content": clarification_prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=100
-                )
-            
-                ai_response = response.choices[0].message.content.strip()
-                print(f"🤖 AI generated clarification request")
-                return ai_response
-            
-            except Exception as e:
-                print(f"❌ AI clarification error: {str(e)}")
-                # Fallback response
-                return f"I understand you'd like to reschedule your appointment currently scheduled for {current_appt_str}. When would you prefer to reschedule to? Please provide both the day and time (e.g., 'Monday at 2pm', 'tomorrow at 10am')."
+            """Ask for the new day and time.
 
+            Deterministic for the same reason as the unavailable reply: a first
+            ask uses the approved script, not an LLM improvising a register.
+            """
+            return self._build_reschedule_clarification(current_appt_str)
+
+        def _build_reschedule_clarification(self, current_appt_str):
+            if self._lead_language() == 'shona':
+                return (f"Hapana dambudziko — parizvino makanyoreswa {current_appt_str}. "
+                        "Munoda kuti tiendese kupi? Nditumirei zuva nenguva "
+                        "(semuenzaniso, 'Muvhuro na2pm').")
+            return (f"No problem — you're down for {current_appt_str} at the moment. "
+                    "What day and time would suit you better? Something like "
+                    "'Monday at 2pm' is perfect.")
+
+        def _build_reschedule_confirmation(self, old_datetime, new_datetime):
+            """Confirm the move in plain words: no headings, no emojis, no
+            named plumber, mirroring the language the lead wrote in."""
+            when = self._slot_display(new_datetime)
+            if self._lead_language() == 'shona':
+                return (f"Zvakanaka, ndachinja — mava pa{when}. "
+                        "Tichakufonerai tisati tasvika. Kana paine chimwe chinochinja, "
+                        "ndinyorerei pano.")
+            return (f"Done — I've moved you to {when}. "
+                    "Someone will call you before we head over. If anything else "
+                    "changes, just message me here.")
+
+        def notify_team_about_reschedule(self, old_datetime, new_datetime):
+            """Tell the plumber their diary moved.
+
+            This is the one that mattered: the method was CALLED on every
+            successful reschedule but never existed anywhere, so the caller's
+            except swallowed an AttributeError, the customer was told their new
+            time was confirmed, and the plumber drove to the old one.
+            """
+            from ...test_console import is_test_sender
+            if is_test_sender(self.phone_number):
+                print("🧪 Test lead — reschedule alert muted")
+                return
+
+            apt = self.appointment
+            field, _ = self._reschedule_slot()
+            kind = 'JOB' if field == 'job_scheduled_datetime' else 'SITE VISIT'
+            customer_phone = clean_phone_number(self.phone_number)
+
+            team_message = (
+                f"⚠️ {kind} RESCHEDULED\n\n"
+                f"Customer: {apt.customer_name or 'Not provided'}\n"
+                f"Phone: +{customer_phone}\n"
+                f"Area: {apt.customer_area or 'Not provided'}\n"
+                f"Work: {apt.job_description or apt.project_type or 'Not specified'}\n\n"
+                f"Was: {self._slot_display(old_datetime)}\n"
+                f"Now: {self._slot_display(new_datetime)}\n\n"
+                f"View: {settings.SITE_URL}/appointments/{apt.id}/"
+            )
+
+            # The tenant's own plumber line. Absent means the email alert is the
+            # whole notification — never another tenant's number.
+            contact = (apt.plumber_contact() or '').replace(
+                'whatsapp:', '').replace('+', '').strip()
+            if contact:
+                try:
+                    from ...whatsapp_cloud_api import get_client_for_tenant
+                    get_client_for_tenant(apt.tenant).send_text_message(contact, team_message)
+                    print(f"✅ Reschedule alert sent to plumber {contact}")
+                except Exception as wa_error:
+                    print(f"❌ Reschedule WhatsApp alert failed: {str(wa_error)}")
+            else:
+                print("⚠️ No plumber contact on tenant profile — reschedule alert by email only")
+
+            try:
+                from ...plumber_notifications import send_plumber_notification_email
+                send_plumber_notification_email(
+                    subject=f"Appointment rescheduled — {apt.customer_name or customer_phone}",
+                    message=team_message,
+                    tenant=getattr(apt, 'tenant', None),
+                )
+            except Exception as mail_error:
+                print(f"❌ Reschedule email alert failed: {str(mail_error)}")
 
         def process_successful_reschedule(self, old_datetime, new_datetime):
-            """Process a successful reschedule and generate confirmation"""
+            """Move the appointment, tell everyone who needs to know, confirm it."""
+            field, _ = self._reschedule_slot()
+
             try:
-                # Update appointment
-                self.appointment.scheduled_datetime = new_datetime
-                if hasattr(self.appointment, 'reschedule_count'):
-                    self.appointment.reschedule_count = (self.appointment.reschedule_count or 0) + 1
-                if hasattr(self.appointment, 'original_datetime') and not self.appointment.original_datetime:
-                    self.appointment.original_datetime = old_datetime
-                self.appointment.save()
-            
-                # Update Google Calendar
-                try:
-                    self.update_google_calendar_appointment(old_datetime, new_datetime)
-                except Exception as cal_error:
-                    print(f"Calendar update error: {str(cal_error)}")
-            
-                # Notify team
-                try:
-                    self.notify_team_about_reschedule(old_datetime, new_datetime)
-                except Exception as team_error:
-                    print(f"Team notification error: {str(team_error)}")
-            
-                # Generate confirmation with AI
-                confirmation_prompt = f"""
-                You are a professional appointment assistant for a plumbing company.
-            
-                SITUATION: Successfully rescheduled customer's appointment.
-            
-                DETAILS:
-                - Customer: {self.appointment.customer_name or 'Customer'}
-                - Old appointment: {old_datetime.strftime('%A, %B %d at %I:%M %p')}
-                - New appointment: {new_datetime.strftime('%A, %B %d at %I:%M %p')}
-                - Service: {self.appointment.project_type or 'Plumbing service'}
-                - Area: {self.appointment.customer_area or 'Your area'}
-            
-                TASK: Write a professional confirmation message that:
-                1. Confirms the reschedule
-                2. Shows the new appointment time clearly
-                3. Mentions the team will contact them before arrival
-                4. Offers help if they need to change again
-                5. Professional, reassuring tone
-            
-                Keep it concise and clear.
-            
-                Generate the confirmation:"""
-            
-                response = deepseek_client.chat.completions.create(
-                    model=settings.DEEPSEEK_MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are a professional appointment assistant. Be reassuring and clear."},
-                        {"role": "user", "content": confirmation_prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=150
-                )
-            
-                ai_confirmation = response.choices[0].message.content.strip()
-                print(f"✅ Successful reschedule processed with AI confirmation")
-                return ai_confirmation
-            
+                setattr(self.appointment, field, new_datetime)
+                self.appointment.save(update_fields=[field])
+                print(f"✅ {field} moved to {new_datetime}")
             except Exception as e:
-                print(f"❌ Error processing successful reschedule: {str(e)}")
-                # Fallback confirmation
-                return f" Appointment rescheduled to {new_datetime.strftime('%A, %B %d at %I:%M %p')}. Our team will contact you before arrival."
+                # The move itself failed — do NOT tell the customer it's done.
+                print(f"❌ Error saving reschedule: {str(e)}")
+                return self._reschedule_breakdown_reply()
+
+            # Audit trail. reschedule_count / original_datetime were assigned
+            # behind hasattr() guards for columns that do not exist on the
+            # model, so every move went unrecorded; the note is what staff
+            # actually read on the lead.
+            try:
+                _append_admin_note(
+                    self.appointment,
+                    f"Rescheduled by customer: {self._slot_display(old_datetime)} "
+                    f"-> {self._slot_display(new_datetime)}",
+                )
+            except Exception as note_error:
+                print(f"⚠️ Reschedule note error: {str(note_error)}")
+
+            try:
+                self.update_google_calendar_appointment(old_datetime, new_datetime)
+            except Exception as cal_error:
+                print(f"⚠️ Calendar update error: {str(cal_error)}")
+
+            try:
+                self.notify_team_about_reschedule(old_datetime, new_datetime)
+            except Exception as team_error:
+                print(f"⚠️ Team notification error: {str(team_error)}")
+
+            return self._build_reschedule_confirmation(old_datetime, new_datetime)
 
 
         def log_ai_reschedule_decision(self, message, ai_decision, confidence=None):

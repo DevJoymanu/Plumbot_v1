@@ -1,9 +1,10 @@
 from django.conf import settings
 from django.utils import timezone
 
-from ...utils import business_name_for
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db.models import F, TextField, Value
+from django.db.models.functions import Coalesce, Concat
 
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -11,8 +12,10 @@ import requests
 import pytz
 import os
 import json
+import random
 import re
 import tempfile
+import threading
 import base64
 import logging
 
@@ -132,36 +135,148 @@ class NotificationMixin:
                 print(f"❌ Error notifying plumber: {str(e)}")
 
 
-        def send_confirmation_message(self, appointment_info, appointment_datetime):
-            """Send booking confirmation to customer."""
+        # ── Booking confirmation pacing ──────────────────────────────────
+        # The confirmation used to leave the instant the booking row saved,
+        # which is the one thing a person never does. A short pause reads like
+        # someone writing the details up and sending them over; keep it short
+        # enough that the customer never wonders whether the booking took.
+        CONFIRMATION_DELAY_MIN_SECONDS = int(os.getenv('CONFIRMATION_DELAY_MIN_SECONDS', '45'))
+        CONFIRMATION_DELAY_MAX_SECONDS = int(os.getenv('CONFIRMATION_DELAY_MAX_SECONDS', '90'))
+
+        def _confirmation_slot_marker(self, appointment_datetime):
+            """The dedupe marker for one booked slot, in SAST so it reads the
+            same as the time the customer was given."""
+            sa_timezone = pytz.timezone('Africa/Johannesburg')
+            when = appointment_datetime
+            if when.tzinfo is None:
+                when = sa_timezone.localize(when)
+            return f"[CONFIRMATION_SENT:{when.astimezone(sa_timezone).strftime('%Y-%m-%dT%H:%M')}]"
+
+        def _claim_confirmation_send(self, appointment_datetime):
+            """Claim the confirmation for this slot; False = already claimed.
+
+            A booking can be triggered more than once — a repeated "yes", the
+            dashboard Confirm button pressed twice, a re-book landing on the
+            same slot — and each one used to send its own confirmation. The
+            claim is a single conditional UPDATE, so two workers racing cannot
+            both win it, and it is keyed on the SLOT so a genuine reschedule to
+            a new time still confirms.
+            """
+            apt = self.appointment
+            if not apt or not apt.pk:
+                return True  # nothing to dedupe against — send it
+            marker = self._confirmation_slot_marker(appointment_datetime)
+            claimed = Appointment.objects.filter(pk=apt.pk).exclude(
+                internal_notes__contains=marker
+            ).update(
+                internal_notes=Concat(
+                    Coalesce(F('internal_notes'), Value('')),
+                    Value(f'\n{marker}'),
+                    output_field=TextField(),
+                )
+            )
+            # Keep the in-memory copy in step: a later full save() off this
+            # instance would write the pre-claim notes back and let a second
+            # confirmation through.
+            apt.internal_notes = Appointment.objects.filter(pk=apt.pk).values_list(
+                'internal_notes', flat=True).first()
+            return bool(claimed)
+
+        def _lead_language(self):
+            """The language the lead last wrote in — the confirmation mirrors it."""
             try:
-                display_datetime = self.format_datetime_for_display(appointment_datetime)
+                from ...repeated_question_detector import detect_language_simple
+                for entry in reversed(self.appointment.conversation_history or []):
+                    if entry.get('role') == 'user' and (entry.get('content') or '').strip():
+                        return detect_language_simple(entry['content'])
+            except Exception as e:
+                print(f"⚠️ Confirmation language check failed: {e}")
+            return 'english'
 
-                service_map = {
-                    'bathroom_renovation':        'Bathroom Renovation',
-                    'new_plumbing_installation':  'New Plumbing Installation',
-                    'kitchen_renovation':         'Kitchen Renovation',
-                }
-                service_name = service_map.get(
-                    appointment_info.get('project_type', ''),
-                    (appointment_info.get('project_type') or 'Plumbing service')
-                    .replace('_', ' ').title()
-                )
+        def _build_confirmation_message(self, appointment_info, appointment_datetime):
+            """The booking confirmation written the way a person would text it —
+            no headings, no labelled fields, no emojis.
 
-                confirmation_message = (
-                    f"✅ APPOINTMENT CONFIRMED\n\n"
-                    f"📅 Date: {display_datetime.strftime('%A, %B %d, %Y')}\n"
-                    f"🕐 Time: {display_datetime.strftime('%I:%M %p')}\n"
-                    f"📍 Area: {appointment_info.get('area', 'Your area')}\n"
-                    f"🔧 Service: {service_name}\n\n"
-                    f"We will contact you before arrival.\n\n"
-                    f"Questions? Just reply here.\n"
-                    f"— {business_name_for(self.appointment)}"
-                )
+            Framed as "in writing" because the booking turn has usually already
+            acknowledged the slot in conversation; this lands a beat later as the
+            written version, not as the same news told twice.
+            """
+            display_datetime = self.format_datetime_for_display(appointment_datetime)
+            when = (
+                f"{display_datetime.strftime('%A')}, "
+                f"{display_datetime.strftime('%d %B').lstrip('0')} at "
+                f"{display_datetime.strftime('%I:%M %p').lstrip('0')}"
+            )
 
+            service_map = {
+                'bathroom_renovation':        'Bathroom Renovation',
+                'new_plumbing_installation':  'New Plumbing Installation',
+                'kitchen_renovation':         'Kitchen Renovation',
+            }
+            raw_service = (appointment_info.get('project_type') or '').strip()
+            service = service_map.get(
+                raw_service, raw_service.replace('_', ' ')
+            ).strip().lower()
+            area = (appointment_info.get('area') or '').strip()
+
+            # Absent means omit: a lead with no area on file is not told we are
+            # coming to "your area".
+            if self._lead_language() == 'shona':
+                opener = f"Zvanyorwa pasi — {when}."
+                if service and area:
+                    detail = f"Tichauya ku{area} kuzotarisa {service}."
+                elif service:
+                    detail = f"Tichauya kuzotarisa {service}."
+                elif area:
+                    detail = f"Tichauya ku{area}."
+                else:
+                    detail = ""
+                closing = ("Tichakufonerai tisati tasvika. Kana paine chinochinja, "
+                           "ndinyorerei pano.")
+            else:
+                opener = f"Just so you've got it in writing — you're booked for {when}."
+                if service and area:
+                    detail = f"We'll come through to {area} to have a look at the {service}."
+                elif service:
+                    detail = f"I've got you down for the {service}."
+                elif area:
+                    detail = f"We'll come through to {area}."
+                else:
+                    detail = ""
+                closing = ("Someone will call you before we head over. If anything "
+                           "changes, just message me here.")
+
+            first_line = f"{opener} {detail}".strip()
+            return f"{first_line}\n\n{closing}"
+
+        def send_confirmation_message(self, appointment_info, appointment_datetime):
+            """Queue the booking confirmation to the customer.
+
+            Deliberately not sent inline: it goes out through delayed_response
+            after a short pause, so it lands like a person following up rather
+            than a receipt printed the moment the record saved. That path also
+            logs the turn and stamps the outbound WAMID, so a customer who
+            highlights the confirmation gets it resolved back.
+            """
+            try:
+                if not self._claim_confirmation_send(appointment_datetime):
+                    print("↩️ Confirmation already queued for this slot — skipping duplicate")
+                    return
+
+                confirmation_message = self._build_confirmation_message(
+                    appointment_info, appointment_datetime)
                 clean_phone = clean_phone_number(self.phone_number)
-                get_client_for_tenant(self.appointment.tenant).send_text_message(clean_phone, confirmation_message)
-                print(f"✅ Confirmation sent to {clean_phone}")
+                delay = random.randint(self.CONFIRMATION_DELAY_MIN_SECONDS,
+                                       self.CONFIRMATION_DELAY_MAX_SECONDS)
+
+                from ...whatsapp_webhook import delayed_response
+                threading.Thread(
+                    target=delayed_response,
+                    args=(clean_phone, confirmation_message, delay),
+                    kwargs={'tenant': self.appointment.tenant},
+                    daemon=True,
+                ).start()
+                print(f"✅ Confirmation queued for {clean_phone} — sending in {delay}s")
 
             except Exception as e:
                 print(f"❌ Confirmation message error: {str(e)}")
@@ -341,12 +456,76 @@ class NotificationMixin:
                     calendarId='primary',
                     body=event
                 ).execute()
-            
+
+                # Keep the event handle. Without it a reschedule has nothing to
+                # move, which is why google_calendar_event_id sat unused on the
+                # model while the calendar kept every stale time.
+                try:
+                    event_id = (event_result or {}).get('id')
+                    if event_id:
+                        self.appointment.google_calendar_event_id = event_id
+                        self.appointment.save(update_fields=['google_calendar_event_id'])
+                except Exception as save_error:
+                    print(f"⚠️ Could not store calendar event id: {save_error}")
+
                 print(f"✅ Added to Google Calendar")
                 return event_result
-            
+
             except Exception as e:
                 print(f"❌ Google Calendar Error: {str(e)}")
+                return None
+
+
+        def update_google_calendar_appointment(self, old_datetime, new_datetime):
+            """Move this lead's calendar event to the new time.
+
+            Called on every reschedule. It never existed, so the caller's except
+            swallowed an AttributeError and the plumber's calendar kept the old
+            slot. With no event id on file (anything booked before the id was
+            stored) it creates the event at the new time instead.
+            """
+            try:
+                if not GOOGLE_CALENDAR_CREDENTIALS:
+                    print("⚠️ Google Calendar credentials not configured")
+                    return None
+
+                event_id = (self.appointment.google_calendar_event_id or '').strip()
+                if not event_id:
+                    print("ℹ️ No calendar event on file — creating one at the new time")
+                    return self.add_to_google_calendar(
+                        self.extract_appointment_details(), new_datetime)
+
+                credentials = service_account.Credentials.from_service_account_info(
+                    GOOGLE_CALENDAR_CREDENTIALS,
+                    scopes=['https://www.googleapis.com/auth/calendar']
+                )
+                service = build('calendar', 'v3', credentials=credentials)
+
+                # A job books its own duration; a site visit is the standard 2h.
+                hours = 2
+                if self.appointment.appointment_type == 'job_appointment':
+                    hours = self.appointment.job_duration_hours or 4
+
+                updated = service.events().patch(
+                    calendarId='primary',
+                    eventId=event_id,
+                    body={
+                        'start': {
+                            'dateTime': new_datetime.isoformat(),
+                            'timeZone': 'Africa/Johannesburg',
+                        },
+                        'end': {
+                            'dateTime': (new_datetime + timedelta(hours=hours)).isoformat(),
+                            'timeZone': 'Africa/Johannesburg',
+                        },
+                    },
+                ).execute()
+
+                print(f"✅ Google Calendar event moved to {new_datetime}")
+                return updated
+
+            except Exception as e:
+                print(f"❌ Google Calendar update error: {str(e)}")
                 return None
 
 

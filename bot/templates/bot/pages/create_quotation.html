@@ -616,6 +616,8 @@
         const item = items.find(i => i.id === id);
         if (item) {
             item[field] = field === 'name' ? value : parseFloat(value) || 0;
+            // A newly named row may have been the last blank one.
+            if (field === 'name') ensureBlankItem();
             // Only recalculate totals for numeric fields, don't re-render
             if (field === 'qty' || field === 'price') {
                 updateItemTotal(id);
@@ -637,28 +639,10 @@
         }
     }
 
-    function renderItems() {
-        const container = document.getElementById('itemsList');
-        const box = document.getElementById('itemsScroll');
-
-        // A re-render replaces every row, which would otherwise jump the list
-        // back to the top and lose the user's place mid-edit.
-        const keepScroll = box ? box.scrollTop : 0;
-
-        if (box) box.classList.toggle('is-capped', items.length > ITEMS_CAP_AT);
-
-        if (items.length === 0) {
-            container.innerHTML = `
-                <div class="pbq-empty">
-                    <i class="fas fa-inbox"></i>
-                    <p>No items added yet</p>
-                </div>
-            `;
-            calculateTotals();
-            return;
-        }
-
-        container.innerHTML = items.map((item, index) => `
+    /* One item card. Shared by the full render and by the single-card
+       append in ensureBlankItem, so the two can never drift apart. */
+    function itemCardHtml(item, index) {
+        return `
             <div class="pbq-item" data-item-id="${item.id}">
                 <div class="pbq-item__head">
                     <span class="pbq-item__index">Item ${index + 1}</span>
@@ -687,7 +671,52 @@
                 </div>
                 <div class="pbq-item__total">Total: ${money(item.qty * item.price)}</div>
             </div>
-        `).join('');
+        `;
+    }
+
+    /* Keep a blank row waiting at the end of the list.
+
+       "Full" is the same test the save uses — a row counts once it has a
+       description, and rows without one are not saved — so there is always
+       exactly one spare line. Appended on its own, never through a re-render:
+       this fires on a keystroke, and rebuilding the list would take the input
+       the user is typing in out from under them. */
+    function ensureBlankItem() {
+        if (!items.length) return;          // the empty state invites the first Add Item
+        if (!items.every(item => String(item.name || '').trim())) return;
+
+        const item = { id: nextItemId(), name: '', qty: 1, price: 0 };
+        items.push(item);
+        document.getElementById('itemsList')
+            .insertAdjacentHTML('beforeend', itemCardHtml(item, items.length - 1));
+
+        const box = document.getElementById('itemsScroll');
+        if (box) box.classList.toggle('is-capped', items.length > ITEMS_CAP_AT);
+        calculateTotals();
+    }
+
+    function renderItems() {
+        const container = document.getElementById('itemsList');
+        const box = document.getElementById('itemsScroll');
+
+        // A re-render replaces every row, which would otherwise jump the list
+        // back to the top and lose the user's place mid-edit.
+        const keepScroll = box ? box.scrollTop : 0;
+
+        if (box) box.classList.toggle('is-capped', items.length > ITEMS_CAP_AT);
+
+        if (items.length === 0) {
+            container.innerHTML = `
+                <div class="pbq-empty">
+                    <i class="fas fa-inbox"></i>
+                    <p>No items added yet</p>
+                </div>
+            `;
+            calculateTotals();
+            return;
+        }
+
+        container.innerHTML = items.map(itemCardHtml).join('');
 
         if (box) box.scrollTop = keepScroll;
 
@@ -706,8 +735,12 @@
         // summary above the list can never drift from the list itself.
         const count = document.getElementById('itemsCount');
         if (count) {
-            count.textContent = items.length
-                ? `${items.length} item${items.length === 1 ? '' : 's'} added`
+            // Count only rows that would actually be saved. There is now
+            // always a blank one waiting at the end, and announcing it as an
+            // item would overstate the quote by one for its whole life.
+            const named = items.filter(item => String(item.name || '').trim()).length;
+            count.textContent = named
+                ? `${named} item${named === 1 ? '' : 's'} added`
                 : 'No items yet';
         }
         const running = document.getElementById('itemsRunningTotal');

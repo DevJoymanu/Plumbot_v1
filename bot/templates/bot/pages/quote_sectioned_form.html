@@ -237,6 +237,7 @@ edit they come back from the saved quote.
 
         if (items && items.length) {
             items.forEach(item => addItem(sid, item));
+            ensureBlankRow(sid);
         } else {
             addItem(sid); addItem(sid); addItem(sid);
             const titleInput = headTr.querySelector('.bq-sec-title');
@@ -284,9 +285,32 @@ edit they come back from the saved quote.
         return tr;
     }
 
+    /* Keep a blank row waiting at the end of every section.
+
+       "Full" is the same test the save uses — a row counts once it has a
+       description, and rows without one are not saved — so the sheet always
+       has exactly one spare line and nobody has to reach for "+ Add item"
+       mid-flow. Deliberately silent: no focus, no scroll, because this fires
+       while the user is typing somewhere else. */
+    function ensureBlankRow(sid) {
+        const rows = [...document.querySelectorAll(`tr.bq-item[data-item-sec="${sid}"]`)];
+        if (rows.every(row => row.querySelector('.bq-desc').value.trim())) {
+            addItem(sid);
+        }
+    }
+
     function removeItem(iid) {
         const row = document.querySelector(`[data-item="${iid}"]`);
-        if (row) row.remove();
+        if (!row) return;
+        const sid = row.dataset.itemSec;
+        row.remove();
+
+        /* Only refill when that was the last row: a section with none has no
+           way back except "+ Add item". Refilling on every delete would make
+           deleting the spare blank row look like it had failed. */
+        if (!document.querySelectorAll(`tr.bq-item[data-item-sec="${sid}"]`).length) {
+            addItem(sid);
+        }
         recalc();
     }
 
@@ -442,6 +466,13 @@ edit they come back from the saved quote.
 
     document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('bqSave').addEventListener('click', save);
+
+        // Typing in any cell may mean the section is now full and needs a
+        // fresh blank row underneath.
+        document.getElementById('bqSections').addEventListener('input', function (e) {
+            const row = e.target.closest('tr.bq-item');
+            if (row) ensureBlankRow(row.dataset.itemSec);
+        });
 
         const dateField = document.getElementById('m-date');
         if (!dateField.value) dateField.valueAsDate = new Date();

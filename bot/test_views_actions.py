@@ -53,6 +53,11 @@ from .models import (
 )
 
 
+# Anything a customer reads must be free of these: pictographs, dingbats,
+# arrows and the variation selector that turns a glyph into an emoji.
+_EMOJI_RE = re.compile('[\U0001F000-\U0001FAFF\u2190-\u21FF\u2300-\u27BF\u2B00-\u2BFF\uFE0F]')
+
+
 def make_lead(suffix, **kwargs):
     """A minimal lead; suffix keeps phone numbers unique per test."""
     defaults = {'phone_number': f'whatsapp:+1555000{suffix:04d}'}
@@ -3988,6 +3993,64 @@ class InboundEmailIntakeTests(TestCase):
             client.assert_not_called()
 
 
+    # ── Emailed reschedules ──────────────────────────────────────────────
+    def _resched_lead(self, suffix):
+        return self._lead(suffix, status='confirmed',
+                          scheduled_datetime=timezone.now() + timedelta(days=2))
+
+    def test_an_emailed_reschedule_runs_the_full_pipeline(self):
+        """It used to just assign scheduled_datetime: the customer was told the
+        move was done while the plumber, the calendar and the lead's own record
+        stayed on the old time."""
+        from .management.commands.process_inbound_emails import _apply_email_reschedule
+        from .views.plumbot.base import Plumbot
+
+        lead = self._resched_lead(7290)
+        new = timezone.now() + timedelta(days=5)
+        with patch.object(Plumbot, 'update_google_calendar_appointment') as cal, \
+             patch.object(Plumbot, 'notify_team_about_reschedule') as notify, \
+             patch.object(Plumbot, '_reschedule_availability', return_value=(True, None)):
+            note = _apply_email_reschedule(lead, new, dry_run=False, out=lambda *a: None)
+
+        lead.refresh_from_db()
+        self.assertAlmostEqual(lead.scheduled_datetime, new, delta=timedelta(seconds=2))
+        self.assertTrue(notify.called)
+        self.assertTrue(cal.called)
+        self.assertIn('rescheduled', note.lower())
+        self.assertIn('Rescheduled by customer', lead.admin_notes or '')
+
+    def test_an_emailed_reschedule_into_a_taken_slot_moves_nothing(self):
+        from .management.commands.process_inbound_emails import _apply_email_reschedule
+        from .views.plumbot.base import Plumbot
+
+        lead = self._resched_lead(7291)
+        was = lead.scheduled_datetime
+        with patch.object(Plumbot, 'notify_team_about_reschedule') as notify, \
+             patch.object(Plumbot, '_reschedule_availability',
+                          return_value=(False, 'conflict')):
+            note = _apply_email_reschedule(lead, timezone.now() + timedelta(days=5),
+                                           dry_run=False, out=lambda *a: None)
+
+        lead.refresh_from_db()
+        self.assertAlmostEqual(lead.scheduled_datetime, was, delta=timedelta(seconds=2))
+        notify.assert_not_called()
+        self.assertIn('another day', note)
+
+    def test_a_dry_run_reschedule_writes_nothing(self):
+        from .management.commands.process_inbound_emails import _apply_email_reschedule
+        from .views.plumbot.base import Plumbot
+
+        lead = self._resched_lead(7292)
+        was = lead.scheduled_datetime
+        with patch.object(Plumbot, 'notify_team_about_reschedule') as notify, \
+             patch.object(Plumbot, '_reschedule_availability', return_value=(True, None)):
+            _apply_email_reschedule(lead, timezone.now() + timedelta(days=5),
+                                    dry_run=True, out=lambda *a: None)
+
+        lead.refresh_from_db()
+        self.assertAlmostEqual(lead.scheduled_datetime, was, delta=timedelta(seconds=2))
+        notify.assert_not_called()
+
 class JobSchedulingTests(StaffClientTestCase):
     """schedule_job used to write with `Appointment.objects.update(...)` — a
     manager-level update with no filter, so one job's datetime, name and area
@@ -4138,3 +4201,286 @@ class MassJobUpdateRepairTests(StaffClientTestCase):
         lead.refresh_from_db()
         self.assertEqual(lead.appointment_type, 'job')
         self.assertEqual(lead.status, 'scheduled')
+
+
+class BookingConfirmationMessageTests(TestCase):
+    """The WhatsApp booking confirmation: written like a person, no emojis,
+    held back a beat instead of firing the instant the booking saved, and
+    never sent twice for the same slot."""
+
+    EMOJI = _EMOJI_RE
+
+    def setUp(self):
+        self.lead = make_lead(9901, customer_area='Borrowdale',
+                              customer_name='Tinashe')
+        from .views.plumbot.base import Plumbot
+        self.bot = Plumbot(self.lead.phone_number)
+        self.assertEqual(self.bot.appointment.pk, self.lead.pk)
+        self.when = timezone.now() + timedelta(days=2)
+        self.info = {'project_type': 'bathroom_renovation', 'area': 'Borrowdale'}
+
+    def test_confirmation_reads_like_a_person(self):
+        text = self.bot._build_confirmation_message(self.info, self.when)
+        # The old copy was a labelled card with an emoji on every line.
+        self.assertNotIn('APPOINTMENT CONFIRMED', text)
+        for label in ('Date:', 'Time:', 'Area:', 'Service:'):
+            self.assertNotIn(label, text)
+        self.assertIsNone(self.EMOJI.search(text), text)
+        self.assertIn("in writing", text)
+        self.assertIn("you're booked for", text)
+        self.assertIn('Borrowdale', text)
+        self.assertIn('bathroom renovation', text)
+        self.assertIn('just message me here', text)
+
+    def test_absent_details_are_omitted_not_invented(self):
+        text = self.bot._build_confirmation_message(
+            {'project_type': 'geyser_installation'}, self.when)
+        self.assertNotIn('Your area', text)
+        self.assertIn('geyser installation', text)
+        self.assertIsNone(self.EMOJI.search(text), text)
+
+    def test_shona_lead_gets_a_shona_confirmation(self):
+        self.lead.add_conversation_message('user', 'Ndinoda kugadzirisa bhavhu, marii?')
+        self.bot.appointment.refresh_from_db()
+        text = self.bot._build_confirmation_message(self.info, self.when)
+        self.assertIn('Tichakufonerai', text)
+        self.assertIsNone(self.EMOJI.search(text), text)
+
+    def test_confirmation_is_queued_behind_a_short_delay_and_only_once(self):
+        from .views.plumbot import notification_mixin as nm
+        with patch.object(nm.threading, 'Thread') as thread:
+            self.bot.send_confirmation_message(self.info, self.when)
+            # Same booking triggered again (repeated "yes", Confirm pressed
+            # twice) — one confirmation is enough.
+            self.bot.send_confirmation_message(self.info, self.when)
+            self.assertEqual(thread.call_count, 1)
+            self.assertTrue(thread.return_value.start.called)
+
+            delay = thread.call_args.kwargs['args'][2]
+            self.assertGreaterEqual(delay, self.bot.CONFIRMATION_DELAY_MIN_SECONDS)
+            self.assertLessEqual(delay, self.bot.CONFIRMATION_DELAY_MAX_SECONDS)
+
+            # A genuine re-book at a NEW time still confirms.
+            self.bot.send_confirmation_message(self.info, self.when + timedelta(days=1))
+            self.assertEqual(thread.call_count, 2)
+
+    def test_the_claim_survives_a_later_full_save_of_the_lead(self):
+        # The claim is written with a conditional UPDATE; the in-memory copy
+        # has to learn about it or a full save() off the same instance writes
+        # the pre-claim notes back and a second confirmation slips through.
+        from .views.plumbot import notification_mixin as nm
+        with patch.object(nm.threading, 'Thread') as thread:
+            self.bot.send_confirmation_message(self.info, self.when)
+            self.bot.appointment.save()
+            self.bot.send_confirmation_message(self.info, self.when)
+        self.assertEqual(thread.call_count, 1)
+
+
+class ReschedulePipelineTests(TestCase):
+    """Customer-initiated reschedules over WhatsApp.
+
+    Three of the methods this path called did not exist anywhere in the repo —
+    the plumber alert, the calendar move and the keyword fallback — and every
+    failure was swallowed by a bare except, so the customer was told their new
+    time was confirmed while nothing else moved.
+    """
+
+    def setUp(self):
+        self.homebase = Tenant.objects.get(slug='homebase')
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.old = timezone.now() + timedelta(days=2)
+        self.new = timezone.now() + timedelta(days=4)
+        self.lead = make_lead(9801, tenant=self.homebase, status='confirmed',
+                              customer_name='Tinashe', customer_area='Borrowdale',
+                              project_type='bathroom_renovation',
+                              scheduled_datetime=self.old)
+        self.bot = self._bot(self.lead)
+
+    def _bot(self, lead):
+        from .views.plumbot.base import Plumbot
+        return Plumbot(lead.phone_number, tenant=lead.tenant)
+
+    def _job_lead(self):
+        lead = make_lead(9802, tenant=self.homebase, status='confirmed',
+                         customer_name='Rudo', customer_area='Avondale',
+                         appointment_type='job_appointment',
+                         scheduled_datetime=timezone.now() - timedelta(days=7),
+                         job_scheduled_datetime=self.old,
+                         job_duration_hours=4, job_status='scheduled')
+        return lead, self._bot(lead)
+
+    # ── detection ────────────────────────────────────────────────────────
+    def test_keyword_fallback_detects_a_reschedule_without_the_api(self):
+        for message in ("Something came up, can we move it?",
+                        "I need to reschedule",
+                        "can't make Thursday",
+                        "ndinoda kuchinja zuva"):
+            with self.subTest(message=message):
+                self.assertTrue(self.bot.detect_reschedule_request(message))
+
+        for message in ("Thanks for confirming", "How much will it cost?",
+                        "Do you need directions?"):
+            with self.subTest(message=message):
+                self.assertFalse(self.bot.detect_reschedule_request(message))
+
+    def test_keyword_fallback_stays_quiet_without_a_confirmed_slot(self):
+        self.lead.status = 'pending'
+        self.lead.save(update_fields=['status'])
+        self.bot.appointment.refresh_from_db()
+        self.assertFalse(self.bot.detect_reschedule_request('can we reschedule?'))
+
+    def test_ai_detector_degrades_to_keywords_when_deepseek_is_down(self):
+        # The except branch called detect_reschedule_request, which did not
+        # exist — an API blip raised AttributeError out of the detector.
+        from .views.plumbot import reschedule_mixin as rm
+        with patch.object(rm.deepseek_client.chat.completions, 'create',
+                          side_effect=RuntimeError('deepseek down')):
+            self.assertTrue(
+                self.bot.detect_reschedule_request_with_ai('something came up, can we move it?'))
+            self.assertFalse(
+                self.bot.detect_reschedule_request_with_ai('thanks for confirming'))
+
+    # ── which slot moves ─────────────────────────────────────────────────
+    def test_site_visit_move_writes_the_visit_slot(self):
+        from .views.plumbot.base import Plumbot
+        with patch.object(Plumbot, 'update_google_calendar_appointment'), \
+             patch.object(Plumbot, 'notify_team_about_reschedule'):
+            reply = self.bot.process_successful_reschedule(self.old, self.new)
+        self.lead.refresh_from_db()
+        self.assertAlmostEqual(self.lead.scheduled_datetime, self.new,
+                               delta=timedelta(seconds=2))
+        self.assertIn('moved you to', reply)
+
+    def test_job_move_writes_the_job_slot_not_the_site_visit(self):
+        # schedule_job_appointment keeps one row, so a job customer still has
+        # the old site-visit datetime on scheduled_datetime. The bot used to
+        # move THAT and leave the jobs board on the old job time.
+        from .views.plumbot.base import Plumbot
+        lead, bot = self._job_lead()
+        visit = lead.scheduled_datetime
+        with patch.object(Plumbot, 'update_google_calendar_appointment'), \
+             patch.object(Plumbot, 'notify_team_about_reschedule'):
+            bot.process_successful_reschedule(self.old, self.new)
+        lead.refresh_from_db()
+        self.assertAlmostEqual(lead.job_scheduled_datetime, self.new,
+                               delta=timedelta(seconds=2))
+        self.assertAlmostEqual(lead.scheduled_datetime, visit,
+                               delta=timedelta(seconds=2))
+
+    def test_the_job_slot_is_the_one_quoted_back_to_the_customer(self):
+        lead, bot = self._job_lead()
+        field, current = bot._reschedule_slot()
+        self.assertEqual(field, 'job_scheduled_datetime')
+        self.assertAlmostEqual(current, self.old, delta=timedelta(seconds=2))
+
+    # ── who gets told ────────────────────────────────────────────────────
+    def test_plumber_is_told_about_the_move(self):
+        with patch('bot.whatsapp_cloud_api.get_client_for_tenant') as client, \
+             patch('bot.plumber_notifications.send_plumber_notification_email') as mail:
+            self.bot.notify_team_about_reschedule(self.old, self.new)
+
+        self.assertTrue(client.return_value.send_text_message.called)
+        number, text = client.return_value.send_text_message.call_args.args
+        self.assertEqual(number, '263774819901')          # the tenant's own line
+        self.assertIn('RESCHEDULED', text)
+        self.assertIn('Tinashe', text)
+        self.assertTrue(mail.called)
+
+    def test_a_tenant_with_no_plumber_line_still_gets_the_email(self):
+        lead = make_lead(9803, tenant=self.acme, status='confirmed',
+                         scheduled_datetime=self.old)
+        bot = self._bot(lead)
+        with patch('bot.whatsapp_cloud_api.get_client_for_tenant') as client, \
+             patch('bot.plumber_notifications.send_plumber_notification_email') as mail:
+            bot.notify_team_about_reschedule(self.old, self.new)
+        client.return_value.send_text_message.assert_not_called()
+        self.assertTrue(mail.called)
+
+    def test_move_is_recorded_on_the_lead(self):
+        from .views.plumbot.base import Plumbot
+        with patch.object(Plumbot, 'update_google_calendar_appointment'), \
+             patch.object(Plumbot, 'notify_team_about_reschedule'):
+            self.bot.process_successful_reschedule(self.old, self.new)
+        self.lead.refresh_from_db()
+        self.assertIn('Rescheduled by customer', self.lead.admin_notes or '')
+
+    # ── calendar ─────────────────────────────────────────────────────────
+    def test_calendar_event_is_patched_not_duplicated(self):
+        from .views.plumbot import notification_mixin as nm
+        self.lead.google_calendar_event_id = 'evt-123'
+        self.lead.save(update_fields=['google_calendar_event_id'])
+        self.bot.appointment.refresh_from_db()
+
+        with patch.object(nm, 'GOOGLE_CALENDAR_CREDENTIALS', {'type': 'service_account'}), \
+             patch.object(nm, 'service_account'), \
+             patch.object(nm, 'build') as build:
+            self.bot.update_google_calendar_appointment(self.old, self.new)
+
+        events = build.return_value.events.return_value
+        self.assertTrue(events.patch.called)
+        self.assertFalse(events.insert.called)
+        self.assertEqual(events.patch.call_args.kwargs['eventId'], 'evt-123')
+
+    def test_calendar_creates_an_event_when_none_is_on_file(self):
+        from .views.plumbot import notification_mixin as nm
+        from .views.plumbot.base import Plumbot
+        with patch.object(nm, 'GOOGLE_CALENDAR_CREDENTIALS', {'type': 'service_account'}), \
+             patch.object(Plumbot, 'add_to_google_calendar') as add:
+            self.bot.update_google_calendar_appointment(self.old, self.new)
+        self.assertTrue(add.called)
+
+    def test_booking_stores_the_calendar_event_id(self):
+        from .views.plumbot import notification_mixin as nm
+        with patch.object(nm, 'GOOGLE_CALENDAR_CREDENTIALS', {'type': 'service_account'}), \
+             patch.object(nm, 'service_account'), \
+             patch.object(nm, 'build') as build:
+            build.return_value.events.return_value.insert.return_value.execute.return_value = {
+                'id': 'evt-new'}
+            self.bot.add_to_google_calendar({'name': 'Tinashe'}, self.new)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.google_calendar_event_id, 'evt-new')
+
+    # ── copy ─────────────────────────────────────────────────────────────
+    def test_reschedule_copy_is_human_and_tenant_safe(self):
+        texts = [
+            self.bot._build_reschedule_confirmation(self.old, self.new),
+            self.bot._build_reschedule_clarification('Monday, June 01 at 10:00 AM'),
+            self.bot._build_reschedule_unavailable_reply([]),
+            self.bot._build_reschedule_unavailable_reply(
+                [{'display': 'Monday at 10:00 AM'}, {'display': 'Tuesday at 2:00 PM'}]),
+            self.bot._reschedule_breakdown_reply(),
+        ]
+        for text in texts:
+            with self.subTest(text=text[:40]):
+                self.assertIsNone(_EMOJI_RE.search(text), text)
+                self.assertNotIn('555', text)              # (555) PLUMBING
+                self.assertNotIn('PLUMBING', text)
+                self.assertNotIn('Monday to Friday', text)  # hardcoded week
+        # The breakdown reply offers the tenant's OWN line, never a placeholder.
+        self.assertIn('263774819901', texts[-1])
+
+    def test_breakdown_reply_omits_a_number_the_tenant_does_not_have(self):
+        lead = make_lead(9804, tenant=self.acme, status='confirmed',
+                         scheduled_datetime=self.old)
+        text = self._bot(lead)._reschedule_breakdown_reply()
+        self.assertNotIn('263774819901', text)             # never homebase's
+        self.assertNotIn('555', text)
+        self.assertIn('day and time', text)
+
+    def test_unavailable_reply_survives_an_alternatives_lookup_failure(self):
+        # The old except branch read `alternatives` before it was assigned.
+        from .views.plumbot.base import Plumbot
+        with patch.object(Plumbot, 'get_alternative_time_suggestions',
+                          side_effect=RuntimeError('diary unavailable')):
+            reply = self.bot.handle_unavailable_reschedule_with_ai(self.new, 'monday at 2pm')
+        self.assertIn('already taken', reply)
+
+    def test_a_failed_save_never_claims_the_move_happened(self):
+        from .views.plumbot.base import Plumbot
+        with patch.object(type(self.bot.appointment), 'save',
+                          side_effect=RuntimeError('db down')), \
+             patch.object(Plumbot, 'notify_team_about_reschedule') as notify:
+            reply = self.bot.process_successful_reschedule(self.old, self.new)
+        self.assertNotIn('moved you to', reply)
+        self.assertIn('day and time', reply)
+        notify.assert_not_called()

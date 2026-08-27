@@ -2768,8 +2768,10 @@ class ResponseMixin:
                     return reply
 
                 # ── STEP 4: RESCHEDULE CHECK (confirmed appointments only) ────────────
+                # The live slot, not scheduled_datetime: a lead whose job is
+                # booked keeps its completed site visit in that field.
                 if (self.appointment.status == 'confirmed' and
-                        self.appointment.scheduled_datetime and
+                        self._reschedule_slot()[1] and
                         self.detect_reschedule_request_with_ai(incoming_message)):
                     print("🤖 AI detected reschedule request, handling...")
                     reschedule_response = self.handle_reschedule_request_with_ai(incoming_message)

@@ -480,6 +480,55 @@
     // and the running total stay put.
     const ITEMS_CAP_AT = 4;
 
+    /* One item row. Shared by the full render and by the single-row
+       append in ensureBlankItem, so the two can never drift apart. */
+    function itemRowHtml(item, index) {
+        return `
+                <td data-label="Item / Description">
+                    <input type="text" class="item-input" data-index="${index}" data-field="name"
+                           value="${esc(item.name)}" placeholder="Item description">
+                </td>
+                <td class="eq-col-qty" data-label="Qty">
+                    <input type="number" class="item-input" data-index="${index}" data-field="qty"
+                           value="${item.qty}" min="0" step="1" inputmode="decimal">
+                </td>
+                <td class="eq-col-unit" data-label="Unit Price (US$)">
+                    <input type="number" class="item-input" data-index="${index}" data-field="unit"
+                           value="${item.unit}" min="0" step="0.01" inputmode="decimal">
+                </td>
+                <td class="eq-col-tot pbq-cell-inline" data-label="Line Total">
+                    <span class="line-total eq-line-total">${money(item.qty * item.unit)}</span>
+                </td>
+                <td class="eq-col-act pbq-cell-inline" data-label="">
+                    <button type="button" class="eq-remove" onclick="removeItem(${index})"
+                            title="Remove item" aria-label="Remove item ${index + 1}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+`;
+    }
+
+    /* Keep a blank row waiting at the end of the table.
+
+       "Full" is the same test the save uses — a row counts once it has a
+       description, and rows without one are not saved — so there is always
+       exactly one spare line. Appended on its own, never through a
+       re-render: this fires on a keystroke, and rebuilding the table would
+       take the input the user is typing in out from under them. */
+    function ensureBlankItem() {
+        if (!items.length) return;      // the empty state invites the first Add Item
+        if (!items.every(item => String(item.name || '').trim())) return;
+
+        items.push({ name: '', qty: 1, unit: 0 });
+        const row = document.createElement('tr');
+        row.innerHTML = itemRowHtml(items[items.length - 1], items.length - 1);
+        itemsTableBody.appendChild(row);
+
+        const box = document.getElementById('itemsScroll');
+        if (box) box.classList.toggle('is-capped', items.length > ITEMS_CAP_AT);
+        updateItemsBar();
+    }
+
     function renderItems() {
         const box = document.getElementById('itemsScroll');
 
@@ -503,29 +552,7 @@
 
         items.forEach((item, index) => {
             const row = document.createElement('tr');
-            row.innerHTML = `
-                <td data-label="Item / Description">
-                    <input type="text" class="item-input" data-index="${index}" data-field="name"
-                           value="${esc(item.name)}" placeholder="Item description">
-                </td>
-                <td class="eq-col-qty" data-label="Qty">
-                    <input type="number" class="item-input" data-index="${index}" data-field="qty"
-                           value="${item.qty}" min="0" step="1" inputmode="decimal">
-                </td>
-                <td class="eq-col-unit" data-label="Unit Price (US$)">
-                    <input type="number" class="item-input" data-index="${index}" data-field="unit"
-                           value="${item.unit}" min="0" step="0.01" inputmode="decimal">
-                </td>
-                <td class="eq-col-tot pbq-cell-inline" data-label="Line Total">
-                    <span class="line-total eq-line-total">${money(item.qty * item.unit)}</span>
-                </td>
-                <td class="eq-col-act pbq-cell-inline" data-label="">
-                    <button type="button" class="eq-remove" onclick="removeItem(${index})"
-                            title="Remove item" aria-label="Remove item ${index + 1}">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
-            `;
+            row.innerHTML = itemRowHtml(item, index);
             itemsTableBody.appendChild(row);
         });
 
@@ -538,8 +565,12 @@
     function updateItemsBar() {
         const count = document.getElementById('itemsCount');
         if (count) {
-            count.textContent = items.length
-                ? `${items.length} item${items.length === 1 ? '' : 's'} added`
+            // Count only rows that would actually be saved. There is now
+            // always a blank one waiting at the end, and announcing it as an
+            // item would overstate the quote by one for its whole life.
+            const named = items.filter(item => String(item.name || '').trim()).length;
+            count.textContent = named
+                ? `${named} item${named === 1 ? '' : 's'} added`
                 : 'No items yet';
         }
         const running = document.getElementById('itemsRunningTotal');
@@ -556,6 +587,9 @@
 
         if (items[index]) {
             items[index][field] = value;
+
+            // A newly named row may have been the last blank one.
+            if (field === 'name') ensureBlankItem();
 
             // Update line total if qty or unit changed
             if (field === 'qty' || field === 'unit') {
