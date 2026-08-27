@@ -4984,8 +4984,24 @@ try:
             self.title, self.price_line, self.item_id = title, price_line, item_id
 
     class _FakePlumbot:
+        catalogued = None
+
         def _product_price_close(self, language='english'):
             return "Does that sit where you expected?"
+
+        def compose_quoted_photo_price_reply(self, title, language='english'):
+            return self.catalogued
+
+        def _ensure_price_disclaimer(self, intent, reply):
+            if not reply or '$' not in reply or 'sees the space' in reply.lower():
+                return reply
+            line = ("These are starting prices. The exact price is confirmed "
+                    "once the plumber sees the space.")
+            parts = reply.split('\n\n')
+            if len(parts) >= 2:
+                parts.insert(len(parts) - 1, line)
+                return '\n\n'.join(parts)
+            return f"{reply}\n\n{line}"
 
         def _no_price_on_file_reply(self, language='english'):
             return ("Mitengo inosiyana. Toona nzvimbo mahara?"
@@ -5010,6 +5026,24 @@ try:
         results.log("quoted photo: no emojis in the reply",
                     _reply is not None and not any(ord(c) > 0x2100 for c in _reply),
                     got=_reply)
+        # Same script as every other priced answer: money, blank line,
+        # starting-prices disclaimer, blank line, one closing question.
+        _blocks = (_reply or '').split('\n\n')
+        results.log("quoted photo: follows the standard priced-reply shape",
+                    len(_blocks) == 3 and 'US$1 200' in _blocks[0]
+                    and 'starting prices' in _blocks[1].lower()
+                    and _blocks[2].endswith('?'), got=_blocks)
+        results.log("quoted photo: the price is not run into the question",
+                    'US$1 200 Does that' not in (_reply or ''), got=_reply)
+        # A catalogued photo uses the existing composer, which prices every
+        # item in the shot rather than just the headline one.
+        _fp = _FakePlumbot()
+        _fp.catalogued = 'Shower cubicle from US$305\nVanity from US$250\n\nWhat area are you in?'
+        _cat = _wwh._quoted_portfolio_price_reply(_fp, _Appt(), 'Borehole', 'How much')
+        results.log("quoted photo: a catalogued photo uses the richer composer",
+                    _cat is not None and 'Vanity from US$250' in _cat, got=_cat)
+        results.log("quoted photo: the catalogued reply still gets the disclaimer",
+                    _cat is not None and 'starting prices' in _cat.lower(), got=_cat)
         # A recognised photo we hold no price for must NOT invent one — and must
         # NOT fall through either. Prod 2026-08-27: returning None here let the
         # multi-item branch answer a borehole question with shower and tub

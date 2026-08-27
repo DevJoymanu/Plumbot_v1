@@ -1595,6 +1595,19 @@ def _quoted_portfolio_price_reply(plumbot, appointment, quoted_text, message_bod
         price_line = price_line_for_item(getattr(appointment, 'tenant', None), item)
     except Exception:
         price_line = (getattr(item, 'price_line', '') or '').strip()
+
+    # The catalogued path first — it prices every item in the shot, not just the
+    # headline one — then fall back to this photo's own line. Either way the
+    # reply goes out in the SAME shape as every other priced answer: the money,
+    # then the starting-prices disclaimer, then one closing question.
+    try:
+        catalogued = plumbot.compose_quoted_photo_price_reply(
+            _quoted_title(quoted_text), language=language)
+    except Exception:
+        catalogued = None
+    if catalogued:
+        return plumbot._ensure_price_disclaimer('pricing', catalogued)
+
     if not price_line:
         # Recognised the photo, hold no price for it: name the piece so the
         # customer knows we understood, then the tenant's own visit offer.
@@ -1606,10 +1619,15 @@ def _quoted_portfolio_price_reply(plumbot, appointment, quoted_text, message_bod
         close = plumbot._product_price_close(language)
     except Exception:
         close = ''
-    parts = [lead_in, price_line]
+    # Same script as every other priced answer: the money in one block, then a
+    # blank line, then the closing question — with _ensure_price_disclaimer
+    # slotting "These are starting prices…" in between. Joining these with
+    # spaces ran the price, the qualifier and the question into one paragraph,
+    # which reads nothing like the rest of the bot's pricing copy.
+    reply = f"{lead_in} {price_line}"
     if close:
-        parts.append(close)
-    reply = ' '.join(p.strip() for p in parts if p and p.strip())
+        reply = f"{reply}\n\n{close}"
+    reply = plumbot._ensure_price_disclaimer('pricing', reply)
     print(f"💬 Quoted-photo price reply from portfolio item '{item.item_id}'")
     return reply
 
