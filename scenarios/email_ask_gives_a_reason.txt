@@ -1,0 +1,37 @@
+# Asking for an email must give the LEAD a reason (prod 2026-08-28, conv 846,
+# barmak). The bot asked for an address four times across the delay flow with
+# nothing in it for the customer — "What's the best email to reach you on?" —
+# and got "just send it here, I don't usually have data" twice in Shona. Two
+# separate faults, both fixed:
+#   1. Copy: every ask now carries _EMAIL_VALUE_CLAUSE — the quote goes over as
+#      a PDF they can keep, pass on to whoever else is deciding, and hold up
+#      against other quotes. The delivery choice RECOMMENDS email instead of
+#      shrugging "either works", while still taking WhatsApp for an answer.
+#   2. Loop: "send it here" in Shona resolved to nothing, so the identical
+#      email-or-WhatsApp question went out twice in a row. Now it is asked at
+#      most once, and a second unresolved answer sends the PDF on WhatsApp.
+# A lead who chooses WhatsApp is NEVER argued with — that was conv 427's rule.
+
+> Ndoda kugadzirisa bathroom yangu
+expect: what area are you in
+reject: US$
+
+> Ndiri kuchitungwiza ndichakubatayi ndapedza kuronga mari
+expect: email
+expect: other quotes
+reject: what area are you in
+
+# The reason has to be in the ask itself, not just the word "email".
+> Ko email yacho munoda yei
+expect: keep
+reject: sorry
+
+# "Just send it here" in Shona — a delivery choice, not a refusal to answer.
+> Munongo senda ipapa handi wanzo gara ne data
+reject: what email
+reject: would you like our catalog by email
+
+# ...and saying it again must not bring the same question back a second time.
+> Muno sender zvenyu ipapa apa
+reject: what email
+reject: the one I'd suggest

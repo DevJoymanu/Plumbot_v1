@@ -2536,6 +2536,54 @@ class WhatsAppInboundEvent(models.Model):
         ordering = ['-created_at']
 
 
+class WhatsAppSendCost(models.Model):
+    """Meta's OWN billing verdict for one outbound message, taken from the
+    ``pricing`` object on its status webhook.
+
+    Why this exists: the free-form messaging window and the free-entry-point
+    window are Meta's state, not ours. ``Appointment.messaging_window_closes_at``
+    only GUESSES at them (its own docstring calls the 72h CTWA span "a local
+    assumption"), and no local test can confirm the guess because the 999 test
+    path never reaches Meta. This table is the free way to find out: it rides
+    real production traffic, costs nothing extra to collect, and records what
+    Meta actually charged and why.
+
+    ``billable``/``pricing_type``/``category`` come straight off the webhook.
+    The ``hours_since_*`` columns are OUR clock at send time, stamped here so a
+    later read can line Meta's verdict up against the window we believed we had.
+    """
+    tenant = _tenant_fk()
+    message_id = models.CharField(max_length=128, unique=True)
+    appointment = models.ForeignKey(
+        'Appointment', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='send_costs')
+    recipient = models.CharField(max_length=50, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    # Straight from the webhook's pricing object. billable is nullable because
+    # not every status carries pricing (a 'sent' status often does not).
+    billable = models.BooleanField(null=True, blank=True, db_index=True)
+    pricing_type = models.CharField(max_length=40, blank=True, db_index=True)
+    category = models.CharField(max_length=40, blank=True, db_index=True)
+    pricing_model = models.CharField(max_length=20, blank=True)
+
+    # Delivery outcome, so a 131047 bounce is visible next to the pricing rows.
+    status = models.CharField(max_length=20, blank=True, db_index=True)
+    error_codes = models.CharField(max_length=120, blank=True)
+
+    # Our believed window state at the moment Meta ruled on this message.
+    was_ctwa_lead = models.BooleanField(default=False, db_index=True)
+    hours_since_ctwa_entry = models.FloatField(null=True, blank=True)
+    hours_since_last_inbound = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        verdict = 'billable' if self.billable else 'free'
+        return f"{self.message_id} {verdict} {self.pricing_type or self.status}"
+
+
 class ServiceArea(models.Model):
     """Define service areas for the plumbing company"""
     tenant = _tenant_fk()

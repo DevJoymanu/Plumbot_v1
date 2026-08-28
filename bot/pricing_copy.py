@@ -125,11 +125,115 @@ def build_prompt_pricing_guide(cfg) -> str:
     return "\n        ".join(lines)
 
 
+# The families the per-intent blocks below already price. A priced row in any
+# OTHER family is a service only THAT tenant sells — Barmak's "Tiling per square
+# meter", gutters, pumps, filters — and no hardcoded intent covers it, so the
+# lead's own word for it resolved to nothing and the bot answered a tiling
+# question with the bathroom package (prod, barmak, 2026-08-28). Those rows get
+# their own block, keyed 'tenant_item:<family>:<variant>'. Homebase has no such
+# rows, so nothing about the standard flow changes for them.
+_STANDARD_FAMILIES = frozenset({
+    'tub', 'chamber', 'geyser', 'shower', 'vanity', 'toilet', 'basin',
+    'package', 'renovation', 'repair', 'geyser_service',
+})
+
+TENANT_ITEM_PREFIX = 'tenant_item:'
+
+
+def tenant_item_intent(item) -> str:
+    """The synthetic intent key for one of a tenant's own priced rows."""
+    return f"{TENANT_ITEM_PREFIX}{item.family}:{item.variant or ''}"
+
+
+def is_tenant_item_intent(intent) -> bool:
+    return bool(intent) and str(intent).startswith(TENANT_ITEM_PREFIX)
+
+
+def tenant_custom_items(cfg) -> dict:
+    """{intent_key: price row} for the tenant's own priced services that no
+    standard intent covers. Rows with no figures at all are skipped — an
+    unpriced row must deflect to the free visit, never quote a blank."""
+    out = {}
+    for item in cfg.price_items():
+        if item.family in _STANDARD_FAMILIES:
+            continue
+        if not (item.label or item.short_label or '').strip():
+            continue
+        if all(getattr(item, fld, None) is None
+               for fld in ('supply', 'labour', 'allin', 'flat')):
+            continue
+        out[tenant_item_intent(item)] = item
+    return out
+
+
+def tenant_item_label(cfg, intent) -> str:
+    """The tenant's own wording for a tenant_item intent ('' when unknown)."""
+    item = tenant_custom_items(cfg).get(intent)
+    if item is None:
+        return ''
+    return (item.short_label or item.label or '').strip()
+
+
+def _tenant_item_block(cfg, item) -> dict:
+    """One bilingual pricing block rendered from a tenant's own price row.
+    Same shape as the hardcoded intents, so handle_service_inquiry and
+    _build_pricing_response consume it unchanged."""
+    cur = cfg.currency
+    name = (item.label or item.short_label or item.family).strip()
+    name = name[:1].upper() + name[1:]
+    supply = _as_money(item.supply)
+    labour = _as_money(item.labour)
+    allin = _as_money(item.allin)
+    flat = _as_money(item.flat)
+
+    if supply is not None and labour is not None:
+        total = allin if allin is not None else supply + labour
+        return {
+            "breakdown_lines": [f"{name}: Supply from {cur}{supply}, Install from {cur}{labour}"],
+            "total_line": f"{name} starts from {cur}{total} all-in — supply and install.",
+            "cheapest_line": f"Already have the materials? Install-only from {cur}{labour}.",
+            "sn_breakdown_lines": [f"{name}: Supply kubva {cur}{supply}, Install kubva {cur}{labour}"],
+            "sn_total_line": f"{name} inotangira pa{cur}{total} all-in — supply ne install.",
+            "sn_cheapest_line": f"Mune zvinhu kare? Install chete kubva {cur}{labour}.",
+        }
+
+    figure = next((v for v in (allin, flat, labour, supply) if v is not None), None)
+    if figure is None:
+        return None
+    if labour is not None and supply is None and allin is None and flat is None:
+        line_en = f"{name}: Labour from {cur}{figure}"
+        line_sn = f"{name}: Labour kubva {cur}{figure}"
+    else:
+        line_en = f"{name}: from {cur}{figure}"
+        line_sn = f"{name}: kubva {cur}{figure}"
+    return {
+        "breakdown_lines": [line_en],
+        "total_line": f"{name} starts from {cur}{figure}.",
+        "cheapest_line": "",
+        "sn_breakdown_lines": [line_sn],
+        "sn_total_line": f"{name} inotangira pa{cur}{figure}.",
+        "sn_cheapest_line": "",
+    }
+
+
+def _as_money(value):
+    if value is None:
+        return None
+    return int(value) if value == int(value) else float(value)
+
+
 def build_structured_pricing(cfg) -> dict:
     """The per-intent bilingual pricing blocks for a tenant. Intents whose
     figures are missing from the tenant's sheet are omitted."""
     f = _figures(cfg)
     out = {}
+
+    # The tenant's own services first — a later standard block never shares a
+    # key with these (the prefix is synthetic), so ordering is cosmetic.
+    for key, item in tenant_custom_items(cfg).items():
+        block = _tenant_item_block(cfg, item)
+        if block is not None:
+            out[key] = block
 
     def have(*keys):
         return all(f[k] is not None for k in keys)

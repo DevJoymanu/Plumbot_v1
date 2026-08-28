@@ -41,6 +41,7 @@ from .repeated_question_detector import (
     detect_language,
 )
 from .views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
+from .pricing_copy import is_tenant_item_intent
 
 PREVIOUS_WORK_IMAGE_URLS = [
     url.strip()
@@ -836,11 +837,12 @@ def _explicitly_requests_price(message: str) -> bool:
         'hw much', 'hw mch', 'hwmuch', 'how mch', 'howmuch',
         'mutengo', 'marii', 'mari', 'zvinodhura', 'inodhura', 'bhadhara',
     )
-    if any(marker in msg for marker in price_markers):
+    from .message_normalizer import contains_any, search_any
+    if contains_any(message, price_markers):
         return True
     # Catch abbreviated / misspelt "how much": "hw much", "howmuch", "hw mch"…
     import re
-    return bool(re.search(r'\bh(?:o)?w\s*m(?:u)?ch\b', msg))
+    return search_any(message, re.compile(r'\bh(?:o)?w\s*m(?:u)?ch\b'))
 
 
 def _explicitly_requests_photos(message: str) -> bool:
@@ -899,15 +901,79 @@ def _mentions_wall_hung_toilet(message: str) -> bool:
         r'wall[\s-]*(?:mount|hung|hang)|concealed|in[\s-]?wall', msg))
 
 
-def _keyword_product_intent(message: str):
+def _tenant_item_keyword_intent(message: str, tenant_cfg=None):
+    """The tenant's OWN priced services, matched on the customer's own word.
+
+    Homebase's product keywords below know nothing about a tenant who also
+    tiles or fits gutters, so those questions resolved to no intent at all and
+    fell through to the generic pricing overview (prod, barmak, 2026-08-28: a
+    tiling price question was answered with the tub package). Matching is on
+    word STEMS, so "tiles" finds a row labelled "Tiling per square meter".
+    Returns the synthetic 'tenant_item:<family>:<variant>' intent, or None.
+    """
+    if tenant_cfg is None:
+        return None
+    try:
+        from .pricing_copy import tenant_custom_items
+        from .out_of_scope_handler import _stems
+        items = tenant_custom_items(tenant_cfg)
+    except Exception:
+        return None
+    if not items:
+        return None
+
+    from .message_normalizer import rule_texts
+    msg_stems = set()
+    for text in rule_texts(message):
+        msg_stems |= _stems(text)
+    if not msg_stems:
+        return None
+
+    best, best_score = None, 0
+    for key, item in items.items():
+        vocab = " ".join(filter(None, [
+            item.label or '', item.short_label or '',
+            (item.variant or '').replace('_', ' '),
+            " ".join(str(k) for k in (item.keywords or [])),
+        ]))
+        # Words that name no product on their own — every price row has them.
+        tokens = _stems(vocab) - _GENERIC_PRICE_WORDS
+        hits = tokens & msg_stems
+        # Score by how much of the row's own vocabulary the customer used, so
+        # "kitchen sink" beats a row that merely shares the word "kitchen".
+        if len(hits) > best_score:
+            best, best_score = key, len(hits)
+    return best
+
+
+# Stems of words that appear in price-row labels but name nothing on their own.
+_GENERIC_PRICE_WORDS = frozenset({
+    'per', 'squar', 'met', 'metr', 'unit', 'suppli', 'instal', 'install',
+    'and', 'the', 'for', 'from', 'valu', 'full', 'new', 'standard', 'siz',
+})
+
+
+def _keyword_product_intent(message: str, tenant_cfg=None):
     """
     Keyword fallback for product/service intent when the AI classifier returns
     'none' (e.g. during a DeepSeek outage). Returns an intent string matching
     handle_service_inquiry()'s intents, or None. Conservative — only fires on
     clear product keywords, most-specific first.
+
+    `tenant_cfg` is optional so existing callers keep working; passing it lets
+    the tenant's own priced services (tiling, gutters, pumps) win a match that
+    Homebase's hardcoded product words below can never make.
+
+    Every keyword below is English, so the scan covers this turn's English
+    rendering as well as the customer's own words — "Ndoda kugadzirisa
+    chimbuzi" names a toilet just as plainly as "I need my toilet fixed", and
+    only one of the two used to resolve.
     """
-    msg = (message or '').lower()
-    if not msg:
+    from .message_normalizer import rule_texts
+    # Joined with a non-word separator: every check below is a substring or a
+    # \b-anchored regex, so nothing can match across the boundary.
+    msg = " | ".join(rule_texts(message))
+    if not msg.strip(' |'):
         return None
 
     has_tub = ('tub' in msg) or ('bathtub' in msg)
@@ -942,7 +1008,10 @@ def _keyword_product_intent(message: str):
         return 'pipe_repair'
     if 'facebook' in msg or 'package' in msg:
         return 'facebook_package'
-    return None
+    # Last: the tenant's own services. Checked AFTER the shared product words so
+    # a tenant row that happens to share a word ("Kitchen Sink") never steals a
+    # message that named a standard fitting.
+    return _tenant_item_keyword_intent(message, tenant_cfg)
 
 
 # Product "family" groups variants of the same item (tub_sales / standalone_tub
@@ -2270,6 +2339,69 @@ def _format_status_errors(errors: list) -> str:
     return " | ".join(parts)
 
 
+def _record_send_cost(status_obj, *, message_id, status_name, recipient_id,
+                      errors, appointment, tenant):
+    """Persist the ``pricing`` object Meta attaches to an outbound status.
+
+    Meta sends several statuses per message (sent, delivered, read) and only
+    some carry pricing, so this upserts on message_id and never overwrites a
+    known pricing verdict with a blank one from a later status.
+
+    The hours_since_* values are stamped from OUR view of the window at the
+    moment of the verdict, which is the whole point: it lets a later read ask
+    whether a send we believed was inside a 72h CTWA window was one Meta agreed
+    was free, still inside its customer service window, or bounced outright.
+    """
+    from django.utils import timezone
+    from .models import WhatsAppSendCost
+
+    if not message_id:
+        return
+
+    pricing = status_obj.get('pricing') or {}
+    has_pricing = bool(pricing)
+
+    hours_since_ctwa = None
+    hours_since_inbound = None
+    is_ctwa = False
+    if appointment is not None:
+        now = timezone.now()
+        entry = getattr(appointment, 'ctwa_entry_at', None)
+        if entry:
+            is_ctwa = True
+            hours_since_ctwa = round((now - entry).total_seconds() / 3600.0, 2)
+        last_in = (getattr(appointment, 'last_inbound_at', None)
+                   or getattr(appointment, 'last_customer_response', None))
+        if last_in:
+            hours_since_inbound = round((now - last_in).total_seconds() / 3600.0, 2)
+
+    defaults = {
+        'recipient': (recipient_id or '')[:50],
+        'status': (status_name or '')[:20],
+        'error_codes': ','.join(
+            str(e.get('code')) for e in (errors or []) if e.get('code') is not None
+        )[:120],
+        'was_ctwa_lead': is_ctwa,
+        'hours_since_ctwa_entry': hours_since_ctwa,
+        'hours_since_last_inbound': hours_since_inbound,
+    }
+    if appointment is not None:
+        defaults['appointment'] = appointment
+    if tenant is not None:
+        defaults['tenant'] = tenant
+    if has_pricing:
+        defaults.update({
+            'billable': pricing.get('billable'),
+            'pricing_type': str(pricing.get('type') or '')[:40],
+            'category': str(pricing.get('category') or '')[:40],
+            'pricing_model': str(pricing.get('pricing_model') or '')[:20],
+        })
+
+    WhatsAppSendCost.objects.update_or_create(
+        message_id=message_id[:128], defaults=defaults,
+    )
+
+
 def process_status_updates(statuses, tenant=None):
     """
     Handle asynchronous WhatsApp outbound delivery state updates.
@@ -2293,6 +2425,20 @@ def process_status_updates(statuses, tenant=None):
 
             appointment = _find_appointment_by_recipient(recipient_id, tenant=tenant) if recipient_id else None
             appointment_ref = f"appointment_id={appointment.id}" if appointment else "appointment_id=unknown"
+
+            # Record Meta's own billing verdict for this message. Free to collect
+            # (it rides the status webhook we already receive) and the only
+            # evidence of what Meta really does with our windows — our
+            # messaging_window_closes_at is a local guess. Best-effort: a failure
+            # here must never break delivery-status handling.
+            try:
+                _record_send_cost(
+                    status_obj, message_id=message_id, status_name=status_name,
+                    recipient_id=recipient_id, errors=errors,
+                    appointment=appointment, tenant=tenant,
+                )
+            except Exception as cost_err:
+                print(f"? Failed to record send cost for {message_id}: {cost_err}")
 
 
             if error_text:
@@ -2760,7 +2906,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             uc_is_photo_request, uc_is_plan_later, uc_is_repeat,
             uc_as_service_inquiry, uc_as_oos_classification,
             uc_pivoted_to_timeline, uc_offered_date, uc_offered_timeframe,
-            uc_extracted, uc_answered_current_question,
+            uc_extracted, uc_answered_current_question, uc_english,
         )
         from django.utils import timezone as _tz
         _today_str = _tz.now().strftime('%Y-%m-%d')
@@ -2789,6 +2935,46 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     _uclass['extracted'] = _ext
                     print(f"📅 Availability keyword backfill: {_kw_date}")
 
+        # ── Inbound language normalisation ───────────────────────────────────
+        # Every deterministic resolver downstream matches ENGLISH phrases, and
+        # the customer writes Shona — so each one silently failed until its
+        # Shona phrases were hand-written in after a lead had already been
+        # mishandled. Hand them the English rendering the classifier just
+        # produced (same call, no extra round trip) and they all gain Shona at
+        # once. RULE ENGINE ONLY: nothing customer-facing may read this, the
+        # bot answers in the lead's own language.
+        try:
+            from .message_normalizer import remember as _remember_english
+            _remember_english(message_body, uc_english(_uclass))
+        except Exception as _norm_exc:
+            print(f"⚠️ Message normalisation failed: {_norm_exc}")
+
+        # ── Area backfill: capture a volunteered suburb BEFORE routing ────────
+        # Booking fields are only extracted in STEP 4, but several steps below
+        # answer and RETURN (out-of-scope, delay, photos, pricing). An area
+        # given in the same breath as a delay signal was therefore thrown away
+        # and then asked for again: "Ndiri kuChitungwiza ndichakubatayi ndapedza
+        # kuronga mari" answered the area question we had just asked, went to
+        # the delay handler, and left the lead with area=None after three asks
+        # (prod, barmak, 2026-08-28). The classifier has already read it — store
+        # it here, where no branch can lose it. Excluded cities are still
+        # refused, exactly as extraction_mixin does it.
+        _uc_area = (uc_extracted(_uclass).get('area') or '').strip()
+        if (_uc_area and _uc_area.lower() != 'null'
+                and not appointment.customer_area):
+            try:
+                _excluded_city = plumbot._is_excluded_city(
+                    _uc_area, tenant=getattr(appointment, 'tenant', None))
+            except Exception as _area_exc:
+                print(f"⚠️ Early area check failed: {_area_exc}")
+                _excluded_city = None
+            if _excluded_city:
+                print(f"🚫 Excluded area (early capture): {_uc_area} → {_excluded_city}")
+            else:
+                appointment.customer_area = _uc_area
+                appointment.save(update_fields=['customer_area'])
+                print(f"✅ Area captured before routing: {_uc_area}")
+
         # ── SERVICE-CONFIRM FOLLOW-UP ─────────────────────────────────────────
         # We asked "Is a <X> the only thing you're looking to get sorted?" last turn
         # (project set to <X>). Handle their answer without losing anything:
@@ -2799,7 +2985,30 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         _sc_notes = appointment.internal_notes or ''
         _sc_pending = '[SERVICE_CONFIRM_PENDING]' in _sc_notes
         _sc_awaiting_more = '[AWAITING_MORE_ITEMS]' in _sc_notes
-        if _sc_pending or _sc_awaiting_more:
+
+        # A delay/exit signal in this reply OUTRANKS the scope question we asked.
+        # "No my main bedroom is not yet sorted will get in touch ndasvika pa
+        # stage iyoyo thanx" is not "no, there is more to add" — it is "not yet,
+        # I will come back to you". Reading the leading "No" as a scope answer
+        # pushed a departing lead for more work ("what else would you like
+        # sorted while we're there?") and the delay handler in STEP 1b never
+        # ran, because this branch answers and returns first (prod, barmak,
+        # 2026-08-28). Same rule as every other pending state: what the customer
+        # just said beats what we were waiting to hear. The tags are cleared so
+        # the scope question cannot re-fire on their delay-flow answer.
+        from bot.out_of_scope_handler import _is_explicit_deferral
+        _sc_delay_override = (
+            (_sc_pending or _sc_awaiting_more)
+            and (uc_intent(_uclass) == 'delay_signal'
+                 or _is_explicit_deferral(message_body))
+        )
+        if _sc_delay_override:
+            print("⏸️ Delay signal outranks the service-confirm question — "
+                  "handing to the delay flow")
+            appointment._remove_notes_tag('[SERVICE_CONFIRM_PENDING]')
+            appointment._remove_notes_tag('[AWAITING_MORE_ITEMS]')
+
+        if (_sc_pending or _sc_awaiting_more) and not _sc_delay_override:
             from bot.out_of_scope_handler import _classify_affirmation
             _more_ai = uc_extracted(_uclass).get('project_description')
             _named = uc_product_intent(_uclass) not in ('none', None)
@@ -2908,7 +3117,22 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             or _explicitly_requests_photos(message_body)
             or _explicitly_requests_catalogue(message_body)
         )
-        _faq_topic = None if _faq_skip else match_faq_topic(message_body)
+        # Tenant passed so the lead's OWN business and plumber names are
+        # triggers — the static lists carried Homebase's.
+        _faq_topic = None if _faq_skip else match_faq_topic(message_body, tenant=tenant)
+
+        # Asking for the plumber is re-engagement, and the FAQ answers before
+        # the delay handler ever runs — so clear any holding state here, or the
+        # lead gets their answer and then walks back into the delay flow on
+        # their next message as though they had never come back.
+        if _faq_topic == 'contact':
+            try:
+                from bot.out_of_scope_handler import _read_pending, _clear_pending
+                if _read_pending(appointment):
+                    print("⏭️ Contact request re-engages the lead — clearing the delay hold")
+                    _clear_pending(appointment)
+            except Exception as _pend_clear_exc:
+                print(f"⚠️ Could not clear delay hold on contact request: {_pend_clear_exc}")
 
         # AI catch: a typo'd / loose service-availability question the keyword
         # topic-match missed ("Do you for shower rooms") but the classifier read as a
@@ -3048,7 +3272,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             and plumbot._is_job_quote_request(message_body, classification=_uclass)
         )
         if not quoted_text and not _multi_item_combined:
-            _kw_intent = _keyword_product_intent(message_body)
+            _kw_intent = _keyword_product_intent(message_body, plumbot.tenant_cfg)
             if (_kw_intent
                     and _product_family(_kw_intent)
                         != _product_family(_quick_service_check.get('intent'))):
@@ -3068,13 +3292,14 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # untouched for the rule engine; only this classification sees the quote.
         if quoted_text:
             _det_intent = (
-                _keyword_product_intent(message_body)
+                _keyword_product_intent(message_body, plumbot.tenant_cfg)
                 # The TITLE only, never the vision sentences after it. Those are
                 # prose, and prose carries incidental fixture words: a storage
                 # tank photo described as "on a steel tower structure with pipe"
                 # resolved to pipe_repair and priced pipe work (prod, barmak,
                 # 2026-08-28). The tenant's own label is the deliberate signal.
-                or _keyword_product_intent(_quoted_title(quoted_text))
+                or _keyword_product_intent(_quoted_title(quoted_text),
+                                           plumbot.tenant_cfg)
             )
             if _det_intent and _det_intent != _quick_service_check.get('intent'):
                 print(
@@ -3351,6 +3576,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             'facebook_package',
         }
         intent = inquiry.get('intent')
+        # A service only this tenant sells (tiling, gutters, a pump) behaves
+        # like any other named product: priced when they ask a price, never
+        # volunteered. Deliberately NOT added to PRICING_AUTO_REPLY_INTENTS —
+        # "do you do tiling?" must get a yes, not a price list.
+        if is_tenant_item_intent(intent):
+            PRODUCT_INTENTS = PRODUCT_INTENTS | {intent}
         price_requested = _explicitly_requests_price(message_body)
         # A demonstrative reply to a quoted portfolio photo ("this one?", "and
         # this one?") is an elliptical price ask on the quoted item — treat it as

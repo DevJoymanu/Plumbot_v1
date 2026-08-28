@@ -288,8 +288,14 @@ class Command(BaseCommand):
             "Last one from us — would {date} work for us to check in?",
             "We will leave this with you. Whenever you are ready, just send us a message.",
         ],
+        # The first nudge carries the reason the lead is better off on email —
+        # the same three benefits as the in-conversation ask (it keeps, it
+        # travels, it compares). A bare "what is your email?" is an extraction
+        # with nothing in it for them, and it got ignored.
         'delay_email': [
-            "Just one thing before we go — what email should we send your quote to?",
+            "One thing before we go — the quote goes over as a PDF you can keep, "
+            "pass on to whoever else is in on the decision, and hold up against "
+            "any other quotes. What email should we send it to?",
             "Happy to hold the quote until you are ready. What email works best?",
             "Last ask on the email — what address should we use?",
             "No worries if you would rather not share. We will follow up on WhatsApp on the agreed date.",

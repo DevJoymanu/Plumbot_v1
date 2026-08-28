@@ -49,6 +49,7 @@ from .models import (
     TenantMembership,
     TenantProfile,
     TenantSetting,
+    WhatsAppSendCost,
     get_default_tenant_id,
 )
 
@@ -2170,6 +2171,85 @@ class LeadSourceTests(TestCase):
         self.assertEqual(lead2.lead_source, 'instagram_ad')
 
 
+class SendCostCaptureTests(TestCase):
+    """Meta's status webhook carries its own billing verdict; we persist it so
+    the messaging-window assumption can be checked against real traffic instead
+    of guessed at. Nothing here sends anything — the whole point is that the
+    evidence is free to collect."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.lead = make_lead(9960, tenant=self.homebase)
+        self.lead.last_inbound_at = timezone.now() - timedelta(hours=30)
+        self.lead.ctwa_entry_at = timezone.now() - timedelta(hours=40)
+        self.lead.save()
+
+    def _status(self, **over):
+        payload = {
+            'id': 'wamid.COST1',
+            'status': 'delivered',
+            'recipient_id': self.lead.phone_number.replace('whatsapp:+', ''),
+            'timestamp': '1700000000',
+            'pricing': {'billable': False, 'pricing_model': 'PMP',
+                        'type': 'free_customer_service', 'category': 'service'},
+        }
+        payload.update(over)
+        return payload
+
+    def test_pricing_verdict_is_recorded_with_our_window_state(self):
+        from bot.whatsapp_webhook import process_status_updates
+        process_status_updates([self._status()], tenant=self.homebase)
+
+        row = WhatsAppSendCost.objects.get(message_id='wamid.COST1')
+        self.assertIs(row.billable, False)
+        self.assertEqual(row.pricing_type, 'free_customer_service')
+        self.assertEqual(row.category, 'service')
+        self.assertEqual(row.appointment_id, self.lead.id)
+        # Our believed window state is stamped alongside Meta's verdict — that
+        # pairing is what makes the CTWA 72h assumption falsifiable.
+        self.assertTrue(row.was_ctwa_lead)
+        self.assertAlmostEqual(row.hours_since_last_inbound, 30, delta=1)
+        self.assertAlmostEqual(row.hours_since_ctwa_entry, 40, delta=1)
+
+    def test_repeat_statuses_upsert_and_never_blank_a_known_verdict(self):
+        from bot.whatsapp_webhook import process_status_updates
+        # 'sent' usually carries no pricing; 'delivered' does. Order must not
+        # matter, and the later pricing-free status must not erase the verdict.
+        process_status_updates([self._status()], tenant=self.homebase)
+        process_status_updates(
+            [self._status(status='read', pricing={})], tenant=self.homebase)
+
+        self.assertEqual(WhatsAppSendCost.objects.count(), 1)
+        row = WhatsAppSendCost.objects.get(message_id='wamid.COST1')
+        self.assertEqual(row.status, 'read')
+        self.assertIs(row.billable, False)
+        self.assertEqual(row.pricing_type, 'free_customer_service')
+
+    def test_window_closed_bounce_is_captured_alongside_the_hour_offset(self):
+        from bot.whatsapp_webhook import process_status_updates
+        process_status_updates([self._status(
+            id='wamid.COST2', status='failed', pricing={},
+            errors=[{'code': 131047, 'title': 'Re-engagement message'}],
+        )], tenant=self.homebase)
+
+        row = WhatsAppSendCost.objects.get(message_id='wamid.COST2')
+        self.assertEqual(row.status, 'failed')
+        self.assertIn('131047', row.error_codes)
+        # A CTWA lead bouncing at 30h is the exact evidence the report looks for.
+        self.assertTrue(row.was_ctwa_lead)
+        self.assertGreater(row.hours_since_last_inbound, 24)
+
+    def test_report_runs_on_captured_rows(self):
+        from bot.whatsapp_webhook import process_status_updates
+        process_status_updates([self._status()], tenant=self.homebase)
+        out = StringIO()
+        call_command('whatsapp_window_report', '--days', '30', stdout=out)
+        text = out.getvalue()
+        self.assertIn('Verdict coverage', text)
+        self.assertIn('free-form sending survive', text)
+
+
 class SelfServiceAccountTests(TestCase):
     """Users manage their own username/password: profile rename (unique,
     logged) and the forgot-password email flow (HTTP transport, no
@@ -3002,6 +3082,67 @@ class TenantConfigTests(TestCase):
         profile.licensed_claim_enabled = True
         profile.save()
         self.assertEqual(get_config(self.acme).faq_fact('licensed'), 'Yes, fully licensed.')
+
+    def test_faq_name_triggers_never_cross_tenants(self):
+        """The shared trigger lists carried Homebase's own names ("talk to
+        takudzwa", "where is homebase"), so another tenant's customer typing
+        their OWN plumber's name matched nothing. Names are generated per lead."""
+        from .faq import match_faq_topic, _TRIGGERS
+        TenantProfile.objects.create(
+            tenant=self.acme, plumber_name='Kudakwashe Marange',
+            plumber_contact='+263773871503', licensed_claim_enabled=False,
+        )
+        # Each tenant's own plumber name is a trigger — and only theirs.
+        self.assertEqual(match_faq_topic('talk to Kudakwashe', tenant=self.acme), 'contact')
+        self.assertIsNone(match_faq_topic('talk to Kudakwashe', tenant=self.homebase))
+        self.assertEqual(match_faq_topic('talk to Takudzwa', tenant=self.homebase), 'contact')
+        self.assertIsNone(match_faq_topic('talk to Takudzwa', tenant=self.acme))
+        # Business name likewise.
+        self.assertEqual(match_faq_topic('where is Acme Plumbing', tenant=self.acme), 'location')
+        self.assertIsNone(match_faq_topic('where is Acme Plumbing', tenant=self.homebase))
+        # No proper noun is left in the SHARED lists.
+        for topic, triggers in _TRIGGERS.items():
+            for trigger in triggers:
+                with self.subTest(topic=topic, trigger=trigger):
+                    self.assertNotIn('takudzwa', trigger)
+                    self.assertNotIn('homebase', trigger)
+
+    def test_asking_to_reach_the_plumber_matches_contact(self):
+        """A lead asking in the obvious words matched nothing — the list only
+        had the plumber's name and "speak to someone"."""
+        from .faq import match_faq_topic
+        for message in ('I want to get in touch with your plumber today',
+                        'can I speak to the plumber',
+                        "what is the plumber's number",
+                        'can I call your plumber'):
+            with self.subTest(message=message):
+                self.assertEqual(match_faq_topic(message, tenant=self.acme), 'contact')
+        # Still not a contact question.
+        self.assertIsNone(match_faq_topic('how much is a tub', tenant=self.acme))
+        self.assertIsNone(match_faq_topic('can you come Wednesday', tenant=self.acme))
+
+    def test_contact_fact_composed_from_the_tenants_own_plumber(self):
+        """A tenant can hold a plumber and no hand-written 'contact' fact
+        (barmak did), and the topic was skipped — so a lead asking to reach
+        them got nothing while we held the number. Absent NUMBER still omits."""
+        from .faq import faq_fact
+        profile = TenantProfile.objects.create(
+            tenant=self.acme, plumber_name='Kudakwashe Marange',
+            plumber_contact='+263773871503', licensed_claim_enabled=False,
+        )
+        fact = faq_fact('contact', tenant=self.acme)
+        self.assertIn('+263773871503', fact)
+        self.assertIn('Kudakwashe Marange', fact)
+        # Never another tenant's plumber.
+        self.assertNotIn('Takudzwa', fact)
+        self.assertNotIn('+263774819901', fact)
+        # A written fact still wins over the composed one.
+        profile.faq_facts = {'contact': 'Ring the office on 0800 000.'}
+        profile.save()
+        self.assertEqual(faq_fact('contact', tenant=self.acme), 'Ring the office on 0800 000.')
+        # No number on file → no fact at all, never a borrowed one.
+        bare = Tenant.objects.create(name='Bare Plumbing', slug='bare-plumbing')
+        self.assertIsNone(faq_fact('contact', tenant=bare))
 
     def test_none_tenant_resolves_to_homebase_seed(self):
         from .faq import faq_fact

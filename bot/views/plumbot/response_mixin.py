@@ -4303,6 +4303,16 @@ class ResponseMixin:
             )
             return any(m in msg for m in markers)
 
+        def _tenant_item_name(self, intent: str) -> str:
+            """This tenant's own wording for a tenant_item intent, lower-cased
+            for use inside a sentence. '' for every other intent."""
+            try:
+                from bot.pricing_copy import tenant_item_label
+                label = tenant_item_label(self.tenant_cfg, intent)
+            except Exception:
+                return ''
+            return label.lower()
+
         def _affirm_and_progress(self, intent: str, language: str = "english") -> str:
             """
             Affirmative 'yes we do' reply that progresses the sale, for when a
@@ -4319,7 +4329,9 @@ class ResponseMixin:
                 'tub_sales':            'bathtubs',
                 'standalone_tub':       'freestanding tubs',
             }
-            name = names.get(intent, 'that')
+            # A service only this tenant sells has no entry above — use
+            # their own label for it rather than the anonymous "that".
+            name = names.get(intent) or self._tenant_item_name(intent) or 'that'
             # Confirm, then hand to the flow's real next question. The old close
             # ("Are you after just that, or a full bathroom setup?") asked the lead
             # to settle scope we don't need settled — the free visit prices what's
@@ -4484,7 +4496,7 @@ class ResponseMixin:
                 'chamber': 'side chambers', 'bathtub_installation': 'bathtubs',
                 'tub_sales': 'bathtubs', 'standalone_tub': 'freestanding tubs',
             }
-            name = name_map.get(intent, 'fittings')
+            name = name_map.get(intent) or self._tenant_item_name(intent) or 'fittings'
             answer = None
             try:
                 from bot.services.clients import deepseek_call
@@ -4761,7 +4773,12 @@ class ResponseMixin:
             """Make sure every priced reply states the price is approximate and the
             exact quote is confirmed once the plumber sees the space. Idempotent and
             inserted before the closing question so the reply still ends on the CTA."""
-            if not reply or intent not in self._PRICED_INTENTS:
+            # A tenant's own priced service (tiling, gutters, a pump) quotes
+            # real money, so it needs the same approximate-price line as every
+            # hardcoded intent — the set above only knows Homebase's products.
+            from bot.pricing_copy import is_tenant_item_intent
+            if not reply or (intent not in self._PRICED_INTENTS
+                             and not is_tenant_item_intent(intent)):
                 return reply
             low = reply.lower()
             # Only attach the price disclaimer when the reply actually quotes a
@@ -4927,6 +4944,12 @@ class ResponseMixin:
                         'vanity', 'geyser', 'shower_cubicle', 'toilet', 'chamber',
                         'wall_hung_toilet', 'bathtub_installation',
                     }
+                    # "Do you tile bathrooms?" about a service only this tenant
+                    # sells gets the same yes-and-progress answer as any other
+                    # product — not a price the lead never asked for.
+                    from bot.pricing_copy import is_tenant_item_intent
+                    if is_tenant_item_intent(intent):
+                        _AVAIL_PROGRESS_INTENTS = _AVAIL_PROGRESS_INTENTS | {intent}
                     if (intent in _AVAIL_PROGRESS_INTENTS and
                             self._is_availability_question(message) and
                             not self._is_asking_for_price(message)):
@@ -5606,6 +5629,10 @@ class ResponseMixin:
         - Match their tone and energy.
         - Short sentences.
         - NEVER ask for info already collected.
+        - NEVER refer to something the customer has not actually told you. No
+          "the area we discussed", "the date you gave me", "as you mentioned"
+          unless it is really there in the conversation above. If you are asking
+          for a field, it is because we do NOT have it — ask for it plainly.
 
         Generate the response now:"""
 

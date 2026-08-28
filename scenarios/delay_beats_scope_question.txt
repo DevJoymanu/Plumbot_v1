@@ -1,0 +1,39 @@
+# A delay signal outranks the scope question we just asked (prod 2026-08-28,
+# barmak, +263773263897 — a Facebook ad lead). We asked "Is a tub the only thing
+# you're looking to get sorted?" and the lead replied "No my main bedroom is not
+# yet sorted will get in touch ndasvika pa stage iyoyo thanx" — not ready, still
+# building, will come back. Two faults:
+#   1. The leading "No" was read as a scope answer, so the bot pushed for MORE
+#      work: "what else would you like sorted while we're there?". The
+#      [SERVICE_CONFIRM_PENDING] branch answers and RETURNS before STEP 1b, so
+#      the delay handler never ran at all.
+#   2. "will GET in touch" was in no keyword list — only "will BE in touch" was.
+# The lead had already flagged it a turn earlier too ("handisati hangu ndasvika
+# ku plumbing" — I have not got to the plumbing stage yet).
+# Expected now: acknowledge, park with a check-back, offer the portfolio. Never
+# ask what else they want done, never pitch the visit.
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> I want to ask kuti type yema tub ayo inoita kuvakira here ..handisati hangu ndasvika ku plumbing
+reject: what else
+reject: US$
+
+> No my main bedroom is not yet sorted will get in touch ndasvika pa stage iyoyo thanx
+reject: what else would you like sorted
+reject: US$
+reject: what works better for you
+
+# An eager lead using the same words must NOT be parked...
+> I want to get in touch with your plumber today
+reject: roughly when
+reject: check back
+
+# ...and the same message from a lead ALREADY parked in the delay flow must
+# break the hold, not get the email-or-WhatsApp delivery pitch (traced
+# 2026-08-29 on lead 846: it did exactly that).
+> Actually I want to speak to the plumber today
+reject: the one I'd suggest
+reject: share your email
+reject: roughly when

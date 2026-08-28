@@ -2798,6 +2798,14 @@ WA_DELIVERY_CASES = [
     ("email it to me at a@b.com",         False),  # email address present
     ("next week",                         False),  # timeframe, not a delivery ask
     ("no thanks",                         False),
+    # Shona "just send it right here". Both of these were answered by re-asking
+    # the identical email-or-WhatsApp question, twice in a row (prod, barmak
+    # 2026-08-28) — the English substring list could not see a send verb and a
+    # "here" word separated by other words.
+    ("Munongo senda ipapa handi wanzo gara ne data", True),
+    ("Muno sender zvenyu ipapa apa",                 True),
+    ("tumirai pano",                                 True),
+    ("Ndiri kuchitungwiza",                          False),  # an area, not a channel
 ]
 for msg, expected in WA_DELIVERY_CASES:
     try:
@@ -2811,6 +2819,851 @@ for msg, expected in WA_DELIVERY_CASES:
         )
     except Exception as e:
         results.log(f"wants_whatsapp_delivery: '{msg[:30]}'", False, got=str(e))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A service only ONE tenant sells must be priceable in chat. Barmak's price
+# sheet carries "Tiling per square meter" (US$15 supply + US$5 labour), but no
+# hardcoded intent named it, so "how much to tile a bathroom" resolved to
+# nothing and got the tub/Facebook-package overview instead — a price for work
+# the lead never asked about (prod, barmak, 2026-08-28). The tenant's own rows
+# now render their own pricing block and the lead's own word resolves to it.
+# Fully offline: a stub config, no DB, no API.
+from bot.pricing_copy import (
+    build_structured_pricing as _bsp_ti, tenant_custom_items as _tci,
+    tenant_item_label as _til, is_tenant_item_intent as _is_ti,
+)
+from bot.out_of_scope_handler import _word_stem as _wstem
+from bot.whatsapp_webhook import _keyword_product_intent as _kpi
+
+
+class _StubPriceRow:
+    def __init__(self, family, variant='', label='', supply=None, labour=None,
+                 allin=None, flat=None, keywords=None, short_label='', parts=None):
+        self.family, self.variant, self.label = family, variant, label
+        self.short_label, self.keywords = short_label, keywords or []
+        self.supply, self.labour, self.allin, self.flat = supply, labour, allin, flat
+        self.parts = parts or []
+
+
+class _StubCfg:
+    currency = 'US$'
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def price_items(self):
+        return self._rows
+
+    def price_item(self, family, variant=''):
+        for row in self._rows:
+            if row.family == family and row.variant == variant:
+                return row
+        return None
+
+
+_TI_KEY = 'tenant_item:other:tiling_per_square_meter'
+_ti_cfg = _StubCfg([
+    _StubPriceRow('other', 'tiling_per_square_meter', 'Tiling per square meter',
+                  supply=15, labour=5, allin=20),
+    _StubPriceRow('pvc-value-gutters', '', 'Pvc value gutters',
+                  supply=600, labour=320, allin=920),
+    # A standard family — priced by its own intent, never as a custom item.
+    _StubPriceRow('tub', '', 'Built-in tub', supply=150, labour=85, allin=235),
+])
+_bare_cfg = _StubCfg([_StubPriceRow('tub', '', 'Built-in tub',
+                                    supply=150, labour=85, allin=235)])
+
+try:
+    _custom = _tci(_ti_cfg)
+    results.log(
+        "tenant_custom_items: own services only",
+        set(_custom) == {_TI_KEY, 'tenant_item:pvc-value-gutters:'},
+        expected="tiling + gutters, tub excluded (standard family)",
+        got=str(sorted(_custom)),
+    )
+except Exception as e:
+    results.log("tenant_custom_items: own services only", False, got=str(e))
+
+try:
+    _block = _bsp_ti(_ti_cfg).get(_TI_KEY) or {}
+    _ok = (
+        _block.get('breakdown_lines') ==
+        ['Tiling per square meter: Supply from US$15, Install from US$5']
+        and 'US$20 all-in' in (_block.get('total_line') or '')
+        and 'US$5' in (_block.get('cheapest_line') or '')
+        and 'kubva' in ((_block.get('sn_breakdown_lines') or [''])[0])
+    )
+    results.log(
+        "structured pricing: tenant item renders the tenant's own figures",
+        _ok,
+        expected="supply US$15 / install US$5 / US$20 all-in, EN + SN",
+        got=str(_block.get('total_line')),
+    )
+except Exception as e:
+    results.log("structured pricing: tenant item renders the tenant's own figures",
+                False, got=str(e))
+
+# (message, cfg, expected intent) — the lead's own word resolves to the
+# tenant's row; a standard product word still wins; a tenant WITHOUT the row is
+# completely unaffected (homebase must never gain a tiling price).
+TENANT_ITEM_INTENT_CASES = [
+    ("how much to install tiles",  _ti_cfg,   _TI_KEY),
+    ("tiling price",               _ti_cfg,   _TI_KEY),
+    ("how much are gutters",       _ti_cfg,   'tenant_item:pvc-value-gutters:'),
+    ("how much for a tub",         _ti_cfg,   'tub_sales'),
+    ("how much shower cubicle",    _ti_cfg,   'shower_cubicle'),
+    ("how much to install tiles",  _bare_cfg, None),
+    ("how much to install tiles",  None,      None),
+    ("ok",                         _ti_cfg,   None),
+]
+for _msg, _cfg, _expected in TENANT_ITEM_INTENT_CASES:
+    try:
+        _got = _kpi(_msg, _cfg)
+        results.log(
+            f"_keyword_product_intent(tenant): '{_msg[:28]}'",
+            _got == _expected,
+            expected=str(_expected),
+            got=str(_got),
+        )
+    except Exception as e:
+        results.log(f"_keyword_product_intent(tenant): '{_msg[:28]}'", False, got=str(e))
+
+try:
+    results.log(
+        "tenant_item_label / is_tenant_item_intent",
+        _til(_ti_cfg, _TI_KEY) == 'Tiling per square meter'
+        and _is_ti(_TI_KEY) and not _is_ti('tub_sales') and not _is_ti(None),
+        expected="label resolves, prefix check is exact",
+        got=f"label={_til(_ti_cfg, _TI_KEY)!r}",
+    )
+except Exception as e:
+    results.log("tenant_item_label / is_tenant_item_intent", False, got=str(e))
+
+# "tiles" must find a row labelled "Tiling per square meter" — plain substring
+# matching missed it, so a tenant who tiles was told tiling is out of scope.
+STEM_PAIRS = [('tiles', 'tiling'), ('roof', 'roofing'), ('gutter', 'gutters'),
+              ('tub', 'tubs'), ('paint', 'painting')]
+for _a, _b in STEM_PAIRS:
+    try:
+        results.log(
+            f"_word_stem: '{_a}' == '{_b}'",
+            _wstem(_a) == _wstem(_b),
+            expected="same stem",
+            got=f"{_wstem(_a)!r} vs {_wstem(_b)!r}",
+        )
+    except Exception as e:
+        results.log(f"_word_stem: '{_a}' == '{_b}'", False, got=str(e))
+
+try:
+    results.log(
+        "_word_stem: distinct services stay distinct",
+        _wstem('tiles') != _wstem('toilet') and _wstem('geyser') != _wstem('gutter'),
+        expected="no collision between unrelated services",
+        got=f"tiles={_wstem('tiles')!r} toilet={_wstem('toilet')!r}",
+    )
+except Exception as e:
+    results.log("_word_stem: distinct services stay distinct", False, got=str(e))
+
+# The Shona way of deferring — "I'll get back to you once I've sorted the
+# money" — must reach the delay branch even with DeepSeek down. The offline
+# keyword classifier read it as a normal in-scope message (prod, barmak,
+# 2026-08-28).
+from bot.out_of_scope_handler import _keyword_classify as _kwc
+DELAY_KEYWORD_CASES = [
+    ("Ndiri kuchitungwiza ndichakubatayi  ndapedza kuronga nyayadze mari", 'delay_signal'),
+    ("ndichakufona",                       'delay_signal'),
+    ("kana ndawana mari ndichakubata",     'delay_signal'),
+    ("call me later",                      'delay_signal'),
+    ("how much is a tub",                  'in_scope'),
+    ("Ndiri kuchitungwiza",                'in_scope'),   # an area alone is not a delay
+]
+for _msg, _expected in DELAY_KEYWORD_CASES:
+    try:
+        _got = _kwc(_msg).get('category')
+        results.log(
+            f"_keyword_classify: '{_msg[:32]}'",
+            _got == _expected,
+            expected=_expected,
+            got=str(_got),
+        )
+    except Exception as e:
+        results.log(f"_keyword_classify: '{_msg[:32]}'", False, got=str(e))
+
+# A message that BOTH answers a question and defers ("Ndiri kuChitungwiza
+# ndichakubatayi ndapedza kuronga mari" — my area is Chitungwiza, I'll get back
+# to you once I've sorted the money) must reach the delay flow whatever the
+# category classifier said that run. Deterministic override, same pattern as the
+# access deferral. Broad words that also appear in BOOKING messages ("mangwana"
+# = tomorrow) must NOT trip it.
+from bot.out_of_scope_handler import _is_explicit_deferral as _ixd
+EXPLICIT_DEFERRAL_CASES = [
+    ("Ndiri kuchitungwiza ndichakubatayi  ndapedza kuronga nyayadze mari", True),
+    ("ndichakubata mangwana",              True),
+    ("kana ndawana mari ndichauya",        True),
+    ("I'll get back to you",               True),
+    ("call me later",                      True),
+    ("mangwana",                           False),  # tomorrow — a booking word
+    ("ndouya mangwana",                    False),  # I'm coming tomorrow
+    ("how much is a tub",                  False),
+    ("Ndiri kuchitungwiza",                False),  # an area alone
+]
+for _msg, _expected in EXPLICIT_DEFERRAL_CASES:
+    try:
+        results.log(
+            f"_is_explicit_deferral: '{_msg[:32]}'",
+            _ixd(_msg) == _expected,
+            expected=f"deferral={_expected}",
+            got=f"deferral={_ixd(_msg)}",
+        )
+    except Exception as e:
+        results.log(f"_is_explicit_deferral: '{_msg[:32]}'", False, got=str(e))
+
+# The override must be wired into handle_out_of_scope, not just defined.
+import inspect as _insp_d
+import bot.out_of_scope_handler as _oos_d
+_src_d = _insp_d.getsource(_oos_d.handle_out_of_scope)
+results.log("delay override: explicit deferral outranks an in_scope verdict",
+            '_is_explicit_deferral(message)' in _src_d
+            and _src_d.find('_is_explicit_deferral') < _src_d.find('if category == "in_scope"'))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Inbound language normalisation. Every deterministic resolver matches ENGLISH
+# phrases while customers write Shona, so each one silently failed until its
+# Shona phrases were hand-written in after a lead had already been mishandled.
+# The classifier's English rendering is now scanned alongside the customer's own
+# words. Two properties are pinned here, and the second matters as much as the
+# first: with NO rendering on file (DeepSeek down) the Shona keyword net must
+# still carry the known phrasings, because that is exactly when it is all we
+# have. Offline — nothing here calls an API.
+import bot.message_normalizer as _mn
+from bot.out_of_scope_handler import (
+    wants_whatsapp_delivery as _wwd_n,
+    _is_explicit_deferral as _ixd_n,
+    _keyword_classify as _kwc_n,
+    _email_step_intent_keywords as _esk_n,
+)
+from bot.whatsapp_webhook import _keyword_product_intent as _kpi_n
+
+# A Shona phrasing none of the hand-written lists anticipates. Without a
+# rendering it is invisible; with one, every English resolver sees it.
+_UNSEEN_WA = "Zvitume imomo mandiri"          # "just put it through to me there"
+# (Whatever is picked here must be a phrasing NO list covers — the previous
+# choice, "handisati ndagadzirira", later became a known phrase and quietly
+# invalidated this case, which is the point being made: hand-written lists only
+# ever cover what someone already thought of.)
+_UNSEEN_DEFER = "Ndichange ndichizvifunga"         # "I will be thinking it over"
+_UNSEEN_PRODUCT = "Ndoda kugadzirisa chimbuzi"     # "I want to fix my toilet"
+
+_mn.forget_all()
+try:
+    results.log(
+        "normalizer: an unseen Shona phrasing is invisible with no rendering",
+        _wwd_n(_UNSEEN_WA) is False
+        and _ixd_n(_UNSEEN_DEFER) is False
+        and _kpi_n(_UNSEEN_PRODUCT) is None,
+        expected="no rendering -> the English lists cannot see it",
+        got=f"wa={_wwd_n(_UNSEEN_WA)} defer={_ixd_n(_UNSEEN_DEFER)} "
+            f"product={_kpi_n(_UNSEEN_PRODUCT)}",
+    )
+except Exception as e:
+    results.log("normalizer: an unseen Shona phrasing is invisible with no rendering",
+                False, got=str(e))
+
+try:
+    _mn.remember(_UNSEEN_WA, "Just send it here to me")
+    _mn.remember(_UNSEEN_DEFER, "I will be thinking it over and will get in touch")
+    _mn.remember(_UNSEEN_PRODUCT, "I want to fix my toilet")
+    results.log(
+        "normalizer: the rendering makes every English resolver see it",
+        _wwd_n(_UNSEEN_WA) is True
+        and _ixd_n(_UNSEEN_DEFER) is True
+        and _kpi_n(_UNSEEN_PRODUCT) == 'toilet_repair',
+        expected="wa=True defer=True product=toilet_repair",
+        got=f"wa={_wwd_n(_UNSEEN_WA)} defer={_ixd_n(_UNSEEN_DEFER)} "
+            f"product={_kpi_n(_UNSEEN_PRODUCT)}",
+    )
+except Exception as e:
+    results.log("normalizer: the rendering makes every English resolver see it",
+                False, got=str(e))
+
+# The keyword net is NOT redundant: with DeepSeek down there is no rendering at
+# all, and the phrases already written in must still carry these on their own.
+_mn.forget_all()
+KEYWORD_NET_CASES = [
+    ("wants_whatsapp_delivery", lambda: _wwd_n("Muno sender zvenyu ipapa apa"), True),
+    ("wants_whatsapp_delivery", lambda: _wwd_n("Munongo senda ipapa"), True),
+    ("_is_explicit_deferral", lambda: _ixd_n("ndichakubatayi ndapedza kuronga mari"), True),
+    ("_keyword_classify", lambda: _kwc_n("ndichakufona").get('category'), 'delay_signal'),
+    ("_email_step_intent_keywords", lambda: _esk_n("tumirai pano"), 'whatsapp'),
+]
+for _name, _call, _expected in KEYWORD_NET_CASES:
+    try:
+        _got = _call()
+        results.log(
+            f"normalizer: keyword net still carries {_name} with DeepSeek down",
+            _got == _expected,
+            expected=str(_expected),
+            got=str(_got),
+        )
+    except Exception as e:
+        results.log(f"normalizer: keyword net still carries {_name} with DeepSeek down",
+                    False, got=str(e))
+
+# 'no' and 'na' sit in the email-step decline list, and as bare substrings they
+# fire inside "muno", "pano", "know", "phone" and "not" — so a Shona lead asking
+# "muno chaja seyi" (how do you charge here) read as declining the email. Those
+# tokens are word-boundary matched now.
+DECLINE_WORD_CASES = [
+    ("Imariyi kuisa ma tails muno chaja seyi", 'unclear'),   # "muno" is not "no"
+    ("pano",                                   'unclear'),
+    ("my phone number is 077",                 'unclear'),
+    ("know what",                              'unclear'),
+    ("no thanks",                              'decline'),
+    ("nah",                                    'decline'),
+    ("skip it",                                'decline'),
+    ("not interested",                         'decline'),
+]
+for _msg, _expected in DECLINE_WORD_CASES:
+    try:
+        _got = _esk_n(_msg)
+        results.log(
+            f"email step decline is word-matched: '{_msg[:30]}'",
+            _got == _expected,
+            expected=_expected,
+            got=str(_got),
+        )
+    except Exception as e:
+        results.log(f"email step decline is word-matched: '{_msg[:30]}'", False, got=str(e))
+
+# A rendering must never invent intent that is in neither text.
+try:
+    _mn.remember("Ndatenda", "Thank you")
+    results.log(
+        "normalizer: a rendering with no signal resolves nothing",
+        _wwd_n("Ndatenda") is False and _ixd_n("Ndatenda") is False
+        and _kpi_n("Ndatenda") is None,
+        expected="a plain thank-you stays inert",
+        got=f"wa={_wwd_n('Ndatenda')} defer={_ixd_n('Ndatenda')}",
+    )
+except Exception as e:
+    results.log("normalizer: a rendering with no signal resolves nothing", False, got=str(e))
+
+# Bookkeeping: an English message stores nothing (there is no second text to
+# scan), lookups are whitespace/case-insensitive, and the cache is bounded so a
+# long-running worker cannot grow it forever.
+_mn.forget_all()
+try:
+    _mn.remember("Just send it here", "Just send it here")
+    _no_dupe = _mn.english_for("Just send it here") == ''
+    _mn.remember("Muno sender ipapa", "Just send it here")
+    _case = (_mn.english_for("  MUNO   sender ipapa ") == 'Just send it here')
+    _texts = _mn.rule_texts("Muno sender ipapa")
+    results.log(
+        "normalizer: already-English stores nothing, lookup ignores case/spacing",
+        _no_dupe and _case and len(_texts) == 2,
+        expected="'' for English, hit for messy lookup, two texts to scan",
+        got=f"no_dupe={_no_dupe} case={_case} texts={len(_texts)}",
+    )
+except Exception as e:
+    results.log("normalizer: already-English stores nothing, lookup ignores case/spacing",
+                False, got=str(e))
+
+try:
+    _mn.forget_all()
+    for _i in range(_mn._MAX_ENTRIES + 50):
+        _mn.remember(f"shona message {_i}", f"english {_i}")
+    results.log(
+        "normalizer: the cache is bounded and evicts oldest first",
+        len(_mn._cache) == _mn._MAX_ENTRIES
+        and _mn.english_for("shona message 0") == ''
+        and _mn.english_for(f"shona message {_mn._MAX_ENTRIES + 49}")
+        == f"english {_mn._MAX_ENTRIES + 49}",
+        expected=f"{_mn._MAX_ENTRIES} entries, oldest gone, newest kept",
+        got=f"size={len(_mn._cache)}",
+    )
+except Exception as e:
+    results.log("normalizer: the cache is bounded and evicts oldest first", False, got=str(e))
+finally:
+    _mn.forget_all()
+
+# The rendering is for the RULE ENGINE only — it must never be handed to a
+# customer or dropped into a reply prompt (the bot answers in the lead's own
+# language). Pinned against the one place that stores it.
+try:
+    import inspect as _insp_n
+    import bot.whatsapp_webhook as _wwh_n
+    _src_n = _insp_n.getsource(_wwh_n._generate_and_schedule_reply)
+    # Every CALL of it (the accessor import line aside) must be the one that
+    # hands it to remember() — anything else would be a route to the customer.
+    _uses = [l.strip() for l in _src_n.splitlines()
+             if 'uc_english(' in l and not l.strip().startswith(('from ', 'import '))]
+    results.log(
+        "normalizer: the rendering is stored for rules and never sent onward",
+        len(_uses) == 1 and '_remember_english' in _uses[0],
+        expected="uc_english() is called once, into remember()",
+        got=str(_uses),
+    )
+except Exception as e:
+    results.log("normalizer: the rendering is stored for rules and never sent onward",
+                False, got=str(e))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Asking for an email must give the LEAD a reason to want to give it. Every ask
+# used to be a bare extraction — "what's the best email to reach you on?" — with
+# nothing in it for them, and conv 846 asked four times and got "just send it
+# here" twice. Each ask now carries _EMAIL_VALUE_CLAUSE: it keeps (a document in
+# a chat is gone when the phone changes), it travels (these jobs are rarely a
+# one-person decision), it compares (a quote-collector can put ours beside the
+# others). Offline — plain string checks.
+import re as _re_em
+from bot.out_of_scope_handler import (
+    _EMAIL_VALUE_CLAUSE as _EVC,
+    _DELIVERY_CHOICE_QUESTION as _DCQ,
+    _DELIVERY_CHOICE_MARKER as _DCM,
+)
+
+# The three benefits, each named so a future rewrite cannot quietly drop one.
+EMAIL_VALUE_BENEFITS = [
+    ("it keeps",    ('open it any time', 'keep')),
+    ("it travels",  ('whoever else', 'pass on', 'send it on')),
+    ("it compares", ('other quotes', 'against any other')),
+]
+for _label, _markers in EMAIL_VALUE_BENEFITS:
+    try:
+        results.log(
+            f"email ask states the benefit — {_label}",
+            any(m in _EVC.lower() for m in _markers),
+            expected=f"one of {_markers}",
+            got=_EVC[:80],
+        )
+    except Exception as e:
+        results.log(f"email ask states the benefit — {_label}", False, got=str(e))
+
+# The clause has to actually REACH every ask. Source-level, because the asks are
+# assembled from f-strings at import time in branches a test cannot easily run.
+try:
+    import inspect as _insp_em
+    import bot.out_of_scope_handler as _oos_em
+    _src_em = _insp_em.getsource(_oos_em)
+    # Every "what's the best email" ask in the file.
+    _asks = [l.strip() for l in _src_em.splitlines()
+             if _re_em.search(r"best email|email should we|what email", l, _re_em.I)
+             and not l.strip().startswith('#')]
+    _uses = _src_em.count('_EMAIL_VALUE_CLAUSE')
+    results.log(
+        "every email ask is paired with the value clause",
+        # one definition + one use per ask site
+        _uses >= len(_asks),
+        expected=f"{len(_asks)} ask(s) -> at least that many clause uses",
+        got=f"asks={len(_asks)} clause_uses={_uses - 1}",
+    )
+except Exception as e:
+    results.log("every email ask is paired with the value clause", False, got=str(e))
+
+# The delivery choice RECOMMENDS email rather than shrugging ("either works"
+# gave the lead no reason to pick) — while still taking WhatsApp for an answer,
+# because a lead who asks for it here must never be argued with.
+try:
+    _low = _DCQ.lower()
+    results.log(
+        "delivery choice recommends email but still honours WhatsApp",
+        ('suggest' in _low or 'recommend' in _low)
+        and 'whatsapp' in _low
+        and 'right here' in _low
+        and 'either works' not in _low,
+        expected="a recommendation + WhatsApp still on the table",
+        got=_DCQ[:90],
+    )
+except Exception as e:
+    results.log("delivery choice recommends email but still honours WhatsApp",
+                False, got=str(e))
+
+# The choice also names OUR reason for wanting the address — keeping the quote
+# on file and following up cleanly. Owner-written and deliberate: said plainly
+# it reads as straight dealing, and "followed up properly" is the lead's benefit
+# as much as ours.
+try:
+    _low_own = _DCQ.lower()
+    results.log(
+        "delivery choice states our own reason plainly too",
+        'on file' in _low_own and 'follow' in _low_own,
+        expected="keeps the quote on file / follows up cleanly",
+        got=_DCQ[:120],
+    )
+except Exception as e:
+    results.log("delivery choice states our own reason plainly too", False, got=str(e))
+
+# The timeframe ask rides along ONLY when no check-back date is on file. With a
+# date already agreed we have just said "we'll check back on <date>", and asking
+# again reads as not listening (conv 415/566). Two questions in one message is
+# otherwise against the copy rules, so this stays conditional.
+try:
+    from bot.out_of_scope_handler import _delivery_choice_question as _dcq_fn
+    _no_date = _dcq_fn(None)
+    _with_date = _dcq_fn('2026-09-11')
+    results.log(
+        "timeframe ask rides along only when no date is on file",
+        'ready to go ahead' in _no_date
+        and 'ready to go ahead' not in _with_date
+        and _with_date == _DCQ,
+        expected="tail with no date, single ask once a date is agreed",
+        got=f"no_date_has_tail={'ready to go ahead' in _no_date} "
+            f"with_date_has_tail={'ready to go ahead' in _with_date}",
+    )
+except Exception as e:
+    results.log("timeframe ask rides along only when no date is on file",
+                False, got=str(e))
+
+# Ask a question, handle its answer: having asked when they will be ready, a
+# timeframe reply must be captured, not force-fit as a failed email address.
+try:
+    import inspect as _insp_tf
+    import bot.out_of_scope_handler as _oos_tf
+    _src_tf = _insp_tf.getsource(_oos_tf._handle_delay_email_answer)
+    results.log(
+        "a timeframe answer at the email step is captured, not force-fit",
+        '_message_has_timeframe(msg)' in _src_tf
+        and _src_tf.find('_message_has_timeframe(msg)')
+            < _src_tf.find('_classify_email_step_reply'),
+        expected="timeframe check runs before the email classifier",
+        got="present" if '_message_has_timeframe(msg)' in _src_tf else "MISSING",
+    )
+except Exception as e:
+    results.log("a timeframe answer at the email step is captured, not force-fit",
+                False, got=str(e))
+
+# The loop guard finds the question by this marker; a copy rewrite that drops it
+# would silently re-enable the duplicate-question loop it was written to stop.
+try:
+    results.log(
+        "delivery choice marker still matches its own question",
+        _DCM in _DCQ,
+        expected="marker is a substring of the question",
+        got=f"marker={_DCM!r}",
+    )
+except Exception as e:
+    results.log("delivery choice marker still matches its own question", False, got=str(e))
+
+# House rules: no emojis anywhere in this copy, and no Homebase-only value
+# (name, plumber, place, figure) — out_of_scope_handler serves every tenant.
+_EMOJI_RE = _re_em.compile(
+    '[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F0FF]')
+for _name, _text in (('value clause', _EVC), ('delivery choice', _DCQ)):
+    try:
+        _leak = [w for w in ('homebase', 'takudzwa', 'harare', 'us$', '263')
+                 if w in _text.lower()]
+        results.log(
+            f"{_name}: no emojis, no tenant-specific value",
+            not _EMOJI_RE.search(_text) and not _leak,
+            expected="emoji-free and tenant-neutral",
+            got=f"emoji={bool(_EMOJI_RE.search(_text))} leak={_leak}",
+        )
+    except Exception as e:
+        results.log(f"{_name}: no emojis, no tenant-specific value", False, got=str(e))
+
+# The first delay-email nudge carries the reason too — it is the ask that goes
+# out to a lead who already ignored one, so a bare re-ask is the weakest thing
+# it could say. Later nudges stay short by design, and the last one concedes.
+try:
+    from bot.management.commands.send_followups import Command as _FUCmd_em
+    _nudges = _FUCmd_em._DELAY_NUDGE_MESSAGES['delay_email']
+    _first = _nudges[0].lower()
+    results.log(
+        "first delay-email nudge gives a reason, not a bare re-ask",
+        ('whoever else' in _first or 'keep' in _first)
+        and 'other quotes' in _first
+        and not _EMOJI_RE.search(_nudges[0]),
+        expected="benefits named before the ask",
+        got=_nudges[0][:90],
+    )
+    results.log(
+        "the last delay-email nudge still concedes gracefully",
+        'rather not' in _nudges[-1].lower() and 'whatsapp' in _nudges[-1].lower(),
+        expected="no pressure, falls back to WhatsApp",
+        got=_nudges[-1][:80],
+    )
+except Exception as e:
+    results.log("first delay-email nudge gives a reason, not a bare re-ask",
+                False, got=str(e))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A delay signal must outrank the scope question we just asked. Prod (barmak,
+# +263773263897, 2026-08-28): asked "Is a tub the only thing you're looking to
+# get sorted?", the lead replied "No my main bedroom is not yet sorted will get
+# in touch ndasvika pa stage iyoyo thanx" — not ready, will come back. The
+# leading "No" was read as a scope answer and the bot pushed for MORE work
+# ("what else would you like sorted while we're there?"), because that branch
+# answers and returns before STEP 1b's delay handler ever runs.
+#
+# Two independent faults, both pinned below: the wording was in no list ("will
+# BE in touch" was, "will GET in touch" was not), and the pending state
+# swallowed the message even when the wording matched.
+from bot.out_of_scope_handler import (
+    _is_explicit_deferral as _ixd2, _keyword_classify as _kwc2,
+)
+from bot.message_normalizer import forget_all as _forget_sc
+
+_forget_sc()
+_PROD_846B = ("No my main bedroom is not yet sorted will get in touch "
+              "ndasvika pa stage iyoyo thanx")
+_PROD_TUB = ("I want to ask kuti type yema tub ayo inoita kuvakira here "
+             "..handisati hangu ndasvika ku plumbing")
+
+# (message, is it a deferral?) — the False rows are the ones that matter most:
+# "get in touch" as a bare substring swept up an EAGER lead.
+NOT_YET_STAGE_CASES = [
+    (_PROD_846B,                                        True),
+    (_PROD_TUB,                                         True),   # words between
+    ("will get in touch",                               True),
+    ("I'll get in touch once the builder is done",      True),
+    ("I will be in touch",                              True),
+    ("handisati ndagadzirira",                          True),
+    ("not yet sorted, still building",                  True),
+    ("I want to get in touch with your plumber today",  False),  # eager, not delay
+    ("can you get in touch with me now",                False),
+    ("how much is a tub",                               False),
+    ("can you come Wednesday",                          False),
+    ("yes please book me in",                           False),
+    ("ndiri kuChitungwiza",                             False),
+]
+for _msg, _expected in NOT_YET_STAGE_CASES:
+    try:
+        results.log(
+            f"not-yet-stage deferral: '{_msg[:34]}'",
+            _ixd2(_msg) == _expected,
+            expected=f"deferral={_expected}",
+            got=f"deferral={_ixd2(_msg)}",
+        )
+    except Exception as e:
+        results.log(f"not-yet-stage deferral: '{_msg[:34]}'", False, got=str(e))
+
+# The offline net shares the one resolver, so it agrees without DeepSeek.
+try:
+    results.log(
+        "offline classifier reads the prod message as a delay",
+        _kwc2(_PROD_846B).get('category') == 'delay_signal'
+        and _kwc2("how much is a tub").get('category') == 'in_scope',
+        expected="delay_signal for the deferral, in_scope for a price ask",
+        got=str(_kwc2(_PROD_846B).get('category')),
+    )
+except Exception as e:
+    results.log("offline classifier reads the prod message as a delay", False, got=str(e))
+
+# The structural half: the service-confirm branch must yield to a delay signal,
+# and must do so BEFORE it can answer-and-return.
+try:
+    import inspect as _insp_sc
+    import bot.whatsapp_webhook as _wwh_sc
+    _src_sc = _insp_sc.getsource(_wwh_sc._generate_and_schedule_reply)
+    _override_at = _src_sc.find('_sc_delay_override =')
+    _branch_at = _src_sc.find("and not _sc_delay_override")
+    _whatelse_at = _src_sc.find('what else would you like sorted')
+    results.log(
+        "service-confirm hold yields to a delay signal",
+        _override_at != -1 and _branch_at != -1
+        and _override_at < _branch_at < _whatelse_at,
+        expected="override computed, then gates the branch that replies",
+        got=f"override={_override_at} branch={_branch_at} reply={_whatelse_at}",
+    )
+    results.log(
+        "the delay override consults both the LLM and the lead's own words",
+        "uc_intent(_uclass) == 'delay_signal'" in _src_sc
+        and '_is_explicit_deferral(message_body)' in _src_sc,
+        expected="classifier verdict OR deterministic resolver",
+        got="present" if '_is_explicit_deferral(message_body)' in _src_sc else "MISSING",
+    )
+    # Leaving the tags set would re-fire the scope question on their answer to
+    # "roughly when are you hoping to get this sorted?".
+    _ovr_block = _src_sc[_override_at:_branch_at]
+    results.log(
+        "the scope tags are cleared when the delay flow takes over",
+        "_remove_notes_tag('[SERVICE_CONFIRM_PENDING]')" in _ovr_block
+        and "_remove_notes_tag('[AWAITING_MORE_ITEMS]')" in _ovr_block,
+        expected="both pending tags cleared",
+        got=_ovr_block[-120:].strip(),
+    )
+except Exception as e:
+    results.log("service-confirm hold yields to a delay signal", False, got=str(e))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A parked lead coming back READY must break the delay hold. The breakout check
+# only knew price asks and named products — built for fresh QUESTIONS — so a
+# commitment carried none of the signals it looked for. Traced 2026-08-29 on the
+# real lead 846 (parked in delay_email): "I want to get in touch with your
+# plumber today" was answered with the email-or-WhatsApp delivery pitch. That is
+# the best message in the whole flow and it was met with a filing request.
+#
+# Ordering is what makes this safe, and it is pinned below: a deferral is tested
+# BEFORE re-engagement, because "I'll be ready to go ahead next month" carries
+# re-engagement words while being the exact opposite.
+from bot.out_of_scope_handler import (
+    _delay_breakout_inquiry as _dbi2, _is_reengagement_signal as _irs2,
+)
+from bot.message_normalizer import forget_all as _forget_re
+
+_forget_re()
+# (message, should it break the holding pattern?)
+BREAKOUT_CASES = [
+    # Ready to move — every one of these used to be swallowed by the hold.
+    ("I want to get in touch with your plumber today", True),
+    ("I want to speak to the plumber",                 True),
+    ("can I talk to your plumber",                     True),
+    ("can you come today",                             True),
+    ("when can you come",                              True),
+    ("I want to book",                                 True),
+    ("ndoda kubhukisha",                               True),
+    # Still the old breakouts — a price ask and a named product.
+    ("how much is a tub",                              True),
+    ("what about the shower cubicle",                  True),
+    # NOT breakouts: a timeframe is the answer we asked for, and a deferral
+    # wearing re-engagement words is still a deferral.
+    ("I'll be ready to go ahead next month",           False),
+    ("next month",                                     False),
+    ("end of the month",                               False),
+    ("will get in touch when I am ready",              False),
+    ("handisati ndagadzirira",                         False),
+    ("ok thanks",                                      False),
+    ("jones@gmail.com",                                False),
+]
+for _msg, _expected in BREAKOUT_CASES:
+    try:
+        results.log(
+            f"delay breakout: '{_msg[:36]}'",
+            _dbi2(_msg) == _expected,
+            expected=f"breakout={_expected}",
+            got=f"breakout={_dbi2(_msg)}",
+        )
+    except Exception as e:
+        results.log(f"delay breakout: '{_msg[:36]}'", False, got=str(e))
+
+# The deferral test must come first in the source, not just happen to win.
+try:
+    import inspect as _insp_re
+    import bot.out_of_scope_handler as _oos_re
+    _src_re = _insp_re.getsource(_oos_re._delay_breakout_inquiry)
+    _defer_at = _src_re.find('_is_explicit_deferral(message)')
+    _time_at = _src_re.find('_message_has_timeframe(message)')
+    _reeng_at = _src_re.find('_is_reengagement_signal(message)')
+    results.log(
+        "a deferral is ruled out before re-engagement is considered",
+        -1 < _defer_at < _time_at < _reeng_at,
+        expected="deferral, then timeframe, then re-engagement",
+        got=f"defer={_defer_at} timeframe={_time_at} reengage={_reeng_at}",
+    )
+except Exception as e:
+    results.log("a deferral is ruled out before re-engagement is considered",
+                False, got=str(e))
+
+# Wanting the plumber is re-engagement on its own, with no booking word in it.
+try:
+    _plumber_ask = _irs2("can I get the plumber's number")
+    results.log(
+        "asking for the plumber counts as re-engagement",
+        _plumber_ask and _irs2("I want to speak to someone")
+        and not _irs2("how much is a tub"),
+        expected="plumber/human asks yes, a bare price ask no",
+        got=f"plumber={_plumber_ask}",
+    )
+except Exception as e:
+    results.log("asking for the plumber counts as re-engagement", False, got=str(e))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The shared FAQ trigger lists must carry NO tenant's proper nouns. They held
+# Homebase's outright — "talk to takudzwa", "where is homebase" — which for
+# every other tenant could never fire, while a lead typing their own plumber's
+# name matched nothing. Names are generated per lead in _tenant_triggers()
+# (crossing is covered with a real DB in TenantConfigTests). Offline here.
+from bot.faq import (
+    _TRIGGERS as _FAQ_TRIGGERS, match_faq_topic as _mft2,
+    _composed_contact_fact as _ccf,
+)
+
+try:
+    _proper_nouns = ('takudzwa', 'homebase', 'barmak', 'kudakwashe')
+    _offenders = [
+        f"{topic}:{trigger}"
+        for topic, triggers in _FAQ_TRIGGERS.items()
+        for trigger in triggers
+        if any(noun in trigger.lower() for noun in _proper_nouns)
+    ]
+    results.log(
+        "FAQ triggers carry no tenant's proper nouns",
+        not _offenders,
+        expected="every shared trigger is generic",
+        got=str(_offenders),
+    )
+except Exception as e:
+    results.log("FAQ triggers carry no tenant's proper nouns", False, got=str(e))
+
+# Asking to reach the plumber in the obvious words matched NOTHING before —
+# the contact list only knew the plumber by name plus "speak to someone".
+PLUMBER_CONTACT_CASES = [
+    ("I want to get in touch with your plumber today", 'contact'),
+    ("can I speak to the plumber",                     'contact'),
+    ("what is the plumber's number",                   'contact'),
+    ("can I call your plumber",                        'contact'),
+    ("can I speak to someone",                         'contact'),
+    ("how much is a tub",                              None),
+    ("can you come Wednesday",                         None),
+    ("I want to book a plumber for Friday",            None),
+]
+for _msg, _expected in PLUMBER_CONTACT_CASES:
+    try:
+        results.log(
+            f"FAQ contact topic: '{_msg[:34]}'",
+            _mft2(_msg) == _expected,
+            expected=str(_expected),
+            got=str(_mft2(_msg)),
+        )
+    except Exception as e:
+        results.log(f"FAQ contact topic: '{_msg[:34]}'", False, got=str(e))
+
+# A tenant holding a plumber but no hand-written 'contact' fact used to skip the
+# topic entirely, so a lead asking got nothing while we held the number. Absent
+# NUMBER still omits — composing from their own data is not borrowing.
+class _StubContactCfg:
+    def __init__(self, name='', contact=''):
+        self.plumber_name, self.plumber_contact = name, contact
+
+try:
+    _named = _ccf(_StubContactCfg('Kudakwashe Marange', '+263773871503'))
+    _unnamed = _ccf(_StubContactCfg('', '+263773871503'))
+    results.log(
+        "contact fact composes from the tenant's own plumber",
+        '+263773871503' in _named and 'Kudakwashe Marange' in _named
+        and 'Takudzwa' not in _named
+        and _unnamed is not None and 'the plumber' in _unnamed,
+        expected="their number and name, never another tenant's",
+        got=repr(_named),
+    )
+    results.log(
+        "no number on file means no contact fact at all",
+        _ccf(_StubContactCfg('Kudakwashe Marange', '')) is None
+        and _ccf(_StubContactCfg('', '')) is None,
+        expected="None, never a borrowed number",
+        got=str(_ccf(_StubContactCfg('Kudakwashe Marange', ''))),
+    )
+except Exception as e:
+    results.log("contact fact composes from the tenant's own plumber", False, got=str(e))
+
+# The FAQ answers BEFORE the delay handler, so a contact request must clear any
+# holding state itself — otherwise the lead gets the plumber's number and then
+# walks back into the delay flow on their next message.
+try:
+    import inspect as _insp_ct
+    import bot.whatsapp_webhook as _wwh_ct
+    _src_ct = _insp_ct.getsource(_wwh_ct._generate_and_schedule_reply)
+    _faq_at = _src_ct.find('match_faq_topic(message_body, tenant=tenant)')
+    _clear_at = _src_ct.find("_faq_topic == 'contact'")
+    results.log(
+        "a contact request clears the delay hold",
+        _faq_at != -1 and _clear_at > _faq_at
+        and '_clear_pending(appointment)' in _src_ct[_clear_at:_clear_at + 700],
+        expected="tenant threaded in, hold cleared on a contact match",
+        got=f"faq={_faq_at} clear={_clear_at}",
+    )
+except Exception as e:
+    results.log("a contact request clears the delay hold", False, got=str(e))
 
 # CTWA (Facebook/Instagram click-to-WhatsApp ad) follow-up cadence. An ad tap
 # opens a 72h free-form window instead of 24h, so ad leads get SIX touches on
@@ -5329,8 +6182,10 @@ try:
     _step1c = _src_q[_src_q.find('STEP 1c'):_src_q.find('STEP 2: Service-specific')]
     results.log("quoted photo: the reply is sent and returned, not left to be overwritten",
                 'delayed_response' in _step1c and 'return' in _step1c)
+    # The title, never the vision prose after it. (The call also carries the
+    # lead's own tenant config now, so match the opening of the call only.)
     results.log("quoted photo: the keyword resolver reads the title only",
-                '_keyword_product_intent(_quoted_title(quoted_text))' in _src_q)
+                '_keyword_product_intent(_quoted_title(quoted_text)' in _src_q)
     results.log("quoted photo: the price step runs BEFORE the family steps",
                 _src_q.find('STEP 1c') != -1
                 and _src_q.find('STEP 1c') < _src_q.find('STEP 2: Service-specific'))

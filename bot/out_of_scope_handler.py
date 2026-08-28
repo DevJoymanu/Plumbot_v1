@@ -116,6 +116,19 @@ _WA_DELIVERY_SIGNALS = ('whatsapp', 'this number', 'this platform', 'this chat',
                         'send it here', 'send it', 'send them', 'send through',
                         'just send', 'right here', 'send here')
 
+# Shona says the same thing with the send verb and the "here" word separated by
+# words the English substring list can never anticipate ("Muno sender zvenyu
+# ipapa apa", "Munongo senda ipapa"). A lead who wrote that twice was asked the
+# identical email-or-WhatsApp question twice (prod, barmak, 2026-08-28), so the
+# verb and the place word are matched as a pattern, not as fixed phrases.
+_WA_SEND_VERB = r'(?:send|senda|sende[rn]?|sendai|tumira|tumirai|unzai|uyai\s+na)'
+_WA_HERE_WORD = r'(?:pano|ipapa|apapa|apa|muno|umu|here)'
+_WA_DELIVERY_RE = re.compile(
+    rf'\b{_WA_SEND_VERB}\w*\b(?:\W+\w+){{0,3}}?\W+\b{_WA_HERE_WORD}\b',
+    re.IGNORECASE,
+)
+# "pa WhatsApp" / "ne WhatsApp" are already covered by the 'whatsapp' substring.
+
 
 def wants_whatsapp_delivery(message: str) -> bool:
     """
@@ -123,7 +136,14 @@ def wants_whatsapp_delivery(message: str) -> bool:
     than by email (an email address present means they chose email, not WhatsApp).
     """
     msg = (message or '').strip()
-    return ('@' not in msg) and any(s in msg.lower() for s in _WA_DELIVERY_SIGNALS)
+    if '@' in msg:
+        return False
+    from .message_normalizer import contains_any, search_any
+    # Scans the customer's own words AND this turn's English rendering, so a
+    # Shona phrasing nobody anticipated still resolves. The lists below stay as
+    # the offline net for when DeepSeek produced no rendering.
+    return (contains_any(msg, _WA_DELIVERY_SIGNALS)
+            or search_any(msg, _WA_DELIVERY_RE))
 
 
 def has_delay_signal(appointment) -> bool:
@@ -277,6 +297,15 @@ _DELAY_PHRASES = (
     "will contact you", "i'll contact", "will reach out", "i'll reach out",
     "busy now", "busy at the moment", "not right now", "not ready",
     "come back to you", "i'll be in touch", "will be in touch",
+    # "will GET in touch" — the list had "be in touch" and missed the commoner
+    # wording entirely, so a plain-English deferral read as in_scope (prod,
+    # barmak, 2026-08-28). Plus the "not at that stage yet" family, which is how
+    # a lead still building says it.
+    # NOT bare "get in touch" — that sweeps up an eager "I want to get in
+    # touch with your plumber today". Only with a future marker on it.
+    "will get in touch", "i'll get in touch", "get in touch when",
+    "get in touch once", "not yet sorted", "not sorted yet",
+    "to that stage", "that stage yet", "when i get there",
     "get back to you", "i'll get back to you", "i will get back to you",
     "when i'm available", "when i am available", "when am available",
     "when i'm back", "when i am back", "when i get back", "back home",
@@ -285,6 +314,15 @@ _DELAY_PHRASES = (
     "i'm abroad", "i am abroad", "i'm away", "i am away", "out of town",
     "travelling", "traveling", "not in harare", "not in zimbabwe",
     "ndichatumira", "ndichauya", "mangwana", "ndichaenda",
+    # Shona "I will get back to you" / "once I have sorted the money" — the
+    # commonest way a Zimbabwean lead defers. "Ndiri kuChitungwiza
+    # ndichakubatayi ndapedza kuronga mari" reached the delay branch only
+    # because DeepSeek was up; the offline fallback read it as in_scope
+    # (prod, barmak, 2026-08-28).
+    "ndichakubata", "ndichazokubata", "ndichakufona", "ndichazokufona",
+    "ndichakutaurirai", "ndichazouya", "ndichazotenga",
+    "kuronga mari", "ndaronga mari", "ndawana mari", "ndikawana mari",
+    "kana ndawana", "ndichange ndaronga", "ndapedza kuronga",
     "tied up", "a bit tied up", "bit tied up", "quite busy",
     "will notify you when", "will let you know when", "let you know when",
     "contact you when", "contact when", "when i'm done", "when am done",
@@ -315,6 +353,25 @@ OOS_SERVICE_TERMS = (
 )
 
 
+def _word_stem(word: str) -> str:
+    """Crude English stem so a keyword and a tenant's own label match on the
+    same root: tiles/tiling -> 'til', roofing/roof -> 'roof', gutters/gutter ->
+    'gutt'. Plain substring matching missed "tiles" against a price row labelled
+    "Tiling per square meter", so a tenant who tiles was still told tiling is
+    out of scope (prod, barmak, 2026-08-28)."""
+    word = (word or '').strip().lower()
+    for suffix in ('ing', 'ers', 'er', 'es', 's'):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            word = word[:-len(suffix)]
+            break
+    return word.rstrip('e') or word
+
+
+def _stems(text: str) -> set:
+    return {_word_stem(w) for w in re.findall(r'[a-z]+', (text or '').lower())
+            if len(w) >= 3}
+
+
 def tenant_sells(tenant, term: str) -> bool:
     """True when this tenant's own gallery or price list covers `term`.
 
@@ -328,19 +385,26 @@ def tenant_sells(tenant, term: str) -> bool:
     term = (term or '').strip().lower()
     if not term or tenant is None:
         return False
+    term_stem = _word_stem(term)
+
+    def covers(*texts) -> bool:
+        for text in texts:
+            text = (text or '')
+            if term in text.lower():
+                return True
+            if term_stem and term_stem in _stems(text):
+                return True
+        return False
+
     try:
         from .models import TenantPortfolioItem, TenantPriceItem
         for title, keywords in TenantPortfolioItem.objects.filter(
                 tenant=tenant, is_active=True).values_list('title', 'keywords'):
-            if term in (title or '').lower():
-                return True
-            if any(term in str(k).lower() for k in (keywords or [])):
+            if covers(title, *[str(k) for k in (keywords or [])]):
                 return True
         for family, label, keywords in TenantPriceItem.objects.filter(
                 tenant=tenant, is_active=True).values_list('family', 'label', 'keywords'):
-            if term in (family or '').lower() or term in (label or '').lower():
-                return True
-            if any(term in str(k).lower() for k in (keywords or [])):
+            if covers(family, label, *[str(k) for k in (keywords or [])]):
                 return True
     except Exception:
         return False
@@ -371,10 +435,11 @@ def _keyword_classify(message: str, tenant=None) -> dict:
     `tenant` is optional so existing callers keep working; passing it stops a
     tenant being told they don't do work they advertise (see tenant_sells).
     """
-    msg = (message or "").lower()
-    if any(phrase in msg for phrase in _DELAY_PHRASES):
+    from .message_normalizer import contains_any, rule_texts
+    if _is_explicit_deferral(message) or contains_any(message, _DELAY_PHRASES):
         return {"category": "delay_signal", "confidence": "HIGH", "detail": "delay keyword matched"}
-    matched = [k for k in _OOS_KEYWORDS if k in msg]
+    _texts = rule_texts(message)
+    matched = [k for k in _OOS_KEYWORDS if any(k in t for t in _texts)]
     if matched and not all(tenant_sells(tenant, k) for k in matched):
         return {"category": "out_of_scope", "confidence": "LOW", "detail": "oos keyword matched"}
     return {"category": "in_scope", "confidence": "LOW", "detail": "keyword fallback default"}
@@ -1196,6 +1261,39 @@ def _message_has_timeframe(message: str) -> bool:
     return bool(_TIMEFRAME_RE.search(message))
 
 
+# A parked lead coming back READY — wanting the plumber, wanting to book,
+# wanting someone out — is the best message in the whole flow, and it broke no
+# holding pattern: the breakout check only knew price asks and named products,
+# so "I want to get in touch with your plumber today" arriving in the
+# delay_email state was answered with the email-or-WhatsApp delivery pitch
+# (found by tracing, 2026-08-29). Commitment is a live signal like any other.
+_REENGAGEMENT_PHRASES = (
+    # They want a human / the plumber
+    "get in touch with your plumber", "get in touch with the plumber",
+    "speak to the plumber", "speak to your plumber", "talk to the plumber",
+    "talk to your plumber", "call the plumber", "call your plumber",
+    "plumber's number", "plumbers number", "speak to someone",
+    "speak to a person", "talk to a person", "real person",
+    # They want to proceed now
+    "want to book", "like to book", "book me", "let's book", "lets book",
+    "ready to book", "ready to go ahead", "go ahead with", "want to proceed",
+    "can you come", "when can you come", "come today", "come tomorrow",
+    "come through", "come round", "as soon as possible", "asap",
+    # Shona (the English rendering covers the rest)
+    "ndoda kubhukisha", "ndoda kutaura na", "muuye", "munouya rini",
+    "ndagadzirira",
+)
+
+
+def _is_reengagement_signal(message: str) -> bool:
+    """True when a parked lead is asking to move NOW — for the plumber, for a
+    booking, for someone to come out. Callers must rule out a deferral first:
+    "I'll be ready to go ahead next month" is a timeframe, not a re-engagement.
+    """
+    from .message_normalizer import contains_any
+    return contains_any(message, _REENGAGEMENT_PHRASES)
+
+
 def _delay_breakout_inquiry(message: str) -> bool:
     """True when a message arriving while we're parked in a delay holding state
     is actually a fresh question (a price ask or a named product) rather than the
@@ -1213,12 +1311,21 @@ def _delay_breakout_inquiry(message: str) -> bool:
     msg = (message or '').lower().strip()
     if not msg:
         return False
+    # A deferral is never a breakout — "I'll be ready to go ahead next month"
+    # carries re-engagement words but is the opposite of one. Checked first so
+    # the ordering, not the wording, settles it.
+    if _is_explicit_deferral(message):
+        return False
     # A real timeframe IS the answer we're waiting for — stay in the flow.
     if _message_has_timeframe(message):
         return False
+    # Ready to move now — outranks the hold, whatever step we are parked at.
+    if _is_reengagement_signal(message):
+        return True
     price_words = ('how much', 'price', 'pricing', 'cost', 'quote', 'quotation',
                    'marii', 'imarii', 'mari', 'how mch', 'hw much')
-    if any(w in msg for w in price_words):
+    from .message_normalizer import contains_any
+    if contains_any(message, price_words):
         return True
     # Named a product (function-local import avoids the circular import at load).
     from bot.whatsapp_webhook import _keyword_product_intent
@@ -1414,8 +1521,51 @@ _ACCESS_DEFER_PHRASES = (
 def _is_access_deferral_keywords(message: str) -> bool:
     """True for an explicit access-arranging deferral ("no one will be home",
     "need to make arrangements") — routed to the access check-in flow."""
-    msg = (message or '').lower()
-    return any(p in msg for p in _ACCESS_DEFER_PHRASES)
+    from .message_normalizer import contains_any
+    return contains_any(message, _ACCESS_DEFER_PHRASES)
+
+
+# Deferrals so explicit that no classifier verdict should outrank them.
+# Deliberately NOT the whole _DELAY_PHRASES list — that carries broad words
+# ("mangwana" = tomorrow) which legitimately appear in booking messages, and
+# reading those as a deferral would park a customer who is trying to book.
+_EXPLICIT_DEFERRAL_PHRASES = (
+    # Shona: "I'll get in touch / call you", "once I've sorted the money"
+    "ndichakubata", "ndichazokubata", "ndichakufona", "ndichazokufona",
+    "ndapedza kuronga", "kana ndawana mari", "ndikawana mari",
+    "ndaronga mari", "ndichange ndaronga",
+    # English
+    "i'll get back to you", "i will get back to you",
+    "call me later", "call you later", "not ready yet",
+    "will get in touch", "i'll get in touch", "will be in touch",
+    "get in touch when", "get in touch once",
+    "not yet sorted", "to that stage",
+)
+
+# The "I am not at that stage yet" family, which needs a pattern rather than
+# fixed phrases: Shona puts words between the marker and the verb ("handisati
+# HANGU ndasvika ku plumbing" — I have not got to plumbing yet), and a lead
+# still building says the same thing several ways.
+_NOT_YET_STAGE_RE = re.compile(
+    r"\bhandisati\b(?:\W+\w+){0,3}?\W+\b(?:ndasvika|ndagadzirira|ndatanga|ndapedza)\b"
+    r"|\bndasvika\W+pa\W+stage\b"
+    r"|\bstage\s+iyoyo\b"
+    r"|\bnot\s+(?:yet\s+)?(?:at|got\s+to|reached)\s+that\s+stage\b",
+    re.IGNORECASE,
+)
+
+
+def _is_explicit_deferral(message: str) -> bool:
+    """True for an unambiguous "I'll come back to you later" in either language.
+
+    The category classifier is nondeterministic on a mixed message that both
+    answers a question and defers ("Ndiri kuChitungwiza ndichakubatayi ndapedza
+    kuronga mari" — an area AND a deferral), so the customer's own words settle
+    it. Same override pattern as _is_access_deferral_keywords above.
+    """
+    from .message_normalizer import contains_any, search_any
+    return (contains_any(message, _EXPLICIT_DEFERRAL_PHRASES)
+            or search_any(message, _NOT_YET_STAGE_RE))
 
 
 def _classify_delay_subtype(message: str, appointment) -> str:
@@ -1544,9 +1694,9 @@ def _build_delay_reply(message: str, appointment) -> str:
             "Totally fair — before you do, can I ask: is it the price, the timing, "
             "or something else that's making you want to sit on it? I'd rather help "
             "you weigh it up properly than leave you to it.\n\n"
-            "Either way, we've got a portfolio of past projects plus a more "
-            "detailed pricing guide that's worth a look while you decide. Want me "
-            "to email it over? Just share your email and I'll send it across."
+            "Either way, I can send you something worth a look while you "
+            f"decide. {_EMAIL_VALUE_CLAUSE}\n\n"
+            "What's the best email for it?"
         )
 
     if subtype == 'comparison_shopping':
@@ -1917,10 +2067,10 @@ def _reask_delay_timeframe(message: str, appointment) -> str:
         logger.info("Delay timeframe pivot to email offer (no timeframe in '%s')",
                     message[:60])
         return (
-            "No problem at all. Let me email you our catalog with the full pricing "
-            "structure so you've got something to look over while you decide, and "
-            "I'll set a reminder to check back in. What's the best email to reach "
-            "you on?"
+            "No problem at all. Let me send our catalog over so you've got "
+            "something to weigh up while you decide, and I'll set a reminder to "
+            f"check back in.\n\n{_EMAIL_VALUE_CLAUSE}\n\n"
+            "What's the best email for it?"
         )
 
     # First miss — ask once for a rough timeframe.
@@ -2005,9 +2155,7 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     _write_pending(appointment, 'delay_email', iso_date or '')
     return (
         f"Got it, no problem. We'll check back on {friendly_date} — and I'll "
-        "send a written quote and our portfolio over too, with a more detailed "
-        "pricing guide and past projects, easier to save and share with whoever "
-        "else needs to see it.\n\n"
+        f"send a written quote and our portfolio over too.\n\n{_EMAIL_VALUE_CLAUSE}\n\n"
         "What's the best email for that?"
     )
 
@@ -2068,11 +2216,28 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
     _write_pending(appointment, 'delay_email', iso_date or '')
     return (
         "Perfect.\n\n"
-        "We'll also send you a proper written quote and our portfolio — with a "
-        "more detailed pricing guide and past projects — easier to save and share "
-        "with whoever else needs to see it. "
-        "What's the best email to reach you on?"
+        "We'll also send you a proper written quote and our portfolio. "
+        f"{_EMAIL_VALUE_CLAUSE}\n\n"
+        "What's the best email for it?"
     )
+
+
+# ── Why the LEAD is better off giving us an email ────────────────────────────
+# Every ask for an address carries this. Asking for a contact detail with no
+# reason attached is an extraction, and it reads like one — conv 846 asked four
+# times and got "just send it here" twice, because nothing we said gave the lead
+# a reason to prefer email. Three benefits, all true and all THEIRS:
+#   it keeps    — a document in a WhatsApp thread is gone the moment the chat is
+#                 cleared or the phone changes; an inbox copy is not,
+#   it travels  — these jobs are rarely decided by one person alone,
+#   it compares — a lead collecting quotes can put ours beside the others.
+# The business reason (email outlives the 24h messaging window) is real too, but
+# it is ours, not theirs, so it is not what we lead with.
+_EMAIL_VALUE_CLAUSE = (
+    "It goes over as a PDF — the full price breakdown and past jobs in one "
+    "document — so you can open it any time, send it on to whoever else is in "
+    "on the decision, and hold it up against any other quotes you get."
+)
 
 
 # ── Email-step reply intent (AI-primary) ─────────────────────────────────────
@@ -2084,12 +2249,16 @@ _EMAIL_STEP_DECLINE_KW = (
 
 def _email_step_intent_keywords(message: str) -> str:
     """Keyword fallback for the email-step classifier when DeepSeek is down."""
-    msg = (message or '').lower().strip()
     if '@' in (message or ''):
         return 'email'
     if wants_whatsapp_delivery(message):
         return 'whatsapp'
-    if any(s in msg for s in _EMAIL_STEP_DECLINE_KW):
+    # Word-boundary matched: this list holds 'no' and 'na', which as bare
+    # substrings fire inside "muno", "pano", "know", "not" and "phone" —
+    # a Shona lead asking "muno chaja seyi" (how do you charge here) read
+    # as declining the email.
+    from .message_normalizer import contains_word_any
+    if contains_word_any(message, _EMAIL_STEP_DECLINE_KW):
         return 'decline'
     return 'unclear'
 
@@ -2104,6 +2273,14 @@ def _classify_email_step_reply(message: str, appointment=None) -> str:
     if '@' in (message or ''):
         return 'email'
     kw = _email_step_intent_keywords(message)
+    # The customer's own words override the classifier: an explicit "send it
+    # here" (English or Shona) is a delivery-channel choice, and DeepSeek
+    # returning 'unclear' on it made the bot re-ask the identical email-or-
+    # WhatsApp question (prod, barmak, 2026-08-28). The deterministic resolver
+    # only fires when they literally said it, so on those inputs it is
+    # authoritative — the LLM may still widen (fuzzy declines), never narrow.
+    if kw == 'whatsapp':
+        return 'whatsapp'
     if not _DEEPSEEK_KEY or not (message or '').strip():
         return kw
     try:
@@ -2116,7 +2293,9 @@ def _classify_email_step_reply(message: str, appointment=None) -> str:
                     "catalog/quote. Classify the customer's reply as ONE of:\n"
                     "- email: they are giving an email address\n"
                     "- whatsapp: they want it sent here on WhatsApp instead of by "
-                    "email ('just send it here', 'on this number', 'whatsapp is fine')\n"
+                    "email ('just send it here', 'on this number', 'whatsapp is fine'; "
+                    "Shona 'munongo senda ipapa', 'sendai pano', 'tumirai pano', "
+                    "'muno sender zvenyu ipapa apa' — all mean send it right here)\n"
                     "- decline: they don't want to share an email / not keen on the "
                     "email ('no', 'skip', 'I'd rather not', \"don't have one\")\n"
                     "- unclear: none of the above is clear\n"
@@ -2244,6 +2423,61 @@ def _resolve_email_attempt_ai(message: str, appointment=None):
         return None, fallback
 
 
+# The one wording of the email-or-WhatsApp choice, so the "have we already
+# asked this?" check below can recognise it in the transcript.
+#
+# It recommends rather than merely offering: "either works" gives the lead no
+# reason to pick, and email is genuinely the better copy for them to hold. One
+# nudge only — their answer settles it, and the guard below means this is never
+# put to them twice.
+#
+# Owner-written copy (2026-08-29). Note it names OUR reason too — keeping the
+# quote on file and following up cleanly. That is deliberate: said plainly it
+# reads as straight dealing rather than extraction, and "followed up properly"
+# is a benefit to the lead as much as to us.
+_DELIVERY_CHOICE_QUESTION = (
+    "Email's the one I'd suggest. It lands as a PDF you can keep, open any "
+    "time, and pass on to whoever else is in on the decision, and it won't get "
+    "buried in the chat. It also means I can keep your quote properly on file "
+    "and follow things up cleanly, rather than it slipping down the WhatsApp "
+    "thread.\n\n"
+    "Happy to send it right here instead if that's easier. Just share your "
+    "email, or say WhatsApp."
+)
+
+# Asked ONLY when we have no check-back date on file. With one already agreed
+# we have just told them "we'll check back on <date>", and asking again reads as
+# not listening — the conv 415/566 failure mode. Kept separate so the question
+# above stays a single ask in the common case.
+_DELIVERY_CHOICE_TIMEFRAME_TAIL = (
+    "\n\nAnd if you've a rough idea when you'll be ready to go ahead, let me "
+    "know, so I can time my check-in around it and pick things straight back "
+    "up when it suits you."
+)
+
+_DELIVERY_CHOICE_MARKER = "the one I'd suggest"
+
+
+def _delivery_choice_question(iso_date=None) -> str:
+    """The delivery choice, plus the timeframe ask when no check-back date is
+    on file yet."""
+    if iso_date:
+        return _DELIVERY_CHOICE_QUESTION
+    return _DELIVERY_CHOICE_QUESTION + _DELIVERY_CHOICE_TIMEFRAME_TAIL
+
+
+def _already_asked_delivery_choice(appointment) -> bool:
+    """True when we have already put the delivery-choice question to this lead.
+    Looks at our own recent outbound turns only."""
+    history = getattr(appointment, 'conversation_history', None) or []
+    for entry in reversed(history[-6:]):
+        if entry.get('role') != 'assistant':
+            continue
+        if _DELIVERY_CHOICE_MARKER in (entry.get('content') or ''):
+            return True
+    return False
+
+
 def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     """
     Step 4: customer provided (or declined) their email after the delay flow.
@@ -2255,6 +2489,14 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
 
     iso_date  = pending.get('original', '') or None
     msg       = (message or '').strip()
+
+    # When we have no date yet the choice question also asks when they'll be
+    # ready, so a timeframe answer must be CAPTURED, not force-fit as a failed
+    # email reply — the recurring "pending state swallows what they just said"
+    # bug. That handler stores the date and comes back asking for the email.
+    if not iso_date and '@' not in msg and _message_has_timeframe(msg):
+        logger.info("Delay email step — timeframe answer captured: '%s'", msg[:60])
+        return _handle_delay_timeframe_answer(msg, {}, appointment)
 
     intent = _classify_email_step_reply(msg, appointment)
 
@@ -2268,14 +2510,21 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
         _deliver_pdf_and_schedule_checkin(appointment, iso_date)
         return "Have a look whenever suits, and if anything changes just send a message."
 
-    # Unclear → offer the choice explicitly rather than guessing.
+    # Unclear → offer the choice explicitly rather than guessing. But only ONCE:
+    # if we already put that exact question to them and their answer still did
+    # not parse, asking it again word-for-word is the bot loop CLAUDE.md warns
+    # about (it happened twice in a row on Shona "send it here", prod barmak
+    # 2026-08-28). They are talking to us on WhatsApp — send it here and stop
+    # asking.
     if intent == 'unclear':
+        if _already_asked_delivery_choice(appointment):
+            logger.info("Delivery choice already asked and unresolved — sending "
+                        "on WhatsApp instead of re-asking (apt=%s)",
+                        getattr(appointment, 'id', None))
+            _deliver_pdf_and_schedule_checkin(appointment, iso_date)
+            return "Have a look whenever suits, and if anything changes just send a message."
         _write_pending(appointment, 'delay_email', iso_date or '')
-        return (
-            "No problem — would you like our catalog by email, or sent right here "
-            "on WhatsApp?\n\n"
-            "Either works — just share your email, or say 'WhatsApp'."
-        )
+        return _delivery_choice_question(iso_date)
 
     # intent == 'email' → extract a valid address. The regex is authoritative for
     # a well-formed address; if it doesn't match, DeepSeek either reconstructs a
@@ -2522,8 +2771,9 @@ def handle_out_of_scope(
     # is a delay signal even when the category classifier read the message as
     # in-scope (LLM nondeterminism — conv 427 got the booking push instead of
     # the access check-in on some runs).
-    if category != "delay_signal" and _is_access_deferral_keywords(message):
-        logger.info("Deterministic access-deferral override → delay_signal: '%s'",
+    if category != "delay_signal" and (_is_access_deferral_keywords(message)
+                                       or _is_explicit_deferral(message)):
+        logger.info("Deterministic deferral override → delay_signal: '%s'",
                     message[:60])
         category, confidence = "delay_signal", "HIGH"
 

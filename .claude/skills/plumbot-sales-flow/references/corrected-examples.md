@@ -214,6 +214,72 @@ they actually said.
 > platform / this chat" is a WhatsApp-delivery request — send it here, do NOT
 > re-ask for an email (`wants_whatsapp_delivery`).
 
+**Conv 846 (Aug 2026, barmak).** Asked for an email four times, never once said
+why.
+
+> **Bot (bad):** "No problem at all. Let me email you our catalog with the full
+> pricing structure so you've got something to look over while you decide, and
+> I'll set a reminder to check back in. What's the best email to reach you on?"
+>
+> **Customer:** "Munongo senda ipapa handi wanzo gara ne data" (just send it
+> here, I do not usually have data)
+>
+> **Bot (good):** "No problem at all. Let me send our catalog over so you've got
+> something to weigh up while you decide, and I'll set a reminder to check back
+> in.
+>
+> It goes over as a PDF — the full price breakdown and past jobs in one document
+> — so you can open it any time, send it on to whoever else is in on the
+> decision, and hold it up against any other quotes you get.
+>
+> What's the best email for it?"
+
+Why: the old ask stated OUR reason to want an address ("so I can email you") and
+gave the lead none of their own, so the path of least resistance was always
+"send it here". The replacement names three benefits that are genuinely theirs —
+it keeps (a document in a chat is gone when the phone changes), it travels
+(these jobs are rarely one person's decision), it compares (a quote-collector
+can put ours beside the others). Shared clause: `_EMAIL_VALUE_CLAUSE`.
+
+The delivery choice recommends rather than shrugs — "either works" gives them
+nothing to choose on — but a lead who still says WhatsApp is sent it on WhatsApp
+and never asked twice (conv 427's rule, now enforced by
+`_already_asked_delivery_choice`).
+
+It also names OUR reason plainly — "I can keep your quote properly on file and
+follow things up cleanly, rather than it slipping down the WhatsApp thread"
+(owner-written, 2026-08-29). Stating the business reason straight reads as
+straight dealing rather than extraction, and being followed up properly is the
+lead's benefit as much as ours. Its trailing timeframe ask
+(`_DELIVERY_CHOICE_TIMEFRAME_TAIL`) is appended ONLY when no check-back date is
+on file — with a date already agreed we have just named it, and asking again is
+the conv 415 mistake. Having asked, the handler also captures a timeframe reply
+instead of force-fitting it as a failed email address.
+
+**Conv 846b (Aug 2026, barmak ad lead).** A delay signal read as a scope answer.
+
+> **Bot:** "Is a tub the only thing you're looking to get sorted?"
+>
+> **Customer:** "No my main bedroom is not yet sorted will get in touch ndasvika
+> pa stage iyoyo thanx" (…will get in touch when I reach that stage)
+>
+> **Bad:** "No problem — what else would you like sorted while we're there?"
+>
+> **Good:** acknowledge the defer, park with a check-back date, offer the
+> portfolio. They are leaving, not adding to the job.
+
+Why: the leading "No" answered our question by accident. The
+`[SERVICE_CONFIRM_PENDING]` branch answers and RETURNS before STEP 1b, so the
+delay handler never saw the message — the sixth time a pending state has
+swallowed a live signal. Any branch that holds the lead in a flow must let a
+delay/exit signal through first (`_sc_delay_override`, and the tags are cleared
+so the scope question cannot re-fire on their delay-flow answer). Second fault:
+"will GET in touch" was in no list, only "will BE in touch" — now covered along
+with the "not at that stage yet" family (`_NOT_YET_STAGE_RE`, which tolerates
+the words Shona puts in between: "handisati HANGU ndasvika"). Bare "get in
+touch" is deliberately NOT a deferral — "I want to get in touch with your
+plumber today" is an eager lead.
+
 ---
 
 ## Bot loops and dead ends

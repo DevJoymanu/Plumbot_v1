@@ -99,6 +99,7 @@ standalone_tub   Specifically freestanding/standalone tub. A CORNER tub is NOT
 geyser, shower_cubicle, vanity, bathtub_installation, toilet, chamber,
 drain_unblocking, pipe_repair, geyser_repair, toilet_repair,
 location_ask, location_visit, pictures, combined_pricing, none
+{tenant_services}
 
 ─── EXTRACT (null when not present in message) ───────────────────────────────
 area              Suburb, neighbourhood, or city name.
@@ -119,6 +120,18 @@ availability      Date+time → YYYY-MM-DDTHH:MM  |  Date only → YYYY-MM-DDT00
                   "available all day" / "anytime" / "whole day" → null.
 customer_name     Only if explicitly given: "my name is X", "I'm X", "call me X".
 project_description  Verbatim project detail (max 120 chars).
+
+─── ENGLISH (the rule engine reads this, the customer never does) ────────────
+english           A plain, literal English rendering of the customer's message.
+                  "" when the message is already English. Translate what they
+                  SAID, do not answer it, summarise it or tidy it up: keep the
+                  intent words intact, because deterministic rules downstream
+                  match on phrases like "send it here", "I will get back to
+                  you", "how much". Keep names, places, numbers and prices
+                  exactly as written. Shona notes: "ipapa"/"pano"/"apa" = here,
+                  "senda"/"tumira" = send, "ndichakubata" = I will get in touch,
+                  "kuronga mari" = sort out the money, "marii"/"imarii" = how
+                  much, "ma-" is just a plural prefix ("matiles" = tiles).
 
 ─── FLAGS ────────────────────────────────────────────────────────────────────
 is_photo_request  true if customer asks to see photos/pictures/portfolio of
@@ -249,6 +262,7 @@ Match the pattern, do not copy values blindly.
   "offered_date": null,
   "offered_timeframe": null,
   "speech_act": "other",
+  "english": "",
   "extracted": {
     "area": null,
     "availability": null,
@@ -273,6 +287,37 @@ def _out_of_scope_services(appointment) -> str:
     except Exception:
         terms = OOS_SERVICE_TERMS
     return ", ".join(terms or OOS_SERVICE_TERMS)
+
+
+def _tenant_product_intents(appointment) -> str:
+    """The product-intent keys for services only THIS tenant sells.
+
+    The hardcoded list above is Homebase's product range. A tenant who also
+    tiles, fits gutters or sinks pumps has those on their OWN price sheet, and
+    with no intent to return for them the model fell back to combined_pricing —
+    so a tiling question was answered with the bathroom package (prod, barmak,
+    2026-08-28). Empty for a tenant with no such rows, leaving the prompt
+    byte-identical to before.
+    """
+    try:
+        from .tenant_config import get_config
+        from .pricing_copy import tenant_custom_items
+        items = tenant_custom_items(get_config(getattr(appointment, 'tenant', None)))
+    except Exception:
+        return ""
+    if not items:
+        return ""
+    lines = [
+        "",
+        "This business ALSO sells the services below. They are its own work —",
+        "never out of scope. Return the key on the left as product_intent when",
+        "the customer asks about one, including misspelt, plural or Shona",
+        'wording (Shona often prefixes "ma-": "matiles" = tiles):',
+    ]
+    for key, item in sorted(items.items()):
+        label = (item.label or item.short_label or item.family or '').strip()
+        lines.append(f"{key}   {label}")
+    return "\n".join(lines)
 
 
 def unified_classify(
@@ -342,12 +387,19 @@ def unified_classify(
                         # their own work (prod: barmak sells boreholes).
                         .replace("{out_of_scope_services}",
                                  _out_of_scope_services(appointment))
+                        # The tenant's OWN extra services, so the model has a
+                        # key to return for work Homebase's product list never
+                        # names (barmak: tiling, gutters, pumps, filters).
+                        .replace("{tenant_services}",
+                                 _tenant_product_intents(appointment))
                     ),
                 },
                 {"role": "user",   "content": user_content},
             ],
             temperature=0.0,
-            max_tokens=400,
+            # +100 over the classification-only budget: the english rendering
+            # is a whole sentence, and a truncated body is unparseable JSON.
+            max_tokens=500,
             json_response=True,
         )
         result = json.loads(raw)
@@ -385,6 +437,15 @@ def uc_is_plan_later(r: dict | None) -> bool:
 
 def uc_is_repeat(r: dict | None) -> bool:
     return bool((r or {}).get("is_repeat_question", False))
+
+def uc_english(r: dict | None) -> str:
+    """The literal English rendering of the customer's message ('' when it was
+    already English or the call failed). RULE ENGINE ONLY — never put this in
+    front of a customer or into a reply prompt; the bot answers in the language
+    the lead used. See bot/message_normalizer.py."""
+    value = (r or {}).get("english")
+    return value.strip() if isinstance(value, str) else ""
+
 
 def uc_extracted(r: dict | None) -> dict:
     return (r or {}).get("extracted") or {}
