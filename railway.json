@@ -4,26 +4,30 @@
     },
     "_cronsReference": [
         {
-            "name": "send-followups",
-            "service": "superb-tenderness",
+            "name": "Follow_Ups",
             "schedule": "*/7 * * * * (set on the service in Railway)",
             "command": "PLUMBOT_CRON=send_followups",
-            "description": "Check non-responsive leads every 7 min; send_followups itself only sends inside CONTACT_WINDOWS (08:21-20:53 CAT), so off-hours ticks are no-ops. Each lead fires at its own jittered minute for natural human send times"
+            "description": "Check non-responsive leads every 7 min; send_followups itself only sends inside CONTACT_WINDOWS (08:21-20:53 CAT), so off-hours ticks are no-ops. Each lead fires at its own jittered minute for natural human send times. Formerly named superb-tenderness."
         },
         {
-            "name": "send-reminders",
-            "service": "Reminders",
+            "name": "Reminders",
             "schedule": "*/5 * * * * (set on the service in Railway)",
             "command": "PLUMBOT_CRON=send_reminders",
-            "description": "Customer and plumber reminders - booking, morning, 2hr, 30min alerts"
+            "description": "Customer and plumber reminders - booking, morning, 2hr, 30min alerts."
         },
         {
-            "name": "misc-jobs",
-            "service": "delightful-eagerness",
+            "name": "Email_Follow_Ups",
             "schedule": "*/5 * * * * (set on the service in Railway)",
             "command": "PLUMBOT_CRON=send_scheduled_followups,process_inbound_emails,send_job_reminders,summarize_unconfirmed_leads",
-            "description": "Carries every job that is not the main follow-up or reminder cron: staff-queued ScheduledFollowup dispatch over WhatsApp or email (including email follow-ups for delayed leads), IMAP inbound-email polling, job reminders, and 24h unconfirmed-lead summaries. All four are idempotent, so a 5-minute tick re-running them is safe."
+            "description": "Carries every job that is not the main follow-up or reminder cron: staff-queued ScheduledFollowup dispatch over WhatsApp or email (including email follow-ups for delayed leads), IMAP inbound-email polling, job reminders, and 24h unconfirmed-lead summaries. All four are idempotent, so a 5-minute tick re-running them is safe. Formerly named delightful-eagerness."
+        },
+        {
+            "name": "Plumbot_v1",
+            "schedule": "none - web service",
+            "command": "PLUMBOT_CRON unset",
+            "description": "The gunicorn web service. PLUMBOT_CRON must stay unset here or start.sh would run a cron job instead of booting the site."
         }
     ],
-    "_note": "This file applies to EVERY service in the project and its startCommand overrides each service's own. Cron services therefore share start.sh and pick their job(s) via the PLUMBOT_CRON env var (comma-separated for several jobs per tick). The list above is documentation only - Railway does not read it."
+    "_note": "This file applies to EVERY service in the project and its startCommand overrides each service's own. Cron services therefore share start.sh and pick their job(s) via the PLUMBOT_CRON env var (comma-separated for several jobs per tick). The list above is documentation only - Railway does not read it.",
+    "_cronScheduleTrap": "A Railway deployment BAKES IN the cron schedule that the service had at the moment the deployment was created. A deployment built while the schedule was absent comes out buildOnly=false with cronSchedule=null: it runs start.sh once at deploy time and then NEVER ticks again, even though the service page still shows a schedule and Railway keeps advancing nextCronRunAt. That is silent - the deployment sits at SUCCESS with no error anywhere. It killed send_followups from 2026-08-25 01:53 UTC until 2026-08-28 12:26 UTC; the only follow-ups that went out in that time were the ones a human triggered with the dashboard's manual follow-up check button, which runs the command inside the WEB service. `railway redeploy` does NOT fix it - it replays the bad snapshot. Re-apply the schedule to the service (serviceInstanceUpdate cronSchedule) and then deploy fresh (serviceInstanceDeployV2). To verify a cron service is genuinely live, check its latest deployment meta: buildOnly must be true and serviceManifest.deploy.cronSchedule must hold the schedule, and its deploymentLogs must show a '[start.sh] cron job' line per tick."
 }
