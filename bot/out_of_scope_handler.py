@@ -1,4 +1,4 @@
-"""
+﻿"""
 bot/out_of_scope_handler.py
 ============================
 Handles messages that fall outside Plumbot's booking scope gracefully.
@@ -148,6 +148,165 @@ def wants_whatsapp_delivery(message: str) -> bool:
 
 def has_delay_signal(appointment) -> bool:
     return _DELAY_SIGNAL_TAG in (appointment.internal_notes or "")
+
+
+# ── Bare acknowledgements while a hold is on ──────────────────────────────────
+# The union of the two ack lists that used to live at the arrival gate
+# (whatsapp_webhook.handle_text_message) and the reply gate
+# (ResponseMixin.generate_response), each of which tested whole-string set
+# membership against its own private copy.
+_BARE_ACK_WORDS = frozenset({
+    'ok', 'okay', 'k', 'kk', 'oky', 'oh ok', 'oh okay', 'ooh ok', 'ooh okay',
+    'sharp', 'shap', 'sho', 'cool', 'nice', 'noted', 'got it', 'alright',
+    'great', 'good', 'fine', 'sure', 'yes', 'yep', 'yeah', 'yup',
+    'no', 'nope', 'nah', 'no worries',
+    'ok thanks', 'ok thank you', 'thanks', 'thank you', 'thank u', 'thx',
+    'thnx', 'understood', 'i see', 'ah ok', 'ah okay', 'oh ok thanks',
+    'oh okay thanks', 'ok cool', 'ok bye', 'okay bye', 'bye',
+    'thanks alot', 'thanks a lot', 'many thanks', 'much appreciated',
+    'appreciated', 'perfect', 'awesome', 'lovely', 'thank you so much',
+    'bo', 'bho', 'hongu', 'zvakanaka', 'zvakanaka hako', 'maita basa',
+    'ndatenda', 'ndatenda hako', 'tatenda', 'ehe', 'ehezve',
+})
+
+# Emoji-only acks: a tick, a thumb, praying hands, a smile.
+_BARE_ACK_EMOJI = frozenset({
+    '\U0001f44d', '\U0001f64f', '✅', '\U0001f60a', '\U0001f44c',
+    '❤', '\U0001f44f', '\U0001f642',
+})
+
+# The punctuation people end an ack with. Newlines need no entry here —
+# splitlines() handles them, and a newline is how the debounce joins two
+# separate taps into one turn.
+_ACK_SPLIT_CHARS = ',.!;'
+_NEWLINE = chr(10)
+
+
+def _split_ack_parts(message: str) -> list:
+    """A turn -> the fragments the customer actually typed, lowercased."""
+    text = message
+    for ch in _ACK_SPLIT_CHARS:
+        text = text.replace(ch, _NEWLINE)
+    return [p.strip().lower() for p in text.splitlines()]
+
+
+def _is_bare_acknowledgement(message: str) -> bool:
+    """True when a turn is nothing but acknowledgement — including a BATCH of
+    acks arriving as one turn.
+
+    Both delay gates used to ask `message.strip().lower() in <set>`, i.e. exact
+    whole-string membership. That holds for a single tap, but the debounce
+    batches rapid-fire taps into one turn joined by a newline, so a customer
+    typing "Alright" and then "Thank you" arrives as a two-line turn matching
+    neither set. The hold was then read as re-engagement and the booking flow
+    restarted, re-pitching the visit to a lead who had already said they would
+    come back to us (prod, +263717781175, 2026-08-29 — the re-pitch drew
+    "Sorry, we'll speak Monday evening").
+
+    So split the turn and require EVERY part to be an ack. A part carrying
+    anything real ("ok, how much for a geyser?") still returns False and is
+    handled by the normal flow — the customer's own words keep outranking the
+    state we are holding.
+
+    Deterministic on purpose (CLAUDE.md: prefer deterministic resolvers for
+    short/fuzzy strings) and API-free, so it still holds with DeepSeek down.
+    """
+    if not message:
+        return False
+    parts = [p for p in _split_ack_parts(message) if p]
+    if not parts:
+        return False
+    for part in parts:
+        # Strip a trailing emoji run so "thanks 👍" reads as the ack it is.
+        core = part.rstrip(''.join(_BARE_ACK_EMOJI)).strip()
+        if not core:
+            continue          # the part was emoji only
+        if core in _BARE_ACK_WORDS:
+            continue
+        return False
+    return True
+
+
+def _ai_says_no_reply_needed(message: str) -> bool:
+    """DeepSeek half of `should_hold_silently`: with a hold already agreed, is
+    this turn purely social — an acknowledgement, a thank-you, a sign-off — that
+    a person would simply not reply to?
+
+    Only ever consulted for the ambiguous middle (see `should_hold_silently`),
+    and a failure returns False, which is the pre-AI behaviour.
+    """
+    if not _DEEPSEEK_KEY or not (message or '').strip():
+        return False
+    from bot.services.clients import deepseek_call
+    try:
+        result = deepseek_call(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a yes/no classifier. "
+                        "Reply with only the single word 'yes' or 'no'."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "A customer told us they would come back to us later, and we "
+                        "have already agreed to check back with them on an agreed date. "
+                        "They then sent the message below.\n\n"
+                        "Is this message purely an acknowledgement or a sign-off — "
+                        "something a person would read and simply not reply to?\n"
+                        "Counts as yes: \"Alright\", \"Thank you\", \"Ok noted\", "
+                        "\"Sure, appreciate the help\", \"Cool, that works for now\", "
+                        "\"Perfect, speak then\", \"No problem, I'll shout when ready\".\n"
+                        "Counts as no: anything asking us something, giving us new "
+                        "information, changing the plan, or asking us to come out — "
+                        "\"how much for a geyser?\", \"can you come tomorrow?\", "
+                        "\"actually make it Tuesday\", \"my geyser is leaking now\".\n\n"
+                        f"Message: {message}"
+                    ),
+                },
+            ],
+            temperature=0.0,
+            max_tokens=5,
+        )
+        return result.strip().lower().startswith('yes')
+    except Exception as exc:
+        logger.warning(
+            "_ai_says_no_reply_needed failed (%s) — treating as 'reply needed'", exc)
+        return False
+
+
+def should_hold_silently(message: str, appointment=None) -> bool:
+    """While a delay hold is on, should this turn get NO reply at all?
+
+    True  -> the customer is just acknowledging; keep the hold and say nothing.
+    False -> something real arrived; clear the hold and let the flow answer.
+
+    AI-primary in the sense that matters (DeepSeek makes the judgement call on
+    genuinely ambiguous turns), but deliberately **widen-only**, per the
+    symmetry rule: BOTH failure directions here are expensive, so the classifier
+    is not allowed to overturn either deterministic verdict.
+
+      1. A turn that is nothing but acks is silence, full stop. Letting the
+         classifier reopen it would re-admit the exact production bug this gate
+         exists for (a batched "Alright" + "Thank you" re-pitching the visit).
+      2. A real inquiry — a price ask, a named product, a re-engagement signal —
+         always gets a reply. Going silent on a lead who came back ready is the
+         worst outcome in the flow, so no classifier verdict may cause it.
+      3. Only what neither rule settles reaches DeepSeek, which can therefore
+         WIDEN silence to the long tail no word list can enumerate ("Cool, that
+         works for now", "Perfect, appreciate it, speak then") but can never
+         narrow it.
+
+    That ordering also means the common cases cost no API call at all — the
+    round trip happens only on the ambiguous middle of an already-rare path.
+    """
+    if _is_bare_acknowledgement(message):
+        return True
+    if _delay_breakout_inquiry(message):
+        return False
+    return _ai_says_no_reply_needed(message)
 
 
 def mark_delay_signal(appointment, source_message: str = "") -> bool:
@@ -1737,12 +1896,105 @@ def _build_delay_reply(message: str, appointment) -> str:
     return _DELAY_SUBTYPE_REPLIES.get(subtype, _DELAY_SUBTYPE_REPLIES['unknown'])
 
 
-def _store_delay_followup_date(appointment, iso_date):
+# ── Time of day the customer named for the check-back ─────────────────────────
+# The date resolver answers WHICH DAY; this answers WHAT TIME, so "Monday
+# evening" stops being scheduled at 9am. Deterministic on purpose: unlike the
+# open-ended calendar math the date needs DeepSeek for, a time of day is a small
+# closed vocabulary, and CLAUDE.md keeps short/fuzzy strings off the LLM.
+# Ordered longest/most specific first — 'afternoon' must beat 'noon', and
+# 'end of day' must beat 'day'.
+_DAYPART_TIMES = (
+    (('first thing', 'early morning', 'crack of dawn'),                 (8, 0)),
+    (('close of business', 'end of business', 'cob'),                   (17, 0)),
+    (('end of the day', 'end of day', 'eod', 'knock off', 'knockoff',
+      'after work', 'after hours'),                                     (17, 0)),
+    (('afternoon', 'masikati'),                                         (14, 0)),
+    (('lunchtime', 'lunch time', 'lunch', 'midday', 'mid day', 'noon'), (12, 0)),
+    (('evening', 'manheru'),                                            (18, 0)),
+    (('tonight', 'night', 'usiku'),                                     (19, 0)),
+    (('morning', 'mangwanani'),                                         (9, 0)),
+)
+
+# An explicit clock beats any daypart word: "9pm", "9.30 pm", "21:00".
+_CLOCK_12H_RE = re.compile(r'\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?m\.?\b', re.I)
+_CLOCK_24H_RE = re.compile(r'\b([01]?\d|2[0-3]):([0-5]\d)\b')
+
+# Never schedule a check-back at an absurd hour even if one is somehow parsed.
+_FOLLOWUP_HOUR_MIN = 6
+_FOLLOWUP_HOUR_MAX = 22
+
+
+def _extract_followup_time(message: str):
+    """A deferral message -> the (hour, minute) the customer named, or None.
+
+    "Monday evening" -> 18:00, "9pm" -> 21:00, "end of day" -> 17:00. Returns
+    None when they named no time, so the caller keeps its default rather than
+    inventing one.
+
+    An explicit clock wins over a daypart word ("Monday evening, say 8pm" is
+    8pm). Bare numbers are deliberately ignored — "the 21st" and "in 2 weeks"
+    are dates, not times, so a time needs am/pm, a colon, or a daypart word.
+    """
+    if not message:
+        return None
+    msg = message.lower()
+
+    m = _CLOCK_12H_RE.search(msg)
+    if m:
+        hour   = int(m.group(1))
+        minute = int(m.group(2) or 0)
+        if 1 <= hour <= 12 and 0 <= minute <= 59:
+            meridiem = m.group(3).lower()
+            if meridiem == 'p' and hour != 12:
+                hour += 12
+            elif meridiem == 'a' and hour == 12:
+                hour = 0
+            return _clamp_followup_hour(hour, minute)
+
+    m = _CLOCK_24H_RE.search(msg)
+    if m:
+        return _clamp_followup_hour(int(m.group(1)), int(m.group(2)))
+
+    for phrases, (hour, minute) in _DAYPART_TIMES:
+        if any(p in msg for p in phrases):
+            return (hour, minute)
+    return None
+
+
+def _clamp_followup_hour(hour: int, minute: int):
+    """Keep a parsed time inside civil hours — a misparse must never schedule a
+    check-back at 3am."""
+    if hour < _FOLLOWUP_HOUR_MIN:
+        return (_FOLLOWUP_HOUR_MIN, 0)
+    if hour > _FOLLOWUP_HOUR_MAX:
+        return (_FOLLOWUP_HOUR_MAX, 0)
+    return (hour, minute)
+
+
+# Default check-back time when the customer named no time of day.
+_DEFAULT_FOLLOWUP_HOUR = 9
+
+_FOLLOWUP_TIME_RE = re.compile(r'\[FOLLOW_UP_TIME\]\s*(\d{2}):(\d{2})')
+
+
+def _stored_followup_time(appointment):
+    """The (hour, minute) already agreed with this lead, or None."""
+    m = _FOLLOWUP_TIME_RE.search(getattr(appointment, 'internal_notes', '') or '')
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _store_delay_followup_date(appointment, iso_date, source_message=None):
     """
     Persist the agreed follow-up date on the appointment: a [FOLLOW_UP_DATE] note
     tag plus an override of delay_followup_due_at so the reactivation cron fires
     on the customer's agreed date. A concrete date means the lead is owned by the
     reactivation queue, so any prior parked/brush-off suppression is lifted.
+
+    `source_message` is the customer's own deferral wording. When it names a time
+    of day ("Monday evening", "9pm", "end of day") the check-back is scheduled at
+    that time instead of the 9am default — being told "evening" and messaging at
+    breakfast is the kind of thing that reads as a bot. Optional so the existing
+    callers keep working untouched.
     """
     if not iso_date:
         return
@@ -1762,18 +2014,62 @@ def _store_delay_followup_date(appointment, iso_date):
         from datetime import date as _d
         _tz_sast = pytz.timezone('Africa/Johannesburg')
         agreed_date = _d.fromisoformat(iso_date)
+        # The delay flow calls this again at later steps (the email capture, a
+        # confirm) where the customer is no longer talking about timing. A time
+        # they named once must survive those, so fall back to the stored tag
+        # before falling back to the default.
+        named_time = (_extract_followup_time(source_message)
+                      or _stored_followup_time(appointment))
+        hour, minute = named_time if named_time else (_DEFAULT_FOLLOWUP_HOUR, 0)
         agreed_dt   = _tz_sast.localize(
-            datetime(agreed_date.year, agreed_date.month, agreed_date.day, 9, 0)
+            datetime(agreed_date.year, agreed_date.month, agreed_date.day, hour, minute)
         )
         appointment.delay_followup_due_at = agreed_dt
         appointment.save(update_fields=['delay_followup_due_at'])
+        if named_time:
+            _append_note_tag(appointment, f"[FOLLOW_UP_TIME] {hour:02d}:{minute:02d}")
         logger.info(
-            "delay_followup_due_at updated to agreed date %s for appointment=%s",
-            iso_date, getattr(appointment, 'id', None),
+            "delay_followup_due_at updated to agreed date %s %02d:%02d (%s) for appointment=%s",
+            iso_date, hour, minute,
+            'customer named the time' if named_time else 'default',
+            getattr(appointment, 'id', None),
         )
+        _note_delay_followup_channel(appointment, agreed_dt)
     except Exception as _exc:
         logger.warning(
             "Could not parse agreed follow-up date '%s': %s", iso_date, _exc
+        )
+
+
+def _append_note_tag(appointment, tag):
+    """Add a tag line to internal_notes if it isn't already there."""
+    notes = appointment.internal_notes or ''
+    if tag in notes:
+        return
+    appointment.internal_notes = f"{notes}\n{tag}".strip()
+    appointment.save(update_fields=['internal_notes'])
+
+
+# Written when the agreed check-back lands inside the lead's FREE messaging
+# window, i.e. WhatsApp will reach them at no cost. Advisory only — the window
+# moves every time the lead writes to us, so the cron re-checks at send time.
+_DELAY_CHANNEL_WA_TAG = '[DELAY_CHANNEL] whatsapp'
+
+
+def _note_delay_followup_channel(appointment, due_dt):
+    """Record whether the agreed check-back is expected to be reachable free on
+    WhatsApp, so the reactivation is planned around the window rather than
+    defaulting to the email pivot."""
+    try:
+        free_until = appointment.free_messaging_window_closes_at
+    except Exception:
+        return
+    if free_until and due_dt <= free_until:
+        _append_note_tag(appointment, _DELAY_CHANNEL_WA_TAG)
+        logger.info(
+            "Check-back %s is inside the free messaging window (closes %s) "
+            "for appointment=%s — WhatsApp follow-up",
+            due_dt, free_until, getattr(appointment, 'id', None),
         )
 
 
@@ -2037,7 +2333,7 @@ def _reask_delay_timeframe(message: str, appointment) -> str:
         # fallback) keeps it.
         iso_default = _default_followup_iso()
         mark_delay_signal(appointment, message)
-        _store_delay_followup_date(appointment, iso_default)
+        _store_delay_followup_date(appointment, iso_default, source_message=message)
         logger.info("No timeframe after re-ask — auto follow-up %s, pivoting to email",
                     iso_default)
 
@@ -2131,7 +2427,7 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     # Presumptively commit: mark the lead delayed and store the agreed date now,
     # rather than gating on a separate confirmation step.
     mark_delay_signal(appointment, message)
-    _store_delay_followup_date(appointment, iso_date)
+    _store_delay_followup_date(appointment, iso_date, source_message=message)
 
     # Email already on file → confirm the date. Skip the quote email if we already
     # sent the portfolio earlier in this delay flow (avoids a duplicate send).
@@ -2199,7 +2495,7 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
         return _handle_delay_timeframe_answer(message, {}, appointment)
 
     # Store follow-up date — in notes AND in delay_followup_due_at so the cron fires correctly
-    _store_delay_followup_date(appointment, iso_date)
+    _store_delay_followup_date(appointment, iso_date, source_message=message)
 
     # If email already captured, skip Step 4
     if getattr(appointment, 'customer_email', None):

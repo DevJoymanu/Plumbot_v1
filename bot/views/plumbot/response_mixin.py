@@ -674,16 +674,22 @@ class ResponseMixin:
             except Exception:
                 pass
 
-        def _park_timeline_lead(self, offered_date: str) -> None:
+        def _park_timeline_lead(self, offered_date: str, source_message=None) -> None:
             """Far-out lead: stop the active booking flow and schedule the follow-up
-            on the offered date (flag for follow-up), rather than chasing a slot now."""
+            on the offered date (flag for follow-up), rather than chasing a slot now.
+
+            `source_message` is the lead's own timeframe wording, so a time of day
+            in it ("Monday evening") sets the check-back time rather than 9am."""
             try:
                 self.appointment.mark_delayed(source_message='timeline pivot (>7 days out)')
             except Exception:
                 pass
             try:
                 from bot.out_of_scope_handler import _store_delay_followup_date
-                _store_delay_followup_date(self.appointment, (offered_date or '')[:10])
+                _store_delay_followup_date(
+                    self.appointment, (offered_date or '')[:10],
+                    source_message=source_message,
+                )
             except Exception:
                 pass
 
@@ -715,7 +721,7 @@ class ResponseMixin:
 
             # >7 days out — park, don't chase a specific date.
             if days_out is not None and days_out > 7:
-                self._park_timeline_lead(offered_date)
+                self._park_timeline_lead(offered_date, source_message=offered_timeframe)
                 when = self._friendly_visit_date(d)
                 if is_shona:
                     return (f"Hapana kumhanya — {when} ichiri kure, saka ndichazviisa "
@@ -2374,23 +2380,16 @@ class ResponseMixin:
                 # Acks ("ok", "sharp", 👍) → save silently, no reply.
                 # Substantive message → clear flag, fall through to normal processing.
                 if self._delay_signal_active():
-                    # When the appointment is already marked delayed, obvious acks
-                    # ("ok", "thanks", "👍", etc.) should always be suppressed without
-                    # a DeepSeek call. is_delayed=True is all the context we need.
-                    _obvious_acks = {
-                        'ok', 'okay', 'k', 'kk', 'oky', 'oh ok', 'oh okay', 'ooh ok',
-                        'ooh okay', 'sharp', 'shap', 'sho', 'cool', 'nice', 'noted',
-                        'got it', 'alright', 'great', 'good', 'fine', 'sure', 'yes',
-                        'yep', 'yeah', 'yup', 'no', 'nope', 'nah', 'ok thanks',
-                        'ok thank you', 'thanks', 'thank you', 'thank u', 'thx', 'thnx',
-                        'understood', 'i see', 'ah ok', 'ah okay', 'oh ok thanks',
-                        'oh okay thanks', 'ok cool', 'ok bye', 'okay bye', 'bye',
-                        'no worries', '👍', '🙏', '✅', '😊', 'bo', 'bho',
-                        'hongu', 'zvakanaka', 'maita basa', 'ndatenda',
-                    }
-                    if (incoming_message or '').strip().lower() in _obvious_acks:
+                    # Re-pitch, or acknowledge and stay silent? DeepSeek decides
+                    # the ambiguous turns; the obvious ones are settled before it
+                    # is asked, so an ack costs no call and a real inquiry can
+                    # never be silenced. A batched ack ("Alright" + "Thank you"
+                    # arriving as one turn) reads as the ack it is — whole-string
+                    # set membership here missed that and restarted the flow.
+                    from bot.out_of_scope_handler import should_hold_silently
+                    if should_hold_silently(incoming_message, self.appointment):
                         self.appointment.add_conversation_message("user", incoming_message)
-                        print(f"🔇 Delay active — ack suppressed without DeepSeek: '{incoming_message[:60]}'")
+                        print(f"🔇 Delay active — no reply needed: '{incoming_message[:60]}'")
                         return None
                     if self._is_delay_or_exit_signal(incoming_message):
                         self.appointment.add_conversation_message("user", incoming_message)

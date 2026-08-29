@@ -2693,20 +2693,14 @@ def handle_text_message(sender, text_data, message_id=None, quoted_id=None, refe
             # A customer typing "ok" after the bot's farewell is acknowledging the
             # delay confirmation — treating it as re-engagement asks the next
             # qualification question (e.g. "What suburb are you in?").
-            _DELAY_ACKS = {
-                'ok', 'okay', 'k', 'kk', 'oky', 'oh ok', 'oh okay',
-                'sharp', 'shap', 'sho', 'cool', 'nice', 'noted',
-                'got it', 'alright', 'great', 'good', 'fine', 'sure', 'yes',
-                'yep', 'yeah', 'yup', 'ok thanks', 'ok thank you',
-                'thanks', 'thank you', 'thank u', 'thx', 'thnx',
-                'understood', 'i see', 'ah ok', 'ah okay', 'ok cool',
-                'ok bye', 'okay bye', 'bye', 'no worries',
-                '👍', '🙏', '✅', '😊', 'bo', 'bho',
-                'hongu', 'zvakanaka', 'maita basa', 'ndatenda',
-            }
-            _msg_norm = (message_body or '').strip().lower()
-            if appointment.is_delayed and _msg_norm in _DELAY_ACKS:
-                # Ack while delayed — keep the pause, save silently, no reply.
+            # Same resolver the reply gate uses, so the hold is never cleared
+            # here on a turn that gate would have answered with silence.
+            from .out_of_scope_handler import should_hold_silently
+            _is_ack = (appointment.is_delayed
+                       and should_hold_silently(message_body, appointment))
+            if _is_ack:
+                # Ack while delayed — keep the pause. The turn still goes to
+                # the batch; the reply gate is what suppresses the reply.
                 print(f"🔇 Delay active — ack ignored at arrival: '{message_body[:60]}'")
             else:
                 # Customer re-engaged with a substantive message — clear the pause.

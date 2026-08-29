@@ -364,6 +364,163 @@ for msg, expected in DELAY_BREAKOUT_CASES:
     except Exception as e:
         results.log(f"_delay_breakout_inquiry: '{msg[:30]}'", False, got=str(e))
 
+# A bare ack while a delay hold is on must keep the hold — including a BATCH of
+# acks, which is how they usually arrive once the debounce joins separate taps
+# into one turn. Both gates used exact whole-string set membership, so "Alright"
+# + "Thank you" (each suppressed alone) combined into a turn matching neither,
+# cleared the hold, and re-pitched the site visit to a lead who had already said
+# they'd come back to us (prod, +263717781175, 2026-08-29).
+from bot.out_of_scope_handler import _is_bare_acknowledgement
+_NL = chr(10)
+# (message, expected: is this turn nothing but acknowledgement?)
+BARE_ACK_CASES = [
+    ("Alright" + _NL + "Thank you", True),   # the bug
+    ("Alright",                     True),
+    ("Thank you",                   True),
+    ("ok thanks",                   True),
+    ("Ok. Thanks!",                 True),
+    ("Sure, thank you",             True),
+    ("Noted. Thanks a lot!",        True),
+    ("thanks \U0001f44d",           True),
+    ("\U0001f44d",                  True),
+    ("maita basa",                  True),   # Shona
+    ("Zvakanaka" + _NL + "Ndatenda", True),  # batched Shona
+    # Must NOT be swallowed — the customer's own words outrank the hold.
+    ("ok, how much for a geyser?",  False),
+    ("thanks, when can you come?",  False),
+    ("Alright" + _NL + "I want to book Monday", False),
+    ("Sorry, we'll speak Monday evening",      False),
+    ("respnachinodakufa@gmail.com", False),   # email capture, not an ack
+    ("Dzivarasekwa extension",      False),   # an area answer
+    ("yes please come tomorrow",    False),
+    ("",                            False),
+    ("   ",                         False),
+]
+for msg, expected in BARE_ACK_CASES:
+    try:
+        got = _is_bare_acknowledgement(msg)
+        results.log(
+            f"_is_bare_acknowledgement: '{msg[:30]}'",
+            got == expected,
+            f"ack={got}",
+            expected=f"ack={expected}",
+            got=f"ack={got}",
+        )
+    except Exception as e:
+        results.log(f"_is_bare_acknowledgement: '{msg[:30]}'", False, got=str(e))
+
+# should_hold_silently decides re-pitch vs stay-silent while a hold is on.
+# DeepSeek makes the call on ambiguous turns, but it is WIDEN-ONLY: both failure
+# directions are expensive here (re-pitching a parked lead drove one away; going
+# silent on a lead who came back ready is worse), so per the symmetry rule the
+# classifier may not overturn either deterministic verdict.
+from bot.out_of_scope_handler import should_hold_silently
+# (message, expected: should we stay SILENT and keep the hold?)
+HOLD_SILENTLY_CASES = [
+    # 1. Deterministic ack — silent, and the classifier is never consulted.
+    ("Alright" + _NL + "Thank you", True),   # the production bug
+    ("ok thanks",                   True),
+    ("maita basa",                  True),
+    # 2. A real inquiry always gets a reply — no classifier verdict may silence it.
+    ("how much for a geyser?",      False),
+    ("This one how much",           False),
+    ("I want to book",              False),
+    ("can you come tomorrow",       False),
+    ("freestanding tub price",      False),
+    # 3. The ambiguous middle — DeepSeek widens silence to what no list enumerates.
+    ("Cool, that works for now",    True),
+    ("Perfect, appreciate the help", True),
+    ("No problem, I'll shout when I'm ready", True),
+    # ...but still answers anything carrying real content.
+    ("actually make it Tuesday",    False),
+    ("my geyser is leaking now",    False),
+]
+for msg, expected in HOLD_SILENTLY_CASES:
+    try:
+        got = should_hold_silently(msg)
+        results.log(
+            f"should_hold_silently: '{msg[:30]}'",
+            got == expected,
+            f"silent={got}",
+            expected=f"silent={expected}",
+            got=f"silent={got}",
+        )
+    except Exception as e:
+        results.log(f"should_hold_silently: '{msg[:30]}'", False, got=str(e))
+
+# With DeepSeek down the gate must still hold the two deterministic rules — the
+# ambiguous middle simply falls back to "reply", which is the pre-AI behaviour.
+import bot.out_of_scope_handler as _oos_hold
+import bot.services.clients as _clients_hold
+_saved_call = _clients_hold.deepseek_call
+try:
+    def _call_down(*_a, **_kw):
+        raise RuntimeError("DeepSeek unavailable")
+    _clients_hold.deepseek_call = _call_down
+    OFFLINE_HOLD_CASES = [
+        ("Alright" + _NL + "Thank you", True),    # rule 1 still holds
+        ("how much for a geyser?",      False),   # rule 2 still holds
+        ("Cool, that works for now",    False),   # middle degrades to a reply
+    ]
+    for msg, expected in OFFLINE_HOLD_CASES:
+        got = _oos_hold.should_hold_silently(msg)
+        results.log(
+            f"should_hold_silently (API down): '{msg[:30]}'",
+            got == expected,
+            f"silent={got}",
+            expected=f"silent={expected}",
+            got=f"silent={got}",
+        )
+finally:
+    _clients_hold.deepseek_call = _saved_call
+
+# The date resolver answers WHICH DAY; _extract_followup_time answers WHAT TIME,
+# so a lead who said "Monday evening" is not checked back on at 9am. Bare numbers
+# must never read as times — "the 21st" and "in 2 weeks" are dates.
+from bot.out_of_scope_handler import _extract_followup_time
+FOLLOWUP_TIME_CASES = [
+    # the production wording (+263717781175)
+    ("Let me update you end of day on Monday",   (17, 0)),
+    ("Sorry, we'll speak Monday evening",        (18, 0)),
+    # explicit clocks
+    ("call me at 9pm",                           (21, 0)),
+    ("9 pm works",                               (21, 0)),
+    ("9:30pm",                                   (21, 30)),
+    ("try me at 9am",                            (9, 0)),
+    ("21:00 is fine",                            (21, 0)),
+    ("12am",                                     (6, 0)),   # clamped to civil hours
+    ("11pm",                                     (22, 0)),  # clamped
+    # dayparts, English and Shona
+    ("give me a call in the morning",            (9, 0)),
+    ("sometime in the afternoon",                (14, 0)),  # must beat 'noon'
+    ("around lunchtime",                         (12, 0)),
+    ("manheru",                                  (18, 0)),
+    ("mangwanani",                               (9, 0)),
+    ("after work",                               (17, 0)),
+    ("first thing Tuesday",                      (8, 0)),
+    ("tonight",                                  (19, 0)),
+    # an explicit clock outranks a daypart word in the same message
+    ("Monday evening, say 8pm",                  (20, 0)),
+    # no time named -> None, so the caller keeps its default
+    ("next week",                                None),
+    ("the 21st",                                 None),
+    ("in 2 weeks",                               None),
+    ("I'll get in touch",                        None),
+    ("",                                         None),
+]
+for msg, expected in FOLLOWUP_TIME_CASES:
+    try:
+        got = _extract_followup_time(msg)
+        results.log(
+            f"_extract_followup_time: '{msg[:30]}'",
+            got == expected,
+            f"time={got}",
+            expected=f"time={expected}",
+            got=f"time={got}",
+        )
+    except Exception as e:
+        results.log(f"_extract_followup_time: '{msg[:30]}'", False, got=str(e))
+
 # A demonstrative reply to a quoted portfolio photo ("this one?", "and this
 # one?") must be treated as a price ask on the quoted item — otherwise it has no
 # explicit price word, reads as a project description, and the price is skipped.

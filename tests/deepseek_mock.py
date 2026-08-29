@@ -63,6 +63,13 @@ _DEFER_HINTS = (
     'text you', 'revert', 'be in touch', 'will advise', 'ndichaku',
     'ndinokutaurira',
 )
+# Purely social wording — used by the "does this need a reply?" gate below for
+# the turns the deterministic ack list can't enumerate.
+_SOCIAL_ACK_HINTS = (
+    'appreciate', 'no problem', 'that works', 'works for now', 'speak then',
+    'speak on', 'shout when', 'cheers', 'all good', 'will do', 'noted',
+    'much obliged', 'you too', 'have a good',
+)
 
 
 def _last_user(messages):
@@ -100,6 +107,13 @@ def _respond(messages, json_response):
     if 'next contact' in user_l:
         tail = user_l.split('message:')[-1]
         return 'yes' if any(h in tail for h in _DEFER_HINTS) else 'no'
+
+    # ── "Needs no reply?" gate (should_hold_silently's ambiguous middle). Only
+    # the tail after the 'Message:' marker is scanned so the in-prompt examples
+    # don't leak into the keyword check.
+    if 'acknowledgement or a sign-off' in user_l:
+        tail = user_l.split('message:')[-1]
+        return 'yes' if any(h in tail for h in _SOCIAL_ACK_HINTS) else 'no'
 
     # ── Yes/No style gates (photo request, standalone-question, exit intent…)
     if re.search(r'reply\s+(only\s+)?(with\s+)?(yes|no)', system) or \

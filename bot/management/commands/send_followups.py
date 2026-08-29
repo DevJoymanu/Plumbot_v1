@@ -662,6 +662,26 @@ class Command(BaseCommand):
 
     # ─── Delayed lead re-engagement ──────────────────────────────────────────
 
+    def _delay_wa_allowed(self, lead):
+        """(allowed, reason) for a WhatsApp check-back to a delayed lead.
+
+        The reactivation path used to fire WhatsApp blind, unlike every other
+        send in this command. Outside the free-form window that bounces 131047,
+        and the first bounce flags the lead's window closed — so a check-back
+        the customer agreed to could burn the lead's window and still not
+        arrive. When the agreed moment lands INSIDE the free window (the common
+        case for a check-back a day or two out) WhatsApp is the right channel
+        and costs nothing; outside it, the email touch carries the follow-up.
+        """
+        if not lead.messaging_window_open:
+            return False, 'free-form window closed'
+        # Permission is not price. A check-back is optional by definition, so it
+        # waits for a free window rather than buying one (owner rule: keep
+        # everything about Meta messaging free).
+        if not paid_sends_allowed() and not lead.messaging_is_free:
+            return False, f'would be billable ({lead.messaging_cost_reason})'
+        return True, 'free window open'
+
     def _process_delayed_reactivations(self, now_local, dry_run):
         """
         Finds delayed leads whose follow-up date has arrived and contacts them.
@@ -800,14 +820,22 @@ class Command(BaseCommand):
                 if is_access_checkin or is_pdf_checkin:
                     # ── Near-term check-in: single WhatsApp shot ────────────
                     kind = 'portfolio' if is_pdf_checkin else 'access'
-                    try:
-                        get_client_for_tenant(lead.tenant).send_text_message(clean, message)
-                        wa_ok = True
-                    except Exception as wa_exc:
-                        logger.warning(
-                            '%s check-in WhatsApp failed for lead %s: %s',
-                            kind, lead.id, wa_exc,
-                        )
+                    wa_allowed, wa_reason = self._delay_wa_allowed(lead)
+                    if not wa_allowed:
+                        # No email leg on this path, so hold the lead and retry
+                        # rather than bouncing 131047 — the first bounce flags
+                        # the window closed and would block the retry too.
+                        logger.info('%s check-in held for lead %s: %s',
+                                    kind, lead.id, wa_reason)
+                    else:
+                        try:
+                            get_client_for_tenant(lead.tenant).send_text_message(clean, message)
+                            wa_ok = True
+                        except Exception as wa_exc:
+                            logger.warning(
+                                '%s check-in WhatsApp failed for lead %s: %s',
+                                kind, lead.id, wa_exc,
+                            )
                     if wa_ok:
                         notes = lead.internal_notes or ''
                         notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes)
@@ -842,19 +870,29 @@ class Command(BaseCommand):
                             lead.id, email_exc,
                         )
                 else:
-                    # ── Touch 1: WhatsApp + (optional) email ────────────────
-                    try:
-                        get_client_for_tenant(lead.tenant).send_text_message(clean, message)
-                        wa_ok = True
-                    except Exception as wa_exc:
-                        logger.warning(
-                            'Delay reactivation WhatsApp failed for lead %s: %s',
-                            lead.id, wa_exc,
+                    # ── Touch 1: WhatsApp (when it will reach them free) + email
+                    wa_allowed, wa_reason = self._delay_wa_allowed(lead)
+                    if wa_allowed:
+                        try:
+                            get_client_for_tenant(lead.tenant).send_text_message(clean, message)
+                            wa_ok = True
+                        except Exception as wa_exc:
+                            logger.warning(
+                                'Delay reactivation WhatsApp failed for lead %s: %s',
+                                lead.id, wa_exc,
+                            )
+                            self.stdout.write(
+                                self.style.WARNING(
+                                    f'  ⚠️  WhatsApp failed for lead {lead.id} — trying email fallback'
+                                )
+                            )
+                    else:
+                        logger.info(
+                            'Delay reactivation WhatsApp skipped for lead %s: %s',
+                            lead.id, wa_reason,
                         )
                         self.stdout.write(
-                            self.style.WARNING(
-                                f'  ⚠️  WhatsApp failed for lead {lead.id} — trying email fallback'
-                            )
+                            f'  ↩️  WhatsApp skipped for lead {lead.id} ({wa_reason}) — email only'
                         )
 
                     if has_email:
