@@ -12,7 +12,7 @@ from bot.models import Appointment
 from bot.plumber_notifications import send_email_to_recipients
 from bot.utils import business_name_for
 from bot.whatsapp_cloud_api import get_client_for_tenant
-from bot.whatsapp_window import is_window_open
+from bot.whatsapp_window import is_window_open, may_send_proactively
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +209,7 @@ Plumber: {plumber_name}
             subject = subjects.get(reminder_type, 'Job reminder')
 
             if dry_run:
-                if is_window_open(job):
+                if may_send_proactively(job):
                     where = f"[WhatsApp] {job.phone_number}"
                 elif job.customer_email:
                     where = f"[email] {job.customer_email}"
@@ -230,7 +230,7 @@ Plumber: {plumber_name}
             # message to reach someone outside the window. Reminders are never
             # worth per-message spend; if there's no open window and no email on
             # file, the reminder is skipped.
-            if is_window_open(job):
+            if may_send_proactively(job):
                 sent = self._send_whatsapp(job, message)
                 if sent:
                     self.stdout.write(f"  {reminder_type} reminder [WhatsApp] -> {job.phone_number}")

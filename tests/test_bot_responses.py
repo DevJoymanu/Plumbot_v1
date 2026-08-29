@@ -3665,6 +3665,154 @@ try:
 except Exception as e:
     results.log("a contact request clears the delay hold", False, got=str(e))
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Nothing about Meta messaging may cost money (owner rule, 2026-08-29: the
+# business runs on click-to-WhatsApp ads and intends to keep doing so past the
+# service-message charge date).
+#
+# The bug this guards: messaging_window_open takes max(24h CSW, 72h FEP) and
+# answers "may we send". Nobody answered "what does it cost". Those are two
+# different Meta windows — the free entry point governs PRICE, the customer
+# service window governs PERMISSION — so an ad lead who taps on Monday and
+# writes back on Friday is permitted but billable. Proactive sends now wait for
+# a free window instead of buying one.
+from datetime import date as _d_free, timedelta as _td_free
+from unittest.mock import patch as _mp_free
+from django.utils import timezone as _tz_free
+from bot.models import Appointment as _Apt_free
+from bot.whatsapp_window import (
+    may_send_proactively as _msp, paid_sends_allowed as _psa,
+)
+
+_NOW_FREE = _tz_free.now()
+_CHARGE_OFF = _d_free(2099, 1, 1)   # service messages still free
+_CHARGE_ON = _d_free(2000, 1, 1)    # service messages chargeable
+
+
+def _free_lead(ctwa_hours_ago=None, inbound_hours_ago=None, notes=''):
+    lead = _Apt_free(phone_number='whatsapp:+263700000000')
+    lead.ctwa_entry_at = (_NOW_FREE - _td_free(hours=ctwa_hours_ago)
+                          if ctwa_hours_ago is not None else None)
+    lead.last_inbound_at = (_NOW_FREE - _td_free(hours=inbound_hours_ago)
+                            if inbound_hours_ago is not None else None)
+    lead.internal_notes = notes
+    return lead
+
+
+# (label, ctwa hours ago, inbound hours ago, charge date, window open?, free?)
+COST_MATRIX = [
+    # Today: every open window is free, so nothing changes for anyone.
+    ("ad lead inside its 72h window",   10, 1, _CHARGE_OFF, True, True),
+    ("ad lead past 72h, wrote 1h ago", 100, 1, _CHARGE_OFF, True, True),
+    ("organic lead, wrote 1h ago",    None, 1, _CHARGE_OFF, True, True),
+    ("organic lead, window shut",     None, 30, _CHARGE_OFF, False, False),
+    # After the charge starts: only the ad free entry point is still free.
+    ("ad lead inside its 72h window",   10, 1, _CHARGE_ON, True, True),
+    ("ad lead past 72h, wrote 1h ago", 100, 1, _CHARGE_ON, True, False),
+    ("organic lead, wrote 1h ago",    None, 1, _CHARGE_ON, True, False),
+    ("organic lead, window shut",     None, 30, _CHARGE_ON, False, False),
+]
+for _label, _ctwa, _inb, _charge, _open, _free in COST_MATRIX:
+    try:
+        _lead = _free_lead(_ctwa, _inb)
+        _when = 'charged' if _charge == _CHARGE_ON else 'free era'
+        with _mp_free.object(_Apt_free, '_service_charge_date',
+                             classmethod(lambda cls, _c=_charge: _c)):
+            _got_open, _got_free = _lead.messaging_window_open, _lead.messaging_is_free
+        results.log(
+            f"messaging cost [{_when}]: {_label}",
+            _got_open == _open and _got_free == _free,
+            expected=f"open={_open} free={_free}",
+            got=f"open={_got_open} free={_got_free}",
+        )
+    except Exception as e:
+        results.log(f"messaging cost: {_label}", False, got=str(e))
+
+# A closed window is never "free" — the only way through would be a paid
+# template, and we never send one.
+try:
+    _shut = _free_lead(None, 30, notes=_Apt_free.FREEFORM_CLOSED_TAG)
+    with _mp_free.object(_Apt_free, '_service_charge_date',
+                         classmethod(lambda cls: _CHARGE_OFF)):
+        results.log(
+            "a closed window is never counted as free",
+            _shut.messaging_is_free is False
+            and _shut.messaging_cost_reason == 'window_closed',
+            expected="free=False, reason=window_closed",
+            got=f"free={_shut.messaging_is_free} reason={_shut.messaging_cost_reason}",
+        )
+except Exception as e:
+    results.log("a closed window is never counted as free", False, got=str(e))
+
+# The proactive gate: allowed AND free, unless paid sends are switched on.
+try:
+    _billable = _free_lead(100, 1)
+    with _mp_free.object(_Apt_free, '_service_charge_date',
+                         classmethod(lambda cls: _CHARGE_ON)):
+        _blocked = _msp(_billable)
+        from django.test import override_settings
+        with override_settings(WHATSAPP_ALLOW_PAID_SENDS=True):
+            _allowed = _msp(_billable)
+    results.log(
+        "proactive sends stop at billable, unless paid sends are enabled",
+        _blocked is False and _allowed is True,
+        expected="blocked by default, allowed with the setting on",
+        got=f"default={_blocked} with_setting={_allowed}",
+    )
+except Exception as e:
+    results.log("proactive sends stop at billable, unless paid sends are enabled",
+                False, got=str(e))
+
+# Default policy is FREE-ONLY: the setting must default off, or the guard is
+# decorative.
+try:
+    results.log(
+        "paid sends are off by default",
+        _psa() is False,
+        expected="False without the setting",
+        got=str(_psa()),
+    )
+except Exception as e:
+    results.log("paid sends are off by default", False, got=str(e))
+
+# Non-Appointment objects have no cost model and must behave exactly as before,
+# or the reminder commands would silently stop sending for unrelated objects.
+try:
+    class _NoCostModel:
+        messaging_window_closes_at = None
+        last_inbound_at = _NOW_FREE - _td_free(hours=1)
+    results.log(
+        "objects with no cost model fall back to the permission check",
+        _msp(_NoCostModel()) is True,
+        expected="True (unchanged behaviour)",
+        got=str(_msp(_NoCostModel())),
+    )
+except Exception as e:
+    results.log("objects with no cost model fall back to the permission check",
+                False, got=str(e))
+
+# Every PROACTIVE path must consult the gate. A new follow-up or reminder path
+# that forgets it would quietly start spending.
+try:
+    import inspect as _insp_free
+    from bot.management.commands import send_followups as _fu_free
+    from bot.management.commands import send_reminders as _rem_free
+    from bot.management.commands import send_job_reminders as _job_free
+    _paths = {
+        'send_followups': _insp_free.getsource(_fu_free),
+        'send_reminders': _insp_free.getsource(_rem_free),
+        'send_job_reminders': _insp_free.getsource(_job_free),
+    }
+    for _name, _src in _paths.items():
+        results.log(
+            f"{_name} gates its sends on cost, not just permission",
+            'messaging_is_free' in _src or 'may_send_proactively' in _src,
+            expected="uses the free-window gate",
+            got="MISSING" if 'free' not in _src else "present",
+        )
+except Exception as e:
+    results.log("proactive paths gate on cost", False, got=str(e))
+
 # CTWA (Facebook/Instagram click-to-WhatsApp ad) follow-up cadence. An ad tap
 # opens a 72h free-form window instead of 24h, so ad leads get SIX touches on
 # absolute offsets from their last response — 4h, 8h, 20h (day 1), 32h, 48h

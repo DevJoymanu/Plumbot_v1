@@ -36,6 +36,46 @@ WINDOW: timedelta = timedelta(hours=24)
 SAFETY_BUFFER_SECONDS: int = 300  # 5 minutes
 
 
+def may_send_proactively(appointment) -> bool:
+    """The one gate for a bot-INITIATED send: is it allowed, and is it free?
+
+    Use this for follow-ups, nudges and reminders — anything WE decide to send.
+    Do NOT use it to gate a reply to a customer who just wrote in: answering is
+    the product, and suppressing an answer to save a fraction of a cent would
+    cost the job it was trying to protect.
+
+    Non-Appointment objects have no cost model, so they fall back to the
+    permission check alone and behave exactly as before.
+    """
+    if not is_window_open(appointment):
+        return False
+    if paid_sends_allowed():
+        return True
+    return bool(getattr(appointment, 'messaging_is_free', True))
+
+
+def paid_sends_allowed() -> bool:
+    """Whether a send Meta would CHARGE for may go out at all.
+
+    Default False. The owner's rule (2026-08-29) is that nothing about Meta
+    messaging costs money: the business runs on click-to-WhatsApp ads, whose
+    free entry point covers 72h of every ad conversation, and no paid template
+    has ever been sent. Once service messages become chargeable, a PROACTIVE
+    send to a lead outside that free window is a purchase, so it waits for a
+    free window instead of buying one.
+
+    Set WHATSAPP_ALLOW_PAID_SENDS=true to let high-value proactive sends
+    through — an appointment reminder is worth more than a fraction of a cent,
+    and it is the one send where skipping can cost a booked job.
+
+    This never gates a REPLY to a customer who just wrote in: answering is the
+    product, and Appointment.messaging_is_free is there to make that cost
+    visible, not to suppress it.
+    """
+    from django.conf import settings
+    return bool(getattr(settings, 'WHATSAPP_ALLOW_PAID_SENDS', False))
+
+
 class WindowClosedError(Exception):
     """Raised when an outbound message would fall outside the 24-hour window."""
 

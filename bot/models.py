@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
-from datetime import timedelta, datetime, time as dt_time
+from datetime import timedelta, datetime, date as dt_date, time as dt_time
 import pytz
 import json
 import re
@@ -1898,6 +1898,8 @@ class Appointment(models.Model):
     def messaging_window_open(self):
         """True while free-form replies (no template) are still allowed.
 
+        PERMISSION, not price — see messaging_is_free for what a send costs.
+
         Meta is authoritative: a prior 131047 (recorded via the closed flag)
         overrides our computed window — our 72h CTWA window is only a local
         assumption and Meta may grant just the standard 24h."""
@@ -1905,6 +1907,66 @@ class Appointment(models.Model):
             return False
         closes = self.messaging_window_closes_at
         return bool(closes and closes > timezone.now())
+
+    # ----- Cost: which sends are FREE, as opposed to merely allowed ----------
+    # Two different Meta windows are being conflated by messaging_window_open,
+    # which takes the max() of both:
+    #   free entry point (FEP) — 72h from the click-to-WhatsApp ad tap. Governs
+    #       PRICE. Everything inside it is free, both directions.
+    #   customer service window (CSW) — 24h from the customer's last message.
+    #       Governs PERMISSION to send free-form. Service messages inside it are
+    #       free today, and become chargeable on the date below.
+    # Taking the max is right for "may we send" and wrong for "what will this
+    # cost": a lead who taps the ad on Monday and writes back on Friday has a
+    # CSW open and no FEP, so replying is permitted but paid.
+    #
+    # The date is settings-overridable (WHATSAPP_SERVICE_MESSAGE_CHARGE_DATE) so
+    # it can move when Meta moves it, without a code change.
+    SERVICE_MESSAGE_CHARGE_DATE = dt_date(2026, 10, 1)
+
+    @classmethod
+    def _service_charge_date(cls):
+        from django.conf import settings
+        return getattr(settings, 'WHATSAPP_SERVICE_MESSAGE_CHARGE_DATE',
+                       cls.SERVICE_MESSAGE_CHARGE_DATE)
+
+    @property
+    def free_messaging_window_closes_at(self):
+        """When FREE sending ends — not when sending stops being allowed.
+
+        Inside the CTWA free entry point it is that window's end. Otherwise it
+        is the permission window's end while service messages are still free,
+        and None once they are chargeable (nothing is free then).
+        """
+        fep = self.ctwa_window_expires_at
+        if fep and fep > timezone.now():
+            return fep
+        if timezone.now().date() < self._service_charge_date():
+            return self.messaging_window_closes_at
+        return None
+
+    @property
+    def messaging_is_free(self):
+        """True when sending to this lead RIGHT NOW costs nothing.
+
+        A closed window is never free — the send would bounce 131047 and the
+        only way through would be a paid template, which we never send.
+        """
+        if not self.messaging_window_open:
+            return False
+        closes = self.free_messaging_window_closes_at
+        return bool(closes and closes > timezone.now())
+
+    @property
+    def messaging_cost_reason(self):
+        """Why a send costs (or does not) — for logs and the dashboard."""
+        if not self.messaging_window_open:
+            return 'window_closed'
+        if self.ctwa_window_open:
+            return 'free_entry_point'
+        if timezone.now().date() < self._service_charge_date():
+            return 'service_message_free_until_charge_date'
+        return 'billable_service_message' 
 
     def recalculate_lead_scoring(self, persist=True):
         """Recalculate lead score and status from collected qualification fields."""

@@ -43,7 +43,7 @@ from bot.plumber_notifications import (
     send_email_to_recipients,
 )
 from bot.customer_emails import send_customer_reminder_email
-from bot.whatsapp_window import is_window_open
+from bot.whatsapp_window import is_window_open, may_send_proactively
 
 logger = logging.getLogger(__name__)
 
@@ -638,7 +638,7 @@ class Command(BaseCommand):
             name      = apt.customer_name or "Customer"
             apt_label = f"{name} (+{phone})  |  {apt_local.strftime('%Y-%m-%d %H:%M')}"
 
-            window_open = is_window_open(apt)
+            window_open = may_send_proactively(apt)
             has_email   = bool(getattr(apt, "customer_email", None))
 
             # Fixed-time reminders
@@ -774,7 +774,7 @@ class Command(BaseCommand):
                 _WA_FOLLOWUP_NAMED.format(name=name)
                 if has_name else _WA_FOLLOWUP_ANON
             )
-            window = is_window_open(apt)
+            window = may_send_proactively(apt)
 
             if window:
                 ok = _send_wa(phone, wa_msg, dry_run=dry_run)

@@ -32,6 +32,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 from bot.models import Appointment, LeadStatus
+from bot.whatsapp_window import paid_sends_allowed
 from bot.utils import business_name_for
 from bot.whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
 import os
@@ -376,6 +377,9 @@ class Command(BaseCommand):
                 # flags the lead's window closed for every other send path.
                 if not lead.messaging_window_open:
                     continue
+                # Nor one Meta would charge for — a nudge is optional.
+                if not paid_sends_allowed() and not lead.messaging_is_free:
+                    continue
 
                 # Absolute offset into the messaging window, measured from the
                 # lead's last message — never from the previous nudge, so a
@@ -576,6 +580,9 @@ class Command(BaseCommand):
                 # flags the lead's window closed, which would block every other
                 # send path too. Never attempt one.
                 if not lead.messaging_window_open:
+                    continue
+                # Nor one Meta would charge for — a nudge is optional.
+                if not paid_sends_allowed() and not lead.messaging_is_free:
                     continue
 
                 # The customer replied after our last nudge → they re-engaged;
@@ -1036,6 +1043,17 @@ class Command(BaseCommand):
         if not force and not lead.messaging_window_open:
             logger.debug(f'Lead {lead.id} skipped: WhatsApp free-form window closed')
             return {'status': 'skipped', 'reason': 'window_closed'}
+
+        # ...and never a send Meta would CHARGE for. The window being open is
+        # permission, not price: once service messages are chargeable, a lead
+        # whose free entry point has expired is billable to nudge even though
+        # the send is allowed. A follow-up is optional by definition, so it
+        # waits for a free window rather than buying one (owner rule,
+        # 2026-08-29: keep everything about Meta messaging free).
+        if not force and not paid_sends_allowed() and not lead.messaging_is_free:
+            logger.info('Lead %s skipped: send would be billable (%s)',
+                        lead.id, lead.messaging_cost_reason)
+            return {'status': 'skipped', 'reason': 'would_be_billable'}
 
         max_followups = max_followups_for(lead)
         if lead.followup_count >= max_followups:
