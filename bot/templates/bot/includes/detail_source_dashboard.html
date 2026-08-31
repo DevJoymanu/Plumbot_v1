@@ -3,13 +3,9 @@
   <div class="appt-list-subtitle">{{ source_workspace.today|date:"l, j F" }}</div>
 </div>
 
-{# Date window — reloads the dashboard sidebar filtered by the lead's last response. #}
-<div class="appt-age-bar">
-  <span class="appt-age-label">Window:</span>
-  <a href="{% url 'appointment_detail' appointment.pk %}?source=dashboard&response_age=1w_minus" class="appt-age-pill {% if source_workspace.selected_response_age == '1w_minus' %}is-active{% endif %}">7 days</a>
-  <a href="{% url 'appointment_detail' appointment.pk %}?source=dashboard&response_age=4w_minus" class="appt-age-pill {% if source_workspace.selected_response_age == '4w_minus' %}is-active{% endif %}">30 days</a>
-  <a href="{% url 'appointment_detail' appointment.pk %}?source=dashboard&response_age=all" class="appt-age-pill {% if source_workspace.selected_response_age == 'all' %}is-active{% endif %}">All time</a>
-</div>
+{# No date-window pills here: this sidebar is a diary (today / tomorrow / rest of
+   the week), and the window filtered on last_customer_response — it could only
+   hide bookings whose customer had gone quiet, never surface anything. #}
 
 {% if source_workspace.hot_lead_count %}
 <a href="{% url 'priority_leads' %}" class="workspace-banner">
@@ -28,7 +24,7 @@
   </div>
   <div class="workspace-stat">
     <div class="workspace-stat-value">{{ source_workspace.week_jobs|length }}</div>
-    <div class="workspace-stat-label">Today's Jobs</div>
+    <div class="workspace-stat-label">Jobs This Week</div>
   </div>
   <div class="workspace-stat">
     <div class="workspace-stat-value">{{ source_workspace.hot_lead_count|default:0 }}</div>
@@ -39,7 +35,7 @@
     <div class="workspace-stat-label">Follow-ups Due</div>
   </div>
   <div class="workspace-stat">
-    <div class="workspace-stat-value">{{ source_workspace.this_week_appointments|length }}</div>
+    <div class="workspace-stat-value">{{ source_workspace.week_appointment_count }}</div>
     <div class="workspace-stat-label">This Week</div>
   </div>
 </div>

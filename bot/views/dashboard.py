@@ -83,8 +83,6 @@ def _due_followup_leads(now=None, tenant=None):
 
 
 def _dashboard_workspace_data(response_age='1w_minus', tenant=None):
-    from bot.models import Job
-
     # Use the date in the configured TIME_ZONE (Africa/Johannesburg), not the UTC
     # date — timezone.now().date() rolls over 2h early and shows "yesterday" at night.
     today = timezone.localdate()
@@ -93,17 +91,17 @@ def _dashboard_workspace_data(response_age='1w_minus', tenant=None):
     week_end = today + timedelta(days=(6 - today.weekday()))
     now = timezone.now()
 
-    age_map_minus = {
-        '1w_minus': timedelta(weeks=1),
-        '4w_minus': timedelta(weeks=4),
-    }
-
     # .real() everywhere in this module: 999-prefixed console/scenario test
     # lines never surface on client-facing pages (they live on /test-leads/).
+    #
+    # The response-age window is deliberately NOT applied to the schedule.
+    # It filters on last_customer_response, so a customer who booked more than
+    # a week ahead and then went quiet dropped straight off the diary — the
+    # visit was still happening, the plumber just couldn't see it. These lists
+    # are already date-scoped (today / tomorrow / rest of the week), which is
+    # their own window; layering recency on top only ever hides real bookings.
     appointments = Appointment.objects.for_tenant_or_seed(tenant).real()
-    if response_age != 'all' and response_age in age_map_minus:
-        cutoff = now - age_map_minus[response_age]
-        appointments = appointments.filter(last_customer_response__gte=cutoff)
+    booked = appointments.filter(status='confirmed')
 
     # Follow-ups: only leads a follow-up would ACTUALLY be sent to now — mirrors
     # the send_followups cron (eligibility + timing + open messaging window), so
@@ -112,13 +110,31 @@ def _dashboard_workspace_data(response_age='1w_minus', tenant=None):
     followups = due_followups[:3]
     followups_due_count = len(due_followups)
 
-    this_week_appointments = appointments.filter(
-        status__in=['confirmed', 'pending'],
+    # "Later this week" starts the day after tomorrow — today and tomorrow have
+    # their own sections above it. Confirmed only, like those two: this used to
+    # include 'pending' as well, so a lead with a proposed-but-unconfirmed slot
+    # showed up here and nowhere else, and the section count disagreed with the
+    # rest of the app (every other surface counts a booking as status=confirmed).
+    this_week_appointments = booked.filter(
         scheduled_datetime__date__range=(day_after_tomorrow, week_end),
     ).order_by('scheduled_datetime')
-    week_jobs = Job.objects.filter(
+    # The metric card's "This week" figure is the WHOLE week (today included),
+    # not the leftovers after today and tomorrow — showing "Today 1 / This week 0"
+    # was simply wrong.
+    week_appointment_count = booked.filter(
         scheduled_datetime__date__range=(today, week_end),
-    ).select_related('site_visit').order_by('scheduled_datetime')
+    ).count()
+
+    # Jobs live on the Appointment row itself (appointment_type='job_appointment'
+    # + job_scheduled_datetime — see Appointment.schedule_job_appointment, which
+    # keeps ONE row). The old bot.models.Job table is written by nothing in the
+    # app, so this panel read an empty table and showed 0 jobs forever, however
+    # many were booked. It was also unscoped, so any row it did find would have
+    # been every tenant's. Same source as the jobs board and send_job_reminders.
+    week_jobs = appointments.filter(
+        appointment_type='job_appointment',
+        job_scheduled_datetime__date__range=(today, week_end),
+    ).exclude(job_status='cancelled').order_by('job_scheduled_datetime')
     # Hot leads: priority (very-hot + hot) leads from the last week that haven't
     # booked yet. Shared with the nav badge + context processor via this helper,
     # so the dashboard, its sidebar, and the global badge always agree.
@@ -128,15 +144,14 @@ def _dashboard_workspace_data(response_age='1w_minus', tenant=None):
         'selected_response_age': response_age,
         'today': today,
         'hot_lead_count': hot_lead_count,
-        'todays_confirmed_appointments': appointments.filter(
-            status='confirmed',
+        'todays_confirmed_appointments': booked.filter(
             scheduled_datetime__date=today,
         ).order_by('scheduled_datetime'),
-        'tomorrows_confirmed_appointments': appointments.filter(
-            status='confirmed',
+        'tomorrows_confirmed_appointments': booked.filter(
             scheduled_datetime__date=tomorrow,
         ).order_by('scheduled_datetime'),
         'this_week_appointments': this_week_appointments,
+        'week_appointment_count': week_appointment_count,
         'week_jobs': week_jobs,
         'followups': followups,
         'followups_due_count': followups_due_count,

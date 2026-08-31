@@ -4755,3 +4755,92 @@ class DeferredImportTests(TestCase):
             'Import(s) naming something that no longer exists:\n  '
             + '\n  '.join(missing)
         )
+
+
+class DashboardScheduleTests(StaffClientTestCase):
+    """The dashboard is the plumber's diary, so what it shows has to be what is
+    actually in the diary. Three bugs pinned here:
+
+    1. The schedule was filtered on ``last_customer_response`` (default: 7
+       days), so a customer who booked further out than that and then went
+       quiet vanished from the dashboard while the visit was still on.
+    2. The "This week" figure counted only the days AFTER tomorrow, so one
+       visit today rendered as "Today's Appts 1 / This week: 0".
+    3. "Jobs This Week" read the ``bot.models.Job`` table, which nothing in the
+       app writes (jobs live on the Appointment row — appointment_type=
+       'job_appointment' + job_scheduled_datetime), so it showed 0 forever;
+       the query was also unscoped, i.e. every tenant's rows.
+    """
+
+    def _local_9am(self, days=0):
+        return timezone.localtime(timezone.now()).replace(
+            hour=9, minute=0, second=0, microsecond=0) + timedelta(days=days)
+
+    def _dashboard(self):
+        response = self.client.get(reverse('dashboard'))
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def test_booking_shows_even_when_the_lead_went_quiet(self):
+        lead = make_lead(
+            7101, customer_name='Quiet Booker', status='confirmed',
+            scheduled_datetime=self._local_9am(),
+            last_customer_response=timezone.now() - timedelta(days=30),
+        )
+        response = self._dashboard()
+        self.assertIn(lead, list(response.context['todays_confirmed_appointments']))
+        self.assertIn('Quiet Booker', response.content.decode())
+
+    def test_week_count_covers_the_whole_week_including_today(self):
+        today = timezone.localdate()
+        week_end = today + timedelta(days=(6 - today.weekday()))
+        make_lead(7102, customer_name='Today Visit', status='confirmed',
+                  scheduled_datetime=self._local_9am(),
+                  last_customer_response=timezone.now())
+        expected = 1
+        if week_end > today:
+            make_lead(7103, customer_name='Later Visit', status='confirmed',
+                      scheduled_datetime=self._local_9am((week_end - today).days),
+                      last_customer_response=timezone.now())
+            expected = 2
+        self.assertEqual(self._dashboard().context['week_appointment_count'], expected)
+
+    def test_unconfirmed_slot_is_not_counted_as_a_booking(self):
+        # Every other surface counts a booking as status='confirmed'; the week
+        # list used to also admit 'pending', so a proposed slot showed there
+        # and nowhere else.
+        make_lead(7104, customer_name='Proposed Only', status='pending',
+                  scheduled_datetime=self._local_9am(),
+                  last_customer_response=timezone.now())
+        response = self._dashboard()
+        self.assertEqual(list(response.context['todays_confirmed_appointments']), [])
+        self.assertEqual(response.context['week_appointment_count'], 0)
+
+    def test_jobs_this_week_reads_the_appointment_row(self):
+        job = make_lead(
+            7105, customer_name='Job Customer', customer_area='Madokero',
+            status='confirmed', appointment_type='job_appointment',
+            job_status='scheduled', job_scheduled_datetime=self._local_9am(),
+            scheduled_datetime=self._local_9am(-7),
+            last_customer_response=timezone.now() - timedelta(days=30),
+        )
+        response = self._dashboard()
+        self.assertIn(job, list(response.context['week_jobs']))
+        self.assertIn('Job Customer', response.content.decode())
+
+    def test_cancelled_job_is_not_on_the_week(self):
+        make_lead(7106, customer_name='Called Off', status='confirmed',
+                  appointment_type='job_appointment', job_status='cancelled',
+                  job_scheduled_datetime=self._local_9am(),
+                  last_customer_response=timezone.now())
+        self.assertEqual(list(self._dashboard().context['week_jobs']), [])
+
+    def test_jobs_are_tenant_scoped(self):
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme-jobs')
+        make_lead(7107, tenant=acme, customer_name='Acme Job', status='confirmed',
+                  appointment_type='job_appointment', job_status='scheduled',
+                  job_scheduled_datetime=self._local_9am(),
+                  last_customer_response=timezone.now())
+        response = self._dashboard()
+        self.assertEqual(list(response.context['week_jobs']), [])
+        self.assertNotIn('Acme Job', response.content.decode())

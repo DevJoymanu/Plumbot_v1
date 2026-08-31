@@ -484,10 +484,10 @@
             </div>
             <div class="pb-metric__mid">
                 <span class="pb-metric__num">{{ todays_confirmed_appointments|length }}</span>
-                <span class="pb-metric__note">This week: {{ this_week_appointments|length }}</span>
+                <span class="pb-metric__note">This week: {{ week_appointment_count }}</span>
             </div>
             <div class="pb-metric__bar">
-                {% widthratio todays_confirmed_appointments|length this_week_appointments|length|default:1 100 as week_share %}
+                {% widthratio todays_confirmed_appointments|length week_appointment_count|default:1 100 as week_share %}
                 <div style="width: {{ week_share|default:0 }}%"></div>
             </div>
         </a>
@@ -650,18 +650,20 @@
                         <i class="fas fa-chevron-down pb-chevron"></i>
                     </button>
                     <div id="sched-jobs" class="pb-schedule__body collapsed">
+                        {# A job IS the lead's own row (appointment_type='job_appointment'),
+                           so its fields and its link come off the appointment directly. #}
                         {% for job in week_jobs %}
-                        <a href="{% url 'appointment_detail' job.site_visit.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
+                        <a href="{% url 'appointment_detail' job.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
                             <div class="pb-time-block pb-tb--job">
-                                {{ job.scheduled_datetime|date:"D j"|default:"--" }}<small>{{ job.scheduled_datetime|date:"H:i" }}</small>
+                                {{ job.job_scheduled_datetime|date:"D j"|default:"--" }}<small>{{ job.job_scheduled_datetime|date:"H:i" }}</small>
                             </div>
                             <div class="pb-sched-center">
-                                <div class="pb-sched-name">{{ job.site_visit.customer_name|default:job.site_visit.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-                                <div class="pb-sched-sub">{{ job.site_visit.get_project_type_display|default:job.site_visit.project_type|default:"Job" }} · {{ job.site_visit.customer_area|default:"No area" }}</div>
+                                <div class="pb-sched-name">{{ job.customer_name|default:job.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
+                                <div class="pb-sched-sub">{{ job.get_project_type_display|default:job.project_type|default:"Job" }} · {{ job.customer_area|default:"No area" }}</div>
                             </div>
                             <div class="pb-sched-right">
                                 <div class="pb-heat-dot pb-heat--very_hot"></div>
-                                <span class="pb-status-pill pb-pill--job">Job</span>
+                                <span class="pb-status-pill pb-pill--job">{{ job.get_job_status_display|default:"Job" }}</span>
                             </div>
                         </a>
                         {% empty %}
