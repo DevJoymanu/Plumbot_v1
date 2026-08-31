@@ -4691,3 +4691,67 @@ class ReschedulePipelineTests(TestCase):
         self.assertNotIn('moved you to', reply)
         self.assertIn('day and time', reply)
         notify.assert_not_called()
+
+
+class DeferredImportTests(TestCase):
+    """
+    Every ``from bot.<module> import <name>`` in the app must resolve.
+
+    Most of these live INSIDE a function body — deferred on purpose, to dodge
+    circular imports — so a name the module no longer exports raises nothing at
+    boot and nothing in a normal request. It only detonates the first time that
+    branch is actually reached, which for a cron branch can be days later:
+    ``send_reminders`` crashed in production on 2026-08-31 with
+    ``ImportError: cannot import name '_WA_NUMBER' from 'bot.customer_emails'``
+    — the multi-tenancy refactor had replaced that module constant with the
+    per-lead ``_wa_number(apt)`` helper months earlier, but the delayed-lead
+    EMAIL branch (only reached when the WhatsApp window is shut AND the lead
+    has an email on file) still imported the old name, so the whole reminder
+    dispatcher died mid-run.
+
+    Static review does not see these; this test does.
+    """
+
+    def _bot_modules(self):
+        import ast
+        bot_dir = os.path.dirname(os.path.abspath(__file__))
+        for root, dirs, files in os.walk(bot_dir):
+            dirs[:] = [d for d in dirs if d not in ('__pycache__', 'migrations')]
+            for fname in sorted(files):
+                if not fname.endswith('.py'):
+                    continue
+                path = os.path.join(root, fname)
+                with open(path, encoding='utf-8-sig') as fh:
+                    yield path, ast.parse(fh.read())
+
+    def test_every_deferred_import_name_still_exists(self):
+        import ast
+        import importlib
+
+        missing = []
+        for path, tree in self._bot_modules():
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom):
+                    continue
+                if node.level or not (node.module or '').startswith('bot'):
+                    continue
+                try:
+                    module = importlib.import_module(node.module)
+                except ImportError:
+                    continue          # optional/env-gated module, not our business
+                for alias in node.names:
+                    if alias.name == '*' or hasattr(module, alias.name):
+                        continue
+                    try:
+                        importlib.import_module(f'{node.module}.{alias.name}')
+                    except ImportError:
+                        missing.append(
+                            f'{os.path.basename(path)}:{node.lineno} '
+                            f'from {node.module} import {alias.name}'
+                        )
+
+        self.assertEqual(
+            missing, [],
+            'Import(s) naming something that no longer exists:\n  '
+            + '\n  '.join(missing)
+        )

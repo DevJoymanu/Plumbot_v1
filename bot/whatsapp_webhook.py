@@ -396,6 +396,26 @@ def _media_ack_reply(appointment: "Appointment", media_type: str,
     )
 
 
+def _description_is_a_plan(description: str) -> bool:
+    """True when what vision saw is an architectural drawing rather than a photo
+    of a space or a fixture.
+
+    Deterministic (CLAUDE.md) and deliberately narrow: 'drawing' or 'layout'
+    alone can describe a sketch of a tub, so a plan word must be paired with a
+    plan context, or be unambiguous on its own ('blueprint', 'floor plan').
+    """
+    text = (description or '').lower()
+    if not text:
+        return False
+    if any(t in text for t in (
+            'floor plan', 'house plan', 'site plan', 'building plan',
+            'blueprint', 'blue print', 'architectural',
+    )):
+        return True
+    return 'plan' in text and any(
+        t in text for t in ('drawing', 'layout', 'elevation', 'scale', 'not a photo'))
+
+
 def _compose_media_ack(next_question, status: str, media_type: str,
                        is_plan_document: bool = False,
                        seen_question: str = None) -> str:
@@ -419,6 +439,13 @@ def _compose_media_ack(next_question, status: str, media_type: str,
     if seen_question and next_question in ('service_type', 'project_description'):
         question = seen_question
     if status == 'confirmed' or next_question in (None, 'complete', 'name')             or not question:
+        # A plan is sent to BE QUOTED — say what happens to it, don't just file
+        # it for the visit. Prod: a customer's floor plan got "I'll have it ready
+        # for when we come round" and their next message was "Quote those".
+        if is_plan_document:
+            return (f"{ack} I'll go through it and put a written quotation "
+                    f"together for you.{MESSAGE_SPLIT_MARKER}"
+                    "Anything you want included that isn't on the plan?")
         return f"{ack} I'll have it ready for when we come round."
 
     # Two messages, not one block: acknowledgement, a beat, then the question.
@@ -861,6 +888,61 @@ def _explicitly_requests_photos(message: str) -> bool:
         r'see your work', r'previous work', r'examples of', r'show me',
     )
     return any(re.search(m, msg) for m in markers)
+
+
+# Plain-English definitions of the fixtures customers most often ask us to
+# explain. Generic trade vocabulary, not tenant data — no prices, no brands, no
+# business names — so it is safe for every tenant (CLAUDE.md: no Homebase value
+# reaches another tenant's customer).
+_FIXTURE_GLOSSARY = (
+    (('mixer', 'mixer tap', 'mixa'),
+     "A mixer is the tap that blends the hot and cold into one spout — the kind "
+     "you fit over a basin, a bath or a shower."),
+    (('pedestal',),
+     "A pedestal is the ceramic stand a basin sits on — it carries the basin and "
+     "hides the pipework running down to the floor."),
+    (('cistern',),
+     "The cistern is the tank behind or above the toilet pan that holds the "
+     "flush water."),
+    (('chamber',),
+     "A chamber toilet is the wall-mounted type, where the cistern is built into "
+     "the wall behind the pan so only the pan and the flush plate show."),
+    (('vanity', 'vanity unit'),
+     "A vanity is the cabinet the basin sits in or on, so you get storage under "
+     "the sink instead of open pipework."),
+    (('cubicle', 'shower cubicle'),
+     "A cubicle is the enclosed shower — the glass panels and door that keep the "
+     "water in, with the tray or the tiled floor underneath."),
+    (('geyser',),
+     "A geyser is the hot water tank that heats and stores the water for the "
+     "taps and the shower."),
+    (('trap', 'p trap', 's trap'),
+     "A trap is the bend in the waste pipe under a basin or a sink — it holds a "
+     "little water so drain smells can't come back up."),
+)
+
+_DEFINITION_ASKS = (
+    'what is', "what's", 'whats', 'what are', 'what does', 'meaning of',
+    'define', 'explain', 'chii', 'chii chinonzi', 'zvinorevei',
+)
+
+
+def _definition_answer(message: str) -> str:
+    """A one-line answer when the customer asks what a fixture IS, or None.
+
+    Deterministic (CLAUDE.md keeps short/fuzzy strings off the LLM). It exists
+    because an explicit photo request wins the router outright: prod answered
+    "What's a mixer can I have a pic" with fifteen gallery photos and never said
+    what a mixer is.
+    """
+    import re
+    msg = (message or '').lower().strip()
+    if not msg or not any(a in msg for a in _DEFINITION_ASKS):
+        return None
+    for terms, answer in _FIXTURE_GLOSSARY:
+        if any(re.search(rf'\b{re.escape(t)}\b', msg) for t in terms):
+            return answer
+    return None
 
 
 def _explicitly_requests_catalogue(message: str) -> bool:
@@ -1938,12 +2020,16 @@ def generate_photo_followup(appointment=None) -> str:
 # queued; the caller must NOT send any fallback text when True is returned.
 # -----------------------------------------------------------------------------
 
-def send_previous_work_photos(sender, appointment=None):
+def send_previous_work_photos(sender, appointment=None, intro=None):
     """
     Send previous work photos with a small delay between each image.
     Returns True if photos were queued (caller must NOT send additional text).
     Returns False if no images are configured (caller may send a text fallback).
     Photos are only sent once per 24-hour window per appointment to prevent duplicates.
+
+    `intro` replaces the standard lead-in line — the photo path returns outright,
+    so anything the customer asked alongside the pictures has to travel with
+    them or it is never answered. Optional, so existing callers are untouched.
     """
     if appointment is not None:
         from django.utils import timezone
@@ -1960,7 +2046,7 @@ def send_previous_work_photos(sender, appointment=None):
         from django.utils import timezone
         appointment.previous_work_photos_sent_at = timezone.now()
         appointment.save(update_fields=['previous_work_photos_sent_at'])
-    intro = "Here are some examples of our previous plumbing work!"
+    intro = intro or "Here are some examples of our previous plumbing work!"
     def send_images_with_delay():
         try:
             from .test_console import is_test_sender
@@ -3450,7 +3536,17 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             uc_is_photo_request(_uclass) and not _is_clear_product_inquiry and not _has_pricing_signal
         )):
             print(f"Photo request detected (explicit={_explicit_photo})")
-            photos_queued = send_previous_work_photos(sender, appointment)
+            # "What's a mixer can I have a pic" is two things. This step returns
+            # outright, so a question asked alongside the request rides in on the
+            # intro line or it is never answered at all (prod: fifteen photos and
+            # no answer).
+            _definition = _definition_answer(message_body)
+            _photo_intro = (
+                f"{_definition}\n\nHere are some examples of our previous work "
+                "so you can see it fitted."
+            ) if _definition else None
+            photos_queued = send_previous_work_photos(
+                sender, appointment, intro=_photo_intro)
             if photos_queued:
                 return
             fallback_reply = (
@@ -3983,6 +4079,23 @@ def handle_media_message(sender, media_data, media_type, message_id=None,
                 )
             except Exception as vision_err:
                 print(f"Vision describe raised, continuing blind: {vision_err}")
+
+        # A drawing is a plan whatever its MIME type. is_plan_document only knows
+        # PDFs, so a plan photographed or exported as an image was filed as an
+        # ordinary photo — prod acked a customer's floor plan with "Got the
+        # photo... I'll have it ready for when we come round", and their next
+        # message was "Quote those": they had sent it to BE QUOTED.
+        if image_description and _description_is_a_plan(image_description):
+            print("Vision recognised a plan drawing — filing it as the plan")
+            is_plan_document = True
+            if saved_path:
+                Appointment.objects.filter(
+                    pk=appointment.pk, plan_file='').update(plan_file=saved_path)
+                Appointment.objects.filter(
+                    pk=appointment.pk, plan_file__isnull=True).update(plan_file=saved_path)
+            Appointment.objects.filter(
+                pk=appointment.pk, has_plan__isnull=True).update(has_plan=True)
+            appointment.refresh_from_db()
 
         # Stamp the inbound WAMID on the photo turn. Without it a customer who
         # highlights their OWN photo to ask "this one, how much?" resolves to

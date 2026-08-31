@@ -325,3 +325,27 @@ the whole job and disengaged a warm lead
 correctly: Homebase is mobile and Zimbabwe-wide. Only the eight decline-list
 towns (Gweru, Bulawayo, Mutare, Masvingo, Victoria Falls, Hwange, Beitbridge,
 Plumtree) are out; the decline says "too far to travel", never "Harare only".
+
+---
+
+## Clarifying questions name the customer's own subject
+
+**Conv (barmak, 2026-08-30).** An out-of-scope ask answered in the abstract.
+
+> **Customer:** "Cost of wiring a new 4 bedroom house"
+>
+> **Bad:** "Just to confirm — is there any plumbing or water-related work
+> involved in this?"
+>
+> **Good:** "Just to clarify, is the wiring you're asking about related to
+> plumbing or water systems in the house?"
+
+Why: "this" makes the customer work out what we read, and whether we read the
+word 'wiring' at all — it lands as a deflection rather than an answer. Naming
+their own word back costs nothing and proves we were listening. Use THEIR
+vocabulary, not our label: someone who wrote "wiring" is asked about the wiring,
+never about "the electrical work". `_oos_subject` pulls the subject as they
+typed it (longest match first, so "electrical work" is never truncated to
+"electrical"), and the verb agrees with it — "are the burglar bars", never "is
+the doors". Only a message naming nothing recognisable still asks in the
+abstract.

@@ -124,6 +124,15 @@ classifiers are AI-primary with keyword fallback.)
 - **Don't re-ask what you have.** A named day means ask only for the time; ask
   for the day only when the timeframe is vague. Never repeat a question already
   asked (semantic duplicate detector runs before qualification questions).
+- **Every clarification is contextual.** A clarifying question always names the
+  thing the customer asked about, in their own words — "is the wiring you're
+  asking about related to plumbing or water systems in the house?", never "is
+  there any plumbing work involved in this?". "This" makes them work out what we
+  read; their own word back proves we read it. `_oos_subject` is the shared
+  resolver, and all three paths that can ask use it: the deterministic
+  HIGH-confidence reframe, the LOW-confidence DeepSeek prompt (handed the exact
+  word via `_subject_echo_rule`, so it can't pick a different one), and the
+  offline `_fallback_clarifier`. Any new clarifier wires into it too.
 - **Two-message split.** An acknowledgement + scripted question in one block
   reads pre-meditated. Split via `MESSAGE_SPLIT_MARKER` (ack, then question,
   short human gap); the split reply must flow through the main dispatcher, not

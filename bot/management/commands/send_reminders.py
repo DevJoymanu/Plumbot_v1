@@ -790,9 +790,19 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.ERROR(f"    FAIL  Follow-up [WA] → {label}"))
 
             elif email:
-                from bot.customer_emails import _wrap, _send, _WA_NUMBER
+                from bot.customer_emails import _wrap, _send, _wa_number
                 subject   = f"Following Up — Your {svc} Assessment"
                 opener    = f"<p>{name},</p>" if has_name else ""
+                # The tenant's own WhatsApp line — absent means omit the button,
+                # never borrow another tenant's number.
+                wa = _wa_number(apt)
+                wa_button = (
+                    f'<p style="margin-top:16px;">'
+                    f'<a href="https://wa.me/{wa}" '
+                    f'style="background:#25D366;color:#fff;text-decoration:none;'
+                    f'padding:10px 20px;border-radius:5px;font-size:14px;">'
+                    f"Reply on WhatsApp</a></p>"
+                ) if wa else ""
                 body_html = (
                     f"{opener}"
                     "<p>Said I'd check in — here I am.</p>"
@@ -803,13 +813,9 @@ class Command(BaseCommand):
                     "<p>Even if you're still in the planning stage, it's worth knowing "
                     "where you stand. Drop us a WhatsApp with a day that works and "
                     "we'll come to you.</p>"
-                    f'<p style="margin-top:16px;">'
-                    f'<a href="https://wa.me/{_WA_NUMBER}" '
-                    f'style="background:#25D366;color:#fff;text-decoration:none;'
-                    f'padding:10px 20px;border-radius:5px;font-size:14px;">'
-                    f"Reply on WhatsApp</a></p>"
+                    f"{wa_button}"
                 )
-                html = _wrap(body_html)
+                html = _wrap(body_html, apt)
                 ok   = _send(apt, subject, html) if not dry_run else True
                 if ok:
                     if not dry_run:

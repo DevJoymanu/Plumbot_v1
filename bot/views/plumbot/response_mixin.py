@@ -114,6 +114,49 @@ def _open_hours_clause(mixin) -> str:
     return clause + (f" {emergency}" if emergency else "")
 
 
+# Words that make a message a reply about WHEN. Deterministic on purpose
+# (CLAUDE.md: short/fuzzy strings stay off the LLM) and deliberately generous —
+# it only decides whether our opening hours are a sensible thing to say back.
+_TIMING_WORDS = (
+    'when', 'time', 'day', 'date', 'week', 'month', 'today', 'tomorrow',
+    'tonight', 'morning', 'afternoon', 'evening', 'weekend', 'available',
+    'availability', 'busy', 'free', 'anytime', 'any time', 'later', 'now',
+    # 'am'/'pm' only ever count attached to a digit (the clock regex below) —
+    # as bare words they turn "I am looking for materials" into a time.
+    'soon', 'hour', 'oclock', "o'clock",
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+    # Shona
+    'nguva', 'zuva', 'mangwana', 'nhasi', 'manheru', 'mangwanani', 'masikati',
+    'svondo', 'mwedzi', 'rini', 'riini',
+)
+
+
+def _is_timing_reply(message: str) -> bool:
+    """True when a message is plausibly about WHEN — so answering it with our
+    opening hours makes sense.
+
+    A bare/short reply ("ok", "hmm", "yes") still counts: it is an unclear answer
+    to the date question we just asked, which is exactly what the hours nudge is
+    for. A substantive message that names no time at all does NOT — it is about
+    something else, and deserves an answer about that instead.
+    """
+    msg = (message or '').strip().lower()
+    if not msg:
+        return True  # nothing to go on — the date nudge is as good as anything
+    words = re.findall(r"[a-z']+", msg)
+    if len(words) <= 2 and '?' not in msg:
+        return True  # a short unclear answer to the day question
+    # A clock or a calendar number — but NOT any stray digit: "9 inch sized
+    # doors x2" is a measurement, and reading it as a time is how a message
+    # about doors got answered with our opening hours.
+    if (re.search(r'\b\d{1,2}\s*[:.]\s*\d{2}\b', msg)
+            or re.search(r'\b\d{1,2}\s*(am|pm)\b', msg)
+            or re.search(r'\b\d{1,2}(st|nd|rd|th)\b', msg)
+            or re.fullmatch(r"[\d\s:.]+", msg)):
+        return True
+    return any(w in _TIMING_WORDS for w in words)
+
+
 def _grounding_facts(mixin) -> str:
     """One-line company grounding for the tiny FAQ prompts:
     'Homebase Plumbers, Hatfield Harare, open Sun–Fri 8am–6pm (closed Sat).'"""
@@ -1268,7 +1311,15 @@ class ResponseMixin:
             Return a warm acknowledgment for genuine exit signals.
             Varies based on whether the appointment is booked or they said they'll reach out.
             """
-            if self.appointment.status == 'confirmed' and self.appointment.scheduled_datetime:
+            # Only restate the visit when it is genuinely still on. A parked lead
+            # has deferred it — the delay flow releases the slot, and this guard
+            # covers the rows parked before it did (and any release that failed):
+            # "see you Monday" to someone who just asked to give a new date later
+            # is the worst thing this bot can say.
+            _parked = self.appointment.PARKED_TAG in (self.appointment.internal_notes or '')
+            if (self.appointment.status == 'confirmed'
+                    and self.appointment.scheduled_datetime
+                    and not _parked):
                 import pytz
                 sa_tz = pytz.timezone('Africa/Johannesburg')
                 dt = self.appointment.scheduled_datetime.astimezone(sa_tz)
@@ -2175,6 +2226,111 @@ class ResponseMixin:
             return "\n\n".join([body, disclaimer, followup])
 
 
+        # A customer who wants the parts, not (or not yet) the labour. Their own
+        # words override whatever stage the flow is parked at — CLAUDE.md's
+        # recurring bug class. Prod: "Currently I need plumbing material" was
+        # sent twice, four minutes apart, and both times came back with our
+        # opening hours, because the flow was waiting on a date.
+        _MATERIAL_WORDS = ('material', 'materials', 'matrial', 'meterial',
+                           'supplies', 'plumbing stuff', 'fittings and pipes')
+        _MATERIAL_NEED_WORDS = (
+            'need', 'want', 'looking for', 'buy', 'buying', 'purchase',
+            'supply', 'sell', 'get', 'require', 'quote', 'quotation', 'price',
+            'how much', 'order', 'ndinoda', 'ndoda', 'tengesa', 'tenga',
+        )
+
+        def _is_material_supply_request(self, message: str) -> bool:
+            """True when the customer is asking us for MATERIALS — the parts
+            themselves — rather than describing a job or answering a question."""
+            msg = (message or '').lower().strip()
+            if not msg:
+                return False
+            if not any(w in msg for w in self._MATERIAL_WORDS):
+                return False
+            # They already have them / are sourcing them themselves — that is a
+            # statement about the job, not an order for us to quote.
+            if any(p in msg for p in ('my own', 'already have', 'already bought',
+                                      'already got', "i've got the", 'i have the')):
+                return False
+            # "the materials you used look nice" is not a request; a need word,
+            # or a message short enough to be nothing but the ask, is.
+            return (any(w in msg for w in self._MATERIAL_NEED_WORDS)
+                    or len(msg.split()) <= 3)
+
+        def _already_offered_material_quote(self) -> bool:
+            marker = 'list of what you need'
+            marker_sn = 'list yezvamunoda'
+            history = getattr(self.appointment, 'conversation_history', None) or []
+            return any(
+                isinstance(e, dict) and e.get('role') == 'assistant'
+                and (marker in (e.get('content') or '')
+                     or marker_sn in (e.get('content') or ''))
+                for e in history
+            )
+
+        def _build_material_supply_reply(self, language: str = 'english') -> str:
+            """Answer a materials request: confirm we supply, then ask for the
+            list (or the plan) so it can be quoted. No figures — the items are
+            unknown, and a price sheet here would be answering a question they
+            did not ask."""
+            is_shona = language == 'shona'
+            if self._already_offered_material_quote():
+                return (
+                    "Nditumirei chete list yezvinhu zvamunoda kana plan yenyu, "
+                    "ndokugadzirirai quotation."
+                    if is_shona else
+                    "Just send the list of items you need, or your plan, and "
+                    "I'll get the quotation done for you."
+                )
+            return (
+                "Tinotengesa material yeplumbing, uye tinogona kuiisawo.\n\n"
+                "Nditumirei list yezvamunoda — kana plan yenyu kana muinayo — "
+                "tokugadzirirai quotation yakanyorwa nemutengo wechinhu chimwe "
+                "nechimwe."
+                if is_shona else
+                "We supply the materials as well as fit them.\n\n"
+                "Send me the list of what you need — or your plan if you have "
+                "one — and we'll put a written quotation together with a price "
+                "against each item."
+            )
+
+
+        def _has_plan_on_file(self) -> bool:
+            """True when this lead has actually sent us a plan we can quote off."""
+            appt = getattr(self, 'appointment', None)
+            if appt is None:
+                return False
+            if getattr(appt, 'plan_file', None):
+                return True
+            return getattr(appt, 'plan_status', '') == 'plan_uploaded'
+
+
+        def _quote_route_followup(self) -> str:
+            """The question that follows routing a quote request to the visit.
+
+            `_get_first_pass_question` has no script for the 'name' or 'complete'
+            stages, and the old `or "All good, what area are you in?"` fallback
+            then asked for the AREA whatever the state. In prod that asked a lead
+            who had given "Magunje" four times — the last of them two minutes
+            earlier — right after they said "Sorry I think I asked for a
+            quotation first". Never re-ask a field we already hold: fall back on
+            what is genuinely still missing, and on the visit itself when nothing
+            is.
+            """
+            next_question = self.get_next_question_to_ask()
+            scripted = self._get_first_pass_question(next_question)
+            if scripted:
+                return scripted
+            if not self.appointment.customer_area:
+                return "All good, what area are you in?"
+            if next_question == 'name':
+                return (
+                    "One last thing — what name should we put on the booking? "
+                    "If you'd rather not share it, just say no."
+                )
+            return "When suits you for us to come through and take a look?"
+
+
         def _already_sent_job_quote_pitch(self) -> bool:
             """True when a previous assistant turn already carried the job-quote
             visit pitch, in either language. The pitch must never repeat: a later
@@ -2208,11 +2364,24 @@ class ResponseMixin:
             question (opener intact) — never the pitch again.
             """
             is_shona = language == "shona"
-            lead = (
-                "Tinokupai quote chaiyo, yese-yese, mahara patinouya kuzoona pamba."
-                if is_shona else
-                "We'll get you an exact, all-in figure free on a quick on-site visit."
-            )
+            # A lead who has already SENT their plan asked to be quoted off it.
+            # Pitching them the visit again is how prod answered "Sorry I think I
+            # asked for a quotation first" — they had sent the drawing an hour
+            # before. Quote the plan; the visit still confirms the figure, but it
+            # is no longer the thing we ask them for.
+            if self._has_plan_on_file():
+                lead = (
+                    "Ndinotarisa plan yenyu ndogadzira quotation yakanyorwa."
+                    if is_shona else
+                    "I'll work through the plan you sent and come back with a "
+                    "written quotation."
+                )
+            else:
+                lead = (
+                    "Tinokupai quote chaiyo, yese-yese, mahara patinouya kuzoona pamba."
+                    if is_shona else
+                    "We'll get you an exact, all-in figure free on a quick on-site visit."
+                )
             if message:
                 self._capture_named_products_as_description(message)
             if (message and self.get_next_question_to_ask() == "service_type"
@@ -2231,10 +2400,7 @@ class ResponseMixin:
                 # advances to area and then to booking on its own.
                 self.appointment.project_description = message.strip()[:120]
                 self.appointment.save(update_fields=["project_description"])
-            followup = (
-                self._get_first_pass_question(self.get_next_question_to_ask())
-                or "All good, what area are you in?"
-            )
+            followup = self._quote_route_followup()
             if self._already_sent_job_quote_pitch():
                 return followup
             # Two separate messages: the acknowledgement is now the warm lead-in, so
@@ -2456,6 +2622,26 @@ class ResponseMixin:
                     self.appointment.add_conversation_message("user", incoming_message)
                     self.appointment.add_conversation_message("assistant", reply)
                     print(f"💸 Budget objection after price tie-down: '{incoming_message[:60]}'")
+                    return reply
+
+                # ── MATERIALS REQUEST ────────────────────────────────────────────────
+                # "I need plumbing material" is a request we can act on, whatever
+                # stage the flow is parked at. Left to the stage logic it became a
+                # failed date answer and was answered with our opening hours —
+                # twice (prod 2026-08-30). Their words override the holding state.
+                if self._is_material_supply_request(incoming_message):
+                    from bot.whatsapp_webhook import detect_language_simple as _dls_m
+                    try:
+                        _mlang = _dls_m(incoming_message)
+                    except Exception:
+                        _mlang = 'english'
+                    reply = self._build_material_supply_reply(_mlang)
+                    if not self.appointment.project_description:
+                        self.appointment.project_description = incoming_message.strip()[:120]
+                        self.appointment.save(update_fields=['project_description'])
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    self.appointment.add_conversation_message("assistant", reply)
+                    print(f"🧰 Materials request: '{incoming_message[:60]}'")
                     return reply
 
                 current_question = self.get_next_question_to_ask()
@@ -3176,7 +3362,17 @@ class ResponseMixin:
                 return f"Do you mean this coming {day_mentioned}?"
 
             if (intent == "unclear" or confidence == "LOW") and retry_count >= 2:
-                # After two failed attempts, ask open-ended rather than repeating
+                # After two failed attempts, ask open-ended rather than repeating —
+                # but ONLY when the customer is actually talking about timing. A
+                # message about something else is not an unclear date answer, and
+                # answering it with our opening hours ignores what they said. In
+                # prod "Currently I need plumbing material" and "Sorry doors were
+                # already fitted" each got the hours line back, the second one
+                # after the customer had repeated themselves. Handing it back
+                # (None) lets the normal retry path answer the message itself.
+                if not _is_timing_reply(message):
+                    print(f"⏱️ Not a timing reply — not answering with hours: '{message[:60]}'")
+                    return None
                 return f"When would work best for you?{_open_hours_clause(self)}"
 
             # accepted_offered or first-retry unclear → fall through to normal logic

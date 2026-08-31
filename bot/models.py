@@ -1700,6 +1700,56 @@ class Appointment(models.Model):
         until they re-engage."""
         return self._add_notes_tag(self.PARKED_TAG, save=save)
 
+    # A slot we were holding that the customer has since deferred. The tag keeps
+    # the released time on the record (the row's own datetime is cleared) so the
+    # dashboard and any later reschedule can see what was given up.
+    RELEASED_TAG = '[VISIT_RELEASED]'
+
+    def deferred_slot_field(self):
+        """(field_name, current_datetime) for the visit a deferral releases.
+
+        Mirrors reschedule_mixin._reschedule_slot: a job customer holds two
+        datetimes, and the one in play is the job, not the site visit they
+        already had.
+        """
+        if (getattr(self, 'appointment_type', None) == 'job_appointment'
+                and self.job_scheduled_datetime):
+            return 'job_scheduled_datetime', self.job_scheduled_datetime
+        return 'scheduled_datetime', self.scheduled_datetime
+
+    def release_deferred_visit(self, reason='', save=True):
+        """The customer deferred the work, so the slot we were holding is not
+        happening: give it back and stop treating the lead as booked.
+
+        Without this a defer left status='confirmed' with the datetime intact,
+        and everything downstream went on believing the visit was live — the
+        exit acknowledgement told the customer "see you Monday" AFTER they'd
+        asked to give a new date later, send_reminders queued a reminder for it,
+        and the plumber's briefing still listed the drive. Returns the released
+        datetime (so the caller can tell the plumber what came off the diary),
+        or None when there was nothing booked to release.
+        """
+        field, current = self.deferred_slot_field()
+        if self.status != 'confirmed' or not current:
+            return None
+        setattr(self, field, None)
+        self.status = 'pending'
+        # The lead is still a lead — the bot keeps talking to them, and the
+        # delay flow's own check-back date owns the next proactive touch.
+        self.is_lead_active = True
+        self.chatbot_paused = False
+        stamp = f"{self.RELEASED_TAG} {current.isoformat()}"
+        if reason:
+            stamp = f"{stamp} - {reason}"
+        notes = (self.internal_notes or '').strip()
+        self.internal_notes = f"{notes}\n{stamp}".strip()
+        if save:
+            self.save(update_fields=[
+                field, 'status', 'is_lead_active', 'chatbot_paused',
+                'internal_notes', 'updated_at',
+            ])
+        return current
+
     @property
     def delay_days_remaining(self):
         if not self.delay_followup_due_at:

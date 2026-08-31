@@ -44,6 +44,36 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def cancel_calendar_event(appointment):
+    """Take a released visit off the plumber's calendar.
+
+    Module-level (not a mixin method) because the delay flow releases a slot
+    with nothing but the Appointment in hand. Best-effort and silent when the
+    calendar isn't configured or no event was ever created — a calendar we
+    can't reach must never block the state change that keeps the plumber from
+    driving out to a visit the customer cancelled.
+    """
+    event_id = (getattr(appointment, 'google_calendar_event_id', '') or '').strip()
+    if not event_id or not GOOGLE_CALENDAR_CREDENTIALS:
+        return False
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            GOOGLE_CALENDAR_CREDENTIALS,
+            scopes=['https://www.googleapis.com/auth/calendar'],
+        )
+        service = build('calendar', 'v3', credentials=credentials)
+        service.events().delete(calendarId='primary', eventId=event_id).execute()
+        appointment.google_calendar_event_id = ''
+        appointment.save(update_fields=['google_calendar_event_id'])
+        logger.info("Calendar event %s deleted — apt %s", event_id,
+                    getattr(appointment, 'pk', None))
+        return True
+    except Exception:
+        logger.exception("cancel_calendar_event failed — apt %s",
+                         getattr(appointment, 'pk', None))
+        return False
+
+
 class NotificationMixin:
         def _maybe_alert_plumber_date_no_time(self):
             """

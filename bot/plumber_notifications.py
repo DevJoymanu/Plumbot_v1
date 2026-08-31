@@ -299,7 +299,7 @@ def send_plumber_notification_email(subject, message, *, dry_run=False,
 
 
 def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
-                                dry_run=False):
+                                released_slot_str=None, dry_run=False):
     """
     Email the plumber to personally follow up a lead the bot could not fully
     close on its own. Two cases:
@@ -307,6 +307,9 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
         the automated email sequence can't reach them.
       • 'date_no_time'      — lead booked a DATE but no time; needs a call to
         pin the time before the slot can be confirmed.
+      • 'visit_deferred'    — a CONFIRMED visit the lead has since deferred. The
+        slot is released; the plumber was told it was on, so they have to be
+        told it is off before they drive out to it.
 
     Plain and actionable, with a click-to-WhatsApp link so the plumber can reach
     the lead in one tap. Reuses the same delivery path as every other plumber
@@ -330,15 +333,26 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
             "This lead gave an appointment DATE but no time. Please call or "
             "WhatsApp to confirm a time so the booking can be locked in."
         ),
+        "visit_deferred": (
+            "This lead has DEFERRED the visit that was booked, so the slot has "
+            "been released - please do NOT travel. The bot will check back in "
+            "with them on the date below."
+        ),
     }.get(reason, str(reason))
 
     when_line  = f"\nAgreed follow-up date: {follow_up_date_str}" if follow_up_date_str else ""
     sched_line = ""
     if reason == "date_no_time" and getattr(appointment, "scheduled_datetime", None):
         sched_line = f"\nBooked date (no time yet): {_fmt_date(appointment)}"
+    if released_slot_str:
+        sched_line = f"{sched_line}\nCancelled slot (do not attend): {released_slot_str}"
 
     wa_link = f"https://wa.me/{phone}" if phone else ""
-    subject = f"[Lead follow-up] {name} - {service}"
+    # A released slot is not a follow-up chore — it changes the plumber's day,
+    # so it must be readable as such in the inbox list.
+    subject = (f"[Visit cancelled] {name} - {service}"
+               if reason == "visit_deferred"
+               else f"[Lead follow-up] {name} - {service}")
     message = (
         f"{reason_detail}\n\n"
         f"Customer: {name}\n"

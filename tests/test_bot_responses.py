@@ -896,6 +896,457 @@ try:
 except Exception as e:
     results.log("delay timeframe NEAR pivot", False, got=str(e))
 
+# A CONFIRMED visit the customer defers must be released — status back to
+# pending, the slot given up, the plumber told not to travel — and the exit
+# acknowledgement must stop restating it. Production 2026-08-30 (Magunje lead):
+# booked Monday 9am, then "our priority was glazing can I give my new date
+# later"; the delay flow parked them and set a 14-day check-back but left the
+# booking standing, so the next bare "Great" was answered with "Perfect — see
+# you on Monday, August 31 at 09:00 AM" and the plumber stayed booked to drive.
+import pytz as _pytz_rv
+from datetime import datetime as _dt_rv, timedelta as _td_rv
+from bot.out_of_scope_handler import release_deferred_visit as _release_rv
+_SAST_RV = _pytz_rv.timezone('Africa/Johannesburg')
+
+class _FakeApptBooked:
+    """Just enough Appointment for the release contract, reusing the real
+    model methods so the state transition under test is the shipped one."""
+    PARKED_TAG = Appointment.PARKED_TAG
+    RELEASED_TAG = Appointment.RELEASED_TAG
+    deferred_slot_field = Appointment.deferred_slot_field
+    release_deferred_visit = Appointment.release_deferred_visit
+
+    def __init__(self, slot):
+        self.status = 'confirmed'
+        self.scheduled_datetime = slot
+        self.job_scheduled_datetime = None
+        self.appointment_type = 'site_visit'
+        self.internal_notes = ''
+        self.is_lead_active = False
+        self.chatbot_paused = True
+        self.google_calendar_event_id = ''
+        self.pk = None
+    def save(self, update_fields=None):
+        pass
+
+try:
+    _slot_rv = _SAST_RV.localize(_dt_rv(2026, 8, 31, 9, 0))
+    # Check-back AFTER the booked visit → the visit is not what they're waiting
+    # for; release it.
+    _late = _FakeApptBooked(_slot_rv)
+    _released = _release_rv(_late, reason='test',
+                            checkin_dt=_slot_rv + _td_rv(days=14))
+    results.log(
+        "deferred visit: check-back after the slot -> released, back to pending",
+        (_released is True and _late.status == 'pending'
+         and _late.scheduled_datetime is None
+         and _late.RELEASED_TAG in _late.internal_notes
+         and _late.is_lead_active is True and _late.chatbot_paused is False),
+        got=f"released={_released} status={_late.status} "
+            f"slot={_late.scheduled_datetime} notes={_late.internal_notes!r}",
+    )
+    # Check-back BEFORE the booked visit is just a nudge ahead of it — the
+    # booking stands. (Releasing here would cancel a live visit.)
+    _early = _FakeApptBooked(_slot_rv)
+    _kept = _release_rv(_early, reason='test',
+                        checkin_dt=_slot_rv - _td_rv(days=2))
+    results.log(
+        "deferred visit: check-back before the slot -> booking stands",
+        (_kept is False and _early.status == 'confirmed'
+         and _early.scheduled_datetime == _slot_rv),
+        got=f"released={_kept} status={_early.status} slot={_early.scheduled_datetime}",
+    )
+    # A brush-off has no check-back date at all — release outright.
+    _brush = _FakeApptBooked(_slot_rv)
+    results.log(
+        "deferred visit: brush-off with no check-back -> released",
+        (_release_rv(_brush, reason='brush-off') is True
+         and _brush.status == 'pending' and _brush.scheduled_datetime is None),
+        got=f"status={_brush.status} slot={_brush.scheduled_datetime}",
+    )
+    # Nothing booked → nothing to release, and no crash on a lead mid-flow.
+    _unbooked = _FakeApptBooked(None)
+    _unbooked.status = 'pending'
+    results.log(
+        "deferred visit: nothing booked -> no-op",
+        _release_rv(_unbooked, reason='test') is False,
+        got=f"status={_unbooked.status}",
+    )
+    # A job customer holds two datetimes; the one a deferral releases is the job.
+    _job = _FakeApptBooked(_slot_rv)
+    _job.appointment_type = 'job_appointment'
+    _job.job_scheduled_datetime = _slot_rv + _td_rv(days=3)
+    _release_rv(_job, reason='test', checkin_dt=_slot_rv + _td_rv(days=30))
+    results.log(
+        "deferred visit: a job releases the job slot, not the completed visit",
+        (_job.job_scheduled_datetime is None
+         and _job.scheduled_datetime == _slot_rv),
+        got=f"job={_job.job_scheduled_datetime} visit={_job.scheduled_datetime}",
+    )
+except Exception as e:
+    results.log("deferred visit release", False, got=str(e))
+
+# Our opening hours are only ever an answer about WHEN. The availability retry
+# used to send them to any message it could not read as a date: prod answered
+# "Currently I need plumbing material" and "Sorry doors were already fitted"
+# with "When would work best for you? We're open Monday-Sunday, 8 AM-6 PM."
+try:
+    from bot.views.plumbot.response_mixin import _is_timing_reply as _itr
+    TIMING_CASES = [
+        # Genuinely about timing → the hours nudge is a sensible answer.
+        ("tomorrow",                      True),
+        ("Monday",                        True),
+        ("9 am",                          True),
+        ("9",                             True),
+        ("ok",                            True),   # short unclear day answer
+        ("hmm",                           True),
+        ("what time are you open",        True),
+        ("I'm busy this week",            True),
+        ("the 15th",                      True),
+        # Not about timing at all → answering with hours ignores what they said.
+        ("Currently I need plumbing material",  False),
+        ("Sorry doors were already fitted",     False),
+        ("Hope you understood it's Magunje not Harare", False),
+        ("9 inch sized doors x2",               False),
+        ("do you sell taps and fittings",       False),
+        ("I am looking for materials",          False),
+    ]
+    results.log(
+        "timing reply: hours answer only for messages about WHEN",
+        all(_itr(m) is e for m, e in TIMING_CASES),
+        got="; ".join(f"{m[:30]!r}->{_itr(m)}"
+                      for m, e in TIMING_CASES if _itr(m) is not e) or "all as expected",
+    )
+except Exception as e:
+    results.log("timing reply: hours answer only for messages about WHEN", False, got=str(e))
+
+# A materials request is acted on whatever stage the flow is parked at, and is
+# answered with the route to a written quote — never with a price sheet.
+try:
+    class _FakeSelfMat:
+        _MATERIAL_WORDS = ResponseMixin._MATERIAL_WORDS
+        _MATERIAL_NEED_WORDS = ResponseMixin._MATERIAL_NEED_WORDS
+        _is_material_supply_request = ResponseMixin._is_material_supply_request
+        _already_offered_material_quote = ResponseMixin._already_offered_material_quote
+        _build_material_supply_reply = ResponseMixin._build_material_supply_reply
+        def __init__(self, history=None):
+            class _Appt:
+                pass
+            self.appointment = _Appt()
+            self.appointment.conversation_history = history or []
+    _mat = _FakeSelfMat()
+    MATERIAL_CASES = [
+        ("Currently I need plumbing material", True),
+        ("I need materials only",              True),
+        ("do you supply materials",            True),
+        ("materials",                          True),
+        ("ndinoda material",                   True),
+        # Not a request for parts.
+        ("the materials you used look really good", False),
+        ("Bathroom renovation",                False),
+        ("tomorrow at 2pm",                    False),
+        # Sourcing them themselves — a fact about the job, not an order.
+        ("I have my own materials",            False),
+        ("I already bought the materials",     False),
+    ]
+    results.log(
+        "materials request: a parts ask is recognised, a passing mention is not",
+        all(_mat._is_material_supply_request(m) is e for m, e in MATERIAL_CASES),
+        got="; ".join(f"{m[:30]!r}->{_mat._is_material_supply_request(m)}"
+                      for m, e in MATERIAL_CASES
+                      if _mat._is_material_supply_request(m) is not e) or "all as expected",
+    )
+    _mat_reply = _mat._build_material_supply_reply("english")
+    results.log(
+        "materials reply: confirms supply, asks for the list, quotes no figures",
+        ("supply the materials" in _mat_reply
+         and "list of what you need" in _mat_reply
+         and "US$" not in _mat_reply),
+        got=repr(_mat_reply),
+    )
+    # Asked again after we already offered → a shorter re-ask, not the same block.
+    _mat_again = _FakeSelfMat(history=[
+        {"role": "assistant", "content": _mat_reply},
+    ])._build_material_supply_reply("english")
+    results.log(
+        "materials reply: a repeat is a shorter re-ask, not the same message again",
+        _mat_again != _mat_reply and "list of items you need" in _mat_again,
+        got=repr(_mat_again),
+    )
+except Exception as e:
+    results.log("materials request handling", False, got=str(e))
+
+# A question asked alongside a photo request must be answered — the photo step
+# returns outright, so it rides in on the intro line. Prod: "What's a mixer can
+# I have a pic" got fifteen photos and no answer.
+try:
+    from bot.whatsapp_webhook import _definition_answer, _description_is_a_plan
+    results.log(
+        "definition: 'what's a mixer' is answered in plain English",
+        (_definition_answer("What's a mixer can I have a pic") or '').startswith(
+            "A mixer is the tap"),
+        got=repr(_definition_answer("What's a mixer can I have a pic")),
+    )
+    DEFINITION_CASES = [
+        ("what is a pedestal",          True),
+        ("whats a cistern",             True),
+        ("What's a mixer",              True),
+        # Not a definition question — don't hijack a normal request.
+        ("send me a pic of your mixers", False),
+        ("how much is a vanity",         False),
+        ("what area do you cover",       False),
+    ]
+    results.log(
+        "definition: only actual 'what is X' questions get a glossary answer",
+        all((_definition_answer(m) is not None) is e for m, e in DEFINITION_CASES),
+        got="; ".join(f"{m[:28]!r}->{_definition_answer(m) is not None}"
+                      for m, e in DEFINITION_CASES
+                      if (_definition_answer(m) is not None) is not e) or "all as expected",
+    )
+    # The glossary is generic trade vocabulary — no tenant's prices or names.
+    for _terms, _answer in __import__('bot.whatsapp_webhook', fromlist=['x'])._FIXTURE_GLOSSARY:
+        assert 'US$' not in _answer and 'Homebase' not in _answer
+    results.log("definition: glossary carries no prices and no business name", True)
+    # A drawing is a plan whatever its MIME type.
+    PLAN_SIGHT_CASES = [
+        ("This is a floor plan drawing, not a photo. It shows a kitchen with a sink",
+         True),
+        ("A blueprint of a two bedroom house", True),
+        ("An architectural drawing showing the bathroom layout", True),
+        # A photo of the real thing is not a plan.
+        ("A freestanding bathtub in a tiled bathroom", False),
+        ("A leaking pipe under a kitchen sink", False),
+        ("A hand drawing of a tap", False),
+    ]
+    results.log(
+        "plan by sight: a drawing is filed as the plan, a photo is not",
+        all(_description_is_a_plan(d) is e for d, e in PLAN_SIGHT_CASES),
+        got="; ".join(f"{d[:30]!r}->{_description_is_a_plan(d)}"
+                      for d, e in PLAN_SIGHT_CASES
+                      if _description_is_a_plan(d) is not e) or "all as expected",
+    )
+    # ...and the ack says what happens to it, instead of filing it for the visit.
+    from bot.whatsapp_webhook import _compose_media_ack
+    _plan_ack = _compose_media_ack('complete', 'confirmed', 'image',
+                                   is_plan_document=True)
+    _photo_ack = _compose_media_ack('complete', 'confirmed', 'image',
+                                    is_plan_document=False)
+    results.log(
+        "plan ack: a plan is quoted, an ordinary photo is still kept for the visit",
+        ("written quotation" in _plan_ack
+         and "when we come round" in _photo_ack
+         and "written quotation" not in _photo_ack),
+        got=f"plan={_plan_ack!r} photo={_photo_ack!r}",
+    )
+except Exception as e:
+    results.log("definition / plan-by-sight handling", False, got=str(e))
+
+# Doors, windows and glazing are joinery. Without them on the out-of-scope list
+# the bot answered "9 inch sized doors x2" with "We can definitely sort out two
+# 9-inch doors for your bathroom project".
+try:
+    from bot.out_of_scope_handler import OOS_SERVICE_TERMS, _OOS_KEYWORDS
+    results.log(
+        "out of scope: doors/windows/glazing are on the list the classifier sees",
+        any('door' in t for t in OOS_SERVICE_TERMS) and 'glazing' in OOS_SERVICE_TERMS,
+        got=str(OOS_SERVICE_TERMS),
+    )
+    # ...but never so broadly that a shower door reads as joinery.
+    results.log(
+        "out of scope: 'shower door' and 'window sill' are still ours",
+        not any(k in 'i need a new shower door for the cubicle' for k in _OOS_KEYWORDS)
+        and not any(k in 'the window sill in the bathroom' for k in _OOS_KEYWORDS),
+        got=str([k for k in _OOS_KEYWORDS
+                 if k in 'i need a new shower door for the cubicle'
+                 or k in 'the window sill in the bathroom']),
+    )
+    # ...and adding them must not turn a DEFERRAL that happens to name another
+    # trade into an out-of-scope reply. "Our priority was glazing, can I give my
+    # new date later" is a deferral; the keyword fallback used to call it
+    # out-of-scope the moment 'glazing' joined the list.
+    from bot.out_of_scope_handler import _keyword_classify, _is_explicit_deferral
+    _defer_msg = ("It's ok but currently our priority was glazing "
+                  "can I give my new date later")
+    results.log(
+        "out of scope: a deferral naming another trade is still a deferral",
+        (_is_explicit_deferral(_defer_msg) is True
+         and _keyword_classify(_defer_msg)['category'] == 'delay_signal'),
+        got=str(_keyword_classify(_defer_msg)),
+    )
+    DEFER_DATE_CASES = [
+        ("can I give my new date later",        True),
+        ("I'll give you a new date next week",  True),
+        # Ordinary date talk is not a deferral.
+        ("is the date later this week?",        False),
+        ("tomorrow works for me",               False),
+        ("can you come at a later date this week", False),
+    ]
+    results.log(
+        "deferral: postponing the date is caught, ordinary date talk is not",
+        all(_is_explicit_deferral(m) is e for m, e in DEFER_DATE_CASES),
+        got="; ".join(f"{m[:30]!r}->{_is_explicit_deferral(m)}"
+                      for m, e in DEFER_DATE_CASES
+                      if _is_explicit_deferral(m) is not e) or "all as expected",
+    )
+except Exception as e:
+    results.log("out of scope: joinery terms", False, got=str(e))
+
+# The out-of-scope clarification always asks about THEIR subject, never "this".
+# Prod: "Cost of wiring a new 4 bedroom house" was answered with "Just to
+# confirm — is there any plumbing or water-related work involved in this?",
+# leaving the customer to work out what "this" meant and whether we had read the
+# word 'wiring' at all.
+try:
+    from bot.out_of_scope_handler import (
+        _generate_plumbing_reframe_question as _reframe, _oos_subject,
+    )
+    _wiring = _reframe("Cost of wiring a new 4 bedroom house")
+    results.log(
+        "clarifier: names the customer's own subject back",
+        (_wiring == "Just to clarify, is the wiring you're asking about "
+                    "related to plumbing or water systems in the house?"),
+        got=repr(_wiring),
+    )
+    # Their word, not our label: a lead who wrote 'wiring' is asked about the
+    # wiring, not "the electrical work".
+    results.log(
+        "clarifier: echoes their vocabulary, not ours",
+        "electrical" not in _wiring.lower(),
+        got=repr(_wiring),
+    )
+    SUBJECT_CASES = [
+        ("Cost of wiring a new 4 bedroom house", 'wiring'),
+        ("Tiling",                               'tiling'),
+        ("do you do roofing",                    'roofing'),
+        ("I need painting done",                 'painting'),
+        ("can you build a garage",               'garage'),
+        ("solar panels installation",            'solar panels'),
+        ("pest control please",                  'pest control'),
+        ("I want electrical work done",          'electrical work'),
+        # Nothing nameable → no subject, and the abstract question stands.
+        ("can you help with the thing at my place", None),
+    ]
+    results.log(
+        "clarifier: the subject is pulled from the customer's own words",
+        all(_oos_subject(m) == s for m, s in SUBJECT_CASES),
+        got="; ".join(f"{m[:28]!r}->{_oos_subject(m)!r}"
+                      for m, s in SUBJECT_CASES if _oos_subject(m) != s)
+            or "all as expected",
+    )
+    # Longest match wins, so a compound subject is never truncated mid-phrase.
+    results.log(
+        "clarifier: 'electrical work' beats 'electrical', 'solar panels' beats 'solar'",
+        (_oos_subject("I want electrical work done") == 'electrical work'
+         and _oos_subject("solar panels installation") == 'solar panels'),
+        got=f"{_oos_subject('I want electrical work done')!r} / "
+            f"{_oos_subject('solar panels installation')!r}",
+    )
+    # A plural subject reads "are the ...", never "is the doors".
+    PLURAL_CASES = [
+        ("how much for burglar bars", 'are the burglar bars'),
+        ("do you fit doors",          'are the doors'),
+        ("tiles for my bathroom floor", 'are the tiles'),
+        ("Cost of wiring a house",    'is the wiring'),
+        ("pest control please",       'is the pest control'),
+    ]
+    results.log(
+        "clarifier: singular/plural agreement holds for every subject",
+        all(frag in _reframe(m) for m, frag in PLURAL_CASES),
+        got="; ".join(f"{m[:26]!r}->{_reframe(m)[:46]!r}"
+                      for m, frag in PLURAL_CASES if frag not in _reframe(m))
+            or "all as expected",
+    )
+    # No emojis, one question, no price — the copy rules hold for every branch.
+    results.log(
+        "clarifier: one question, no price, no emoji",
+        all(_reframe(m).count('?') == 1 and 'US$' not in _reframe(m)
+            for m, _s in SUBJECT_CASES),
+        got=repr(_reframe("Tiling")),
+    )
+    # The abstract question survives only for a message naming nothing.
+    results.log(
+        "clarifier: the unnameable case keeps the original question",
+        _reframe("can you help with the thing at my place")
+        == "Just to confirm — is there any plumbing or water-related work involved in this?",
+        got=repr(_reframe("can you help with the thing at my place")),
+    )
+    # ── The other two paths that can ask a clarifying question ───────────────
+    # (1) DeepSeek down / generation failed → the offline fallback. Being
+    # offline is no excuse for asking about "this": the subject resolver is
+    # deterministic and always available.
+    from bot.out_of_scope_handler import _fallback_clarifier, _subject_echo_rule
+    results.log(
+        "clarifier: the offline fallback is contextual too",
+        ("the wiring you're asking about"
+         in _fallback_clarifier('out_of_scope', 'Cost of wiring a new 4 bedroom house')),
+        got=repr(_fallback_clarifier('out_of_scope',
+                                     'Cost of wiring a new 4 bedroom house')),
+    )
+    results.log(
+        "clarifier: an unknown category still gets a contextual fallback",
+        "the roofing you're asking about" in _fallback_clarifier('mystery',
+                                                                 'do you do roofing'),
+        got=repr(_fallback_clarifier('mystery', 'do you do roofing')),
+    )
+    results.log(
+        "clarifier: the delay/complaint fallbacks are unchanged",
+        _fallback_clarifier('delay_signal', 'maybe next month').startswith(
+            "No problem at all!"),
+        got=repr(_fallback_clarifier('delay_signal', 'maybe next month')[:50]),
+    )
+    # (2) LOW confidence → DeepSeek writes it. The model is handed the exact
+    # word to echo rather than left to pick one, so both paths name the same
+    # subject.
+    _echo = _subject_echo_rule("Cost of wiring a new 4 bedroom house")
+    results.log(
+        "clarifier: the LLM prompt is told the exact subject to say back",
+        ('"wiring"' in _echo and 'MUST contain the word' in _echo
+         and 'Never replace it with' in _echo),
+        got=repr(_echo),
+    )
+    results.log(
+        "clarifier: no subject means no instruction to invent one",
+        _subject_echo_rule("can you help with the thing at my place") == "",
+        got=repr(_subject_echo_rule("can you help with the thing at my place")),
+    )
+    # The prompt's own examples must not teach the pattern we just banned.
+    import inspect as _inspect_cl
+    from bot.out_of_scope_handler import _generate_clarifying_question as _gcq
+    _src = _inspect_cl.getsource(_gcq)
+    results.log(
+        "clarifier: the prompt's GOOD examples name a subject, and 'this' is a BAD one",
+        ("is the wiring you're asking about" in _src
+         and 'BAD EXAMPLES' in _src
+         and _src.index('BAD EXAMPLES')
+             < _src.index('is there any plumbing work involved in this?')),
+        got="prompt examples not in the expected shape",
+    )
+except Exception as e:
+    results.log("clarifier: contextual out-of-scope question", False, got=str(e))
+
+# The exit acknowledgement reads that state: a parked lead is never told the
+# visit is still on, however the slot came to be left on the row.
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RM_rv
+    class _FakeSelfAck:
+        _get_delay_acknowledgment = _RM_rv._get_delay_acknowledgment
+        def __init__(self, appt):
+            self.appointment = appt
+        def _customer_said_they_will_reach_out(self):
+            return False
+    _live = _FakeApptBooked(_SAST_RV.localize(_dt_rv(2026, 8, 31, 9, 0)))
+    _ack_live = _FakeSelfAck(_live)._get_delay_acknowledgment()
+    _parked_appt = _FakeApptBooked(_SAST_RV.localize(_dt_rv(2026, 8, 31, 9, 0)))
+    _parked_appt.internal_notes = Appointment.PARKED_TAG
+    _ack_parked = _FakeSelfAck(_parked_appt)._get_delay_acknowledgment()
+    results.log(
+        "delay ack: live booking restated, parked booking never is",
+        ("see you on" in _ack_live and "see you on" not in _ack_parked),
+        got=f"live={_ack_live[:40]!r} parked={_ack_parked[:40]!r}",
+    )
+except Exception as e:
+    results.log("delay ack: parked booking never restated", False, got=str(e))
+
 # The AI-first wrapper must still yield a date offline by falling through to the
 # deterministic parser (proves the fallback is wired, not just the AI path).
 for msg in ("next week", "August", "this weekend"):
@@ -2026,13 +2477,17 @@ try:
         _build_job_quote_reply = ResponseMixin._build_job_quote_reply
         _get_first_pass_question = ResponseMixin._get_first_pass_question
         _already_sent_job_quote_pitch = ResponseMixin._already_sent_job_quote_pitch
-        def __init__(self, nq, history=None):
+        _quote_route_followup = ResponseMixin._quote_route_followup
+        _has_plan_on_file = ResponseMixin._has_plan_on_file
+        def __init__(self, nq, history=None, area=None, plan=False):
             self._nq = nq
-            if history is not None:
-                class _Appt:
-                    pass
-                self.appointment = _Appt()
-                self.appointment.conversation_history = history
+            class _Appt:
+                pass
+            self.appointment = _Appt()
+            self.appointment.conversation_history = history or []
+            self.appointment.customer_area = area
+            self.appointment.plan_file = 'plans/house.jpg' if plan else ''
+            self.appointment.plan_status = 'plan_uploaded' if plan else ''
         def get_next_question_to_ask(self):
             return self._nq
         def _capture_named_products_as_description(self, message):
@@ -2094,6 +2549,58 @@ try:
         "job quote reply: shona pitch in history also blocks a re-pitch",
         _SPLIT not in _jq_dup_sn and "all-in figure" not in _jq_dup_sn,
         got=repr(_jq_dup_sn),
+    )
+    # The follow-up must never re-ask a field we already hold. The stages with no
+    # scripted question ('name', 'complete') used to fall back on the AREA
+    # question unconditionally — prod asked "What area are you in?" of a lead who
+    # had answered "Magunje" four times, right after "Sorry I think I asked for a
+    # quotation first".
+    _jq_named = _FakeSelfJQ("name", area="Magunje", history=[
+        {"role": "assistant",
+         "content": "We'll get you an exact, all-in figure free on a quick on-site visit."},
+    ])._build_job_quote_reply("english", "Sorry I think I asked for a quotation first")
+    results.log(
+        "job quote reply: area already on file is never re-asked",
+        "what area are you in" not in _jq_named.lower()
+        and "name should we put on the booking" in _jq_named.lower(),
+        got=repr(_jq_named),
+    )
+    _jq_done = _FakeSelfJQ("complete", area="Magunje", history=[
+        {"role": "assistant",
+         "content": "We'll get you an exact, all-in figure free on a quick on-site visit."},
+    ])._build_job_quote_reply("english", "quotation please")
+    results.log(
+        "job quote reply: nothing left to collect -> the visit, not the area again",
+        "what area are you in" not in _jq_done.lower(),
+        got=repr(_jq_done),
+    )
+    # Area genuinely missing at a scriptless stage → still ask for it.
+    _jq_noarea = _FakeSelfJQ("complete", area=None, history=[
+        {"role": "assistant",
+         "content": "We'll get you an exact, all-in figure free on a quick on-site visit."},
+    ])._build_job_quote_reply("english", "quotation please")
+    results.log(
+        "job quote reply: area still missing -> the area question is asked",
+        "what area are you in" in _jq_noarea.lower(),
+        got=repr(_jq_noarea),
+    )
+    # A lead who has SENT their plan is quoted off it, not pitched the visit
+    # again ("Sorry I think I asked for a quotation first", plan sent an hour
+    # earlier).
+    _jq_plan = _FakeSelfJQ("availability_date", area="Magunje", plan=True
+                           )._build_job_quote_reply("english", "quote those please")
+    results.log(
+        "job quote reply: a plan on file is quoted, not answered with the visit pitch",
+        ("written quotation" in _jq_plan.lower()
+         and "all-in figure free on a quick on-site visit" not in _jq_plan),
+        got=repr(_jq_plan),
+    )
+    _jq_noplan = _FakeSelfJQ("availability_date", area="Magunje", plan=False
+                             )._build_job_quote_reply("english", "quote those please")
+    results.log(
+        "job quote reply: no plan on file -> the free-visit route is unchanged",
+        "all-in figure free on a quick on-site visit" in _jq_noplan,
+        got=repr(_jq_noplan),
     )
     # Tub sizes: a size question with NO specific tub type named must list ALL
     # measurements (built-in + free-standing + corner); naming a type gives just

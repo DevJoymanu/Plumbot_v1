@@ -501,6 +501,10 @@ _OOS_KEYWORDS = (
     "air conditioning", "aircon", "hvac",
     "solar panels", "solar energy",
     "borehole",
+    # Joinery/glazing. Multi-word on purpose: a bare "door" or "window" would
+    # match "shower door" and "window sill in the bathroom", which ARE ours.
+    "glazing", "door fitting", "door frame", "window fitting", "window frame",
+    "burglar bar",
 )
 
 # The prose list the DeepSeek classifier prompt shows as "services we do NOT
@@ -509,6 +513,11 @@ _OOS_KEYWORDS = (
 OOS_SERVICE_TERMS = (
     "painting", "electrical", "roofing", "solar", "borehole",
     "gardening", "carpentry", "pest control",
+    # Doors, windows and glazing are joinery, not plumbing. Without them on the
+    # list the classifier read "9 inch sized doors x2" as work we do and the bot
+    # replied "We can definitely sort out two 9-inch doors for your bathroom
+    # project" — a promise nobody here can keep.
+    "door and window fitting", "glazing",
 )
 
 
@@ -756,19 +765,102 @@ _FALLBACK_CLARIFIERS: dict[str, str] = {
 }
 
 
+# The work customers name when it isn't ours, in the words THEY use. The
+# clarifier echoes the customer's own token back, so the question is always
+# about the thing they actually asked about.
+#
+# Deliberately their vocabulary, not our labels: a lead who wrote "wiring"
+# should be asked about "the wiring", not "the electrical work" — reading your
+# own word back is what makes the question feel answered rather than deflected.
+_OOS_SUBJECT_WORDS = (
+    # Electrical
+    'wiring', 'rewiring', 'electrics', 'electrical work', 'electrical',
+    'electrician',
+    # Building trades
+    'roofing', 'roof', 'painting', 'paint', 'plastering', 'tiling', 'tiles',
+    'carpentry', 'furniture', 'glazing', 'burglar bars', 'doors', 'windows',
+    'paving', 'fencing', 'welding', 'ceiling', 'thatching', 'brickwork',
+    'garage', 'carport', 'driveway',
+    # Services
+    'solar panels', 'solar geyser', 'solar', 'borehole', 'landscaping',
+    'gardening', 'garden', 'pest control', 'air conditioning', 'aircon',
+    'security system', 'alarm',
+)
+
+
+def _oos_subject(message: str):
+    """The thing the customer named, in their own words — or None.
+
+    Longest match first so 'electrical work' beats 'electrical', and
+    'pest control' is never truncated to something that reads oddly in the
+    sentence it lands in.
+    """
+    msg = (message or '').lower()
+    if not msg:
+        return None
+    for word in sorted(_OOS_SUBJECT_WORDS, key=len, reverse=True):
+        if re.search(rf'\b{re.escape(word)}\b', msg):
+            return word
+    return None
+
+
 def _generate_plumbing_reframe_question(message: str) -> str:
-    msg = message.lower()
+    """Ask whether what they named is actually plumbing — always about THEIR
+    subject, never about "this".
 
-    if "garage" in msg or "carport" in msg:
-        return "Just to check — are you looking for plumbing work in the garage like a sink, water pipes, or drainage?"
+    Prod: "Cost of wiring a new 4 bedroom house" was answered with "Just to
+    confirm — is there any plumbing or water-related work involved in this?"
+    The customer had to work out what "this" referred to, and that the bot had
+    even read the word 'wiring'. Naming it back costs nothing and reads as an
+    answer rather than a deflection.
+    """
+    subject = _oos_subject(message)
+    if subject:
+        # "are the burglar bars", "is the wiring" — a plural subject reading
+        # "is the doors" is exactly the kind of seam that makes copy sound
+        # generated. Trailing 's' settles it for every word in the list.
+        verb = 'are' if subject.endswith('s') else 'is'
+        return (
+            f"Just to clarify, {verb} the {subject} you're asking about related "
+            "to plumbing or water systems in the house?"
+        )
 
-    if "paint" in msg:
-        return "Just checking — is this part of a renovation where you also need plumbing like bathroom or kitchen fittings?"
-
-    if "electric" in msg:
-        return "Do you mean any plumbing work like geysers or water installations alongside the electrical work?"
-
+    # Nothing nameable in the message — the only case that still has to ask in
+    # the abstract.
     return "Just to confirm — is there any plumbing or water-related work involved in this?"
+
+def _subject_echo_rule(message: str) -> str:
+    """The instruction block that forces the LLM to name the customer's own
+    subject back, or '' when the message names nothing we can pin.
+
+    The model is told the exact word rather than left to pick one: it is the
+    same resolver the deterministic branch uses, so a lead gets the identical
+    subject whichever path writes the question.
+    """
+    subject = _oos_subject(message)
+    if not subject:
+        return ""
+    return (
+        f'\nTHE THING THEY NAMED: "{subject}"\n'
+        f'Your question MUST contain the word "{subject}" and ask whether THAT '
+        f'is connected to plumbing or water in the house. Never replace it with '
+        f'"this", "that" or "it" — reading their own word back is what proves '
+        f'we read the message.\n'
+    )
+
+
+def _fallback_clarifier(category: str, message: str = "") -> str:
+    """The clarifier used when DeepSeek can't write one.
+
+    Contextual wherever the message names something: being offline is no excuse
+    for asking about "this", and the resolver that names their subject is
+    deterministic and always available.
+    """
+    if category == "out_of_scope":
+        return _generate_plumbing_reframe_question(message)
+    return _FALLBACK_CLARIFIERS.get(
+        category, _generate_plumbing_reframe_question(message))
+
 
 def _generate_clarifying_question(
     message: str,
@@ -784,7 +876,7 @@ def _generate_clarifying_question(
     Falls back to a hardcoded question if DeepSeek is unavailable.
     """
     if not _deepseek:
-        return _FALLBACK_CLARIFIERS.get(category, _FALLBACK_CLARIFIERS["out_of_scope"])
+        return _fallback_clarifier(category, message)
 
     # Conversation context
     history = appointment.conversation_history or []
@@ -833,11 +925,13 @@ CUSTOMER MESSAGE:
 
 WHY IT'S AMBIGUOUS:
 {detail}
-
+{_subject_echo_rule(message)}
 TASK:
 Write ONE short clarifying question that steers the conversation toward plumbing services.
 
 STRICT RULES:
+0. ALWAYS name the specific thing the customer asked about, in THEIR words. If
+   they said "wiring", your question says "wiring" — never "this" or "that"
 1. ALWAYS assume the customer probably needs plumbing help
 2. ALWAYS mention at least ONE specific plumbing service:
    - bathroom renovation
@@ -852,15 +946,17 @@ STRICT RULES:
 7. DO NOT be vague or generic
 8. DO NOT ask open-ended questions
 
-GOOD EXAMPLES:
-- "Just to check — are you looking for bathroom plumbing or something like a geyser installation?"
-- "Got you — is this for a pipe issue or were you thinking of a full bathroom renovation?"
-- "Just checking, is this something like a blocked drain or a new installation you want sorted?"
+GOOD EXAMPLES (each one names what the customer asked about):
+- "Just to clarify, is the wiring you're asking about related to plumbing or water systems in the house?"
+- "Got you — is the tiling part of a bathroom you're redoing, or on its own?"
+- "Just checking, is the geyser a repair or a new installation you want sorted?"
 
 BAD EXAMPLES:
 - "Can you clarify?"
 - "What do you mean?"
 - "Could you explain more?"
+- "Just to confirm — is there any plumbing work involved in this?"  (says "this"
+  instead of the thing they named)
 
 OUTPUT:
 Only the question text. No quotes, no labels."""
@@ -888,7 +984,7 @@ Only the question text. No quotes, no labels."""
 
     except Exception as exc:
         logger.warning("Clarifying question generation failed: %s", exc)
-        return _FALLBACK_CLARIFIERS.get(category, _FALLBACK_CLARIFIERS["out_of_scope"])
+        return _fallback_clarifier(category, message)
 
 
 # ── Pending-answer resolver ───────────────────────────────────────────────────
@@ -1699,6 +1795,15 @@ _EXPLICIT_DEFERRAL_PHRASES = (
     "will get in touch", "i'll get in touch", "will be in touch",
     "get in touch when", "get in touch once",
     "not yet sorted", "to that stage",
+    # Postponing the date itself. "Can I give my new date later" is as explicit
+    # as a deferral gets, and nothing here caught it: with another trade named in
+    # the same breath ("our priority was glazing"), the keyword fallback read the
+    # whole message as an out-of-scope enquiry instead (prod 2026-08-30).
+    # Each phrase carries its own "later" or "new" — a bare "date later" would
+    # swallow "is the date later this week?", which is the opposite of a defer.
+    "give my new date", "give you a new date", "give a new date",
+    "new date later", "another date later",
+    "confirm the date later", "confirm a date later",
 )
 
 # The "I am not at that stage yet" family, which needs a pattern rather than
@@ -1813,6 +1918,10 @@ def _build_delay_reply(message: str, appointment) -> str:
             appointment.mark_parked(save=True)
         except Exception:
             pass
+        # A brush-off with a visit on the books releases it outright: there is no
+        # check-back date to weigh it against, and they've just told us they're
+        # stepping away. (Same rule as the check-back path below.)
+        release_deferred_visit(appointment, reason='brush-off')
         # Already have their email → send the portfolio now, then ask for a rough
         # follow-up date so we check back in proactively.
         if getattr(appointment, 'customer_email', None):
@@ -1983,6 +2092,68 @@ def _stored_followup_time(appointment):
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
+def release_deferred_visit(appointment, reason='', checkin_dt=None) -> bool:
+    """A confirmed visit the customer has just deferred is not happening —
+    release the slot and tell the plumber it is off.
+
+    `checkin_dt` is the check-back we agreed instead. When it falls BEFORE the
+    booked visit the booking stands (we're only checking in ahead of it); on or
+    after it, the visit cannot be what they meant, so it goes. With no
+    check-back at all (a brush-off) the deferral itself is the answer and the
+    slot is released outright.
+
+    Production 2026-08-30: a lead booked Monday 9am, then said "our priority
+    was glazing, can I give my new date later". The delay flow parked them and
+    set a 14-day check-back, but left status='confirmed' with the datetime
+    intact — so their next "Great" (an ack of the photos we'd just sent) hit the
+    exit-signal branch, which reads that state and replied "see you Monday,
+    August 31 at 09:00 AM". The plumber was still booked to drive to Magunje.
+    """
+    try:
+        _, current = appointment.deferred_slot_field()
+    except AttributeError:
+        return False  # lightweight fakes / non-Appointment callers
+    if getattr(appointment, 'status', None) != 'confirmed' or not current:
+        return False
+    # Compare the two as the customer reads them — the slot is stored in UTC, so
+    # an evening visit compared raw can look like the next day.
+    _sast = pytz.timezone('Africa/Johannesburg')
+    if (checkin_dt is not None
+            and checkin_dt.astimezone(_sast).date() < current.astimezone(_sast).date()):
+        return False
+
+    released = appointment.release_deferred_visit(reason=reason)
+    if not released:
+        return False
+    logger.info("Deferred visit released (%s) — apt %s was %s",
+                reason or 'no reason given', getattr(appointment, 'pk', None),
+                released.isoformat())
+
+    # Everything past here is best-effort in its own try: the slot is already
+    # given back, and a dead calendar or mail transport must not undo that.
+    try:
+        from bot.views.plumbot.notification_mixin import cancel_calendar_event
+        cancel_calendar_event(appointment)
+    except Exception:
+        logger.exception("Calendar cancel failed for released visit — apt %s",
+                         getattr(appointment, 'pk', None))
+    try:
+        from bot.plumber_notifications import send_plumber_followup_alert
+        send_plumber_followup_alert(
+            appointment,
+            reason='visit_deferred',
+            follow_up_date_str=(_friendly_iso(checkin_dt.date().isoformat())
+                                if checkin_dt is not None else None),
+            released_slot_str=released.astimezone(
+                pytz.timezone('Africa/Johannesburg')
+            ).strftime('%A, %B %d at %I:%M %p'),
+        )
+    except Exception:
+        logger.exception("Plumber alert failed for released visit — apt %s",
+                         getattr(appointment, 'pk', None))
+    return True
+
+
 def _store_delay_followup_date(appointment, iso_date, source_message=None):
     """
     Persist the agreed follow-up date on the appointment: a [FOLLOW_UP_DATE] note
@@ -2026,6 +2197,20 @@ def _store_delay_followup_date(appointment, iso_date, source_message=None):
         )
         appointment.delay_followup_due_at = agreed_dt
         appointment.save(update_fields=['delay_followup_due_at'])
+        # A check-back we agreed for on/after a booked visit means the visit
+        # isn't what they're waiting for any more — give the slot back rather
+        # than holding two contradictory promises on one lead. Its own try: a
+        # failure here is not "could not parse the date", and must not be
+        # reported as one by the enclosing handler.
+        try:
+            release_deferred_visit(
+                appointment,
+                reason=f'deferred to check-back {iso_date}',
+                checkin_dt=agreed_dt,
+            )
+        except Exception:
+            logger.exception("Releasing the deferred visit failed — apt %s",
+                             getattr(appointment, 'pk', None))
         if named_time:
             _append_note_tag(appointment, f"[FOLLOW_UP_TIME] {hour:02d}:{minute:02d}")
         logger.info(

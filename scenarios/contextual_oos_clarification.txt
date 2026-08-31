@@ -1,0 +1,21 @@
+# The out-of-scope clarification is always about THEIR subject (prod 2026-08-30,
+# barmak, +263715928339).
+#
+# "Cost of wiring a new 4 bedroom house" was answered with "Just to confirm — is
+# there any plumbing or water-related work involved in this?" — leaving the
+# customer to work out what "this" referred to, and whether the bot had read the
+# word 'wiring' at all. The ask now names their own word back:
+# "Just to clarify, is the wiring you're asking about related to plumbing or
+# water systems in the house?"
+#
+# Fixed by _oos_subject() + _generate_plumbing_reframe_question.
+
+> Cost of wiring a new 4 bedroom house
+expect: the wiring you're asking about
+expect: plumbing or water systems
+reject: involved in this
+reject: US$
+
+> No it's just the electrics
+reject: the wiring you're asking about
+reject: US$
