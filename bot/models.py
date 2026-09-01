@@ -543,6 +543,12 @@ class Appointment(models.Model):
     needs_estimate = models.BooleanField(default=False, help_text="Customer requested written estimate")
 
     # Reminders
+    # The 2-day reminder used to share reminder_1_day_sent ("reuse closest
+    # field"), which made the two mutually exclusive: whichever fired first
+    # marked the flag and the other was skipped as already sent, so anyone
+    # booked two or more days out got the 2-day nudge and then nothing until the
+    # morning. It needs its own column.
+    reminder_2_days_sent = models.BooleanField(default=False, help_text="2-day reminder sent")
     reminder_1_day_sent = models.BooleanField(default=False, help_text="1-day reminder sent")
     reminder_morning_sent = models.BooleanField(default=False, help_text="Morning reminder sent")
     reminder_2_hours_sent = models.BooleanField(default=False, help_text="2-hour reminder sent")
@@ -2216,7 +2222,19 @@ class Appointment(models.Model):
         reengaged = '[DELAY REACTIVATION]' in history_text or '[DELAY ACCESS CHECK-IN]' in history_text
         last_checked = '[DELAY LAST CHECK]' in history_text
 
-        if self.delay_followup_due_at:
+        # delay_followup_due_at deliberately OUTLIVES the delay queue:
+        # clear_delayed() leaves it set so send_followups can keep a parked lead
+        # out of normal follow-ups (its eligibility query excludes a future due
+        # date). So the field alone does not mean a delay email is still coming —
+        # and keying this projection off it alone made every lead who left the
+        # queue, booking included, show a "Delay re-engagement email — overdue"
+        # row for ever, plus a last-check email that would never be sent
+        # (Barmak lead 858: booked, is_delayed False, no delay email ever sent).
+        #
+        # Project the sequence while the lead is genuinely still in the queue, or
+        # where a delay email really did go out — so history stays visible on the
+        # leads that have it, and phantoms do not appear on the ones that don't.
+        if self.delay_followup_due_at and (self.is_delayed or reengaged or last_checked):
             due = self.delay_followup_due_at
             items.append({
                 'label': 'Delay re-engagement email',
@@ -2241,12 +2259,19 @@ class Appointment(models.Model):
                 return sast.localize(datetime.combine(d, dt_time(hour, minute)))
 
             reminders = [
-                ('Reminder — 2 days before',  _at((sd_sast - timedelta(days=2)).date(), 18, 0), self.reminder_1_day_sent),
+                ('Reminder — 2 days before',  _at((sd_sast - timedelta(days=2)).date(), 18, 0), self.reminder_2_days_sent),
                 ('Reminder — 1 day before',   _at((sd_sast - timedelta(days=1)).date(), 18, 0), self.reminder_1_day_sent),
                 ('Reminder — morning of',     _at(sd_sast.date(), 7, 0),                        self.reminder_morning_sent),
                 ('Reminder — 2 hours before', self.scheduled_datetime - timedelta(hours=2),     self.reminder_2_hours_sent),
             ]
             for label, when, sent in reminders:
+                # A reminder whose moment predates the lead's own row could
+                # never have been sent by anything, so reporting it "overdue"
+                # is noise on every lead booked at short notice. (It cannot
+                # catch a long-standing lead who booked late — there is no
+                # booked-at timestamp to test — but it kills the clear cases.)
+                if not sent and self.created_at and when < self.created_at:
+                    continue
                 items.append({
                     'label': label,
                     'scheduled_for': when,

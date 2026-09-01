@@ -73,6 +73,25 @@ def _is_2h_window(appt_utc_dt, now_utc) -> bool:
     return (1 * 3600 + 55 * 60) <= diff <= (2 * 3600 + 5 * 60)
 
 
+def _morning_collides_with_2h(morning_target_local, appt_utc_dt) -> bool:
+    """True when the morning-of and 2-hours-before windows overlap.
+
+    They are separate reminders with separate flags, so for an early enough
+    appointment BOTH fire on the same tick and the customer gets two messages a
+    minute apart. A 09:00 visit is the worst case: morning-of covers 06:50-07:10
+    and the 2-hour window covers 06:55-07:05, entirely inside it.
+
+    Windows (local/UTC agnostic — both operands are aware datetimes):
+        morning   [target - WINDOW_MINUTES, target + WINDOW_MINUTES]
+        two-hour  [appt - 2h05m,            appt - 1h55m]
+    """
+    morning_start = morning_target_local - timedelta(minutes=WINDOW_MINUTES)
+    morning_end   = morning_target_local + timedelta(minutes=WINDOW_MINUTES)
+    two_h_start   = appt_utc_dt - timedelta(hours=2, minutes=5)
+    two_h_end     = appt_utc_dt - timedelta(hours=1, minutes=55)
+    return morning_start <= two_h_end and two_h_start <= morning_end
+
+
 def _appt_utc(apt):
     """
     Return the appointment's scheduled_datetime as a UTC-aware datetime.
@@ -139,7 +158,7 @@ def _apt_date_str(apt) -> str:
 def _already_sent_customer(apt, rtype: str) -> bool:
     """Check dedicated boolean fields added in migration 0008."""
     field_map = {
-        "lead_2days":   "reminder_1_day_sent",    # reuse closest field
+        "lead_2days":   "reminder_2_days_sent",
         "lead_1day":    "reminder_1_day_sent",
         "lead_morning": "reminder_morning_sent",
         "lead_2hours":  "reminder_2_hours_sent",
@@ -152,9 +171,14 @@ def _already_sent_customer(apt, rtype: str) -> bool:
 
 
 def _mark_sent_customer(apt, rtype: str) -> None:
-    """Mark the appropriate boolean field (and save only that field)."""
+    """Mark the appropriate boolean field (and save only that field).
+
+    Must stay in step with _already_sent_customer above — while the two maps
+    disagreed nothing worked, and while lead_2days shared lead_1day's column the
+    first of the pair to fire silently cancelled the second.
+    """
     field_map = {
-        "lead_2days":   "reminder_1_day_sent",
+        "lead_2days":   "reminder_2_days_sent",
         "lead_1day":    "reminder_1_day_sent",
         "lead_morning": "reminder_morning_sent",
         "lead_2hours":  "reminder_2_hours_sent",
@@ -704,6 +728,24 @@ class Command(BaseCommand):
                     if _already_sent_customer(apt, rtype):
                         customer_skipped += 1
                         self.stdout.write(f"    SKIP  {label} → {apt_label}")
+                    elif rtype == "lead_morning" and _morning_collides_with_2h(
+                        now_local.replace(hour=hour, minute=0, second=0, microsecond=0),
+                        apt_u,
+                    ):
+                        # An early appointment puts both windows on the same tick
+                        # and they use different flags, so the customer would get
+                        # two messages a minute apart. The 2-hour reminder is the
+                        # more useful of the two ("we'll be with you at 9"), so it
+                        # carries the morning. Marked sent, not merely skipped:
+                        # the morning window outlives the 2-hour one, so an
+                        # unmarked skip would just fire on a later tick.
+                        if not dry_run:
+                            _mark_sent_customer(apt, rtype)
+                        customer_skipped += 1
+                        self.stdout.write(
+                            f"    SKIP  {label} → {apt_label} "
+                            f"[2-hour reminder covers it]"
+                        )
                     else:
                         outcome = _deliver_customer_reminder(
                             apt, rtype,

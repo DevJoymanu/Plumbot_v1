@@ -7994,6 +7994,93 @@ results.log(
     got=f"call sites={_srm_src.count('_deliver_customer_reminder(') - 1}",
 )
 
+# ── The 2-day and 1-day reminders have separate flags ────────────────────────
+# They both wrote reminder_1_day_sent ("reuse closest field"), which made them
+# mutually exclusive: the 2-day fired, stamped the flag, and the 1-day was then
+# skipped as already sent. Anyone booked 2+ days out got one nudge and then
+# nothing until the morning.
+results.log(
+    "reminders: the 2-day reminder reads its own flag",
+    _srm._already_sent_customer(
+        type('A', (), {'reminder_2_days_sent': True, 'reminder_1_day_sent': False})(),
+        'lead_2days') is True,
+    got="own column",
+)
+results.log(
+    "reminders: a sent 2-day reminder no longer suppresses the 1-day",
+    _srm._already_sent_customer(
+        type('A', (), {'reminder_2_days_sent': True, 'reminder_1_day_sent': False})(),
+        'lead_1day') is False,
+    got="1-day still due",
+)
+results.log(
+    "reminders: the read and write maps agree on every reminder type",
+    _inspect.getsource(_srm._already_sent_customer).count('reminder_2_days_sent')
+    == _inspect.getsource(_srm._mark_sent_customer).count('reminder_2_days_sent') == 1,
+    got="maps in step",
+)
+
+# ── Morning-of and 2-hours-before must not double-send ───────────────────────
+# Separate flags + overlapping windows meant an early appointment got both on
+# the same tick. A 09:00 visit is the worst case: the 2-hour window (06:55-07:05)
+# sits entirely inside the morning window (06:50-07:10).
+import pytz as _pytz
+from datetime import datetime as _dt, timedelta as _td
+_cat = _pytz.timezone('Africa/Harare')
+_morning_7am = _cat.localize(_dt(2026, 9, 2, 7, 0))
+
+results.log(
+    "reminders: a 09:00 appointment collides with the morning reminder",
+    _srm._morning_collides_with_2h(_morning_7am, _cat.localize(_dt(2026, 9, 2, 9, 0))),
+    got="collision detected",
+)
+results.log(
+    "reminders: a midday appointment does not collide",
+    not _srm._morning_collides_with_2h(_morning_7am, _cat.localize(_dt(2026, 9, 2, 13, 0))),
+    got="no collision",
+)
+results.log(
+    "reminders: a late-afternoon appointment does not collide",
+    not _srm._morning_collides_with_2h(_morning_7am, _cat.localize(_dt(2026, 9, 2, 16, 30))),
+    got="no collision",
+)
+results.log(
+    "reminders: the collision skip stamps the flag so it cannot fire later",
+    "[2-hour reminder covers it]" in _srm_src
+    and _srm_src.index("_morning_collides_with_2h") < _srm_src.index("[2-hour reminder covers it]")
+    and "_mark_sent_customer(apt, rtype)" in _srm_src.split("_morning_collides_with_2h")[1][:900],
+    got="marked, not merely skipped",
+)
+
+# ── The dashboard must not project delay emails for a lead who left the queue ─
+# delay_followup_due_at deliberately outlives clear_delayed() (send_followups
+# uses it to keep a parked lead out of normal follow-ups), so keying the
+# projection off that field alone showed a permanent "overdue" delay email on
+# every lead who had since booked — Barmak 858, booked, is_delayed False, no
+# delay email ever sent.
+import bot.models as _bot_models
+_gue_src = _inspect.getsource(_bot_models.Appointment.get_upcoming_emails)
+results.log(
+    "dashboard: the delay sequence is gated on the lead still being delayed",
+    "self.is_delayed or reengaged or last_checked" in _gue_src,
+    got="gated",
+)
+results.log(
+    "dashboard: a delay email that really was sent still shows in history",
+    "reengaged" in _gue_src and "last_checked" in _gue_src,
+    got="history preserved",
+)
+results.log(
+    "dashboard: a reminder moment predating the lead's own row is not 'overdue'",
+    "when < self.created_at" in _gue_src,
+    got="phantom guard present",
+)
+results.log(
+    "dashboard: the 2-day row reads the 2-day flag, not the 1-day one",
+    "self.reminder_2_days_sent" in _gue_src,
+    got="own flag",
+)
+
 if GATE_ONLY:
     _finish()
 
