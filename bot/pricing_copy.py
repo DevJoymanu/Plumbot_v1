@@ -247,45 +247,51 @@ def _tenant_item_block(cfg, item) -> dict:
         if noun:
             article = 'an' if noun[0].lower() in 'aeiou' else 'a'
             if components_add_up:
+                # The three figures reconcile, so "so X all-in" is a true sum.
                 total_line = (
                     f"Labour to install {article} {noun} is {cur}{labour}. "
-                    f"If we supply {article} new {noun}, that's from {cur}{supply}, "
+                    f"The {noun} on its own is from {cur}{supply}, "
                     f"so {cur}{total} all-in."
                 )
                 sn_total_line = (
                     f"Mari yekuisa {noun} i{cur}{labour}. "
-                    f"Kana tikakupai {noun} itsva, ndeye kubva pa{cur}{supply}, "
+                    f"{noun.capitalize()} yoga inotangira pa{cur}{supply}, "
                     f"saka {cur}{total} all-in."
                 )
             else:
+                # A bundle: the all-in covers extra parts, so the supply price is
+                # still stated on its own but never joined by "so" — that would
+                # claim a sum the figures do not make.
                 total_line = (
                     f"Labour to install {article} {noun} is {cur}{labour}. "
-                    f"If we supply {article} new {noun}, it starts from {cur}{total}."
+                    f"The {noun} on its own is from {cur}{supply}. "
+                    f"Supplied and fitted, from {cur}{total} all-in."
                 )
                 sn_total_line = (
                     f"Mari yekuisa {noun} i{cur}{labour}. "
-                    f"Kana tikakupai {noun} itsva, zvinotangira pa{cur}{total}."
+                    f"{noun.capitalize()} yoga inotangira pa{cur}{supply}. "
+                    f"Nekuiswa, kubva pa{cur}{total} all-in."
                 )
         else:
             # Repairs, servicing, per-unit work: the label is not a noun you can
             # "install a" of, so keep a form that works for any wording.
             if components_add_up:
                 total_line = (
-                    f"{name}: labour from {cur}{labour}, supply from {cur}{supply}, "
+                    f"{name}: labour from {cur}{labour}, parts from {cur}{supply}, "
                     f"so from {cur}{total} all-in."
                 )
                 sn_total_line = (
-                    f"{name}: labour kubva {cur}{labour}, supply kubva {cur}{supply}, "
+                    f"{name}: labour kubva {cur}{labour}, zvinhu kubva {cur}{supply}, "
                     f"saka kubva {cur}{total} all-in."
                 )
             else:
                 total_line = (
-                    f"{name}: labour from {cur}{labour}. "
-                    f"If we supply it too, from {cur}{total} all-in."
+                    f"{name}: labour from {cur}{labour}, parts from {cur}{supply}. "
+                    f"All-in from {cur}{total}."
                 )
                 sn_total_line = (
-                    f"{name}: labour kubva {cur}{labour}. "
-                    f"Kana tikapa zvinhu futi, kubva {cur}{total} all-in."
+                    f"{name}: labour kubva {cur}{labour}, zvinhu kubva {cur}{supply}. "
+                    f"All-in kubva {cur}{total}."
                 )
         return {
             "breakdown_lines": [],

@@ -3583,7 +3583,7 @@ try:
     _ok = (
         _block.get('breakdown_lines') == []
         and _block.get('total_line') == (
-            'Tiling per square meter: labour from US$5, supply from US$15, '
+            'Tiling per square meter: labour from US$5, parts from US$15, '
             'so from US$20 all-in.')
         and 'rough guide' in (_block.get('cheapest_line') or '')
         and 'kubva US$5' in (_block.get('sn_total_line') or '')
@@ -7475,7 +7475,7 @@ _blk = _tib(_cfgp, _row)
 results.log(
     "price answer: labour to install X, then the supplied-too figure",
     _blk['total_line'] == ('Labour to install a toilet is US$50. '
-                           "If we supply a new toilet, that's from US$90, "
+                           'The toilet on its own is from US$90, '
                            'so US$140 all-in.'),
     got=repr(_blk['total_line']),
 )
@@ -7510,7 +7510,7 @@ _row2 = _ty.SimpleNamespace(label='Element replacement', short_label='',
 results.log(
     "price answer: a repair/service never becomes 'install a <service>'",
     _tib(_cfgp, _row2)['total_line'] ==
-    'Element replacement: labour from US$30, supply from US$10, so from US$40 all-in.',
+    'Element replacement: labour from US$30, parts from US$10, so from US$40 all-in.',
     got=repr(_tib(_cfgp, _row2)['total_line']),
 )
 # Every family the "install a" wording claims must actually read as English:
@@ -7525,12 +7525,18 @@ _row_odd = _ty.SimpleNamespace(label='Freestanding tub', short_label='', family=
                                allin=320, flat=None)
 _odd_line = _tib(_cfgp, _row_odd)['total_line']
 results.log(
-    "price answer: a bundle whose parts don't sum keeps the two-figure form",
-    len(re.findall(r'US\$(\d+)', _odd_line)) == 2 and 'US$320' in _odd_line
-    and 'US$150' not in _odd_line,
+    "price answer: a bundle still quotes its supply price on its own",
+    'US$150' in _odd_line and 'US$50' in _odd_line and 'US$320' in _odd_line,
     got=repr(_odd_line),
 )
-# And wherever three figures ARE named, they must actually add up.
+results.log(
+    "price answer: a bundle never CLAIMS a sum ('so X all-in')",
+    'so US$' not in _odd_line,
+    got=repr(_odd_line),
+)
+# The real invariant: wherever the copy joins the figures with "so <total>
+# all-in", that claim must be true. Stating three figures separately is fine;
+# asserting a sum that does not hold is not.
 _money = re.compile(r'US\$(\d+)')
 _sum_errors = []
 for _f, _v, _s, _l, _a in (
@@ -7543,11 +7549,13 @@ for _f, _v, _s, _l, _a in (
     _it = _ty.SimpleNamespace(label=_f.title(), short_label='', family=_f,
                               variant=_v, supply=_s, labour=_l, allin=_a, flat=None)
     _ln = _tib(_cfgp, _it)['total_line']
+    if 'so US$' not in _ln:
+        continue                      # no sum claimed, nothing to verify
     _fig = [int(x) for x in _money.findall(_ln)]
     if len(_fig) == 3 and _fig[0] + _fig[1] != _fig[2]:
         _sum_errors.append((_f, _v, _ln))
 results.log(
-    "price answer: three quoted figures always add up",
+    "price answer: any sum the copy claims actually adds up",
     not _sum_errors,
     got=str(_sum_errors),
 )
