@@ -2306,36 +2306,11 @@ class _FakeApptStage:
         self.conversation_history = history or []
         self.project_type = project_type
         self.project_description = project_description
-class _StubCfgNoPrices:
-    """Tenant config with no price sheet — the 'absent means omit' half of
-    _service_price_line, and what keeps the pre-existing continuation
-    assertions unchanged."""
-    @staticmethod
-    def labour_breakdown_lines():
-        return {}
-
-    @staticmethod
-    def rough_price_lines():
-        return {}
 
 
-class _StubCfgPriced:
-    """Tenant config that prices a shower and a toilet."""
-    @staticmethod
-    def labour_breakdown_lines():
-        return {'shower': 'Shower cubicle: supply from US$220, labour from US$85'}
-
-    @staticmethod
-    def rough_price_lines():
-        return {'shower': 'Shower cubicle from US$305',
-                'geyser': 'Geyser supply & install from US$200'}
 
 
 class _FakeSelfFollowup:
-    _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
-    _product_families_in = ResponseMixin._product_families_in
-    _service_price_line = ResponseMixin._service_price_line
-    tenant_cfg = _StubCfgNoPrices()
     _FAMILY_DISPLAY = ResponseMixin._FAMILY_DISPLAY
     _confirm_intent_question = ResponseMixin._confirm_intent_question
     _get_pricing_followup_prompt = ResponseMixin._get_pricing_followup_prompt
@@ -2855,8 +2830,6 @@ try:
         _quantity_for_family = ResponseMixin._quantity_for_family
         _scope_item_phrase = ResponseMixin._scope_item_phrase
         _service_continuation_reply = ResponseMixin._service_continuation_reply
-        _service_price_line = ResponseMixin._service_price_line
-        tenant_cfg = _StubCfgNoPrices()
     _sip = _FakeSelfSIP()
     _item2 = _sip._scope_item_phrase(
         "I want to purchase 2x shower cubicles and asseries", "shower cubicle")
@@ -2870,40 +2843,16 @@ try:
         and _item1 == "geyser",
         got=f"item={_item2!r}; cont={_cont2!r}",
     )
-    # ── "Do you have X" is answered with a PRICE, not just a yes ────────────
-    # Prod lead 856: "Do you have ceramic tubs" -> "Yes, we handle tub and all
-    # related plumbing work. Is a tub the only thing…" — a yes with no figure,
-    # and the lead never wrote again.
-    class _FakeSelfSIPPriced(_FakeSelfSIP):
-        tenant_cfg = _StubCfgPriced()
-    _sipp = _FakeSelfSIPPriced()
-    _priced = _sipp._service_continuation_reply("shower cubicle", "english")
+    # Price Conditional Rule: "Do you have ceramic tubs" is a SERVICE_INQUIRY,
+    # not a PRICE_QUERY, so the continuation reply must carry NO figure. The
+    # scoping question is what earns the next turn.
+    _svc = _sip._service_continuation_reply("shower cubicle", "english")
     results.log(
-        "service continuation: a priced family is quoted in the same reply",
-        "US$220" in _priced and "labour from US$85" in _priced
-        and "Yes, we handle shower cubicle" in _priced
-        and "only thing you're looking to get sorted?" in _priced,
-        got=repr(_priced),
-    )
-    # Falls back to the rough line when there is no supply/labour split.
-    _rough = _sipp._service_continuation_reply("geyser", "english")
-    results.log(
-        "service continuation: falls back to the rough price line",
-        "US$200" in _rough,
-        got=repr(_rough),
-    )
-    # Absent means omit — a tenant with no price sheet gets the old copy back,
-    # never another tenant's figures.
-    _unpriced = _sip._service_continuation_reply("shower cubicle", "english")
-    results.log(
-        "service continuation: no tenant price means no price line",
-        "US$" not in _unpriced and "Yes, we handle shower cubicle" in _unpriced,
-        got=repr(_unpriced),
-    )
-    results.log(
-        "service continuation: an unknown item never invents a price",
-        _sipp._service_price_line("skylight") == "",
-        got=repr(_sipp._service_price_line("skylight")),
+        "service continuation: a service inquiry is never answered with a price",
+        "US$" not in _svc and "$" not in _svc
+        and "Yes, we handle shower cubicle" in _svc
+        and _svc.rstrip().endswith("?"),
+        got=repr(_svc),
     )
 
     # A captured description satisfies the service question — never bounce a
@@ -7169,94 +7118,112 @@ except Exception as e:
 
 from bot.views.plumbot.response_mixin import (
     build_cold_opener as _bco, build_cold_opener_rule as _bcor,
-    COLD_OPENER as _BARE_OPENER,
+    strip_known_questions as _skq,
 )
 
+# The bare greeting killed 13 of the last 50 leads on turn one (26%). The
+# replacement is specific, but under the Price Conditional Rule it carries no
+# figures — a greeting is not a price question.
+_opener = _bco()
+results.log(
+    "cold opener: no longer the dead generic greeting",
+    "How may we assist you on plumbing services" not in _opener
+    and "bathroom and kitchen plumbing" in _opener,
+    got=repr(_opener),
+)
+results.log(
+    "cold opener: carries NO price (price conditional rule)",
+    "$" not in _opener and "US" not in _opener,
+    got=repr(_opener),
+)
+results.log(
+    "cold opener: ends on one this-or-that question, not an open one",
+    _opener.rstrip().endswith("?") and _opener.count("?") == 1,
+    got=repr(_opener),
+)
+results.log(
+    "cold opener: no emojis in customer-facing copy",
+    all(ord(ch) < 0x2190 for ch in _opener),
+    got=repr(_opener),
+)
+_opener_sn = _bco(is_shona=True)
+results.log(
+    "cold opener: mirrors Shona and stays price-free",
+    "Mhoro" in _opener_sn and "$" not in _opener_sn,
+    got=repr(_opener_sn),
+)
+results.log(
+    "cold opener: the LLM rule carries the same opener text",
+    "bathroom and kitchen plumbing" in _bcor() and "$" not in _bcor(),
+    got=repr(_bcor()[:180]),
+)
 
-class _StubTenantPriced:
-    """Stands in for a tenant with a real price sheet."""
-    slug = 'stub-priced'
+# ── Handler D: the memory check ─────────────────────────────────────────────
+# "what area are you in" was the most re-asked question in the last 50
+# conversations (4x), and lead 872 was asked for an area it had already given.
+class _FakeApptKnown:
+    customer_area = "Bulawayo"
+    customer_name = "Mrs Ncube"
+    project_type = "bathroom_renovation"
+    project_description = ""
 
 
-class _StubCfgOpener:
-    currency = 'US$'
-
-    @staticmethod
-    def labour_breakdown_lines():
-        return {'toilet': 'Toilet install: supply from US$90, labour from US$50',
-                'shower': 'Shower cubicle: supply from US$220, labour from US$85',
-                'tub': 'Tub: supply from US$150, labour from US$85'}
-
-    @staticmethod
-    def rough_price_lines():
-        return {'toilet': 'Toilet install from US$140'}
+class _FakeApptBlank:
+    customer_area = ""
+    customer_name = ""
+    project_type = ""
+    project_description = ""
 
 
-class _StubCfgBare:
-    currency = 'US$'
+_known, _blank = _FakeApptKnown(), _FakeApptBlank()
 
-    @staticmethod
-    def labour_breakdown_lines():
-        return {}
-
-    @staticmethod
-    def rough_price_lines():
-        return {}
-
-
-import bot.tenant_config as _tc
-_real_get_config = _tc.get_config
-
-# The bare greeting killed 13 of the last 50 leads on turn one (26%).
-try:
-    _tc.get_config = lambda tenant=None: _StubCfgOpener()
-    _opener = _bco(_StubTenantPriced())
-    results.log(
-        "cold opener: leads with two of the tenant's own prices",
-        "US$90" in _opener and "US$220" in _opener
-        and _opener.count("\n- ") == 2,
-        got=repr(_opener),
-    )
-    results.log(
-        "cold opener: ends on one this-or-that question, not an open one",
-        _opener.rstrip().endswith("?") and _opener.count("?") == 1,
-        got=repr(_opener),
-    )
-    results.log(
-        "cold opener: no emojis in customer-facing copy",
-        all(ord(ch) < 0x2190 for ch in _opener),
-        got=repr(_opener),
-    )
-    _opener_sn = _bco(_StubTenantPriced(), is_shona=True)
-    results.log(
-        "cold opener: mirrors Shona and still carries the figures",
-        "Mhoro" in _opener_sn and "US$90" in _opener_sn,
-        got=repr(_opener_sn),
-    )
-    # The LLM path must be told to send the SAME priced opener, or the two
-    # branches disagree about the most important message we ever send.
-    _rule = _bcor(_StubTenantPriced())
-    results.log(
-        "cold opener: the LLM rule carries the priced opener too",
-        "US$90" in _rule and "US$220" in _rule,
-        got=repr(_rule[:160]),
-    )
-
-    # Absent means omit — a tenant with no price sheet keeps the bare greeting
-    # rather than borrowing another tenant's numbers.
-    _tc.get_config = lambda tenant=None: _StubCfgBare()
-    results.log(
-        "cold opener: no price sheet falls back to the bare greeting",
-        _bco(None) == _BARE_OPENER,
-        got=repr(_bco(None)),
-    )
-    results.log(
-        "cold opener: the LLM rule falls back with it",
-        _bcor(None).startswith("CRITICAL RULE"),
-        got=repr(_bcor(None)[:80]),
-    )
-finally:
-    _tc.get_config = _real_get_config
+_r, _caught = _skq("Great, we can sort that. What area are you in?", _known)
+results.log(
+    "memory check: a known area is never asked for again",
+    "What area are you in?" not in _r and "we can sort that" in _r
+    and _caught == ['area'],
+    got=f"{_r!r} caught={_caught}",
+)
+_r2, _c2 = _skq("Great, we can sort that. What area are you in?", _blank)
+results.log(
+    "memory check: an unknown area is still asked for",
+    "What area are you in?" in _r2 and _c2 == [],
+    got=f"{_r2!r} caught={_c2}",
+)
+_r3, _c3 = _skq("One last thing, what name should we put on the booking?", _known)
+results.log(
+    "memory check: a known name is never asked for again (lead 874)",
+    "what name" not in _r3.lower() and _c3 == ['name']
+    and "Mrs Ncube" in _r3,
+    got=f"{_r3!r} caught={_c3}",
+)
+_r4, _c4 = _skq("Which service are you interested in?", _known)
+results.log(
+    "memory check: a whole-reply repeat becomes an acknowledgement, never empty",
+    _r4.strip() != "" and "?" not in _r4
+    and "bathroom renovation" in _r4 and _c4 == ['service'],
+    got=f"{_r4!r} caught={_c4}",
+)
+_r7, _c7 = _skq("What area are you in?", _blank)
+results.log(
+    "memory check: a first ask with nothing stored is sent untouched",
+    _r7 == "What area are you in?" and _c7 == [],
+    got=f"{_r7!r} caught={_c7}",
+)
+_r5, _c5 = _skq("Thanks for that. We'll get you a fixed price on the visit.", _known)
+results.log(
+    "memory check: a reply that asks nothing is untouched",
+    _r5 == "Thanks for that. We'll get you a fixed price on the visit." and _c5 == [],
+    got=f"{_r5!r}",
+)
+# The split marker must survive the guard, or the two-message send collapses.
+from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER as _MK
+_r6, _c6 = _skq(f"Noted, thanks.{_MK}What area are you in?", _known)
+results.log(
+    "memory check: the split marker survives and the re-ask is dropped",
+    _r6 == "Noted, thanks." and _c6 == ['area'],
+    got=f"{_r6!r} caught={_c6}",
+)
 
 # ── Out of scope: decline, never loop ───────────────────────────────────────
 from bot.out_of_scope_handler import (
@@ -7325,8 +7292,32 @@ from bot.management.commands.send_followups import Command as _FUCmd
 _supp_src = _inspect.getsource(_FUCmd._exclude_suppressed_states)
 results.log(
     "hard stop: follow-up eligibility excludes STOP_REQUESTED and EXCLUDED_AREA",
-    '[STOP_REQUESTED]' in _supp_src and '[EXCLUDED_AREA' in _supp_src,
+    '[STOP_REQUESTED]' in _supp_src and '[EXCLUDED_AREA' in _supp_src
+    and '[OOS_DECLINED]' in _supp_src,
     got=_supp_src,
+)
+
+# Handler C: a stop gets ONE confirmation — never silence, never a catalogue
+# offer and never a question.
+from bot.out_of_scope_handler import build_hard_stop_reply as _bhsr
+_stop_reply = _bhsr()
+results.log(
+    "hard stop: confirms once, asks nothing, offers no catalogue",
+    "?" not in _stop_reply
+    and "catalog" not in _stop_reply.lower()
+    and "email" not in _stop_reply.lower()
+    and all(ord(ch) < 0x2190 for ch in _stop_reply),
+    got=repr(_stop_reply),
+)
+results.log(
+    "hard stop: the confirmation leaves the door open",
+    "Hey" in _stop_reply and "Mhoro" not in _stop_reply,
+    got=repr(_stop_reply),
+)
+results.log(
+    "hard stop: mirrors Shona",
+    "Hesi" in _bhsr(is_shona=True),
+    got=repr(_bhsr(is_shona=True)),
 )
 _fu_src = _inspect.getsource(_FUCmd)
 results.log(

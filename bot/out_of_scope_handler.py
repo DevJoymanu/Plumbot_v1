@@ -856,6 +856,41 @@ def is_hard_stop_request(message: str) -> bool:
     return bool(_HARD_STOP_RE.search(message or ''))
 
 
+def _mark_oos_declined(appointment) -> None:
+    """Record that we have told this lead we don't do their kind of work.
+
+    Handler B exits the loop: once informed, they get no plumbing follow-ups.
+    Without the marker the decline is just one polite message and the crons
+    carry on qualifying somebody we have already turned away.
+    """
+    try:
+        notes = getattr(appointment, 'internal_notes', '') or ''
+        if '[OOS_DECLINED]' in notes:
+            return
+        appointment.internal_notes = f"[OOS_DECLINED]\n{notes}".strip()
+        appointment.save(update_fields=['internal_notes'])
+    except Exception as exc:
+        logger.warning("Could not mark OOS decline: %s", exc)
+
+
+def build_hard_stop_reply(is_shona: bool = False) -> str:
+    """One short confirmation, then nothing ever again.
+
+    Handler C: acknowledge and leave the door open — no catalogue, no email
+    capture, no question. Silence would technically obey the instruction but
+    reads as the bot having crashed; a single line tells them it landed.
+    """
+    if is_shona:
+        return (
+            "Zvanzwika, hazvina mubvunzo. Handichakutumirai zvimwe.\n\n"
+            "Kana mafunga zvimwe, nditumirei chete 'Hesi' ndichange ndiripo."
+        )
+    return (
+        "Got it, loud and clear. I'll back off completely.\n\n"
+        "If you change your mind, just say Hey and I'll be here."
+    )
+
+
 # Somebody selling TO us, not a customer. These arrive on the same WhatsApp
 # number as real leads and were being run through the plumbing filter, which
 # asked a marketing agency twice whether their social-media package involved
@@ -1155,6 +1190,7 @@ def _resolve_pending_clarification(answer: str, pending: dict, appointment) -> O
         # reach an answer: prod leads 840 (house build) and 855 (marketing
         # pitch) were both asked twice and never told we don't do it.
         logger.info("Still out of scope after clarification — declining explicitly")
+        _mark_oos_declined(appointment)
         return _build_oos_reply(f"{original} {answer}".strip(), appointment)
     if new_category == "delay_signal":
         return _build_delay_reply(answer, appointment)

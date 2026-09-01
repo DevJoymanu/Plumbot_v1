@@ -354,6 +354,7 @@ class Command(BaseCommand):
             # pending delay nudge — see _exclude_suppressed_states (lead 872).
             .exclude(internal_notes__contains='[EXCLUDED_AREA')
             .exclude(internal_notes__contains='[STOP_REQUESTED]')
+            .exclude(internal_notes__contains='[OOS_DECLINED]')
         )
 
         count = candidates.count()
@@ -565,6 +566,7 @@ class Command(BaseCommand):
             # explicit stop request still outranks the nudge (lead 872).
             .exclude(internal_notes__contains='[EXCLUDED_AREA')
             .exclude(internal_notes__contains='[STOP_REQUESTED]')
+            .exclude(internal_notes__contains='[OOS_DECLINED]')
         )
 
         count = candidates.count()
@@ -1025,6 +1027,7 @@ class Command(BaseCommand):
               .exclude(internal_notes__contains='[PARKED]')
               .exclude(internal_notes__contains='[EXCLUDED_AREA')
               .exclude(internal_notes__contains='[STOP_REQUESTED]')
+              .exclude(internal_notes__contains='[OOS_DECLINED]')
         )
 
     def _get_eligible_leads(self, now_local, force):

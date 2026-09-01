@@ -256,13 +256,8 @@ MESSAGE_SPLIT_MARKER = "\x1fSPLIT\x1f"
 # which leads with two of their own real figures — see below for why.
 COLD_OPENER = "Hello,\nHow may we assist you on plumbing services"
 
-# Families the value opener anchors on, in preference order. Two is the target:
-# enough to make the price real, few enough to stay a WhatsApp message.
-_OPENER_PRICE_FAMILIES = ('toilet', 'shower', 'tub', 'basin', 'geyser', 'vanity')
-
-
 def build_cold_opener(tenant=None, is_shona: bool = False) -> str:
-    """First-contact reply that leads with THIS tenant's own prices.
+    """First-contact reply: say what we do, then ask ONE specific question.
 
     The bare greeting ("Hello, How may we assist you on plumbing services") was
     the single biggest leak in the funnel: across the 50 most recent
@@ -270,40 +265,24 @@ def build_cold_opener(tenant=None, is_shona: bool = False) -> str:
     again — 26% of all leads, dead on the first turn. It carries no information
     and puts the whole burden of continuing on the customer.
 
-    So the opener anchors on two real figures with the supply/install split, then
-    asks ONE this-or-that question. Prices come from the lead's own tenant and
-    absent means omit: a tenant with no price sheet falls back to COLD_OPENER
-    rather than borrowing another tenant's numbers (nullability rule). No emojis.
+    It carries NO prices. A greeting is not a price question, and the Price
+    Conditional Rule is absolute: figures appear only when the customer actually
+    asks for one (_asks_price_figure). What replaces the dead greeting is
+    specificity — naming the work and closing on a this-or-that question the
+    customer can answer with two words. No emojis.
     """
-    from bot.tenant_config import get_config
-    cfg = get_config(tenant)
-    breakdown = cfg.labour_breakdown_lines()
-    rough = cfg.rough_price_lines()
-
-    lines = []
-    for family in _OPENER_PRICE_FAMILIES:
-        if family in breakdown:
-            lines.append(f"- {breakdown[family]}")
-        elif family in rough:
-            lines.append(f"- {rough[family]}")
-        if len(lines) == 2:
-            break
-
-    if not lines:
-        return COLD_OPENER
-
     if is_shona:
         return (
             "Mhoro,\n"
-            "Kuti mumbofunga zvemitengo:\n"
-            + "\n".join(lines)
-            + "\n\nMuri kuda kuisa zvitsva here kana kugadziridza zvamunazvo?"
+            "Tinogadzira zvepaipi dzemubathroom nemukitchen — kuisa zvitsva, "
+            "kuvandudza, nekugadzirisa zvakafa.\n\n"
+            "Muri kuda kuisa zvitsva here, kana kugadziridza zvamunazvo?"
         )
     return (
         "Hello,\n"
-        "To give you a rough idea of our pricing:\n"
-        + "\n".join(lines)
-        + "\n\nAre you looking at a new installation, or a renovation of what you have?"
+        "We handle bathroom and kitchen plumbing — installations, renovations "
+        "and repairs.\n\n"
+        "Are you looking at a new installation, or a renovation of what you have?"
     )
 
 _COLD_OPENER_RULE = """CRITICAL RULE — GENERIC OPENERS:
@@ -318,6 +297,127 @@ _COLD_OPENER_RULE = """CRITICAL RULE — GENERIC OPENERS:
         - Any language variant (Shona, Ndebele, informal Zim English) that is a greeting or vague opener with no specific question"""
 
 
+# ── Handler D: the memory check ──────────────────────────────────────────────
+# Questions that ask for something we may already hold. Each entry is
+# (state key, matcher, acknowledgement template). The matcher runs against ONE
+# sentence, so a reply that both answers and re-asks loses only the re-ask.
+#
+# This is a post-generation guard on purpose. get_next_question_to_ask already
+# skips a field once it is stored, but the LLM paths compose their own replies
+# and are not bound by it — which is how "what area are you in" came to be the
+# most re-asked question in the last 50 conversations (4x), and how lead 872 was
+# asked for an area it had already been given.
+_KNOWN_FIELD_QUESTIONS = (
+    (
+        'area',
+        re.compile(
+            r"(which|what)\s+(area|suburb|part of (town|harare)|location)\b"
+            r"|where\s+(are|abouts are)\s+you\s+(based|located|at)\b"
+            r"|what\s+area\s+are\s+you\s+in\b"
+            r"|munogara\s+kupi\b|muri\s+kupi\b",
+            re.IGNORECASE,
+        ),
+        "You're in {value}, so we've got that.",
+    ),
+    (
+        'name',
+        re.compile(
+            r"(what|which)\s+name\s+(should|shall|do)\b"
+            r"|may\s+i\s+(have|get|ask)\s+your\s+name\b"
+            r"|can\s+i\s+(have|get)\s+your\s+name\b"
+            r"|what'?s?\s+your\s+name\b"
+            r"|zita\s+ren[yu]u\b",
+            re.IGNORECASE,
+        ),
+        "Thanks {value}.",
+    ),
+    (
+        'service',
+        re.compile(
+            r"which\s+service\s+are\s+you\s+interested\s+in\b"
+            r"|is\s+it\s+a\s+bathroom\s+or\s+a\s+kitchen\b"
+            r"|what\s+service\s+(do|are)\s+you\b",
+            re.IGNORECASE,
+        ),
+        "We've got the {value} noted.",
+    ),
+)
+
+
+def _known_state(appointment) -> dict:
+    """What we already hold for this lead — the Step 2 memory read.
+
+    Defensive: these helpers run on live reply paths and not every object handed
+    to them is a full Appointment (test fakes, partially built rows).
+    """
+    def field(name):
+        value = getattr(appointment, name, None)
+        return str(value).strip() if value else ''
+
+    service = field('project_type') or field('project_description')
+    return {
+        'area': field('customer_area'),
+        'name': field('customer_name'),
+        # A raw enum ("bathroom_renovation") is not something to read back to a
+        # customer, so tidy it into words before it can reach the copy.
+        'service': service.replace('_', ' ').strip().lower(),
+    }
+
+
+def _split_sentences(text: str) -> list:
+    """Sentence-ish chunks that keep their own trailing punctuation."""
+    return [p for p in re.split(r'(?<=[.!?])\s+', text or '') if p.strip()]
+
+
+def strip_known_questions(reply: str, appointment):
+    """Remove any question that asks for something this lead has already told us.
+
+    Returns (cleaned_reply, [fields that were re-asked]). The caller logs the
+    field names; the customer just never sees the repeat.
+
+    A sentence is dropped only when it BOTH matches a known-field question and
+    we actually hold that field, so a legitimate first ask is untouched.
+
+    When the redundant question was the WHOLE reply, the acknowledgement for
+    that field is sent instead. That case is not hypothetical — lead 874 was
+    sent "One last thing, what name should we put on the booking?" twice, and
+    the reply is nothing but the repeat, so there is nothing left to keep.
+    Reading the stored value back is what the customer wanted the first time.
+    """
+    if not reply or not reply.strip():
+        return reply, []
+
+    state = _known_state(appointment)
+    acks = {key: template for key, _, template in _KNOWN_FIELD_QUESTIONS}
+    caught = []
+    out_parts = []
+
+    for part in reply.split(MESSAGE_SPLIT_MARKER):
+        kept = []
+        for sentence in _split_sentences(part):
+            redundant = next(
+                (key for key, matcher, _ in _KNOWN_FIELD_QUESTIONS
+                 if state.get(key) and '?' in sentence and matcher.search(sentence)),
+                None,
+            )
+            if redundant:
+                caught.append(redundant)
+                continue
+            kept.append(sentence)
+        out_parts.append(" ".join(kept).strip())
+
+    cleaned = MESSAGE_SPLIT_MARKER.join(p for p in out_parts if p)
+    if not cleaned.strip():
+        if caught:
+            field = caught[0]
+            value = state.get(field, '')
+            if value:
+                return acks[field].format(value=value), caught
+        # Nothing to drop and nothing to say: never send an empty message.
+        return reply, []
+    return cleaned, caught
+
+
 def build_cold_opener_rule(tenant=None, is_shona: bool = False) -> str:
     """_COLD_OPENER_RULE with THIS tenant's priced opener as the required text.
 
@@ -326,8 +426,6 @@ def build_cold_opener_rule(tenant=None, is_shona: bool = False) -> str:
     different (and much weaker) first message depending on which branch ran.
     """
     opener = build_cold_opener(tenant, is_shona=is_shona)
-    if opener == COLD_OPENER:
-        return _COLD_OPENER_RULE
     indented = "\n".join(f"        {line}" for line in opener.split("\n"))
     return (
         "CRITICAL RULE — GENERIC OPENERS:\n"
@@ -993,59 +1091,29 @@ class ResponseMixin:
                 label = f"{label} and accessories"
             return label
 
-        def _service_price_line(self, item: str) -> str:
-            """One price line for the family named in `item`, or '' when this
-            tenant doesn't price it (absent means omit — never another
-            tenant's figure).
-
-            Prefers the supply/labour split, because "do you have X" is nearly
-            always followed by "how much", and answering both at once is the
-            whole point.
-            """
-            families = self._product_families_in(item or '')
-            if not families:
-                return ''
-            breakdown = self.tenant_cfg.labour_breakdown_lines()
-            rough = self.tenant_cfg.rough_price_lines()
-            for family in sorted(families):
-                if family in breakdown:
-                    return breakdown[family]
-                if family in rough:
-                    return rough[family]
-            return ''
-
         def _service_continuation_reply(self, item: str, language: str = "english") -> str:
             """Exact scripted first-pass reply to a service-availability question:
-            confirm we handle it, quote it, then the assumptive 'only thing?'
-            close. Item is filled in; wording is fixed for consistency.
-            Paraphrasing (ai_answer_faq) is used only on a repeat ask.
+            confirm we handle it, then the assumptive 'only thing?' close. Item is
+            filled in; wording is fixed for consistency. Paraphrasing (ai_answer_faq)
+            is used only on a repeat ask.
 
-            The price line was added after prod lead 856: "Do you have ceramic
-            tubs" was answered "Yes, we handle tub and all related plumbing
-            work. Is a tub the only thing…" — a yes with no figure, and the
-            lead never replied. Someone asking whether we sell a thing is
-            asking what it costs; making them ask again is a wasted turn.
+            Carries NO price. "Do you have ceramic tubs" is a SERVICE_INQUIRY,
+            not a PRICE_QUERY: under the Price Conditional Rule a figure appears
+            only when the customer asks for one. The scoping question is what
+            earns the next turn here, not a number.
             """
             it = (item or 'that').strip()
-            price = self._service_price_line(it)
             # Plural / compound items ("2 shower cubicles and accessories") need
             # plural grammar, not "Is a 2 shower cubicles…".
             plural = bool(re.match(r'^\d', it)) or ' and ' in it
             if language == 'shona':
-                lead_in = (f"Ehe, tinoita {it} pamwe nemamwe mabasa epaipi ese "
-                           f"akabatana nazvo.")
-                close = f"{it} chete here chamuri kuda kugadzirisa?"
-            elif plural:
-                lead_in = f"Yes, we handle {it} and all related plumbing work."
-                close = f"Are the {it} everything you're looking to get sorted?"
-            else:
-                lead_in = f"Yes, we handle {it} and all related plumbing work."
-                close = f"Is a {it} the only thing you're looking to get sorted?"
-            parts = [lead_in]
-            if price:
-                parts.append(price)
-            parts.append(close)
-            return "\n\n".join(parts)
+                return (f"Ehe, tinoita {it} pamwe nemamwe mabasa epaipi ese "
+                        f"akabatana nazvo.\n\n{it} chete here chamuri kuda kugadzirisa?")
+            if plural:
+                return (f"Yes, we handle {it} and all related plumbing work.\n\n"
+                        f"Are the {it} everything you're looking to get sorted?")
+            return (f"Yes, we handle {it} and all related plumbing work.\n\n"
+                    f"Is a {it} the only thing you're looking to get sorted?")
 
         @staticmethod
         def _is_substantive_faq_answer(answer: str) -> bool:
@@ -6264,6 +6332,13 @@ class ResponseMixin:
         Weak: "Shower cubicle: supply plus install, approximate starting prices apply..."
         Good: "Nice one — two shower cubicles plus accessories, we can sort that."
 
+        HOW TO SOUND HUMAN (apply to every reply):
+        - EMPATHY FIRST: acknowledge their situation before the business. A leak is annoying ("a dripping pipe is the worst — good to catch it early"); a renovation is exciting. One short clause, not a speech.
+        - VARIETY: never open two replies the same way. Rotate naturally — "To be fair", "Honestly", "Sure thing", "Glad you asked", "Roughly speaking", "To be upfront", "Nice one". Look at the RECENT CONVERSATION above and do NOT reuse an opening you have already used with this person.
+        - ACTIVE LISTENING: repeat back one specific detail they gave you, so it is obvious you read it. "Ah, Bulawayo" beats "noted".
+        - MIRROR THEM: match their register. Slang and Shona-English get a relaxed reply; formal gets polite and plain. Always use contractions — "that'll be", "we're based", "it's around", "we don't do that".
+        - OWN A SLIP: if you realise you have asked for something they already told you, apologise plainly in one clause and move on — "sorry, you did say Bulawayo — ignore that". Never pretend it did not happen, and never ask it again.
+
         NEVER WRITE: "Certainly", "I'd be happy to", "Feel free to", "Let me know if",
         "I understand that", "Great question", "Rest assured", "Please don't hesitate",
         "As mentioned". No greeting unless this is their first message. Never restate
@@ -6291,7 +6366,15 @@ class ResponseMixin:
                         },
                         {"role": "user", "content": prompt},
                     ],
-                    temperature=0.5,
+                    # Variety is the point on this call: at 0.5 the model reached
+                    # for the same opening every time, which is what made the
+                    # replies read as canned. frequency_penalty discourages
+                    # reusing the same phrasing within a reply; the copy rules
+                    # above and _trim_incomplete_sentence below keep the extra
+                    # looseness from turning into rambling.
+                    temperature=1.0,
+                    top_p=0.9,
+                    frequency_penalty=0.3,
                     max_tokens=100,
                 )
                 answer = response.choices[0].message.content.strip().replace("**", "").replace("__", "")

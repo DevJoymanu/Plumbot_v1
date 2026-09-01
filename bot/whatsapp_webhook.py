@@ -2984,10 +2984,23 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # permanently. Marking the lead is the point: the crons read
         # [STOP_REQUESTED] too, so the decision survives this turn (prod lead
         # 872 was told to stop and then sent three more automated pitches).
-        from .out_of_scope_handler import is_hard_stop_request
+        from .out_of_scope_handler import is_hard_stop_request, build_hard_stop_reply
         if is_hard_stop_request(message_body):
             _mark_stop_requested(appointment)
             print(f"Hard stop requested by {phone_number}; suppressing all proactive sends.")
+            from bot.repeated_question_detector import detect_language_simple
+            _stop_reply = build_hard_stop_reply(
+                is_shona=detect_language_simple(message_body) == 'shona')
+            appointment.add_conversation_message("assistant", _stop_reply)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=[
+                'conversation_history', 'last_outbound_at', 'last_contacted_at'])
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, _stop_reply, get_random_delay(sender=sender)),
+                kwargs={'tenant': tenant}, daemon=True,
+            ).start()
             return
 
         # A highlighted photo we have never looked at gets described NOW, so
@@ -3923,6 +3936,16 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if reply is None:
             print("🔇 Conversation complete — no reply sent")
             return
+
+        # ── HANDLER D: the memory check ──────────────────────────────────────
+        # Last gate before anything is logged or sent: strip any question that
+        # asks for something this lead has already given us. Every reply path
+        # converges here, which is the point — get_next_question_to_ask honours
+        # stored fields but the LLM paths compose their own copy and don't.
+        from bot.views.plumbot.response_mixin import strip_known_questions
+        reply, _re_asked = strip_known_questions(reply, appointment)
+        if _re_asked:
+            print(f"🧠 Memory check dropped re-asked field(s): {sorted(set(_re_asked))}")
 
         # A reply may be split into two messages (acknowledgement, then the
         # question) via MESSAGE_SPLIT_MARKER — log each piece as its own turn so
