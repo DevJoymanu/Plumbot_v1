@@ -7225,6 +7225,67 @@ results.log(
     got=f"{_r6!r} caught={_c6}",
 )
 
+# ── "Where are you?" is answered with the tenant's own address ──────────────
+# Prod lead 863 asked "Your location please" and was answered about email
+# delivery: the phrase matched no trigger, and barmak had an address on the
+# Profile but no faq_facts['location'], so the fact resolved to None.
+import types as _types
+from bot.tenant_config import TenantConfig as _TC
+from bot.faq import match_faq_topic as _mft
+
+
+def _locfact(line, short=''):
+    return _TC._location_fact(
+        _types.SimpleNamespace(location_line=line, location_short=lambda: short))
+
+
+results.log(
+    "location: a bare address is framed into a sentence",
+    _locfact('20398 Budiriro 5B Cabs Harare', 'Budiriro, Harare')
+    == "We're based at 20398 Budiriro 5B Cabs Harare.",
+    got=repr(_locfact('20398 Budiriro 5B Cabs Harare', 'Budiriro, Harare')),
+)
+results.log(
+    "location: a tenant who already wrote a sentence is not re-framed",
+    _locfact("We're in Hatfield, Harare.", 'Hatfield, Harare')
+    == "We're in Hatfield, Harare.",
+    got=repr(_locfact("We're in Hatfield, Harare.", 'Hatfield, Harare')),
+)
+results.log(
+    "location: an address ending in a full stop does not crash",
+    _locfact('12 Samora Machel Ave.', 'Harare')
+    == "We're based at 12 Samora Machel Ave.",
+    got=repr(_locfact('12 Samora Machel Ave.', 'Harare')),
+)
+results.log(
+    "location: falls back to area, city when there is no street address",
+    _locfact('', 'Bulawayo CBD') == "We're based in Bulawayo CBD.",
+    got=repr(_locfact('', 'Bulawayo CBD')),
+)
+results.log(
+    "location: absent means omit — no address at all yields no fact",
+    _locfact('', '') is None,
+    got=repr(_locfact('', '')),
+)
+
+_loc_asks = ['Your location please', 'your location', 'muri kupi',
+             'can i have your location', 'send me your location',
+             'where is your shop', 'whereabouts are you', 'where are you based',
+             'what is your location', 'nzvimbo yenyu']
+results.log(
+    "location: every way a lead asks where we are matches the topic",
+    all(_mft(m) == 'location' for m in _loc_asks),
+    got=str([(m, _mft(m)) for m in _loc_asks if _mft(m) != 'location']),
+)
+# The customer naming THEIR OWN area must never be read as asking for ours.
+_not_loc = ['I am in Budiriro', 'how much is a toilet', 'Rockview park near sunway city',
+            'my area is Chitungwiza', 'Helensvale']
+results.log(
+    "location: a lead stating their own area is not asking for ours",
+    all(_mft(m) != 'location' for m in _not_loc),
+    got=str([(m, _mft(m)) for m in _not_loc if _mft(m) == 'location']),
+)
+
 # ── Out of scope: decline, never loop ───────────────────────────────────────
 from bot.out_of_scope_handler import (
     _is_affirmative as _isaff, is_inbound_sales_pitch as _isp,

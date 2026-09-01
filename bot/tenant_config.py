@@ -405,6 +405,27 @@ class TenantConfig:
         return list(self._field('excluded_areas', []) or [])
 
     # ── FAQ facts (business facts — no fallback) ─────────────────────────────
+    def _location_fact(self):
+        """A sentence naming where THIS tenant is, built from the Profile
+        address, or None when they have given no address at all.
+
+        location_line is free text: some tenants type a sentence ("We're in
+        Hatfield, Harare."), others a bare postal address ("20398 Budiriro 5B
+        Cabs Harare"). Only the second needs framing, so a tenant who already
+        wrote a sentence is not made to say "We're based at We're in...".
+        """
+        line = (self.location_line or '').strip()
+        if line:
+            # Already a sentence about us? Leave it alone — otherwise a tenant
+            # who typed "We're in Hatfield, Harare." would be made to say
+            # "We're based at We're in Hatfield, Harare".
+            words = set(line.lower().replace("'", " ").split())
+            if line[-1] in '.!' and words & {'we', 'our', 'us', "were", 'were'}:
+                return line
+            return f"We're based at {line.rstrip('.')}."
+        short = self.location_short()
+        return f"We're based in {short}." if short else None
+
     def faq_fact(self, topic: str):
         """The tenant's own fact sentence for a topic, or None → the caller
         skips/deflects the topic (never answers with another tenant's fact).
@@ -416,6 +437,14 @@ class TenantConfig:
             return None
         fact = (self.profile.faq_facts or {}).get(topic)
         if not fact:
+            # Location is the one topic we can answer without an FAQ entry: the
+            # tenant's own address is already on the Profile. Barmak had
+            # location_line on file and no faq_facts['location'], so "Your
+            # location please" got no answer at all (prod lead 863, which was
+            # replied to about email delivery instead). Still the tenant's OWN
+            # value — never a fallback to anyone else's.
+            if topic == 'location':
+                return self._location_fact()
             return None
         # The hours fact is typed by the tenant, so a later 24/7 tick would
         # otherwise never reach the answer. Append it once — never twice, and

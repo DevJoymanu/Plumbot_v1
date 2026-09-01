@@ -32,6 +32,33 @@ _TRIGGERS = {
         'office address',
         'which area are you',
         'where in harare',
+        # "Your location please" reached none of the above and was answered
+        # about email delivery instead (prod lead 863). A customer asking where
+        # we are almost never phrases it as a full "where are you based?"
+        # question — most of these are two words and no question mark.
+        'your location',
+        'ur location',
+        'you location',
+        'location please',
+        'your shop',
+        'where is your shop',
+        'your premises',
+        'your workshop',
+        'whereabouts',
+        'where abouts',
+        'send me your location',
+        'share your location',
+        'drop your location',
+        'can i have your location',
+        'what is your location',
+        'where are you situated',
+        'where are u',
+        'where r u',
+        # Shona / Zim-English
+        'muri kupi',
+        'munobva kupi',
+        'muri kuseiko',
+        'nzvimbo yenyu',
     ],
     'hours': [
         'what time do you',
