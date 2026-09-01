@@ -3578,17 +3578,20 @@ except Exception as e:
 
 try:
     _block = _bsp_ti(_ti_cfg).get(_TI_KEY) or {}
+    # Labour-first shape: no bullets, labour then the supplied-too all-in
+    # figure, then the rough-guide caveat. Still the tenant's OWN figures.
     _ok = (
-        _block.get('breakdown_lines') ==
-        ['Tiling per square meter: Supply from US$15, Install from US$5']
-        and 'US$20 all-in' in (_block.get('total_line') or '')
-        and 'US$5' in (_block.get('cheapest_line') or '')
-        and 'kubva' in ((_block.get('sn_breakdown_lines') or [''])[0])
+        _block.get('breakdown_lines') == []
+        and _block.get('total_line') == (
+            'Tiling per square meter: labour from US$5. '
+            'If we supply it too, from US$20 all-in.')
+        and 'rough guide' in (_block.get('cheapest_line') or '')
+        and 'kubva US$5' in (_block.get('sn_total_line') or '')
     )
     results.log(
         "structured pricing: tenant item renders the tenant's own figures",
         _ok,
-        expected="supply US$15 / install US$5 / US$20 all-in, EN + SN",
+        expected="labour US$5 first, then US$20 all-in, EN + SN",
         got=str(_block.get('total_line')),
     )
 except Exception as e:
@@ -7379,6 +7382,132 @@ results.log(
     all(_mft(m) != 'location' for m in _not_loc),
     got=str([(m, _mft(m)) for m in _not_loc if _mft(m) == 'location']),
 )
+
+# ── Price answers lead with labour, then the supplied-too figure ────────────
+from bot.pricing_copy import _tenant_item_block as _tib
+import types as _ty
+
+_row = _ty.SimpleNamespace(label='Toilet install', short_label='', family='toilet',
+                           supply=90, labour=50, allin=140, flat=None)
+_cfgp = _ty.SimpleNamespace(currency='US$')
+_blk = _tib(_cfgp, _row)
+results.log(
+    "price answer: labour first, then the supplied-too all-in figure",
+    _blk['total_line'] == ('Toilet install: labour from US$50. '
+                           'If we supply it too, from US$140 all-in.'),
+    got=repr(_blk['total_line']),
+)
+results.log(
+    "price answer: carries the rough-guide caveat and no bullets",
+    _blk['breakdown_lines'] == []
+    and 'rough guide' in _blk['cheapest_line']
+    and 'visit' in _blk['cheapest_line'],
+    got=repr(_blk['cheapest_line']),
+)
+# A label like "Element replacement" must not be forced into "install a ...".
+_row2 = _ty.SimpleNamespace(label='Element replacement', short_label='',
+                            family='geyser_service', supply=10, labour=30,
+                            allin=40, flat=None)
+results.log(
+    "price answer: stays grammatical for any label the tenant types",
+    _tib(_cfgp, _row2)['total_line'] ==
+    'Element replacement: labour from US$30. If we supply it too, from US$40 all-in.',
+    got=repr(_tib(_cfgp, _row2)['total_line']),
+)
+# The disclaimer must not stack on top of the block's own caveat.
+from bot.views.plumbot.response_mixin import ResponseMixin as _RMD
+
+
+class _FakeSelfDisc:
+    _PRICED_INTENTS = _RMD._PRICED_INTENTS
+    _ensure_price_disclaimer = _RMD._ensure_price_disclaimer
+
+
+_priced_reply = ('Toilet install: labour from US$50. If we supply it too, from '
+                 'US$140 all-in.\n\nThis is a rough guide, we confirm the exact '
+                 'price on a visit.')
+results.log(
+    "price answer: the shared disclaimer does not stack a second caveat",
+    _FakeSelfDisc()._ensure_price_disclaimer('toilet', _priced_reply) == _priced_reply,
+    got=repr(_FakeSelfDisc()._ensure_price_disclaimer('toilet', _priced_reply)),
+)
+
+# ── Consultation fee: never promise a visit is free when it is not ──────────
+import re
+from bot.views.plumbot.response_mixin import strip_free_visit_claims as _sfv
+import bot.tenant_config as _tcmod
+
+
+class _CfgFee:
+    def __init__(self, fee):
+        self.fee = fee
+        self.currency = 'US$'
+
+    def visit_is_free(self):
+        return not self.fee
+
+    @property
+    def consultation_fee(self):
+        return self.fee
+
+    def visit_cost_sentence(self, is_shona=False):
+        return '' if not self.fee else f'The call-out to quote is US${self.fee}.'
+
+
+_free_claims = [
+    'We give you an exact, all-in quote free on a quick on-site visit.',
+    'The visit is free and takes about 20 minutes.',
+    'Our site visit and quotation are provided free of charge.',
+]
+_appt_stub = _ty.SimpleNamespace(tenant=None)
+_real_gc = _tcmod.get_config
+try:
+    # Default: no fee set anywhere -> completely inert.
+    _tcmod.get_config = lambda tenant=None: _CfgFee(None)
+    results.log(
+        "consultation fee: absent means every reply is untouched",
+        all(_sfv(s, _appt_stub) == (s, False) for s in _free_claims),
+        got=str([_sfv(s, _appt_stub) for s in _free_claims]),
+    )
+    # Fee set -> no reply may still call the visit free.
+    _tcmod.get_config = lambda tenant=None: _CfgFee(20)
+    _outs = [_sfv(s, _appt_stub)[0] for s in _free_claims]
+    results.log(
+        "consultation fee: no surviving 'free' claim about the visit",
+        not any(re.search(r'\bfree\b', o, re.I) for o in _outs),
+        got=str(_outs),
+    )
+    results.log(
+        "consultation fee: the figure is stated instead",
+        all('US$20' in o for o in _outs),
+        got=str(_outs),
+    )
+    # A visit offer with no free claim still gets the fee stated once.
+    _offer = ('What works better, tomorrow or Friday, for us to come round '
+              'and look at the space?')
+    _o, _c = _sfv(_offer, _appt_stub)
+    results.log(
+        "consultation fee: a visit offer states the fee once, keeping the question",
+        _c and _o.count('US$20') == 1 and _offer in _o,
+        got=repr(_o),
+    )
+    # "Freestanding" is not "free", and a price reply is not a visit claim.
+    for _untouched in ('Freestanding tubs from US$670 all-in.',
+                       'Toilet install: labour from US$50.'):
+        results.log(
+            f"consultation fee: leaves unrelated copy alone ({_untouched[:22]}...)",
+            _sfv(_untouched, _appt_stub) == (_untouched, False),
+            got=str(_sfv(_untouched, _appt_stub)),
+        )
+    # Never send an empty message, even if the whole reply was a free claim.
+    _o2, _ = _sfv('The visit is free.', _appt_stub)
+    results.log(
+        "consultation fee: a reply that was only a free claim is replaced, not emptied",
+        _o2.strip() != '' and 'free' not in _o2.lower(),
+        got=repr(_o2),
+    )
+finally:
+    _tcmod.get_config = _real_gc
 
 # ── Out of scope: decline, never loop ───────────────────────────────────────
 from bot.out_of_scope_handler import (

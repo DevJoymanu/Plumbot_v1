@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -60,6 +61,8 @@ def _letterhead_form_values(profile):
     values.update({
         'sectioned': str(raw.get('layout') or '').lower() == 'sectioned',
         'address': getattr(profile, 'location_line', '') if profile else '',
+        'consultation_fee': (getattr(profile, 'consultation_fee', None)
+                             if profile else None),
         'default_vat_percent': raw.get('default_vat_percent') or 0,
         'bank': {key: str(bank.get(key) or '') for key in _LETTERHEAD_BANK},
     })
@@ -106,6 +109,23 @@ def _save_letterhead(request, profile):
     if address != (profile.location_line or ''):
         profile.location_line = address
         fields.append('location_line')
+
+    # What this business charges to come out and quote. Blank clears it, which
+    # means the visit is free — the default. Anything unparseable is treated as
+    # blank rather than raising: a typo must not lose the whole Profile save.
+    if 'consultation_fee' in request.POST:
+        raw_fee = ((request.POST.get('consultation_fee') or '')
+                   .replace(profile.currency or 'US$', '')
+                   .replace('$', '').replace(',', '').strip())
+        new_fee = None
+        if raw_fee:
+            try:
+                new_fee = Decimal(raw_fee)
+            except (InvalidOperation, TypeError):
+                new_fee = None
+        if new_fee != profile.consultation_fee:
+            profile.consultation_fee = new_fee
+            fields.append('consultation_fee')
 
     profile.letterhead = stored
     profile.save(update_fields=fields)

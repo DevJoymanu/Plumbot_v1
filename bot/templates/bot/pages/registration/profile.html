@@ -142,6 +142,18 @@
                                                placeholder="20398 Budiriro 5B Cabs Harare">
                                     </div>
                                     <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_consultation_fee">Call-out / consultation fee</label>
+                                        <input type="text" class="form-control" id="id_consultation_fee"
+                                               name="consultation_fee"
+                                               value="{% if letterhead.consultation_fee %}{{ letterhead.consultation_fee }}{% endif %}"
+                                               placeholder="Leave blank if the visit is free">
+                                        <small class="text-muted">
+                                            What you charge to come out and quote. Leave blank and the
+                                            assistant keeps offering the visit free; set a figure and it
+                                            stops promising free anywhere and states this instead.
+                                        </small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
                                         <label class="form-label fw-bold" for="id_lh_phones">Phone numbers</label>
                                         <textarea class="form-control" id="id_lh_phones" name="lh_phones"
                                                   rows="4" placeholder="One per line">{{ letterhead.phones }}</textarea>

@@ -239,6 +239,11 @@ class TenantProfile(models.Model):
     excluded_areas = models.JSONField(default=list, blank=True)
     # sales
     currency = models.CharField(max_length=8, blank=True, default='US$')
+    # What this business charges to come out and quote. NULL means the visit is
+    # free, which is every tenant's behaviour today and stays the default — the
+    # copy only changes for a tenant who deliberately sets a figure.
+    consultation_fee = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True)
     packages = models.JSONField(default=list, blank=True)
     sales_profile_md = models.TextField(blank=True, default='')
     faq_facts = models.JSONField(default=dict, blank=True)

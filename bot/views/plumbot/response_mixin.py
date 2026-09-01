@@ -418,6 +418,76 @@ def strip_known_questions(reply: str, appointment):
     return cleaned, caught
 
 
+# ── Consultation fee: never promise a free visit a tenant charges for ───────
+# "the visit is free" is asserted in ~77 places across ten modules — the
+# pricing overview, the visit pitch, the follow-up copy, the LLM prompt, the
+# emails. Converting them one by one guarantees some get missed, and a MISSED
+# one is the worst possible outcome: the bot promises free and the plumber
+# turns up with an invoice. So the claim is stripped once, at the single point
+# every reply passes through, from the lead's OWN tenant.
+# A sentence asserting the visit costs nothing. Matched WHOLE-SENTENCE and the
+# sentence is dropped, never word-substituted: rewriting generated prose in
+# place produced "provided free of charge" -> "provided chargeable", and worse,
+# left "an exact, all-in quote free on a quick on-site visit" still saying free
+# while a fee sentence was appended underneath it. Dropping loses a little copy
+# and can never produce a false promise.
+_FREE_CLAIM_RE = re.compile(
+    r"\bfree\b|\bfree\s+of\s+charge\b|\bno\s+charge\b|\bat\s+no\s+cost\b"
+    r"|\b(costs?|charges?)\s+(you\s+)?nothing\b|\bnothing\s+to\s+pay\b"
+    r"|\byemahara\b|\bmahara\b",
+    re.IGNORECASE,
+)
+# Only sentences that are about the VISIT — "free" elsewhere (a free-standing
+# tub, freeing a blockage) must survive untouched.
+_VISIT_WORD_RE = re.compile(
+    r"\b(visit|assessment|quote|quotation|call[- ]?out|come (round|through|out|and (see|look))"
+    r"|look at the space|on[- ]?site|kuuya|kuzoona)\b",
+    re.IGNORECASE,
+)
+
+
+def strip_free_visit_claims(reply: str, appointment):
+    """Drop any 'the visit is free' claim when this tenant charges a fee, and
+    state the fee once instead.
+
+    Returns (reply, changed). A tenant with no consultation fee — every tenant
+    by default — gets the reply back untouched, so this is inert until someone
+    deliberately sets a figure on their Profile.
+    """
+    if not reply or not reply.strip():
+        return reply, False
+    from bot.tenant_config import get_config
+    cfg = get_config(getattr(appointment, 'tenant', None))
+    if cfg.visit_is_free():
+        return reply, False
+
+    dropped = False
+    kept_parts = []
+    for part in reply.split(MESSAGE_SPLIT_MARKER):
+        kept = []
+        for sentence in _split_sentences(part):
+            if _FREE_CLAIM_RE.search(sentence) and _VISIT_WORD_RE.search(sentence):
+                dropped = True
+                continue
+            kept.append(sentence)
+        kept_parts.append(" ".join(kept).strip())
+
+    cleaned = MESSAGE_SPLIT_MARKER.join(p for p in kept_parts if p).strip()
+    fee_sentence = cfg.visit_cost_sentence()
+
+    # Say what it costs whenever the reply is about visiting at all, or when a
+    # free claim was just removed and would otherwise leave a hole.
+    mentions_visit = bool(_VISIT_WORD_RE.search(cleaned))
+    if fee_sentence and (dropped or mentions_visit) \
+            and str(cfg.consultation_fee) not in cleaned:
+        cleaned = f"{cleaned}\n\n{fee_sentence}".strip()
+
+    if not cleaned:
+        # Everything was a free claim. Sending nothing is not an option.
+        cleaned = fee_sentence or reply
+    return cleaned, cleaned != reply
+
+
 def build_cold_opener_rule(tenant=None, is_shona: bool = False) -> str:
     """_COLD_OPENER_RULE with THIS tenant's priced opener as the required text.
 
@@ -5229,7 +5299,12 @@ class ResponseMixin:
             # of our wordings ("approximate…", the combined reply's "ballpark…", or
             # the shared "…sees the space" tail) — otherwise we'd stack two.
             if ('approximate' in low or 'may vary' in low or 'ballpark' in low
-                    or 'sees the space' in low):
+                    or 'sees the space' in low
+                    # The per-item block now carries its own caveat in the
+                    # tenant's price answer ("This is a rough guide, we confirm
+                    # the exact price on a visit"). Without this the reply would
+                    # end on two disclaimers saying the same thing.
+                    or 'rough guide' in low or 'mapurice ekufungidzira' in low):
                 return reply
             is_shona = any(t in low for t in (
                 'kubva', 'inotangira', 'munoda', 'uri kuda', 'tiuye', 'zvichienda', 'ne install',

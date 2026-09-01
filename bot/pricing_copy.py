@@ -188,13 +188,30 @@ def _tenant_item_block(cfg, item) -> dict:
 
     if supply is not None and labour is not None:
         total = allin if allin is not None else supply + labour
+        # Labour first, then the supplied-too figure, then the rough-guide
+        # caveat. Deliberately phrased so it stays grammatical for EVERY label
+        # a tenant might type: rows are named "Basin", "Geyser supply &
+        # install", "Element replacement", so "Labour to install a {label}"
+        # would read as "install a Element replacement" on most of them.
+        # No bullets — this is one flowing answer, and the closing booking
+        # question is appended by the follow-up prompt downstream.
         return {
-            "breakdown_lines": [f"{name}: Supply from {cur}{supply}, Install from {cur}{labour}"],
-            "total_line": f"{name} starts from {cur}{total} all-in — supply and install.",
-            "cheapest_line": f"Already have the materials? Install-only from {cur}{labour}.",
-            "sn_breakdown_lines": [f"{name}: Supply kubva {cur}{supply}, Install kubva {cur}{labour}"],
-            "sn_total_line": f"{name} inotangira pa{cur}{total} all-in — supply ne install.",
-            "sn_cheapest_line": f"Mune zvinhu kare? Install chete kubva {cur}{labour}.",
+            "breakdown_lines": [],
+            "total_line": (
+                f"{name}: labour from {cur}{labour}. "
+                f"If we supply it too, from {cur}{total} all-in."
+            ),
+            "cheapest_line": (
+                "This is a rough guide, we confirm the exact price on a visit."
+            ),
+            "sn_breakdown_lines": [],
+            "sn_total_line": (
+                f"{name}: labour kubva {cur}{labour}. "
+                f"Kana tikapa zvinhu futi, kubva {cur}{total} all-in."
+            ),
+            "sn_cheapest_line": (
+                "Aya mapurice ekufungidzira, tinosimbisa chaiyo patinouya kuzoona."
+            ),
         }
 
     figure = next((v for v in (allin, flat, labour, supply) if v is not None), None)

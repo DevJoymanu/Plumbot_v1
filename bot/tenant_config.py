@@ -405,6 +405,49 @@ class TenantConfig:
         return list(self._field('excluded_areas', []) or [])
 
     # ── FAQ facts (business facts — no fallback) ─────────────────────────────
+    @property
+    def consultation_fee(self):
+        """What this tenant charges to come out and quote, or None.
+
+        None means the visit is free — the default, and what every tenant does
+        today. Only a tenant who deliberately sets a figure changes any copy.
+        """
+        value = self._field('consultation_fee', None)
+        if value in (None, ''):
+            return None
+        try:
+            return _as_int(value)
+        except Exception:
+            return None
+
+    def visit_is_free(self) -> bool:
+        """True when we can honestly call the visit free."""
+        return not self.consultation_fee
+
+    def visit_cost_phrase(self, is_shona: bool = False) -> str:
+        """How the cost of a visit is worded — the ONE place that is decided.
+
+        Every "the visit is free" claim in customer copy has to resolve through
+        here, or a tenant who sets a fee has the bot promising a free visit and
+        then charging for it.
+        """
+        fee = self.consultation_fee
+        if not fee:
+            return 'yemahara' if is_shona else 'free'
+        return f"{self.currency}{fee}"
+
+    def visit_cost_sentence(self, is_shona: bool = False) -> str:
+        """A whole sentence stating what the visit costs, for copy that offers
+        one. '' when the visit is free — the caller then says nothing extra,
+        because 'the visit is free' is already how the rest of the copy reads.
+        """
+        fee = self.consultation_fee
+        if not fee:
+            return ''
+        if is_shona:
+            return f"Kuuya kuzoona kunobhadharwa {self.currency}{fee}."
+        return f"The call-out to quote is {self.currency}{fee}."
+
     def _location_fact(self):
         """A sentence naming where THIS tenant is, built from the Profile
         address, or None when they have given no address at all.
@@ -435,6 +478,14 @@ class TenantConfig:
             return None
         if topic == 'licensed' and not self.profile.licensed_claim_enabled:
             return None
+        # Someone asking where we are wants the address they could actually
+        # travel to, so the full location_line outranks a terser FAQ entry
+        # ("We're in Hatfield, Harare" tells a customer nothing about which
+        # building). Falls through to the FAQ entry when no address is on file.
+        if topic == 'location':
+            full = self._location_fact()
+            if full:
+                return full
         fact = (self.profile.faq_facts or {}).get(topic)
         if not fact:
             # Location is the one topic we can answer without an FAQ entry: the

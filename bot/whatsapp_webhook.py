@@ -3942,10 +3942,17 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # asks for something this lead has already given us. Every reply path
         # converges here, which is the point — get_next_question_to_ask honours
         # stored fields but the LLM paths compose their own copy and don't.
-        from bot.views.plumbot.response_mixin import strip_known_questions
+        from bot.views.plumbot.response_mixin import (
+            strip_known_questions, strip_free_visit_claims)
         reply, _re_asked = strip_known_questions(reply, appointment)
         if _re_asked:
             print(f"🧠 Memory check dropped re-asked field(s): {sorted(set(_re_asked))}")
+
+        # Never promise a free visit a tenant charges for. Inert unless the
+        # tenant has set a consultation fee on their Profile.
+        reply, _fee_fixed = strip_free_visit_claims(reply, appointment)
+        if _fee_fixed:
+            print("💵 Consultation fee set — free-visit wording replaced")
 
         # A reply may be split into two messages (acknowledgement, then the
         # question) via MESSAGE_SPLIT_MARKER — log each piece as its own turn so
