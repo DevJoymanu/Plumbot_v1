@@ -7951,6 +7951,49 @@ results.log(
     got="deterministic",
 )
 
+# ── A rejected WhatsApp reminder falls back to email ─────────────────────────
+# The email branch was an `elif` on the WhatsApp branch, so it was reachable
+# only when the window was already known closed. A send Meta REJECTED against a
+# window we believed open (131047) dropped the reminder entirely: no flag set,
+# no email, and once the ±10 minute _in_window passed it never fired again.
+# Barmak lead 858 lost its 2-day reminder that way with a good address on file.
+import bot.management.commands.send_reminders as _srm
+
+_srm_src = _inspect.getsource(_srm.Command.handle)
+results.log(
+    "reminders: WhatsApp and email are no longer mutually exclusive branches",
+    "_deliver_customer_reminder" in _srm_src
+    and "elif has_email:" not in _srm_src,
+    got=("helper wired" if "_deliver_customer_reminder" in _srm_src
+         else "still branching inline"),
+)
+_deliver_src = _srm_src[_srm_src.index("def _deliver_customer_reminder"):]
+_deliver_src = _deliver_src[:_deliver_src.index("# ─────")]
+results.log(
+    "reminders: a failed send with an email on file still reaches the email path",
+    "if not has_email:" in _deliver_src
+    and _deliver_src.index("if not has_email:") < _deliver_src.index("send_customer_reminder_email"),
+    got="fallback ordered before the email send",
+)
+results.log(
+    "reminders: the sent flag is only stamped after a real send",
+    _deliver_src.count("_mark_sent_customer") == 2
+    and "if not dry_run:" in _deliver_src,
+    got=f"marks={_deliver_src.count('_mark_sent_customer')}",
+)
+results.log(
+    "reminders: a raising email is logged, not swallowed, and never marks sent",
+    "logger.warning" in _deliver_src and "ok = False" in _deliver_src,
+    got="guarded",
+)
+# Both reminder families must go through the one helper — the 2-hour block had
+# its own copy of the same broken elif.
+results.log(
+    "reminders: the 2-hour reminder uses the same delivery path",
+    _srm_src.count("_deliver_customer_reminder(") >= 3,
+    got=f"call sites={_srm_src.count('_deliver_customer_reminder(') - 1}",
+)
+
 if GATE_ONLY:
     _finish()
 

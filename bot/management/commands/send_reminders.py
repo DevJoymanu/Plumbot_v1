@@ -612,6 +612,63 @@ class Command(BaseCommand):
                 own = plumber_contact
             return (own or '').replace('+', '')
 
+        def _deliver_customer_reminder(
+            apt, rtype, message, email_type, label, apt_label,
+            window_open, has_email, phone,
+        ):
+            """Send one customer reminder — WhatsApp first, email as fallback.
+
+            Returns 'sent' | 'failed' | 'skipped'.
+
+            The email branch used to be an `elif` on the WhatsApp branch, so it
+            was reachable ONLY when the window was already known to be closed. A
+            send we ATTEMPTED and Meta rejected — a 131047 against a window we
+            believed open — therefore dropped the reminder on the floor: no flag
+            was set, no email went out, and once _in_window passed (±10 minutes)
+            that reminder never fired again. Barmak lead 858 lost its 2-day
+            reminder exactly that way, with a good email address sitting on the
+            row the whole time. A rejected send is now just as good a reason to
+            fall back to email as a closed window is.
+            """
+            if window_open:
+                if _send_wa(phone, message, dry_run=dry_run,
+                            tenant=getattr(apt, 'tenant', None)):
+                    if not dry_run:
+                        _mark_sent_customer(apt, rtype)
+                    self.stdout.write(self.style.SUCCESS(
+                        f"    SENT  {label} [WA] → {apt_label}"))
+                    return 'sent'
+                if not has_email:
+                    self.stdout.write(self.style.ERROR(
+                        f"    FAIL  {label} [WA, no email on file] → {apt_label}"))
+                    return 'failed'
+                self.stdout.write(self.style.WARNING(
+                    f"    WA rejected {label} → {apt_label} — falling back to email"))
+            elif not has_email:
+                self.stdout.write(
+                    f"    SKIP  {label} → {apt_label} [window closed, no email]")
+                return 'skipped'
+
+            try:
+                ok = send_customer_reminder_email(apt, email_type) if not dry_run else True
+            except Exception as exc:  # noqa: BLE001 — one bad address must not
+                # abort the sweep for every other lead behind it in the loop.
+                logger.warning(
+                    'Reminder email raised for appointment %s (%s): %s',
+                    apt.id, email_type, exc,
+                )
+                ok = False
+
+            if ok:
+                if not dry_run:
+                    _mark_sent_customer(apt, rtype)
+                self.stdout.write(self.style.SUCCESS(
+                    f"    SENT  {label} [EMAIL] → {apt_label}"))
+                return 'sent'
+            self.stdout.write(self.style.ERROR(
+                f"    FAIL  {label} [EMAIL] → {apt_label}"))
+            return 'failed'
+
         # ─────────────────────────────────────────────────────────────────────
         # CUSTOMER REMINDERS
         # ─────────────────────────────────────────────────────────────────────
@@ -647,36 +704,16 @@ class Command(BaseCommand):
                     if _already_sent_customer(apt, rtype):
                         customer_skipped += 1
                         self.stdout.write(f"    SKIP  {label} → {apt_label}")
-                    elif window_open:
-                        msg = builder(apt, _lead_plumber_contact(apt))
-                        ok  = _send_wa(phone, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
-                        if ok:
-                            if not dry_run:
-                                _mark_sent_customer(apt, rtype)
-                            customer_sent += 1
-                            self.stdout.write(
-                                self.style.SUCCESS(f"    SENT  {label} [WA] → {apt_label}")
-                            )
-                        else:
-                            customer_failed += 1
-                            self.stdout.write(self.style.ERROR(f"    FAIL  {label} [WA] → {apt_label}"))
-                    elif has_email:
-                        ok = send_customer_reminder_email(apt, email_type) if not dry_run else True
-                        if ok:
-                            if not dry_run:
-                                _mark_sent_customer(apt, rtype)
-                            customer_sent += 1
-                            self.stdout.write(
-                                self.style.SUCCESS(f"    SENT  {label} [EMAIL] → {apt_label}")
-                            )
-                        else:
-                            customer_failed += 1
-                            self.stdout.write(self.style.ERROR(f"    FAIL  {label} [EMAIL] → {apt_label}"))
                     else:
-                        self.stdout.write(
-                            f"    SKIP  {label} → {apt_label} "
-                            f"[window closed, no email]"
+                        outcome = _deliver_customer_reminder(
+                            apt, rtype,
+                            builder(apt, _lead_plumber_contact(apt)),
+                            email_type, label, apt_label,
+                            window_open, has_email, phone,
                         )
+                        if   outcome == 'sent':    customer_sent += 1
+                        elif outcome == 'failed':  customer_failed += 1
+                        else:                      customer_skipped += 1
 
             # 2-hour reminder
             if _is_2h_window(apt_u, now_utc):
@@ -684,30 +721,16 @@ class Command(BaseCommand):
                 if _already_sent_customer(apt, rtype):
                     customer_skipped += 1
                     self.stdout.write(f"    SKIP  2 Hours Before → {apt_label}")
-                elif window_open:
-                    _pc = _lead_plumber_contact(apt)
-                    msg = _msg_2hours(apt, _pc)
-                    ok  = _send_wa(phone, msg, dry_run=dry_run, tenant=getattr(apt, 'tenant', None))
-                    if ok:
-                        if not dry_run:
-                            _mark_sent_customer(apt, rtype)
-                        customer_sent += 1
-                        self.stdout.write(self.style.SUCCESS(f"    SENT  2 Hours Before [WA] → {apt_label}"))
-                    else:
-                        customer_failed += 1
-                        self.stdout.write(self.style.ERROR(f"    FAIL  2 Hours Before [WA] → {apt_label}"))
-                elif has_email:
-                    ok = send_customer_reminder_email(apt, "two_hours") if not dry_run else True
-                    if ok:
-                        if not dry_run:
-                            _mark_sent_customer(apt, rtype)
-                        customer_sent += 1
-                        self.stdout.write(self.style.SUCCESS(f"    SENT  2 Hours Before [EMAIL] → {apt_label}"))
-                    else:
-                        customer_failed += 1
-                        self.stdout.write(self.style.ERROR(f"    FAIL  2 Hours Before [EMAIL] → {apt_label}"))
                 else:
-                    self.stdout.write(f"    SKIP  2 Hours Before → {apt_label} [window closed, no email]")
+                    outcome = _deliver_customer_reminder(
+                        apt, rtype,
+                        _msg_2hours(apt, _lead_plumber_contact(apt)),
+                        "two_hours", "2 Hours Before", apt_label,
+                        window_open, has_email, phone,
+                    )
+                    if   outcome == 'sent':    customer_sent += 1
+                    elif outcome == 'failed':  customer_failed += 1
+                    else:                      customer_skipped += 1
 
         if customer_sent == 0 and customer_skipped == 0 and customer_failed == 0:
             self.stdout.write("    No customer reminders due at this time.")
