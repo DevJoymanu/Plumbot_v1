@@ -174,6 +174,49 @@ def tenant_item_label(cfg, intent) -> str:
     return (item.short_label or item.label or '').strip()
 
 
+# Families that name an installable THING, so "Labour to install a <noun>"
+# reads as English. Built from the families actually on tenants' price sheets.
+# Anything NOT here — repairs, geyser servicing, per-square-metre work — keeps
+# the generic phrasing, because "Labour to install a Element replacement" and
+# "install a Tiling per square meter" are not sentences.
+_INSTALL_NOUNS = {
+    'toilet': 'toilet',
+    'shower': 'shower cubicle',
+    'tub': 'tub',
+    'basin': 'basin',
+    'geyser': 'geyser',
+    'vanity': 'vanity unit',
+    'chamber': 'side chamber',
+    'kitchen-sink': 'kitchen sink', 'kitchen_sink': 'kitchen sink',
+    'concrete_sink': 'concrete sink',
+    'prep_bowl': 'prep bowl',
+    'vegetable-bowl': 'vegetable bowl',
+    'dishwasher': 'dishwasher',
+    'washing_machine': 'washing machine',
+    'jacuzzi': 'jacuzzi',
+    'booster-pump': 'booster pump', 'booster_pump': 'booster pump',
+    'well-pump': 'well pump',
+    'pressure-tank': 'pressure tank', 'pressure_tank': 'pressure tank',
+    'water_tank': 'water tank',
+    'filter': 'water filter',
+    'borehole': 'borehole',
+    'septic_tank': 'septic tank',
+}
+# A variant that changes the noun the customer would use for it.
+_INSTALL_NOUNS_BY_VARIANT = {
+    ('tub', 'freestanding'): 'freestanding tub',
+    ('shower', 'glass'): 'shower glass',
+    ('toilet', 'wall_hung'): 'wall-hung toilet',
+}
+
+
+def _install_noun(item):
+    """The everyday noun for this item, or None when it is not a thing you
+    install (a repair, a service, work priced per square metre)."""
+    key = (item.family, item.variant or '')
+    return _INSTALL_NOUNS_BY_VARIANT.get(key) or _INSTALL_NOUNS.get(item.family)
+
+
 def _tenant_item_block(cfg, item) -> dict:
     """One bilingual pricing block rendered from a tenant's own price row.
     Same shape as the hardcoded intents, so handle_service_inquiry and
@@ -189,26 +232,40 @@ def _tenant_item_block(cfg, item) -> dict:
     if supply is not None and labour is not None:
         total = allin if allin is not None else supply + labour
         # Labour first, then the supplied-too figure, then the rough-guide
-        # caveat. Deliberately phrased so it stays grammatical for EVERY label
-        # a tenant might type: rows are named "Basin", "Geyser supply &
-        # install", "Element replacement", so "Labour to install a {label}"
-        # would read as "install a Element replacement" on most of them.
-        # No bullets — this is one flowing answer, and the closing booking
-        # question is appended by the follow-up prompt downstream.
-        return {
-            "breakdown_lines": [],
-            "total_line": (
+        # caveat. No bullets — one flowing answer. The closing booking question
+        # is appended by the follow-up prompt downstream (_build_pricing_response
+        # already adds one, so emitting a second here would end the reply on two
+        # questions).
+        noun = _install_noun(item)
+        if noun:
+            article = 'an' if noun[0].lower() in 'aeiou' else 'a'
+            total_line = (
+                f"Labour to install {article} {noun} is {cur}{labour}. "
+                f"If we supply {article} new {noun}, it starts from {cur}{total}."
+            )
+            sn_total_line = (
+                f"Mari yekuisa {noun} i{cur}{labour}. "
+                f"Kana tikakupai {noun} itsva, zvinotangira pa{cur}{total}."
+            )
+        else:
+            # Repairs, servicing, per-unit work: the label is not a noun you can
+            # "install a" of, so keep a form that works for any wording.
+            total_line = (
                 f"{name}: labour from {cur}{labour}. "
                 f"If we supply it too, from {cur}{total} all-in."
-            ),
-            "cheapest_line": (
-                "This is a rough guide, we confirm the exact price on a visit."
-            ),
-            "sn_breakdown_lines": [],
-            "sn_total_line": (
+            )
+            sn_total_line = (
                 f"{name}: labour kubva {cur}{labour}. "
                 f"Kana tikapa zvinhu futi, kubva {cur}{total} all-in."
+            )
+        return {
+            "breakdown_lines": [],
+            "total_line": total_line,
+            "cheapest_line": (
+                "This is a rough guide; we confirm the exact price on a site visit."
             ),
+            "sn_breakdown_lines": [],
+            "sn_total_line": sn_total_line,
             "sn_cheapest_line": (
                 "Aya mapurice ekufungidzira, tinosimbisa chaiyo patinouya kuzoona."
             ),

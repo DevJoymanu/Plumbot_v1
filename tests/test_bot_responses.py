@@ -7470,12 +7470,30 @@ import types as _ty
 _row = _ty.SimpleNamespace(label='Toilet install', short_label='', family='toilet',
                            supply=90, labour=50, allin=140, flat=None)
 _cfgp = _ty.SimpleNamespace(currency='US$')
+_row.variant = ''
 _blk = _tib(_cfgp, _row)
 results.log(
-    "price answer: labour first, then the supplied-too all-in figure",
-    _blk['total_line'] == ('Toilet install: labour from US$50. '
-                           'If we supply it too, from US$140 all-in.'),
+    "price answer: labour to install X, then the supplied-too figure",
+    _blk['total_line'] == ('Labour to install a toilet is US$50. '
+                           'If we supply a new toilet, it starts from US$140.'),
     got=repr(_blk['total_line']),
+)
+# The noun comes from the FAMILY, not the tenant's label, so "Toilet install"
+# never becomes "install a Toilet install".
+results.log(
+    "price answer: the noun is the family's, not the tenant's label",
+    'Toilet install' not in _blk['total_line'],
+    got=repr(_blk['total_line']),
+)
+# A variant that changes the everyday noun is honoured.
+_row_fs = _ty.SimpleNamespace(label='Freestanding tub', short_label='', family='tub',
+                              variant='freestanding', supply=270, labour=50,
+                              allin=320, flat=None)
+results.log(
+    "price answer: a variant with its own noun is used",
+    _tib(_cfgp, _row_fs)['total_line'].startswith(
+        'Labour to install a freestanding tub is US$50.'),
+    got=repr(_tib(_cfgp, _row_fs)['total_line']),
 )
 results.log(
     "price answer: carries the rough-guide caveat and no bullets",
@@ -7486,13 +7504,25 @@ results.log(
 )
 # A label like "Element replacement" must not be forced into "install a ...".
 _row2 = _ty.SimpleNamespace(label='Element replacement', short_label='',
-                            family='geyser_service', supply=10, labour=30,
-                            allin=40, flat=None)
+                            family='geyser_service', variant='element',
+                            supply=10, labour=30, allin=40, flat=None)
 results.log(
-    "price answer: stays grammatical for any label the tenant types",
+    "price answer: a repair/service never becomes 'install a <service>'",
     _tib(_cfgp, _row2)['total_line'] ==
     'Element replacement: labour from US$30. If we supply it too, from US$40 all-in.',
     got=repr(_tib(_cfgp, _row2)['total_line']),
+)
+# Every family the "install a" wording claims must actually read as English:
+# the noun must be a bare noun phrase, never a label carrying a verb.
+import re
+from bot.pricing_copy import _INSTALL_NOUNS as _NOUNS
+_bad_nouns = [n for n in set(_NOUNS.values())
+              if re.search(r'\b(install|installation|supply|replacement|repair|'
+                           r'service|per|&)\b', n, re.I)]
+results.log(
+    "price answer: no install-noun carries a verb or a service word",
+    not _bad_nouns,
+    got=str(_bad_nouns),
 )
 # The disclaimer must not stack on top of the block's own caveat.
 from bot.views.plumbot.response_mixin import ResponseMixin as _RMD
