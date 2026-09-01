@@ -3632,6 +3632,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         oos_reply = handle_out_of_scope(
             message_body, appointment,
             precomputed=uc_as_oos_classification(_uclass),
+            classification=_uclass,
         )
         if oos_reply is not None:
             appointment.add_conversation_message("assistant", oos_reply)

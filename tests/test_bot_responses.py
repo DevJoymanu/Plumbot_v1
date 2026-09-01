@@ -7703,11 +7703,51 @@ NEW_BUILD_CASES = [
     ('doing the bathroom from scratch',                        None),
 ]
 for _msg, _want in NEW_BUILD_CASES:
-    _got = _nb._new_build_subject(_msg)
+    _got = _nb._new_build_subject_fallback(_msg)
     results.log(
-        f"new build: {_msg[:40]!r} -> {_want}",
+        f"new build (offline fallback): {_msg[:34]!r} -> {_want}",
         _got == _want, expected=str(_want), got=str(_got),
     )
+
+# ── DeepSeek is the primary; the regex is add-only underneath it ─────────────
+# The classifier answers off the `new_build` field of the SAME unified_classify
+# result the turn already computed — no extra round trip — and it EARNS its
+# place: "Cost of wiring a new 4 bedroom house" has words between "new" and
+# "house", which the adjacency-bound fallback cannot match without also
+# swallowing "a new bathroom in my house".
+from bot.unified_classifier import uc_new_build as _ucnb
+
+results.log(
+    "new build: the classifier widens what the regex cannot reach",
+    _nb._new_build_subject_fallback('Cost of wiring a new 4 bedroom house') is None
+    and _nb._new_build_subject(
+        'Cost of wiring a new 4 bedroom house',
+        {'new_build': 'house'}) == 'house',
+    got=str(_nb._new_build_subject('Cost of wiring a new 4 bedroom house',
+                                   {'new_build': 'house'})),
+)
+results.log(
+    "new build: the classifier can never CLOSE a phrase the fallback knows",
+    # Add-only (the symmetry rule): missing a build DECLINES a live lead, while
+    # over-firing costs one waved-off question. A null/absent verdict, a failed
+    # call and a disagreeing call all leave the fallback's answer standing.
+    _nb._new_build_subject("It's a new building", {'new_build': None}) == 'building'
+    and _nb._new_build_subject("It's a new building", None) == 'building'
+    and _nb._new_build_subject("It's a new building", {}) == 'building',
+    got=str(_nb._new_build_subject("It's a new building", {'new_build': None})),
+)
+results.log(
+    "new build: a failed classification is 'no answer', never a definite no",
+    _ucnb(None) is None and _ucnb({}) is None and _ucnb({'new_build': None}) is None,
+    got=f"{_ucnb(None)}/{_ucnb({})}/{_ucnb({'new_build': None})}",
+)
+results.log(
+    "new build: the accessor takes the noun out of a wordy answer",
+    _ucnb({'new_build': 'a new house'}) == 'house'
+    and _ucnb({'new_build': ' Building '}) == 'building'
+    and _ucnb({'new_build': 'duplex'}) == 'house',   # unlisted noun still counts
+    got=str(_ucnb({'new_build': 'a new house'})),
+)
 
 results.log(
     "new build: the confirmation is the approved script, in their own noun",
@@ -7754,6 +7794,65 @@ results.log(
     _FakeNB()._new_build_confirmation('ndiri kuvaka imba itsva')
     == 'Saka muri kuda plumbing itsva yeimba itsva?',
     got=repr(_FakeNB()._new_build_confirmation('ndiri kuvaka imba itsva')),
+)
+
+# ── A new build beats the out-of-scope hold ─────────────────────────────────
+# Prod 2026-09-01: "Cost of wiring a new 4 bedroom house" -> we asked whether
+# the wiring was plumbing-related -> "It's a new building" -> DECLINED, and a
+# live new-build lead was sent off to find a specialist. The wiring isn't ours;
+# the building is. Same recurring bug: a holding state outranking the
+# customer's own words.
+from bot.out_of_scope_handler import (
+    _resolve_pending_clarification as _rpc, _mentions_new_build as _mnb,
+)
+
+
+class _FakeOOSAppt:
+    internal_notes = ''
+    conversation_history = []
+
+    def save(self, update_fields=None):
+        pass
+
+
+_real_classify = _oos.classify_message
+try:
+    # Pin the classifier: this case is about what we do with an out_of_scope
+    # verdict, not about reaching one.
+    _oos.classify_message = lambda *_a, **_k: {
+        'category': 'out_of_scope', 'confidence': 'HIGH', 'detail': 'electrical',
+    }
+    _pending = {'category': 'out_of_scope',
+                'original': 'Cost of wiring a new 4 bedroom house'}
+    _out = _rpc("It's a new building", dict(_pending), _FakeOOSAppt())
+    results.log(
+        "oos: a new build named in the answer is never declined",
+        _out is None, expected='None (back to the booking flow)', got=repr(_out),
+    )
+    # The classifier reaches the decline too — an answer the regex cannot read
+    # ("we've just finished the slab") still stops it, off the same result.
+    _ai_out = _rpc("we've just finished the slab", dict(_pending), _FakeOOSAppt(),
+                   {'new_build': 'house'})
+    results.log(
+        "oos: the classifier's new_build signal stops the decline as well",
+        _ai_out is None, expected='None', got=repr(_ai_out),
+    )
+    # The guard is narrow: an answer with no build in it still declines, or the
+    # module would never turn anyone away again.
+    _still_oos = _rpc("No, it's the electrical wiring", dict(_pending), _FakeOOSAppt())
+    results.log(
+        "oos: an answer with no build in it is still declined",
+        _still_oos is not None and 'outside what we do' in (_still_oos or ''),
+        got=repr(' '.join((_still_oos or '').split())[:110]),
+    )
+finally:
+    _oos.classify_message = _real_classify
+
+results.log(
+    "oos: the decline and the confirmation share one new-build resolver",
+    _mnb("It's a new building") and _mnb('a new house')
+    and not _mnb('Dzivarasekwa extension') and not _mnb('the electrical wiring'),
+    got=str(_mnb("It's a new building")),
 )
 
 # ── Price answers lead with labour, then the supplied-too figure ────────────

@@ -1,0 +1,20 @@
+# A new build must beat the out-of-scope hold (prod 2026-09-01).
+# "Cost of wiring a new 4 bedroom house" -> we correctly asked whether the
+# wiring was plumbing-related -> the lead answered "It's a new building" ->
+# and the bot DECLINED, sending a live new-build lead off to find a specialist.
+# The wiring still isn't ours. The building is: a house going up needs plumbing
+# whatever else it needs, so the answer names the job back instead of closing
+# the door.
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> Cost of wiring a new 4 bedroom house
+expect: wiring
+reject: outside what we do
+
+> It's a new building
+expect: new plumbing installation for a new building
+reject: outside what we do
+reject: you'd need a specialist
+reject: bathroom or a kitchen

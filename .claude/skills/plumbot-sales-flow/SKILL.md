@@ -99,6 +99,7 @@ local checks:
 | `_is_carryover_pricing` / `_is_unprompted_carryover_pricing` | response_mixin.py / whatsapp_webhook.py | stale intent pricing an area reply |
 | `_is_quoted_item_reference` | whatsapp_webhook.py | "this one how much?" on a photo |
 | `_delay_breakout_inquiry` | out_of_scope_handler.py | delay hold swallowing a question — wire EVERY pending state to it |
+| `_new_build_subject` / `_mentions_new_build` | response_mixin.py / out_of_scope_handler.py | an OOS decline (or a scope question) swallowing a live new build — AI-primary off `uc_new_build`, **add-only** |
 | `_is_purchase_commitment` | response_mixin.py | buying statement leaking price/size |
 | `_is_job_quote_request` / `_names_multiple_products` | response_mixin.py | job description mistaken for price ask |
 | `wants_whatsapp_delivery` | out_of_scope_handler.py | "use this chat" re-asked for email |

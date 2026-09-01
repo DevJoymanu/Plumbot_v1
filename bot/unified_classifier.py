@@ -181,6 +181,24 @@ speech_act        WHAT KIND of message this is — what the customer is DOING, n
                   "who would be coming to do the work?" is logistics, and "do you
                   do bathroom renovations?" is capability. Read the verb that
                   belongs to the CUSTOMER, not the words about the job.
+new_build         The customer's own word for a structure that is NEW or still
+                  going up, when plumbing would go INTO it. Return ONE lowercase
+                  noun — EXACTLY the word they used, so it can be said back to
+                  them (they wrote "building" → "building", never "house").
+                  Otherwise null.
+                  Yes: "new house", "it's a new building", "cost of wiring a new
+                  4 bedroom house", "I'm building a place in Ruwa", "the house is
+                  still under construction", "we've just finished the slab",
+                  "imba itsva", "ndiri kuvaka imba", "chivakwa chitsva".
+                  A structure counts even when the customer asks about a trade we
+                  do NOT do (wiring, roofing): the building still needs plumbing,
+                  and intent is judged separately.
+                  No → null: a REFIT of something that already exists ("a new
+                  bathroom in my house", "renovating my house", "doing the
+                  bathroom from scratch" — a room is not a structure); a new
+                  FIXTURE ("new toilet", "new geyser", "new shower cubicle"); and
+                  a PLACE NAME that merely contains the word — the Harare suburb
+                  "Dzivarasekwa Extension" is an area, not a building.
 
 ─── WORKED EXAMPLES (input → output) ─────────────────────────────────────────
 These show the EXACT reasoning for the cases that get misclassified most often.
@@ -248,6 +266,24 @@ Match the pattern, do not copy values blindly.
 (Appointment: service=bathroom_renovation, area=Hatfield | next_question=availability_date)  "are you free this Friday?"
 {"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"answered_current_question":false,"pivoted_to_timeline":true,"offered_date":"2026-07-03","offered_timeframe":null,"extracted":{"area":null,"availability":"2026-07-03T00:00","customer_name":null,"project_description":null}}
 
+# A new build is a new build even when the trade they asked about is not ours.
+# The wiring is out of scope; the house going up is a full plumbing job, and the
+# noun comes back as THEY wrote it:
+"Cost of wiring a new 4 bedroom house"
+{"intent":"out_of_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"price_ask","new_build":"house","extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# Answering our clarification with the structure — still a new build:
+(Appointment: ... | next_question=service_type)  "It's a new building"
+{"intent":"in_scope","confidence":"HIGH","service_type":"new_plumbing_installation","product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"booking_answer","new_build":"building","extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# A ROOM being redone is not a new structure — new_build stays null:
+"I need a new bathroom in my house"
+{"intent":"in_scope","confidence":"HIGH","service_type":"bathroom_renovation","product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"quote_request","new_build":null,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":"new bathroom in my house"}}
+
+# A suburb whose NAME contains a building word is an area, not a build:
+(Appointment: ... | next_question=area)  "Dzivarasekwa extension"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"booking_answer","new_build":null,"extracted":{"area":"Dzivarasekwa Extension","availability":null,"customer_name":null,"project_description":null}}
+
 ─── OUTPUT FORMAT (return exactly this structure) ────────────────────────────
 {
   "intent": "in_scope",
@@ -262,6 +298,7 @@ Match the pattern, do not copy values blindly.
   "offered_date": null,
   "offered_timeframe": null,
   "speech_act": "other",
+  "new_build": null,
   "english": "",
   "extracted": {
     "area": null,
@@ -480,6 +517,37 @@ def uc_speech_act(r: dict | None) -> str | None:
         return None
     v = v.strip().lower()
     return v or None
+
+
+# Nouns we are willing to say back in "a new ___". The model is asked for the
+# customer's own word, and this keeps a surprising one out of customer-facing
+# copy — an unlisted noun still COUNTS as a new build, it just gets confirmed
+# as "a new house" rather than pasting whatever came back into the reply.
+_NEW_BUILD_NOUNS = {
+    'house', 'home', 'building', 'property', 'structure',
+    'place', 'flat', 'cottage', 'stand', 'build',
+}
+
+
+def uc_new_build(r: dict | None) -> str | None:
+    """The customer's own noun for a structure that is new or still going up
+    ('house', 'building', ...), or None when they named none.
+
+    None also means "the classifier did not run" — callers treat that as no
+    answer and fall back to their keyword resolver, never as a definite "no".
+    """
+    v = (r or {}).get("new_build")
+    if not isinstance(v, str):
+        return None
+    v = v.strip().lower().strip('.,!?"\'')
+    if not v:
+        return None
+    # Tolerate "a new house" / "4 bedroom house" coming back instead of a bare
+    # noun: take the listed noun out of it rather than discarding the signal.
+    for word in reversed(v.split()):
+        if word in _NEW_BUILD_NOUNS:
+            return word
+    return 'house'
 
 def uc_as_service_inquiry(r: dict | None) -> dict:
     """Format the result as the dict that detect_service_inquiry() would return."""

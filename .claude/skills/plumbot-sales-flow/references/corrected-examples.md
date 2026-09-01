@@ -412,3 +412,51 @@ in my house" is a refit, not a build; "Dzivarasekwa extension" is a suburb),
 stages and only once — asked twice it is the bot loop — and it records the
 service type as it asks, so the "yes" advances to the project detail instead
 of falling back to "bathroom or kitchen?".
+
+---
+
+## A new build beats the out-of-scope hold
+
+**Conv (2026-09-01).** The clarification was right; the verdict was not.
+
+> **Customer:** "Cost of wiring a new 4 bedroom house"
+>
+> **Bot (correct):** "Just to clarify, is the wiring you're asking about
+> related to plumbing or water systems in the house?"
+>
+> **Customer:** "It's a new building"
+>
+> **Bad:** "We specialise in plumbing and bathroom/kitchen renovations, so
+> that service is outside what we do. For that you'd need a specialist…"
+>
+> **Good:** "So you need a new plumbing installation for a new building?"
+
+Why: the customer never said the wiring was plumbing, so the classifier stayed
+on out_of_scope and the decline fired — technically defensible, commercially
+the worst possible reply. A four-bedroom house going up needs a full plumbing
+system whatever else it needs, and they had just told us there was one. We shut
+the door on a live new-build lead over the one trade they happened to ask about
+first.
+
+The wiring is still not ours; the building is. `_mentions_new_build` (one
+resolver shared with the booking flow, so the decline and the confirmation can
+never disagree) breaks the OOS hold and hands the lead back to the flow, which
+names the job back to them. The guard stays narrow: an answer with no build in
+it — "no, it's the electrical wiring" — still declines, or the module would
+never turn anyone away again.
+
+DeepSeek answers it, off the `new_build` field of the same `unified_classify`
+result the turn already computes — no extra round trip — and it earns the seat:
+the opener here, "cost of wiring a new 4 bedroom house", has words between
+"new" and "house", so the adjacency-bound regex misses it, and loosening the
+regex to span them would also swallow "a new bathroom in my house". Live: that
+message classifies `intent=out_of_scope` AND `new_build="house"` at once, which
+is exactly the shape of the case.
+
+**Add-only** — the classifier may widen the signal but never close it. A phrase
+the regex fallback knows still counts with the API down or disagreeing, because
+the failure costs are lopsided: over-firing asks one question the lead waves
+off, missing one declines a live lead.
+
+This is the same recurring bug as the delay-hold and pricing-gate cases above:
+a holding state outranking what the customer just said.

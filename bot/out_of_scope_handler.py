@@ -1122,7 +1122,25 @@ Only the question text. No quotes, no labels."""
 
 # ── Pending-answer resolver ───────────────────────────────────────────────────
 
-def _resolve_pending_clarification(answer: str, pending: dict, appointment) -> Optional[str]:
+def _mentions_new_build(message: str, classification=None) -> bool:
+    """True when the lead says the work is going into something newly built.
+
+    One resolver, shared with the booking flow: `ResponseMixin._new_build_subject`
+    owns the question (DeepSeek's `new_build` signal off the turn's existing
+    unified_classify result, with the adjacency-bound regex as the fallback), so
+    the out-of-scope decline and the new-build confirmation can never disagree
+    about what counts. Imported inside the function — the two modules import
+    each other this way.
+
+    `classification` is the already-computed unified result; nothing here makes
+    an extra API call, and without one the keyword fallback answers.
+    """
+    from bot.views.plumbot.response_mixin import ResponseMixin
+    return ResponseMixin._new_build_subject(message, classification) is not None
+
+
+def _resolve_pending_clarification(answer: str, pending: dict, appointment,
+                                   classification=None) -> Optional[str]:
     """
     The customer has answered our clarifying question.
     Re-classify the answer in context of the original message and the pending
@@ -1175,6 +1193,18 @@ def _resolve_pending_clarification(answer: str, pending: dict, appointment) -> O
         if any(sig in lower for sig in plumbing_signals):
             logger.info("Plumbing intent detected after OOS — treating as in_scope")
             return None  # continue booking flow
+
+        # A NEW BUILD is the strongest in-scope signal there is — a house going
+        # up needs plumbing whatever else it needs — and it has to beat this
+        # holding state (CLAUDE.md: the customer's own words override any gate).
+        # Prod 2026-09-01: "Cost of wiring a new 4 bedroom house" was clarified,
+        # answered "It's a new building", and DECLINED — we sent a live new-build
+        # lead off to find a specialist. The wiring still isn't ours; the
+        # building is, and the booking flow confirms that back to them.
+        if _mentions_new_build(answer, classification):
+            logger.info("New build named after the OOS clarification (%r) — "
+                        "back to the booking flow", answer[:60])
+            return None
 
         # A plain "yes" IS the answer to "is there plumbing involved?" — the
         # question was ours and it was closed. Reading it as "still unclear"
@@ -3517,12 +3547,18 @@ def handle_out_of_scope(
     message: str,
     appointment,
     precomputed: dict | None = None,
+    classification: dict | None = None,
 ) -> Optional[str]:
     """
     Check whether this message falls outside the normal booking scope.
 
     precomputed: optional dict from uc_as_oos_classification(). When provided,
                  skips the internal classify_message() API call entirely.
+    classification: the RAW unified_classify result behind `precomputed`. The
+                 mapped `precomputed` dict keeps only category/confidence, and
+                 the new-build signal that stops us declining a live build lead
+                 lives on the raw one. Optional — without it the keyword
+                 fallback answers.
 
     Decision tree:
       1. If a clarifying question is pending, resolve it first.
@@ -3588,7 +3624,8 @@ def handle_out_of_scope(
             "Resolving pending clarification: category=%s original='%s' answer='%s'",
             pending_cat, pending.get("original", "")[:60], message[:60],
         )
-        return _resolve_pending_clarification(message, pending, appointment)
+        return _resolve_pending_clarification(message, pending, appointment,
+                                              classification)
 
     # ── Step 2: classify (use precomputed to skip the API call) ───────────────
     if precomputed:

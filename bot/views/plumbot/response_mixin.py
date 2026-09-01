@@ -3001,6 +3001,7 @@ class ResponseMixin:
                     handle_out_of_scope(
                         incoming_message, self.appointment,
                         precomputed=_oos_precomputed,
+                        classification=precomputed_classification,
                     )
                     if has_prior_convo else None
                 )
@@ -3219,6 +3220,7 @@ class ResponseMixin:
                             next_question,
                             ['plan_status'],
                             quoted_context=quoted_context,
+                            classification=precomputed_classification,
                         )
                         reply = "Perfect! You can send your plan whenever you're ready. " + reply
                         return reply
@@ -3372,6 +3374,7 @@ class ResponseMixin:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
+                            classification=precomputed_classification,
                         )
                     elif (self._is_facebook_price_ref(incoming_message)
                             and not _asks_figure):
@@ -3397,6 +3400,7 @@ class ResponseMixin:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
+                            classification=precomputed_classification,
                         )
                     elif ((self._asks_for_quote(incoming_message)
                             or self._is_job_quote_request(
@@ -3468,11 +3472,13 @@ class ResponseMixin:
                             reply = self.generate_contextual_response(
                                 incoming_message, next_question, updated_fields,
                                 quoted_context=quoted_context,
+                                classification=precomputed_classification,
                             )
                     else:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
+                            classification=precomputed_classification,
                         )
 
                 # Guard: never return None or empty — send a safe fallback instead
@@ -3491,7 +3497,7 @@ class ResponseMixin:
                 return "Sorry, dropped that on our end — could you send that again?"
 
 
-        def generate_contextual_response(self, incoming_message, next_question, updated_fields, quoted_context=None):
+        def generate_contextual_response(self, incoming_message, next_question, updated_fields, quoted_context=None, classification=None):
             """
             Generate the next bot message.
 
@@ -3546,7 +3552,7 @@ class ResponseMixin:
 
                 # A new build is its own job — confirm it back before running the
                 # lead through a scope question they have already answered.
-                new_build = self._new_build_confirmation(incoming_message)
+                new_build = self._new_build_confirmation(incoming_message, classification)
                 if new_build:
                     return new_build
 
@@ -3768,25 +3774,52 @@ class ResponseMixin:
             r'\bchivakwa\s+chitsva\b',      # new structure
         )
 
-        def _new_build_subject(self, message: str):
+        @classmethod
+        def _new_build_subject(cls, message: str, classification=None):
             """The lead's own word for the new structure ('house', 'building',
             'stand', ...), or None when nothing says the plumbing is going into
             something new.
 
-            Deterministic and adjacency-bound on purpose: "a new bathroom in my
-            house" is a refit, and only `new house` / `building a house` and
-            friends read as a build. Their noun comes back so the confirmation
-            can use it — someone who wrote "building" is not asked about a
-            "house"."""
+            DeepSeek decides, off the `new_build` field of the SAME
+            `unified_classify` result every turn already computes — no extra
+            round trip. The regex below is the demoted fallback that keeps the
+            offline gate working and an API blip functioning.
+
+            **Add-only, per the symmetry rule.** The classifier can WIDEN this
+            (it reads "cost of wiring a new 4 bedroom house" and "we've just
+            finished the slab", which no adjacency-bound pattern matches) but it
+            can never CLOSE it: a phrase the fallback recognises still counts
+            with the API down or disagreeing. The failure costs are lopsided —
+            over-firing asks one extra question the lead can wave off, while
+            missing a new build DECLINES a live lead as out of scope (prod
+            2026-09-01). Compare `_asks_price_figure`, add-only for the same
+            reason, and `_is_job_quote_request`, where the AI does outrank.
+
+            A classmethod so the modules that only need the SIGNAL — the
+            out-of-scope clarification, which must not decline a live new build
+            — can ask without an instance.
+            """
+            from bot.unified_classifier import uc_new_build
+            return (cls._new_build_subject_fallback(message)
+                    or uc_new_build(classification))
+
+        @classmethod
+        def _new_build_subject_fallback(cls, message: str):
+            """Keyword/regex resolver for `_new_build_subject` — the offline
+            half, deliberately adjacency-bound and high-precision: "a new
+            bathroom in my house" is a refit, and only `new house` / `building a
+            house` and friends read as a build. Loosening it to span the words
+            in "new 4 bedroom house" would also swallow "new bathroom in my
+            house", so the widening is the classifier's job, not this one's."""
             msg = (message or '').lower()
-            for pattern in self._NEW_BUILD_PATTERNS:
+            for pattern in cls._NEW_BUILD_PATTERNS:
                 m = re.search(pattern, msg)
                 if m:
                     return m.group(1)
-            if re.search(self._NEW_BUILD_ROOM_WORDS, msg):
+            if re.search(cls._NEW_BUILD_ROOM_WORDS, msg):
                 return None
             if any(re.search(p, msg)
-                   for p in self._NEW_BUILD_BARE + self._NEW_BUILD_SHONA):
+                   for p in cls._NEW_BUILD_BARE + cls._NEW_BUILD_SHONA):
                 return 'house'
             return None
 
@@ -3818,18 +3851,21 @@ class ResponseMixin:
                 for entry in history
             )
 
-        def _new_build_confirmation(self, message: str):
+        def _new_build_confirmation(self, message: str, classification=None):
             """The new-build confirmation, or None when it doesn't apply.
 
             Only at the two scope-gathering stages: past those the lead has
             already told us what the job is, and confirming it late would be a
             question about something they settled several turns ago.
+
+            `classification` is an already-computed unified_classify result;
+            nothing here makes an extra API call.
             """
             if self.get_next_question_to_ask() not in ('service_type', 'project_description'):
                 return None
             if self._already_confirmed_new_build():
                 return None
-            subject = self._new_build_subject(message)
+            subject = self._new_build_subject(message, classification)
             if not subject:
                 return None
 
