@@ -506,9 +506,7 @@ class ResponseMixin:
             value word ("invest" / outcome of getting it sorted), presumptive (it
             assumes they're buying), and forward-leaning so a "yes" hands straight
             off to the free on-site visit close."""
-            if language == "shona":
-                return "Ndiyo here mari yamaitarisira kuti tigadzirise izvi nemazvo?"
-            return "Is that around what you were looking to invest to get it sorted properly?"
+            return self._BUDGET_FIT_CLOSE[self._lang_key(language)][0]
 
         def _tub_line(self, kind: str, language: str):
             """One tub's price sentence built from THIS tenant's figures, or
@@ -755,6 +753,29 @@ class ResponseMixin:
         # naturally to the on-site visit. (Price replies use _price_tiedown instead.)
         # Rotated off the transcript so the same line never repeats and we never send
         # two of these back to back.
+        # ── Tie-down copy: text and its detection signature, together ────────
+        # Every "was our last turn a close?" gate works by scanning the previous
+        # assistant message for a signature fragment. When the text lived in one
+        # place and its signature in another, rewording the close silently broke
+        # the gate — the bot stops recognising its own tie-down, so it either
+        # stacks two or never advances to the booking question. The budget close
+        # had FOUR copies of its wording (the builder, two signature lists, and a
+        # pasted literal), and the literal was English-only.
+        #
+        # Pairing them makes the coupling visible, and TEST 0 asserts every
+        # signature is genuinely a substring of the text it claims to identify —
+        # so a reword that forgets its signature fails the commit gate.
+        _PRICE_TIEDOWN = {
+            'english': ("That sit alright with your budget?", "with your budget"),
+            'shona': ("Izvozvo zvirikuenderana ne budget yenyu here?", "ne budget"),
+        }
+        _BUDGET_FIT_CLOSE = {
+            'english': ("Is that around what you were looking to invest to get it "
+                        "sorted properly?", "looking to invest"),
+            'shona': ("Ndiyo here mari yamaitarisira kuti tigadzirise izvi nemazvo?",
+                      "yamaitarisira"),
+        }
+
         _TIEDOWN_VALUE_CHECK = {
             'english': [
                 ("Anything else on the property that needs looking at?",
@@ -789,17 +810,26 @@ class ResponseMixin:
 
         # Other yes-seeking closes that also count as a tie-down for stacking
         # purposes (so we never follow one with a value-check next turn).
-        # "with your budget" / "ne budget" = the price-reply tie-down (_price_tiedown).
+        # Derived from the tables above — never hand-written, or a reworded close
+        # keeps an orphaned signature here and the gate reads the wrong thing.
         _EXTRA_TIEDOWN_SIGNATURES = (
-            "looking to invest", "yamaitarisira", "with your budget", "ne budget",
+            _BUDGET_FIT_CLOSE['english'][1], _BUDGET_FIT_CLOSE['shona'][1],
+            _PRICE_TIEDOWN['english'][1], _PRICE_TIEDOWN['shona'][1],
         )
+
+        @classmethod
+        def _lang_key(cls, language: str) -> str:
+            return 'shona' if language == 'shona' else 'english'
 
         def _price_tiedown(self, language: str = "english") -> str:
             """Closing tie-down for PRICE replies — a budget-fit yes (per business
             preference) rather than the generic value-check used elsewhere."""
-            if language == "shona":
-                return "Izvozvo zvirikuenderana ne budget yenyu here?"
-            return "That sit alright with your budget?"
+            return self._PRICE_TIEDOWN[self._lang_key(language)][0]
+
+        @classmethod
+        def _price_tiedown_signatures(cls) -> tuple:
+            """The fragments that identify the budget tie-down in a past turn."""
+            return tuple(sig for _, sig in cls._PRICE_TIEDOWN.values())
 
         def _last_assistant_was_price_tiedown(self) -> bool:
             """True when our most recent turn was the budget tie-down — so a 'no'
@@ -811,7 +841,7 @@ class ResponseMixin:
                  if m.get('role') == 'assistant'),
                 '',
             ).lower()
-            return 'with your budget' in last or 'ne budget' in last
+            return any(sig in last for sig in self._price_tiedown_signatures())
 
         def _is_budget_decline_keywords(self, message: str) -> bool:
             """Keyword fallback for _is_budget_decline (only consulted right after we
@@ -5126,7 +5156,10 @@ class ResponseMixin:
             try:
                 reply += "\n\n" + self._get_pricing_followup_prompt('english')
             except Exception:
-                reply += "\n\nThat sit alright with your budget?"
+                # Was a pasted literal of the English tie-down, so a Shona lead
+                # got an English close here AND the copy drifted from
+                # _price_tiedown without either detector noticing.
+                reply += "\n\n" + self._price_tiedown('english')
             # Carry the approximate-price disclaimer on any priced combo, inserted
             # before the closing tie-down (idempotent, only when a figure is present).
             priced = [i for i in answerable if i in self._PRICED_INTENTS]

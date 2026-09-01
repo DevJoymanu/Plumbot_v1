@@ -1962,6 +1962,10 @@ class _FakeApptPoisoned:
     def save(self, update_fields=None):
         pass
 class _FakeSelfHistory:
+    _PRICE_TIEDOWN = ResponseMixin._PRICE_TIEDOWN
+    _BUDGET_FIT_CLOSE = ResponseMixin._BUDGET_FIT_CLOSE
+    _lang_key = ResponseMixin._lang_key
+    _price_tiedown_signatures = ResponseMixin._price_tiedown_signatures
     _TIEDOWN_VALUE_CHECK = ResponseMixin._TIEDOWN_VALUE_CHECK
     _TIEDOWN_OPENER = ResponseMixin._TIEDOWN_OPENER
     _EXTRA_TIEDOWN_SIGNATURES = ResponseMixin._EXTRA_TIEDOWN_SIGNATURES
@@ -2189,6 +2193,10 @@ class _FakeApptFwd:
         self.scheduled_datetime = scheduled_datetime
         self.conversation_history = history or []
 class _FakeSelfForward:
+    _PRICE_TIEDOWN = ResponseMixin._PRICE_TIEDOWN
+    _BUDGET_FIT_CLOSE = ResponseMixin._BUDGET_FIT_CLOSE
+    _lang_key = ResponseMixin._lang_key
+    _price_tiedown_signatures = ResponseMixin._price_tiedown_signatures
     _FORWARD_BANK = ResponseMixin._FORWARD_BANK
     _SCOPE_LABEL = ResponseMixin._SCOPE_LABEL
     _next_forward_question = ResponseMixin._next_forward_question
@@ -2311,6 +2319,10 @@ class _FakeApptStage:
 
 
 class _FakeSelfFollowup:
+    _PRICE_TIEDOWN = ResponseMixin._PRICE_TIEDOWN
+    _BUDGET_FIT_CLOSE = ResponseMixin._BUDGET_FIT_CLOSE
+    _lang_key = ResponseMixin._lang_key
+    _price_tiedown_signatures = ResponseMixin._price_tiedown_signatures
     _FAMILY_DISPLAY = ResponseMixin._FAMILY_DISPLAY
     _confirm_intent_question = ResponseMixin._confirm_intent_question
     _get_pricing_followup_prompt = ResponseMixin._get_pricing_followup_prompt
@@ -7223,6 +7235,88 @@ results.log(
     "memory check: the split marker survives and the re-ask is dropped",
     _r6 == "Noted, thanks." and _c6 == ['area'],
     got=f"{_r6!r} caught={_c6}",
+)
+
+# ── Tie-down signatures must match the copy they identify ───────────────────
+# The whole sale-progression ladder turns on "was our last turn a tie-down?",
+# which is a substring scan of the previous assistant message. If a close is
+# reworded and its signature is not, the gate stops recognising the bot's own
+# copy: it either stacks two closes or never advances to the booking question.
+# These cases make that reword fail the commit gate instead of production.
+from bot.views.plumbot.response_mixin import ResponseMixin as _RMT
+
+_banks = {
+    '_TIEDOWN_VALUE_CHECK': _RMT._TIEDOWN_VALUE_CHECK,
+    '_TIEDOWN_OPENER': _RMT._TIEDOWN_OPENER,
+}
+_bad = [
+    (name, lang, text, sig)
+    for name, bank in _banks.items()
+    for lang, pairs in bank.items()
+    for text, sig in pairs
+    if sig.lower() not in text.lower()
+]
+results.log(
+    "tie-down: every rotating close contains its own signature",
+    not _bad,
+    got=str(_bad),
+)
+
+_pair_tables = {
+    '_PRICE_TIEDOWN': _RMT._PRICE_TIEDOWN,
+    '_BUDGET_FIT_CLOSE': _RMT._BUDGET_FIT_CLOSE,
+}
+_bad2 = [
+    (name, lang, text, sig)
+    for name, table in _pair_tables.items()
+    for lang, (text, sig) in table.items()
+    if sig.lower() not in text.lower()
+]
+results.log(
+    "tie-down: the price and budget closes contain their own signatures",
+    not _bad2,
+    got=str(_bad2),
+)
+
+# The derived list must cover every language in both tables — a new language
+# added to a table and forgotten here would be invisible to the gate.
+_expected_extra = set()
+for _t in _pair_tables.values():
+    _expected_extra |= {sig for _, sig in _t.values()}
+results.log(
+    "tie-down: _EXTRA_TIEDOWN_SIGNATURES is derived, not hand-written",
+    set(_RMT._EXTRA_TIEDOWN_SIGNATURES) == _expected_extra,
+    got=f"declared={sorted(_RMT._EXTRA_TIEDOWN_SIGNATURES)} expected={sorted(_expected_extra)}",
+)
+results.log(
+    "tie-down: the price signatures resolve from the table",
+    set(_RMT._price_tiedown_signatures())
+    == {sig for _, sig in _RMT._PRICE_TIEDOWN.values()},
+    got=str(_RMT._price_tiedown_signatures()),
+)
+
+# The builders must return the table text verbatim, so no caller can drift.
+class _FakeSelfTD:
+    _PRICE_TIEDOWN = _RMT._PRICE_TIEDOWN
+    _BUDGET_FIT_CLOSE = _RMT._BUDGET_FIT_CLOSE
+    _lang_key = _RMT._lang_key
+    _price_tiedown = _RMT._price_tiedown
+    _budget_fit_close = _RMT._budget_fit_close
+
+
+_td = _FakeSelfTD()
+results.log(
+    "tie-down: builders return the table copy for both languages",
+    _td._price_tiedown('english') == _RMT._PRICE_TIEDOWN['english'][0]
+    and _td._price_tiedown('shona') == _RMT._PRICE_TIEDOWN['shona'][0]
+    and _td._budget_fit_close('shona') == _RMT._BUDGET_FIT_CLOSE['shona'][0],
+    got=repr(_td._price_tiedown('shona')),
+)
+# An unknown language falls back to English rather than raising mid-reply.
+results.log(
+    "tie-down: an unknown language falls back to English, never a KeyError",
+    _td._price_tiedown('ndebele') == _RMT._PRICE_TIEDOWN['english'][0],
+    got=repr(_td._price_tiedown('ndebele')),
 )
 
 # ── "Where are you?" is answered with the tenant's own address ──────────────

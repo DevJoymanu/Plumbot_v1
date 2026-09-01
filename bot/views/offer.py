@@ -5,6 +5,7 @@ with no context at all (usually straight off the ad) — see
 ResponseMixin._compose_pricing_overview. Stored as the tenant's
 TenantPriceItem(family='package', variant='facebook') row.
 """
+import logging
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
@@ -15,6 +16,8 @@ from django.views.decorators.http import require_POST
 from ..decorators import staff_required
 from ..models import TenantPriceItem
 from ..tenant_config import get_config
+
+logger = logging.getLogger(__name__)
 
 
 def _tenant_or_404(request):
@@ -52,6 +55,12 @@ def _compose_offer_preview(tenant):
         _price_components_map = _RM._price_components_map
         _product_price_close = _RM._product_price_close
         _price_tiedown = _RM._price_tiedown
+        # _price_tiedown reads its copy out of the shared table, so the table
+        # and the language resolver have to come with it. They were missed once
+        # and the AttributeError went straight into the bare except below —
+        # the page then rendered with no preview at all, silently.
+        _PRICE_TIEDOWN = _RM._PRICE_TIEDOWN
+        _lang_key = _RM._lang_key
         _ensure_price_disclaimer = _RM._ensure_price_disclaimer
         _PRICED_INTENTS = _RM._PRICED_INTENTS
 
@@ -59,7 +68,11 @@ def _compose_offer_preview(tenant):
             return False  # preview = a fresh conversation
     try:
         return _Shim()._compose_pricing_overview('english')
-    except Exception:
+    except Exception as exc:
+        # The shim borrows methods off ResponseMixin, so it breaks whenever one
+        # of them grows a dependency the shim doesn't carry. Swallowing that
+        # silently just removes the preview and tells nobody.
+        logger.warning("Offer preview could not be composed: %s", exc, exc_info=True)
         return None
 
 
