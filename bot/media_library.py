@@ -477,6 +477,12 @@ def describe_portfolio_items_async(item_ids):
     item_ids = [i for i in (item_ids or []) if i]
     if not item_ids:
         return
+    # Never spawn under the test runner — see regenerate_lead_magnet_async.
+    # A daemon thread querying the in-memory SQLite test database races the
+    # test's own connection and raises "database table is locked".
+    from django.conf import settings
+    if getattr(settings, 'TESTING', False):
+        return
     import threading
 
     def _work():

@@ -510,6 +510,15 @@ def regenerate_lead_magnet_async(tenant):
     """Rebuild + cache in a daemon thread (keeps config saves snappy)."""
     if tenant is None:
         return
+    # Never spawn under the test runner. The suite's database is in-memory
+    # SQLite, so a background thread querying it races the test's own
+    # connection and raises "database table is locked" — dozens of tracebacks
+    # per run, from a side effect no test asserts, burying the failures that
+    # actually matter. build_lead_magnet_pdf and get_or_build_lead_magnet are
+    # covered directly and synchronously by their own cases.
+    from django.conf import settings
+    if getattr(settings, 'TESTING', False):
+        return
     import threading
 
     def _work():
