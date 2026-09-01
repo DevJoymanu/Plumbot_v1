@@ -7463,6 +7463,52 @@ results.log(
     got=str(_shadowed),
 )
 
+# ── A defer is asked for a DATE before it is asked for an email ─────────────
+# Prod lead 881 (+263786318169, Barmak): "Ndiri kuchitungwiza ndichakubatayi
+# ndapedza kuronga nyaya dze mari" — I'm in Chitungwiza, I'll get back to you
+# once I've sorted the money — was answered "What's the best email for it?"
+# without anyone ever asking when. A self-initiated defer used to skip the
+# timeframe question entirely. A date books the follow-up; an email asked for
+# out of nowhere reads as an extraction.
+from bot.out_of_scope_handler import _reask_delay_timeframe as _rdt
+
+
+class _FakeDeferAppt:
+    pk = 881
+    customer_email = ''
+    internal_notes = ''
+    delay_followup_due_at = None
+    is_delayed = False
+
+    def save(self, update_fields=None):
+        pass
+
+    def mark_delayed(self, source_message=None, save=True):
+        self.is_delayed = True
+        return True
+
+
+_defer_msg = 'Ndiri kuchitungwiza ndichakubatayi ndapedza kuronga nyaya dze mari'
+_da = _FakeDeferAppt()
+_turn1 = _rdt(_defer_msg, _da)
+results.log(
+    "defer: a self-initiated defer is asked for a date, not an email",
+    'when are you thinking' in _turn1.lower() and 'email' not in _turn1.lower(),
+    got=repr(' '.join(_turn1.split())[:130]),
+)
+_turn2 = _rdt('will let you know', _da)
+results.log(
+    "defer: the SECOND miss pivots to the catalog/email offer",
+    'email' in _turn2.lower() and 'when are you thinking' not in _turn2.lower(),
+    got=repr(' '.join(_turn2.split())[:130]),
+)
+results.log(
+    "defer: nobody is asked 'when?' twice",
+    not ('when are you thinking' in _turn1.lower()
+         and 'when are you thinking' in _turn2.lower()),
+    got='turn1/turn2 both ask when' ,
+)
+
 # ── Price answers lead with labour, then the supplied-too figure ────────────
 from bot.pricing_copy import _tenant_item_block as _tib
 import types as _ty

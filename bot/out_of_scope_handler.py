@@ -2647,10 +2647,20 @@ def _reask_delay_timeframe(message: str, appointment) -> str:
     """
     count = _read_delay_reask(appointment)
 
-    # A self-initiated defer ("Will advise", "I'll contact you") skips the
-    # timeframe re-ask entirely — respect their claim on the next move, set the
-    # default 14-day follow-up, and go for the email/lead magnet in one step.
-    if count >= _DELAY_TF_ASKS_BEFORE_EMAIL_PIVOT or _is_self_initiated_defer(message):
+    # ALWAYS try for a date first, even on a self-initiated defer.
+    #
+    # A self-initiated defer ("Will advise", "I'll contact you") used to skip
+    # the timeframe question entirely and go straight to the email/catalog
+    # offer. That is the wrong trade: a date is worth more than an address,
+    # because it books the follow-up, and asking for an email out of nowhere
+    # reads as an extraction. Prod (+263786318169, Barmak): "Ndiri
+    # kuchitungwiza ndichakubatayi ndapedza kuronga nyaya dze mari" — I'm in
+    # Chitungwiza, I'll get back to you once I've sorted the money — was met
+    # with "What's the best email for it?" without anyone ever asking when.
+    #
+    # The count still governs: one ask, and the NEXT miss pivots to email, so
+    # nobody is asked "when?" twice.
+    if count >= _DELAY_TF_ASKS_BEFORE_EMAIL_PIVOT:
         _clear_delay_reask(appointment)
 
         # Still no concrete timeframe after a re-ask (e.g. "will call you"). Stop
@@ -3130,8 +3140,14 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
         # Send the PDF and schedule a proactive check-in (before the window closes
         # for ad/72h leads). Keep the reply light — don't narrate the send or the
         # check-in date; we'll follow up about the portfolio ourselves.
-        _deliver_pdf_and_schedule_checkin(appointment, iso_date)
-        return "Have a look whenever suits, and if anything changes just send a message."
+        if _deliver_pdf_and_schedule_checkin(appointment, iso_date):
+            return ("Have a look whenever suits, and if anything changes just "
+                    "send a message.")
+        # The send failed. "Have a look" would point them at nothing — the same
+        # rule the reschedule path follows: never tell a customer something
+        # happened when it did not. The plumber is alerted either way.
+        return ("Noted. If anything changes just send a message and we'll pick "
+                "it up from there.")
 
     # Unclear → offer the choice explicitly rather than guessing. But only ONCE:
     # if we already put that exact question to them and their answer still did
