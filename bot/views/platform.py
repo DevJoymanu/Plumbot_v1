@@ -744,18 +744,26 @@ class TenantProfileForm(forms.ModelForm):
         fields = [
             'plumber_name', 'plumber_contact', 'business_whatsapp',
             'location_area', 'location_city', 'location_line',
-            'timezone_name', 'currency',
+            'timezone_name', 'currency', 'consultation_fee',
             'licensed_claim_enabled', 'email_from_name', 'email_sender',
             'customer_from_email',
         ]
         labels = {
             'email_sender': 'Alerts inbox (this business receives here)',
             'customer_from_email': 'Customer-facing sender (their clients see this)',
+            'consultation_fee': 'Call-out fee (blank = the visit is free)',
         }
         help_texts = {
             'customer_from_email': (
                 'An address on their own business domain. Blank sends customer '
                 'mail from their platform subdomain instead.'
+            ),
+            # The tenant can set this themselves on their Profile page; this is
+            # the same field, so an operator can do it for them during setup.
+            'consultation_fee': (
+                'What they charge to come out and quote. Set a figure and the '
+                'assistant stops calling the visit free anywhere and states '
+                'this instead. Blank keeps the visit free, which is the default.'
             ),
         }
 

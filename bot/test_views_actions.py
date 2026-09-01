@@ -1690,6 +1690,46 @@ class PlatformConsoleTests(TestCase):
         self.assertIn('Free Quote', body)                    # FAQ topic tag
         self.assertIn(reverse('platform_tenant_config_edit', args=['acme']), body)
 
+    def test_operator_sets_the_call_out_fee_for_a_tenant(self):
+        """The tenant can set this on their own Profile page; the operator must
+        be able to do it for them during setup, from the console."""
+        from .tenant_config import get_config
+        body = self.client.get(
+            reverse('platform_tenant_config_edit', args=['homebase'])).content.decode()
+        self.assertIn('name="consultation_fee"', body)
+
+        base = {
+            'plumber_name': 'Takudzwa', 'plumber_contact': '+263774819901',
+            'business_whatsapp': '+263776255077',
+            'location_line': "We're in Hatfield, Harare.",
+            'location_area': 'Hatfield', 'location_city': 'Harare',
+            'timezone_name': 'Africa/Johannesburg', 'currency': 'US$',
+            'email_from_name': 'Takudzwa', 'email_sender': '',
+            'hours_day': ['monday'], 'hours_open': '08:00', 'hours_close': '18:00',
+            'form-TOTAL_FORMS': '0', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+        }
+        # Default: no fee, so the assistant may keep calling the visit free.
+        self.assertTrue(get_config(self.homebase).visit_is_free())
+
+        response = self.client.post(
+            reverse('platform_tenant_config_edit', args=['homebase']),
+            dict(base, consultation_fee='30'))
+        self.assertEqual(response.status_code, 302)
+        profile = TenantProfile.objects.get(tenant=self.homebase)
+        self.assertEqual(int(profile.consultation_fee), 30)
+        cfg = get_config(self.homebase)
+        self.assertFalse(cfg.visit_is_free())
+        self.assertIn('30', cfg.visit_cost_sentence())
+
+        # And clearing it puts the tenant back to a free visit.
+        self.client.post(
+            reverse('platform_tenant_config_edit', args=['homebase']),
+            dict(base, consultation_fee=''))
+        profile.refresh_from_db()
+        self.assertIsNone(profile.consultation_fee)
+        self.assertTrue(get_config(self.homebase).visit_is_free())
+
     def test_config_edit_page_renders_and_saves(self):
         response = self.client.get(reverse('platform_tenant_config_edit', args=['homebase']))
         self.assertEqual(response.status_code, 200)
