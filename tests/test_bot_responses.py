@@ -7383,6 +7383,86 @@ results.log(
     got=str([(m, _mft(m)) for m in _not_loc if _mft(m) == 'location']),
 )
 
+# ── No function-level import may shadow a module-level one in the webhook ───
+# Prod 2026-09-01: a `from bot.repeated_question_detector import
+# detect_language_simple` was added inside the hard-stop branch of
+# _generate_and_schedule_reply. Python then treats that name as LOCAL for the
+# whole function, so every later use — the FAQ language pick, _advance_after_
+# scope, the reschedule path — raised UnboundLocalError on any message that did
+# not take that branch. Which was most of them: "where are you located" died on
+# it in production.
+#
+# whatsapp_webhook.py is clean, so this is enforced with no allowlist.
+import ast as _ast
+import io as _io
+
+# utf-8-sig: this file carries a UTF-8 BOM, and ast.parse rejects U+FEFF.
+_wh_src = _io.open('bot/whatsapp_webhook.py', encoding='utf-8-sig').read()
+_wh_tree = _ast.parse(_wh_src)
+_wh_top = set()
+for _n in _wh_tree.body:
+    if isinstance(_n, (_ast.Import, _ast.ImportFrom)):
+        for _a in _n.names:
+            _wh_top.add(_a.asname or _a.name.split('.')[0])
+# An import at the top of a function always runs, so it is harmless. The
+# dangerous shape is an import inside a CONDITIONAL block (if/try/for/while)
+# whose name is then used outside that block: the name is local for the whole
+# function, but the binding only happens on one path. That is exactly the bug.
+def _wh_conditional_shadow(tree, top_names):
+    """Uses of a locally-imported module-level name that no import reaches.
+
+    A use is safe when some import of that name either runs unconditionally in
+    the function, or sits in the same conditional block as the use (that is the
+    send_previous_work_photos shape: `if appointment is not None:` imports
+    timezone and uses it two lines later). It is dangerous when the only import
+    is in a branch the use is NOT inside — the name is local to the whole
+    function, but only bound on one path.
+    """
+    _BLOCKS = (_ast.If, _ast.Try, _ast.For, _ast.While, _ast.With)
+    bad = []
+    for fn in _ast.walk(tree):
+        if not isinstance(fn, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            continue
+        # Every local import of a shadowing name, with the line-set of the
+        # conditional block enclosing it (None = unconditional in this function).
+        imports = []
+        for stmt in _ast.walk(fn):
+            if not isinstance(stmt, (_ast.Import, _ast.ImportFrom)):
+                continue
+            for alias in stmt.names:
+                name = alias.asname or alias.name.split('.')[0]
+                if name not in top_names:
+                    continue
+                scope = None
+                for blk in _ast.walk(fn):
+                    if isinstance(blk, _BLOCKS):
+                        lines = {n.lineno for n in _ast.walk(blk)
+                                 if hasattr(n, 'lineno')}
+                        if stmt.lineno in lines:
+                            scope = lines if scope is None else (scope & lines)
+                imports.append((name, stmt.lineno, scope))
+        if not imports:
+            continue
+        for use in _ast.walk(fn):
+            if not isinstance(use, _ast.Name) or use.id not in top_names:
+                continue
+            reached = any(
+                nm == use.id and ln <= use.lineno and (sc is None or use.lineno in sc)
+                for nm, ln, sc in imports
+            )
+            if not reached and any(nm == use.id for nm, _, _ in imports):
+                bad.append((fn.name, use.id, use.lineno))
+    return bad
+
+
+_shadowed = _wh_conditional_shadow(_wh_tree, _wh_top)
+results.log(
+    "webhook: no conditional import shadows a module-level name used elsewhere",
+    not _shadowed,
+    expected="none — a conditional import binds on one path but is local to all",
+    got=str(_shadowed),
+)
+
 # ── Price answers lead with labour, then the supplied-too figure ────────────
 from bot.pricing_copy import _tenant_item_block as _tib
 import types as _ty

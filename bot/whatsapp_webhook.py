@@ -2988,7 +2988,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if is_hard_stop_request(message_body):
             _mark_stop_requested(appointment)
             print(f"Hard stop requested by {phone_number}; suppressing all proactive sends.")
-            from bot.repeated_question_detector import detect_language_simple
+            # detect_language_simple is imported at MODULE level. Importing it
+            # again here made the name local to this entire function, so every
+            # later use — the FAQ language pick, _advance_after_scope, the
+            # reschedule path — raised UnboundLocalError on any message that did
+            # not take this branch. Which was most of them: "where are you
+            # located" died on it in production (2026-09-01).
             _stop_reply = build_hard_stop_reply(
                 is_shona=detect_language_simple(message_body) == 'shona')
             appointment.add_conversation_message("assistant", _stop_reply)
