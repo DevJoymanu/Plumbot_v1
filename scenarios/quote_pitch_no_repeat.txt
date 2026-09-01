@@ -19,7 +19,14 @@ expect: what works better for you
 reject: all-in figure
 reject: US$
 
+# A new build now gets its scope confirmed back first (scenarios/
+# new_build_confirmed) — still no repeated pitch and still no prices.
 > It's a new building and we require installation of all the plumbing requirements on the plan
+expect: new plumbing installation for a new building
+reject: all-in figure
+reject: US$
+
+> Yes
 expect: what works better for you
 reject: all-in figure
 reject: US$

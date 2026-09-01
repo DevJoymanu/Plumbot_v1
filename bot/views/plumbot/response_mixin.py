@@ -3544,6 +3544,12 @@ class ResponseMixin:
                 if next_question == "name":
                     return self._handle_name_step(incoming_message, updated_fields)
 
+                # A new build is its own job — confirm it back before running the
+                # lead through a scope question they have already answered.
+                new_build = self._new_build_confirmation(incoming_message)
+                if new_build:
+                    return new_build
+
                 if retry_count == 0:
                     first_pass = self._get_first_pass_question(next_question)
                     if first_pass:
@@ -3719,6 +3725,141 @@ class ResponseMixin:
             """The service question WITHOUT a greeting, closed this-or-that."""
             return ("Muri kuda kugadzirisa bathroom kana kitchen?" if is_shona
                     else "Is it a bathroom or a kitchen you're looking to get sorted?")
+
+        # ── New build: confirm the job back before qualifying it ─────────────
+        # A structure with no plumbing in it yet is a different job from a
+        # refit — nothing to renovate, the whole system goes in from scratch —
+        # so "bathroom or kitchen?" is the wrong question to put to it, and
+        # "can you tell me a bit more about the project?" throws the scope back
+        # at a lead who has already given it. Confirm what we heard instead:
+        # one micro-yes, in their own noun, and the ladder starts on a yes.
+        _NEW_BUILD_NOUN = r'(house|home|building|property|structure|place|flat|cottage|stand|build)'
+
+        _NEW_BUILD_PATTERNS = (
+            # "new house", "brand new building", "newly built home"
+            rf'\b(?:brand[-\s]+)?new(?:ly)?\s+(?:built\s+)?{_NEW_BUILD_NOUN}\b',
+            # "building a house", "putting up a new place", "constructing a home"
+            rf'\b(?:building|build|putting\s+up|constructing)\s+'
+            rf'(?:a|an|my|our|the)?\s*(?:new\s+)?{_NEW_BUILD_NOUN}\b',
+            # "the house is still under construction", "a place I'm building"
+            rf'\b{_NEW_BUILD_NOUN}\b[^.?!]{{0,40}}?\b(?:under\s+construction|'
+            rf'still\s+being\s+built|(?:i|we)\'?(?:m|re)\s+building)\b',
+        )
+
+        # Markers that say "new build" without naming the structure — the noun
+        # falls back to 'house', which is what they nearly always are here.
+        # These only count when no ROOM is named: "doing the bathroom from
+        # scratch" is a refit, and confirming "a new house" back to it would be
+        # putting words in the lead's mouth. ("from scratch" is deliberately not
+        # on this list at all — on its own it says nothing about a structure.)
+        _NEW_BUILD_BARE = (
+            r'\bunder\s+construction\b',
+            r'\bnew\s+construction\b',
+        )
+
+        _NEW_BUILD_ROOM_WORDS = r'\b(?:bathroom|kitchen|toilet|shower|en-?suite)\b'
+
+        # The Shona ones are their own list: matching one is itself proof the
+        # lead is writing Shona, which detect_language_simple needs two markers
+        # to conclude — "imba itsva" alone would have been answered in English.
+        _NEW_BUILD_SHONA = (
+            r'\bimba\s+itsva\b',            # new house
+            r'\bkuvaka\s+imba\b',           # building a house
+            r'\bchivakwa\s+chitsva\b',      # new structure
+        )
+
+        def _new_build_subject(self, message: str):
+            """The lead's own word for the new structure ('house', 'building',
+            'stand', ...), or None when nothing says the plumbing is going into
+            something new.
+
+            Deterministic and adjacency-bound on purpose: "a new bathroom in my
+            house" is a refit, and only `new house` / `building a house` and
+            friends read as a build. Their noun comes back so the confirmation
+            can use it — someone who wrote "building" is not asked about a
+            "house"."""
+            msg = (message or '').lower()
+            for pattern in self._NEW_BUILD_PATTERNS:
+                m = re.search(pattern, msg)
+                if m:
+                    return m.group(1)
+            if re.search(self._NEW_BUILD_ROOM_WORDS, msg):
+                return None
+            if any(re.search(p, msg)
+                   for p in self._NEW_BUILD_BARE + self._NEW_BUILD_SHONA):
+                return 'house'
+            return None
+
+        def _new_build_confirm_question(self, subject: str = 'house',
+                                        is_shona: bool = False) -> str:
+            """The scope micro-yes for a new build, in their language."""
+            if is_shona:
+                return "Saka muri kuda plumbing itsva yeimba itsva?"
+            return f"So you need a new plumbing installation for a new {subject}?"
+
+        # Signatures of the confirmation as SENT, so it is never asked twice.
+        _NEW_BUILD_CONFIRM_MARKERS = (
+            'new plumbing installation for a new',
+            'plumbing itsva yeimba itsva',
+        )
+
+        def _already_confirmed_new_build(self) -> bool:
+            """True when a previous assistant turn already put the new-build
+            confirmation to this lead. Asking it twice is the bot loop."""
+            try:
+                history = getattr(self.appointment, 'conversation_history', None) or []
+            except Exception:
+                return False
+            return any(
+                isinstance(entry, dict)
+                and entry.get('role') == 'assistant'
+                and any(m in (entry.get('content') or '').lower()
+                        for m in self._NEW_BUILD_CONFIRM_MARKERS)
+                for entry in history
+            )
+
+        def _new_build_confirmation(self, message: str):
+            """The new-build confirmation, or None when it doesn't apply.
+
+            Only at the two scope-gathering stages: past those the lead has
+            already told us what the job is, and confirming it late would be a
+            question about something they settled several turns ago.
+            """
+            if self.get_next_question_to_ask() not in ('service_type', 'project_description'):
+                return None
+            if self._already_confirmed_new_build():
+                return None
+            subject = self._new_build_subject(message)
+            if not subject:
+                return None
+
+            # Record the service type presumptively, so their "yes" advances to
+            # the project detail instead of falling back to "bathroom or
+            # kitchen?" — a question a new build has no answer to. The webhook's
+            # classify_and_save already catches most of these phrasings; this
+            # covers the ones it doesn't ("building a house", "under
+            # construction") and keeps the two in step.
+            appt = getattr(self, 'appointment', None)
+            if appt is not None and not getattr(appt, 'project_type', None):
+                from bot.service_type_classifier import NEW_PLUMBING_INSTALLATION
+                appt.project_type = NEW_PLUMBING_INSTALLATION
+                try:
+                    appt.save(update_fields=['project_type'])
+                except Exception:
+                    logger.warning("Could not save new-build project_type", exc_info=True)
+
+            from bot.repeated_question_detector import detect_language_simple
+            msg = (message or '').lower()
+            is_shona = (detect_language_simple(message or '') == 'shona'
+                        or any(re.search(p, msg) for p in self._NEW_BUILD_SHONA))
+            question = self._new_build_confirm_question(subject, is_shona)
+            logger.info("New-build confirmation for subject=%r from: %r",
+                        subject, (message or '')[:80])
+            # On first contact the greeting still leads — but the opener's own
+            # "new installation or a renovation?" is dropped: they just answered it.
+            if not self._conversation_underway():
+                return f"{'Mhoro' if is_shona else 'Hello'},\n\n{question}"
+            return question
 
         def _get_first_pass_question(self, next_question: str) -> str:
             """

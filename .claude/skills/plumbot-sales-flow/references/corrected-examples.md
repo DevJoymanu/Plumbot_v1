@@ -384,3 +384,31 @@ carries its own preposition, because "on tomorrow morning" is not English.
 
 Same rule, same message, for language: a Shona lead hears "mangwana
 mangwanani", not an English date.
+
+---
+
+## A new build is confirmed back, not qualified blind
+
+**Conv 566 / prod (new-build leads).** A structure with no plumbing in it yet.
+
+> **Customer:** "It's a new building and we require installation of all the
+> plumbing requirements on the plan"
+>
+> **Bad:** "Is it a bathroom or a kitchen you're looking to get sorted?"
+> (or "Got it! Can you tell me a bit more about the project?")
+>
+> **Good:** "So you need a new plumbing installation for a new building?"
+
+Why: a new build is a different job from a refit — nothing to renovate, the
+whole system goes in from scratch — so the bathroom/kitchen this-or-that is a
+question it has no answer to, and "tell me a bit more about the project" throws
+the lead's own words back at them. Confirming the scope is a micro-yes: it
+proves we read the message and starts the ladder on a yes.
+
+Use THEIR noun: someone who wrote "building" is asked about a building, not a
+house. `_new_build_subject` is the resolver (adjacency-bound: "a new bathroom
+in my house" is a refit, not a build; "Dzivarasekwa extension" is a suburb),
+`_new_build_confirmation` the gate. It fires only at the two scope-gathering
+stages and only once — asked twice it is the bot loop — and it records the
+service type as it asks, so the "yes" advances to the project detail instead
+of falling back to "bathroom or kitchen?".

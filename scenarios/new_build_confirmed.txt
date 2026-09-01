@@ -1,0 +1,21 @@
+# A new build gets its scope confirmed back, in the lead's own noun.
+# Before this, "It's a new building and we require installation of all the
+# plumbing requirements on the plan" was answered with the bathroom/kitchen
+# this-or-that (a question a new build has no answer to) or with "can you tell
+# me a bit more about the project?" — throwing their own words back at them.
+# One micro-yes on scope, then the ladder continues from a yes.
+
+> Hello
+expect: how may we assist you on plumbing services
+
+> It's a new building and we require installation of all the plumbing requirements on the plan
+expect: new plumbing installation for a new building
+reject: bathroom or a kitchen
+reject: US$
+
+> Yes
+reject: new plumbing installation for a new
+reject: bathroom or a kitchen
+
+> We are in Chitungwiza
+reject: new plumbing installation for a new

@@ -7651,6 +7651,111 @@ results.log(
     got=str(_is_self_initiated_defer_keywords('Let me update you tomorrow morning')),
 )
 
+# ── A new build is confirmed back, not run through "bathroom or kitchen?" ───
+# A structure with no plumbing in it yet is a different job from a refit, so
+# the lead who says "new house" / "new building" gets the scope confirmed in
+# their own noun — one micro-yes — instead of a this-or-that they can't answer
+# or a "tell me more about the project" that throws their own words back.
+class _FakeNBAppt:
+    project_type = None
+
+    def __init__(self, history=None, project_type=None):
+        self.conversation_history = history or []
+        self.project_type = project_type
+
+    def save(self, update_fields=None):
+        pass
+
+
+class _FakeNB(ResponseMixin):
+    def __init__(self, nq='service_type', history=None, underway=True,
+                 project_type=None):
+        self.appointment = _FakeNBAppt(history, project_type)
+        self._nq, self._underway = nq, underway
+
+    def get_next_question_to_ask(self):
+        return self._nq
+
+    def _conversation_underway(self):
+        return self._underway
+
+
+_nb = _FakeNB()
+NEW_BUILD_CASES = [
+    # (message, the noun we say back — None means the flow is untouched)
+    ("It's a new building and we require installation of all the plumbing "
+     "requirements on the plan",                              'building'),
+    ('l just need all the services needed on a new house',     'house'),
+    ("I'm building a new house in Ruwa, 3 bathrooms",          'house'),
+    ('building a house in Norton',                             'house'),
+    ('the house is still under construction',                  'house'),
+    ('brand new property',                                     'property'),
+    ('newly built home',                                       'home'),
+    ('imba itsva',                                             'house'),
+    ('ndiri kuvaka imba',                                      'house'),
+    # Must NOT fire: a suburb whose name ends in "extension", a refit, a
+    # single fixture, and a ROOM done from scratch (that is not a new house).
+    ('Dzivarasekwa extension',                                 None),
+    ('I need a new bathroom in my house',                      None),
+    ('renovating my house',                                    None),
+    ('new shower cubicle',                                     None),
+    ('how much for a new toilet',                              None),
+    ('doing the bathroom from scratch',                        None),
+]
+for _msg, _want in NEW_BUILD_CASES:
+    _got = _nb._new_build_subject(_msg)
+    results.log(
+        f"new build: {_msg[:40]!r} -> {_want}",
+        _got == _want, expected=str(_want), got=str(_got),
+    )
+
+results.log(
+    "new build: the confirmation is the approved script, in their own noun",
+    (_nb._new_build_confirm_question('house')
+     == 'So you need a new plumbing installation for a new house?'
+     and _nb._new_build_confirm_question('building')
+     == 'So you need a new plumbing installation for a new building?'),
+    got=_nb._new_build_confirm_question('building'),
+)
+
+# The whole gate: fires once, records the service type so a "yes" advances,
+# then never fires again — and stays out of the later stages entirely.
+_nb1 = _FakeNB(nq='service_type')
+_r1 = _nb1._new_build_confirmation("It's a new building, plumbing on the plan")
+results.log(
+    "new build: confirmed at the scope stage, and the service type is recorded",
+    _r1 == 'So you need a new plumbing installation for a new building?'
+    and _nb1.appointment.project_type == 'New Plumbing Installation',
+    got=f"{_r1!r} / {_nb1.appointment.project_type!r}",
+)
+_nb2 = _FakeNB(nq='project_description', history=[
+    {'role': 'assistant',
+     'content': 'So you need a new plumbing installation for a new house?'},
+])
+results.log(
+    "new build: never asked twice",
+    _nb2._new_build_confirmation('yes, a new house') is None,
+    got=str(_nb2._new_build_confirmation('yes, a new house')),
+)
+results.log(
+    "new build: not raised again once the flow is past scope",
+    _FakeNB(nq='area')._new_build_confirmation('new house') is None
+    and _FakeNB(nq='availability_date')._new_build_confirmation('new house') is None,
+    got='late-stage gate',
+)
+results.log(
+    "new build: first contact still greets before confirming",
+    _FakeNB(underway=False)._new_build_confirmation('new house')
+    == 'Hello,\n\nSo you need a new plumbing installation for a new house?',
+    got=repr(_FakeNB(underway=False)._new_build_confirmation('new house')),
+)
+results.log(
+    "new build: a Shona lead is confirmed in Shona",
+    _FakeNB()._new_build_confirmation('ndiri kuvaka imba itsva')
+    == 'Saka muri kuda plumbing itsva yeimba itsva?',
+    got=repr(_FakeNB()._new_build_confirmation('ndiri kuvaka imba itsva')),
+)
+
 # ── Price answers lead with labour, then the supplied-too figure ────────────
 from bot.pricing_copy import _tenant_item_block as _tib
 import types as _ty
