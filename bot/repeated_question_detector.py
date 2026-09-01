@@ -20,7 +20,7 @@ import json
 import logging
 from typing import Optional
 from django.conf import settings
-from bot.services.clients import deepseek_client as _classifier
+from bot.services.clients import deepseek_client as _classifier, HUMAN_VOICE
 
 logger = logging.getLogger(__name__)
 
@@ -437,7 +437,7 @@ RULES:
 - Keep the whole message under 180 words
 - Use simple everyday language — no jargon
 - No markdown headers, no bullet points
-- One emoji max, only if it feels natural
+- No emojis
 - {lang_instruction}
 - Never say "I'm just a bot" — say "I'm the booking assistant" or similar
 - Zimbabwean English tone ("sorted", "sharp", "no worries")
@@ -457,11 +457,12 @@ Write the message now:"""
                 },
                 {'role': 'user', 'content': prompt},
             ],
-            temperature=0.6,
+            **HUMAN_VOICE,
             max_tokens=280,
         )
+        from bot.utils import strip_emojis
         reply = response.choices[0].message.content.strip()
-        reply = reply.replace('**', '').replace('__', '')
+        reply = strip_emojis(reply.replace('**', '').replace('__', ''))
         logger.info(f"Generated repeat clarification ({len(reply)} chars)")
         return reply
 

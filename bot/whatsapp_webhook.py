@@ -1927,16 +1927,14 @@ def get_previous_work_images(tenant=None) -> list:
 
 
 def _strip_emojis(text: str) -> str:
-    """Remove emojis to honour the no-emoji house rule on customer-facing copy."""
-    import re
-    if not text:
-        return text
-    cleaned = re.sub(
-        r'[\U0001F000-\U0001FAFF\U00002600-\U000027BF'
-        r'\U0001F1E6-\U0001F1FF\U00002B00-\U00002BFF️]',
-        '', text,
-    )
-    return re.sub(r'\s+', ' ', cleaned).strip()
+    """Remove emojis to honour the no-emoji house rule on customer-facing copy.
+
+    Thin alias kept for this module's existing callers — the implementation moved
+    to bot.utils so the other generative paths (follow-ups, retry re-asks, repeat
+    clarifications) can share the one stripper instead of trusting their prompt.
+    """
+    from .utils import strip_emojis
+    return strip_emojis(text)
 
 
 def _fallback_photo_followup(appointment=None) -> str:

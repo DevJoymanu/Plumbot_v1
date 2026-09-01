@@ -52,6 +52,23 @@ except Exception:  # pragma: no cover — SDK shape changed; calls still work, j
 
 
 
+# The sampling dials for copy a CUSTOMER reads, as opposed to a classification
+# the rule engine reads. Variety is the point: at low temperature the model
+# reaches for the same opening every time, which is exactly what makes a reply
+# read as canned, and a lead who gets four follow-ups notices. top_p keeps the
+# looseness from wandering into nonsense and frequency_penalty discourages
+# reusing the same phrasing.
+#
+# ONLY for free-text generation. Classifiers, extractors and any call whose
+# output the rule engine parses stay at temperature 0 — a business fact must come
+# back the same every time, and a JSON schema is not improved by creativity.
+HUMAN_VOICE = {
+    'temperature': 1.0,
+    'top_p': 0.9,
+    'frequency_penalty': 0.3,
+}
+
+
 def deepseek_call(
     messages,
     *,
@@ -61,12 +78,19 @@ def deepseek_call(
     json_response=False,
     retries=3,
     timeout=15,
+    top_p=None,
+    frequency_penalty=None,
 ):
     """
     Wrapper around deepseek_client.chat.completions.create with:
       - Per-attempt timeout (default 15 s)
       - Retry with exponential backoff on failure or empty response
       - Treats empty content as a failure (retries instead of returning silently)
+
+    `top_p` / `frequency_penalty` default to None and are omitted from the
+    request entirely when unset, so every existing caller sends the exact same
+    payload it did before. Pass **HUMAN_VOICE to opt a customer-facing generator
+    in.
 
     Raises the last exception after all retries — callers keep their
     existing except blocks and fallback logic unchanged.
@@ -86,6 +110,10 @@ def deepseek_call(
             )
             if json_response:
                 kwargs['response_format'] = {'type': 'json_object'}
+            if top_p is not None:
+                kwargs['top_p'] = top_p
+            if frequency_penalty is not None:
+                kwargs['frequency_penalty'] = frequency_penalty
 
             resp = deepseek_client.chat.completions.create(**kwargs)
             choice = resp.choices[0]

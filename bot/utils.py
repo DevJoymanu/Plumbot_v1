@@ -1,5 +1,6 @@
 import os
 import base64
+import re
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
@@ -89,6 +90,40 @@ def business_name_for(obj, default='the plumbing team') -> str:
     """
     tenant = getattr(obj, 'tenant', obj)
     return (getattr(tenant, 'name', '') or '').strip() or default
+
+
+# The no-emoji house rule is enforced in the prompt AND here. A prompt rule is a
+# request, not a guarantee: four generative prompts used to ASK for "one emoji
+# max" and only one send path stripped what came back, so follow-ups, retry
+# re-asks and repeat-question clarifications could each put an emoji in front of
+# a customer. Belt and braces — the prompts now forbid it, and every free-text
+# generator runs its output through here before the copy can be sent.
+_EMOJI_RE = re.compile(
+    '['
+    '\U0001F000-\U0001FAFF'   # pictographs, symbols, transport, supplemental
+    '\U00002600-\U000027BF'   # misc symbols + dingbats
+    '\U0001F1E6-\U0001F1FF'   # regional indicators (flags)
+    '\U00002B00-\U00002BFF'   # arrows/shapes
+    '←-⇿'           # arrows — the test suite's own emoji set includes these
+    '⌀-⏿'           # misc technical (⌚, ⏰)
+    '️'                  # variation selector: turns a plain glyph into emoji
+    ']'
+)
+
+
+def strip_emojis(text: str) -> str:
+    """Remove emojis to honour the no-emoji house rule on customer-facing copy.
+
+    Whitespace is re-collapsed because removing a glyph usually leaves a double
+    space or a line ending in one; line breaks are preserved, since follow-up and
+    confirmation copy is written in paragraphs.
+    """
+    if not text:
+        return text
+    cleaned = _EMOJI_RE.sub('', text)
+    cleaned = re.sub(r'[^\S\n]+', ' ', cleaned)
+    cleaned = re.sub(r' *\n', '\n', cleaned)
+    return cleaned.strip()
 
 
 def _append_admin_note(appointment, message):

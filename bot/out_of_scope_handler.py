@@ -42,6 +42,7 @@ import pytz
 from django.conf import settings
 from openai import OpenAI
 
+from .services.clients import HUMAN_VOICE
 from .utils import business_name_for
 
 logger = logging.getLogger(__name__)
@@ -1105,11 +1106,12 @@ Only the question text. No quotes, no labels."""
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.5,
+            **HUMAN_VOICE,
             max_tokens=100,
         )
+        from .utils import strip_emojis
         question = response.choices[0].message.content.strip()
-        question = question.replace("**", "").replace("__", "")
+        question = strip_emojis(question.replace("**", "").replace("__", ""))
         logger.info("Generated clarifying question for category=%s: '%s'", category, question[:80])
         return question
 

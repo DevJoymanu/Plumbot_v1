@@ -22,11 +22,12 @@ from ...models import (
 )
 from ...services.clients import (
     deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
+    HUMAN_VOICE,
 )
 from ...utils import (
     _to_decimal, _to_float,
     clean_phone_number, format_phone_number_for_storage,
-    _append_admin_note,
+    _append_admin_note, strip_emojis,
 )
 from ...whatsapp_cloud_api import whatsapp_api
 
@@ -3857,7 +3858,7 @@ class ResponseMixin:
     - {language_note}
     - No markdown, no bold, no bullet points in the question itself
     - One question only — never stack two questions
-    - At most one emoji for retry 1-2, zero emoji for retry 3+
+    - No emojis at all, at any retry count
     - Never say "just checking in", "following up", "hope you're well"
     - Never use the customer's name (we may not know it)
     - Sound like a real person texting, not a bot
@@ -3881,11 +3882,14 @@ class ResponseMixin:
                         },
                         {"role": "user", "content": prompt},
                     ],
-                    temperature=0.5,
+                    # This is THE vary-on-retry path: the customer has already
+                    # seen the scripted first ask, so reaching for the same
+                    # phrasing again is the one thing it must not do.
+                    **HUMAN_VOICE,
                     max_tokens=200,
                 )
                 reply = response.choices[0].message.content.strip()
-                reply = reply.replace('**', '').replace('__', '')
+                reply = strip_emojis(reply.replace('**', '').replace('__', ''))
                 print(
                     f" Retry response | q={next_question} retry={retry_count} "
                     f"updated={updated_fields}"
@@ -4414,11 +4418,14 @@ class ResponseMixin:
                             "content": clarification_prompt
                         }
                     ],
-                    temperature=0.8,  # Higher temp for variety
+                    # Was a lone temperature=0.8 "for variety". The shared preset
+                    # is that same intent, plus the top_p / frequency_penalty
+                    # that actually stop it reaching for the previous phrasing.
+                    **HUMAN_VOICE,
                     max_tokens=150
                 )
-            
-                clarifying_question = response.choices[0].message.content.strip()
+
+                clarifying_question = strip_emojis(response.choices[0].message.content.strip())
                 print(f"🤖 Generated clarifying question (retry {retry_count}): {clarifying_question[:100]}...")
             
                 return clarifying_question
@@ -6101,7 +6108,7 @@ class ResponseMixin:
         NEVER use bullet points in a chat message.
         NEVER stack two questions in one message.
         NEVER use contractions — write "we will" not "we'll", "they will" not "they'll".
-        Emojis only when they fit naturally — not forced at the end of every message.
+        NEVER use emojis — not one, not at the end, not anywhere.
         Use "we" not "I" or "our" — you represent the whole team.
         The plumber's name is {self.appointment.plumber_display_name()}.
 
@@ -6155,10 +6162,11 @@ class ResponseMixin:
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": f"Customer message: '{incoming_message}'"},
                     ],
-                    temperature=0.7,
+                    **HUMAN_VOICE,
                     max_tokens=250,
                 )
-    
+                reply = strip_emojis(reply)
+
                 # Reset / increment retry counter
                 if updated_fields:
                     self._set_question_retry_count(next_question, 0)

@@ -7866,6 +7866,91 @@ results.log(
     got=f"stop={_fu_src.count('[STOP_REQUESTED]')} area={_fu_src.count('[EXCLUDED_AREA')}",
 )
 
+# ── No emojis in customer-facing copy, enforced not merely requested ─────────
+# The house rule was in the prompts of some generators and not others: four
+# customer-facing prompts asked for "one emoji max / only if it fits naturally",
+# and only ONE send path stripped what came back. Follow-ups, retry re-asks,
+# repeat-question clarifications and the legacy contextual reply could each put
+# an emoji in front of a customer. Pinned in both halves — the prompts must not
+# invite one, and the stripper must remove one that arrives anyway.
+from bot.utils import strip_emojis as _strip
+
+results.log(
+    "no-emoji: the stripper removes emoji and keeps the words",
+    _strip("Sure thing 👍 we can sort that ✅") == "Sure thing we can sort that",
+    got=repr(_strip("Sure thing 👍 we can sort that ✅")),
+)
+results.log(
+    "no-emoji: paragraph breaks survive stripping",
+    _strip("Got it 😊\n\nWhat day suits you?") == "Got it\n\nWhat day suits you?",
+    got=repr(_strip("Got it 😊\n\nWhat day suits you?")),
+)
+results.log(
+    "no-emoji: ordinary copy is returned untouched",
+    _strip("Shower cubicles from US$170 all-in.") == "Shower cubicles from US$170 all-in.",
+    got=repr(_strip("Shower cubicles from US$170 all-in.")),
+)
+results.log(
+    "no-emoji: empty and None pass through without raising",
+    _strip("") == "" and _strip(None) is None,
+    got=repr(_strip("")),
+)
+
+# No customer-facing prompt may ASK for an emoji. Catches the exact wording that
+# shipped ("At most one emoji", "One emoji max", "Emojis only when they fit").
+import bot.out_of_scope_handler as _oos_mod
+import bot.repeated_question_detector as _rqd
+import bot.unified_classifier as _uc_mod
+import bot.views.plumbot.response_mixin as _rm_mod
+_emoji_invites = re.compile(
+    r"(at most|max(imum)?|only)\s+(one\s+)?emoji"
+    r"|one emoji max"
+    r"|emojis? only when",
+    re.IGNORECASE,
+)
+for _label, _mod in (
+    ("follow-up copy", _FUCmd),
+    ("repeat clarification", _rqd),
+    ("response mixin", _rm_mod),
+    ("out-of-scope", _oos_mod),
+):
+    _src = _inspect.getsource(_mod)
+    results.log(
+        f"no-emoji: the {_label} prompt never invites an emoji",
+        _emoji_invites.search(_src) is None,
+        got=(_emoji_invites.search(_src).group(0) if _emoji_invites.search(_src) else "clean"),
+    )
+
+# ── Part 5 runtime parameters reach the customer-facing generators ───────────
+# temperature/top_p/frequency_penalty are the variety dials. They belong on
+# free-text generation and must stay OFF the classifiers, whose output the rule
+# engine parses — a business fact has to come back the same every time.
+from bot.services.clients import HUMAN_VOICE as _HV, deepseek_call as _dsc
+
+results.log(
+    "voice preset: the documented variety dials",
+    _HV == {'temperature': 1.0, 'top_p': 0.9, 'frequency_penalty': 0.3},
+    got=repr(_HV),
+)
+_sig = _inspect.signature(_dsc).parameters
+results.log(
+    "voice preset: deepseek_call passes the dials through, defaulting to unset",
+    _sig['top_p'].default is None and _sig['frequency_penalty'].default is None,
+    got=f"top_p={_sig['top_p'].default} freq={_sig['frequency_penalty'].default}",
+)
+results.log(
+    "voice preset: the vary-on-retry generator uses it",
+    "**HUMAN_VOICE" in _inspect.getsource(_rm_mod.ResponseMixin._generate_retry_response),
+    got="present" if "**HUMAN_VOICE" in _inspect.getsource(
+        _rm_mod.ResponseMixin._generate_retry_response) else "missing",
+)
+results.log(
+    "voice preset: the unified classifier stays deterministic",
+    "temperature=0.0" in _inspect.getsource(_uc_mod.unified_classify)
+    and "HUMAN_VOICE" not in _inspect.getsource(_uc_mod),
+    got="deterministic",
+)
+
 if GATE_ONLY:
     _finish()
 

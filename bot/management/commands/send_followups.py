@@ -1682,7 +1682,7 @@ RULES — every single one must be followed:
 6. {length_instruction}
 7. Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
 8. Zero markdown, zero bold, zero bullet points
-9. At most one emoji — only if it fits naturally. Attempt 4 = no emoji
+9. No emojis — not one, on any attempt
 10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
 11. Sound like a real person texting, not a marketing email
 
@@ -1701,11 +1701,20 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                 },
                 {'role': 'user', 'content': prompt},
             ],
+            # Temperature stays low here, unlike the other customer-facing
+            # generators: rule 1 above is "stay close to the base template", and
+            # this is the one path where drifting off the approved copy matters
+            # more than sounding fresh. top_p / frequency_penalty still apply —
+            # one lead gets four to six of these, so reusing the same phrasing
+            # across the sequence is the failure mode worth spending on.
             temperature=0.4,
+            top_p=0.9,
+            frequency_penalty=0.3,
             max_tokens=300,
         )
 
-        message = raw.strip().replace('**', '').replace('__', '')
+        from bot.utils import strip_emojis
+        message = strip_emojis(raw.strip().replace('**', '').replace('__', ''))
 
         # Guard: if DeepSeek returned something too short to be a real follow-up,
         # fall back to the template so we never send a bare "Hi" or empty string.
