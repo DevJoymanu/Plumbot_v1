@@ -1094,6 +1094,52 @@ class SectionedQuoteTests(TestCase):
         self.assertIn('1 New Road, Harare', html)
         self.assertIn('deposit 50%', html)
 
+    # ── the consultation fee: how a plumber says the visit is not free ──────
+    def test_consultation_fee_input_is_on_the_profile_page(self):
+        html = self._html(reverse('profile'))
+        self.assertIn('name="consultation_fee"', html)
+
+    def test_setting_and_clearing_the_consultation_fee(self):
+        from .tenant_config import get_config
+
+        # Default: nothing set, so the visit is free and the copy is untouched.
+        profile = self.barmak_lead.tenant.profile
+        self.assertIsNone(profile.consultation_fee)
+        self.assertTrue(get_config(self.barmak_lead.tenant).visit_is_free())
+
+        # A plumber types a figure on the Profile page.
+        self.client.post(reverse('profile'), {
+            'consultation_fee_submit': '1',
+            'consultation_fee': '25',
+        })
+        profile.refresh_from_db()
+        self.assertEqual(int(profile.consultation_fee), 25)
+        cfg = get_config(self.barmak_lead.tenant)
+        self.assertFalse(cfg.visit_is_free())
+        self.assertIn('25', cfg.visit_cost_sentence())
+
+        # It renders back into the form, so it can be seen and edited.
+        self.assertIn('value="25', self._html(reverse('profile')))
+
+        # A currency symbol typed by hand is accepted, not rejected.
+        self.client.post(reverse('profile'), {
+            'consultation_fee_submit': '1', 'consultation_fee': 'US$40'})
+        profile.refresh_from_db()
+        self.assertEqual(int(profile.consultation_fee), 40)
+
+        # Nonsense does not raise or wipe the rest of the profile save.
+        self.client.post(reverse('profile'), {
+            'consultation_fee_submit': '1', 'consultation_fee': 'abc'})
+        profile.refresh_from_db()
+        self.assertIsNone(profile.consultation_fee)
+
+        # Blank clears it, and the visit is free again.
+        self.client.post(reverse('profile'), {
+            'consultation_fee_submit': '1', 'consultation_fee': ''})
+        profile.refresh_from_db()
+        self.assertIsNone(profile.consultation_fee)
+        self.assertTrue(get_config(self.barmak_lead.tenant).visit_is_free())
+
     def test_unticking_the_layout_returns_that_tenant_to_the_flat_quote(self):
         self.client.post(reverse('profile'), {
             'letterhead_submit': '1',

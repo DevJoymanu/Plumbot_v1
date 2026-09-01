@@ -61,8 +61,6 @@ def _letterhead_form_values(profile):
     values.update({
         'sectioned': str(raw.get('layout') or '').lower() == 'sectioned',
         'address': getattr(profile, 'location_line', '') if profile else '',
-        'consultation_fee': (getattr(profile, 'consultation_fee', None)
-                             if profile else None),
         'default_vat_percent': raw.get('default_vat_percent') or 0,
         'bank': {key: str(bank.get(key) or '') for key in _LETTERHEAD_BANK},
     })
@@ -110,25 +108,33 @@ def _save_letterhead(request, profile):
         profile.location_line = address
         fields.append('location_line')
 
-    # What this business charges to come out and quote. Blank clears it, which
-    # means the visit is free — the default. Anything unparseable is treated as
-    # blank rather than raising: a typo must not lose the whole Profile save.
-    if 'consultation_fee' in request.POST:
-        raw_fee = ((request.POST.get('consultation_fee') or '')
-                   .replace(profile.currency or 'US$', '')
-                   .replace('$', '').replace(',', '').strip())
-        new_fee = None
-        if raw_fee:
-            try:
-                new_fee = Decimal(raw_fee)
-            except (InvalidOperation, TypeError):
-                new_fee = None
-        if new_fee != profile.consultation_fee:
-            profile.consultation_fee = new_fee
-            fields.append('consultation_fee')
-
     profile.letterhead = stored
     profile.save(update_fields=fields)
+
+
+def _save_consultation_fee(request, profile) -> None:
+    """What this business charges to come out and quote.
+
+    Blank clears it, which means the visit is free — the default. Anything
+    unparseable is treated as blank rather than raising: a typo must not throw
+    on a Profile save. The currency symbol is stripped so "US$40", "$40" and
+    "40" all mean the same thing, because people type what they see.
+
+    Deliberately NOT part of the letterhead form: this figure never appears on
+    a quote document, it changes what the assistant says on WhatsApp.
+    """
+    raw = ((request.POST.get('consultation_fee') or '')
+           .replace(profile.currency or 'US$', '')
+           .replace('$', '').replace(',', '').strip())
+    fee = None
+    if raw:
+        try:
+            fee = Decimal(raw)
+        except (InvalidOperation, TypeError):
+            fee = None
+    if fee != profile.consultation_fee:
+        profile.consultation_fee = fee
+        profile.save(update_fields=['consultation_fee'])
 
 
 @sensitive_post_parameters()
@@ -389,6 +395,36 @@ def profile_view(request):
                     user.username, profile.tenant.slug, sender or '(cleared)',
                 )
 
+        # The call-out fee. Its own form, because it is not a quote-document
+        # field — it decides whether the assistant may call the visit free.
+        if 'consultation_fee_submit' in request.POST:
+            profile = _tenant_profile(request)
+            if profile is None:
+                messages.error(
+                    request,
+                    'No business is linked to your account, so the call-out '
+                    'fee could not be saved.',
+                )
+                return redirect('profile')
+            _save_consultation_fee(request, profile)
+            if profile.consultation_fee:
+                messages.success(
+                    request,
+                    f'Call-out fee set to {profile.currency or "US$"}'
+                    f'{profile.consultation_fee:g}. The assistant will stop '
+                    f'offering the visit free and quote this instead.',
+                )
+            else:
+                messages.success(
+                    request,
+                    'Call-out fee cleared. The assistant will offer the visit '
+                    'free again.',
+                )
+            logger.info("User %s set tenant %s consultation fee to %s",
+                        user.username, profile.tenant.slug,
+                        profile.consultation_fee or '(free)')
+            return redirect('profile')
+
         # The quote letterhead: everything that appears on this business's
         # own quote document. Posted from its own form on the Profile page.
         if 'letterhead_submit' in request.POST:
@@ -436,6 +472,10 @@ def profile_view(request):
         'platform_sender': tenant_platform_from_email(tenant),
         'letterhead': _letterhead_form_values(profile),
         'letterhead_editable': profile is not None,
+        # The call-out fee has its own card and its own form. None means the
+        # visit is free, which is the default for every tenant.
+        'consultation_fee': getattr(profile, 'consultation_fee', None) if profile else None,
+        'currency': (getattr(profile, 'currency', '') or 'US$') if profile else 'US$',
     }
 
     return render(request, 'bot/pages/registration/profile.html', context)
