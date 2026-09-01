@@ -7509,6 +7509,60 @@ results.log(
     got='turn1/turn2 both ask when' ,
 )
 
+# ── A check-back inside the free window is done on WhatsApp, not by email ───
+# If we can reach them here at the moment they named, an email buys nothing —
+# and it is the ask leads push back on ("just send it here, I don't usually
+# have data"). Outside the window email is the only way, so it is still asked.
+from datetime import timedelta as _td
+from django.utils import timezone as _tz
+from bot.out_of_scope_handler import _handle_delay_timeframe_answer as _hdta
+
+
+class _FakeWindowAppt(_FakeDeferAppt):
+    project_type = 'Bathroom Renovation'
+
+    def __init__(self, closes_in_hours):
+        self.internal_notes = ''
+        self.free_messaging_window_closes_at = _tz.now() + _td(hours=closes_in_hours)
+
+
+# The date parser is an LLM call and returns nothing under the offline stub, so
+# it is pinned here — this case is about the CHANNEL branch, not about parsing.
+import bot.out_of_scope_handler as _oos
+_real_compute = _oos._compute_followup_date
+try:
+    def _fixed_date(_msg, _days=None):
+        d = (_tz.now() + _td(days=2)).date()
+        return d.isoformat(), d.strftime('%A %d %B')
+
+    _oos._compute_followup_date = _fixed_date
+
+    _inside = _FakeWindowAppt(72)      # window open for three more days
+    _r_in = _hdta('ndichakubatayi', {}, _inside)
+    results.log(
+        "check-back: inside the free window we say we'll message here, no email ask",
+        'email' not in _r_in.lower() and 'right here' in _r_in.lower()
+        and '[DELAY_CHANNEL] whatsapp' in _inside.internal_notes,
+        got=repr(' '.join(_r_in.split())[:140]),
+    )
+    results.log(
+        "check-back: the WhatsApp confirmation still names the agreed day",
+        any(d in _r_in for d in ('Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                                 'Friday', 'Saturday', 'Sunday')),
+        got=repr(' '.join(_r_in.split())[:140]),
+    )
+
+    _outside = _FakeWindowAppt(4)      # window shuts tonight
+    _r_out = _hdta('ndichakubatayi', {}, _outside)
+    results.log(
+        "check-back: outside the window the email is still asked for",
+        'email' in _r_out.lower()
+        and '[DELAY_CHANNEL] whatsapp' not in _outside.internal_notes,
+        got=repr(' '.join(_r_out.split())[:140]),
+    )
+finally:
+    _oos._compute_followup_date = _real_compute
+
 # ── Price answers lead with labour, then the supplied-too figure ────────────
 from bot.pricing_copy import _tenant_item_block as _tib
 import types as _ty

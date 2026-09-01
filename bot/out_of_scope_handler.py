@@ -2400,6 +2400,19 @@ def _note_delay_followup_channel(appointment, due_dt):
         )
 
 
+def _checkback_is_free_on_whatsapp(appointment) -> bool:
+    """True when the agreed check-back lands inside this lead's free WhatsApp
+    window, so we can reach them right here at the moment they named.
+
+    Set by _note_delay_followup_channel, which runs inside
+    _store_delay_followup_date, so it is already decided by the time the flow
+    reaches the email ask. When it is true there is nothing an email buys us:
+    asking for one is asking for a contact detail we do not need, and it is the
+    ask leads push back on ("just send it here").
+    """
+    return _DELAY_CHANNEL_WA_TAG in (getattr(appointment, 'internal_notes', '') or '')
+
+
 def _friendly_iso(iso_date):
     """ISO date → 'Friday 12 June', or None if unparseable/empty."""
     if not iso_date:
@@ -2784,7 +2797,20 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
             "If anything changes just send us a message — we'll be right here."
         )
 
-    # Ask for the email alongside the presumptive date confirmation.
+    # The date they named is inside their free WhatsApp window, so we can just
+    # message them here when it comes round. No email needed, so none is asked
+    # for — the follow-up cron re-checks the window at send time anyway.
+    if _checkback_is_free_on_whatsapp(appointment):
+        logger.info("Check-back %s is reachable on WhatsApp — skipping the email ask",
+                    iso_date)
+        return (
+            f"Got it, no problem. We'll check back with you right here on "
+            f"{friendly_date}.\n\n"
+            "If anything changes before then, just send a message."
+        )
+
+    # Outside the free window, email is the only way to reach them on the day,
+    # so ask for it alongside the presumptive date confirmation.
     _write_pending(appointment, 'delay_email', iso_date or '')
     return (
         f"Got it, no problem. We'll check back on {friendly_date} — and I'll "
@@ -2843,6 +2869,17 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
             "Perfect, we'll do that. "
             "We've also sent a quote to your email. "
             "If anything changes just send us a message — we'll be right here."
+        )
+
+    # Reachable free on WhatsApp at the agreed moment — confirm and stop there
+    # rather than asking for an address we don't need.
+    if _checkback_is_free_on_whatsapp(appointment):
+        friendly = _friendly_iso(iso_date)
+        when = f" on {friendly}" if friendly else ""
+        logger.info("Check-back reachable on WhatsApp — skipping the email ask (step 4)")
+        return (
+            f"Perfect, we'll check back with you right here{when}.\n\n"
+            "If anything changes before then, just send a message."
         )
 
     # Step 4 — ask for email with quote framing
