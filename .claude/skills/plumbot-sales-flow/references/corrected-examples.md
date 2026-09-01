@@ -349,3 +349,38 @@ typed it (longest match first, so "electrical work" is never truncated to
 "electrical"), and the verb agrees with it — "are the burglar bars", never "is
 the doors". Only a message naming nothing recognisable still asks in the
 abstract.
+
+---
+
+## Say WHEN in the lead's own words
+
+**Conv (2026-09-01, Dzivarasekwa extension).** A parked lead read out a date.
+
+> **Customer:** "Let me update you tomorrow morning"
+>
+> **Bad:** "Got it, no problem. We'll check back with you right here on
+> Wednesday 02 September.
+>
+> If anything changes before then, just send a message."
+>
+> **Good:** "Got it, no problem. We'll check back with you tomorrow morning.
+>
+> If anything changes before then, just send a message."
+
+Why: the bad reply is not wrong — Wednesday 02 September IS tomorrow. It is a
+diary entry read back to someone who spoke in ordinary words, and that one
+line is enough to make the whole thread feel automated. Their own words
+("tomorrow morning") are the proof we read them, and they cost nothing to
+repeat. "right here" went with it: in a WhatsApp thread, "we'll check back
+with you" already means here.
+
+`_checkback_when_phrase` is the shared resolver — 'tomorrow morning', 'this
+evening', 'tonight', 'on Friday afternoon' — and it falls back to the formal
+date only past six days out, where a bare weekday would be ambiguous. The
+daypart comes from the customer's own wording (or the time they named earlier
+in the flow, kept in `[FOLLOW_UP_TIME]`), never from a clock time they gave:
+"Friday at 2" is an hour, not someone saying "Friday afternoon". The phrase
+carries its own preposition, because "on tomorrow morning" is not English.
+
+Same rule, same message, for language: a Shona lead hears "mangwana
+mangwanani", not an English date.

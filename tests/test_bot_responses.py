@@ -7541,7 +7541,7 @@ try:
     _r_in = _hdta('ndichakubatayi', {}, _inside)
     results.log(
         "check-back: inside the free window we say we'll message here, no email ask",
-        'email' not in _r_in.lower() and 'right here' in _r_in.lower()
+        'email' not in _r_in.lower() and 'check back with you' in _r_in.lower()
         and '[DELAY_CHANNEL] whatsapp' in _inside.internal_notes,
         got=repr(' '.join(_r_in.split())[:140]),
     )
@@ -7562,6 +7562,94 @@ try:
     )
 finally:
     _oos._compute_followup_date = _real_compute
+
+# ── We say WHEN in the lead's own words, not as a diary entry ───────────────
+# Prod 2026-09-01: "Let me update you tomorrow morning" was answered "We'll
+# check back with you right here on Wednesday 02 September". Accurate, and the
+# one line that made the whole thread read as a machine. Mirror their wording;
+# keep the formal date only for dates too far out to name naturally.
+import re as _re
+from datetime import date as _pdate
+from bot.out_of_scope_handler import (
+    _checkback_when_phrase as _cwp, _named_daypart as _ndp,
+)
+
+_WHEN_TODAY = _pdate(2026, 9, 1)          # a Tuesday
+WHEN_CASES = [
+    # (agreed iso date, the customer's own words, the phrase we say back)
+    ('2026-09-02', 'Let me update you tomorrow morning', 'tomorrow morning'),
+    ('2026-09-02', 'tomorrow',                           'tomorrow'),
+    ('2026-09-01', 'later today in the evening',         'this evening'),
+    ('2026-09-01', 'tonight',                            'tonight'),
+    ('2026-09-04', 'Friday afternoon',                   'on Friday afternoon'),
+    ('2026-09-04', 'Friday',                             'on Friday'),
+    ('2026-09-05', 'over the weekend',                   'on Saturday'),
+    # A bare clock time is an hour, not a daypart word — don't echo one back.
+    ('2026-09-04', 'Friday at 2',                        'on Friday'),
+    # Far enough out that a weekday alone is ambiguous: date, and the daypart
+    # drops with it ("on Wednesday 30 September morning" is not a sentence).
+    ('2026-09-30', 'end of the month, in the morning',   'on Wednesday 30 September'),
+]
+for _iso, _said, _want in WHEN_CASES:
+    try:
+        _got = _cwp(_iso, _said, today=_WHEN_TODAY)
+        results.log(
+            f"check-back phrase: {_said[:34]!r} -> {_want!r}",
+            _got == _want, expected=_want, got=str(_got),
+        )
+    except Exception as _e:
+        results.log(f"check-back phrase: {_said[:34]!r}", False, got=str(_e))
+
+results.log(
+    "check-back phrase: bare form drops the preposition for subject position",
+    _cwp('2026-09-04', 'Friday morning', bare=True, today=_WHEN_TODAY) == 'Friday morning',
+    got=str(_cwp('2026-09-04', 'Friday morning', bare=True, today=_WHEN_TODAY)),
+)
+results.log(
+    "check-back phrase: a Shona lead hears it in Shona",
+    _cwp('2026-09-02', 'mangwana mangwanani', is_shona=True, today=_WHEN_TODAY)
+    == 'mangwana mangwanani',
+    got=str(_cwp('2026-09-02', 'mangwana mangwanani', is_shona=True, today=_WHEN_TODAY)),
+)
+results.log(
+    "check-back phrase: 'fortnight' is not a daypart",
+    _ndp('in a fortnight') is None and _ndp('tomorrow night') == 'night',
+    got=f"fortnight->{_ndp('in a fortnight')}, tomorrow night->{_ndp('tomorrow night')}",
+)
+
+# End to end: the reply itself carries the lead's words, and no formal date.
+_real_defer = _oos._is_self_initiated_defer
+try:
+    def _tomorrow_date(_msg, _days=None):
+        d = (_tz.now() + _td(days=1)).date()
+        return d.isoformat(), d.strftime('%A %d %B')
+
+    _oos._compute_followup_date    = _tomorrow_date
+    _oos._is_self_initiated_defer  = lambda _m: True     # they said THEY'd update us
+
+    _appt = _FakeWindowAppt(72)
+    _reply = _hdta('Let me update you tomorrow morning', {}, _appt)
+    results.log(
+        "check-back reply: mirrors 'tomorrow morning', no formal date, no 'right here'",
+        ('check back with you tomorrow morning' in _reply.lower()
+         and 'right here' not in _reply.lower()
+         and not _re.search(r'\d{1,2}\s+(January|February|March|April|May|June|July|'
+                            r'August|September|October|November|December)', _reply)),
+        got=repr(' '.join(_reply.split())[:150]),
+    )
+finally:
+    _oos._compute_followup_date   = _real_compute
+    _oos._is_self_initiated_defer = _real_defer
+
+# The keyword fallback must catch "let me update you" on its own — before this
+# it fell through and only the LLM parked the lead.
+results.log(
+    "self-initiated defer (keyword fallback): 'let me update you tomorrow'",
+    _is_self_initiated_defer_keywords('Let me update you tomorrow morning')
+    and _is_self_initiated_defer_keywords('I will update you')
+    and not _is_self_initiated_defer_keywords('tomorrow morning works'),
+    got=str(_is_self_initiated_defer_keywords('Let me update you tomorrow morning')),
+)
 
 # ── Price answers lead with labour, then the supplied-too figure ────────────
 from bot.pricing_copy import _tenant_item_block as _tib

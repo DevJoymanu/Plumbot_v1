@@ -1,0 +1,21 @@
+# Check-back copy mirrors the lead's own words (prod 2026-09-01, Dzivarasekwa).
+# "Let me update you tomorrow morning" was answered "We'll check back with you
+# right here on Wednesday 02 September" — accurate, and the one line that made
+# the whole thread read as a machine. A near date is said the way they said it;
+# the formal date is kept only for dates too far out to name naturally.
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> Where are you located
+reject: US$
+
+> Dzivarasekwa extension
+reject: US$
+
+> Let me update you tomorrow morning
+expect: tomorrow morning
+expect: check back
+reject: right here
+reject: September
+reject: what day and time works for you

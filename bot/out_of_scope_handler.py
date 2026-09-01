@@ -1396,7 +1396,10 @@ _SELF_DEFER_PATTERNS = (
     r"\bwill\s+contact\s+(you|u)\b",
     r"\bwill\s+call\s+(you|u)\b",
     r"\bwill\s+let\s+(you|u)\s+know\b",
-    r"\b(i'?ll|i\s+will|let\s+me)\s+.{0,20}\b(let\s+you\s+know|reach\s+out|contact\s+you|call\s+you|message\s+you|text\s+you|revert|touch\s+base|come\s+back\s+to\s+you)\b",
+    # "Let me update you tomorrow morning" (prod 2026-09-01) — a plain deferral
+    # the alternation below missed, so only the LLM caught it.
+    r"\bwill\s+update\s+(you|u)\b",
+    r"\b(i'?ll|i\s+will|let\s+me)\s+.{0,20}\b(let\s+you\s+know|reach\s+out|contact\s+you|call\s+you|message\s+you|text\s+you|update\s+you|revert|touch\s+base|come\s+back\s+to\s+you)\b",
     r"\blet\s+you\s+know\b",
     r"\breach\s+out\b",
     r"\btouch\s+base\b",
@@ -2426,6 +2429,130 @@ def _friendly_iso(iso_date):
         return None
 
 
+# ── How we say WHEN we'll check back, in the lead's own words ─────────────────
+# "Wednesday 02 September" is a diary entry, not a reply. A lead who wrote
+# "tomorrow morning" gets "tomorrow morning" back — their own words are the
+# proof we read them, and reading a near date out as a formal one is the single
+# line that makes a whole thread sound automated (prod 2026-09-01: "Let me
+# update you tomorrow morning" was answered "We'll check back with you right
+# here on Wednesday 02 September"). The formal date is kept only for dates far
+# enough out that a bare weekday would be ambiguous.
+#
+# Deterministic on purpose, off the same closed vocabulary _extract_followup_time
+# already uses: the daypart we SAY and the hour we SCHEDULE come from one source,
+# so they can never disagree.
+_DAYPART_LABELS = (
+    (('afternoon', 'masikati'),                                  'afternoon'),
+    (('tonight', 'night', 'usiku'),                              'night'),
+    (('evening', 'manheru'),                                     'evening'),
+    (('first thing', 'early morning', 'morning', 'mangwanani'),  'morning'),
+)
+
+_DAYPART_SHONA = {
+    'morning': 'mangwanani', 'afternoon': 'masikati',
+    'evening': 'manheru',    'night': 'usiku',
+}
+
+# Mon..Sun, matching date.weekday().
+_SHONA_WEEKDAYS = (
+    'Muvhuro', 'Chipiri', 'Chitatu', 'China', 'Chishanu', 'Mugovera', 'Svondo',
+)
+
+
+def _named_daypart(message: str):
+    """The time of day the customer named ('morning' / 'afternoon' / 'evening' /
+    'night'), or None when they named none.
+
+    Their wording only — a bare clock time is deliberately not mapped, because
+    "Friday at 2" is someone naming an hour, not someone saying "Friday
+    afternoon", and echoing a word they never used is not mirroring. Matched on
+    word boundaries: 'night' as a bare substring fires inside "fortnight".
+    """
+    msg = (message or '').lower()
+    for phrases, label in _DAYPART_LABELS:
+        if any(re.search(rf'\b{re.escape(p)}\b', msg) for p in phrases):
+            return label
+    return None
+
+
+def _checkback_daypart(message: str, appointment=None):
+    """The daypart for the check-back: what they just said, else the time they
+    named earlier in this flow. [FOLLOW_UP_TIME] is only ever written from a
+    time the customer named, so falling back to it still echoes them — it keeps
+    "evening" alive through the email/confirm steps, where the message on hand
+    is just "yes"."""
+    part = _named_daypart(message)
+    if part:
+        return part
+    stored = _stored_followup_time(appointment) if appointment is not None else None
+    if not stored:
+        return None
+    hour = stored[0]
+    return 'morning' if hour < 12 else ('afternoon' if hour < 17 else 'evening')
+
+
+def _checkback_when_phrase(iso_date, message=None, appointment=None,
+                           is_shona: bool = False, bare: bool = False,
+                           today=None):
+    """The agreed check-back moment, phrased the way the lead phrased it and
+    ready to drop straight into copy: 'tomorrow morning', 'this evening',
+    'on Friday morning', 'on Wednesday 02 September'.
+
+    The preposition is PART of the phrase — "on tomorrow morning" is not
+    English — so callers must not prefix an "on" of their own. `bare=True`
+    drops it for the positions that read as a subject ("Friday morning works").
+    Returns None when there is no usable date, and the caller drops the clause
+    rather than printing an empty one.
+    """
+    from datetime import date as _d
+    try:
+        target = _d.fromisoformat(str(iso_date)[:10])
+    except Exception:
+        return None
+
+    if today is None:
+        today = datetime.now(pytz.timezone('Africa/Johannesburg')).date()
+    delta = (target - today).days
+    part  = _checkback_daypart(message, appointment)
+
+    if is_shona:
+        suffix = f" {_DAYPART_SHONA[part]}" if part else ''
+        if delta <= 0:
+            return f"nhasi{suffix}"
+        if delta == 1:
+            return f"mangwana{suffix}"
+        if delta <= 6:
+            day = _SHONA_WEEKDAYS[target.weekday()]
+            return f"{day}{suffix}" if bare else f"ne{day}{suffix}"
+        day = target.strftime('%d %B')
+        return day if bare else f"musi we {day}"
+
+    suffix = f" {part}" if part else ''
+    if delta <= 0:
+        if part == 'night':
+            return 'tonight'
+        return f"this {part}" if part else 'later today'
+    if delta == 1:
+        return f"tomorrow{suffix}"
+    if delta <= 6:
+        day = target.strftime('%A')
+        return f"{day}{suffix}" if bare else f"on {day}{suffix}"
+    # Far enough out that the weekday alone is ambiguous — give the date, and
+    # drop the daypart with it ("on Wednesday 16 September morning" is not a
+    # sentence). The hour they named is still what the cron fires on.
+    day = target.strftime('%A %d %B')
+    return day if bare else f"on {day}"
+
+
+def _lead_speaks_shona(message: str) -> bool:
+    """True when this turn is Shona, so the reply mirrors it."""
+    try:
+        from .repeated_question_detector import detect_language_simple
+        return detect_language_simple(message or '') == 'shona'
+    except Exception:
+        return False
+
+
 # ── Near-term check-in scheduling (access / "no one home" deferrals) ───────────
 _CHECKIN_TZ           = 'Africa/Johannesburg'
 _CHECKIN_MIN_HOURS    = 12   # don't pester before they've had time to arrange
@@ -2765,9 +2892,11 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
         logger.info("Near-term timeframe — booking the visit instead of parking")
         look = f"a quick look at {_service_space_label(appointment)} — 20 minutes or so"
         if _timeframe_names_specific_day(message):
-            # We already have the day — ask only for a time.
+            # We already have the day — ask only for a time. Say the day back the
+            # way they said it ("Friday works", not "Friday 05 September works").
+            day_back = _checkback_when_phrase(iso_date, message, bare=True) or friendly_date
             return (
-                f"Nice one — {friendly_date} works. What time suits you? "
+                f"Nice one — {day_back} works. What time suits you? "
                 f"We'll pop round for {look} and confirm the exact figure on the spot."
             )
         # Vague near range ("this weekend") — pin the actual day too.
@@ -2781,19 +2910,25 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     mark_delay_signal(appointment, message)
     _store_delay_followup_date(appointment, iso_date, source_message=message)
 
+    # Say the moment back in their own words; the formal date is only the
+    # fallback for a date too far out to name naturally.
+    is_shona = _lead_speaks_shona(message)
+    when = _checkback_when_phrase(iso_date, message, appointment,
+                                  is_shona=is_shona) or f"on {friendly_date}"
+
     # Email already on file → confirm the date. Skip the quote email if we already
     # sent the portfolio earlier in this delay flow (avoids a duplicate send).
     if getattr(appointment, 'customer_email', None):
         if '[DELAY_QUOTE_SENT]' in (appointment.internal_notes or ''):
             return (
-                f"Perfect — we'll check back in with you on {friendly_date}. "
+                f"Perfect — we'll check back in with you {when}. "
                 "Take your time with the portfolio; if anything changes just send "
                 "us a message and we'll pick up right where we left off."
             )
         from bot.customer_emails import send_delay_quote_email_async
         send_delay_quote_email_async(appointment, follow_up_date_str=friendly_date)
         return (
-            f"Got it, no problem. We'll check back on {friendly_date}.\n\n"
+            f"Got it, no problem. We'll check back {when}.\n\n"
             "I've also sent a written quote and our portfolio — past projects plus "
             "a more detailed pricing guide — to your email. "
             "If anything changes just send us a message — we'll be right here."
@@ -2805,9 +2940,13 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     if _checkback_is_free_on_whatsapp(appointment):
         logger.info("Check-back %s is reachable on WhatsApp — skipping the email ask",
                     iso_date)
+        if is_shona:
+            return (
+                f"Zvakanaka, hapana dambudziko. Tichadzoka kwamuri {when}.\n\n"
+                "Kana pane chinochinja tisati tasvika ipapo, ingotumirai meseji."
+            )
         return (
-            f"Got it, no problem. We'll check back with you right here on "
-            f"{friendly_date}.\n\n"
+            f"Got it, no problem. We'll check back with you {when}.\n\n"
             "If anything changes before then, just send a message."
         )
 
@@ -2815,7 +2954,7 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     # so ask for it alongside the presumptive date confirmation.
     _write_pending(appointment, 'delay_email', iso_date or '')
     return (
-        f"Got it, no problem. We'll check back on {friendly_date} — and I'll "
+        f"Got it, no problem. We'll check back {when} — and I'll "
         f"send a written quote and our portfolio over too.\n\n{_EMAIL_VALUE_CLAUSE}\n\n"
         "What's the best email for that?"
     )
@@ -2876,11 +3015,20 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
     # Reachable free on WhatsApp at the agreed moment — confirm and stop there
     # rather than asking for an address we don't need.
     if _checkback_is_free_on_whatsapp(appointment):
-        friendly = _friendly_iso(iso_date)
-        when = f" on {friendly}" if friendly else ""
+        # The message on hand here is just "yes", so the phrase leans on the
+        # time they named earlier in the flow rather than this turn's words.
+        is_shona = _lead_speaks_shona(message)
+        phrase   = _checkback_when_phrase(iso_date, message, appointment,
+                                          is_shona=is_shona)
+        when = f" {phrase}" if phrase else ""
         logger.info("Check-back reachable on WhatsApp — skipping the email ask (step 4)")
+        if is_shona:
+            return (
+                f"Zvakanaka, tichadzoka kwamuri{when}.\n\n"
+                "Kana pane chinochinja tisati tasvika ipapo, ingotumirai meseji."
+            )
         return (
-            f"Perfect, we'll check back with you right here{when}.\n\n"
+            f"Perfect, we'll check back with you{when}.\n\n"
             "If anything changes before then, just send a message."
         )
 
