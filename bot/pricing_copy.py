@@ -237,27 +237,56 @@ def _tenant_item_block(cfg, item) -> dict:
         # already adds one, so emitting a second here would end the reply on two
         # questions).
         noun = _install_noun(item)
+        # Only quote the supply figure separately when it actually reconciles
+        # with the all-in. One tenant's freestanding tub is supply 150 +
+        # labour 50 but 320 all-in, because the all-in bundles a mixer — saying
+        # "supply from 150, so 320 all-in" publishes arithmetic that does not
+        # add up. Those keep the two-figure form, which is still correct.
+        components_add_up = (allin is None) or (allin == supply + labour)
+
         if noun:
             article = 'an' if noun[0].lower() in 'aeiou' else 'a'
-            total_line = (
-                f"Labour to install {article} {noun} is {cur}{labour}. "
-                f"If we supply {article} new {noun}, it starts from {cur}{total}."
-            )
-            sn_total_line = (
-                f"Mari yekuisa {noun} i{cur}{labour}. "
-                f"Kana tikakupai {noun} itsva, zvinotangira pa{cur}{total}."
-            )
+            if components_add_up:
+                total_line = (
+                    f"Labour to install {article} {noun} is {cur}{labour}. "
+                    f"If we supply {article} new {noun}, that's from {cur}{supply}, "
+                    f"so {cur}{total} all-in."
+                )
+                sn_total_line = (
+                    f"Mari yekuisa {noun} i{cur}{labour}. "
+                    f"Kana tikakupai {noun} itsva, ndeye kubva pa{cur}{supply}, "
+                    f"saka {cur}{total} all-in."
+                )
+            else:
+                total_line = (
+                    f"Labour to install {article} {noun} is {cur}{labour}. "
+                    f"If we supply {article} new {noun}, it starts from {cur}{total}."
+                )
+                sn_total_line = (
+                    f"Mari yekuisa {noun} i{cur}{labour}. "
+                    f"Kana tikakupai {noun} itsva, zvinotangira pa{cur}{total}."
+                )
         else:
             # Repairs, servicing, per-unit work: the label is not a noun you can
             # "install a" of, so keep a form that works for any wording.
-            total_line = (
-                f"{name}: labour from {cur}{labour}. "
-                f"If we supply it too, from {cur}{total} all-in."
-            )
-            sn_total_line = (
-                f"{name}: labour kubva {cur}{labour}. "
-                f"Kana tikapa zvinhu futi, kubva {cur}{total} all-in."
-            )
+            if components_add_up:
+                total_line = (
+                    f"{name}: labour from {cur}{labour}, supply from {cur}{supply}, "
+                    f"so from {cur}{total} all-in."
+                )
+                sn_total_line = (
+                    f"{name}: labour kubva {cur}{labour}, supply kubva {cur}{supply}, "
+                    f"saka kubva {cur}{total} all-in."
+                )
+            else:
+                total_line = (
+                    f"{name}: labour from {cur}{labour}. "
+                    f"If we supply it too, from {cur}{total} all-in."
+                )
+                sn_total_line = (
+                    f"{name}: labour kubva {cur}{labour}. "
+                    f"Kana tikapa zvinhu futi, kubva {cur}{total} all-in."
+                )
         return {
             "breakdown_lines": [],
             "total_line": total_line,

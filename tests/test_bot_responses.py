@@ -3583,8 +3583,8 @@ try:
     _ok = (
         _block.get('breakdown_lines') == []
         and _block.get('total_line') == (
-            'Tiling per square meter: labour from US$5. '
-            'If we supply it too, from US$20 all-in.')
+            'Tiling per square meter: labour from US$5, supply from US$15, '
+            'so from US$20 all-in.')
         and 'rough guide' in (_block.get('cheapest_line') or '')
         and 'kubva US$5' in (_block.get('sn_total_line') or '')
     )
@@ -7475,7 +7475,8 @@ _blk = _tib(_cfgp, _row)
 results.log(
     "price answer: labour to install X, then the supplied-too figure",
     _blk['total_line'] == ('Labour to install a toilet is US$50. '
-                           'If we supply a new toilet, it starts from US$140.'),
+                           "If we supply a new toilet, that's from US$90, "
+                           'so US$140 all-in.'),
     got=repr(_blk['total_line']),
 )
 # The noun comes from the FAMILY, not the tenant's label, so "Toilet install"
@@ -7509,12 +7510,48 @@ _row2 = _ty.SimpleNamespace(label='Element replacement', short_label='',
 results.log(
     "price answer: a repair/service never becomes 'install a <service>'",
     _tib(_cfgp, _row2)['total_line'] ==
-    'Element replacement: labour from US$30. If we supply it too, from US$40 all-in.',
+    'Element replacement: labour from US$30, supply from US$10, so from US$40 all-in.',
     got=repr(_tib(_cfgp, _row2)['total_line']),
 )
 # Every family the "install a" wording claims must actually read as English:
 # the noun must be a bare noun phrase, never a label carrying a verb.
 import re
+# The supply figure is quoted separately ONLY when it reconciles with the
+# all-in. One tenant's freestanding tub is supply 150 + labour 50 but 320
+# all-in (the all-in bundles a mixer), so naming all three would publish
+# arithmetic that does not add up. Those keep the two-figure form.
+_row_odd = _ty.SimpleNamespace(label='Freestanding tub', short_label='', family='tub',
+                               variant='freestanding', supply=150, labour=50,
+                               allin=320, flat=None)
+_odd_line = _tib(_cfgp, _row_odd)['total_line']
+results.log(
+    "price answer: a bundle whose parts don't sum keeps the two-figure form",
+    len(re.findall(r'US\$(\d+)', _odd_line)) == 2 and 'US$320' in _odd_line
+    and 'US$150' not in _odd_line,
+    got=repr(_odd_line),
+)
+# And wherever three figures ARE named, they must actually add up.
+_money = re.compile(r'US\$(\d+)')
+_sum_errors = []
+for _f, _v, _s, _l, _a in (
+    ('toilet', '', 90, 50, 140), ('shower', '', 130, 40, 170),
+    ('basin', '', 35, 30, 65), ('geyser', '', 120, 80, 200),
+    ('tub', 'freestanding', 150, 50, 320),
+    ('geyser_service', 'element', 10, 30, 40),
+    ('repair', 'cistern', 40, 20, 60),
+):
+    _it = _ty.SimpleNamespace(label=_f.title(), short_label='', family=_f,
+                              variant=_v, supply=_s, labour=_l, allin=_a, flat=None)
+    _ln = _tib(_cfgp, _it)['total_line']
+    _fig = [int(x) for x in _money.findall(_ln)]
+    if len(_fig) == 3 and _fig[0] + _fig[1] != _fig[2]:
+        _sum_errors.append((_f, _v, _ln))
+results.log(
+    "price answer: three quoted figures always add up",
+    not _sum_errors,
+    got=str(_sum_errors),
+)
+
 from bot.pricing_copy import _INSTALL_NOUNS as _NOUNS
 _bad_nouns = [n for n in set(_NOUNS.values())
               if re.search(r'\b(install|installation|supply|replacement|repair|'
