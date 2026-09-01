@@ -2938,6 +2938,26 @@ def _derive_additional_items(message: str) -> str:
     return m
 
 
+def _mark_stop_requested(appointment) -> None:
+    """Record that this lead asked us to stop, so every send path can see it.
+
+    Written once and never cleared automatically: the customer has to re-open
+    the conversation themselves. The follow-up crons exclude
+    [STOP_REQUESTED] (see send_followups._exclude_suppressed_states), which is
+    what makes the request stick beyond the current turn.
+    """
+    try:
+        notes = appointment.internal_notes or ''
+        if '[STOP_REQUESTED]' in notes:
+            return
+        stamp = timezone.now().strftime('%Y-%m-%d %H:%M')
+        appointment.internal_notes = f"[STOP_REQUESTED] {stamp}\n{notes}".strip()
+        appointment.is_lead_active = False
+        appointment.save(update_fields=['internal_notes', 'is_lead_active'])
+    except Exception as exc:
+        print(f"WARNING could not mark stop request: {exc}")
+
+
 def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None, tenant=None):
     """Generate a bot reply for message_body and schedule it with a 1-5 min send delay."""
     try:
@@ -2957,6 +2977,17 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         if appointment.status == 'confirmed' and is_post_booking_ack_message(message_body):
             print(f"Post-booking ack detected; no reply sent. sender={sender}, message='{message_body}'")
+            return
+
+        # ── HARD STOP — before every other step, including classification ────
+        # "please dont say anything more" must end the chasing immediately and
+        # permanently. Marking the lead is the point: the crons read
+        # [STOP_REQUESTED] too, so the decision survives this turn (prod lead
+        # 872 was told to stop and then sent three more automated pitches).
+        from .out_of_scope_handler import is_hard_stop_request
+        if is_hard_stop_request(message_body):
+            _mark_stop_requested(appointment)
+            print(f"Hard stop requested by {phone_number}; suppressing all proactive sends.")
             return
 
         # A highlighted photo we have never looked at gets described NOW, so

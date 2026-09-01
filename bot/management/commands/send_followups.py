@@ -350,6 +350,10 @@ class Command(BaseCommand):
             .exclude(internal_notes__contains='category=delay_checkin')
             .exclude(chatbot_paused=True)
             .exclude(status='confirmed')
+            # A declined area or an explicit "stop messaging me" outranks a
+            # pending delay nudge — see _exclude_suppressed_states (lead 872).
+            .exclude(internal_notes__contains='[EXCLUDED_AREA')
+            .exclude(internal_notes__contains='[STOP_REQUESTED]')
         )
 
         count = candidates.count()
@@ -557,6 +561,10 @@ class Command(BaseCommand):
             .exclude(chatbot_paused=True)
             .exclude(internal_notes__contains='[HANDED_OFF]')
             .exclude(internal_notes__contains='[OOS_PENDING] category=delay_')
+            # Parked is why this lead is here, but a declined area or an
+            # explicit stop request still outranks the nudge (lead 872).
+            .exclude(internal_notes__contains='[EXCLUDED_AREA')
+            .exclude(internal_notes__contains='[STOP_REQUESTED]')
         )
 
         count = candidates.count()
@@ -999,11 +1007,24 @@ class Command(BaseCommand):
     # ─── Eligibility ─────────────────────────────────────────────────────────
 
     def _exclude_suppressed_states(self, qs):
-        """State guard — never proactively message a lead that has been handed
-        to a human or parked. Mirrors the prior pending_upload over-firing fix."""
+        """State guard — never proactively message a lead we have already
+        decided not to chase. Mirrors the prior pending_upload over-firing fix.
+
+        EXCLUDED_AREA and STOP_REQUESTED were added after prod lead 872: the bot
+        correctly declined the job ("Bulawayo is a bit far for our team"), and
+        the very next outbound was an AUTO FOLLOW-UP asking which suburb in
+        Bulawayo the property was in — the cron re-opening a decision the
+        conversation had already closed. The same lead later wrote "Ok send hear
+        and please dont say anything more" and received three further pitches.
+
+        The decision has to live on the LEAD, not inside the handler that made
+        it, or every other send path re-litigates it.
+        """
         return (
             qs.exclude(internal_notes__contains='[HANDED_OFF]')
               .exclude(internal_notes__contains='[PARKED]')
+              .exclude(internal_notes__contains='[EXCLUDED_AREA')
+              .exclude(internal_notes__contains='[STOP_REQUESTED]')
         )
 
     def _get_eligible_leads(self, now_local, force):

@@ -804,6 +804,102 @@ def _oos_subject(message: str):
     return None
 
 
+# A closed yes to a closed question. Deliberately anchored to the START of the
+# message so "yes" wins but "yes, but it's actually roofing" does not.
+_AFFIRMATIVE_RE = re.compile(
+    r"^\W*(yes|yeah|yep|yebo|yah|ya|sure|correct|that.?s right|indeed|"
+    r"hongu|ehe|ndizvo|zvirokwazvo)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_affirmative(message: str) -> bool:
+    """True when the customer simply said yes.
+
+    Used to close the plumbing-reframe question: we asked a yes/no, so a yes is
+    an answer and must not be met with the same question again.
+    """
+    text = (message or '').strip()
+    if not text:
+        return False
+    return bool(_AFFIRMATIVE_RE.match(text))
+
+
+# An explicit instruction to stop messaging — NOT a soft defer. Kept apart from
+# _is_delay_or_exit_signal, which bails on anything over six words and so never
+# saw "Ok send hear and please dont say anything more" (prod lead 872, which
+# then received three more automated pitches).
+_HARD_STOP_RE = re.compile(
+    r"("
+    # "dont say anything more" — the words between the verb and the tail vary
+    # ("anything", "me", "to me"), so match across them rather than enumerating
+    # every combination. The bare "more" tail matters: the real message said
+    # "anything more", not "anymore", and an exact-form list missed it.
+    r"\bdon'?t (say|send|message|text|write|contact)\b[^.?!]{0,24}\b(any ?more|again|more)\b|"
+    r"\bnothing more\b|\bsay no more\b|\bno more messages?\b|"
+    r"\bstop (messaging|texting|sending|contacting|calling)\b|"
+    r"\bstop it\b|\bplease stop\b|"
+    r"\bleave me alone\b|\bunsubscribe\b|\bremove me\b|\btake me off\b|"
+    r"\bdo not contact\b|\bnot interested at all\b|"
+    r"\brega kutumira\b|\bmusatumire\b|\bsiyana neni\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def is_hard_stop_request(message: str) -> bool:
+    """True when the customer has explicitly told us to stop messaging them.
+
+    Deterministic and length-independent on purpose: this is the one signal that
+    must never depend on an API call or a word-count heuristic.
+    """
+    return bool(_HARD_STOP_RE.search(message or ''))
+
+
+# Somebody selling TO us, not a customer. These arrive on the same WhatsApp
+# number as real leads and were being run through the plumbing filter, which
+# asked a marketing agency twice whether their social-media package involved
+# any water-related work (prod lead 855).
+_SALES_PITCH_RE = re.compile(
+    r"\b("
+    r"social media (post|posts|package|marketing|management)|"
+    r"digital marketing|marketing (package|services|agency)|"
+    r"seo|advertis(ing|e) (package|services)|"
+    r"we (have|offer|are offering) a .{0,30}(package|deal|offer)|"
+    r"grow your (business|brand|page)|promote your (business|brand|page)|"
+    r"boost your (sales|business|page)|"
+    r"web(site)? (design|development) (services|package)|"
+    r"partnership opportunity|business proposal"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_inbound_sales_pitch(message: str) -> bool:
+    """True when the message is somebody selling us a service.
+
+    Deterministic on purpose: the classifier read these as ordinary
+    out-of-scope enquiries and put them into the plumbing-reframe loop, which
+    is both wrong and slightly insulting to the sender.
+    """
+    return bool(_SALES_PITCH_RE.search(message or ''))
+
+
+def build_sales_pitch_reply(appointment=None) -> str:
+    """Decline an inbound pitch politely and close the loop.
+
+    Not a lead, so nothing here asks a qualifying question — answering at all is
+    a courtesy, and the point is that it does not come back.
+    """
+    return (
+        "Thanks for reaching out. We're a plumbing and bathroom/kitchen "
+        "renovation company, and we're not looking for those services at the "
+        "moment.\n\n"
+        "We'll keep your details on file in case that changes. And if you ever "
+        "need plumbing work doing, we'd be glad to help."
+    )
+
+
 def _generate_plumbing_reframe_question(message: str) -> str:
     """Ask whether what they named is actually plumbing — always about THEIR
     subject, never about "this".
@@ -1043,13 +1139,23 @@ def _resolve_pending_clarification(answer: str, pending: dict, appointment) -> O
             logger.info("Plumbing intent detected after OOS — treating as in_scope")
             return None  # continue booking flow
 
-        # 🟡 If still ambiguous → ASK a final confirmation instead of rejecting
-        logger.info("OOS still uncertain after clarification — re-confirm plumbing intent")
+        # A plain "yes" IS the answer to "is there plumbing involved?" — the
+        # question was ours and it was closed. Reading it as "still unclear"
+        # asked the identical question again: prod lead 847 answered "Yes"
+        # twice and was asked twice, then left. An affirmative belongs to the
+        # booking flow, not to another clarifier.
+        if _is_affirmative(answer):
+            logger.info("Affirmative answer to the plumbing reframe — treating as in_scope")
+            return None
 
-        return (
-            "Just to be sure — is this actually for any plumbing work like pipes, "
-            "drainage, or installation, or is it something outside plumbing?"
-        )
+        # Otherwise: we have now asked once and the answer is still not
+        # plumbing. DECLINE — naming the trade — instead of asking a second
+        # time. The old branch re-asked "is this actually for any plumbing
+        # work..." and had no third step, so a non-plumbing lead could never
+        # reach an answer: prod leads 840 (house build) and 855 (marketing
+        # pitch) were both asked twice and never told we don't do it.
+        logger.info("Still out of scope after clarification — declining explicitly")
+        return _build_oos_reply(f"{original} {answer}".strip(), appointment)
     if new_category == "delay_signal":
         return _build_delay_reply(answer, appointment)
     if new_category == "complaint":
@@ -3186,6 +3292,15 @@ def handle_out_of_scope(
       4. LOW confidence + non-in_scope → ask clarifying question.
       5. in_scope → return None.
     """
+    # ── Step 0: somebody selling TO us ───────────────────────────────────────
+    # Before any classification: an inbound pitch is not a lead, and running it
+    # through the plumbing reframe asks a marketing agency whether their social
+    # media package involves water-related work (prod lead 855, asked twice).
+    if is_inbound_sales_pitch(message):
+        logger.info("Inbound sales pitch — declining without qualifying")
+        _clear_pending(appointment)
+        return build_sales_pitch_reply(appointment)
+
     # ── Step 1: pending states (no API call — reads from internal_notes) ─────
     pending = _read_pending(appointment)
     if pending:

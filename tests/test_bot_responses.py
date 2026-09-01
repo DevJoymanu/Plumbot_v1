@@ -2306,7 +2306,36 @@ class _FakeApptStage:
         self.conversation_history = history or []
         self.project_type = project_type
         self.project_description = project_description
+class _StubCfgNoPrices:
+    """Tenant config with no price sheet — the 'absent means omit' half of
+    _service_price_line, and what keeps the pre-existing continuation
+    assertions unchanged."""
+    @staticmethod
+    def labour_breakdown_lines():
+        return {}
+
+    @staticmethod
+    def rough_price_lines():
+        return {}
+
+
+class _StubCfgPriced:
+    """Tenant config that prices a shower and a toilet."""
+    @staticmethod
+    def labour_breakdown_lines():
+        return {'shower': 'Shower cubicle: supply from US$220, labour from US$85'}
+
+    @staticmethod
+    def rough_price_lines():
+        return {'shower': 'Shower cubicle from US$305',
+                'geyser': 'Geyser supply & install from US$200'}
+
+
 class _FakeSelfFollowup:
+    _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
+    _product_families_in = ResponseMixin._product_families_in
+    _service_price_line = ResponseMixin._service_price_line
+    tenant_cfg = _StubCfgNoPrices()
     _FAMILY_DISPLAY = ResponseMixin._FAMILY_DISPLAY
     _confirm_intent_question = ResponseMixin._confirm_intent_question
     _get_pricing_followup_prompt = ResponseMixin._get_pricing_followup_prompt
@@ -2826,6 +2855,8 @@ try:
         _quantity_for_family = ResponseMixin._quantity_for_family
         _scope_item_phrase = ResponseMixin._scope_item_phrase
         _service_continuation_reply = ResponseMixin._service_continuation_reply
+        _service_price_line = ResponseMixin._service_price_line
+        tenant_cfg = _StubCfgNoPrices()
     _sip = _FakeSelfSIP()
     _item2 = _sip._scope_item_phrase(
         "I want to purchase 2x shower cubicles and asseries", "shower cubicle")
@@ -2839,6 +2870,42 @@ try:
         and _item1 == "geyser",
         got=f"item={_item2!r}; cont={_cont2!r}",
     )
+    # ── "Do you have X" is answered with a PRICE, not just a yes ────────────
+    # Prod lead 856: "Do you have ceramic tubs" -> "Yes, we handle tub and all
+    # related plumbing work. Is a tub the only thing…" — a yes with no figure,
+    # and the lead never wrote again.
+    class _FakeSelfSIPPriced(_FakeSelfSIP):
+        tenant_cfg = _StubCfgPriced()
+    _sipp = _FakeSelfSIPPriced()
+    _priced = _sipp._service_continuation_reply("shower cubicle", "english")
+    results.log(
+        "service continuation: a priced family is quoted in the same reply",
+        "US$220" in _priced and "labour from US$85" in _priced
+        and "Yes, we handle shower cubicle" in _priced
+        and "only thing you're looking to get sorted?" in _priced,
+        got=repr(_priced),
+    )
+    # Falls back to the rough line when there is no supply/labour split.
+    _rough = _sipp._service_continuation_reply("geyser", "english")
+    results.log(
+        "service continuation: falls back to the rough price line",
+        "US$200" in _rough,
+        got=repr(_rough),
+    )
+    # Absent means omit — a tenant with no price sheet gets the old copy back,
+    # never another tenant's figures.
+    _unpriced = _sip._service_continuation_reply("shower cubicle", "english")
+    results.log(
+        "service continuation: no tenant price means no price line",
+        "US$" not in _unpriced and "Yes, we handle shower cubicle" in _unpriced,
+        got=repr(_unpriced),
+    )
+    results.log(
+        "service continuation: an unknown item never invents a price",
+        _sipp._service_price_line("skylight") == "",
+        got=repr(_sipp._service_price_line("skylight")),
+    )
+
     # A captured description satisfies the service question — never bounce a
     # lead with a known project back to the opener (prod: 'yes' after the
     # budget tie-down got "How may we assist you on plumbing services").
@@ -7095,6 +7162,180 @@ except Exception as e:
 # regression block (every production bug we've fixed is pinned there). The
 # TEST 1+ sections below exercise the live LLM's accuracy — valuable as a quality
 # signal, but inherently fuzzy, so they are NOT a commit gate.
+# ============================================================
+# TEST 0 — first contact, out-of-scope declines, and the hard stop
+# ============================================================
+# Every case here is a lead that died in the last 50 production conversations.
+
+from bot.views.plumbot.response_mixin import (
+    build_cold_opener as _bco, build_cold_opener_rule as _bcor,
+    COLD_OPENER as _BARE_OPENER,
+)
+
+
+class _StubTenantPriced:
+    """Stands in for a tenant with a real price sheet."""
+    slug = 'stub-priced'
+
+
+class _StubCfgOpener:
+    currency = 'US$'
+
+    @staticmethod
+    def labour_breakdown_lines():
+        return {'toilet': 'Toilet install: supply from US$90, labour from US$50',
+                'shower': 'Shower cubicle: supply from US$220, labour from US$85',
+                'tub': 'Tub: supply from US$150, labour from US$85'}
+
+    @staticmethod
+    def rough_price_lines():
+        return {'toilet': 'Toilet install from US$140'}
+
+
+class _StubCfgBare:
+    currency = 'US$'
+
+    @staticmethod
+    def labour_breakdown_lines():
+        return {}
+
+    @staticmethod
+    def rough_price_lines():
+        return {}
+
+
+import bot.tenant_config as _tc
+_real_get_config = _tc.get_config
+
+# The bare greeting killed 13 of the last 50 leads on turn one (26%).
+try:
+    _tc.get_config = lambda tenant=None: _StubCfgOpener()
+    _opener = _bco(_StubTenantPriced())
+    results.log(
+        "cold opener: leads with two of the tenant's own prices",
+        "US$90" in _opener and "US$220" in _opener
+        and _opener.count("\n- ") == 2,
+        got=repr(_opener),
+    )
+    results.log(
+        "cold opener: ends on one this-or-that question, not an open one",
+        _opener.rstrip().endswith("?") and _opener.count("?") == 1,
+        got=repr(_opener),
+    )
+    results.log(
+        "cold opener: no emojis in customer-facing copy",
+        all(ord(ch) < 0x2190 for ch in _opener),
+        got=repr(_opener),
+    )
+    _opener_sn = _bco(_StubTenantPriced(), is_shona=True)
+    results.log(
+        "cold opener: mirrors Shona and still carries the figures",
+        "Mhoro" in _opener_sn and "US$90" in _opener_sn,
+        got=repr(_opener_sn),
+    )
+    # The LLM path must be told to send the SAME priced opener, or the two
+    # branches disagree about the most important message we ever send.
+    _rule = _bcor(_StubTenantPriced())
+    results.log(
+        "cold opener: the LLM rule carries the priced opener too",
+        "US$90" in _rule and "US$220" in _rule,
+        got=repr(_rule[:160]),
+    )
+
+    # Absent means omit — a tenant with no price sheet keeps the bare greeting
+    # rather than borrowing another tenant's numbers.
+    _tc.get_config = lambda tenant=None: _StubCfgBare()
+    results.log(
+        "cold opener: no price sheet falls back to the bare greeting",
+        _bco(None) == _BARE_OPENER,
+        got=repr(_bco(None)),
+    )
+    results.log(
+        "cold opener: the LLM rule falls back with it",
+        _bcor(None).startswith("CRITICAL RULE"),
+        got=repr(_bcor(None)[:80]),
+    )
+finally:
+    _tc.get_config = _real_get_config
+
+# ── Out of scope: decline, never loop ───────────────────────────────────────
+from bot.out_of_scope_handler import (
+    _is_affirmative as _isaff, is_inbound_sales_pitch as _isp,
+    build_sales_pitch_reply as _bspr, is_hard_stop_request as _ishs,
+)
+
+# Prod lead 847: answered "Yes" to "is there plumbing involved?" and was asked
+# the identical question again, twice.
+results.log(
+    "oos: a plain yes closes the plumbing reframe",
+    _isaff("Yes") and _isaff("yes") and _isaff("Hongu") and _isaff("Ehe"),
+    got="affirmatives",
+)
+results.log(
+    "oos: a negative answer is not an affirmative",
+    not _isaff("No, It's for a house build")
+    and not _isaff("Not at present. I thought you were a construction company"),
+    got="negatives",
+)
+
+# Prod lead 855: a marketing agency was asked twice whether its social media
+# package involved water-related work.
+results.log(
+    "oos: an inbound sales pitch is recognised",
+    _isp("We have a 20 dollar package which contains 3 social media post")
+    and _isp("We offer digital marketing services"),
+    got="pitches",
+)
+results.log(
+    "oos: a real enquiry is never read as a sales pitch",
+    not _isp("how much for a shower cubicle")
+    and not _isp("Am requesting for quote for roofing")
+    and not _isp("I need my toilet fixed"),
+    got="enquiries",
+)
+_pitch_reply = _bspr()
+results.log(
+    "oos: the pitch decline asks no qualifying question and has no emoji",
+    "?" not in _pitch_reply and all(ord(ch) < 0x2190 for ch in _pitch_reply),
+    got=repr(_pitch_reply),
+)
+
+# ── The hard stop ───────────────────────────────────────────────────────────
+# Prod lead 872 wrote this and received three more automated pitches.
+results.log(
+    "hard stop: an explicit stop request is caught regardless of length",
+    _ishs("Ok send hear and please dont say anything more")
+    and _ishs("please stop messaging me")
+    and _ishs("leave me alone")
+    and _ishs("remove me"),
+    got="stop requests",
+)
+results.log(
+    "hard stop: ordinary messages are never read as a stop",
+    not _ishs("Ok")
+    and not _ishs("Thank you")
+    and not _ishs("send me more info")
+    and not _ishs("stop by tomorrow and take a look"),
+    got="non-stops",
+)
+
+# The crons must read the decision, not just the handler that made it.
+import inspect as _inspect
+from bot.management.commands.send_followups import Command as _FUCmd
+_supp_src = _inspect.getsource(_FUCmd._exclude_suppressed_states)
+results.log(
+    "hard stop: follow-up eligibility excludes STOP_REQUESTED and EXCLUDED_AREA",
+    '[STOP_REQUESTED]' in _supp_src and '[EXCLUDED_AREA' in _supp_src,
+    got=_supp_src,
+)
+_fu_src = _inspect.getsource(_FUCmd)
+results.log(
+    "hard stop: the delay and parked nudge queries honour it too",
+    _fu_src.count("[STOP_REQUESTED]") >= 3
+    and _fu_src.count("[EXCLUDED_AREA") >= 3,
+    got=f"stop={_fu_src.count('[STOP_REQUESTED]')} area={_fu_src.count('[EXCLUDED_AREA')}",
+)
+
 if GATE_ONLY:
     _finish()
 

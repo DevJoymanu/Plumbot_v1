@@ -250,7 +250,61 @@ MESSAGE_SPLIT_MARKER = "\x1fSPLIT\x1f"
 # The cold-open reply, and the rule that produces it. Applies ONLY to a genuine
 # first contact — see _answer_standalone_question, which swaps in a no-greeting
 # rule once the conversation is underway.
+#
+# Kept as the FALLBACK only: a tenant with no price sheet has nothing to anchor
+# on, so they still get the bare greeting. Everyone else gets build_cold_opener,
+# which leads with two of their own real figures — see below for why.
 COLD_OPENER = "Hello,\nHow may we assist you on plumbing services"
+
+# Families the value opener anchors on, in preference order. Two is the target:
+# enough to make the price real, few enough to stay a WhatsApp message.
+_OPENER_PRICE_FAMILIES = ('toilet', 'shower', 'tub', 'basin', 'geyser', 'vanity')
+
+
+def build_cold_opener(tenant=None, is_shona: bool = False) -> str:
+    """First-contact reply that leads with THIS tenant's own prices.
+
+    The bare greeting ("Hello, How may we assist you on plumbing services") was
+    the single biggest leak in the funnel: across the 50 most recent
+    conversations, 13 leads opened with a greeting, received it, and never wrote
+    again — 26% of all leads, dead on the first turn. It carries no information
+    and puts the whole burden of continuing on the customer.
+
+    So the opener anchors on two real figures with the supply/install split, then
+    asks ONE this-or-that question. Prices come from the lead's own tenant and
+    absent means omit: a tenant with no price sheet falls back to COLD_OPENER
+    rather than borrowing another tenant's numbers (nullability rule). No emojis.
+    """
+    from bot.tenant_config import get_config
+    cfg = get_config(tenant)
+    breakdown = cfg.labour_breakdown_lines()
+    rough = cfg.rough_price_lines()
+
+    lines = []
+    for family in _OPENER_PRICE_FAMILIES:
+        if family in breakdown:
+            lines.append(f"- {breakdown[family]}")
+        elif family in rough:
+            lines.append(f"- {rough[family]}")
+        if len(lines) == 2:
+            break
+
+    if not lines:
+        return COLD_OPENER
+
+    if is_shona:
+        return (
+            "Mhoro,\n"
+            "Kuti mumbofunga zvemitengo:\n"
+            + "\n".join(lines)
+            + "\n\nMuri kuda kuisa zvitsva here kana kugadziridza zvamunazvo?"
+        )
+    return (
+        "Hello,\n"
+        "To give you a rough idea of our pricing:\n"
+        + "\n".join(lines)
+        + "\n\nAre you looking at a new installation, or a renovation of what you have?"
+    )
 
 _COLD_OPENER_RULE = """CRITICAL RULE — GENERIC OPENERS:
         If the customer's message is a generic greeting, a vague request for more information, or an opening message with no specific question, you MUST reply with ONLY this exact text and nothing else:
@@ -262,6 +316,37 @@ _COLD_OPENER_RULE = """CRITICAL RULE — GENERIC OPENERS:
         - Vague info requests: "more information", "more info", "tell me more", "how can you help", "what do you do", "I need help", "can you help me", "I saw your ad", "I'm interested"
         - Any combo of the above: "hello, I need more info", "hi, can I get more information on this", "good morning, tell me about your services"
         - Any language variant (Shona, Ndebele, informal Zim English) that is a greeting or vague opener with no specific question"""
+
+
+def build_cold_opener_rule(tenant=None, is_shona: bool = False) -> str:
+    """_COLD_OPENER_RULE with THIS tenant's priced opener as the required text.
+
+    The deterministic paths already return build_cold_opener; without this the
+    LLM path would still emit the bare greeting, so the same lead would get a
+    different (and much weaker) first message depending on which branch ran.
+    """
+    opener = build_cold_opener(tenant, is_shona=is_shona)
+    if opener == COLD_OPENER:
+        return _COLD_OPENER_RULE
+    indented = "\n".join(f"        {line}" for line in opener.split("\n"))
+    return (
+        "CRITICAL RULE — GENERIC OPENERS:\n"
+        "        If the customer's message is a generic greeting, a vague request for "
+        "more information, or an opening message with no specific question, you MUST "
+        "reply with ONLY this exact text and nothing else:\n"
+        f"{indented}\n\n"
+        "        This applies to ALL of the following (and any equivalent):\n"
+        "        - Greetings: hi, hello, hey, hie, good morning, good afternoon, good "
+        "evening, sawubona, mhoro, makadii, masikati, mangwanani, howzit, sharp, eita\n"
+        "        - Vague info requests: \"more information\", \"more info\", \"tell me "
+        "more\", \"how can you help\", \"what do you do\", \"I need help\", \"can you "
+        "help me\", \"I saw your ad\", \"I'm interested\"\n"
+        "        - Any combo of the above, in any language variant (Shona, Ndebele, "
+        "informal Zim English), that is a greeting or vague opener with no specific "
+        "question\n"
+        "        NEVER reply with a bare greeting that carries no prices — leading "
+        "with real figures is what earns the next message."
+    )
 
 
 class ResponseMixin:
@@ -908,23 +993,59 @@ class ResponseMixin:
                 label = f"{label} and accessories"
             return label
 
+        def _service_price_line(self, item: str) -> str:
+            """One price line for the family named in `item`, or '' when this
+            tenant doesn't price it (absent means omit — never another
+            tenant's figure).
+
+            Prefers the supply/labour split, because "do you have X" is nearly
+            always followed by "how much", and answering both at once is the
+            whole point.
+            """
+            families = self._product_families_in(item or '')
+            if not families:
+                return ''
+            breakdown = self.tenant_cfg.labour_breakdown_lines()
+            rough = self.tenant_cfg.rough_price_lines()
+            for family in sorted(families):
+                if family in breakdown:
+                    return breakdown[family]
+                if family in rough:
+                    return rough[family]
+            return ''
+
         def _service_continuation_reply(self, item: str, language: str = "english") -> str:
             """Exact scripted first-pass reply to a service-availability question:
-            confirm we handle it, then the assumptive 'only thing?' close. Item is
-            filled in; wording is fixed for consistency. Paraphrasing (ai_answer_faq)
-            is used only on a repeat ask."""
+            confirm we handle it, quote it, then the assumptive 'only thing?'
+            close. Item is filled in; wording is fixed for consistency.
+            Paraphrasing (ai_answer_faq) is used only on a repeat ask.
+
+            The price line was added after prod lead 856: "Do you have ceramic
+            tubs" was answered "Yes, we handle tub and all related plumbing
+            work. Is a tub the only thing…" — a yes with no figure, and the
+            lead never replied. Someone asking whether we sell a thing is
+            asking what it costs; making them ask again is a wasted turn.
+            """
             it = (item or 'that').strip()
+            price = self._service_price_line(it)
             # Plural / compound items ("2 shower cubicles and accessories") need
             # plural grammar, not "Is a 2 shower cubicles…".
             plural = bool(re.match(r'^\d', it)) or ' and ' in it
             if language == 'shona':
-                return (f"Ehe, tinoita {it} pamwe nemamwe mabasa epaipi ese "
-                        f"akabatana nazvo.\n\n{it} chete here chamuri kuda kugadzirisa?")
-            if plural:
-                return (f"Yes, we handle {it} and all related plumbing work.\n\n"
-                        f"Are the {it} everything you're looking to get sorted?")
-            return (f"Yes, we handle {it} and all related plumbing work.\n\n"
-                    f"Is a {it} the only thing you're looking to get sorted?")
+                lead_in = (f"Ehe, tinoita {it} pamwe nemamwe mabasa epaipi ese "
+                           f"akabatana nazvo.")
+                close = f"{it} chete here chamuri kuda kugadzirisa?"
+            elif plural:
+                lead_in = f"Yes, we handle {it} and all related plumbing work."
+                close = f"Are the {it} everything you're looking to get sorted?"
+            else:
+                lead_in = f"Yes, we handle {it} and all related plumbing work."
+                close = f"Is a {it} the only thing you're looking to get sorted?"
+            parts = [lead_in]
+            if price:
+                parts.append(price)
+            parts.append(close)
+            return "\n\n".join(parts)
 
         @staticmethod
         def _is_substantive_faq_answer(answer: str) -> bool:
@@ -1595,6 +1716,27 @@ class ResponseMixin:
                 from bot.tenant_config import get_config
                 self._tenant_cfg = get_config(getattr(self.appointment, 'tenant', None))
             return self._tenant_cfg
+
+        def _last_customer_message(self) -> str:
+            """The most recent thing the customer actually typed, for language
+            detection on paths that don't carry the message down to them."""
+            history = self.appointment.conversation_history or []
+            for entry in reversed(history):
+                if isinstance(entry, dict) and entry.get('role') == 'user':
+                    return str(entry.get('content') or '')
+            return ''
+
+        def _cold_opener_reply(self, message: str = '') -> str:
+            """The first-contact reply, priced from this lead's own tenant.
+
+            See build_cold_opener: the bare greeting killed 26% of recent leads
+            on turn one, so first contact leads with real figures instead.
+            """
+            from bot.repeated_question_detector import detect_language_simple
+            text = message or self._last_customer_message()
+            is_shona = detect_language_simple(text) == 'shona'
+            return build_cold_opener(
+                getattr(self.appointment, 'tenant', None), is_shona=is_shona)
 
         def _rough_price_map(self) -> dict:
             """{family: 'label from US$X'} — was _FAMILY_ROUGH_PRICE."""
@@ -3418,7 +3560,7 @@ class ResponseMixin:
             if next_question == "service_type":
                 if self._conversation_underway():
                     return self._service_type_question()
-                return COLD_OPENER
+                return self._cold_opener_reply()
 
             if next_question == "project_description":
                 return f"Got it! {self._get_contextual_description_question()}"
@@ -5734,7 +5876,7 @@ class ResponseMixin:
                     if next_question == "service_type":
                         if self._conversation_underway():
                             return self._service_type_question()
-                        return COLD_OPENER
+                        return self._cold_opener_reply()
 
                     if next_question == "project_description":
                         return f"Got it! {self._get_contextual_description_question()}"
@@ -6061,7 +6203,11 @@ class ResponseMixin:
                         "        need next; never restart the conversation."
                     )
                 else:
-                    opener_rule = _COLD_OPENER_RULE
+                    from bot.repeated_question_detector import detect_language_simple
+                    opener_rule = build_cold_opener_rule(
+                        getattr(self.appointment, 'tenant', None),
+                        is_shona=detect_language_simple(
+                            message or self._last_customer_message()) == 'shona')
 
                 prompt = f"""You are a knowledgeable WhatsApp assistant for {_biz(self)} — a professional plumbing and renovation company based in {_city(self)}, Zimbabwe.
 
