@@ -1,0 +1,19 @@
+# "No" to a day or time offer means the slots we named don't work.
+# Prod probe 2026-09-01: "No" to "what works better: 9AM or 2PM?" was answered
+# "9AM or 2PM tomorrow?" and "No" to the day offer got an improvised "you're
+# not keen on either tomorrow or Thursday?" — the same question again, either
+# way. Open the question up instead of putting the same two slots back.
+
+> Hello
+expect: hello
+
+> I need my bathroom renovated
+reject: US$
+
+> Avondale
+expect: what works better for you
+
+> No
+expect: what day would suit you better
+reject: 9am
+reject: 2pm

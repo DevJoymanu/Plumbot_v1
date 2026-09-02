@@ -408,10 +408,20 @@ proves we read the message and starts the ladder on a yes.
 Use THEIR noun: someone who wrote "building" is asked about a building, not a
 house. `_new_build_subject` is the resolver (adjacency-bound: "a new bathroom
 in my house" is a refit, not a build; "Dzivarasekwa extension" is a suburb),
-`_new_build_confirmation` the gate. It fires only at the two scope-gathering
-stages and only once — asked twice it is the bot loop — and it records the
-service type as it asks, so the "yes" advances to the project detail instead
-of falling back to "bathroom or kitchen?".
+`_new_build_confirmation` the gate. It records the service type as it asks, so
+the "yes" advances to the project detail instead of falling back to "bathroom
+or kitchen?".
+
+**The stage is not the gate — a booked slot is.** Limiting it to the two
+scope-gathering stages was the obvious first cut and it was too narrow to fire:
+a lead whose opening message filled `project_type` and `project_description`
+was already on `area` by the time they said "It's a new building", and got
+"All good, what area are you in?" (prod 2026-09-01). The description we held
+was about the WIRING they'd asked about first, which is exactly why confirming
+mattered. It now fires on the turn the build is first named, at whatever stage
+the flow is at, and stops only once a slot is on the table — past that the lead
+has committed and a scope question derails a booking. Once per lead either way;
+asked twice it is the bot loop.
 
 ---
 
@@ -460,3 +470,83 @@ off, missing one declines a live lead.
 
 This is the same recurring bug as the delay-hold and pricing-gate cases above:
 a holding state outranking what the customer just said.
+
+---
+
+## "No" to a presumptive confirmation is an answer
+
+**Conv (2026-09-01).** The confirmation landed. The answer to it did not.
+
+> **Bot:** "So you need a new plumbing installation for a new building?"
+>
+> **Customer:** "No"
+>
+> **Bad:** "All good, what area are you in?"
+>
+> **Good:** "Ah, my mistake. What's the plumbing side you're looking to get
+> sorted?"
+
+Why: the no was not detected at all — it matched no "last assistant was X"
+bank, so the flow simply carried on to the next field. That books a visit for
+a job we cannot name, on a service type the lead has just rejected.
+
+The state matters as much as the copy. We wrote `project_type = New Plumbing
+Installation` **presumptively, in order to ask the question** — so a no turns
+our own guess into a wrong record that the dashboard, the visit copy and the
+plumber alert all go on repeating. `_handle_new_build_rejection` clears it,
+and clears the `project_description` captured BEFORE we asked (here: "cost of
+wiring a new 4 bedroom house" — the thing we misread). That second clear is
+load-bearing: `update_appointment_with_extracted_data` only ever fills a
+description that is EMPTY, so leaving the stale one in place would silently
+discard the lead's correction on the next turn.
+
+**Any presumptive write needs an undo path on the "no".** If a gate records
+something in order to ask about it, the rejection branch has to put it back —
+otherwise the guess outlives the question.
+
+Only a BARE no gets the reply. "No, it's a renovation of my bathroom" clears
+the fields and falls through, so the normal flow reads what they actually said
+rather than us guessing a second time.
+
+---
+
+## Every "no" is an answer — audit, 2026-09-01
+
+A sweep of every question the bot asks that a lead can answer "no" to. Four
+were already right; four were re-asking the question they had just been
+answered with a "no".
+
+| They said "no" to | Was | Now |
+|---|---|---|
+| "That sit alright with your budget?" | all-in reframe | ✓ unchanged |
+| "Is a shower cubicle the only thing…?" | "what else would you like sorted?" | ✓ unchanged |
+| "Anything else on the property?" | advance to next field | ✓ unchanged |
+| "…any plumbing work involved?" (OOS) | decline, naming the trade | ✓ unchanged |
+| "What name should we put on the booking?" | proceed without it | ✓ unchanged |
+| **"What area are you in?"** | **"All good, what area are you in?"** | acknowledge + rephrase |
+| **"what works better: 9AM or 2PM?"** | **"9AM or 2PM tomorrow?"** | "What time would suit you better that day?" |
+| **day offer** | "you're not keen on either tomorrow or Thursday?" | "What day would suit you better?" |
+| **"Can you tell me a bit more about the project?"** | the same question + a second one bolted on | record what we know, move to the next field |
+
+Two distinct causes:
+
+**1. A question nobody recorded asking.** `_quote_route_followup` was the only
+path that emitted a scripted first-pass question without calling
+`_set_question_retry_count`, so `retry_count` stayed at 0 and the next turn
+re-emitted the *identical string*. That is the quote pitch's "What area are you
+in?" — one of the most-travelled questions in the funnel — repeating word for
+word at any lead who didn't answer it. **Not a "no" bug at all: it fired on
+every non-answer.** Reproduced on three separate conversations before anyone
+looked at the cause. Any new path that sends a scripted question records the
+ask, or it will repeat itself.
+
+**2. A "no" with nowhere to land.** The slot offer and the detail request had
+no handler, so the retry path rephrased — and a rephrase of "9AM or 2PM?" is
+still "9AM or 2PM?". A "no" to a this-or-that means *neither*: open the
+question up rather than putting the same two options back. A "no" to the detail
+request means they won't elaborate — and we don't need them to, for the same
+reason we never ask a lead to settle scope: the visit prices whatever is there.
+
+**The general rule.** Every question the bot asks needs an answer for "no",
+and "ask it again" is never that answer. When adding a question, add its "no"
+branch and a TEST 0 case with it.

@@ -1,0 +1,19 @@
+# "No" to "Can you tell me a bit more about the project?" — they will not
+# elaborate and we do not need them to: the visit prices whatever is there.
+# The retry path used to re-send the question verbatim with a SECOND question
+# bolted on ("...Or is it a simple fix or a full install?"), which both repeats
+# a question and stacks two (prod probe 2026-09-01).
+
+> Hello
+expect: hello
+
+> New house build, need all the plumbing
+expect: new plumbing installation for a new house
+
+> Yes
+expect: tell me a bit more about the project
+
+> No
+expect: what area are you in
+reject: tell me a bit more about the project
+reject: simple fix

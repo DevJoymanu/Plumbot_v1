@@ -6,7 +6,7 @@
 # One micro-yes on scope, then the ladder continues from a yes.
 
 > Hello
-expect: how may we assist you on plumbing services
+expect: hello
 
 > It's a new building and we require installation of all the plumbing requirements on the plan
 expect: new plumbing installation for a new building

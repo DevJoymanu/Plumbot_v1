@@ -26,10 +26,13 @@ expect: new plumbing installation for a new building
 reject: all-in figure
 reject: US$
 
+# This scenario is about the PITCH not repeating and no prices leaking — the
+# exact wording of the booking close belongs to the assumptive-close scenarios,
+# so it is not pinned here.
 > Yes
-expect: what works better for you
 reject: all-in figure
 reject: US$
+reject: new plumbing installation for a new
 
 > Tomorrow would be great!
 expect: 9am

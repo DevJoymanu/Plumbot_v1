@@ -3210,6 +3210,56 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 ).start()
                 return
 
+        # ── "NO" TO THE REQUEST FOR PROJECT DETAIL ──────────────────────
+        # They will not elaborate, and we do not need them to — the visit prices
+        # whatever is there. Stop asking and move on, instead of re-sending the
+        # question with a second one bolted on (prod probe 2026-09-01).
+        _detail_no = plumbot._handle_no_to_detail_request(message_body)
+        if _detail_no:
+            appointment.add_conversation_message("assistant", _detail_no)
+            delay = get_random_delay(sender=sender)
+            threading.Thread(
+                target=delayed_response, args=(sender, _detail_no, delay, message_id),
+                kwargs={'tenant': tenant}, daemon=True,
+            ).start()
+            return
+
+        # ── "NO" / "NEITHER" TO A DAY OR TIME OFFER ───────────────────────────
+        # The slots we named don't work. Open the question up instead of putting
+        # the same two back — "No" to "what works better: 9AM or 2PM?" used to be
+        # answered "9AM or 2PM tomorrow?" (prod probe 2026-09-01). Only a bare
+        # negative lands here; "no, Friday please" carries the answer and goes to
+        # the normal date parser.
+        _slot_no = plumbot._handle_no_to_slot_offer(message_body)
+        if _slot_no:
+            appointment.add_conversation_message("assistant", _slot_no)
+            delay = get_random_delay(sender=sender)
+            threading.Thread(
+                target=delayed_response, args=(sender, _slot_no, delay, message_id),
+                kwargs={'tenant': tenant}, daemon=True,
+            ).start()
+            return
+
+        # ── "NO" TO THE NEW-BUILD CONFIRMATION ────────────────────────────────
+        # We asked "So you need a new plumbing installation for a new house?"
+        # and recorded that service type presumptively in order to ask it. A no
+        # makes it a wrong guess on the record, so it is cleared here — BEFORE
+        # extraction runs, so their correction can take its place — and a bare
+        # no gets asked what the plumbing job actually is. Without this the no
+        # was not detected at all and the flow carried on to "All good, what
+        # area are you in?", booking a visit for a job we could not name, on a
+        # service type the lead had just rejected (prod 2026-09-01).
+        if plumbot._last_assistant_was_new_build_confirm():
+            _nb_no = plumbot._handle_new_build_rejection(message_body)
+            if _nb_no:
+                appointment.add_conversation_message("assistant", _nb_no)
+                delay = get_random_delay(sender=sender)
+                threading.Thread(
+                    target=delayed_response, args=(sender, _nb_no, delay, message_id),
+                    kwargs={'tenant': tenant}, daemon=True,
+                ).start()
+                return
+
         # ── DATE-STAGE TIMELINE PIVOT (deterministic dispatch) ────────────────
         # At the date/time stage, when the lead pivots to timeline instead of
         # answering, dispatch on offered_date vs today — >7 days out parks the lead;
@@ -3926,6 +3976,25 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     language_hint=lang,
                     business_name=business_name_for(appointment),
                 )
+
+        # -- STEP 3c: New build — confirm the job before qualifying it ----------
+        # Deliberately its own step, and deliberately HERE. It used to live
+        # inside generate_contextual_response, which is the tail of STEP 4 —
+        # so it only fired for messages that reached the field-question path.
+        # "I want to build a new house" does not: the standalone-question
+        # classifier calls it a GENUINE_QUESTION and the dynamic answerer
+        # replies first, with improvised copy that changes every run (prod
+        # probe 2026-09-01). Everything that should outrank the confirmation
+        # has already had its turn by this line — the FAQ, photos and the
+        # catalogue, the out-of-scope/delay handlers, and all three pricing
+        # steps — so what is left is the scope-gathering conversation this
+        # question belongs to. `_asks_price_figure` is still checked: a lead
+        # who asked what a new build COSTS gets the figure, not a question
+        # back (CLAUDE.md — the customer's own words override any gate).
+        if reply is None and not plumbot._asks_price_figure(message_body, _uclass):
+            reply = plumbot._new_build_confirmation(message_body, _uclass)
+            if reply:
+                print(f"🏗️  New build confirmed back: '{message_body[:60]}'")
 
         # -- STEP 4: Normal Plumbot processing ---------------------------------
         if reply is None:

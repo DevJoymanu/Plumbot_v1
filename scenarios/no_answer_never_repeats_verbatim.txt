@@ -1,0 +1,14 @@
+# A question is never re-sent word for word. _quote_route_followup emitted the
+# quote pitch's "What area are you in?" WITHOUT recording the ask, so
+# retry_count stayed 0 and the next turn re-emitted the identical string — a
+# bot loop on every non-answer, not only on a "no" (prod probe 2026-09-01,
+# reproduced on three separate conversations).
+
+> Hi there
+expect: hello
+
+> I need a plumber
+expect: what area are you in
+
+> No
+reject: all good, what area are you in?

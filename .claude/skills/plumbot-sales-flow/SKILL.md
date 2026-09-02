@@ -100,6 +100,8 @@ local checks:
 | `_is_quoted_item_reference` | whatsapp_webhook.py | "this one how much?" on a photo |
 | `_delay_breakout_inquiry` | out_of_scope_handler.py | delay hold swallowing a question — wire EVERY pending state to it |
 | `_new_build_subject` / `_mentions_new_build` | response_mixin.py / out_of_scope_handler.py | an OOS decline (or a scope question) swallowing a live new build — AI-primary off `uc_new_build`, **add-only** |
+| `_handle_no_to_slot_offer` / `_handle_no_to_detail_request` | response_mixin.py | a "no" answered by re-asking the SAME question |
+| `_set_question_retry_count` (every scripted-question path) | response_mixin.py | a question re-sent verbatim because the path that asked it never recorded the ask |
 | `_is_purchase_commitment` | response_mixin.py | buying statement leaking price/size |
 | `_is_job_quote_request` / `_names_multiple_products` | response_mixin.py | job description mistaken for price ask |
 | `wants_whatsapp_delivery` | out_of_scope_handler.py | "use this chat" re-asked for email |

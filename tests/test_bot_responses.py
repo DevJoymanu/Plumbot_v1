@@ -2508,6 +2508,11 @@ try:
             return self._nq
         def _capture_named_products_as_description(self, message):
             pass
+        def _set_question_retry_count(self, question, count):
+            # _quote_route_followup records the ask now, so the fake must expose
+            # this — without it the scripted question repeats verbatim next turn.
+            self.asked = getattr(self, 'asked', {})
+            self.asked[question] = count
         def _get_next_two_available_days(self):
             return []
         def _format_day(self, d):
@@ -7659,18 +7664,33 @@ results.log(
 class _FakeNBAppt:
     project_type = None
 
-    def __init__(self, history=None, project_type=None):
+    def __init__(self, history=None, project_type=None,
+                 scheduled_datetime=None, status='pending'):
         self.conversation_history = history or []
         self.project_type = project_type
+        self.scheduled_datetime = scheduled_datetime
+        self.status = status
 
     def save(self, update_fields=None):
         pass
 
 
+# The default fake is MID-conversation: the greeting only leads on a lead's
+# very first turn, so a fake with an empty history would silently test the
+# first-contact branch everywhere.
+_NB_MIDCONVO = [
+    {'role': 'user', 'content': 'Hello'},
+    {'role': 'assistant', 'content': 'Hello, How may we assist you on plumbing services'},
+    {'role': 'user', 'content': 'It is a new building'},
+]
+
+
 class _FakeNB(ResponseMixin):
     def __init__(self, nq='service_type', history=None, underway=True,
-                 project_type=None):
-        self.appointment = _FakeNBAppt(history, project_type)
+                 project_type=None, scheduled_datetime=None, status='pending'):
+        self.appointment = _FakeNBAppt(
+            list(_NB_MIDCONVO) if history is None else history,
+            project_type, scheduled_datetime, status)
         self._nq, self._underway = nq, underway
 
     def get_next_question_to_ask(self):
@@ -7777,17 +7797,226 @@ results.log(
     _nb2._new_build_confirmation('yes, a new house') is None,
     got=str(_nb2._new_build_confirmation('yes, a new house')),
 )
+
+# The stage is NOT the gate — a booked slot is. Prod 2026-09-01: the lead who
+# answered our wiring clarification with "It's a new building" already had a
+# project_type and a (wiring) project_description captured off their opener, so
+# the flow sat on `area` and they got "All good, what area are you in?".
+_nb_area = _FakeNB(nq='area')._new_build_confirmation("It's a new building")
 results.log(
-    "new build: not raised again once the flow is past scope",
-    _FakeNB(nq='area')._new_build_confirmation('new house') is None
-    and _FakeNB(nq='availability_date')._new_build_confirmation('new house') is None,
-    got='late-stage gate',
+    "new build: confirmed even when the flow has moved on to the area",
+    _nb_area == 'So you need a new plumbing installation for a new building?',
+    got=repr(_nb_area),
 )
 results.log(
+    "new build: a captured description does not suppress it",
+    _FakeNB(nq='availability_date')._new_build_confirmation('new house')
+    == 'So you need a new plumbing installation for a new house?',
+    got=repr(_FakeNB(nq='availability_date')._new_build_confirmation('new house')),
+)
+results.log(
+    "new build: never raised over a lead who has already booked a slot",
+    _FakeNB(nq='area', scheduled_datetime='2026-09-04T09:00')
+    ._new_build_confirmation('new house') is None
+    and _FakeNB(nq='area', status='confirmed')
+    ._new_build_confirmation('new house') is None,
+    got='committed-lead gate',
+)
+
+# ── "No" to the request for project detail ──────────────────────────
+# Prod probe 2026-09-01: the retry path re-sent the question verbatim with a
+# second one bolted on — "Can you tell me a bit more about the project? Or is
+# it a simple fix or a full install?" — repeating a question AND stacking two.
+# They will not elaborate and we do not need them to: the visit prices whatever
+# is there. Record what we know and move to the next field.
+_DETAIL_ASK = [{'role': 'assistant',
+                'content': 'Got it! Can you tell me a bit more about the project?'}]
+
+
+class _FakeDetail(_FakeNB):
+    def _advance_after_scope(self, language='english'):
+        return 'All good, what area are you in?'
+
+
+_d_no = _FakeDetail(nq='project_description', history=list(_DETAIL_ASK),
+                    project_type='new_plumbing_installation')
+_d_out = _d_no._handle_no_to_detail_request('No')
+results.log(
+    "detail 'no': the flow advances instead of re-asking",
+    _d_out == 'All good, what area are you in?',
+    got=repr(_d_out),
+)
+results.log(
+    "detail 'no': what we already know becomes the description, nothing is lost",
+    _d_no.appointment.project_description == 'new plumbing installation',
+    got=repr(_d_no.appointment.project_description),
+)
+results.log(
+    "detail 'no': a real answer is never swallowed by this branch",
+    _FakeDetail(nq='project_description', history=list(_DETAIL_ASK))
+    ._handle_no_to_detail_request('No tiling, just the tub and shower') is None,
+    got='carries detail',
+)
+results.log(
+    "detail 'no': only right after WE asked for detail",
+    _FakeDetail(nq='project_description', history=[
+        {'role': 'assistant', 'content': 'All good, what area are you in?'}])
+    ._handle_no_to_detail_request('No') is None,
+    got='ask gate',
+)
+
+# ── "No" / "neither" to a day or time offer ─────────────────────────
+# Prod probe 2026-09-01: "No" to "what works better: 9AM or 2PM?" was answered
+# "9AM or 2PM tomorrow?", and "No" to the day offer got an improvised "you're
+# not keen on either tomorrow or Thursday?" — the same question again either
+# way. The slots we named don't work, so the question opens up.
+_DAY_OFFER = [{'role': 'assistant', 'content':
+               'Great, what works better for you, tomorrow or this Thursday, '
+               'for us to come through and have a quick look at the bathroom?'}]
+_TIME_OFFER = [{'role': 'assistant', 'content':
+                'Perfect, for tomorrow — what works better: 9AM or 2PM?'}]
+
+results.log(
+    "slot offer 'no': the DAY question opens up instead of repeating",
+    _FakeNB(nq='availability_date', history=list(_DAY_OFFER))
+    ._handle_no_to_slot_offer('No') == 'No problem. What day would suit you better?',
+    got=repr(_FakeNB(nq='availability_date', history=list(_DAY_OFFER))
+             ._handle_no_to_slot_offer('No')),
+)
+results.log(
+    "slot offer 'neither': the TIME question opens up instead of repeating",
+    _FakeNB(nq='availability_time', history=list(_TIME_OFFER))
+    ._handle_no_to_slot_offer('neither')
+    == 'No problem. What time would suit you better that day?',
+    got=repr(_FakeNB(nq='availability_time', history=list(_TIME_OFFER))
+             ._handle_no_to_slot_offer('neither')),
+)
+results.log(
+    "slot offer: a no that CARRIES the answer goes to the date parser",
+    _FakeNB(nq='availability_date', history=list(_DAY_OFFER))
+    ._handle_no_to_slot_offer('No, Friday please') is None,
+    got='carries an answer',
+)
+results.log(
+    "slot offer: only fires when we actually offered slots",
+    _FakeNB(nq='availability_date', history=[
+        {'role': 'assistant', 'content': 'All good, what area are you in?'}])
+    ._handle_no_to_slot_offer('No') is None
+    and _FakeNB(nq='area', history=list(_DAY_OFFER))
+    ._handle_no_to_slot_offer('No') is None,
+    got='offer gate',
+)
+
+# ── A scripted question must record that it was asked ───────────────────────
+# _quote_route_followup was the only path emitting a first-pass question
+# without _set_question_retry_count, so retry_count stayed 0 and the NEXT turn
+# re-emitted the identical string. Reproduced on three separate conversations:
+# a lead who did not answer the quote pitch's "What area are you in?" got it
+# back word for word — a bot loop on every non-answer, not only on a "no".
+import inspect as _insp
+_qrf_src = _insp.getsource(ResponseMixin._quote_route_followup)
+results.log(
+    "quote route: the scripted question it sends is recorded as asked",
+    _qrf_src.count('_set_question_retry_count') >= 2,
+    expected='>=2 (the scripted branch and the area fallback)',
+    got=str(_qrf_src.count('_set_question_retry_count')),
+)
+
+# ── "No" to the confirmation is an answer, not noise ────────────────────────
+# Prod 2026-09-01: the no was not detected at all — the flow moved straight on
+# to "All good, what area are you in?", booking a visit for a job we could not
+# name, on a service type the lead had just rejected (and which WE wrote
+# presumptively in order to ask the question).
+_NB_CONFIRMED = [{'role': 'assistant',
+                  'content': 'So you need a new plumbing installation for a new building?'}]
+
+_nb_no = _FakeNB(nq='area', history=list(_NB_CONFIRMED),
+                 project_type='New Plumbing Installation')
+_nb_no.appointment.project_description = 'Cost of wiring a new 4 bedroom house'
+_nb_no_reply = _nb_no._handle_new_build_rejection('No')
+results.log(
+    "new build 'no': the lead is asked what the plumbing job actually is",
+    _nb_no_reply == "Ah, my mistake. What's the plumbing side you're looking to get sorted?",
+    got=repr(_nb_no_reply),
+)
+results.log(
+    "new build 'no': the presumptive service type and the misread description go",
+    _nb_no.appointment.project_type is None
+    and _nb_no.appointment.project_description is None,
+    got=f"{_nb_no.appointment.project_type!r} / {_nb_no.appointment.project_description!r}",
+)
+
+# A no that CARRIES the correction falls through — the fields are cleared by
+# then, so the normal flow reads what they said instead of us guessing twice.
+_nb_corr = _FakeNB(nq='area', history=list(_NB_CONFIRMED),
+                   project_type='New Plumbing Installation')
+_nb_corr.appointment.project_description = 'Cost of wiring a new 4 bedroom house'
+results.log(
+    "new build 'no, it's a renovation': falls through with the guess cleared",
+    _nb_corr._handle_new_build_rejection("No, it's a renovation of my bathroom") is None
+    and _nb_corr.appointment.project_type is None
+    and _nb_corr.appointment.project_description is None,
+    got=f"{_nb_corr.appointment.project_type!r}",
+)
+
+# A YES is not a rejection, and nothing is cleared.
+_nb_yes = _FakeNB(nq='area', history=list(_NB_CONFIRMED),
+                  project_type='New Plumbing Installation')
+results.log(
+    "new build 'yes': nothing is cleared and the flow carries on",
+    _nb_yes._handle_new_build_rejection('Yes') is None
+    and _nb_yes.appointment.project_type == 'New Plumbing Installation',
+    got=repr(_nb_yes.appointment.project_type),
+)
+results.log(
+    "new build 'no': only answers to OUR confirmation count",
+    _FakeNB(nq='area')._last_assistant_was_new_build_confirm() is False
+    and _FakeNB(nq='area', history=list(_NB_CONFIRMED))
+    ._last_assistant_was_new_build_confirm() is True,
+    got='last-turn gate',
+)
+results.log(
+    "new build 'no': bare negatives only, in both languages",
+    all(_nb._is_bare_negative(m) for m in ('No', 'nope', 'Nah.', 'kwete', 'not really'))
+    and not any(_nb._is_bare_negative(m) for m in
+                ("No, it's a renovation", 'no bathroom yet', 'nothing else')),
+    got=str(_nb._is_bare_negative('No')),
+)
+# A second "no" cannot loop: our last turn is now the scope question.
+results.log(
+    "new build 'no': the rejection reply cannot be re-triggered by another no",
+    _FakeNB(nq='service_type', history=[
+        {'role': 'assistant',
+         'content': "Ah, my mistake. What's the plumbing side you're looking to get sorted?"},
+    ])._last_assistant_was_new_build_confirm() is False,
+    got='no loop',
+)
+
+# First contact is counted off the lead's OWN turns, not _conversation_underway
+# — that short-circuits on a filled project_type, and classify_and_save fills
+# one from "a new house" before this runs, so an OPENING message was treated as
+# mid-conversation and lost its greeting (prod probe 2026-09-01).
+results.log(
     "new build: first contact still greets before confirming",
-    _FakeNB(underway=False)._new_build_confirmation('new house')
+    _FakeNB(history=[{'role': 'user', 'content': 'I want to build a new house'}],
+            project_type='New Plumbing Installation')
+    ._new_build_confirmation('I want to build a new house')
     == 'Hello,\n\nSo you need a new plumbing installation for a new house?',
-    got=repr(_FakeNB(underway=False)._new_build_confirmation('new house')),
+    got=repr(_FakeNB(history=[{'role': 'user', 'content': 'I want to build a new house'}],
+                     project_type='New Plumbing Installation')
+             ._new_build_confirmation('I want to build a new house')),
+)
+results.log(
+    "new build: no greeting once the lead has spoken before",
+    _FakeNB(history=[{'role': 'user', 'content': 'Hello'},
+                     {'role': 'assistant', 'content': 'Hello, How may we assist you'},
+                     {'role': 'user', 'content': 'I want to build a new house'}])
+    ._new_build_confirmation('I want to build a new house')
+    == 'So you need a new plumbing installation for a new house?',
+    got=repr(_FakeNB(history=[{'role': 'user', 'content': 'Hello'},
+                              {'role': 'assistant', 'content': 'Hello, How may we assist you'},
+                              {'role': 'user', 'content': 'I want to build a new house'}])
+             ._new_build_confirmation('I want to build a new house')),
 )
 results.log(
     "new build: a Shona lead is confirmed in Shona",

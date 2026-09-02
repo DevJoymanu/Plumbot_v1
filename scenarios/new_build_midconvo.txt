@@ -1,0 +1,10 @@
+# The same words mid-conversation: confirmed the same way, but no second
+# greeting — the lead has already been greeted.
+
+> Hello
+expect: hello
+
+> I want to build a new house
+expect: new plumbing installation for a new house
+reject: US$
+reject: bathroom or a kitchen

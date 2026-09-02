@@ -1,0 +1,33 @@
+# "No" to the new-build confirmation is an ANSWER (prod 2026-09-01).
+# We ask "So you need a new plumbing installation for a new building?" and we
+# record that service type presumptively in order to ask it. When the bot first
+# shipped, a "No" was not detected at all: the flow moved straight on to "All
+# good, what area are you in?" — booking a visit for a job we could not name,
+# on a service type the lead had just rejected, with a project_description
+# still describing the WIRING they opened with.
+#
+# The no now clears both, and asks what the plumbing job actually is. Clearing
+# matters: update_appointment_with_extracted_data only ever fills a description
+# that is EMPTY, so a stale one silently discards the correction.
+
+> Hello! Can I get more info on this?
+expect: hello
+
+> Cost of wiring a new 4 bedroom house
+expect: wiring
+reject: outside what we do
+
+> It's a new building
+expect: new plumbing installation for a new building
+
+> No
+expect: my mistake
+expect: plumbing side
+reject: what area are you in
+reject: new plumbing installation for a new
+
+# The correction has to LAND — it can only do that on cleared fields.
+> Just the bathroom and kitchen plumbing for the house
+expect: area
+reject: my mistake
+reject: new plumbing installation for a new

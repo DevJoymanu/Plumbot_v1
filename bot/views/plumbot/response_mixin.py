@@ -2631,8 +2631,17 @@ class ResponseMixin:
             next_question = self.get_next_question_to_ask()
             scripted = self._get_first_pass_question(next_question)
             if scripted:
+                # Record the ask. This was the ONLY path that emitted a scripted
+                # first-pass question without doing so, which left retry_count at
+                # 0 — so the next turn re-emitted the IDENTICAL question. Any lead
+                # who did not answer the quote pitch's "What area are you in?" got
+                # it back word for word (prod probe 2026-09-01, reproduced on
+                # three separate conversations). A bot loop, and not only on a
+                # "no": on any non-answer.
+                self._set_question_retry_count(next_question, 1)
                 return scripted
             if not self.appointment.customer_area:
+                self._set_question_retry_count('area', 1)
                 return "All good, what area are you in?"
             if next_question == 'name':
                 return (
@@ -3220,7 +3229,6 @@ class ResponseMixin:
                             next_question,
                             ['plan_status'],
                             quoted_context=quoted_context,
-                            classification=precomputed_classification,
                         )
                         reply = "Perfect! You can send your plan whenever you're ready. " + reply
                         return reply
@@ -3374,7 +3382,6 @@ class ResponseMixin:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
-                            classification=precomputed_classification,
                         )
                     elif (self._is_facebook_price_ref(incoming_message)
                             and not _asks_figure):
@@ -3400,7 +3407,6 @@ class ResponseMixin:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
-                            classification=precomputed_classification,
                         )
                     elif ((self._asks_for_quote(incoming_message)
                             or self._is_job_quote_request(
@@ -3472,13 +3478,11 @@ class ResponseMixin:
                             reply = self.generate_contextual_response(
                                 incoming_message, next_question, updated_fields,
                                 quoted_context=quoted_context,
-                                classification=precomputed_classification,
                             )
                     else:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
-                            classification=precomputed_classification,
                         )
 
                 # Guard: never return None or empty — send a safe fallback instead
@@ -3497,7 +3501,7 @@ class ResponseMixin:
                 return "Sorry, dropped that on our end — could you send that again?"
 
 
-        def generate_contextual_response(self, incoming_message, next_question, updated_fields, quoted_context=None, classification=None):
+        def generate_contextual_response(self, incoming_message, next_question, updated_fields, quoted_context=None):
             """
             Generate the next bot message.
 
@@ -3550,11 +3554,11 @@ class ResponseMixin:
                 if next_question == "name":
                     return self._handle_name_step(incoming_message, updated_fields)
 
-                # A new build is its own job — confirm it back before running the
-                # lead through a scope question they have already answered.
-                new_build = self._new_build_confirmation(incoming_message, classification)
-                if new_build:
-                    return new_build
+                # (The new-build confirmation used to sit here. It is STEP 3c in
+                # the webhook now — this is the tail of STEP 4, and messages that
+                # never reach the field-question path, like "I want to build a
+                # new house", were being answered by the standalone-question
+                # answerer long before they got this far.)
 
                 if retry_count == 0:
                     first_pass = self._get_first_pass_question(next_question)
@@ -3851,17 +3855,224 @@ class ResponseMixin:
                 for entry in history
             )
 
+        def _last_assistant_was_new_build_confirm(self) -> bool:
+            """True when our MOST RECENT turn was the new-build confirmation —
+            so this turn's yes/no is an answer to it. Distinct from
+            `_already_confirmed_new_build`, which looks at the whole thread to
+            stop us asking twice."""
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            last = next(
+                (m.get('content') or '' for m in reversed(history)
+                 if isinstance(m, dict) and m.get('role') == 'assistant'),
+                '',
+            ).lower()
+            return any(m in last for m in self._NEW_BUILD_CONFIRM_MARKERS)
+
+        # A negative with nothing else in it. Anything longer carries their
+        # correction ("no, it's a renovation"), and that belongs to the normal
+        # flow — which can only read it once the wrong guess is cleared.
+        _BARE_NEGATIVES = frozenset({
+            'no', 'nope', 'nah', 'naah', 'no no', 'ah no', 'negative',
+            'not really', 'not quite', 'no its not', "no it's not", 'no not',
+            'kwete', 'aiwa', 'aiwas', 'kwete hazvisi',
+            # The "neither" family: the natural no to a this-or-that offer.
+            'neither', 'none', 'none of those', 'none of them', 'not those',
+            'no neither', 'neither of those', 'neither works', 'none work',
+            'none of these', 'hapana',
+        })
+
+        def _is_bare_negative(self, message: str) -> bool:
+            norm = re.sub(r"[^a-z' ]", ' ', (message or '').lower())
+            return ' '.join(norm.split()) in self._BARE_NEGATIVES
+
+        # Signatures of a reply that put SPECIFIC slots to the lead. Paired with
+        # the flow stage, which is what actually says whether those slots were
+        # days or times — both copies share the words "what works better".
+        _SLOT_OFFER_MARKERS = (
+            'what works better', 'work better for you', 'which day would suit',
+            'which suits you better', 'morning or afternoon',
+            'nderipi zuva rinokukodzerai', 'ndeipi inokukodzerai',
+            'nderipi zuva', 'mangwanani kana masikati',
+        )
+
+        def _last_assistant_offered_slots(self):
+            """'date' | 'time' | None — did our last turn put specific slots to
+            this lead, and which kind? The stage decides the kind: the day and
+            time offers are worded almost identically."""
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            last = next(
+                (m.get('content') or '' for m in reversed(history)
+                 if isinstance(m, dict) and m.get('role') == 'assistant'),
+                '',
+            ).lower()
+            if not any(sig in last for sig in self._SLOT_OFFER_MARKERS):
+                return None
+            nq = self.get_next_question_to_ask()
+            return {'availability_date': 'date', 'availability_time': 'time'}.get(nq)
+
+        def _handle_no_to_slot_offer(self, message: str):
+            """A bare no / "neither" to the day or time this-or-that.
+
+            It means the slots we named do not work — so we open the question up
+            instead of putting the same two back. Before this, "No" to "what
+            works better: 9AM or 2PM?" was answered "9AM or 2PM tomorrow?", and
+            "No" to the day offer got an improvised "you're not keen on either
+            tomorrow or Thursday?" — both of them the same question again (prod
+            probe 2026-09-01).
+
+            Only a BARE negative: "no, Friday please" carries the answer and
+            belongs to the normal date/time parser, not here.
+            """
+            kind = self._last_assistant_offered_slots()
+            if kind is None or not self._is_bare_negative(message):
+                return None
+            from bot.repeated_question_detector import detect_language_simple
+            is_shona = detect_language_simple(message or '') == 'shona'
+            logger.info("Bare no to the %s offer — opening the question up", kind)
+            if kind == 'date':
+                return ("Hapana dambudziko. Nderipi zuva ringakunakirai?"
+                        if is_shona else
+                        "No problem. What day would suit you better?")
+            return ("Hapana dambudziko. Ndeipi nguva ingakunakirai pazuva iroro?"
+                    if is_shona else
+                    "No problem. What time would suit you better that day?")
+
+        # The scripted request for project detail, in both languages.
+        _DETAIL_REQUEST_MARKERS = (
+            'tell me a bit more about the project',
+            'tell me a bit more about what you need',
+            'chii chaizvo chamunoda kuti chiitwe',
+        )
+
+        def _last_assistant_asked_for_detail(self) -> bool:
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            last = next(
+                (m.get('content') or '' for m in reversed(history)
+                 if isinstance(m, dict) and m.get('role') == 'assistant'),
+                '',
+            ).lower()
+            return any(m in last for m in self._DETAIL_REQUEST_MARKERS)
+
+        def _handle_no_to_detail_request(self, message: str):
+            """A bare no to "Can you tell me a bit more about the project?".
+
+            They are not going to elaborate, and we do not need them to — the
+            visit prices whatever is actually there, which is the same reason we
+            never ask a lead to settle scope. So we stop asking: the service
+            type we already hold becomes the description (exactly what
+            update_appointment_with_extracted_data does on a repeat answer) and
+            the flow moves to the next field.
+
+            Before this the retry path re-sent the question verbatim with a
+            second one bolted on — "Can you tell me a bit more about the
+            project? Or is it a simple fix or a full install?" — which both
+            repeats a question and stacks two (prod probe 2026-09-01).
+            """
+            if not self._last_assistant_asked_for_detail():
+                return None
+            if not self._is_bare_negative(message):
+                return None
+            appt = getattr(self, 'appointment', None)
+            if appt is None:
+                return None
+            if not getattr(appt, 'project_description', None):
+                svc = (getattr(appt, 'project_type', '') or '').replace('_', ' ').strip()
+                appt.project_description = svc or 'Plumbing work'
+                try:
+                    appt.save(update_fields=['project_description'])
+                except Exception:
+                    logger.warning("Could not record the declined detail", exc_info=True)
+            from bot.repeated_question_detector import detect_language_simple
+            lang = 'shona' if detect_language_simple(message or '') == 'shona' else 'english'
+            logger.info("Bare no to the detail request — advancing instead of re-asking")
+            return self._advance_after_scope(lang)
+
+        def _handle_new_build_rejection(self, message: str):
+            """The lead has just said NO to "So you need a new plumbing
+            installation for a new house?".
+
+            We wrote that service type presumptively in order to ask, so a no
+            makes it a wrong guess sitting on the record — every downstream
+            surface (the dashboard, the visit copy, the plumber alert) would go
+            on describing the job as a new install they explicitly rejected. It
+            goes, along with the project_description we captured BEFORE asking,
+            which is the thing we misread: `update_appointment_with_extracted_
+            data` only ever fills a description that is EMPTY, so leaving the
+            old one there would silently discard their correction.
+
+            Returns the reply for a BARE no (nothing to act on but the no
+            itself). A no that carries their correction returns None on
+            purpose — the fields are cleared by then, so the normal flow reads
+            what they actually said instead of us guessing a second time.
+
+            Before this, the no was not detected at all: the flow simply moved
+            on to "All good, what area are you in?" — booking a visit for a job
+            we could not name, on a service type the lead had just rejected.
+            """
+            from bot.out_of_scope_handler import _classify_affirmation
+            if _classify_affirmation(message) != 'no':
+                return None
+
+            appt = getattr(self, 'appointment', None)
+            if appt is None:
+                return None
+            from bot.service_type_classifier import NEW_PLUMBING_INSTALLATION
+            fields = []
+            if (getattr(appt, 'project_type', '') or '').strip().lower() in (
+                    NEW_PLUMBING_INSTALLATION.lower(), 'new_plumbing_installation'):
+                appt.project_type = None
+                fields.append('project_type')
+            if getattr(appt, 'project_description', None):
+                appt.project_description = None
+                fields.append('project_description')
+            if fields:
+                try:
+                    appt.save(update_fields=fields)
+                except Exception:
+                    logger.warning("Could not clear the rejected new-build guess",
+                                   exc_info=True)
+            logger.info("New build rejected (%r) — cleared %s", message[:60], fields)
+
+            if not self._is_bare_negative(message):
+                return None
+
+            from bot.repeated_question_detector import detect_language_simple
+            if detect_language_simple(message or '') == 'shona':
+                return ("Ndakanganisa ipapo. Chii chaicho chepaipi "
+                        "chamuri kuda kugadziriswa?")
+            return ("Ah, my mistake. What's the plumbing side you're looking "
+                    "to get sorted?")
+
         def _new_build_confirmation(self, message: str, classification=None):
             """The new-build confirmation, or None when it doesn't apply.
 
-            Only at the two scope-gathering stages: past those the lead has
-            already told us what the job is, and confirming it late would be a
-            question about something they settled several turns ago.
+            Fires on the turn the build is first named, at whatever stage the
+            flow happens to be at — the ONE gate is that nothing is booked yet.
+            It used to be limited to the two scope-gathering stages, and that
+            was too narrow to be useful: the lead who answered our wiring
+            clarification with "It's a new building" had already had a
+            project_type and a project_description captured off their opening
+            message, so the flow was on `area` and they got "All good, what
+            area are you in?" instead (prod 2026-09-01). The description we
+            held was about the WIRING, which is exactly why confirming mattered.
+
+            Once a slot is on the table the lead has committed, and a scope
+            question there derails a booking (CLAUDE.md: never re-pitch a
+            customer who has already committed) — so a booked or confirmed
+            appointment is where it stops. `_already_confirmed_new_build` is
+            what keeps it to once per lead.
 
             `classification` is an already-computed unified_classify result;
             nothing here makes an extra API call.
             """
-            if self.get_next_question_to_ask() not in ('service_type', 'project_description'):
+            appt = getattr(self, 'appointment', None)
+            if appt is None:
+                return None
+            if (getattr(appt, 'scheduled_datetime', None)
+                    or getattr(appt, 'status', None) == 'confirmed'):
                 return None
             if self._already_confirmed_new_build():
                 return None
@@ -3875,8 +4086,7 @@ class ResponseMixin:
             # classify_and_save already catches most of these phrasings; this
             # covers the ones it doesn't ("building a house", "under
             # construction") and keeps the two in step.
-            appt = getattr(self, 'appointment', None)
-            if appt is not None and not getattr(appt, 'project_type', None):
+            if not getattr(appt, 'project_type', None):
                 from bot.service_type_classifier import NEW_PLUMBING_INSTALLATION
                 appt.project_type = NEW_PLUMBING_INSTALLATION
                 try:
@@ -3892,8 +4102,19 @@ class ResponseMixin:
             logger.info("New-build confirmation for subject=%r from: %r",
                         subject, (message or '')[:80])
             # On first contact the greeting still leads — but the opener's own
-            # "new installation or a renovation?" is dropped: they just answered it.
-            if not self._conversation_underway():
+            # "new installation or a renovation?" is dropped: they just answered
+            # it. Counted off their own turns, NOT `_conversation_underway`:
+            # that short-circuits on a filled project_type, and the webhook's
+            # classify_and_save fills one from "a new house" before this runs —
+            # so an opening message was treated as mid-conversation and lost
+            # its greeting entirely.
+            history = getattr(appt, 'conversation_history', None) or []
+            user_turns = sum(
+                1 for m in history
+                if isinstance(m, dict) and m.get('role') == 'user'
+                and not str(m.get('content') or '').startswith('[')
+            )
+            if user_turns <= 1:      # this turn is already logged
                 return f"{'Mhoro' if is_shona else 'Hello'},\n\n{question}"
             return question
 

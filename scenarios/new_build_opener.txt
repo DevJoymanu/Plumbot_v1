@@ -1,0 +1,21 @@
+# "I want to build a new house" as the OPENING message (prod probe 2026-09-01).
+# The confirmation lived inside generate_contextual_response, the TAIL of the
+# normal-flow step — so it only fired for messages that reached the field
+# question. This one does not: the standalone-question classifier calls it a
+# GENUINE_QUESTION and the dynamic answerer replied first, with improvised copy
+# that changed every run. It is STEP 3c in the webhook now, ahead of the normal
+# flow and behind everything that should outrank it.
+#
+# The greeting still leads on a first turn — counted off the lead's OWN turns,
+# because classify_and_save fills project_type from "a new house" before this
+# runs and _conversation_underway short-circuits on that.
+
+> I want to build a new house
+expect: new plumbing installation for a new house
+expect: hello
+reject: US$
+reject: bathroom or a kitchen
+
+> Yes
+expect: tell me a bit more about the project
+reject: new plumbing installation for a new

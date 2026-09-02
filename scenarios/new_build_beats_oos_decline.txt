@@ -7,14 +7,28 @@
 # the door.
 
 > Hello! Can I get more info on this?
-expect: how may we assist you on plumbing services
+expect: hello
 
 > Cost of wiring a new 4 bedroom house
 expect: wiring
 reject: outside what we do
 
+# Note the second half of this bug: the decline stopped, but the reply became
+# "All good, what area are you in?" — the opener had already filled
+# project_type AND a (wiring) project_description, so the flow sat on `area`
+# and the confirmation's stage gate skipped it. The gate is now a booked slot,
+# not a stage.
 > It's a new building
 expect: new plumbing installation for a new building
 reject: outside what we do
 reject: you'd need a specialist
 reject: bathroom or a kitchen
+reject: what area are you in
+
+# STEP 3c runs BEFORE extraction, so the wiring text is never captured as the
+# project description — the flow asks for the real one instead of carrying a
+# description of a trade we don't do into a plumbing job.
+> Yes
+expect: tell me a bit more about the project
+reject: new plumbing installation for a new
+reject: wiring
