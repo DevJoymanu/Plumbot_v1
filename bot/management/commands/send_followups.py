@@ -35,6 +35,7 @@ from bot.models import Appointment, LeadStatus
 from bot.whatsapp_window import paid_sends_allowed
 from bot.utils import business_name_for
 from bot.whatsapp_cloud_api import get_client_for_tenant, whatsapp_api
+from bot.views.plumbot.response_mixin import dequalify_free_visit
 import os
 import re
 import logging
@@ -278,15 +279,15 @@ class Command(BaseCommand):
     # Messages per step per attempt (0-indexed).
     _DELAY_NUDGE_MESSAGES = {
         'delay_timeframe': [
-            "Just checking in — roughly when do you think you will be back? Even a ballpark works.",
+            "Just checking in. Roughly when do you think you'll be back? Even a ballpark works.",
             "No rush at all. Just need a rough idea so we can set a reminder for you.",
-            "Last check-in from us — when would work best to reconnect?",
+            "Last check-in from us. When would work best to reconnect?",
             "We will leave this with you. Just send us a message whenever you are ready and we will pick up right where we left off.",
         ],
         'delay_confirm': [
-            "Just checking — is it okay if we reach out to you on {date}? A quick yes or no is all we need.",
+            "Just checking, is it okay if we reach out to you on {date}? A quick yes or no is all we need.",
             "Should we put {date} in the diary to follow up with you?",
-            "Last one from us — would {date} work for us to check in?",
+            "Last one from us. Would {date} work for us to check in?",
             "We will leave this with you. Whenever you are ready, just send us a message.",
         ],
         # The first nudge carries the reason the lead is better off on email —
@@ -294,11 +295,11 @@ class Command(BaseCommand):
         # travels, it compares). A bare "what is your email?" is an extraction
         # with nothing in it for them, and it got ignored.
         'delay_email': [
-            "One thing before we go — the quote goes over as a PDF you can keep, "
+            "One thing before we go. The quote goes over as a PDF you can keep, "
             "pass on to whoever else is in on the decision, and hold up against "
             "any other quotes. What email should we send it to?",
             "Happy to hold the quote until you are ready. What email works best?",
-            "Last ask on the email — what address should we use?",
+            "Last ask on the email. What address should we use?",
             "No worries if you would rather not share. We will follow up on WhatsApp on the agreed date.",
         ],
     }
@@ -416,6 +417,9 @@ class Command(BaseCommand):
                     continue
                 body     = template.format(date=date) if '{date}' in template else template
                 message  = f'{hi}, {body}'
+                # The visit is free ONCE, at the start. A nudge is never the
+                # place to say it again — see strip_repeat_free_visit.
+                message  = dequalify_free_visit(lead, message)
 
                 if dry_run:
                     self.stdout.write(self.style.SUCCESS(
@@ -509,8 +513,8 @@ class Command(BaseCommand):
         "just checking in — no pressure at all. If it helps while you decide, I can "
         "send over our portfolio of past projects and full pricing. Or whenever you "
         "are ready, a free on-site visit and fixed quote is one message away.",
-        "one thing worth knowing while you think it over: the on-site visit and the "
-        "written quote are free, and the price we put on paper is the price you pay.",
+        "one thing worth knowing while you think it over: the price we put on "
+        "paper is the price you pay, with nothing added on the day.",
         "if it is easier, we can put the quote in an email so you have it on hand "
         "for whenever you are ready. Just send us the address and we will do the rest.",
         "we will leave this with you. Whenever the time is right, just send us a "
@@ -619,6 +623,7 @@ class Command(BaseCommand):
                 hi   = f'Hi {name}' if name else 'Hi there'
                 body = self._PARKED_NUDGE_MESSAGES[nudge_count]
                 message = f'{hi}, {body}'
+                message = dequalify_free_visit(lead, message)
 
                 if dry_run:
                     self.stdout.write(self.style.SUCCESS(
@@ -771,7 +776,7 @@ class Command(BaseCommand):
                 # ── Build the WhatsApp message (touch 1 only) ───────────────────
                 if is_access_checkin:
                     message = (
-                        f"{hi}, just checking in — were you able to sort out access "
+                        f"{hi}, just checking in. Were you able to sort out access "
                         f"on your side?\n\n"
                         f"Happy to lock in a time to come through whenever suits you."
                     )
@@ -792,7 +797,7 @@ class Command(BaseCommand):
                         message = (
                             f"{hi}, hope you got a chance to look through the "
                             f"portfolio and pricing guide we sent.\n\n"
-                            f"About the job you mentioned — {want} — the plumber can "
+                            f"About the job you mentioned, {want}. The plumber can "
                             f"put an exact, all-in figure on it with a quick "
                             f"20-minute look at the space, free of charge.\n\n"
                             f"Is that the kind of work you had in mind?"
@@ -806,9 +811,14 @@ class Command(BaseCommand):
                 else:
                     message = (
                         f"{hi}, hope you're back and settled in. "
-                        f'You were looking at {detail} — still keen to move forward? '
+                        f'You were looking at {detail}. Still keen to move forward? '
                         f"We're ready when you are."
                     )
+
+                # The visit is free ONCE, at the start. Every leg below sends
+                # this same body, so de-qualify here — before the dry-run
+                # preview, so what it prints is what goes out.
+                message = dequalify_free_visit(lead, message)
 
                 if dry_run:
                     label = ('access check-in' if is_access_checkin
@@ -1134,7 +1144,7 @@ class Command(BaseCommand):
         next_q  = self._get_next_question(lead)
         attempt = lead.followup_count + 1   # 1-based attempt number
         result  = self._generate_message(lead, next_q, attempt)
-        message = result['message']
+        message = dequalify_free_visit(lead, result['message'])
 
         if dry_run:
             self.stdout.write(
@@ -1682,7 +1692,8 @@ RULES — every single one must be followed:
 6. {length_instruction}
 7. Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
 8. Zero markdown, zero bold, zero bullet points
-9. No emojis — not one, on any attempt
+9. No emojis, not one, on any attempt
+10. Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung).
 10. Never say: "just checking in", "following up", "I noticed you haven't replied", "hope you're well", "touching base"
 11. Sound like a real person texting, not a marketing email
 
@@ -1713,8 +1724,9 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             max_tokens=300,
         )
 
-        from bot.utils import strip_emojis
-        message = strip_emojis(raw.strip().replace('**', '').replace('__', ''))
+        from bot.utils import strip_emojis, strip_dashes
+        message = strip_dashes(
+            strip_emojis(raw.strip().replace('**', '').replace('__', '')))
 
         # Guard: if DeepSeek returned something too short to be a real follow-up,
         # fall back to the template so we never send a bare "Hi" or empty string.
@@ -1758,12 +1770,12 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                     f"Is it a bathroom, kitchen, or new installation you're after?"
                 ),
                 (
-                    f"Hey! Just so I can point you in the right direction — are you looking at a "
+                    f"Hey! Just so I can point you in the right direction, are you looking at a "
                     f"bathroom renovation, kitchen reno, or a new installation?\n\n"
                     f"We price the job upfront so you know exactly what you're paying before anything starts."
                 ),
                 (
-                    f"We're getting booked up this week — if you're still keen, which service "
+                    f"We're getting booked up this week. If you're still keen, which service "
                     f"were you after? Bathroom, kitchen, or new plumbing installation?"
                 ),
                 (
@@ -1777,7 +1789,7 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                 ),
                 (
                     f"Hi there, the more detail you can share about the {service} job, "
-                    f"the more accurate we can be with the price — what exactly needs doing?"
+                    f"the more accurate we can be with the price. What exactly needs doing?"
                 ),
                 (
                     f"Hi there, we're booking up this week. "
@@ -1789,15 +1801,15 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             ],
             'area': [
                 (
-                    f"Hi there, I just need your area to finish the booking — "
-                    f"which suburb are you based in?"
+                    f"Hi there, I just need your area to finish the booking. "
+                    f"Which suburb are you based in?"
                 ),
                 (
                     f"Hi there, we've done a number of renovations{area_or_ours} recently — "
                     f"just need your suburb to match you with the right team."
                 ),
                 (
-                    f"Almost done — we're booking up this week. "
+                    f"Almost done. We're booking up this week, "
                     f"Which suburb are you in so we can lock in your slot?"
                 ),
                 (
@@ -1806,7 +1818,7 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             ],
             'availability': [
                 (
-                    f"Hi there, what day works best for the free site visit — "
+                    f"Hi there, what day works best for the free site visit? "
                     f"we have slots this week and next."
                 ),
                 (
@@ -1814,7 +1826,7 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                     f"Would tomorrow or later this week work for the visit?"
                 ),
                 (
-                    f"We're getting tight on slots this week — "
+                    f"We're getting tight on slots this week. "
                     f"which day works for the site visit?"
                 ),
                 (
@@ -1827,11 +1839,11 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
                     f"Just say the word and I'll confirm your slot."
                 ),
                 (
-                    f"Hi there, your {service} slot is ready — the price is fixed once we confirm. "
+                    f"Hi there, your {service} slot is ready. The price is fixed once we confirm, "
                     f"What's the best time to lock it in?"
                 ),
                 (
-                    f"We're booking up — shall I lock in your {service} slot?"
+                    f"We're booking up, shall I lock in your {service} slot?"
                 ),
                 (
                     f"Still want to get the {service} sorted?"

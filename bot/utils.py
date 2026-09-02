@@ -126,6 +126,112 @@ def strip_emojis(text: str) -> str:
     return cleaned.strip()
 
 
+# ── Dashes: the punctuation that makes copy read as written, not texted ─────
+# Nobody types an em dash on a phone. A reply full of them reads as drafted
+# prose, which is exactly the tell we do not want on WhatsApp, so every dash
+# used as PUNCTUATION comes out of customer-facing copy.
+#
+# Hyphens INSIDE words stay: "on-site", "all-in", "wall-hung", "call-out",
+# "20-minute" are how people actually write, and stripping them would produce
+# "onsite" and "allin". The rule is about the dash that joins clauses, not the
+# hyphen that joins words.
+
+# A range: "8am - 6pm", "Sun–Fri", "8:00–18:00". Reads as "to" in speech, so
+# that is what it becomes. Checked BEFORE the clause dash, since "Sun–Fri" has
+# no spaces and would otherwise survive.
+_RANGE_DASH_RE = re.compile(
+    r'(?<=[\w.])\s*[—–-]\s*(?=[\w])'
+    r'(?=(?:\d|Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))',
+    re.IGNORECASE,
+)
+
+# A dash joining clauses: em, en, or a hyphen with a space on at least one
+# side. "US$20 - free if we do the job", "the visit is free — we come round".
+_CLAUSE_DASH_RE = re.compile(r'\s*[—–]\s*|\s+-{1,2}\s+|\s+-(?=\s)|(?<=\s)-{2,}\s*')
+
+# A dash opening a line is a bullet, not punctuation. It keeps its job as a
+# list marker but stops being a dash.
+_BULLET_DASH_RE = re.compile(r'^([ \t]*)[—–-]{1,2}[ \t]+', re.MULTILINE)
+
+# What follows the dash decides the replacement. A clause that stands on its
+# own becomes its own sentence; a fragment hangs off a comma.
+_INDEPENDENT_RE = re.compile(
+    r'^(?:and\s+|so\s+)?(?:we|i|you|they|he|she|it|there|here|now|then|'
+    # An interrogative always opens a sentence of its own.
+    r'what|when|where|which|how|who|why|shall|would|could|'
+    r'ndeipi|munoda|unoda|mungada|chii|rinhi|'
+    r'that|this|these|those|the|our|your|my|his|her|its|no|yes|just|'
+    r'nothing|everything|ndi|ti|va|mu|zvi|hapana|hongu|kwete)\b',
+    re.IGNORECASE,
+)
+_SENTENCE_END_RE = re.compile(r'[.!?]["\')\]]?$')
+
+
+def _dash_replacement(before: str, after: str) -> str:
+    """Comma or full stop, whichever the two halves actually want."""
+    if not after:
+        return ''
+    before = before.rstrip()
+    if not before or _SENTENCE_END_RE.search(before):
+        return ' '
+    # A short interjection wants its own stop: "Perfect - thanks, Tendai"
+    # reads as "Perfect. Thanks, Tendai", never "Perfect, thanks, Tendai".
+    if len(before.split()) <= 3 and not before.endswith(','):
+        return '. '
+    # A trailing fragment with no verb of its own hangs off a comma; a clause
+    # that could stand alone gets to be its own sentence.
+    if _INDEPENDENT_RE.match(after.lstrip()) and len(after.split()) > 2:
+        return '. '
+    return ', '
+
+
+def strip_dashes(text: str) -> str:
+    """Take the dash punctuation out of customer-facing copy.
+
+    Ranges become "to", bullet leaders become a bullet, and a clause dash
+    becomes the comma or full stop the sentence was reaching for. Intra-word
+    hyphens are left exactly as they are.
+    """
+    if not text:
+        return text
+    out = _BULLET_DASH_RE.sub(r'\1• ', text)
+    out = _RANGE_DASH_RE.sub(' to ', out)
+
+    # Walk the clause dashes so each replacement can see its own context.
+    result = []
+    pos = 0
+    for m in _CLAUSE_DASH_RE.finditer(out):
+        before = out[pos:m.start()]
+        after = out[m.end():]
+        # A line break already does the dash's job; don't add punctuation.
+        if '\n' in m.group(0):
+            result.append(before)
+            result.append(m.group(0))
+            pos = m.end()
+            continue
+        rep = _dash_replacement(''.join(result) + before, after)
+        result.append(before)
+        if rep == '. ':
+            # The new sentence has to start like one.
+            tail = after.lstrip()
+            result.append('. ')
+            out = out[:m.end()] + tail[:1].upper() + tail[1:]
+            pos = m.end()
+            continue
+        result.append(rep)
+        pos = m.end()
+    result.append(out[pos:])
+    cleaned = ''.join(result)
+
+    # Removing a dash can leave doubled punctuation or a space before it.
+    cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
+    cleaned = re.sub(r'[ \t]+([.,!?;:])', r'\1', cleaned)
+    cleaned = re.sub(r',\s*([.!?])', r'\1', cleaned)
+    cleaned = re.sub(r'\.\s*\.', '.', cleaned)
+    cleaned = re.sub(r'[ \t]+\n', '\n', cleaned)
+    return cleaned.strip()
+
+
 def _append_admin_note(appointment, message):
     timestamp = timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M')
     existing = appointment.admin_notes or ''

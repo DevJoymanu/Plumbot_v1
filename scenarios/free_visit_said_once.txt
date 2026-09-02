@@ -1,0 +1,39 @@
+# The free visit is said ONCE, at the start (owner note, 2026-09-02).
+# "free site visit" / "free assessment" / "free of charge" was landing in
+# almost every reply — the opener, the price answer, the booking close, the
+# follow-ups. Said once it is the USP that earns the appointment; said six
+# times it reads as pleading and drags a lead who already accepted the visit
+# back onto the subject of money.
+#
+# The rule: the claim goes out in the first reply that pitches the visit and
+# is de-qualified in every later one, UNLESS the lead asks what the visit
+# costs — the customer's own words always outrank the gate (CLAUDE.md).
+# Enforced at the outbound choke point by strip_repeat_free_visit, so it
+# catches the LLM paths too, not just the hardcoded copy.
+#
+# The pitch itself must survive: only the price claim comes off, never the
+# offer of the visit.
+
+> Hi, I'm looking at redoing my bathroom
+expect: bathroom
+
+# First mention of the visit — "free" is allowed here and nowhere after.
+> How much would that cost?
+expect: US$
+
+> Borrowdale
+reject: free
+reject: no charge
+reject: costs nothing
+
+# Still offering the visit, just not re-pricing it.
+> Ok what's the next step?
+reject: free
+reject: free of charge
+
+> Tuesday works
+reject: free
+
+# The lead asks outright — they get the straight answer, gate or no gate.
+> And the visit itself, is it free?
+expect: free

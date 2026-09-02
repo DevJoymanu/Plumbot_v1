@@ -244,6 +244,12 @@ class TenantProfile(models.Model):
     # copy only changes for a tenant who deliberately sets a figure.
     consultation_fee = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True)
+    # "US$X call-out — free if we do the job": the fee is charged to come out
+    # and quote, then dropped when the customer goes ahead. It is a different
+    # offer from a flat fee and reads very differently to a lead, so it is its
+    # own flag rather than a convention on the figure. Meaningless without a
+    # consultation_fee, and False (a flat fee) stays the default.
+    consultation_fee_waived_on_job = models.BooleanField(default=False)
     packages = models.JSONField(default=list, blank=True)
     sales_profile_md = models.TextField(blank=True, default='')
     faq_facts = models.JSONField(default=dict, blank=True)

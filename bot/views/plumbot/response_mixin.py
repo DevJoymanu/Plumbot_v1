@@ -27,7 +27,7 @@ from ...services.clients import (
 from ...utils import (
     _to_decimal, _to_float,
     clean_phone_number, format_phone_number_for_storage,
-    _append_admin_note, strip_emojis,
+    _append_admin_note, strip_emojis, strip_dashes,
 )
 from ...whatsapp_cloud_api import whatsapp_api
 
@@ -275,13 +275,13 @@ def build_cold_opener(tenant=None, is_shona: bool = False) -> str:
     if is_shona:
         return (
             "Mhoro,\n"
-            "Tinogadzira zvepaipi dzemubathroom nemukitchen — kuisa zvitsva, "
+            "Tinogadzira zvepaipi dzemubathroom nemukitchen. Kuisa zvitsva, "
             "kuvandudza, nekugadzirisa zvakafa.\n\n"
             "Muri kuda kuisa zvitsva here, kana kugadziridza zvamunazvo?"
         )
     return (
         "Hello,\n"
-        "We handle bathroom and kitchen plumbing — installations, renovations "
+        "We handle bathroom and kitchen plumbing. Installations, renovations "
         "and repairs.\n\n"
         "Are you looking at a new installation, or a renovation of what you have?"
     )
@@ -433,7 +433,7 @@ def strip_known_questions(reply: str, appointment):
 # while a fee sentence was appended underneath it. Dropping loses a little copy
 # and can never produce a false promise.
 _FREE_CLAIM_RE = re.compile(
-    r"\bfree\b|\bfree\s+of\s+charge\b|\bno\s+charge\b|\bat\s+no\s+cost\b"
+    r"\bfree\b(?![-\s]?stand)|\bfree\s+of\s+charge\b|\bno\s+charge\b|\bat\s+no\s+cost\b"
     r"|\b(costs?|charges?)\s+(you\s+)?nothing\b|\bnothing\s+to\s+pay\b"
     r"|\byemahara\b|\bmahara\b",
     re.IGNORECASE,
@@ -447,7 +447,31 @@ _VISIT_WORD_RE = re.compile(
 )
 
 
-def strip_free_visit_claims(reply: str, appointment):
+def _visit_fee_already_stated(appointment, cfg) -> bool:
+    """Have we already told this lead what the call-out costs?
+
+    Matched on the fee sentence itself, not on the bare figure: "US$20" also
+    turns up as a fixture price, and a false "already told them" would mean the
+    fee never gets stated at all. Wording that drifts away from the sentence
+    fails toward saying it once more, which is the safe direction.
+    """
+    wordings = {cfg.visit_cost_sentence(False).strip(),
+                cfg.visit_cost_sentence(True).strip(),
+                cfg.visit_price_note(False).strip(),
+                cfg.visit_price_note(True).strip()}
+    wordings.discard('')
+    if not wordings:
+        return False
+    for turn in getattr(appointment, 'conversation_history', None) or []:
+        if not isinstance(turn, dict) or turn.get('role') != 'assistant':
+            continue
+        content = str(turn.get('content') or '')
+        if any(w in content for w in wordings):
+            return True
+    return False
+
+
+def strip_free_visit_claims(reply: str, appointment, message: str = None):
     """Drop any 'the visit is free' claim when this tenant charges a fee, and
     state the fee once instead.
 
@@ -465,28 +489,383 @@ def strip_free_visit_claims(reply: str, appointment):
     dropped = False
     kept_parts = []
     for part in reply.split(MESSAGE_SPLIT_MARKER):
-        kept = []
-        for sentence in _split_sentences(part):
-            if _FREE_CLAIM_RE.search(sentence) and _VISIT_WORD_RE.search(sentence):
-                dropped = True
-                continue
-            kept.append(sentence)
-        kept_parts.append(" ".join(kept).strip())
+        kept_lines = []
+        # Line by line, so paragraph breaks survive. Splitting the whole part
+        # into sentences and re-joining on a space flattened every reply this
+        # touched — a fee tenant's opener arrived as one run-on block.
+        for line in part.split("\n"):
+            # De-qualify FIRST: "come round for a free site visit and look
+            # at the space?" only needs the word "free" gone, and deleting
+            # the whole sentence took the question with it — a fee tenant's
+            # lead got "Good one." and nothing to answer. Dropping stays the
+            # fallback for claims that cannot survive the word coming out.
+            if _VISIT_WORD_RE.search(line) and _FREE_MENTION_RE.search(line):
+                line, before = _dequalify_line(line), line
+                if line != before:
+                    dropped = True
+            kept = []
+            for sentence in (_split_sentences(line) or [line]):
+                if _FREE_CLAIM_RE.search(sentence) and _VISIT_WORD_RE.search(sentence):
+                    dropped = True
+                    continue
+                if sentence.strip():
+                    kept.append(sentence.strip())
+            kept_lines.append(" ".join(kept))
+        kept_parts.append(_tidy_after_removal("\n".join(kept_lines)))
 
     cleaned = MESSAGE_SPLIT_MARKER.join(p for p in kept_parts if p).strip()
     fee_sentence = cfg.visit_cost_sentence()
 
-    # Say what it costs whenever the reply is about visiting at all, or when a
-    # free claim was just removed and would otherwise leave a hole.
+    # Say what it costs the FIRST time the reply is about visiting at all, and
+    # after that only when they ask — a price restated on every turn is the
+    # same complaint whether the figure is US$20 or the word "free" (see
+    # strip_repeat_free_visit). Dropping the false promise above is what keeps
+    # this safe: the claim never survives, whether or not the fee is repeated.
     mentions_visit = bool(_VISIT_WORD_RE.search(cleaned))
-    if fee_sentence and (dropped or mentions_visit) \
-            and str(cfg.consultation_fee) not in cleaned:
+    say_fee = (not _visit_fee_already_stated(appointment, cfg)
+               or asks_visit_cost(message))
+    if fee_sentence and (dropped or mentions_visit) and say_fee \
+            and not _states_visit_price(cleaned, cfg):
         cleaned = f"{cleaned}\n\n{fee_sentence}".strip()
 
     if not cleaned:
         # Everything was a free claim. Sending nothing is not an option.
         cleaned = fee_sentence or reply
     return cleaned, cleaned != reply
+
+
+# -- The free visit is a headline, not a refrain -----------------------------
+# "the visit is free" is asserted in ~77 copy sites, and the lead hears it in
+# almost every reply: the opener, the pricing overview, the quote deflection,
+# each booking close, every follow-up and reminder. Said ONCE it is the USP
+# that earns the appointment. Said eight times it stops sounding generous and
+# starts sounding like pleading — and it drags a lead who has already accepted
+# the visit back onto the subject of money, which is the one place we do not
+# want them thinking.
+#
+# So the claim goes out in the FIRST reply that pitches the visit and is
+# de-qualified in every later one. The exception is the standing rule that the
+# customer's own words override any gate (CLAUDE.md): a lead who asks what the
+# visit costs gets the straight answer, however many times they ask.
+#
+# Enforced here, at the same choke point as strip_free_visit_claims, for the
+# same reason — editing seventy-seven copy sites by hand guarantees misses, and
+# the LLM paths compose prose that no copy edit can reach.
+
+# "free" as a word, minus the false friends: a FREE-standing tub is not a price
+# claim, and neither is freeing a blockage.
+_FREE_WORD = r"free\b(?![-\s]?stand)"
+
+# A parenthetical whose WHOLE job is the price claim — "(Free site visit)",
+# "(Site assessment is free)". Removed before anything else, so the adjective
+# pass below can't strand a pointless "(Site visit)" label. Deliberately narrow:
+# it must open on the word or close on "is free", and stay short, so an aside
+# that carries real information — "(final cost confirmed after a free site
+# visit)" — keeps its place and merely loses the adjective.
+_FREE_PARENTHETICAL_RE = re.compile(
+    r"\s*\(\s*(?:" + _FREE_WORD + r"[^()]{0,28}|[^()]{0,28}\bis\s+" + _FREE_WORD
+    + r")\s*\)",
+    re.IGNORECASE,
+)
+
+# A sentence whose ONLY substance is the price claim — "The assessment is
+# free.", "Yes, the site visit and quote are completely free.", "Our site visit
+# and quotation are provided free of charge." Nothing survives de-qualifying
+# these ("...are provided."), so the sentence goes whole.
+_PURE_FREE_ASSERTION_RE = re.compile(
+    r"^(?:yes[,.!]?\s+)?(?:and\s+)?(?:the|our|this|that)\s+"
+    r"(?:on[-\s]?site\s+|site\s+)?"
+    r"(?:visit|assessment|quote|quotation|call[-\s]?out)s?"
+    r"(?:\s+and\s+(?:the\s+)?(?:quote|quotation|visit)s?)?\s+(?:is|are)\s+"
+    r"(?:also\s+)?(?:provided\s+|offered\s+|done\s+|given\s+)?"
+    r"(?:completely\s+|totally\s+|absolutely\s+|100%\s+)?" + _FREE_WORD +
+    r"(?:\s+of\s+charge)?\s*[.!]?$",
+    re.IGNORECASE,
+)
+
+# The same claim as the LEADING clause of a sentence that goes on to say
+# something else: "The site visit and quote are free — our plumber will come
+# and look at the space." Taking the words out in place leaves "The site visit
+# and quote — our plumber will...", so the clause goes and the rest is promoted
+# to a sentence of its own.
+_FREE_LEAD_CLAUSE_RE = re.compile(
+    r"^(?:yes[,.!]?\s+)?(?:and\s+)?(?:the|our|this|that)\s+"
+    r"(?:on[-\s]?site\s+|site\s+)?"
+    r"(?:visit|assessment|quote|quotation|call[-\s]?out)s?"
+    r"(?:\s+and\s+(?:the\s+)?(?:quote|quotation|visit)s?)?\s+(?:is|are)\s+"
+    r"(?:also\s+)?(?:completely\s+|totally\s+|absolutely\s+|100%\s+)?" + _FREE_WORD +
+    r"(?:\s+of\s+charge)?(?:\s*[,\u2014\u2013-]+\s*|\s+and\s+)",
+    re.IGNORECASE,
+)
+
+# "free" used as an ADJECTIVE on the visit — "a free on-site visit". The word
+# comes out in place, article and all, so the sentence survives whole. Unlike
+# the consultation-fee stripper above, dropping the sentence is NOT an option
+# here: these sentences carry the pitch, not just the price claim.
+_FREE_VISIT_ADJ_RE = re.compile(
+    r"\b(?:(a|an|the|our|your)\s+)?"
+    + _FREE_WORD +
+    r"\s+((?:on[-\s]?site|onsite|site|quick|initial|first|no[-\s]?obligation)\s+)*"
+    r"(visits?|assessments?|quotes?|quotations?|call[-\s]?outs?|surveys?"
+    r"|measurements?|inspections?)\b",
+    re.IGNORECASE,
+)
+
+# The claim hung off the end of a sentence that says something else too. Each
+# comes out in place, leaving the sentence standing.
+_FREE_VISIT_TRAILERS = (
+    # The claim tacked on as a trailing clause: "..., and the site visit is free."
+    re.compile(r"\s*[,;]?\s*and\s+(?:the|our|this)\s+(?:on[-\s]?site\s+|site\s+)?"
+               r"(?:visit|assessment|quote|quotation|call[-\s]?out)s?\s+(?:is|are)\s+"
+               r"(?:completely\s+|totally\s+|absolutely\s+|100%\s+)?" + _FREE_WORD
+               + r"(?:\s+of\s+charge)?", re.IGNORECASE),
+    re.compile(r"\s*[,;]?\s*(?:and\s+)?(?:it(?:'s| is)\s+)?" + _FREE_WORD
+               + r"\s+of\s+charge\b", re.IGNORECASE),
+    re.compile(r"\s*[,;]?\s*at\s+no\s+(?:cost|charge)\b", re.IGNORECASE),
+    re.compile(r"\s*[,;]?\s*(?:and\s+)?(?:it\s+)?costs?\s+(?:you\s+)?nothing\b",
+               re.IGNORECASE),
+    re.compile(r"\s*[,;]?\s*(?:and\s+)?there(?:'s| is)\s+no\s+charge\b", re.IGNORECASE),
+    re.compile(r"\s*[,;]?\s*(?:for|totally|completely)\s+" + _FREE_WORD, re.IGNORECASE),
+    # Adverbial: "an exact, all-in figure free on a quick on-site visit",
+    # "confirm the exact figures free when they come out to you".
+    re.compile(r"\b" + _FREE_WORD + r"\s+(?=(?:on|when|at|during|after)\s)",
+               re.IGNORECASE),
+    # Shona.
+    re.compile(r"\s*[,;]?\s*\b(?:ye)?mahara\b", re.IGNORECASE),
+)
+
+# Any mention at all, for the "have we said it yet?" read of the transcript.
+_FREE_MENTION_RE = re.compile(
+    r"\b" + _FREE_WORD + r"|\bno\s+charge\b|\bat\s+no\s+cost\b"
+    r"|\b(?:costs?|charges?)\s+(?:you\s+)?nothing\b|\bnothing\s+to\s+pay\b"
+    r"|\b(?:ye)?mahara\b",
+    re.IGNORECASE,
+)
+
+# "So what does the visit cost?" — asked directly, or as a price question aimed
+# at the visit rather than at a fixture.
+_VISIT_COST_ASK_RE = re.compile(
+    r"(?:how\s+much|what.{0,15}\bcosts?\b|price|charge|marii|mutengo|bhadhar)"
+    r"[^?.!]{0,45}\b(?:visit|assessment|quote|quotation|call[-\s]?out|kuuya|kuzoona)"
+    r"|\b(?:visit|assessment|quote|quotation|call[-\s]?out)\b[^?.!]{0,45}"
+    r"(?:" + _FREE_WORD + r"|costs?\b|charge|mahara)"
+    r"|\bis\s+(?:it|that|this)\s+" + _FREE_WORD +
+    r"|\b(?:ndi|tino|muno)?bhadhar\w*\s+here\b"
+    r"|\bmahara\s+here\b",
+    re.IGNORECASE,
+)
+
+
+def asks_visit_cost(message) -> bool:
+    """Did the lead just ask what the visit / quote costs?
+
+    Deterministic on purpose (CLAUDE.md: short, fuzzy strings get a resolver,
+    not an LLM round-trip). The phrase list is the FAQ's own free_quote
+    triggers, so this gate can never fall out of step with the topic that
+    answers the question.
+    """
+    text = (message or '').strip().lower()
+    if not text:
+        return False
+    from bot.faq import visit_cost_triggers
+    if any(phrase in text for phrase in visit_cost_triggers()):
+        return True
+    return bool(_VISIT_COST_ASK_RE.search(text))
+
+
+def free_visit_already_stated(appointment) -> bool:
+    """Have we already told this lead the visit costs nothing?
+
+    Reads our OWN turns only — a customer writing "free" is not us promising
+    it. Defensive about shape: this runs on live reply paths that are handed
+    test fakes and part-built rows as well as real Appointments.
+    """
+    history = getattr(appointment, 'conversation_history', None) or []
+    for turn in history:
+        if not isinstance(turn, dict) or turn.get('role') != 'assistant':
+            continue
+        content = str(turn.get('content') or '')
+        if _FREE_MENTION_RE.search(content) and _VISIT_WORD_RE.search(content):
+            return True
+    return False
+
+
+def _tidy_after_removal(text: str) -> str:
+    """Close the gaps a removal leaves, without touching paragraph breaks."""
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"[ \t]+([.,!?;:])", r"\1", text)
+    text = re.sub(r"\(\s*\)", "", text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # A removal can strand a doubled full stop or a sentence-opening comma.
+    text = re.sub(r"\.[ \t]*\.", ".", text)
+    text = re.sub(r"(?<=[.!?])[ \t]*,", "", text)
+    return text.strip()
+
+
+def _dequalify_free_adjective(match) -> str:
+    """'a free on-site visit' -> 'an on-site visit', article and capital kept."""
+    article, modifiers, noun = match.group(1), match.group(2) or '', match.group(3)
+    rest = f"{modifiers}{noun}"
+    if article:
+        if article.lower() in ('a', 'an'):
+            article = 'an' if rest[:1].lower() in 'aeiou' else 'a'
+        out = f"{article} {rest}"
+    else:
+        out = rest
+    # "Free site visit" opened the sentence; "Site visit" must still open it.
+    if match.group(0)[:1].isupper():
+        out = out[:1].upper() + out[1:]
+    return out
+
+
+def _dequalify_line(line: str) -> str:
+    """One line of copy with the price claim taken off, sentence by sentence."""
+    kept = []
+    for sentence in (_split_sentences(line) or [line]):
+        stripped = sentence.strip()
+        if _PURE_FREE_ASSERTION_RE.match(stripped):
+            continue
+        promoted = _FREE_LEAD_CLAUSE_RE.sub('', stripped, count=1)
+        if promoted != stripped:
+            sentence = promoted[:1].upper() + promoted[1:]
+        sentence = _FREE_VISIT_ADJ_RE.sub(_dequalify_free_adjective, sentence)
+        for pattern in _FREE_VISIT_TRAILERS:
+            sentence = pattern.sub('', sentence)
+        sentence = sentence.strip()
+        # A removal must never leave a sentence hanging on its verb — "the
+        # site visit and quote are." If that is all that survived, the
+        # sentence was only ever the price claim, so it goes.
+        if sentence and not re.search(r"\b(?:is|are|was|were|be)\s*[.!?]?$",
+                                      sentence, re.IGNORECASE):
+            kept.append(sentence)
+    return " ".join(kept)
+
+
+_VISIT_SHAPE = ("we come round, have a quick look at the space (20 minutes or "
+                "so) and give a fixed quote on the spot")
+
+
+def _states_visit_price(text: str, cfg) -> bool:
+    """Does this piece of copy already say what the visit costs?
+
+    Matched WITH the currency symbol. The bare figure is not enough: a fee of
+    20 matched "Takes about 20 minutes", and the copy then skipped stating the
+    fee because it thought it already had.
+    """
+    if not text:
+        return False
+    fee = cfg.consultation_fee
+    if fee:
+        return f"{cfg.currency}{fee}" in text
+    return bool(_FREE_MENTION_RE.search(text) and _VISIT_WORD_RE.search(text))
+
+
+def visit_price_already_stated(appointment, cfg) -> bool:
+    """Have we told this lead what the visit costs, in either direction?
+
+    The free claim and the fee are the same fact wearing two faces, so the
+    "say it once" rule has to read both — otherwise a tenant who switches from
+    free to a fee, or the reverse, starts the count again mid-conversation.
+    """
+    return (free_visit_already_stated(appointment)
+            or _visit_fee_already_stated(appointment, cfg))
+
+
+def ensure_visit_price_note(reply: str, appointment, message: str = None):
+    """Open the conversation with what the visit costs, once.
+
+    Every lead is quietly asking it, so answering up front — "US$20 call-out
+    fee, free if we do the job", or that the call-out is free — buys trust and
+    takes the question off the table. Answering it AGAIN on every turn is what
+    made the price the subject of the conversation instead of the work, which
+    is what strip_repeat_free_visit undoes.
+
+    Appended LAST at the choke point, after both strippers: the note is
+    tenant-resolved and authoritative, and the fee stripper would otherwise
+    read "FREE if we do the job" as a false promise and drop the sentence.
+
+    Returns (reply, added).
+    """
+    if not reply or not reply.strip():
+        return reply, False
+    from bot.tenant_config import get_config
+    cfg = get_config(getattr(appointment, 'tenant', None))
+    if visit_price_already_stated(appointment, cfg) or _states_visit_price(reply, cfg):
+        return reply, False
+    from bot.repeated_question_detector import detect_language_simple
+    is_shona = detect_language_simple(message or '') == 'shona'
+    note = cfg.visit_price_note(is_shona=is_shona)
+    if not note:
+        return reply, False
+    return f"{reply}\n\n{note}", True
+
+
+def dequalify_free_visit(lead, message: str) -> str:
+    """strip_repeat_free_visit for proactive copy, which has no inbound message.
+
+    A follow-up or a reminder lands in the same thread as the conversation, so
+    the "free site visit" line in a nudge is the fifth or sixth time the lead
+    has read it. Same rule and same resolver as the live reply path; with no
+    current customer message the decision rests entirely on what we have
+    already said.
+    """
+    cleaned, _ = strip_repeat_free_visit(message, lead)
+    # A follow-up is a text message like any other: no dash punctuation.
+    from bot.utils import strip_dashes
+    return strip_dashes(cleaned)
+
+
+def _visit_fact_line(bot) -> str:
+    """The visit fact for the prompt, with "free" said only while it is news.
+
+    strip_repeat_free_visit is the backstop that catches whatever the model
+    writes anyway. This stops it wanting to write it in the first place, so
+    the sentence it composes is a natural one rather than one with a hole cut
+    in it afterwards.
+    """
+    appointment = getattr(bot, 'appointment', None)
+    if appointment is not None and free_visit_already_stated(appointment):
+        return (
+            f"The visit: {_VISIT_SHAPE}. It costs them nothing and they have "
+            f"ALREADY been told that — do NOT say \"free\", \"no charge\" or "
+            f"\"costs nothing\" again unless they ask what the visit costs"
+        )
+    return f"The visit is free: {_VISIT_SHAPE}"
+
+
+def strip_repeat_free_visit(reply: str, appointment, message: str = None):
+    """Take "free" off the visit once this lead has already been told.
+
+    Returns (reply, changed). Untouched on the first mention — that one is the
+    pitch — and untouched whenever the current message asks what the visit
+    costs, because the customer's own words outrank the gate.
+    """
+    if not reply or not reply.strip():
+        return reply, False
+    if asks_visit_cost(message):
+        return reply, False
+    if not free_visit_already_stated(appointment):
+        return reply, False
+
+    out_parts = []
+    for part in reply.split(MESSAGE_SPLIT_MARKER):
+        # Only where the copy is about the visit at all — "free" on a
+        # freestanding tub or a free delivery of parts is not this claim.
+        if not _VISIT_WORD_RE.search(part) or not _FREE_MENTION_RE.search(part):
+            out_parts.append(part)
+            continue
+        cleaned = _FREE_PARENTHETICAL_RE.sub('', part)
+        # Line by line, so paragraph breaks survive the sentence pass.
+        cleaned = "\n".join(_dequalify_line(line) for line in cleaned.split("\n"))
+        out_parts.append(_tidy_after_removal(cleaned))
+
+    result = MESSAGE_SPLIT_MARKER.join(p for p in out_parts if p.strip())
+    if not result.strip():
+        # Everything the reply had to say was the price claim. Sending nothing
+        # is never the answer — keep the original.
+        return reply, False
+    return result, result != reply
 
 
 def build_cold_opener_rule(tenant=None, is_shona: bool = False) -> str:
@@ -700,8 +1079,8 @@ class ResponseMixin:
             if self._declines_sharing_name(incoming_message):
                 self._mark_customer_name_declined()
                 return (
-                    "No problem at all. Your appointment is still confirmed — "
-                    "we'll use this WhatsApp number for updates."
+                    "No problem at all. Your appointment is still confirmed. "
+                    "We'll use this WhatsApp number for updates."
                 )
             parsed_name = self._parse_name_from_reply(incoming_message)
             if parsed_name:
@@ -722,7 +1101,7 @@ class ResponseMixin:
                     "If you'd rather not share it, just say no."
                 )
             return (
-                "One last thing — what name should we put on the booking? "
+                "One last thing, what name should we put on the booking? "
                 "If you'd rather not share it, just say no."
             )
 
@@ -773,22 +1152,22 @@ class ResponseMixin:
 
             if 'drain' in svc:
                 return (
-                    "Which drain is blocked — kitchen, bathroom, or outside? "
+                    "Which drain is blocked, the kitchen, bathroom or outside one? "
                     "And is it draining slowly or completely backed up?"
                 )
             if 'pipe' in svc:
                 return (
-                    "Where's the pipe — in a wall, under a sink, or outside? "
+                    "Where's the pipe, in a wall, under a sink, or outside? "
                     "And is it dripping or has it fully burst?"
                 )
             if 'geyser' in svc and 'repair' in svc:
                 return (
-                    "Is the geyser not heating at all, leaking, or just making noise — "
+                    "Is the geyser not heating at all, leaking, or just making noise, "
                     "and how long has it been like that?"
                 )
             if 'toilet' in svc and 'repair' in svc:
                 return (
-                    "What's the toilet doing — leaking at the base, not flushing, "
+                    "What's the toilet doing, leaking at the base, not flushing, "
                     "or running continuously?"
                 )
             # Generic case — the approved script, verbatim.
@@ -974,12 +1353,12 @@ class ResponseMixin:
             get them the exact number for their space (i.e. the free visit)."""
             if language == "shona":
                 return (
-                    "Mutengo iwoyo wakasanganisa zvese — zvigadzirwa, kuiswa, basa "
+                    "Mutengo iwoyo wakasanganisa zvese. Zvigadzirwa, kuiswa, basa "
                     "rese rapera, pasina zvimwe zvinowedzerwa pazuva racho.\n\n"
                     "Ndokutorerai mutengo chaiwo wenzvimbo yenyu here?"
                 )
             return (
-                "That's everything in — supply, install, fully fitted, no extras on "
+                "That's everything in. Supply, install, fully fitted, no extras on "
                 "the day.\n\n"
                 "Want me to sort you the exact number for your space?"
             )
@@ -1051,9 +1430,9 @@ class ResponseMixin:
                 self._park_timeline_lead(offered_date, source_message=offered_timeframe)
                 when = self._friendly_visit_date(d)
                 if is_shona:
-                    return (f"Hapana kumhanya — {when} ichiri kure, saka ndichazviisa "
+                    return (f"Hapana kumhanya. {when} ichiri kure, saka ndichazviisa "
                             "pasi tozokubatai pedyo nenguva yacho. Zvakanaka here?")
-                return (f"No rush at all — {when} is a way out yet, so I'll make a note "
+                return (f"No rush at all. {when} is a way out yet, so I'll make a note "
                         "and we'll reach out closer to the time to lock it in. Sound good?")
 
             # Hard date within a week — lock it, ask an assumptive time slot.
@@ -1261,6 +1640,7 @@ class ResponseMixin:
                         "in their own words — is the only thing they're looking to get "
                         "sorted (e.g. \"Is a shower room the only thing you're looking to "
                         "get sorted?\"). Zimbabwean English. No emojis, no markdown. "
+                        "Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung). "
                         "Invent nothing — no prices or details not in the reference."
                     )
                 else:
@@ -1363,16 +1743,16 @@ class ResponseMixin:
                     "Which day would suit you best?"
                 )
             if next_question == "availability_time":
-                return ("Mangwanani kana masikati — ndeipi inokukodzerai?"
+                return ("Mangwanani kana masikati, ndeipi inokukodzerai?"
                         if is_shona else
-                        "Morning or afternoon — which suits you better?")
+                        "Morning or afternoon, which suits you better?")
             if next_question == "area":
                 return ("Muri munzvimbo ipi?" if is_shona
                         else "Whereabouts are you based?")
             if next_question == "name":
                 return "Tingaisa zita ripi pabhooking?" if is_shona else "What name should we put on the booking?"
             return (
-                "Svondo rino kana svondo rinouya — ndeipi yakanakira kuti "
+                "Svondo rino kana svondo rinouya, ndeipi yakanakira kuti "
                 "tiuye kuzotarisa nzvimbo?"
                 if is_shona else
                 "Would this week or next suit better for us to come round and "
@@ -1615,7 +1995,7 @@ class ResponseMixin:
                 dt = self.appointment.scheduled_datetime.astimezone(sa_tz)
                 formatted = dt.strftime('%A, %B %d at %I:%M %p')
                 return (
-                    f"Perfect — see you on {formatted}! "
+                    f"Perfect, see you on {formatted}! "
                     "We will call you 30 minutes before arrival. "
                     "Feel free to message anytime if you have questions."
                 )
@@ -1755,13 +2135,13 @@ class ResponseMixin:
             turn was already a tie-down)."""
             _fbp = facebook_package_facts(self.tenant_cfg)
             if language == 'shona':
-                body = ("Ehe — iyi ndiyo mitengo yedu yazvino, yakafanana neya "
+                body = ("Ehe, iyi ndiyo mitengo yedu yazvino, yakafanana neya "
                         "paFacebook page yedu.")
                 if _fbp is not None and _fbp['sn']:
                     body += (f" {_fbp['label']} yeUS${_fbp['price']} ine "
                              f"{_fbp['sn']}, zvaiswa.")
             else:
-                body = ("Yes — those are our current prices, the same as on our "
+                body = ("Yes, those are our current prices, the same as on our "
                         "Facebook page.")
                 if _fbp is not None and _fbp['en']:
                     body += (f" The US${_fbp['price']} {_fbp['label']} specifically "
@@ -2022,12 +2402,12 @@ class ResponseMixin:
                 return None
             if is_shona:
                 joined = ", ".join(names[:-1]) + f" ne {names[-1]}"
-                return f"Muri kuda kuita zvese — {joined} — kana kutanga nechimwe chete?"
+                return f"Muri kuda kuita zvese, {joined}, kana kutanga nechimwe chete?"
             if len(names) == 2:
                 return (f"Are you looking to do both the {names[0]} and {names[1]}, "
                         f"or starting with one?")
             joined = ", ".join(names[:-1]) + f" and {names[-1]}"
-            return f"Are you looking to do all of them — {joined} — or starting with one?"
+            return f"Are you looking to do all of them, {joined}, or starting with one?"
 
         def _asks_about_labour(self, message: str) -> bool:
             """True when the customer is asking specifically about labour / install
@@ -2196,7 +2576,7 @@ class ResponseMixin:
                  "in use at the moment"),
             ],
             'detail': [
-                ("What accessories are you after with the {fixture} — screens, rails, mixers?",
+                ("What accessories are you after with the {fixture}, screens, rails, mixers?",
                  "accessories are you after"),
                 ("Any particular brand or finish in mind, or should we quote our standard range?",
                  "brand or finish"),
@@ -2595,13 +2975,13 @@ class ResponseMixin:
                 )
             return (
                 "Tinotengesa material yeplumbing, uye tinogona kuiisawo.\n\n"
-                "Nditumirei list yezvamunoda — kana plan yenyu kana muinayo — "
+                "Nditumirei list yezvamunoda, kana plan yenyu kana muinayo, "
                 "tokugadzirirai quotation yakanyorwa nemutengo wechinhu chimwe "
                 "nechimwe."
                 if is_shona else
                 "We supply the materials as well as fit them.\n\n"
-                "Send me the list of what you need — or your plan if you have "
-                "one — and we'll put a written quotation together with a price "
+                "Send me the list of what you need, or your plan if you have "
+                "one, and we'll put a written quotation together with a price "
                 "against each item."
             )
 
@@ -2645,7 +3025,7 @@ class ResponseMixin:
                 return "All good, what area are you in?"
             if next_question == 'name':
                 return (
-                    "One last thing — what name should we put on the booking? "
+                    "One last thing, what name should we put on the booking? "
                     "If you'd rather not share it, just say no."
                 )
             return "When suits you for us to come through and take a look?"
@@ -2981,12 +3361,12 @@ class ResponseMixin:
                     ).lower()
                     if 'whenever you' in _last_bot:
                         reply = (
-                            "All good — just message me whenever you're ready and "
+                            "All good, just message me whenever you're ready and "
                             "we'll pick it up from there"
                         )
                     else:
                         reply = (
-                            "No worries Whenever you're ready — are you after a "
+                            "No worries. Whenever you're ready, are you after a "
                             "bathroom or kitchen reno, a new installation, or a "
                             "specific repair? I can give you a rough price or set up "
                             "a free site visit."
@@ -3159,7 +3539,7 @@ class ResponseMixin:
                         booking_result = self.book_appointment_with_selected_time(selected_time)
                         if booking_result['success']:
                             reply = (
-                                "One last thing — what name should we put on the booking? "
+                                "One last thing, what name should we put on the booking? "
                                 "If you'd rather not share it, just say no."
                             )
                         else:
@@ -3252,7 +3632,7 @@ class ResponseMixin:
                     # Bulawayo). It also read wrong: work "closer to Bulawayo" is the
                     # opposite of what we mean — nearer US.
                     reply = (
-                        f"Ah, sorry — {_city} is a bit far for our team to travel to, "
+                        f"Ah, sorry. {_city} is a bit far for our team to travel to, "
                         f"so we can't take this one on properly.\n\n"
                         f"If you've got a project nearer our side in future, we'd be "
                         f"glad to help."
@@ -3290,8 +3670,8 @@ class ResponseMixin:
                 _scope_q = any(q in _msg_lc for q in ('do you do', 'do u do', 'do you also', 'do u also', 'can you do', 'can u do'))
                 if 'garage' in _msg_lc and (_scope_q or '?' in incoming_message):
                     reply = (
-                        "Yes! We handle all plumbing work in garages and outbuildings — "
-                        "sinks, water points, drainage, and pipework. \n\n"
+                        "Yes! We handle all plumbing work in garages and outbuildings, from "
+                        "sinks and water points to drainage and pipework. \n\n"
                         "Is this for a garage at the same property, or is it a separate job?"
                     )
                     self.appointment.add_conversation_message("user", incoming_message)
@@ -3306,7 +3686,7 @@ class ResponseMixin:
                     booking_result = self.book_appointment(incoming_message)
                     if booking_result['success']:
                         reply = (
-                            "One last thing — what name should we put on the booking? "
+                            "One last thing, what name should we put on the booking? "
                             "If you'd rather not share it, just say no."
                         )
                     else:
@@ -3352,7 +3732,7 @@ class ResponseMixin:
                         else:
                             alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
                             reply = (
-                                f"That slot just got taken — here are the next available times:\n"
+                                f"That slot just got taken. Here are the next available times:\n"
                                 f"{alt_text}\n\nWhich works better for you?"
                             )
                 else:
@@ -3498,7 +3878,7 @@ class ResponseMixin:
 
             except Exception as e:
                 print(f"❌ API Error: {str(e)}")
-                return "Sorry, dropped that on our end — could you send that again?"
+                return "Sorry, dropped that on our end. Could you send that again?"
 
 
         def generate_contextual_response(self, incoming_message, next_question, updated_fields, quoted_context=None):
@@ -3601,7 +3981,7 @@ class ResponseMixin:
 
             except Exception as e:
                 print(f"❌ Error generating contextual response: {str(e)}")
-                return "Sorry, dropped that on our end — could you send that again?"
+                return "Sorry, dropped that on our end. Could you send that again?"
 
 
         def _classify_availability_response(self, message: str, offered_days: list) -> dict:
@@ -4154,7 +4534,7 @@ class ResponseMixin:
                         f"Perfect, for {day_label} — "
                         f"what works better: {time_a} or {time_b}?"
                     )
-                return "What time works best for you — 9am or 2pm?"
+                return "What time works best for you, 9am or 2pm?"
 
             if next_question == "area":
                 return "All good, what area are you in?"
@@ -4257,6 +4637,7 @@ class ResponseMixin:
     - No markdown, no bold, no bullet points in the question itself
     - One question only — never stack two questions
     - No emojis at all, at any retry count
+    - Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung).
     - Never say "just checking in", "following up", "hope you're well"
     - Never use the customer's name (we may not know it)
     - Sound like a real person texting, not a bot
@@ -4287,7 +4668,8 @@ class ResponseMixin:
                     max_tokens=200,
                 )
                 reply = response.choices[0].message.content.strip()
-                reply = strip_emojis(reply.replace('**', '').replace('__', ''))
+                reply = strip_dashes(
+                    strip_emojis(reply.replace('**', '').replace('__', '')))
                 print(
                     f" Retry response | q={next_question} retry={retry_count} "
                     f"updated={updated_fields}"
@@ -4347,9 +4729,9 @@ class ResponseMixin:
                 if 'bathroom' in service:
                     return "Bathroom renovations are actually our most popular service right now."
                 if 'kitchen' in service:
-                    return "Kitchen plumbing is one of our specialities — great choice."
+                    return "Kitchen plumbing is one of our specialities, great choice."
                 if 'installation' in service:
-                    return "New installations are something we handle from scratch — no problem at all."
+                    return "New installations are something we handle from scratch, no problem at all."
                 return "That's actually one of the services we do most frequently."
 
             if 'project_description' in updated_fields:
@@ -4359,14 +4741,14 @@ class ResponseMixin:
                         "which keeps costs down."
                     )
                 if any(w in desc for w in ('new', 'from scratch', 'building')):
-                    return "Starting fresh gives us more flexibility with the layout — good to know."
+                    return "Starting fresh gives us more flexibility with the layout, good to know."
                 return "That gives us a much clearer picture of the job."
 
             if 'availability' in updated_fields and next_question == 'availability_time':
                 return "That day works well on our side."
 
             if 'availability' in updated_fields and next_question == 'area':
-                return "That time is noted — almost there."
+                return "That time is noted, almost there."
 
             return ""
 
@@ -4439,13 +4821,13 @@ class ResponseMixin:
             """
             fallbacks = {
                 'service_type': [
-                    "Which service were you after — bathroom, kitchen, or a new installation?",
-                    "Bathroom, kitchen, or new installation — which one?",
-                    "Just to confirm — which service do you need?",
+                    "Which service were you after, bathroom, kitchen, or a new installation?",
+                    "Bathroom, kitchen, or new installation?",
+                    "Just to confirm, which service do you need?",
                 ],
                 'project_description': [
                     self._get_contextual_description_question(),
-                    "What exactly needs doing — the more detail the better for the quote.",
+                    "What exactly needs doing? The more detail the better for the quote.",
                     "What's the main thing you want sorted?",
                 ],
                 'availability_date': [
@@ -4454,7 +4836,7 @@ class ResponseMixin:
                     "What day works for you?",
                 ],
                 'availability_time': [
-                    "What works better for you — 9AM or 2PM?",
+                    "What works better for you, 9AM or 2PM?",
                     "Would 9AM or 2PM suit you for the visit?",
                     "9AM or 2PM?",
                 ],
@@ -4585,12 +4967,12 @@ class ResponseMixin:
             name = self.appointment.plumber_display_name()
             if number:
                 return (
-                    f"Let me get the right person to help you directly — "
+                    f"Let me get the right person to help you directly. "
                     f"you can reach {name} on +{number} and he'll sort it from there.\n\n"
                     "Or just tell me in a few words what you need and I'll take it from there."
                 )
             return (
-                "Let me get the right person to help you directly — "
+                "Let me get the right person to help you directly. "
                 "just tell me in a few words what you need and I'll flag it for the team."
             )
 
@@ -4823,7 +5205,8 @@ class ResponseMixin:
                     max_tokens=150
                 )
 
-                clarifying_question = strip_emojis(response.choices[0].message.content.strip())
+                clarifying_question = strip_dashes(
+                    strip_emojis(response.choices[0].message.content.strip()))
                 print(f"🤖 Generated clarifying question (retry {retry_count}): {clarifying_question[:100]}...")
             
                 return clarifying_question
@@ -6484,7 +6867,7 @@ class ResponseMixin:
                                 f"Perfect, for {day_label} — "
                                 f"what works better: {time_a} or {time_b}?"
                             )
-                        return "What time works best for you — 9am or 2pm?"
+                        return "What time works best for you, 9am or 2pm?"
 
                     if next_question == "area":
                         return "All good, what area are you in?"
@@ -6506,7 +6889,8 @@ class ResponseMixin:
         NEVER use bullet points in a chat message.
         NEVER stack two questions in one message.
         NEVER use contractions — write "we will" not "we'll", "they will" not "they'll".
-        NEVER use emojis — not one, not at the end, not anywhere.
+        NEVER use emojis, not one, not at the end, not anywhere.
+        Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung).
         Use "we" not "I" or "our" — you represent the whole team.
         The plumber's name is {self.appointment.plumber_display_name()}.
 
@@ -6576,7 +6960,7 @@ class ResponseMixin:
     
             except Exception as e:
                 print(f"❌ Error generating contextual response: {str(e)}")
-                return "Sorry, dropped that on our end — could you send that again?"
+                return "Sorry, dropped that on our end. Could you send that again?"
 
 
         def _is_standalone_question(self, message: str) -> bool:
@@ -6682,7 +7066,7 @@ class ResponseMixin:
                     return scripted
             if nq == 'name':
                 return (
-                    "One last thing — what name should we put on the booking? "
+                    "One last thing, what name should we put on the booking? "
                     "If you'd rather not share it, just say no."
                 )
             return None
@@ -6811,7 +7195,7 @@ class ResponseMixin:
         - Works by appointment (not walk-ins)
         - Working days: {_hours_days(self)}
         - Business hours: {_hours_clock(self)}{_emergency_fact(self)}
-        - The visit is free: we come round, have a quick look at the space (20 minutes or so) and give a fixed quote on the spot
+        - {_visit_fact_line(self)}
         - The plumber's name is {self.appointment.plumber_display_name()} — ONLY say it if they ask who is coming or who they are dealing with
         - Plumber direct contact: {self.appointment.plumber_contact() or "not available — offer to have the team call instead"} — ONLY give this out if they ask for a number
 
@@ -6834,6 +7218,7 @@ class ResponseMixin:
         - ONLY give prices, sizes, or measurements if the customer EXPLICITLY asked about price or size. If they did not ask, do NOT mention any prices, sizes, or specifications — just acknowledge what they want and keep it moving. The pricing guide above is for reference only; never volunteer it unprompted.
         - When you DO quote a price, always show the supply + install split using ONLY the figures in the pricing guide above — e.g. "Shower cubicles from US$170 all-in (supply from US$130 + install from US$40)". Never invent figures.
         - Zimbabwean English. No bold, no bullets. Do NOT end with a question.
+        - Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung).
 
         HOW IT SHOULD SOUND — these show REGISTER only. They deliberately carry no
         figures: any price must come from the pricing guide above, which belongs to

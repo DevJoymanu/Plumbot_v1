@@ -438,6 +438,7 @@ RULES:
 - Use simple everyday language — no jargon
 - No markdown headers, no bullet points
 - No emojis
+- Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung).
 - {lang_instruction}
 - Never say "I'm just a bot" — say "I'm the booking assistant" or similar
 - Zimbabwean English tone ("sorted", "sharp", "no worries")
@@ -460,9 +461,10 @@ Write the message now:"""
             **HUMAN_VOICE,
             max_tokens=280,
         )
-        from bot.utils import strip_emojis
+        from bot.utils import strip_emojis, strip_dashes
         reply = response.choices[0].message.content.strip()
-        reply = strip_emojis(reply.replace('**', '').replace('__', ''))
+        reply = strip_dashes(
+            strip_emojis(reply.replace('**', '').replace('__', '')))
         logger.info(f"Generated repeat clarification ({len(reply)} chars)")
         return reply
 

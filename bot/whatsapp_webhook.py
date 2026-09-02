@@ -1,4 +1,4 @@
-﻿"""
+"""
 WhatsApp Cloud API Webhook Handler - ASYNC VERSION
 Handles delays without blocking the webhook response
 
@@ -1991,7 +1991,8 @@ def generate_photo_followup(appointment=None) -> str:
                     "- invites them to point out anything in the photos they liked\n"
                     "- gently nudges toward the free on-site visit / next booking step\n"
                     "Reply in the SAME language the customer used (English or Shona). "
-                    "No emojis. Do not quote a price. Sound like a knowledgeable colleague "
+                    "No emojis. Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung). "
+                    "Do not quote a price. Sound like a knowledgeable colleague "
                     "texting, not a script. Output only the message text."
                 )},
                 {"role": "user", "content": (
@@ -2135,10 +2136,10 @@ def handle_pricing_objection(appointment) -> str:
             f"• The specific fixtures and materials you choose\n"
             f"• The size and complexity of the work\n"
             f"• Your exact location ({appointment.customer_area})\n\n"
-            f"The site visit and quote are completely free — our plumber will "
-            f"{'review your plan' if appointment.has_plan else 'do a free site visit'} "
+            f"The site visit and quote are free — our plumber will "
+            f"{'review your plan' if appointment.has_plan else 'come and look at the space'} "
             f"and give you a fixed price before any work starts.\n\n"
-            f"Shall I lock in that free visit for you?"
+            f"Shall I lock that in for you?"
         )
 
     missing_str = ' and '.join(missing) if len(missing) <= 2 else f"{', '.join(missing[:-1])}, and {missing[-1]}"
@@ -4016,16 +4017,49 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # converges here, which is the point — get_next_question_to_ask honours
         # stored fields but the LLM paths compose their own copy and don't.
         from bot.views.plumbot.response_mixin import (
-            strip_known_questions, strip_free_visit_claims)
+            strip_known_questions, strip_free_visit_claims,
+            strip_repeat_free_visit, ensure_visit_price_note)
         reply, _re_asked = strip_known_questions(reply, appointment)
         if _re_asked:
             print(f"🧠 Memory check dropped re-asked field(s): {sorted(set(_re_asked))}")
 
         # Never promise a free visit a tenant charges for. Inert unless the
-        # tenant has set a consultation fee on their Profile.
-        reply, _fee_fixed = strip_free_visit_claims(reply, appointment)
+        # tenant has set a consultation fee on their Profile. The message is
+        # passed so an explicit "what does the visit cost?" gets the figure
+        # again, the same override the repeat stripper below honours.
+        reply, _fee_fixed = strip_free_visit_claims(reply, appointment, message_body)
         if _fee_fixed:
             print("💵 Consultation fee set — free-visit wording replaced")
+
+        # The visit is free ONCE. After the first time we've said it, "free"
+        # comes off the visit in every later reply — repeating it reads as
+        # pleading and drags a lead who already accepted the visit back onto
+        # the subject of money. A lead who ASKS what it costs still gets the
+        # straight answer: their own words outrank the gate.
+        reply, _dequalified = strip_repeat_free_visit(reply, appointment, message_body)
+        if _dequalified:
+            print("✂️  Free-visit claim already made — not repeating it")
+
+        # ...and the other half of the same rule: the FIRST message says what
+        # the visit costs, so the lead never has to ask. Last in the chain
+        # because the note is tenant-resolved and authoritative — the fee
+        # stripper above would read "FREE if we do the job" as a promise to
+        # break and drop it.
+        reply, _noted = ensure_visit_price_note(reply, appointment, message_body)
+        if _noted:
+            print("💬 Visit price stated once, up front")
+
+        # Nobody types an em dash on a phone. Dash punctuation is the clearest
+        # tell that copy was drafted rather than texted, so it comes out of
+        # every reply here — the one place all of them pass through, and the
+        # only place that can reach what the LLM composed. Hyphens inside
+        # words ("on-site", "all-in") are left alone: those are how people
+        # actually write. This runs LAST, after the price note is appended.
+        from bot.utils import strip_dashes
+        _undashed = strip_dashes(reply)
+        if _undashed != reply:
+            print("➖ Dash punctuation removed from the reply")
+        reply = _undashed
 
         # A reply may be split into two messages (acknowledgement, then the
         # question) via MESSAGE_SPLIT_MARKER — log each piece as its own turn so

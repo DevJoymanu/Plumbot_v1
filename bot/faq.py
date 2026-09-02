@@ -194,6 +194,17 @@ _TRIGGERS = {
 }
 
 
+def visit_cost_triggers() -> tuple:
+    """The phrases that mean "what does the visit/quote cost?".
+
+    Exposed so the copy layer can ask the same question the FAQ asks without
+    keeping a second, drifting copy of the list. Used by
+    ResponseMixin.asks_visit_cost, which is the gate that decides whether the
+    "it's free" claim may be repeated after its first outing.
+    """
+    return tuple(_TRIGGERS['free_quote'])
+
+
 def _tenant_triggers(tenant) -> dict:
     """Name-based triggers built from THIS tenant's own business and plumber.
 

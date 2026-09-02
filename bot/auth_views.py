@@ -132,9 +132,20 @@ def _save_consultation_fee(request, profile) -> None:
             fee = Decimal(raw)
         except (InvalidOperation, TypeError):
             fee = None
+    # "US$X call-out — free if we do the job" is a different offer from a flat
+    # fee, so it is a tick of its own. Meaningless without a figure, and
+    # cleared with the figure so a tenant going back to free cannot leave a
+    # stale waiver behind.
+    waived = bool(fee) and bool(request.POST.get('consultation_fee_waived'))
+    changed = []
     if fee != profile.consultation_fee:
         profile.consultation_fee = fee
-        profile.save(update_fields=['consultation_fee'])
+        changed.append('consultation_fee')
+    if waived != profile.consultation_fee_waived_on_job:
+        profile.consultation_fee_waived_on_job = waived
+        changed.append('consultation_fee_waived_on_job')
+    if changed:
+        profile.save(update_fields=changed)
 
 
 @sensitive_post_parameters()
@@ -408,11 +419,16 @@ def profile_view(request):
                 return redirect('profile')
             _save_consultation_fee(request, profile)
             if profile.consultation_fee:
+                waived_note = (
+                    ' It will say the fee is free if you do the job.'
+                    if profile.consultation_fee_waived_on_job else ''
+                )
                 messages.success(
                     request,
                     f'Call-out fee set to {profile.currency or "US$"}'
                     f'{profile.consultation_fee:g}. The assistant will stop '
-                    f'offering the visit free and quote this instead.',
+                    f'offering the visit free and quote this instead.'
+                    f'{waived_note}',
                 )
             else:
                 messages.success(
@@ -475,6 +491,8 @@ def profile_view(request):
         # The call-out fee has its own card and its own form. None means the
         # visit is free, which is the default for every tenant.
         'consultation_fee': getattr(profile, 'consultation_fee', None) if profile else None,
+        'consultation_fee_waived': (
+            getattr(profile, 'consultation_fee_waived_on_job', False) if profile else False),
         'currency': (getattr(profile, 'currency', '') or 'US$') if profile else 'US$',
     }
 

@@ -436,6 +436,41 @@ class TenantConfig:
             return 'yemahara' if is_shona else 'free'
         return f"{self.currency}{fee}"
 
+    def visit_fee_waived_on_job(self) -> bool:
+        """True when the call-out fee is dropped if the customer goes ahead.
+
+        Only meaningful alongside a consultation_fee — a business with no fee
+        has nothing to waive, and saying so would be noise.
+        """
+        return bool(self.consultation_fee) and bool(
+            self._field('consultation_fee_waived_on_job', False))
+
+    def visit_price_note(self, is_shona: bool = False) -> str:
+        """The one-line note that states what the visit costs, for the FIRST
+        message of a conversation and nowhere else.
+
+        Said once at the top it is a straight answer to the question every lead
+        is quietly asking; repeated it becomes the thing the conversation is
+        about. ensure_visit_price_note is the only caller — see
+        strip_repeat_free_visit for the rule that keeps it to one outing.
+
+        Three offers, three notes, and never another tenant's: a waived fee, a
+        flat fee, or a visit that is genuinely free.
+        """
+        fee = self.consultation_fee
+        if not fee:
+            return ('Chinhu chidiki: *tinouya kuzoona mahara.*' if is_shona
+                    else 'Just a quick note: *the call-out is free.*')
+        amount = f"{self.currency}{fee}"
+        if self.visit_fee_waived_on_job():
+            return (f'Chinhu chidiki: *{amount} yekuuya kuzoona, mahara kana '
+                    f'tikaita basa.*' if is_shona else
+                    f'Just a quick note: *{amount} call-out fee, free if we '
+                    f'do the job.*')
+        return (f'Chinhu chidiki: *kuuya kuzoona kunobhadharwa {amount}.*'
+                if is_shona else
+                f'Just a quick note: *{amount} call-out fee.*')
+
     def visit_cost_sentence(self, is_shona: bool = False) -> str:
         """A whole sentence stating what the visit costs, for copy that offers
         one. '' when the visit is free — the caller then says nothing extra,
@@ -444,6 +479,12 @@ class TenantConfig:
         fee = self.consultation_fee
         if not fee:
             return ''
+        if self.visit_fee_waived_on_job():
+            if is_shona:
+                return (f"Kuuya kuzoona kunobhadharwa {self.currency}{fee}, "
+                        f"asi imahara kana tikaita basa.")
+            return (f"The call-out to quote is {self.currency}{fee}, and it is "
+                    f"free if we do the job.")
         if is_shona:
             return f"Kuuya kuzoona kunobhadharwa {self.currency}{fee}."
         return f"The call-out to quote is {self.currency}{fee}."

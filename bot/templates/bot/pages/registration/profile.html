@@ -129,6 +129,20 @@
                                         and states this amount instead. Clear it to go back to free.
                                     </small>
                                 </div>
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox"
+                                           id="id_consultation_fee_waived"
+                                           name="consultation_fee_waived"
+                                           {% if consultation_fee_waived %}checked{% endif %}>
+                                    <label class="form-check-label" for="id_consultation_fee_waived">
+                                        Waive the fee if we do the job
+                                    </label>
+                                    <small class="d-block text-muted">
+                                        The assistant opens with &ldquo;{{ currency|default:"US$" }}X
+                                        call-out fee &mdash; FREE if we do the job&rdquo; instead of a
+                                        flat fee. Ignored while the fee above is blank.
+                                    </small>
+                                </div>
                                 <button type="submit" class="btn btn-primary">
                                     <i class="fas fa-save me-1"></i>Save call-out fee
                                 </button>

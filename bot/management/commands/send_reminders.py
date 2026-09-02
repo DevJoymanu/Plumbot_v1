@@ -44,6 +44,7 @@ from bot.plumber_notifications import (
 )
 from bot.customer_emails import send_customer_reminder_email
 from bot.whatsapp_window import is_window_open, may_send_proactively
+from bot.views.plumbot.response_mixin import dequalify_free_visit
 
 logger = logging.getLogger(__name__)
 
@@ -839,6 +840,10 @@ class Command(BaseCommand):
                 _WA_FOLLOWUP_NAMED.format(name=name)
                 if has_name else _WA_FOLLOWUP_ANON
             )
+            # The visit is free once, at the start. This lead has read that
+            # line in the conversation already; repeating it in a check-in is
+            # what makes the check-in read as a sales push.
+            wa_msg = dequalify_free_visit(apt, wa_msg)
             window = may_send_proactively(apt)
 
             if window:

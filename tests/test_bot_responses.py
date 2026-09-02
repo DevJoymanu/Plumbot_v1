@@ -3137,7 +3137,10 @@ try:
     _bo = _bfake._handle_budget_objection("english")
     results.log(
         "budget objection: reframes all-in value, offers the exact number (no negotiating)",
-        ("everything in" in _bo and "supply, install" in _bo
+        # Case-insensitive: the copy reads "That's everything in. Supply,
+        # install, ..." now that the dash became a full stop, and the
+        # assertion is about what the reframe SAYS, not how it is cased.
+        ("everything in" in _bo and "supply, install" in _bo.lower()
          and "no extras on the day" in _bo and "exact number for your space" in _bo),
         got=_bo,
     )
@@ -8229,6 +8232,15 @@ class _CfgFee:
     def visit_cost_sentence(self, is_shona=False):
         return '' if not self.fee else f'The call-out to quote is US${self.fee}.'
 
+    # The once-only rule reads both wordings of the same fact (the opening
+    # note and the sentence), so the fake has to expose both.
+    def visit_fee_waived_on_job(self):
+        return False
+
+    def visit_price_note(self, is_shona=False):
+        return ('Just a quick note: *the call-out is free.*' if not self.fee
+                else f'Just a quick note: *US${self.fee} call-out fee.*')
+
 
 _free_claims = [
     'We give you an exact, all-in quote free on a quick on-site visit.',
@@ -8275,6 +8287,32 @@ try:
             _sfv(_untouched, _appt_stub) == (_untouched, False),
             got=str(_sfv(_untouched, _appt_stub)),
         )
+    # The FIGURE is stated once too, on the same rule as the word "free": a
+    # price restated on every turn is the same complaint whichever it is.
+    _fee_told = _ty.SimpleNamespace(tenant=None, conversation_history=[
+        {'role': 'assistant',
+         'content': 'Would Tuesday work? The call-out to quote is US$20.'},
+    ])
+    _later = 'What works better for the visit, morning or afternoon?'
+    results.log(
+        "consultation fee: the figure is not restated on every later turn",
+        _sfv(_later, _fee_told, 'morning') == (_later, False),
+        got=str(_sfv(_later, _fee_told, 'morning')),
+    )
+    results.log(
+        "consultation fee: an explicit ask gets the figure again",
+        'US$20' in _sfv(_later, _fee_told, 'how much is the visit?')[0],
+        got=repr(_sfv(_later, _fee_told, 'how much is the visit?')[0]),
+    )
+    # Safety is unchanged: a free promise is dropped whether or not the fee is
+    # repeated, so a fee tenant can never be made to look free.
+    _late_free, _ = _sfv('No problem, the site visit is free.', _fee_told, 'ok')
+    results.log(
+        "consultation fee: a late free promise is still dropped once the fee is known",
+        'free' not in _late_free.lower(),
+        got=repr(_late_free),
+    )
+
     # Never send an empty message, even if the whole reply was a free claim.
     _o2, _ = _sfv('The visit is free.', _appt_stub)
     results.log(
@@ -8284,6 +8322,313 @@ try:
     )
 finally:
     _tcmod.get_config = _real_gc
+
+# ── The free visit is said ONCE, then only when asked ───────────────────────
+from bot.views.plumbot.response_mixin import (
+    strip_repeat_free_visit as _srfv,
+    asks_visit_cost as _avc,
+    free_visit_already_stated as _fvas,
+)
+
+_told = _ty.SimpleNamespace(conversation_history=[
+    {'role': 'user', 'content': 'hi'},
+    {'role': 'assistant',
+     'content': 'We can come round for a free site visit and give you a fixed price.'},
+])
+_untold = _ty.SimpleNamespace(conversation_history=[
+    {'role': 'user', 'content': 'hi'},
+    {'role': 'assistant', 'content': 'We handle bathroom and kitchen plumbing.'},
+])
+
+results.log(
+    "free visit: the FIRST mention goes out untouched",
+    _srfv('Would you like to book a free site visit?', _untold, 'ok') ==
+    ('Would you like to book a free site visit?', False),
+    got=str(_srfv('Would you like to book a free site visit?', _untold, 'ok')),
+)
+
+results.log(
+    "free visit: a customer saying 'free' is not us having said it",
+    _fvas(_ty.SimpleNamespace(conversation_history=[
+        {'role': 'user', 'content': 'is the site visit free?'}])) is False,
+)
+
+_repeats = {
+    'Would Monday or Tuesday work for a free site visit?':
+        'Would Monday or Tuesday work for a site visit?',
+    "If you're ready, a free on-site visit and fixed quote is one message away.":
+        "If you're ready, an on-site visit and fixed quote is one message away.",
+    "We'll get you an exact, all-in figure free on a quick on-site visit.":
+        "We'll get you an exact, all-in figure on a quick on-site visit.",
+    'Want us to come take a look and lock in a fixed price? The assessment is free.':
+        'Want us to come take a look and lock in a fixed price?',
+    'Munogara kunzvimbo ipi kuti tironge visit toita free quote yakarurama?':
+        'Munogara kunzvimbo ipi kuti tironge visit toita quote yakarurama?',
+}
+for _src, _want in _repeats.items():
+    _got, _changed = _srfv(_src, _told, 'monday works')
+    results.log(
+        f"free visit: not repeated ({_src[:34]}...)",
+        _changed and _got == _want,
+        got=repr(_got),
+    )
+
+results.log(
+    "free visit: the pitch survives, only the price claim comes off",
+    all('visit' in _srfv(s, _told, 'ok')[0] or 'assessment' in _srfv(s, _told, 'ok')[0]
+        or 'quote' in _srfv(s, _told, 'ok')[0] or 'look' in _srfv(s, _told, 'ok')[0]
+        for s in _repeats),
+    got=str([_srfv(s, _told, 'ok')[0] for s in _repeats]),
+)
+
+# The customer's own words override the gate — they asked, so they get told.
+for _ask in ('is the visit free?', 'do you charge for a quote',
+             'how much is the site visit', 'marii kuuya'):
+    results.log(
+        f"free visit: an explicit ask still gets the answer ({_ask})",
+        _avc(_ask) and _srfv('The site visit is free.', _told, _ask) ==
+        ('The site visit is free.', False),
+        got=f"asks={_avc(_ask)} out={_srfv('The site visit is free.', _told, _ask)}",
+    )
+
+for _not_ask in ('monday works', 'how much is a toilet', 'i want a quote',
+                 'what areas do you cover'):
+    results.log(
+        f"free visit: not every message is a cost question ({_not_ask})",
+        _avc(_not_ask) is False,
+    )
+
+# Never mangle copy that has nothing to do with the visit's price.
+for _untouched in ('A freestanding tub is from US$670 all-in, confirmed on the visit.',
+                   'Shower cubicles from US$170 all-in (supply from US$130 + install from US$40).',
+                   'Great, Monday at 10am works. The plumber will be there.'):
+    results.log(
+        f"free visit: leaves unrelated copy alone ({_untouched[:26]}...)",
+        _srfv(_untouched, _told, 'ok') == (_untouched, False),
+        got=str(_srfv(_untouched, _told, 'ok')),
+    )
+
+# The shapes the claim takes beyond the plain adjective, each of which used to
+# leave the sentence broken when the word was simply deleted.
+_shapes = {
+    # leading clause -> the rest of the sentence is promoted
+    'The site visit and quote are free — our plumber will come and look at the space.':
+        'Our plumber will come and look at the space.',
+    # trailing clause -> dropped, the sentence before it stands
+    'The plumber gives a fixed quote after seeing the space, and the site visit is free.':
+        'The plumber gives a fixed quote after seeing the space.',
+    # adverbial
+    'Our plumber will confirm the exact figures free when they come out to you.':
+        'Our plumber will confirm the exact figures when they come out to you.',
+    # a label parenthetical goes whole; an informative one only loses the adjective
+    'Do you know the size, or should we measure up?\n(Site assessment is free)':
+        'Do you know the size, or should we measure up?',
+    'Rough prices (final cost confirmed after a free site visit):':
+        'Rough prices (final cost confirmed after a site visit):',
+}
+for _src, _want in _shapes.items():
+    _got, _ = _srfv(_src, _told, 'monday works')
+    results.log(
+        f"free visit: de-qualified cleanly ({_src[:34]}...)",
+        _got == _want,
+        got=repr(_got),
+    )
+
+_hanging = _srfv(
+    'Yes, the site visit and quote are completely free.\n\nWe come to you '
+    'and give a fixed price on the spot.', _told, 'ok')[0]
+results.log(
+    "free visit: a removal never leaves a sentence hanging on its verb",
+    not re.search(r'\\b(?:is|are)\\s*[.!?]?$', _hanging)
+    and 'fixed price on the spot' in _hanging,
+    got=repr(_hanging),
+)
+
+# A reply whose whole substance was the claim is kept, never emptied.
+_only, _ = _srfv('The site visit is free.', _told, 'monday works')
+results.log(
+    "free visit: a reply that was only the claim is kept, not emptied",
+    _only.strip() != '',
+    got=repr(_only),
+)
+
+# The prompt stops asserting it too, so the model isn't fighting the stripper.
+from bot.views.plumbot.response_mixin import _visit_fact_line as _vfl
+results.log(
+    "free visit: the LLM grounding fact drops 'is free' after the first time",
+    'The visit is free:' in _vfl(_ty.SimpleNamespace(appointment=_untold))
+    and 'The visit is free:' not in _vfl(_ty.SimpleNamespace(appointment=_told)),
+    got=repr(_vfl(_ty.SimpleNamespace(appointment=_told))[:80]),
+)
+
+# ── No dash punctuation in anything the customer reads ─────────────────────
+from bot.utils import strip_dashes as _sd
+
+# The clause dash becomes the comma or the full stop the sentence wanted.
+_dash_cases = {
+    'The way we land a fair price is an on-site visit — the plumber sees the space.':
+        'The way we land a fair price is an on-site visit. The plumber sees the space.',
+    'Perfect — thanks, Tendai.': 'Perfect. Thanks, Tendai.',
+    "Said I'd check in — here I am.": "Said I'd check in. Here I am.",
+    'Wall-hung toilet, all-in from US$160 - supply US$130 plus install US$30.':
+        'Wall-hung toilet, all-in from US$160, supply US$130 plus install US$30.',
+    # ranges read as "to" in speech
+    'Business hours: 8:00 - 18:00, Sun–Fri.': 'Business hours: 8:00 to 18:00, Sun to Fri.',
+    "We're open Mon-Fri, 8am-6pm.": "We're open Mon to Fri, 8am to 6pm.",
+}
+for _src, _want in _dash_cases.items():
+    results.log(
+        f"dashes: taken out cleanly ({_src[:38]}...)",
+        _sd(_src) == _want,
+        got=repr(_sd(_src)),
+    )
+
+# A dash opening a line is a bullet doing a job, not punctuation.
+results.log(
+    "dashes: a bullet leader keeps its job without keeping the dash",
+    _sd('It depends on:\n- the fixtures\n- the size') == 'It depends on:\n• the fixtures\n• the size',
+    got=repr(_sd('It depends on:\n- the fixtures\n- the size')),
+)
+
+# Hyphens INSIDE words are how people write. Stripping them would give
+# "onsite" and "allin", so they are left exactly alone.
+for _keep in ('A corner tub is a built-in tub, from US$160 all-in.',
+              'Wall-hung toilet, supply and install.',
+              'A quick 20-minute look at the on-site space.',
+              'Call us on +263774819901.',
+              'Would Monday or Tuesday work for a site visit?'):
+    results.log(
+        f"dashes: intra-word hyphens survive ({_keep[:34]}...)",
+        _sd(_keep) == _keep,
+        got=repr(_sd(_keep)),
+    )
+
+results.log(
+    "dashes: empty and None pass through without raising",
+    _sd('') == '' and _sd(None) is None,
+)
+
+# No customer-facing reply may leave the choke point with dash punctuation.
+_dashy = re.compile(r'—|–|(?<= )-(?= )')
+results.log(
+    "dashes: nothing dash-punctuated survives the stripper",
+    not any(_dashy.search(_sd(t)) for t in list(_dash_cases) + [
+        'a — b — c', 'One thing — and another — and a third.']),
+    got=str([_sd(t) for t in ['a — b — c', 'One thing — and another — and a third.']]),
+)
+
+# The prompts must stop the model reaching for a dash, not just repair it after.
+from bot.views.plumbot.response_mixin import build_cold_opener as _bco
+import bot.views.plumbot.response_mixin as _rm_mod
+# Read the module by its own __file__ so the check does not depend on cwd.
+_rm_src = open(_rm_mod.__file__, encoding='utf-8-sig').read()
+results.log(
+    "dashes: the reply prompt tells the model not to use one",
+    'Never use a dash as punctuation' in _rm_src,
+)
+results.log(
+    "dashes: the approved cold opener carries none",
+    not _dashy.search(_bco()) and not _dashy.search(_bco(is_shona=True)),
+    got=repr(_bco()),
+)
+
+# ── The visit price is stated ONCE, in the first message ────────────────────
+from bot.views.plumbot.response_mixin import (
+    ensure_visit_price_note as _evpn,
+    visit_price_already_stated as _vpas,
+)
+
+
+class _CfgNote:
+    """Stands in for the three offers a tenant can have."""
+    currency = 'US$'
+
+    def __init__(self, fee=None, waived=False):
+        self.fee, self.waived = fee, waived
+
+    @property
+    def consultation_fee(self):
+        return self.fee
+
+    def visit_is_free(self):
+        return not self.fee
+
+    def visit_fee_waived_on_job(self):
+        return bool(self.fee) and self.waived
+
+    def visit_price_note(self, is_shona=False):
+        if not self.fee:
+            return 'Just a quick note: *the call-out is free.*'
+        if self.visit_fee_waived_on_job():
+            return f'Just a quick note: *US${self.fee} call-out fee — FREE if we do the job.*'
+        return f'Just a quick note: *US${self.fee} call-out fee.*'
+
+    def visit_cost_sentence(self, is_shona=False):
+        return '' if not self.fee else f'The call-out to quote is US${self.fee}.'
+
+
+_opener = ('Hello,\nWe handle bathroom and kitchen plumbing.\n\nA new '
+           'installation, or a renovation of what you have?')
+_fresh = lambda: _ty.SimpleNamespace(tenant=None, conversation_history=[])
+_real_gc2 = _tcmod.get_config
+try:
+    for _label, _cfg, _want in (
+        ('free', _CfgNote(), 'the call-out is free'),
+        ('flat fee', _CfgNote(20), 'US$20 call-out fee'),
+        ('waived on the job', _CfgNote(20, True), 'US$20 call-out fee — FREE if we do the job'),
+    ):
+        _tcmod.get_config = lambda tenant=None, _c=_cfg: _c
+        _out, _added = _evpn(_opener, _fresh(), 'hie')
+        results.log(
+            f"visit price note: the first message states it ({_label})",
+            _added and _want in _out and _out.startswith(_opener),
+            got=repr(_out),
+        )
+
+    # Once it has been said, no later reply carries it again.
+    _tcmod.get_config = lambda tenant=None: _CfgNote()
+    _told_note = _ty.SimpleNamespace(tenant=None, conversation_history=[
+        {'role': 'assistant',
+         'content': _opener + '\n\nJust a quick note: *the call-out is free.*'},
+    ])
+    _second = 'Borrowdale is well within our area. Tuesday or Thursday?'
+    results.log(
+        "visit price note: never repeated on a later turn",
+        _evpn(_second, _told_note, 'borrowdale') == (_second, False),
+        got=str(_evpn(_second, _told_note, 'borrowdale')),
+    )
+    results.log(
+        "visit price note: the transcript read sees it in either wording",
+        _vpas(_told_note, _CfgNote()) is True
+        and _vpas(_fresh(), _CfgNote()) is False,
+    )
+    # A reply that already prices the visit is not given a second note.
+    _prices_it = 'The site visit is free, so there is nothing to lose.'
+    results.log(
+        "visit price note: a reply that already states it is left alone",
+        _evpn(_prices_it, _fresh(), 'hi') == (_prices_it, False),
+        got=str(_evpn(_prices_it, _fresh(), 'hi')),
+    )
+    # A fee tenant's note must not be read back as a free promise and dropped:
+    # the note is appended AFTER both strippers for exactly this reason.
+    _tcmod.get_config = lambda tenant=None: _CfgNote(20, True)
+    _noted, _ = _evpn(_opener, _fresh(), 'hie')
+    results.log(
+        "visit price note: the waived-fee note survives the fee stripper's order",
+        'FREE if we do the job' in _noted,
+        got=repr(_noted),
+    )
+    # The fee stripper de-qualifies before it drops, so the pitch keeps its
+    # question instead of the whole sentence being deleted.
+    _pitch = 'Good one. Would you like us to come round for a free site visit?'
+    _kept, _ = _sfv(_pitch, _ty.SimpleNamespace(tenant=None, conversation_history=[]), 'ok')
+    results.log(
+        "consultation fee: the visit pitch keeps its question, minus the claim",
+        'free' not in _kept.lower() and 'come round for a site visit?' in _kept,
+        got=repr(_kept),
+    )
+finally:
+    _tcmod.get_config = _real_gc2
 
 # ── Out of scope: decline, never loop ───────────────────────────────────────
 from bot.out_of_scope_handler import (

@@ -1,4 +1,4 @@
-﻿"""
+"""
 bot/out_of_scope_handler.py
 ============================
 Handles messages that fall outside Plumbot's booking scope gracefully.
@@ -1109,9 +1109,10 @@ Only the question text. No quotes, no labels."""
             **HUMAN_VOICE,
             max_tokens=100,
         )
-        from .utils import strip_emojis
+        from .utils import strip_emojis, strip_dashes
         question = response.choices[0].message.content.strip()
-        question = strip_emojis(question.replace("**", "").replace("__", ""))
+        question = strip_dashes(
+            strip_emojis(question.replace("**", "").replace("__", "")))
         logger.info("Generated clarifying question for category=%s: '%s'", category, question[:80])
         return question
 
@@ -3247,6 +3248,7 @@ def _resolve_email_attempt_ai(message: str, appointment=None):
                     "WhatsApp \"reply\" that responds to what they actually said and "
                     "either asks them to re-send the email or offers to send it here "
                     "on WhatsApp. Match their language (English or Shona). No emojis; "
+                    "Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung). "
                     "one or two sentences.\n"
                     "Reply with strict JSON only."
                 )},
