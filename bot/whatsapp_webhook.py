@@ -2768,6 +2768,12 @@ def handle_text_message(sender, text_data, message_id=None, quoted_id=None, refe
 
         appointment.mark_customer_response()
 
+        # Post-visit: a lead in the quote follow-up sequence who names a day
+        # moves from the ask cadence onto the confirmation branch. A no-op for
+        # every lead without a live site-visit report, and it never raises.
+        from .post_visit import note_inbound_reply
+        note_inbound_reply(appointment, message_body, source='whatsapp')
+
         from .out_of_scope_handler import detect_delay_signal_message, mark_delay_signal
 
         delay_check = detect_delay_signal_message(message_body, appointment)
@@ -4019,6 +4025,15 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         from bot.views.plumbot.response_mixin import (
             strip_known_questions, strip_free_visit_claims,
             strip_repeat_free_visit, ensure_visit_price_note)
+
+        # What the mixins composed, before this chain rewrites it. Most of the
+        # ~20 reply paths log their own draft the moment they build it, and
+        # everything below edits that text — so the draft has to be replaced,
+        # not appended to, or the transcript shows the reply twice (once
+        # without the price note, once with it). See
+        # Appointment.replace_draft_assistant_turns.
+        _draft_reply = reply
+
         reply, _re_asked = strip_known_questions(reply, appointment)
         if _re_asked:
             print(f"🧠 Memory check dropped re-asked field(s): {sorted(set(_re_asked))}")
@@ -4068,8 +4083,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             p.strip() for p in reply.split(MESSAGE_SPLIT_MARKER)
         ] if MESSAGE_SPLIT_MARKER in reply else [reply]
         reply_parts = [p for p in reply_parts if p]
-        for _part in reply_parts:
-            appointment.add_conversation_message("assistant", _part)
+        appointment.replace_draft_assistant_turns(_draft_reply, reply_parts)
         appointment.last_outbound_at = timezone.now()
         appointment.last_contacted_at = appointment.last_outbound_at
         appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])

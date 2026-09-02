@@ -30,7 +30,7 @@ TENANT_SESSION_KEY = 'platform_tenant_slug'
 # Paths that don't require a tenant workspace: auth, public surfaces, the
 # webhook, the platform console itself, and static assets.
 _EXEMPT_PREFIXES = (
-    '/login', '/logout', '/webhook', '/intake/', '/call/', '/call',
+    '/login', '/logout', '/webhook', '/intake/', '/call/', '/call', '/site-visit/',
     '/admin', '/platform', '/static', '/media', '/favicon',
 )
 

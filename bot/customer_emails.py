@@ -1078,3 +1078,155 @@ def send_email_reply_notification_to_plumber(apt, customer_reply_text):
     except Exception:
         logger.exception("send_email_reply_notification_to_plumber failed — apt %s", apt.pk)
         return False
+
+
+# ── Post-visit follow-up emails ───────────────────────────────────────────────
+#
+# These go out AFTER the plumber has been on site and the quote has been sent,
+# so the copy must never re-pitch the visit or mention its price — that stage is
+# over and repeating it reads as pleading. Each ask closes on a this-or-that
+# choice rather than an open question, and the last one leaves the door open
+# without asking again.
+#
+# Rendering rule: nothing here interpolates a date the lead did not give. The
+# only date that appears is the one on the report, and the Case A builder is the
+# only place a date is rendered at all.
+
+_POST_VISIT_ASKS = {
+    1: {
+        'subject': 'Your quote',
+        'opening': (
+            'Thanks for having us round. Your quote should be with you now, so '
+            'have a look through it when you get a moment.'
+        ),
+        'ask': (
+            'Roughly when were you hoping to have the work done? Something in '
+            'the next couple of weeks, or further out than that?'
+        ),
+    },
+    2: {
+        'subject': 'Quick one about your quote',
+        'opening': 'Just circling back on the quote we sent through.',
+        'ask': (
+            'Is this something you want to get moving on, or is it sitting on '
+            'the maybe pile for now? Either answer is genuinely fine, it just '
+            'tells us whether to hold a slot for you.'
+        ),
+    },
+    3: {
+        'subject': 'Last one from us',
+        'opening': (
+            'I will not keep emailing. Just leaving you one easy way to pick '
+            'this back up.'
+        ),
+        'ask': (
+            'Whenever you are ready, reply with the week that suits and we will '
+            'sort the rest. If the timing has changed, no problem at all, the '
+            'quote stays good and you can come back to us any time.'
+        ),
+    },
+}
+
+
+def build_post_visit_ask_email(apt, ask_number):
+    """Return (subject, html) for post-visit ask 1, 2 or 3 (Case B).
+
+    Ask 1 goes out the day after the debrief, ask 2 three days later, ask 3 a
+    week after that. Ask 3 is the last thing we send: it closes the loop rather
+    than asking again.
+    """
+    ask = _POST_VISIT_ASKS.get(int(ask_number)) or _POST_VISIT_ASKS[1]
+    name = (getattr(apt, 'customer_name', '') or '').strip()
+    hi = f'Hi {name}' if name else 'Hi there'
+    subject = ask['subject'] + (f', {name}' if name and ask_number == 3 else '')
+
+    body = (
+        f'<p>{hi},</p>'
+        f'<p>{ask["opening"]}</p>'
+        f'<p>{ask["ask"]}</p>'
+        f'{_contact_buttons(apt)}'
+        f'<p>{_from_name(apt)}<br>{_business_name(apt)}</p>'
+    )
+    return subject, _wrap(body, apt)
+
+
+def send_post_visit_ask_email(apt, ask_number):
+    """Send one Case B ask to the lead. Returns True on a successful send."""
+    try:
+        subject, html = build_post_visit_ask_email(apt, ask_number)
+        ok = _send(apt, subject, html)
+        if ok:
+            logger.info("Post-visit ask %s sent — apt %s", ask_number, apt.pk)
+        return ok
+    except Exception:
+        logger.exception("send_post_visit_ask_email failed — apt %s", apt.pk)
+        return False
+
+
+def build_post_visit_confirmation_email(apt, job_date):
+    """Return (subject, html) for the Case A confirmation, two days out.
+
+    ``job_date`` is required and must be a real date — this is the one email
+    that renders the lead's own date back to them, so a missing date means the
+    email must not be built at all rather than printed as a blank.
+    """
+    if not job_date:
+        raise ValueError('build_post_visit_confirmation_email needs a job date')
+
+    name = (getattr(apt, 'customer_name', '') or '').strip()
+    hi = f'Hi {name}' if name else 'Hi there'
+    pretty = job_date.strftime('%A %d %B')
+    subject = f'Still on for {pretty}?'
+
+    body = (
+        f'<p>{hi},</p>'
+        f'<p>You had us down for {pretty}, so this is just to make sure that '
+        f'still works on your side.</p>'
+        f'<p>Reply yes and we will lock it in and let you know what time the '
+        f'team will be there. If the day has shifted, tell us which day suits '
+        f'better and we will move it.</p>'
+        f'{_contact_buttons(apt)}'
+        f'<p>{_from_name(apt)}<br>{_business_name(apt)}</p>'
+    )
+    return subject, _wrap(body, apt)
+
+
+def send_post_visit_confirmation_email(apt, job_date):
+    """Send the Case A confirmation. Returns True on a successful send."""
+    try:
+        subject, html = build_post_visit_confirmation_email(apt, job_date)
+        ok = _send(apt, subject, html)
+        if ok:
+            logger.info("Post-visit confirmation sent — apt %s (%s)", apt.pk, job_date)
+        return ok
+    except Exception:
+        logger.exception("send_post_visit_confirmation_email failed — apt %s", apt.pk)
+        return False
+
+
+def send_quotation_email_to_customer(quotation, pdf_bytes=None, filename=None):
+    """Email the customer their quotation, with the same PDF WhatsApp sends.
+
+    The plumber picks the channel: this and the WhatsApp send are independent
+    buttons, and using one has no bearing on the other or on the follow-up
+    sequence, which is always email.
+    """
+    apt = quotation.appointment
+    name = (getattr(apt, 'customer_name', '') or '').strip()
+    hi = f'Hi {name}' if name else 'Hi there'
+    title = quotation.get_display_name()
+    subject = f'Your quote for {title}'
+    body = (
+        f'<p>{hi},</p>'
+        f'<p>Here is your quote for the {_service(apt).lower()}, attached as a PDF.</p>'
+        f'<p>The figure covers everything on the sheet, so there are no extras '
+        f'on the day. Have a read and let us know if you would like us to go '
+        f'ahead, or if there is anything on it you want changed.</p>'
+        f'{_contact_buttons(apt)}'
+        f'<p>{_from_name(apt)}<br>{_business_name(apt)}</p>'
+    )
+    return _send(
+        apt, subject, _wrap(body, apt),
+        attachment=pdf_bytes,
+        attachment_name=filename or f'Quotation-{quotation.quotation_number}.pdf',
+    )

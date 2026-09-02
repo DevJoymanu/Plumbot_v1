@@ -127,6 +127,13 @@ class CreateQuotationView(CreateView):
             appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)), pk=self.kwargs['pk'])
             context['appointment'] = appointment
 
+        # Job notes from the post-visit debrief carry into the quote screen —
+        # the plumber typed them minutes ago and should not retype them. Only
+        # while unsent: an old report must not overwrite a later description.
+        report = getattr(appointment, 'site_visit_report', None) if appointment else None
+        if report is not None and (report.job_notes or '').strip():
+            context['quote_prefill_notes'] = report.job_notes.strip()
+
         if is_sectioned(tenant_of(self.request, appointment=appointment)):
             context.update(_sectioned_form_context(self.request, appointment=appointment))
             return context

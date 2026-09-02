@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.utils import timezone
-from .models import Appointment, WhatsAppInboundEvent, ScheduledReminder
+from .models import Appointment, WhatsAppInboundEvent, ScheduledReminder, SiteVisitReport
 import json
 from datetime import timedelta
 
@@ -527,3 +527,16 @@ class WhatsAppInboundEventAdmin(admin.ModelAdmin):
         return format_html('<pre style="white-space: pre-wrap;">{}</pre>',
                            json.dumps(obj.raw_payload, indent=2, ensure_ascii=False))
     raw_payload_display.short_description = 'Raw inbound message'
+
+
+@admin.register(SiteVisitReport)
+class SiteVisitReportAdmin(admin.ModelAdmin):
+    """Read-mostly. The token is the credential on a public URL, so it is not
+    editable here and nothing in the list view prints it."""
+    list_display = ('appointment', 'outcome', 'sequence', 'ask_count',
+                    'expected_date', 'submitted_at', 'next_action_at')
+    list_filter = ('sequence', 'outcome', 'expectation')
+    search_fields = ('appointment__customer_name', 'appointment__phone_number')
+    readonly_fields = ('token', 'created_at', 'submitted_at', 'submitted_by',
+                       'fallback_email_sent_at', 'confirmation_sent_at',
+                       'cold_notified_at', 'no_email_notified_at')

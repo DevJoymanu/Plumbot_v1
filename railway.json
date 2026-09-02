@@ -18,8 +18,8 @@
         {
             "name": "Email_Follow_Ups",
             "schedule": "*/5 * * * * (set on the service in Railway)",
-            "command": "PLUMBOT_CRON=send_scheduled_followups,process_inbound_emails,send_job_reminders,summarize_unconfirmed_leads",
-            "description": "Carries every job that is not the main follow-up or reminder cron: staff-queued ScheduledFollowup dispatch over WhatsApp or email (including email follow-ups for delayed leads), IMAP inbound-email polling, job reminders, and 24h unconfirmed-lead summaries. All four are idempotent, so a 5-minute tick re-running them is safe. Formerly named delightful-eagerness."
+            "command": "PLUMBOT_CRON=send_scheduled_followups,process_inbound_emails,send_job_reminders,summarize_unconfirmed_leads,send_post_visit_followups",
+            "description": "Carries every job that is not the main follow-up or reminder cron: staff-queued ScheduledFollowup dispatch over WhatsApp or email (including email follow-ups for delayed leads), IMAP inbound-email polling, job reminders, 24h unconfirmed-lead summaries, and the post-visit machine (the 35-minute debrief-form email to the plumber, the Case A/B/C quote follow-ups to the lead, and the cold handback). All five are idempotent - every send is gated by a timestamp written as it goes out - so a 5-minute tick re-running them is safe. Formerly named delightful-eagerness."
         },
         {
             "name": "Plumbot_v1",

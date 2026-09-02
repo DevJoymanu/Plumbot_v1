@@ -575,3 +575,101 @@ def _send_via_sendgrid(
             "Failed to send SendGrid email '%s' to %s", subject, ", ".join(recipients)
         )
         return False
+
+
+def send_site_visit_form_email(report, *, dry_run=False):
+    """Email the plumber the tokenized debrief form, 35 minutes after the visit.
+
+    This is the FALLBACK entry point — the in-app banner on the appointment
+    screen is the primary one, and it opens the very same URL, so whichever the
+    plumber uses first closes the other out. Callers must check
+    ``report.submitted_at`` before sending; this function does not re-check the
+    gate, it just delivers the link.
+    """
+    from bot.customer_emails import _clean_phone, _fmt_date, _service
+    from bot.post_visit import form_url
+
+    apt = report.appointment
+    name = (getattr(apt, 'customer_name', '') or '').strip() or 'Unknown'
+    phone = _clean_phone(getattr(apt, 'phone_number', ''))
+    link = form_url(report)
+
+    subject = f"[Site visit] How did {name} go?"
+    message = (
+        f"The site visit for {name} is done. Two minutes to log the outcome and "
+        f"we take it from there:\n\n"
+        f"{link}\n\n"
+        f"The form asks how the visit went, when the customer expects the job "
+        f"done, and any notes for the quote. It carries straight into the quote "
+        f"screen, and the customer follow-ups are scheduled off your answers.\n\n"
+        f"Customer: {name}\n"
+        f"WhatsApp: {phone}  " + (f"https://wa.me/{phone}" if phone else "") + "\n"
+        f"Service: {_service(apt)}\n"
+        f"Area: {getattr(apt, 'customer_area', '') or 'not given'}\n"
+        f"Visit: {_fmt_date(apt)}\n\n"
+        f"This link works once. If you already logged it in the app, ignore this.\n"
+    )
+    html = (
+        f'<p>The site visit for <strong>{name}</strong> is done. Two minutes to '
+        f'log the outcome and we take it from there.</p>'
+        f'<p><a href="{link}" style="display:inline-block;background:#0f766e;'
+        f'color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;'
+        f'font-size:16px;font-weight:bold;">Log the site visit</a></p>'
+        f'<p style="color:#555;font-size:14px;">It asks how the visit went, when '
+        f'the customer expects the job done, and any notes for the quote. Your '
+        f'answers schedule the customer follow-ups.</p>'
+        f'<p style="font-size:14px;color:#444;">'
+        f'Customer: {name}<br>'
+        f'WhatsApp: {phone}<br>'
+        f'Service: {_service(apt)}<br>'
+        f'Area: {getattr(apt, "customer_area", "") or "not given"}<br>'
+        f'Visit: {_fmt_date(apt)}</p>'
+        f'<p style="font-size:13px;color:#888;">This link works once. If you have '
+        f'already logged it in the app, ignore this email.</p>'
+    )
+    return send_plumber_notification_email(
+        subject, message, dry_run=dry_run, html_message=html,
+        tenant=getattr(apt, 'tenant', None))
+
+
+def send_post_visit_handback_email(appointment, *, reason, dry_run=False):
+    """Hand a post-visit lead back to the plumber for a manual close.
+
+    Two reasons, both ends of the automated road:
+      • 'gone_cold'  — three asks went out and nothing came back.
+      • 'no_email'   — there is no address to follow up on, and the debrief form
+                       (the only place to add one) was never submitted.
+    """
+    from bot.customer_emails import _clean_phone, _service
+
+    name = (getattr(appointment, 'customer_name', '') or '').strip() or 'Unknown'
+    phone = _clean_phone(getattr(appointment, 'phone_number', ''))
+    wa_link = f"https://wa.me/{phone}" if phone else ''
+    detail = {
+        'gone_cold': (
+            "We sent this lead three follow-ups after the site visit and got "
+            "nothing back, so the automated sequence has stopped and the lead is "
+            "marked cold. It is yours now — a call will do more than another "
+            "email at this point."
+        ),
+        'no_email': (
+            "This site visit is over but we have no email address for the "
+            "customer and the visit form was never filled in, so there is no way "
+            "to follow up automatically. Please pick this one up directly."
+        ),
+    }.get(reason, str(reason))
+
+    subject = (f"[Lead cold] {name} - {_service(appointment)}"
+               if reason == 'gone_cold'
+               else f"[Needs you] {name} - {_service(appointment)}")
+    message = (
+        f"{detail}\n\n"
+        f"Customer: {name}\n"
+        f"WhatsApp: {phone}  {wa_link}\n"
+        f"Service: {_service(appointment)}\n"
+        f"Area: {getattr(appointment, 'customer_area', '') or 'not given'}\n"
+        f"Lead: {settings.SITE_URL}/appointments/{appointment.pk}/\n"
+    )
+    return send_plumber_notification_email(
+        subject, message, dry_run=dry_run,
+        tenant=getattr(appointment, 'tenant', None))

@@ -4930,3 +4930,641 @@ class DashboardScheduleTests(StaffClientTestCase):
         response = self._dashboard()
         self.assertEqual(list(response.context['week_jobs']), [])
         self.assertNotIn('Acme Job', response.content.decode())
+
+
+# ======================================================================
+# Post-visit debrief form + quote follow-up automation
+# ======================================================================
+
+class PostVisitFormTests(StaffClientTestCase):
+    """The two entry points, the gate, and the single-use rule."""
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(
+            8100, customer_name='Rudo Moyo', customer_area='Borrowdale',
+            project_type='bathroom_renovation', status='confirmed',
+            scheduled_datetime=timezone.now() - timedelta(hours=3),
+            customer_email='rudo@example.com',
+        )
+
+    def _report(self):
+        from bot.post_visit import ensure_report
+        return ensure_report(self.lead)
+
+    # -- the in-app entry point -------------------------------------------
+
+    def test_banner_shows_on_a_finished_visit(self):
+        response = self.client.get(reverse('appointment_detail', args=[self.lead.pk]))
+        self.assertTrue(response.context['site_visit_prompt'])
+        self.assertIn('Is the site visit complete?', response.content.decode())
+
+    def test_banner_hidden_before_the_visit_has_happened(self):
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=1)
+        self.lead.save()
+        response = self.client.get(reverse('appointment_detail', args=[self.lead.pk]))
+        self.assertFalse(response.context['site_visit_prompt'])
+
+    def test_rendering_the_page_does_not_create_a_report(self):
+        """A page view is not an action - creating the row here would start the
+        fallback-email clock on every render."""
+        from bot.models import SiteVisitReport
+        self.client.get(reverse('appointment_detail', args=[self.lead.pk]))
+        self.assertFalse(SiteVisitReport.objects.filter(appointment=self.lead).exists())
+
+    def test_in_app_button_opens_the_same_tokenized_form(self):
+        from bot.models import SiteVisitReport
+        response = self.client.get(reverse('site_visit_start', args=[self.lead.pk]))
+        report = SiteVisitReport.objects.get(appointment=self.lead)
+        self.assertRedirects(
+            response, reverse('site_visit_form', kwargs={'token': report.token}))
+
+    def test_banner_disappears_once_the_form_is_submitted(self):
+        from bot.post_visit import apply_submission
+        apply_submission(self._report(), outcome='went_ahead', expectation='unknown',
+                         email='rudo@example.com')
+        response = self.client.get(reverse('appointment_detail', args=[self.lead.pk]))
+        self.assertFalse(response.context['site_visit_prompt'])
+
+    # -- the form itself ---------------------------------------------------
+
+    def test_form_is_public_and_token_gated(self):
+        report = self._report()
+        self.client.logout()
+        ok = self.client.get(reverse('site_visit_form', kwargs={'token': report.token}))
+        self.assertEqual(ok.status_code, 200)
+        missing = self.client.get(
+            reverse('site_visit_form', kwargs={'token': 'not-a-real-token'}))
+        self.assertEqual(missing.status_code, 404)
+
+    def test_form_prefills_what_we_already_know(self):
+        report = self._report()
+        body = self.client.get(
+            reverse('site_visit_form', kwargs={'token': report.token})).content.decode()
+        self.assertIn('Rudo Moyo', body)
+        self.assertIn('rudo@example.com', body)
+
+    def test_went_ahead_with_a_date_arms_the_confirmation(self):
+        report = self._report()
+        target = timezone.localdate() + timedelta(days=10)
+        response = self.client.post(
+            reverse('site_visit_form', kwargs={'token': report.token}),
+            {'outcome': 'went_ahead', 'lead_email': 'rudo@example.com',
+             'expectation': 'specific_date', 'expected_date': target.isoformat(),
+             'job_notes': 'Retile and move the shower feed'})
+        self.assertRedirects(response, reverse('create_quotation', args=[self.lead.pk]))
+        report.refresh_from_db()
+        self.assertEqual(report.outcome, 'went_ahead')
+        self.assertEqual(report.expected_date, target)
+        self.assertEqual(report.sequence, 'confirm')
+        self.assertEqual(report.job_notes, 'Retile and move the shower feed')
+
+    def test_went_ahead_with_a_timeframe_arms_the_ask_sequence(self):
+        report = self._report()
+        self.client.post(
+            reverse('site_visit_form', kwargs={'token': report.token}),
+            {'outcome': 'went_ahead', 'lead_email': 'rudo@example.com',
+             'expectation': 'timeframe', 'expected_timeframe': 'two_weeks'})
+        report.refresh_from_db()
+        self.assertEqual(report.sequence, 'asks')
+        self.assertEqual(report.expected_timeframe, 'two_weeks')
+        self.assertIsNotNone(report.next_action_at)
+
+    def test_the_form_sets_a_missing_lead_email(self):
+        self.lead.customer_email = None
+        self.lead.save()
+        report = self._report()
+        self.client.post(
+            reverse('site_visit_form', kwargs={'token': report.token}),
+            {'outcome': 'went_ahead', 'lead_email': 'new@example.com',
+             'expectation': 'unknown'})
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.customer_email, 'new@example.com')
+
+    def test_went_ahead_without_an_email_is_refused(self):
+        self.lead.customer_email = None
+        self.lead.save()
+        report = self._report()
+        response = self.client.post(
+            reverse('site_visit_form', kwargs={'token': report.token}),
+            {'outcome': 'went_ahead', 'expectation': 'unknown'})
+        self.assertEqual(response.status_code, 200)
+        report.refresh_from_db()
+        self.assertIsNone(report.submitted_at)
+
+    # -- the gate ----------------------------------------------------------
+
+    def test_other_outcomes_produce_no_quote_and_no_sequence(self):
+        for suffix, outcome in enumerate(('no_show', 'rescheduled', 'not_proceeding')):
+            lead = make_lead(8200 + suffix, status='confirmed',
+                             customer_email='x@example.com',
+                             scheduled_datetime=timezone.now() - timedelta(hours=3))
+            from bot.post_visit import ensure_report
+            report = ensure_report(lead)
+            response = self.client.post(
+                reverse('site_visit_form', kwargs={'token': report.token}),
+                {'outcome': outcome})
+            self.assertEqual(response.status_code, 200, outcome)
+            report.refresh_from_db()
+            self.assertEqual(report.sequence, 'stopped', outcome)
+            self.assertIsNone(report.next_action_at, outcome)
+
+    def test_not_proceeding_deactivates_the_lead(self):
+        report = self._report()
+        self.client.post(reverse('site_visit_form', kwargs={'token': report.token}),
+                         {'outcome': 'not_proceeding'})
+        self.lead.refresh_from_db()
+        self.assertFalse(self.lead.is_lead_active)
+
+    def test_no_show_marks_the_appointment(self):
+        report = self._report()
+        self.client.post(reverse('site_visit_form', kwargs={'token': report.token}),
+                         {'outcome': 'no_show'})
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.status, 'no_show')
+
+    # -- single use --------------------------------------------------------
+
+    def test_a_second_submit_changes_nothing(self):
+        report = self._report()
+        url = reverse('site_visit_form', kwargs={'token': report.token})
+        self.client.post(url, {'outcome': 'went_ahead', 'lead_email': 'rudo@example.com',
+                               'expectation': 'timeframe', 'expected_timeframe': 'asap'})
+        report.refresh_from_db()
+        first_submitted, first_sequence = report.submitted_at, report.sequence
+
+        response = self.client.post(url, {'outcome': 'not_proceeding'})
+        self.assertEqual(response.status_code, 200)
+        report.refresh_from_db()
+        self.assertEqual(report.submitted_at, first_submitted)
+        self.assertEqual(report.sequence, first_sequence)
+        self.assertEqual(report.outcome, 'went_ahead')
+
+    def test_a_used_link_says_so_instead_of_showing_the_form(self):
+        report = self._report()
+        url = reverse('site_visit_form', kwargs={'token': report.token})
+        self.client.post(url, {'outcome': 'no_show'})
+        body = self.client.get(url).content.decode()
+        self.assertIn('already been logged', body)
+        self.assertNotIn('name="outcome"', body)
+
+    # -- job notes carry into the quote ------------------------------------
+
+    def test_job_notes_prefill_the_quote_screen(self):
+        report = self._report()
+        self.client.post(
+            reverse('site_visit_form', kwargs={'token': report.token}),
+            {'outcome': 'went_ahead', 'lead_email': 'rudo@example.com',
+             'expectation': 'unknown', 'job_notes': 'Second bathroom, geyser move'})
+        body = self.client.get(
+            reverse('create_quotation', args=[self.lead.pk])).content.decode()
+        self.assertIn('Second bathroom, geyser move', body)
+
+
+class PostVisitSchedulerTests(TestCase):
+    """The cron: the fallback email, Cases A / B / C, and the guards."""
+
+    def setUp(self):
+        self.lead = make_lead(
+            8300, customer_name='Tendai', status='confirmed',
+            customer_email='tendai@example.com',
+            scheduled_datetime=timezone.now() - timedelta(hours=4),
+        )
+
+    def _report(self):
+        from bot.post_visit import ensure_report
+        return ensure_report(self.lead)
+
+    def _tick(self, now=None, **kw):
+        from bot.post_visit import run_post_visit_tick
+        return run_post_visit_tick(now=now, **kw)
+
+    # -- the 35-minute fallback -------------------------------------------
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    def test_fallback_email_goes_out_35_minutes_after_the_visit(self, send):
+        from bot.post_visit import visit_end
+        just_after = visit_end(self.lead) + timedelta(minutes=36)
+        stats = self._tick(now=just_after)
+        self.assertEqual(stats['form_emails'], 1)
+        self.assertTrue(send.called)
+        self.assertIsNotNone(self._report().fallback_email_sent_at)
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    def test_fallback_email_is_not_sent_early(self, send):
+        from bot.post_visit import visit_end
+        stats = self._tick(now=visit_end(self.lead) + timedelta(minutes=5))
+        self.assertEqual(stats['form_emails'], 0)
+        self.assertFalse(send.called)
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    def test_the_in_app_submit_voids_the_fallback_email(self, send):
+        """The primary path resolves the appointment: the fallback must not fire."""
+        from bot.post_visit import apply_submission, visit_end
+        apply_submission(self._report(), outcome='went_ahead', expectation='unknown',
+                         email='tendai@example.com')
+        stats = self._tick(now=visit_end(self.lead) + timedelta(minutes=90))
+        self.assertEqual(stats['form_emails'], 0)
+        self.assertFalse(send.called)
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    def test_the_fallback_email_is_sent_only_once(self, send):
+        from bot.post_visit import visit_end
+        when = visit_end(self.lead) + timedelta(minutes=40)
+        self._tick(now=when)
+        self._tick(now=when + timedelta(minutes=5))
+        self.assertEqual(send.call_count, 1)
+
+    # -- Case A ------------------------------------------------------------
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_case_a_sends_one_confirmation_two_days_out(self, _send):
+        from bot.post_visit import apply_submission
+        target = timezone.localdate() + timedelta(days=10)
+        report = self._report()
+        apply_submission(report, outcome='went_ahead', expectation='specific_date',
+                         expected_date=target, email='tendai@example.com')
+
+        # The armed moment is 09:00 local, two days before the date they gave.
+        # Asserted rather than recomputed here: deriving the tick time from
+        # now() + an offset made this test depend on the hour it ran at.
+        report.refresh_from_db()
+        due = timezone.localtime(report.next_action_at)
+        self.assertEqual(due.date(), target - timedelta(days=2))
+        self.assertEqual(due.hour, 9)
+
+        # A minute early: nothing yet.
+        self.assertEqual(
+            self._tick(now=report.next_action_at - timedelta(minutes=1))['confirmations'], 0)
+
+        # Due: exactly one confirmation, and then never again.
+        self.assertEqual(self._tick(now=report.next_action_at)['confirmations'], 1)
+        self.assertEqual(
+            self._tick(now=report.next_action_at + timedelta(hours=2))['confirmations'], 0)
+
+        report.refresh_from_db()
+        self.assertEqual(report.sequence, 'done')
+        self.assertIsNotNone(report.confirmation_sent_at)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_case_a_never_renders_a_null_date(self, _send):
+        """A confirm-branch report with no date must not send a date-shaped
+        email; it falls back to the ask sequence instead."""
+        from bot.customer_emails import build_post_visit_confirmation_email
+        with self.assertRaises(ValueError):
+            build_post_visit_confirmation_email(self.lead, None)
+
+        report = self._report()
+        report.submitted_at = timezone.now()
+        report.outcome = 'went_ahead'
+        report.sequence = 'confirm'
+        report.expected_date = None
+        report.next_action_at = timezone.now() - timedelta(minutes=1)
+        report.save()
+        self._tick()
+        report.refresh_from_db()
+        self.assertEqual(report.sequence, 'asks')
+
+    # -- Case B ------------------------------------------------------------
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_case_b_runs_three_asks_then_goes_cold(self, _send, alert):
+        from bot.post_visit import apply_submission
+        report = self._report()
+        apply_submission(report, outcome='went_ahead', expectation='timeframe',
+                         expected_timeframe='this_month', email='tendai@example.com')
+        report.refresh_from_db()
+
+        # Ask 1 — next day at noon, and ask 2 is queued three days out.
+        self.assertEqual(self._tick(now=report.next_action_at)['asks'], 1)
+        report.refresh_from_db()
+        self.assertEqual(report.ask_count, 1)
+        self.assertEqual((report.next_action_at - report.last_ask_at).days, 3)
+
+        # Ask 2 — and ask 3 is queued seven days after it.
+        self.assertEqual(self._tick(now=report.next_action_at)['asks'], 1)
+        report.refresh_from_db()
+        self.assertEqual(report.ask_count, 2)
+        self.assertEqual((report.next_action_at - report.last_ask_at).days, 7)
+
+        # Ask 3 — the last one; the lead gets the same week to answer it.
+        self.assertEqual(self._tick(now=report.next_action_at)['asks'], 1)
+        report.refresh_from_db()
+        self.assertEqual(report.ask_count, 3)
+        self.assertEqual((report.next_action_at - report.last_ask_at).days, 7)
+
+        # Then cold, and back to the plumber.
+        self.assertEqual(self._tick(now=report.next_action_at)['cold'], 1)
+        report.refresh_from_db()
+        self.lead.refresh_from_db()
+        self.assertEqual(report.sequence, 'cold')
+        self.assertEqual(self.lead.lead_status, 'cold')
+        self.assertTrue(alert.called)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_ask_one_lands_at_noon_the_next_day(self, _send):
+        from bot.post_visit import apply_submission
+        report = self._report()
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='tendai@example.com')
+        report.refresh_from_db()
+        due = timezone.localtime(report.next_action_at)
+        self.assertEqual(due.hour, 12)
+        self.assertEqual(due.date(),
+                         timezone.localtime(report.submitted_at).date() + timedelta(days=1))
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_a_date_from_the_lead_switches_case_b_to_case_a(self, _send):
+        from bot.post_visit import apply_submission, note_inbound_reply
+        report = self._report()
+        apply_submission(report, outcome='went_ahead', expectation='timeframe',
+                         expected_timeframe='exploring', email='tendai@example.com')
+        self.assertEqual(report.sequence, 'asks')
+
+        target = timezone.localdate() + timedelta(days=12)
+        self.lead.refresh_from_db()
+        switched = note_inbound_reply(
+            self.lead, 'we want it done on {}'.format(target.strftime('%d/%m/%Y')))
+        self.assertTrue(switched)
+        report.refresh_from_db()
+        self.assertEqual(report.sequence, 'confirm')
+        self.assertEqual(report.expected_date, target)
+
+    # -- Case C ------------------------------------------------------------
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_case_c_starts_the_sequence_when_the_form_never_comes_back(self, _send, alert):
+        from bot.post_visit import next_day_noon, visit_end
+        report = self._report()
+        deadline = next_day_noon(visit_end(self.lead))
+
+        self.assertEqual(self._tick(now=deadline - timedelta(hours=1))['asks'], 0)
+        self.assertEqual(self._tick(now=deadline + timedelta(minutes=1))['asks'], 1)
+
+        report.refresh_from_db()
+        self.assertEqual(report.sequence, 'asks')
+        self.assertEqual(report.ask_count, 1)
+        # The form stays open — the plumber may still get to it.
+        self.assertTrue(report.is_open)
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_case_c_does_not_re_fire_on_every_later_tick(self, _send, alert):
+        """Case C leaves the form open, so this branch is re-entered every tick.
+        Starting the sequence twice would fire ask 2 minutes after ask 1."""
+        from bot.post_visit import next_day_noon, visit_end
+        report = self._report()
+        deadline = next_day_noon(visit_end(self.lead))
+        self._tick(now=deadline + timedelta(minutes=1))
+        self.assertEqual(self._tick(now=deadline + timedelta(minutes=6))['asks'], 0)
+        report.refresh_from_db()
+        self.assertEqual(report.ask_count, 1)
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_case_c_still_paces_the_later_asks(self, _send, alert):
+        """The cadence after a Case C start is the same 3-then-7 as any other."""
+        from bot.post_visit import next_day_noon, visit_end
+        report = self._report()
+        self._tick(now=next_day_noon(visit_end(self.lead)) + timedelta(minutes=1))
+        report.refresh_from_db()
+        self.assertEqual(self._tick(now=report.next_action_at)['asks'], 1)
+        report.refresh_from_db()
+        self.assertEqual(report.ask_count, 2)
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_case_c_with_no_email_hands_the_lead_back_instead(self, _send, alert):
+        from bot.post_visit import next_day_noon, visit_end
+        self.lead.customer_email = None
+        self.lead.save()
+        report = self._report()
+
+        stats = self._tick(now=next_day_noon(visit_end(self.lead)) + timedelta(minutes=1))
+        self.assertEqual(stats['no_email'], 1)
+        self.assertEqual(stats['asks'], 0)
+        self.assertFalse(_send.called)
+        report.refresh_from_db()
+        self.assertIsNotNone(report.no_email_notified_at)
+        self.assertEqual(report.sequence, 'stopped')
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_the_no_email_handback_is_sent_only_once(self, _send, alert):
+        from bot.post_visit import next_day_noon, visit_end
+        self.lead.customer_email = None
+        self.lead.save()
+        self._report()
+        when = next_day_noon(visit_end(self.lead)) + timedelta(minutes=1)
+        self._tick(now=when)
+        before = alert.call_count
+        self._tick(now=when + timedelta(hours=1))
+        self.assertEqual(alert.call_count, before)
+
+    # -- guards ------------------------------------------------------------
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_a_parked_lead_is_never_chased(self, _send):
+        from bot.post_visit import apply_submission
+        report = self._report()
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='tendai@example.com')
+        self.lead.refresh_from_db()
+        self.lead.mark_parked()
+        report.refresh_from_db()
+
+        stats = self._tick(now=report.next_action_at)
+        self.assertEqual(stats['asks'], 0)
+        self.assertEqual(stats['skipped'], 1)
+        self.assertFalse(_send.called)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_a_handed_off_lead_is_never_chased(self, _send):
+        from bot.post_visit import apply_submission
+        report = self._report()
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='tendai@example.com')
+        self.lead.refresh_from_db()
+        self.lead.mark_handed_off()
+        report.refresh_from_db()
+        self.assertEqual(self._tick(now=report.next_action_at)['asks'], 0)
+        self.assertFalse(_send.called)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_a_lead_whose_job_is_booked_is_never_chased(self, _send):
+        from bot.post_visit import apply_submission
+        report = self._report()
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='tendai@example.com')
+        self.lead.refresh_from_db()
+        self.lead.job_scheduled_datetime = timezone.now() + timedelta(days=3)
+        self.lead.job_status = 'scheduled'
+        self.lead.save()
+        report.refresh_from_db()
+        self.assertEqual(self._tick(now=report.next_action_at)['asks'], 0)
+        self.assertFalse(_send.called)
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_a_future_visit_is_left_alone(self, _send, alert):
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
+        self.lead.save()
+        stats = self._tick()
+        self.assertEqual(stats, {'form_emails': 0, 'asks': 0, 'confirmations': 0,
+                                 'cold': 0, 'no_email': 0, 'skipped': 0})
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_dry_run_writes_nothing(self, _send, alert):
+        from bot.post_visit import visit_end
+        self._tick(now=visit_end(self.lead) + timedelta(days=2), dry_run=True)
+        self.assertFalse(_send.called)
+        self.assertFalse(alert.called)
+        report = self._report()
+        self.assertIsNone(report.fallback_email_sent_at)
+        self.assertEqual(report.ask_count, 0)
+
+    def test_the_command_runs(self):
+        out = StringIO()
+        call_command('send_post_visit_followups', '--dry-run', stdout=out)
+        self.assertIn('Post-visit', out.getvalue())
+
+
+class PostVisitDateParsingTests(TestCase):
+    """extract_expected_date: a real date switches branches, a vague one must not."""
+
+    def _parse(self, text):
+        from bot.post_visit import extract_expected_date
+        return extract_expected_date(text, today=timezone.localdate())
+
+    def test_explicit_dates_are_read(self):
+        today = timezone.localdate()
+        target = today + timedelta(days=20)
+        for text in (target.strftime('%d/%m/%Y'),
+                     target.strftime('%Y-%m-%d'),
+                     target.strftime('%d %B'),
+                     target.strftime('%B %d')):
+            self.assertEqual(self._parse('we can do ' + text), target, text)
+
+    def test_tomorrow_and_named_days_are_dates(self):
+        today = timezone.localdate()
+        self.assertEqual(self._parse('tomorrow works'), today + timedelta(days=1))
+        self.assertIsNotNone(self._parse('next monday please'))
+
+    def test_a_vague_timeframe_is_not_a_date(self):
+        """This is the whole point of Case B - a rough answer must keep chasing,
+        never trigger a confirmation for a day the lead never named."""
+        for text in ('in a few weeks', 'sometime next month', 'not sure yet',
+                     'asap', 'when we have the money', ''):
+            self.assertIsNone(self._parse(text), text)
+
+    def test_a_past_date_does_not_switch_the_branch(self):
+        from bot.post_visit import record_lead_expected_date
+        lead = make_lead(8400, status='confirmed',
+                         scheduled_datetime=timezone.now() - timedelta(hours=3))
+        from bot.post_visit import ensure_report
+        ensure_report(lead)
+        lead.refresh_from_db()
+        self.assertFalse(record_lead_expected_date(
+            lead, timezone.localdate() - timedelta(days=2)))
+
+    def test_a_lead_with_no_report_is_untouched(self):
+        from bot.post_visit import note_inbound_reply
+        lead = make_lead(8401)
+        self.assertFalse(note_inbound_reply(lead, 'tomorrow works'))
+
+
+class PostVisitCopyTests(TestCase):
+    """What the lead reads. The house rules: no emojis, no dash punctuation, and
+    never a re-pitch of the visit that has already happened."""
+
+    def setUp(self):
+        self.lead = make_lead(8500, customer_name='Chipo',
+                              customer_email='chipo@example.com',
+                              project_type='bathroom_renovation')
+
+    def _bodies(self):
+        from bot.customer_emails import (build_post_visit_ask_email,
+                                         build_post_visit_confirmation_email)
+        out = [build_post_visit_ask_email(self.lead, n) for n in (1, 2, 3)]
+        out.append(build_post_visit_confirmation_email(
+            self.lead, timezone.localdate() + timedelta(days=5)))
+        return out
+
+    def test_no_emojis_anywhere(self):
+        for subject, html in self._bodies():
+            self.assertIsNone(_EMOJI_RE.search(subject), subject)
+            self.assertIsNone(_EMOJI_RE.search(html), subject)
+
+    def test_no_dash_punctuation(self):
+        import re as _re
+        text = _re.compile(r'<[^>]+>')
+        for subject, html in self._bodies():
+            visible = text.sub(' ', html)
+            self.assertNotIn('—', visible, subject)
+            self.assertNotIn('–', visible, subject)
+            # A clause dash - like this one - is the shape being banned; hyphens
+            # inside words (on-site, call-out) are fine.
+            self.assertIsNone(_re.search(r'\s-\s', visible), subject)
+
+    def test_the_visit_is_never_re_pitched(self):
+        """The plumber has already been. Offering the visit again, free or
+        otherwise, is the repeat-pitch bug in a new channel."""
+        for subject, html in self._bodies():
+            low = html.lower()
+            self.assertNotIn('free', low, subject)
+            self.assertNotIn('site visit', low, subject)
+            self.assertNotIn('no cost', low, subject)
+
+    def test_the_confirmation_names_the_lead_s_own_date(self):
+        from bot.customer_emails import build_post_visit_confirmation_email
+        target = timezone.localdate() + timedelta(days=5)
+        subject, html = build_post_visit_confirmation_email(self.lead, target)
+        self.assertIn(target.strftime('%d %B'), subject + html)
+        self.assertNotIn('None', html)
+
+
+class QuoteSendChannelTests(StaffClientTestCase):
+    """The two quote-send buttons are independent, and neither touches the
+    follow-up channel."""
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(8600, customer_name='Farai', status='confirmed',
+                              customer_email='farai@example.com',
+                              scheduled_datetime=timezone.now() - timedelta(hours=3))
+        self.quotation = Quotation.objects.create(appointment=self.lead, labor_cost=Decimal('120'))
+
+    @patch('bot.customer_emails.send_quotation_email_to_customer', return_value=True)
+    @patch('bot.views.quotations.build_quotation_pdf_file')
+    def test_email_send_marks_only_the_email_flag(self, build_pdf, send):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            tmp.write(b'%PDF-1.4 test')
+            build_pdf.return_value = tmp.name
+        self.client.post(reverse('send_quotation_email', args=[self.quotation.pk]))
+        self.quotation.refresh_from_db()
+        self.assertTrue(self.quotation.sent_via_email)
+        self.assertFalse(self.quotation.sent_via_whatsapp)
+        self.assertTrue(send.called)
+
+    def test_email_send_refuses_without_an_address(self):
+        self.lead.customer_email = None
+        self.lead.save()
+        self.client.post(reverse('send_quotation_email', args=[self.quotation.pk]))
+        self.quotation.refresh_from_db()
+        self.assertFalse(self.quotation.sent_via_email)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_a_whatsapp_only_quote_send_does_not_disable_email_followups(self, _send):
+        """Send channel and follow-up channel are decoupled."""
+        from bot.post_visit import apply_submission, ensure_report, run_post_visit_tick
+        self.quotation.sent_via_whatsapp = True
+        self.quotation.save()
+        report = ensure_report(self.lead)
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='farai@example.com')
+        report.refresh_from_db()
+        self.assertEqual(run_post_visit_tick(now=report.next_action_at)['asks'], 1)

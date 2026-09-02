@@ -702,6 +702,22 @@ class AppointmentDetailView(DetailView):
         return Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None))
     #
     @staticmethod
+    def _site_visit_prompt(appointment):
+        """Show the "Is the site visit complete?" banner?
+
+        Only for a finished site visit whose debrief is still outstanding. This
+        deliberately does NOT create the report row — a page view is not an
+        action, and creating one here would start the fallback-email clock on
+        every render. The row is created when the button is actually tapped.
+        """
+        from bot.post_visit import is_due_for_report
+
+        if not is_due_for_report(appointment):
+            return False
+        report = getattr(appointment, 'site_visit_report', None)
+        return report is None or report.is_open
+
+    @staticmethod
     def _followup_info_for(appointment):
         """Next automatic follow-up (attempt, due time, ad-cadence flag) for the
         detail page. Uses the cron's timing core so the shown time matches sends."""
@@ -768,6 +784,7 @@ class AppointmentDetailView(DetailView):
             'computed_lead_status': computed_status,
             'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
             'followup_info': self._followup_info_for(appointment),
+            'site_visit_prompt': self._site_visit_prompt(appointment),
             'detail_source': detail_source,
             'source_workspace': source_workspace,
             'source_back_url': source_back_url,

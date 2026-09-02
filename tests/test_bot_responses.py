@@ -7540,7 +7540,12 @@ import bot.out_of_scope_handler as _oos
 _real_compute = _oos._compute_followup_date
 try:
     def _fixed_date(_msg, _days=None):
-        d = (_tz.now() + _td(days=2)).date()
+        # localdate(), not now().date(). _checkback_when_phrase measures the
+        # delta against the SAST date; building the target off the UTC date
+        # makes them disagree by one between 00:00 and 02:00 SAST, so "two days
+        # out" was phrased as "tomorrow" and these cases failed for a two-hour
+        # window every night (seen 2026-09-03 01:50).
+        d = _tz.localdate() + _td(days=2)
         return d.isoformat(), d.strftime('%A %d %B')
 
     _oos._compute_followup_date = _fixed_date
@@ -7629,7 +7634,9 @@ results.log(
 _real_defer = _oos._is_self_initiated_defer
 try:
     def _tomorrow_date(_msg, _days=None):
-        d = (_tz.now() + _td(days=1)).date()
+        # localdate() for the same reason as _fixed_date above: off the UTC
+        # date, "tomorrow morning" became "this morning" after midnight SAST.
+        d = _tz.localdate() + _td(days=1)
         return d.isoformat(), d.strftime('%A %d %B')
 
     _oos._compute_followup_date    = _tomorrow_date
@@ -8945,6 +8952,227 @@ results.log(
     "dashboard: the 2-day row reads the 2-day flag, not the 1-day one",
     "self.reminder_2_days_sent" in _gue_src,
     got="own flag",
+)
+
+
+# ── Post-visit follow-up: the date resolver and the state guard ───────────────
+# The whole Case A / Case B split turns on ONE deterministic question: did the
+# lead name a real day, or give a rough answer? Reading "in a few weeks" as a
+# date would send a confirmation for a day nobody chose; failing to read
+# "15/03" would keep chasing a lead who has already answered. Both are the
+# customer's-own-words-override rule in a new place, so both are pinned here.
+import bot.post_visit as _pv
+from datetime import date as _pv_date, timedelta as _pv_td
+
+_pv_today = _pv_date(2026, 9, 2)
+
+for _text, _expected in [
+    ("we can do 15/03/2027", _pv_date(2027, 3, 15)),
+    ("book us for 2026-10-20", _pv_date(2026, 10, 20)),
+    ("20 October works", _pv_date(2026, 10, 20)),
+    ("October 20 works", _pv_date(2026, 10, 20)),
+    ("the 20th of October", _pv_date(2026, 10, 20)),
+    ("tomorrow if you can", _pv_today + _pv_td(days=1)),
+]:
+    results.log(
+        f"post-visit: '{_text[:34]}' reads as a specific date",
+        _pv.extract_expected_date(_text, today=_pv_today) == _expected,
+        got=str(_pv.extract_expected_date(_text, today=_pv_today)),
+        expected=str(_expected),
+    )
+
+for _vague in ["in a few weeks", "sometime next month", "not sure yet", "asap",
+               "when we have the money", "this month maybe", ""]:
+    results.log(
+        f"post-visit: '{_vague[:34]}' is NOT a date (keeps chasing)",
+        _pv.extract_expected_date(_vague, today=_pv_today) is None,
+        got=str(_pv.extract_expected_date(_vague, today=_pv_today)),
+        expected="None",
+    )
+
+# A day/month with no year means the NEXT time that date comes round, never a
+# date in the past — a past date would arm a confirmation that can never send.
+results.log(
+    "post-visit: a bare day/month that has passed rolls to next year",
+    _pv.extract_expected_date("1 March", today=_pv_today) == _pv_date(2027, 3, 1),
+    got=str(_pv.extract_expected_date("1 March", today=_pv_today)),
+)
+
+
+class _PVLead:
+    """Minimal stand-in for the lead-state guard (no DB)."""
+    def __init__(self, **kw):
+        self.internal_notes = ''
+        self.is_lead_active = True
+        self.status = 'confirmed'
+        self.job_scheduled_datetime = None
+        self.job_status = 'not_applicable'
+        self.__dict__.update(kw)
+
+
+results.log(
+    "post-visit: a live lead is chaseable",
+    _pv.lead_is_suppressed(_PVLead()) is False,
+    got="not suppressed",
+)
+for _label, _lead in [
+    ("parked", _PVLead(internal_notes='[PARKED]')),
+    ("handed off", _PVLead(internal_notes='[HANDED_OFF]')),
+    ("stop requested", _PVLead(internal_notes='[STOP_REQUESTED]')),
+    ("out of area", _PVLead(internal_notes='[EXCLUDED_AREA Bulawayo]')),
+    ("inactive", _PVLead(is_lead_active=False)),
+    ("cancelled", _PVLead(status='cancelled')),
+    ("job on the diary", _PVLead(job_scheduled_datetime='2026-10-01')),
+    ("job scheduled", _PVLead(job_status='scheduled')),
+]:
+    results.log(
+        f"post-visit: a {_label} lead is never chased",
+        _pv.lead_is_suppressed(_lead) is True,
+        got="suppressed",
+    )
+
+# The stale-end-time trap: Appointment.save() fills end_datetime once and never
+# recomputes it, so a rescheduled visit carries the OLD end. Trusting it would
+# email the plumber a debrief for a visit that has not happened yet.
+class _PVVisit:
+    def __init__(self, start, end):
+        self.scheduled_datetime = start
+        self.end_datetime = end
+        self.duration = _pv_td(hours=2)
+
+
+from datetime import datetime as _pv_dt
+_pv_start = _pv_dt(2026, 9, 10, 9, 0)
+results.log(
+    "post-visit: a stale end_datetime does not make a future visit look finished",
+    _pv.visit_end(_PVVisit(_pv_start, _pv_dt(2026, 9, 1, 11, 0))) == _pv_start + _pv_td(hours=2),
+    got=str(_pv.visit_end(_PVVisit(_pv_start, _pv_dt(2026, 9, 1, 11, 0)))),
+)
+results.log(
+    "post-visit: a consistent end_datetime is used as-is",
+    _pv.visit_end(_PVVisit(_pv_start, _pv_dt(2026, 9, 10, 10, 30))) == _pv_dt(2026, 9, 10, 10, 30),
+    got="explicit end kept",
+)
+
+# The spacing the brief specifies: ask 1 the next day at noon, then +3, then +7.
+results.log(
+    "post-visit: the ask cadence is next-day noon, then 3 days, then 7",
+    (_pv.ASK_HOUR, _pv.ASK_2_AFTER_DAYS, _pv.ASK_3_AFTER_DAYS, _pv.MAX_ASKS) == (12, 3, 7, 3),
+    got=f"{_pv.ASK_HOUR}/{_pv.ASK_2_AFTER_DAYS}/{_pv.ASK_3_AFTER_DAYS}/{_pv.MAX_ASKS}",
+)
+results.log(
+    "post-visit: the plumber's form link follows the visit by 35 minutes",
+    _pv.FALLBACK_EMAIL_DELAY_MINUTES == 35,
+    got=str(_pv.FALLBACK_EMAIL_DELAY_MINUTES),
+)
+results.log(
+    "post-visit: the confirmation lands 2 days before the job date",
+    _pv.CONFIRM_DAYS_BEFORE == 2,
+    got=str(_pv.CONFIRM_DAYS_BEFORE),
+)
+
+# The visit has already happened by the time these go out, so re-pitching it -
+# free or otherwise - is the repeat-pitch bug wearing a new channel. The copy
+# is a module-level table, so it can be read without touching the API.
+import bot.customer_emails as _pv_emails
+
+_pv_ask_copy = str(_pv_emails._POST_VISIT_ASKS).lower()
+results.log(
+    "post-visit: the asks never re-pitch the site visit",
+    'free' not in _pv_ask_copy and 'site visit' not in _pv_ask_copy,
+    got="no visit pitch",
+)
+results.log(
+    "post-visit: the asks carry no dash punctuation",
+    ' - ' not in _pv_ask_copy and '—' not in _pv_ask_copy and '–' not in _pv_ask_copy,
+    got="no clause dashes",
+)
+
+
+# ── The transcript shows what was SENT, not the draft of it ──────────────────
+# The response mixins log the reply they compose; the webhook then rewrites it
+# at the outbound choke point (memory check, fee/free-visit strippers, the
+# first-message price note, dash stripping) and logs the result. While the
+# chain changed nothing the two writes collapsed via add_conversation_message's
+# exact-content dedup. The price note edits the FIRST reply of every
+# conversation, so they stopped matching and the dashboard showed the reply
+# twice - once without the note, once with it - while the lead received only
+# the second (prod 2026-09-03, barmak-plumbing 263786318169).
+class _DraftLead:
+    """Minimal Appointment stand-in: real history semantics, no DB."""
+    def __init__(self, history=None):
+        self.conversation_history = list(history or [])
+        self.saved = 0
+
+    def save(self, **kw):
+        self.saved += 1
+
+    add_conversation_message = _bot_models.Appointment.add_conversation_message
+    replace_draft_assistant_turns = _bot_models.Appointment.replace_draft_assistant_turns
+
+
+_DRAFT = "Hello, How may we assist you on plumbing services"
+_FINAL = _DRAFT + "\n\nJust a quick note: *US$10 call-out fee.*"
+
+_dl = _DraftLead([{"role": "user", "content": "Hello! Can I get more info on this?"}])
+_dl.add_conversation_message("assistant", _DRAFT)          # the mixin's draft
+_dl.replace_draft_assistant_turns(_DRAFT, [_FINAL])         # the choke point
+_assistant_turns = [e for e in _dl.conversation_history if e.get("role") == "assistant"]
+results.log(
+    "transcript: a reply rewritten by the price note is logged ONCE",
+    len(_assistant_turns) == 1,
+    got=f"{len(_assistant_turns)} assistant turn(s)",
+    expected="1",
+)
+results.log(
+    "transcript: the entry kept is the text actually sent, not the draft",
+    _assistant_turns and _assistant_turns[0]["content"] == _FINAL,
+    got=(_assistant_turns[0]["content"][-40:] if _assistant_turns else "none"),
+    expected="the reply carrying the price note",
+)
+
+# An unchanged reply must still land exactly once (the case that used to be
+# carried by the dedup guard alone).
+_dl2 = _DraftLead([{"role": "user", "content": "hi"}])
+_dl2.add_conversation_message("assistant", _DRAFT)
+_dl2.replace_draft_assistant_turns(_DRAFT, [_DRAFT])
+results.log(
+    "transcript: an unchanged reply is still logged once",
+    len([e for e in _dl2.conversation_history if e.get("role") == "assistant"]) == 1,
+    got=str(len([e for e in _dl2.conversation_history if e.get("role") == "assistant"])),
+)
+
+# A split reply is two draft turns and two final turns - both halves replaced.
+_A, _B = "Perfect.", "What suburb are you in?"
+_dl3 = _DraftLead([{"role": "user", "content": "hi"}])
+_dl3.add_conversation_message("assistant", _A)
+_dl3.add_conversation_message("assistant", _B)
+_dl3.replace_draft_assistant_turns(
+    _A + _MK + _B, [_A, _B + " Just a quick note."])
+results.log(
+    "transcript: a split reply is replaced part-for-part, not doubled",
+    len([e for e in _dl3.conversation_history if e.get("role") == "assistant"]) == 2,
+    got=str(len([e for e in _dl3.conversation_history if e.get("role") == "assistant"])),
+    expected="2",
+)
+
+# A path that never logged a draft must still get its reply into the transcript.
+_dl4 = _DraftLead([{"role": "user", "content": "hi"}])
+_dl4.replace_draft_assistant_turns(_DRAFT, [_FINAL])
+results.log(
+    "transcript: a path with no draft still logs the reply",
+    [e["content"] for e in _dl4.conversation_history if e.get("role") == "assistant"] == [_FINAL],
+    got=str(len(_dl4.conversation_history)),
+)
+
+# A turn already stamped with a WAMID was really sent - never delete that.
+_dl5 = _DraftLead([{"role": "user", "content": "hi"},
+                   {"role": "assistant", "content": _DRAFT, "message_id": "wamid.X"}])
+_dl5.replace_draft_assistant_turns(_DRAFT, [_FINAL])
+results.log(
+    "transcript: an already-sent turn is never dropped as a draft",
+    any(e.get("message_id") == "wamid.X" for e in _dl5.conversation_history),
+    got="sent turn kept",
 )
 
 if GATE_ONLY:

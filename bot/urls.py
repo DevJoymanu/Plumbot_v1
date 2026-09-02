@@ -5,6 +5,7 @@ from .views import platform as platform_views
 from .views import gallery as gallery_views
 from .views import offer as offer_views
 from .views import legal as legal_views
+from .views import post_visit as post_visit_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
@@ -100,6 +101,13 @@ urlpatterns = [
     path('api/appointments/<int:appointment_id>/', appointment_detail_api, name='appointment_detail_api'),
 
     
+    # Post-visit debrief. Both entry points open the SAME tokenized form:
+    # the in-app button (staff, redirects) and the 35-minute fallback email
+    # (public, token only — the plumber taps it from their phone). One URL and
+    # one submitted_at is what makes the form single-use across both paths.
+    path('appointments/<int:pk>/site-visit/', post_visit_views.site_visit_start, name='site_visit_start'),
+    path('site-visit/<token>/', post_visit_views.site_visit_form, name='site_visit_form'),
+
     # Job scheduling URLs
     path('appointments/<int:pk>/complete-site-visit/', complete_site_visit, name='complete_site_visit'),
     path('appointments/<int:pk>/schedule-job/', schedule_job, name='schedule_job'),
@@ -123,6 +131,9 @@ urlpatterns = [
     path('quotations/<int:pk>/preview/', ViewQuotationView.as_view(), name='preview_quotation'),
     path('quotations/<int:pk>/edit/', EditQuotationView.as_view(), name='edit_quotation'),
     path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),
+    # Independent of the WhatsApp send above — the plumber may use either
+    # channel or both, and neither affects the email follow-up sequence.
+    path('quotations/<int:pk>/send-email/', post_visit_views.send_quotation_email, name='send_quotation_email'),
     path('quotations/<int:pk>/duplicate/', duplicate_quotation, name='duplicate_quotation'),
     path('quotations/<int:pk>/delete/', delete_quotation, name='delete_quotation'),
     path('quotations/new/', StandaloneQuotationView.as_view(), name='standalone_quotation'),

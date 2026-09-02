@@ -1289,6 +1289,79 @@
   }
 
   /* ── "Job at a glance" hero — the plumber's read-first summary ── */
+  /* ── Site-visit prompt ─────────────────────────────────────────────────
+     Pinned above every other detail, deliberately loud: it is the ONE thing
+     the plumber has to do the moment they leave site, and everything after
+     the visit (the quote, the follow-up sequence) hangs off it. It disappears
+     the instant the form is submitted from either entry point. */
+  .visit-prompt {
+    background: linear-gradient(135deg, var(--color-header) 0%, #0ea5e9 100%);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 40px -15px rgba(14, 165, 233, 0.35);
+    padding: 22px 24px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .visit-prompt-kicker {
+    font-family: var(--font-label);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.75);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .visit-prompt-q {
+    font-size: 20px;
+    font-weight: 500;
+    color: #fff;
+    margin: 0;
+    line-height: 1.3;
+  }
+
+  .visit-prompt-sub {
+    font-size: 13.5px;
+    color: rgba(255, 255, 255, 0.82);
+    margin: 6px 0 0;
+  }
+
+  .visit-prompt-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    background: #fff;
+    color: var(--color-header);
+    border: none;
+    border-radius: 999px;
+    padding: 14px 26px;
+    font-family: var(--font-label);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-decoration: none;
+    white-space: nowrap;
+    box-shadow: 0 10px 20px -8px rgba(0, 0, 0, 0.35);
+    transition: transform .2s ease, opacity .2s ease;
+  }
+
+  .visit-prompt-btn:hover { opacity: .92; color: var(--color-header); }
+  .visit-prompt-btn:active { transform: scale(.95); }
+
+  @media (max-width: 640px) {
+    .visit-prompt { padding: 18px; }
+    .visit-prompt-btn { width: 100%; justify-content: center; }
+  }
+
   .glance-card {
     background: var(--glass-bg);
     backdrop-filter: blur(var(--glass-blur));
@@ -2058,6 +2131,25 @@
 
       <div class="appt-tab-pane is-active" id="tab-details">
         <div class="appt-detail-content">
+
+          {# ── Site visit complete? ── Pinned above everything else, because it
+             is the trigger for the quote and the whole post-visit follow-up
+             sequence. Shown only while the debrief is still outstanding; the
+             view sets site_visit_prompt False the moment the form is submitted
+             from either entry point, so this and the fallback email can never
+             both be live. #}
+          {% if site_visit_prompt %}
+          <div class="visit-prompt">
+            <div style="min-width:0;">
+              <span class="visit-prompt-kicker"><i class="fas fa-clipboard-check"></i> Action needed</span>
+              <p class="visit-prompt-q">Is the site visit complete?</p>
+              <p class="visit-prompt-sub">Log how it went and we will handle the quote and the follow-ups.</p>
+            </div>
+            <a href="{% url 'site_visit_start' appointment.pk %}" class="visit-prompt-btn">
+              <i class="fas fa-pen-to-square"></i> Log the visit
+            </a>
+          </div>
+          {% endif %}
 
           {# ── Job at a glance: when / where / what / who, readable in five seconds ── #}
           <div class="glance-card">

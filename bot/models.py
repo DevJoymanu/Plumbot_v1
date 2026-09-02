@@ -1425,6 +1425,61 @@ class Appointment(models.Model):
                 return str(description)
         return None
 
+    def replace_draft_assistant_turns(self, draft, final_parts):
+        """Log the reply that was actually SENT, replacing the draft of it.
+
+        Two layers log an assistant turn. The response mixins log the reply the
+        moment they compose it (~20 call sites, and some of those paths never
+        reach the webhook — the email poller, the test console), and the webhook
+        logs the final text at the outbound choke point. Between the two sits
+        the whole rewrite chain: the memory check, the fee and repeat-free-visit
+        strippers, the first-message price note, and the dash stripper.
+
+        add_conversation_message de-dupes on EXACT content, so while the chain
+        happened to change nothing the two writes collapsed into one entry and
+        nobody noticed. The price note changed that: it edits the first reply of
+        every conversation, so the draft and the final text stopped matching and
+        the dashboard started showing the same reply twice — once without the
+        note, once with it (prod 2026-09-03, barmak-plumbing 263786318169). The
+        customer only ever received the second one.
+
+        So the draft is dropped rather than deduped. Only the text that goes out
+        belongs in the transcript: the dashboard is read as a record of what the
+        lead was told, and a pre-stripper draft is a message nobody was sent.
+
+        Falls back to a plain append when the trailing turns are not this
+        draft — a path that never logged one, or one whose turn has already been
+        interrupted by the customer.
+        """
+        final_parts = [p for p in (final_parts or []) if p and str(p).strip()]
+        if not final_parts:
+            return
+
+        from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
+        draft_parts = [
+            p.strip() for p in str(draft or '').split(MESSAGE_SPLIT_MARKER)
+        ]
+        draft_parts = [p for p in draft_parts if p]
+
+        history = self.conversation_history if isinstance(self.conversation_history, list) else []
+        if draft_parts and len(history) >= len(draft_parts):
+            tail = history[-len(draft_parts):]
+            is_draft = all(
+                isinstance(e, dict) and e.get('role') == 'assistant'
+                and e.get('content') == part
+                # A WAMID means this entry was really sent; never drop that.
+                and not e.get('message_id')
+                for e, part in zip(tail, draft_parts)
+            )
+            if is_draft:
+                del self.conversation_history[-len(draft_parts):]
+                self.save(update_fields=['conversation_history'])
+                print(f"♻️  Replaced {len(draft_parts)} draft assistant turn(s) "
+                      f"with the text actually sent")
+
+        for part in final_parts:
+            self.add_conversation_message('assistant', part)
+
     def attach_message_id(self, role, content, message_id):
         """Stamp an outbound WAMID onto the matching conversation entry.
 
@@ -2624,6 +2679,122 @@ class ScheduledReminder(models.Model):
         )
 
 
+class SiteVisitReport(models.Model):
+    """The post-visit debrief for ONE site visit, and the state machine for
+    everything that follows it.
+
+    One row per appointment (OneToOne), created lazily the moment the visit is
+    over — by the detail page's banner, by the fallback-email cron, or by the
+    tokenized form itself. The row IS the single-use gate: whichever entry
+    point the plumber uses (the in-app button or the emailed link), both open
+    the same URL, and ``submitted_at`` closes it to the other. The fallback
+    email is never sent once ``submitted_at`` is set.
+
+    Sequencing state lives here rather than in internal_notes tags because it
+    is structured (a count, three distinct due moments, an outcome) and has to
+    be queryable by the cron — the tag trick is for booleans.
+    """
+
+    OUTCOME_CHOICES = [
+        ('went_ahead', 'Went ahead'),
+        ('no_show', 'No-show'),
+        ('rescheduled', 'Rescheduled'),
+        ('not_proceeding', 'Lead not proceeding'),
+    ]
+    # How the lead answered "when do you expect the job done?".
+    EXPECTATION_CHOICES = [
+        ('specific_date', 'Specific date'),
+        ('timeframe', 'Rough timeframe'),
+        ('unknown', "Didn't say"),
+    ]
+    TIMEFRAME_CHOICES = [
+        ('asap', 'ASAP'),
+        ('two_weeks', 'Within 2 weeks'),
+        ('this_month', 'This month'),
+        ('one_to_three_months', '1 to 3 months'),
+        ('exploring', 'Just exploring'),
+    ]
+    SOURCE_CHOICES = [
+        ('app', 'In-app button'),
+        ('link', 'Emailed link'),
+    ]
+    # Where the follow-up machine has got to. 'awaiting_form' until the plumber
+    # submits (or Case C fires); 'confirm' is Case A, 'asks' is Case B.
+    SEQUENCE_CHOICES = [
+        ('awaiting_form', 'Awaiting the form'),
+        ('confirm', 'Confirmation before the job date'),
+        ('asks', 'Ask sequence'),
+        ('done', 'Finished'),
+        ('cold', 'Marked cold'),
+        ('stopped', 'Stopped'),
+    ]
+
+    tenant = _tenant_fk(related_name='site_visit_reports')
+    appointment = models.OneToOneField(
+        Appointment, on_delete=models.CASCADE, related_name='site_visit_report'
+    )
+    # Not guessable: submitting the form can set the lead's email and start
+    # customer-facing sends, so the link cannot be a bare /appointments/<pk>/.
+    token = models.CharField(max_length=64, unique=True, default=uuid.uuid4, db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    # The 35-minutes-after-the-visit fallback email to the plumber.
+    fallback_email_sent_at = models.DateTimeField(null=True, blank=True)
+    # The single-use gate. Set by whichever entry point submits first.
+    submitted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    submitted_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    submitted_via = models.CharField(max_length=10, choices=SOURCE_CHOICES, blank=True, default='')
+
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, blank=True, default='')
+    expectation = models.CharField(max_length=20, choices=EXPECTATION_CHOICES, blank=True, default='')
+    expected_date = models.DateField(null=True, blank=True)
+    expected_timeframe = models.CharField(max_length=25, choices=TIMEFRAME_CHOICES, blank=True, default='')
+    job_notes = models.TextField(blank=True, default='')
+
+    sequence = models.CharField(max_length=20, choices=SEQUENCE_CHOICES,
+                                default='awaiting_form', db_index=True)
+    ask_count = models.PositiveSmallIntegerField(default=0)
+    last_ask_at = models.DateTimeField(null=True, blank=True)
+    next_action_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    confirmation_sent_at = models.DateTimeField(null=True, blank=True)
+    cold_notified_at = models.DateTimeField(null=True, blank=True)
+    # Set when the sequence could not start because there was no email to send
+    # to; keeps the plumber from being alerted about the same lead every tick.
+    no_email_notified_at = models.DateTimeField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        _inherit_tenant(self, getattr(self, 'appointment', None))
+        super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['sequence', 'next_action_at']),
+        ]
+
+    def __str__(self):
+        return f"Site visit report for apt {self.appointment_id} ({self.sequence})"
+
+    # ── State ────────────────────────────────────────────────────────────────
+
+    @property
+    def is_open(self):
+        """The form is still answerable — the single-use gate is not closed."""
+        return self.submitted_at is None
+
+    def expectation_label(self):
+        """Human wording for the expected-date answer, never a bare None.
+
+        Callers render this straight into an email, so it must not be able to
+        produce 'None' or an empty gap — the no-null-date rule.
+        """
+        if self.expectation == 'specific_date' and self.expected_date:
+            return self.expected_date.strftime('%A %d %B %Y')
+        if self.expectation == 'timeframe' and self.expected_timeframe:
+            return dict(self.TIMEFRAME_CHOICES).get(self.expected_timeframe, '')
+        return ''
+
+
 class AppointmentNote(models.Model):
     """Additional notes for appointments"""
     tenant = _tenant_fk()
@@ -2797,8 +2968,11 @@ class Quotation(models.Model):
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     
-    # Tracking
+    # Tracking. The two send channels are INDEPENDENT — the plumber chooses one
+    # or taps both — so each keeps its own flag; neither disables the other, and
+    # neither has any bearing on which channel follow-ups use.
     sent_via_whatsapp = models.BooleanField(default=False)
+    sent_via_email = models.BooleanField(default=False)
     sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

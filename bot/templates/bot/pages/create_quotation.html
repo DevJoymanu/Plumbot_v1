@@ -123,7 +123,10 @@
         </div>
         <div class="pbq-field" style="margin-top: 16px;">
             <label for="projectNotes">Project Notes</label>
-            <textarea id="projectNotes" placeholder="Describe the project scope...">{{ appointment.project_description|default:'' }}</textarea>
+            {# The debrief's job notes win when there are any — they are the newer, #}
+            {# more specific description of what this quote is actually for.        #}
+            <textarea id="projectNotes" placeholder="Describe the project scope..."
+                      {% if quote_prefill_notes %}data-prefilled="1"{% endif %}>{% if quote_prefill_notes %}{{ quote_prefill_notes }}{% else %}{{ appointment.project_description|default:'' }}{% endif %}</textarea>
         </div>
     </div>
 
@@ -508,14 +511,20 @@
             setValue('projectType', projectType);
             setValue('projectLocation', appointment.customer_area);
 
-            let notes = appointment.project_description || '';
-            if (appointment.property_type) {
-                notes += `\nProperty Type: ${appointment.property_type}`;
+            // The debrief's job notes are rendered server-side and are newer and
+            // more specific than project_description, so this fetch must not
+            // overwrite them - it would blank what the plumber typed on site.
+            const notesEl = document.getElementById('projectNotes');
+            if (!notesEl || notesEl.dataset.prefilled !== '1') {
+                let notes = appointment.project_description || '';
+                if (appointment.property_type) {
+                    notes += `\nProperty Type: ${appointment.property_type}`;
+                }
+                if (appointment.house_stage) {
+                    notes += `\nHouse Stage: ${appointment.house_stage}`;
+                }
+                setValue('projectNotes', notes.trim());
             }
-            if (appointment.house_stage) {
-                notes += `\nHouse Stage: ${appointment.house_stage}`;
-            }
-            setValue('projectNotes', notes.trim());
 
             if (appointment.project_type === 'bathroom_renovation' ||
                 projectType.toLowerCase().includes('bathroom')) {

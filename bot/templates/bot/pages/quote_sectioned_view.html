@@ -25,11 +25,18 @@ prints. Used for any tenant whose profile sets letterhead.layout = "sectioned".
         <a href="{% url 'appointment_detail' quotation.appointment.pk %}" class="btn btn-outline-primary">
             <i class="fas fa-arrow-left"></i> Back to Lead
         </a>
-        {% if quotation.status == 'draft' %}
+        {# Two INDEPENDENT send buttons — one channel, the other, or both. #}
         <a href="{% url 'send_quotation' quotation.pk %}" class="btn btn-success">
-            <i class="fab fa-whatsapp"></i> Send via WhatsApp
+            <i class="fab fa-whatsapp"></i> Send via WhatsApp{% if quotation.sent_via_whatsapp %} (sent){% endif %}
         </a>
-        {% endif %}
+        <form method="post" action="{% url 'send_quotation_email' quotation.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-info"
+                    {% if not quotation.appointment.customer_email %}disabled
+                    title="No email address on file for this customer"{% endif %}>
+                <i class="fas fa-envelope"></i> Send via Email{% if quotation.sent_via_email %} (sent){% endif %}
+            </button>
+        </form>
         <form method="post" action="{% url 'duplicate_quotation' quotation.pk %}">
             {% csrf_token %}
             <button type="submit" class="btn btn-warning"

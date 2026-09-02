@@ -1,0 +1,275 @@
+{% comment %}
+Post-visit debrief form — PUBLIC, token-gated, single-use.
+
+Standalone document on purpose: the plumber opens this from an email on their
+phone, usually with no dashboard session, so it must not depend on the admin
+shell. Follows the Aetheris Clinical system (glass surfaces, one electric blue,
+Geist uppercase labels, pill controls) using the wireframe's own token config.
+
+The OUTCOME radio is the gate. Only "went ahead" reveals the questions and the
+Create Quote button — every other answer submits straight away and routes to
+reschedule/close, with no quote and no follow-up sequence.
+{% endcomment %}<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>{{ appointment.tenant.name|default:"Plumbot" }} · Site visit</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&amp;family=Geist:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: { extend: {
+      "colors": {
+        "on-primary": "#ffffff",
+        "surface-container-low": "#eff4ff",
+        "surface-container-lowest": "#ffffff",
+        "on-surface-variant": "#3e4850",
+        "surface-variant": "#d3e4fe",
+        "surface-container": "#e5eeff",
+        "primary-container": "#0ea5e9",
+        "on-surface": "#0b1c30",
+        "error-container": "#ffdad6",
+        "background": "#f8f9ff",
+        "primary": "#006591",
+        "surface": "#f8f9ff",
+        "secondary": "#4648d4",
+        "error": "#ba1a1a",
+        "outline": "#6e7881",
+        "surface-container-high": "#dce9ff"
+      },
+      "borderRadius": { "DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px" },
+      "fontFamily": {
+        "display-lg": ["Inter"], "label-sm": ["Geist"], "headline-md": ["Inter"],
+        "body-md": ["Inter"], "body-lg": ["Inter"], "label-md": ["Geist"]
+      },
+      "fontSize": {
+        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "0.02em", "fontWeight": "300"}],
+        "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+        "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "0.01em", "fontWeight": "400"}],
+        "body-md": ["16px", {"lineHeight": "24px", "letterSpacing": "0px", "fontWeight": "300"}],
+        "body-lg": ["18px", {"lineHeight": "28px", "letterSpacing": "0.01em", "fontWeight": "300"}],
+        "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}]
+      }
+    } }
+  }
+</script>
+<style>
+  .glass-surface {
+    background: rgba(248, 249, 255, 0.85);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(0, 101, 145, 0.1);
+  }
+  .command-glow { box-shadow: 0 20px 40px -15px rgba(14, 165, 233, 0.08); }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+
+  /* Radio cards: the input itself is hidden and the label carries the state,
+     so the whole tile is the tap target on a phone. */
+  .pick input { position: absolute; opacity: 0; pointer-events: none; }
+  .pick input:checked + span {
+    border-color: #006591;
+    background: rgba(0, 101, 145, 0.06);
+    color: #006591;
+    font-weight: 500;
+  }
+  .pick input:focus-visible + span { outline: 2px solid rgba(0, 101, 145, 0.4); outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen">
+
+<div aria-hidden="true" class="fixed -z-10 pointer-events-none top-[-6rem] right-[-6rem] w-96 h-96 rounded-full bg-primary/5 blur-3xl"></div>
+<div aria-hidden="true" class="fixed -z-10 pointer-events-none bottom-[-8rem] left-[-8rem] w-96 h-96 rounded-full bg-secondary/5 blur-3xl"></div>
+
+<main class="max-w-2xl mx-auto px-4 py-10 sm:py-16">
+
+  <header class="mb-8">
+    <p class="font-label-sm text-label-sm uppercase tracking-widest text-primary">Site visit</p>
+    <h1 class="font-headline-md text-headline-md mt-1">How did it go?</h1>
+    <p class="font-body-md text-on-surface-variant mt-2">
+      Two minutes. Your answers schedule everything that happens next.
+    </p>
+  </header>
+
+  <section class="glass-surface command-glow rounded p-6 mb-6">
+    <p class="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-3">The job</p>
+    <dl class="space-y-2 font-body-md">
+      <div class="flex gap-3">
+        <dt class="text-on-surface-variant w-28 shrink-0">Customer</dt>
+        <dd class="font-medium">{{ appointment.customer_name|default:"Not given" }}</dd>
+      </div>
+      <div class="flex gap-3">
+        <dt class="text-on-surface-variant w-28 shrink-0">Phone</dt>
+        <dd>{{ appointment.phone_number|cut:"whatsapp:"|default:"Not given" }}</dd>
+      </div>
+      <div class="flex gap-3">
+        <dt class="text-on-surface-variant w-28 shrink-0">Service</dt>
+        <dd>{{ appointment.get_project_type_display|default:appointment.project_type|default:"Not given" }}</dd>
+      </div>
+      <div class="flex gap-3">
+        <dt class="text-on-surface-variant w-28 shrink-0">Area</dt>
+        <dd>{{ appointment.customer_area|default:"Not given" }}</dd>
+      </div>
+      {% if appointment.scheduled_datetime %}
+      <div class="flex gap-3">
+        <dt class="text-on-surface-variant w-28 shrink-0">Visited</dt>
+        <dd>{{ appointment.scheduled_datetime|date:"D j M, H:i" }}</dd>
+      </div>
+      {% endif %}
+    </dl>
+  </section>
+
+  {% if error %}
+  <div class="rounded bg-error-container/40 border border-error/10 px-5 py-4 mb-6 flex items-start gap-3">
+    <span class="material-symbols-outlined text-error" style="font-variation-settings:'FILL' 1;">error</span>
+    <p class="font-label-md text-label-md text-on-surface">{{ error }}</p>
+  </div>
+  {% endif %}
+
+  <form method="post" id="visitForm" class="space-y-6" novalidate>
+    {% csrf_token %}
+
+    {# ── The gate ─────────────────────────────────────────────────────── #}
+    <section class="glass-surface command-glow rounded p-6">
+      <p class="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-4">
+        Visit outcome
+      </p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        {% for value, label in outcome_choices %}
+        <label class="pick block cursor-pointer">
+          <input type="radio" name="outcome" value="{{ value }}" required
+                 {% if value == 'went_ahead' %}data-reveals="1"{% endif %}>
+          <span class="flex items-center gap-3 rounded-full border border-primary/10 bg-surface-container-lowest px-5 py-3 font-body-md transition-all duration-200 active:scale-95 hover:border-primary/40">
+            <span class="material-symbols-outlined text-primary">
+              {% if value == 'went_ahead' %}task_alt{% elif value == 'no_show' %}person_off{% elif value == 'rescheduled' %}event_repeat{% else %}do_not_disturb_on{% endif %}
+            </span>
+            {{ label }}
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+      <p class="font-body-md text-on-surface-variant mt-4" id="gateNote" hidden>
+        No quote and no customer follow-ups for this one. We will note it and
+        leave the lead with you.
+      </p>
+    </section>
+
+    {# ── Revealed only by "went ahead" ─────────────────────────────────── #}
+    <div id="wentAheadBlock" hidden class="space-y-6">
+
+      <section class="glass-surface command-glow rounded p-6">
+        <label for="lead_email" class="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant block mb-3">
+          Customer's email
+        </label>
+        <input type="email" id="lead_email" name="lead_email"
+               value="{{ appointment.customer_email|default:'' }}"
+               placeholder="name@example.com"
+               class="w-full rounded-full border-0 bg-surface-container-low px-5 py-3 font-body-md text-on-surface placeholder:text-outline focus:ring-2 focus:ring-primary/20">
+        <p class="font-body-md text-on-surface-variant mt-3">
+          The quote and every follow-up go here, so it has to be right.
+        </p>
+      </section>
+
+      <section class="glass-surface command-glow rounded p-6">
+        <p class="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant mb-4">
+          When does the customer expect the job done?
+        </p>
+        <div class="grid gap-3 sm:grid-cols-3">
+          <label class="pick block cursor-pointer">
+            <input type="radio" name="expectation" value="specific_date" data-panel="datePanel">
+            <span class="block text-center rounded-full border border-primary/10 bg-surface-container-lowest px-4 py-3 font-body-md transition-all duration-200 active:scale-95 hover:border-primary/40">They gave a date</span>
+          </label>
+          <label class="pick block cursor-pointer">
+            <input type="radio" name="expectation" value="timeframe" data-panel="timeframePanel">
+            <span class="block text-center rounded-full border border-primary/10 bg-surface-container-lowest px-4 py-3 font-body-md transition-all duration-200 active:scale-95 hover:border-primary/40">Rough timeframe</span>
+          </label>
+          <label class="pick block cursor-pointer">
+            <input type="radio" name="expectation" value="unknown" data-panel="">
+            <span class="block text-center rounded-full border border-primary/10 bg-surface-container-lowest px-4 py-3 font-body-md transition-all duration-200 active:scale-95 hover:border-primary/40">They didn't say</span>
+          </label>
+        </div>
+
+        <div id="datePanel" hidden class="mt-5">
+          <label for="expected_date" class="font-label-md text-label-md uppercase tracking-widest text-on-surface-variant block mb-2">The date</label>
+          <input type="date" id="expected_date" name="expected_date" min="{{ today }}"
+                 class="w-full rounded-full border-0 bg-surface-container-low px-5 py-3 font-body-md text-on-surface focus:ring-2 focus:ring-primary/20">
+          <p class="font-body-md text-on-surface-variant mt-3">
+            We will check back with them two days before.
+          </p>
+        </div>
+
+        <div id="timeframePanel" hidden class="mt-5">
+          <p class="font-label-md text-label-md uppercase tracking-widest text-on-surface-variant mb-2">How soon</p>
+          <div class="grid gap-3 sm:grid-cols-2">
+            {% for value, label in timeframe_choices %}
+            <label class="pick block cursor-pointer">
+              <input type="radio" name="expected_timeframe" value="{{ value }}">
+              <span class="block text-center rounded-full border border-primary/10 bg-surface-container-lowest px-4 py-3 font-body-md transition-all duration-200 active:scale-95 hover:border-primary/40">{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section class="glass-surface command-glow rounded p-6">
+        <label for="job_notes" class="font-label-sm text-label-sm uppercase tracking-widest text-on-surface-variant block mb-3">
+          Job notes <span class="normal-case tracking-normal text-outline">(optional)</span>
+        </label>
+        <textarea id="job_notes" name="job_notes" rows="5"
+                  placeholder="What needs doing, materials, anything the quote should say."
+                  class="w-full rounded border-0 bg-surface-container-low px-5 py-4 font-body-md text-on-surface placeholder:text-outline focus:ring-2 focus:ring-primary/20">{{ report.job_notes }}</textarea>
+        <p class="font-body-md text-on-surface-variant mt-3">These carry into the quote screen.</p>
+      </section>
+    </div>
+
+    <button type="submit" id="submitBtn"
+            class="w-full rounded-full bg-primary text-on-primary px-6 py-4 font-label-md text-label-md uppercase tracking-widest shadow-lg shadow-primary/20 transition-all duration-200 hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled>
+      Choose an outcome first
+    </button>
+  </form>
+
+  <p class="font-body-md text-on-surface-variant text-center mt-8">
+    This link works once.
+  </p>
+</main>
+
+<script>
+  (function () {
+    var block   = document.getElementById('wentAheadBlock');
+    var note    = document.getElementById('gateNote');
+    var submit  = document.getElementById('submitBtn');
+    var panels  = { datePanel: document.getElementById('datePanel'),
+                    timeframePanel: document.getElementById('timeframePanel') };
+
+    function onOutcome() {
+      var picked = document.querySelector('input[name="outcome"]:checked');
+      if (!picked) { return; }
+      var wentAhead = picked.value === 'went_ahead';
+      block.hidden = !wentAhead;
+      note.hidden = wentAhead;
+      submit.disabled = false;
+      submit.textContent = wentAhead ? 'Create quote' : 'Log it and close';
+    }
+
+    function onExpectation() {
+      var picked = document.querySelector('input[name="expectation"]:checked');
+      Object.keys(panels).forEach(function (key) { panels[key].hidden = true; });
+      if (picked && picked.dataset.panel && panels[picked.dataset.panel]) {
+        panels[picked.dataset.panel].hidden = false;
+      }
+    }
+
+    document.querySelectorAll('input[name="outcome"]').forEach(function (el) {
+      el.addEventListener('change', onOutcome);
+    });
+    document.querySelectorAll('input[name="expectation"]').forEach(function (el) {
+      el.addEventListener('change', onExpectation);
+    });
+    onOutcome();
+    onExpectation();
+  })();
+</script>
+</body>
+</html>

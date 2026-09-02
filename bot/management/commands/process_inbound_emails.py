@@ -991,6 +991,11 @@ class Command(BaseCommand):
                 # ── Conversation history (customer turn) ──────────────────────
                 if not dry_run:
                     apt.add_conversation_message("user", clean)
+                    # A lead answering a post-visit ask with a real date moves
+                    # onto the confirmation branch (Case B -> Case A). No-op for
+                    # every lead without a live site-visit report.
+                    from bot.post_visit import note_inbound_reply
+                    note_inbound_reply(apt, clean, source='email')
 
                 # ── Acknowledgement-only reply (short path, no pitch) ─────────
                 if intent == "acknowledgement":
