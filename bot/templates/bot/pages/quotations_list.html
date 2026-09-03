@@ -224,7 +224,7 @@ contract pinned by QuoteMobileLayoutTests).
                                         <i class="fas fa-envelope"></i> {% if q.sent_via_email %}Resend{% else %}Email{% endif %}
                                     </button>
                                 </form>
-                                <a href="{% url 'send_quotation' q.pk %}" class="btn btn-secondary">
+                                <a href="{% url 'quotation_whatsapp_handoff' q.pk %}" class="btn btn-secondary">
                                     <i class="fab fa-whatsapp"></i> {% if q.sent_via_whatsapp %}Resend{% else %}Send{% endif %}
                                 </a>
                                 <form method="post" action="{% url 'duplicate_quotation' q.pk %}">

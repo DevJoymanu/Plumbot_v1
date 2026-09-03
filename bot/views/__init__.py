@@ -25,6 +25,7 @@ from .quotations import (
     QuotationsListView,
     download_quotation_pdf,
     mark_quotation_sent,
+    quotation_whatsapp_handoff,
     quotation_detail_api,
     EditQuotationView,
     duplicate_quotation,

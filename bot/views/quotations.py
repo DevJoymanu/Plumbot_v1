@@ -814,6 +814,51 @@ def send_quotation(request, pk):
     return redirect('appointment_detail', pk=quotation.appointment.pk)
 
 
+@staff_required
+def quotation_whatsapp_handoff(request, pk):
+    """Hand the quote to the plumber's OWN WhatsApp. The bot does not send it.
+
+    Every "Send on WhatsApp" control in the app comes here — the quotes list,
+    the quote page, the appointment's Quotes tab — so there is one behaviour and
+    one explanation of it, rather than some buttons handing over and others
+    quietly sending from the bot's number.
+
+    Why the handoff rather than the Cloud API:
+      * the quote then comes from the number the customer already knows, not the
+        bot's line;
+      * the bot's own sends are bound by WhatsApp's 24h messaging window, and a
+        quote usually goes out days after the visit, when that send fails 131047.
+    """
+    quotation = get_object_or_404(_visible_quotations(request), pk=pk)
+    appointment = quotation.appointment
+    tenant = tenant_of(request, quotation=quotation)
+
+    lead_name = (getattr(appointment, 'customer_name', '') or '').strip()
+    service = ''
+    if appointment is not None and appointment.project_type:
+        try:
+            service = appointment.get_project_type_display().lower()
+        except Exception:
+            service = (appointment.project_type or '').replace('_', ' ').lower()
+
+    # Short, and it does not claim the PDF is attached — the plumber attaches it
+    # themselves, and copy that promises otherwise reads as a lie when they
+    # forget. No dashes: nobody types one on a phone (CLAUDE.md).
+    greeting = f'Hi {lead_name},' if lead_name else 'Hi there,'
+    message = f'{greeting} here is your quote for {service or "the work"}.'
+
+    return render(request, 'bot/pages/quote_whatsapp_handoff.html', {
+        'quotation': quotation,
+        'appointment': appointment,
+        'lead_name': lead_name or 'the customer',
+        'lead_wa_digits': clean_phone_number(getattr(appointment, 'phone_number', '') or ''),
+        'prefilled_message': message,
+        'pdf_filename': f'Quotation-{quotation.quotation_number}.pdf',
+        'active_nav': 'quotations',
+        **branding.branding_context(tenant),
+    })
+
+
 @require_POST
 @staff_required
 def mark_quotation_sent(request, pk):
@@ -913,176 +958,15 @@ Thank you for considering our services!
 
 
 def build_quotation_pdf_file(quotation):
-    """Generate quotation PDF using the same visual structure as preview."""
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    from reportlab.pdfgen import canvas
+    """Render the quote to a temp PDF and return its path.
 
-    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-        pdf_path = tmp.name
+    The renderer lives in bot/quote_pdf.py and follows the TENANT's own layout,
+    the same way the screens do: a sectioned tenant gets their sectioned sheet,
+    everyone else the flat one. This used to be one hardcoded flat renderer, so
+    a sectioned tenant's customers received a document that looked nothing like
+    the one their plumber had approved on screen.
+    """
+    from ..quote_pdf import build_quotation_pdf
+    return build_quotation_pdf(quotation)
 
-    c = canvas.Canvas(pdf_path, pagesize=A4)
-    page_width, page_height = A4
-    left = 40
-    right = page_width - 40
-    y = page_height - 45
 
-    def _new_page():
-        c.showPage()
-        return page_height - 45
-
-    def _money(value):
-        return f"US${value}"
-
-    # Header card
-    c.setFillColor(colors.whitesmoke)
-    c.roundRect(left - 8, y - 105, right - left + 16, 95, 8, stroke=0, fill=1)
-
-    # THIS tenant's logo, never a hardcoded file. The old block reached for
-    # bot/static/logo.jpg - Homebase's mark - so every other tenant's quote went
-    # out under someone else's brand. bot/branding is the single reader, and a
-    # tenant with no logo falls back to their own name in text (below), never to
-    # the platform's mark and never to another tenant's.
-    _apt = getattr(quotation, 'appointment', None)
-    _tenant = getattr(_apt, 'tenant', None) or getattr(quotation, 'tenant', None)
-    _text_x = left
-    _logo_bytes, _ = branding.logo_bytes(_tenant)
-    if _logo_bytes:
-        try:
-            from reportlab.lib.utils import ImageReader
-            c.drawImage(ImageReader(io.BytesIO(_logo_bytes)), left, y - 82,
-                        width=70, height=70, preserveAspectRatio=True, mask='auto')
-            _text_x = left + 85
-        except Exception:
-            # An SVG, or a file reportlab cannot draw. The name still prints,
-            # so the header is never blank - it just starts at the margin.
-            logger.info('Quote PDF: logo not drawable for tenant %s', _tenant)
-
-    # Tenant identity on the quotation header (Phase 2.2b). The strapline and
-    # street address come from the tenant's own letterhead; absent means the
-    # line is omitted, never filled with another tenant's. (The hardcoded
-    # "HOMEBASE CONSTRUCTION" / Johannesburg address that used to sit here were
-    # template remnants printed on every tenant's quote.)
-    _letterhead = {}
-    if _tenant is not None:
-        from ..tenant_config import get_config
-        _letterhead = get_config(_tenant).letterhead() or {}
-    _name = (branding.brand_name(_tenant) or '').upper()
-    _cell = _apt.plumber_contact() if _apt is not None and hasattr(_apt, 'plumber_contact') else ''
-    _strapline = (_letterhead.get('strapline') or '').strip()
-    _address = (_letterhead.get('address') or _letterhead.get('location_line') or '').strip()
-
-    _line_y = y - 20
-    c.setFillColor(colors.black)
-    if _name:
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(_text_x, _line_y, _name[:48])
-        _line_y -= 18
-    if _strapline:
-        c.setFont("Helvetica-Oblique", 10)
-        c.setFillColor(colors.grey)
-        c.drawString(_text_x, _line_y, _strapline[:70])
-        _line_y -= 17
-    if _address:
-        c.setFont("Helvetica", 9)
-        c.setFillColor(colors.grey)
-        c.drawString(_text_x, _line_y, _address[:80])
-        _line_y -= 14
-    if _cell:
-        c.setFont("Helvetica", 9)
-        c.setFillColor(colors.grey)
-        c.drawString(_text_x, _line_y, f"Cell: {_cell}")
-        _line_y -= 17
-    c.setFont("Helvetica-Bold", 10)
-    c.setFillColor(colors.black)
-    c.drawString(_text_x, min(_line_y, y - 86), quotation.get_display_name()[:80])
-    y -= 125
-
-    # Client info block
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(colors.black)
-    c.drawString(left, y, "Client Information")
-    y -= 16
-    c.setFont("Helvetica", 10)
-    c.drawString(left, y, quotation.appointment.customer_name or "Customer")
-    y -= 14
-    c.drawString(left, y, quotation.appointment.customer_area or "")
-    y -= 24
-
-    # Project details block (preview style)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(left, y, "Project Details")
-    y -= 16
-    c.setFont("Helvetica", 10)
-    c.drawString(left, y, quotation.appointment.get_project_type_display() if quotation.appointment.project_type else "")
-    y -= 14
-    c.drawString(left, y, quotation.appointment.customer_area or "")
-    y -= 14
-    notes_preview = (quotation.notes or "No additional notes").splitlines()
-    for line in notes_preview[:3]:
-        c.drawString(left, y, line[:100])
-        y -= 14
-    y -= 8
-
-    # Items table header
-    if y < 180:
-        y = _new_page()
-    table_x = left
-    col_item = table_x
-    col_qty = table_x + 260
-    col_price = table_x + 330
-    col_total = table_x + 420
-
-    c.setFillColor(colors.lightgrey)
-    c.rect(table_x, y - 18, right - left, 18, stroke=0, fill=1)
-    c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(col_item + 4, y - 12, "Item")
-    c.drawString(col_qty + 4, y - 12, "Qty")
-    c.drawString(col_price + 4, y - 12, "Price")
-    c.drawString(col_total + 4, y - 12, "Total")
-    y -= 22
-
-    # Items rows
-    c.setFont("Helvetica", 9)
-    for item in quotation.items.all():
-        if y < 90:
-            y = _new_page()
-            c.setFillColor(colors.lightgrey)
-            c.rect(table_x, y - 18, right - left, 18, stroke=0, fill=1)
-            c.setFillColor(colors.black)
-            c.setFont("Helvetica-Bold", 9)
-            c.drawString(col_item + 4, y - 12, "Item")
-            c.drawString(col_qty + 4, y - 12, "Qty")
-            c.drawString(col_price + 4, y - 12, "Price")
-            c.drawString(col_total + 4, y - 12, "Total")
-            y -= 22
-            c.setFont("Helvetica", 9)
-
-        c.setStrokeColor(colors.HexColor("#dddddd"))
-        c.line(table_x, y - 2, right, y - 2)
-        c.drawString(col_item + 4, y - 14, str(item.description)[:48])
-        c.drawRightString(col_qty + 44, y - 14, str(item.quantity))
-        c.drawRightString(col_price + 74, y - 14, _money(item.unit_price))
-        c.drawRightString(col_total + 94, y - 14, _money(item.total_price))
-        y -= 20
-
-    # Totals card
-    if y < 130:
-        y = _new_page()
-    c.setFillColor(colors.whitesmoke)
-    c.roundRect(right - 220, y - 88, 220, 88, 8, stroke=0, fill=1)
-    c.setFillColor(colors.black)
-    c.setFont("Helvetica", 10)
-    c.drawString(right - 208, y - 18, "Material cost:")
-    c.drawRightString(right - 12, y - 18, _money(quotation.materials_cost))
-    c.drawString(right - 208, y - 34, "Labour:")
-    c.drawRightString(right - 12, y - 34, _money(quotation.labor_cost))
-    c.drawString(right - 208, y - 50, "Transport:")
-    c.drawRightString(right - 12, y - 50, _money(quotation.transport_cost))
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(right - 208, y - 70, "Total Amount:")
-    c.drawRightString(right - 12, y - 70, _money(quotation.total_amount))
-
-    c.save()
-    return pdf_path

@@ -6464,10 +6464,13 @@ class QuoteHandoffTests(StaffClientTestCase):
 
     # -- WhatsApp: the lead's chat, from the tenant's own number ------------
 
-    def test_the_editor_knows_the_leads_whatsapp_digits(self):
+    def test_the_editor_routes_whatsapp_through_the_one_handoff_page(self):
+        """ONE WhatsApp behaviour in the app: the editor navigates to the same
+        page every other send control links to, rather than keeping a second
+        copy of the handoff that could drift from it."""
         body = self._editor()
-        self.assertIn('const LEAD_WA_DIGITS = "15550009800"', body)
-        self.assertIn('https://wa.me/', body)
+        self.assertIn("'/quotations/' + id + '/whatsapp/'", body)
+        self.assertNotIn('https://wa.me/', body)
 
     def test_the_digits_are_clean_enough_for_a_wa_me_link(self):
         """wa.me takes digits only: no +, no 'whatsapp:' prefix."""
@@ -6479,10 +6482,38 @@ class QuoteHandoffTests(StaffClientTestCase):
         response = self.client.get(reverse('standalone_quotation'))
         self.assertEqual(response.context['lead_wa_digits'], '')
 
-    def test_whatsapp_downloads_the_pdf_because_a_link_cannot_attach_one(self):
-        body = self._editor()
-        self.assertIn('fetchPdf(id);', body)
-        self.assertIn('/download/', body)
+    def test_the_handoff_page_downloads_the_pdf_and_opens_the_chat(self):
+        """A wa.me link carries text only, so the PDF has to arrive separately."""
+        body = self.client.get(
+            reverse('quotation_whatsapp_handoff', args=[self.quote.pk])).content.decode()
+        self.assertIn(reverse('download_quotation_pdf', args=[self.quote.pk]), body)
+        self.assertIn('https://wa.me/15550009800', body)
+        self.assertIn('Open WhatsApp', body)
+
+    def test_the_handoff_page_says_the_bot_is_not_sending_it(self):
+        body = self.client.get(
+            reverse('quotation_whatsapp_handoff', args=[self.quote.pk])).content.decode()
+        self.assertIn('Nothing is sent until you send it', body)
+
+    def test_no_screen_still_asks_the_bot_to_send_the_quote(self):
+        """Every WhatsApp control hands off; none posts to the Cloud API send."""
+        pages = [reverse('quotations_list'),
+                 reverse('view_quotation', args=[self.quote.pk]),
+                 reverse('appointment_detail', args=[self.lead.pk])]
+        bot_send = reverse('send_quotation', args=[self.quote.pk])
+        for url in pages:
+            with self.subTest(url=url):
+                body = self.client.get(url).content.decode()
+                self.assertNotIn('"' + bot_send + '"', body)
+                self.assertIn(reverse('quotation_whatsapp_handoff', args=[self.quote.pk]), body)
+
+    def test_the_handoff_page_is_tenant_scoped(self):
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-handoff')
+        foreign = Quotation.objects.create(appointment=make_lead(9802, tenant=other))
+        self.assertEqual(
+            self.client.get(
+                reverse('quotation_whatsapp_handoff', args=[foreign.pk])).status_code,
+            404)
 
     # -- Email: a choice, with the tenant's default pre-marked -------------
 
@@ -6691,3 +6722,208 @@ class QuoteDocumentParityTests(StaffClientTestCase):
     def test_the_closing_line_is_not_printed_twice(self):
         body = self._body(self._pages()['view'])
         self.assertEqual(body.count('Prepared for:'), 1)
+
+
+class QuotePdfMatchesTheAppTests(StaffClientTestCase):
+    """The PDF a customer receives is the document the plumber approved.
+
+    It followed ONE hardcoded flat layout for everybody, so a sectioned tenant's
+    customers got a plain list with none of their sections, subtotals, VAT,
+    terms or banking - a document that looked nothing like the one on screen. It
+    also hardcoded 'US$' and printed the materials_cost column rather than the
+    item lines it is built from.
+
+    Markup cannot be shared between an HTML page and a reportlab canvas, so what
+    is asserted here is what a customer would actually notice: which layout was
+    drawn, and that the FIGURES agree with the screen.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.get(slug='homebase')
+        self.profile, _ = TenantProfile.objects.get_or_create(tenant=self.tenant)
+        self.profile.letterhead = {
+            'business_name': 'Homebase Plumbers',
+            'services_blurb': 'Quality is our qualification',
+            'phones': ['+263 77 481 9901'],
+            'public_email': 'hello@homebase.example',
+        }
+        self.profile.save(update_fields=['letterhead'])
+
+        self.lead = make_lead(9950, customer_name='Pdf Client',
+                              customer_area='Hatfield',
+                              customer_email='pdf@example.com',
+                              project_type='bathroom_renovation')
+        self.quote = Quotation.objects.create(
+            appointment=self.lead, labor_cost=Decimal('100'),
+            transport_cost=Decimal('25'), notes='Deposit 50%')
+        QuotationItem.objects.create(quotation=self.quote, description='Basin mixer',
+                                     quantity=2, unit_price=Decimal('40'))
+
+    @staticmethod
+    def _text(quotation):
+        """The PDF's drawn strings, via its content stream."""
+        import re
+        import zlib
+        from bot.quote_pdf import build_quotation_pdf
+
+        path = build_quotation_pdf(quotation)
+        try:
+            with open(path, 'rb') as fh:
+                raw = fh.read()
+        finally:
+            os.remove(path)
+
+        # reportlab writes content streams ASCII85-encoded AND flate-compressed
+        # by default, so both layers come off before there is any text to read.
+        import base64
+        chunks = []
+        for stream in re.findall(rb'stream\r?\n(.*?)endstream', raw, re.S):
+            body = stream.strip(b'\r\n')
+            try:
+                body = base64.a85decode(body, adobe=True)
+            except Exception:
+                pass
+            try:
+                body = zlib.decompress(body)
+            except zlib.error:
+                pass
+            chunks.append(body)
+        blob = b'\n'.join(chunks).decode('latin-1')
+        # Text is drawn as (…) Tj / TJ; pull the literals back out.
+        return '\n'.join(re.findall(r'\((.*?)\)\s*T[Jj]', blob))
+
+    # -- it is a real PDF ---------------------------------------------------
+
+    def test_it_produces_a_pdf(self):
+        from bot.quote_pdf import build_quotation_pdf
+        path = build_quotation_pdf(self.quote)
+        try:
+            with open(path, 'rb') as fh:
+                self.assertTrue(fh.read(5).startswith(b'%PDF'))
+            self.assertGreater(os.path.getsize(path), 800)
+        finally:
+            os.remove(path)
+
+    # -- the flat sheet mirrors the flat document ---------------------------
+
+    def test_the_flat_pdf_carries_the_same_blocks_as_the_screen(self):
+        text = self._text(self.quote)
+        for block in ('CLIENT INFORMATION', 'PROJECT DETAILS',
+                      'Material cost', 'Labour', 'Transport', 'Total Amount'):
+            self.assertIn(block, text, block)
+
+    def test_the_flat_pdf_carries_the_leads_own_details(self):
+        text = self._text(self.quote)
+        self.assertIn('Pdf Client', text)
+        self.assertIn('Hatfield', text)
+        self.assertIn('Basin mixer', text)
+
+    def test_the_figures_match_the_screen(self):
+        text = self._text(self.quote)
+        self.assertIn('US$80.00', text)      # 2 x 40, the item lines
+        self.assertIn('US$100.00', text)     # labour
+        self.assertIn('US$25.00', text)      # transport
+
+    def test_the_notes_reach_the_customer(self):
+        self.assertIn('Deposit 50%', self._text(self.quote))
+
+    def test_the_letterhead_is_the_tenants_own(self):
+        text = self._text(self.quote)
+        self.assertIn('Homebase Plumbers', text)
+        self.assertIn('Quality is our qualification', text)
+        # ...and none of the values that used to be hardcoded for everyone.
+        self.assertNotIn('HOMEBASE CONSTRUCTION', text)
+        self.assertNotIn('Pritchard', text)
+
+    def test_no_letterhead_omits_the_lines_rather_than_borrowing(self):
+        bare = Tenant.objects.create(name='Bare Plumbing', slug='bare-pdf')
+        TenantProfile.objects.create(tenant=bare)
+        lead = make_lead(9951, tenant=bare, customer_name='Bare Client')
+        quote = Quotation.objects.create(appointment=lead)
+        text = self._text(quote)
+        self.assertIn('Bare Plumbing', text)
+        self.assertNotIn('Homebase', text)
+
+    # -- a sectioned tenant gets THEIR sheet ---------------------------------
+
+    def _sectioned_quote(self):
+        barmak = Tenant.objects.create(name='Barmak Plumbing', slug='barmak-pdf')
+        TenantProfile.objects.create(tenant=barmak, letterhead={
+            'layout': 'sectioned',
+            'business_name': 'Barmak Plumbing',
+            'trading_name': 'ROYAL HARDWARE',
+            'bank': {'account_name': 'Barmak Plumbing Private Limited',
+                     'account_number': '1154714543'},
+            'terms': ['Deposit 75% before work begins'],
+            'signatory': 'T. Barmak',
+        })
+        lead = make_lead(9952, tenant=barmak, customer_name='Barmak Client',
+                         project_type='bathroom_renovation')
+        quote = Quotation.objects.create(
+            appointment=lead, labor_cost=Decimal('200'),
+            transport_cost=Decimal('30'), vat_percent=Decimal('15'),
+            notes='Deposit 75% before work begins')
+        QuotationItem.objects.create(quotation=quote, description='Copper pipe',
+                                     section='PLUMBING MATERIALS',
+                                     quantity=10, unit_price=Decimal('5'))
+        return quote
+
+    def test_a_sectioned_tenant_gets_their_own_sheet(self):
+        text = self._text(self._sectioned_quote())
+        self.assertIn('QUOTATION', text)
+        self.assertIn('PLUMBING MATERIALS', text)
+        self.assertIn('SUB-TOTAL', text)
+        self.assertIn('GRAND TOTAL', text)
+        # ...and not the flat sheet's blocks.
+        self.assertNotIn('CLIENT INFORMATION', text)
+
+    def test_the_sectioned_sheet_carries_vat_terms_and_banking(self):
+        text = self._text(self._sectioned_quote())
+        self.assertIn('VAT', text)
+        self.assertIn('Deposit 75% before work begins', text)
+        self.assertIn('Banking Details', text)
+        self.assertIn('1154714543', text)
+        self.assertIn('Client signature', text)
+        self.assertIn('T. Barmak', text)
+
+    def test_the_sectioned_sheet_uses_the_tenants_trading_name(self):
+        text = self._text(self._sectioned_quote())
+        self.assertIn('ROYAL HARDWARE', text)
+
+    def test_the_layout_follows_the_tenant_not_the_viewer(self):
+        """Same rule as the screens: the LEAD's tenant owns the document."""
+        from bot.views.quote_layout import is_sectioned, tenant_of
+        sectioned = self._sectioned_quote()
+        self.assertTrue(is_sectioned(tenant_of(None, quotation=sectioned)))
+        self.assertFalse(is_sectioned(tenant_of(None, quotation=self.quote)))
+
+    def test_a_tenant_with_no_bank_details_gets_no_banking_block(self):
+        """Absent means omit, never another tenant's account number."""
+        plain = Tenant.objects.create(name='Plain Sectioned', slug='plain-sectioned')
+        TenantProfile.objects.create(tenant=plain, letterhead={
+            'layout': 'sectioned', 'business_name': 'Plain Sectioned'})
+        lead = make_lead(9953, tenant=plain, customer_name='Plain Client')
+        quote = Quotation.objects.create(appointment=lead)
+        text = self._text(quote)
+        self.assertNotIn('Banking Details', text)
+        self.assertNotIn('1154714543', text)
+
+    # -- currency ------------------------------------------------------------
+
+    def test_the_currency_is_the_tenants_own(self):
+        """'US$' was hardcoded into every figure on every tenant's quote."""
+        self.profile.currency = 'ZAR '
+        self.profile.save(update_fields=['currency'])
+        text = self._text(self.quote)
+        self.assertIn('ZAR 100.00', text)
+        self.assertNotIn('US$100.00', text)
+
+    # -- the send paths use this same builder -------------------------------
+
+    def test_download_and_send_share_one_builder(self):
+        """What the plumber checks is byte-for-byte what the customer gets."""
+        response = self.client.get(
+            reverse('download_quotation_pdf', args=[self.quote.pk]))
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(b''.join(response.streaming_content).startswith(b'%PDF'))

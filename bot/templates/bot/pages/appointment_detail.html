@@ -2603,9 +2603,12 @@
                       {% csrf_token %}
                       <button type="submit" class="action-btn danger" onclick="return confirm('Delete this quotation permanently?');"><i class="fas fa-trash"></i> Delete</button>
                     </form>
-                    {% if quote.status == 'draft' or quote.status == 'sent' %}
-                    <a href="{% url 'send_quotation' quote.id %}" class="action-btn success"><i class="fab fa-whatsapp"></i> {% if quote.status == 'draft' %}Send{% else %}Resend{% endif %}</a>
-                    {% endif %}
+                    {% comment %}
+                    Opens the customer's chat on the plumber's own WhatsApp with
+                    the PDF downloaded, rather than the bot sending it from its
+                    number. Always offered: re-sending a quote is normal.
+                    {% endcomment %}
+                    <a href="{% url 'quotation_whatsapp_handoff' quote.id %}" class="action-btn success"><i class="fab fa-whatsapp"></i> {% if quote.sent_via_whatsapp %}Resend{% else %}Send{% endif %}</a>
                   </div>
                 </div>
                 {% endfor %}

@@ -776,7 +776,9 @@ which is why the manual route downloads the PDF first and says so.
 
     // Pull the PDF down so it is sitting in Downloads, ready to attach. A
     // hidden iframe rather than a navigation: the response is an attachment, so
-    // the page must stay where it is while the file arrives.
+    // the page must stay where it is while the file arrives. (WhatsApp gets
+    // this from the handoff page instead; only the manual email draft needs it
+    // here.)
     function fetchPdf(id) {
         const frame = document.createElement('iframe');
         frame.style.display = 'none';
@@ -854,16 +856,14 @@ which is why the manual route downloads the PDF first and says so.
             const id = await persist();
 
             if (channel === 'whatsapp') {
-                // Their own WhatsApp, so the message comes from the number the
-                // customer already knows, and the 24h messaging window that
-                // limits the bot's own sends does not apply.
-                fetchPdf(id);
-                const url = 'https://wa.me/' + LEAD_WA_DIGITS
-                          + '?text=' + encodeURIComponent(quoteBlurb());
-                if (opened) { opened.location.href = url; } else { window.open(url, '_blank'); }
-                markSent(id, 'whatsapp');
-                showAlert('WhatsApp opened and the PDF downloaded. Attach it and send.',
-                          'success');
+                // ONE WhatsApp behaviour in the whole app. Every other send
+                // control is a plain link to this page, and the editor goes the
+                // same way rather than keeping a second copy of the handoff
+                // that could drift from it. The page downloads the PDF, shows
+                // the message and opens the chat on the plumber's own number -
+                // the bot never sends the quote.
+                const url = '/quotations/' + id + '/whatsapp/';
+                if (opened) { opened.location.href = url; } else { window.location.href = url; }
                 return;
             }
 

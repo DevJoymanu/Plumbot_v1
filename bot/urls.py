@@ -133,6 +133,11 @@ urlpatterns = [
     # The plumber sent it from their own WhatsApp or mail app, so the
     # server never saw the message; this records that it went out.
     path('quotations/<int:pk>/mark-sent/', views.mark_quotation_sent, name='mark_quotation_sent'),
+    # Every WhatsApp send control goes here: the plumber sends from their own
+    # number, with the PDF downloaded ready to attach. `send_quotation` below
+    # is the bot's own Cloud API send - deliberately no longer linked from any
+    # screen, kept because it still works and the flows may want it back.
+    path('quotations/<int:pk>/whatsapp/', views.quotation_whatsapp_handoff, name='quotation_whatsapp_handoff'),
     path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),
     # Independent of the WhatsApp send above — the plumber may use either
     # channel or both, and neither affects the email follow-up sequence.

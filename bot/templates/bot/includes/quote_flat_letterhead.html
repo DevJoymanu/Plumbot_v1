@@ -26,7 +26,7 @@ Expects: lh (TenantConfig.letterhead()), plus branding_context
     {% firstof lh.business_name brand_name as doc_name %}
     {% if doc_name %}<h2 class="qf-doc__name">{{ doc_name }}</h2>{% endif %}
     {% if lh.trading_name %}<p class="qf-doc__ta">t / a {{ lh.trading_name }}</p>{% endif %}
-    {% if lh.strapline %}<p class="qf-doc__line">{{ lh.strapline }}</p>{% endif %}
+    {% if lh.services_blurb %}<p class="qf-doc__line">{{ lh.services_blurb }}</p>{% endif %}
     {% if lh.address %}<p class="qf-doc__line">{{ lh.address }}</p>{% endif %}
     {% if lh.phones %}
     <p class="qf-doc__line">{% for phone in lh.phones %}{{ phone }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>

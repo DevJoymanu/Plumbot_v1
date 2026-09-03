@@ -26,7 +26,8 @@ prints. Used for any tenant whose profile sets letterhead.layout = "sectioned".
             <i class="fas fa-arrow-left"></i> Back to Lead
         </a>
         {# Two INDEPENDENT send buttons — one channel, the other, or both. #}
-        <a href="{% url 'send_quotation' quotation.pk %}" class="btn btn-success">
+        {# WhatsApp hands off to the plumber's own number; the bot does not send it. #}
+        <a href="{% url 'quotation_whatsapp_handoff' quotation.pk %}" class="btn btn-success">
             <i class="fab fa-whatsapp"></i> Send via WhatsApp{% if quotation.sent_via_whatsapp %} (sent){% endif %}
         </a>
         <form method="post" action="{% url 'send_quotation_email' quotation.pk %}">

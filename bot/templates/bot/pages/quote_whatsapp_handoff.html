@@ -1,0 +1,188 @@
+{% extends "bot/layouts/base.html" %}
+
+{% comment %}
+Hand the quote to the plumber's OWN WhatsApp.
+
+The bot does NOT send the quote. This opens the customer's chat on the
+plumber's phone, from the number the customer already knows, with the PDF
+already downloaded so it is one tap to attach.
+
+Two reasons it works this way rather than the Cloud API sending it:
+  * a wa.me link carries TEXT only - no link can attach a file - so the PDF
+    has to arrive separately, which the hidden iframe below starts on load;
+  * the bot's own sends are bound by WhatsApp's 24h messaging window, and a
+    quote usually goes out days after the visit, when that send fails 131047.
+
+The "Open WhatsApp" control is a real link the plumber clicks, not something
+this page opens for them: a window opened without a click is what popup
+blockers stop.
+{% endcomment %}
+
+{% block title %}Send on WhatsApp{% endblock %}
+
+{% block extra_css %}
+{% include "bot/includes/quote_responsive_css.html" %}
+<style>
+    .wh-steps { counter-reset: step; margin: 0; padding: 0; list-style: none; }
+
+    .wh-step {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        padding: 16px 0;
+        border-bottom: 1px solid rgba(0, 101, 145, 0.08);
+    }
+
+    .wh-step:last-child { border-bottom: none; }
+
+    .wh-step__num {
+        counter-increment: step;
+        flex: 0 0 auto;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: var(--color-surface-low);
+        color: var(--color-primary);
+        font-family: var(--font-label);
+        font-weight: 600;
+        font-size: 13px;
+    }
+
+    .wh-step__num::before { content: counter(step); }
+
+    .wh-step__body { min-width: 0; flex: 1; }
+    .wh-step__body strong { display: block; color: var(--color-text); margin-bottom: 3px; }
+    .wh-step__body small { color: var(--color-muted); font-size: 12.5px; }
+
+    .wh-msg {
+        margin-top: 10px;
+        padding: 12px 14px;
+        border-radius: var(--radius-md);
+        background: var(--color-surface-low);
+        font-size: 13px;
+        color: var(--color-text);
+        white-space: pre-wrap;
+    }
+
+    .wh-wa {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 12px;
+        padding: 15px 28px;
+        border-radius: 999px;
+        background: #25D366;
+        color: #fff;
+        text-decoration: none;
+        font-family: var(--font-label);
+        font-weight: 600;
+        font-size: 15px;
+        box-shadow: 0 10px 22px -10px rgba(37, 211, 102, .8);
+    }
+
+    .wh-wa:hover { color: #fff; opacity: .93; }
+    .wh-wa:active { transform: scale(.97); }
+
+    .wh-note {
+        margin-top: 18px;
+        font-size: 12.5px;
+        color: var(--color-muted);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pbq-page">
+
+    <div class="pbq-head">
+        <div>
+            <h1 class="pbq-head__title">Send on WhatsApp</h1>
+            <p class="pbq-head__sub">
+                {{ quotation.quotation_number }} · {{ quotation.get_display_name }}
+            </p>
+        </div>
+        <div class="pbq-head__actions">
+            <a href="{% url 'view_quotation' quotation.pk %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to the quote
+            </a>
+        </div>
+    </div>
+
+    <div class="pbq-card">
+        <ol class="wh-steps">
+            <li class="wh-step">
+                <span class="wh-step__num"></span>
+                <span class="wh-step__body">
+                    <strong>The PDF is downloading now</strong>
+                    <small>
+                        It goes to your usual downloads folder as
+                        <em>{{ pdf_filename }}</em>. If it did not start,
+                        <a href="{% url 'download_quotation_pdf' quotation.pk %}">download it here</a>.
+                    </small>
+                </span>
+            </li>
+
+            <li class="wh-step">
+                <span class="wh-step__num"></span>
+                <span class="wh-step__body">
+                    <strong>Open the chat and attach it</strong>
+                    <small>
+                        This opens {{ lead_name }}'s chat in <em>your</em> WhatsApp, so the
+                        quote comes from your own number.
+                    </small>
+                    <div class="wh-msg">{{ prefilled_message }}</div>
+                    {% if lead_wa_digits %}
+                    <a class="wh-wa" id="openWhatsapp" target="_blank" rel="noopener"
+                       href="https://wa.me/{{ lead_wa_digits }}?text={{ prefilled_message|urlencode }}">
+                        <i class="fab fa-whatsapp"></i> Open WhatsApp
+                    </a>
+                    {% else %}
+                    <div class="pbq-empty" style="margin-top:12px;">
+                        <i class="fas fa-triangle-exclamation"></i>
+                        <p>This quote has no WhatsApp number on its lead, so there is no chat to open.</p>
+                    </div>
+                    {% endif %}
+                </span>
+            </li>
+        </ol>
+
+        <p class="wh-note">
+            <i class="far fa-circle-question"></i>
+            A WhatsApp link can carry a message but never a file, which is why the
+            PDF comes down separately. Nothing is sent until you send it.
+        </p>
+    </div>
+</div>
+
+{% comment %}
+Starts the download without script and without navigating away. The page has to
+stay put: the plumber still needs the Open WhatsApp button on it.
+{% endcomment %}
+<iframe src="{% url 'download_quotation_pdf' quotation.pk %}" title="Quote PDF download"
+        style="display:none;" aria-hidden="true"></iframe>
+
+<script>
+    // Record that the quote went out on WhatsApp when the plumber opens the
+    // chat. The server never sees the message itself, so this is the only
+    // moment we learn it happened - and it records what they DID, not proof of
+    // delivery. Best effort: a failed marker must never block the handoff.
+    (function () {
+        var link = document.getElementById('openWhatsapp');
+        if (!link) { return; }
+        link.addEventListener('click', function () {
+            try {
+                fetch('{% url "mark_quotation_sent" quotation.pk %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json',
+                               'X-CSRFToken': '{{ csrf_token }}' },
+                    body: JSON.stringify({ channel: 'whatsapp' }),
+                    keepalive: true
+                });
+            } catch (error) { /* they are already on their way to WhatsApp */ }
+        });
+    })();
+</script>
+{% endblock %}
