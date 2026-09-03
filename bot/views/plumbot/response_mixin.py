@@ -6187,6 +6187,18 @@ class ResponseMixin:
             the normal single-intent flow handles it). Booking/scheduling intents
             are deliberately NOT composed here — they stay with the booking flow.
             """
+            # Every snippet, the combined-pricing line and the closer in here
+            # are English. A Shona lead therefore got an English wall of prices
+            # (prod, lead 974, 2026-09-03 13:17) where the single-intent path
+            # answers them in Shona. Until the snippet bank is translated, hand
+            # a Shona message to that path instead: one answer in their own
+            # language beats two in the wrong one.
+            from bot.repeated_question_detector import detect_language_simple
+            if detect_language_simple(message or '') == 'shona':
+                logger.info("Multi-intent compose skipped: no Shona snippets, "
+                            "handing to the single-intent path")
+                return None
+
             items = self._split_intents(message)
             if not items:
                 return None

@@ -8886,6 +8886,66 @@ for _not in ('Morning or afternoon, which suits you better?',
         _alc(_not) is False,
     )
 
+# ── Multi-intent compose: check what you record, answer in their language ──
+# Prod, lead 974 (Barmak, 2026-09-03): the lead sent the same two Shona
+# messages twice and got the IDENTICAL English price block both times. Two
+# separate bugs in STEP 0, both pinned here.
+from bot.whatsapp_webhook import _has_sent_pricing_for_intent as _hsp
+from bot.views.plumbot.response_mixin import ResponseMixin as _RMix2
+
+
+class _FakeCompose:
+    _split_intents = _RMix2._split_intents
+    compose_multi_answer = _RMix2.compose_multi_answer
+
+    def __init__(self):
+        self.appointment = _ty.SimpleNamespace(tenant=None, conversation_history=[])
+
+
+# 1. Every snippet and the closer in compose_multi_answer are English, so a
+#    Shona message goes to the single-intent path, which answers in Shona.
+results.log(
+    "multi-intent: a Shona message is not answered from the English snippets",
+    _FakeCompose().compose_multi_answer(
+        'Ndaona  pane zvemabathroom' + chr(10) +
+        'Mashower nematub kuzviisa imarii') is None,
+)
+
+# 2. The step recorded its priced intents but never checked them, so a lead who
+#    repeated themselves got the identical price block again.
+def _step0_would_send(sent, intents):
+    info = [i for i in intents if i in ('location', 'hours', 'pictures', 'other')]
+    appt = _ty.SimpleNamespace(sent_pricing_intents=list(sent))
+    new = [i for i in intents
+           if i not in ('location', 'hours', 'pictures', 'other')
+           and not _hsp(appt, i)]
+    return bool(new or info)
+
+
+results.log(
+    "multi-intent: an already-priced combo is not re-sent",
+    _step0_would_send(['shower_cubicle', 'standalone_tub'],
+                      ['shower_cubicle', 'standalone_tub']) is False,
+)
+results.log(
+    "multi-intent: the first time still goes out",
+    _step0_would_send([], ['shower_cubicle', 'standalone_tub']) is True,
+)
+results.log(
+    "multi-intent: a genuinely new question is still answered",
+    _step0_would_send(['shower_cubicle', 'standalone_tub'],
+                      ['shower_cubicle', 'hours']) is True,
+)
+
+# 3. The step sent straight to delayed_response, skipping every rewrite. One
+#    finaliser now, so no send path can drift from the others again.
+import bot.whatsapp_webhook as _wh
+results.log(
+    "multi-intent: the reply goes out through the shared finaliser",
+    hasattr(_wh, 'finalise_outbound')
+    and 'finalise_outbound(_multi[' in open(_wh.__file__, encoding='utf-8-sig').read(),
+)
+
 # ── Guard rails: the lock-in close is a yes/no, so "no" gets an answer ─────
 from bot.views.plumbot.response_mixin import ResponseMixin as _RMix
 

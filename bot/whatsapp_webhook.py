@@ -2963,6 +2963,49 @@ def _mark_stop_requested(appointment) -> None:
         print(f"WARNING could not mark stop request: {exc}")
 
 
+def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
+    """Every rewrite a reply gets between composition and the wire.
+
+    Extracted because STEP 0 (multi-intent compose) sent its own reply
+    straight to delayed_response and so skipped ALL of this: the memory check,
+    the fee stripper, the repeat-free-visit stripper, the visit-price note and
+    the dash stripper. A fee tenant's multi-intent answer could therefore have
+    promised a free visit with nothing to correct it. Any new send path calls
+    this, rather than repeating the chain and drifting from it.
+    """
+    from bot.views.plumbot.response_mixin import (
+        strip_known_questions, strip_free_visit_claims,
+        strip_repeat_free_visit, ensure_visit_price_note)
+    from bot.utils import strip_dashes
+
+    reply, _re_asked = strip_known_questions(reply, appointment)
+    if _re_asked:
+        print(f"🧠 Memory check dropped re-asked field(s): {sorted(set(_re_asked))}")
+
+    # Never promise a free visit a tenant charges for. The message is passed so
+    # an explicit "what does the visit cost?" gets the figure again.
+    reply, _fee_fixed = strip_free_visit_claims(reply, appointment, message_body)
+    if _fee_fixed:
+        print("💵 Consultation fee set — free-visit wording replaced")
+
+    # The visit price is said ONCE. Repeating it reads as pleading and drags a
+    # lead who already accepted the visit back onto the subject of money.
+    reply, _dequalified = strip_repeat_free_visit(reply, appointment, message_body)
+    if _dequalified:
+        print("✂️  Free-visit claim already made — not repeating it")
+
+    # ...and the other half of the rule: state it with the availability ask.
+    reply, _noted = ensure_visit_price_note(reply, appointment, message_body)
+    if _noted:
+        print("💬 Visit price stated once, with the availability ask")
+
+    # Nobody types an em dash on a phone.
+    _undashed = strip_dashes(reply)
+    if _undashed != reply:
+        print("➖ Dash punctuation removed from the reply")
+    return _undashed
+
+
 def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None, tenant=None):
     """Generate a bot reply for message_body and schedule it with a 1-5 min send delay."""
     try:
@@ -3547,13 +3590,33 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             print(f"⚠️ Multi-intent compose failed: {_multi_exc}")
             _multi = None
         if _multi and _multi.get('reply'):
+            # This step RECORDED the priced intents but never CHECKED them, so a
+            # lead who repeated themselves got the identical price block again
+            # seven minutes later (prod, lead 974, 2026-09-03 13:17 and 13:24,
+            # both logged "Multi-intent compose"). The single-intent branch has
+            # always checked; this one just never did. When everything it would
+            # answer is a price we have already sent, drop through to the normal
+            # flow, which advances the conversation instead of repeating it.
+            _multi_intents = _multi.get('intents') or []
+            _info_intents = [i for i in _multi_intents
+                             if i in ('location', 'hours', 'pictures', 'other')]
+            _new_prices = [i for i in _multi_intents
+                           if i not in ('location', 'hours', 'pictures', 'other')
+                           and not _has_sent_pricing_for_intent(appointment, i)]
+            if not _new_prices and not _info_intents:
+                print(f"Skipping already-sent multi-intent pricing: {_multi_intents}")
+                _multi = None
+
+        if _multi and _multi.get('reply'):
             print(f"🧩 Multi-intent compose — intents={_multi.get('intents')}")
             if _multi.get('send_photos'):
                 send_previous_work_photos(sender, appointment)
             for _pi in (_multi.get('intents') or []):
                 if _pi not in ('location', 'hours', 'pictures', 'other'):
                     _mark_pricing_intent_sent(appointment, _pi)
-            reply_text = _multi['reply']
+            # Through the same chain as every other reply — this path used to
+            # skip the strippers, the price note and the dash stripper entirely.
+            reply_text = finalise_outbound(_multi['reply'], appointment, message_body)
             appointment.add_conversation_message("assistant", reply_text)
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
@@ -4042,10 +4105,6 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # asks for something this lead has already given us. Every reply path
         # converges here, which is the point — get_next_question_to_ask honours
         # stored fields but the LLM paths compose their own copy and don't.
-        from bot.views.plumbot.response_mixin import (
-            strip_known_questions, strip_free_visit_claims,
-            strip_repeat_free_visit, ensure_visit_price_note)
-
         # What the mixins composed, before this chain rewrites it. Most of the
         # ~20 reply paths log their own draft the moment they build it, and
         # everything below edits that text — so the draft has to be replaced,
@@ -4053,48 +4112,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # without the price note, once with it). See
         # Appointment.replace_draft_assistant_turns.
         _draft_reply = reply
-
-        reply, _re_asked = strip_known_questions(reply, appointment)
-        if _re_asked:
-            print(f"🧠 Memory check dropped re-asked field(s): {sorted(set(_re_asked))}")
-
-        # Never promise a free visit a tenant charges for. Inert unless the
-        # tenant has set a consultation fee on their Profile. The message is
-        # passed so an explicit "what does the visit cost?" gets the figure
-        # again, the same override the repeat stripper below honours.
-        reply, _fee_fixed = strip_free_visit_claims(reply, appointment, message_body)
-        if _fee_fixed:
-            print("💵 Consultation fee set — free-visit wording replaced")
-
-        # The visit is free ONCE. After the first time we've said it, "free"
-        # comes off the visit in every later reply — repeating it reads as
-        # pleading and drags a lead who already accepted the visit back onto
-        # the subject of money. A lead who ASKS what it costs still gets the
-        # straight answer: their own words outrank the gate.
-        reply, _dequalified = strip_repeat_free_visit(reply, appointment, message_body)
-        if _dequalified:
-            print("✂️  Free-visit claim already made — not repeating it")
-
-        # ...and the other half of the same rule: the FIRST message says what
-        # the visit costs, so the lead never has to ask. Last in the chain
-        # because the note is tenant-resolved and authoritative — the fee
-        # stripper above would read "FREE if we do the job" as a promise to
-        # break and drop it.
-        reply, _noted = ensure_visit_price_note(reply, appointment, message_body)
-        if _noted:
-            print("💬 Visit price stated once, up front")
-
-        # Nobody types an em dash on a phone. Dash punctuation is the clearest
-        # tell that copy was drafted rather than texted, so it comes out of
-        # every reply here — the one place all of them pass through, and the
-        # only place that can reach what the LLM composed. Hyphens inside
-        # words ("on-site", "all-in") are left alone: those are how people
-        # actually write. This runs LAST, after the price note is appended.
-        from bot.utils import strip_dashes
-        _undashed = strip_dashes(reply)
-        if _undashed != reply:
-            print("➖ Dash punctuation removed from the reply")
-        reply = _undashed
+        reply = finalise_outbound(reply, appointment, message_body)
 
         # A reply may be split into two messages (acknowledgement, then the
         # question) via MESSAGE_SPLIT_MARKER — log each piece as its own turn so
