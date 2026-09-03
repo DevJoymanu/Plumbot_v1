@@ -33,66 +33,62 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
 
 {% block extra_css %}
 {% include "bot/includes/quote_responsive_css.html" %}
+{% include "bot/includes/quote_flat_document_css.html" %}
 <style>
-    /* The quote document — page-specific bits only; the shared quote layer
-       (quote_responsive_css.html) carries the responsive behaviour. */
+    /* Page-specific bits only. The document's own styles come from the
+       shared include above, and the responsive behaviour from the shared quote
+       layer. */
     .qf-preview { display: none; }
 
-    .qf-doc__head {
-        text-align: center;
-        margin-bottom: 18px;
-        padding-bottom: 16px;
-        border-bottom: 1px solid rgba(0, 101, 145, 0.10);
+    /* The email chooser's two routes. Full-width tap targets on a phone. */
+    .qf-choice {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        width: 100%;
+        text-align: left;
+        padding: 16px;
+        margin-bottom: 12px;
+        border: 1px solid rgba(0, 101, 145, 0.12);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-lowest);
+        cursor: pointer;
+        transition: border-color .2s ease, transform .2s ease;
     }
 
-    .qf-doc__logo {
-        height: 66px;
-        width: auto;
-        max-width: 180px;
-        display: block;
-        margin: 0 auto 10px;
-    }
+    .qf-choice:hover { border-color: var(--color-primary); }
+    .qf-choice:active { transform: scale(.98); }
 
-    .qf-doc__mark {
-        width: 66px;
-        height: 66px;
-        margin: 0 auto 10px;
+    .qf-choice__icon {
+        flex: 0 0 auto;
+        width: 38px;
+        height: 38px;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: var(--radius-md);
-        background: var(--color-primary);
-        color: var(--color-on-primary);
-        font-weight: 700;
-    }
-
-    .qf-doc__name {
-        margin: 0;
-        font-size: clamp(1.05rem, 4.5vw, 1.35rem);
-        font-weight: 500;
-        color: var(--color-text);
-    }
-
-    .qf-doc__ta,
-    .qf-doc__line { margin: 4px 0 0; font-size: 12px; color: var(--color-muted); }
-
-    .qf-block {
-        padding: 14px;
-        margin: 12px 0;
-        border-radius: var(--radius-md);
+        border-radius: 999px;
         background: var(--color-surface-low);
-        font-size: 13px;
+        color: var(--color-primary);
     }
 
-    .qf-block strong {
-        display: block;
-        margin-bottom: 6px;
+    .qf-choice__body { min-width: 0; }
+    .qf-choice__body strong { display: block; color: var(--color-text); margin-bottom: 3px; }
+    .qf-choice__body small { color: var(--color-muted); font-size: 12.5px; }
+
+    .qf-choice__tag {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: var(--color-surface-low);
+        color: var(--color-primary);
         font-family: var(--font-label);
-        font-size: 10.5px;
-        font-weight: 500;
-        text-transform: uppercase;
+        font-size: 10px;
+        font-style: normal;
+        font-weight: 600;
         letter-spacing: 0.05em;
-        color: var(--color-muted);
+        text-transform: uppercase;
+        vertical-align: middle;
     }
 
     /* Edit mode only: the record's own identity, above the form. */
@@ -268,37 +264,14 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
         </div>
     </div>
 
-    <!-- The document itself -->
+    {% comment %}
+    The document. Same include as the read-only client copy, so the preview a
+    plumber checks IS what the customer receives - same blocks, same order, same
+    totals rows. quote_live=True swaps the saved values for the containers the
+    JS writes into as they type.
+    {% endcomment %}
     <div class="pbq-card qf-preview" id="previewSection">
-        {% include "bot/includes/quote_flat_letterhead.html" %}
-
-        <div class="qf-block"><strong>Client Information</strong><div id="previewClient"></div></div>
-        <div class="qf-block"><strong>Project Details</strong><div id="previewProject"></div></div>
-
-        <div class="pbq-table-wrap">
-            <table class="pbq-table pbq-table--stack">
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th class="pbq-num">Qty</th>
-                        <th class="pbq-num">Price</th>
-                        <th class="pbq-num">Total</th>
-                    </tr>
-                </thead>
-                <tbody id="previewItems"></tbody>
-            </table>
-        </div>
-
-        <div class="pbq-totals" style="margin-top:16px;">
-            <div class="pbq-total-row"><span>Material cost</span><span id="previewMaterials">US$0.00</span></div>
-            <div class="pbq-total-row"><span>Labour</span><span id="previewLabour">US$0.00</span></div>
-            <div class="pbq-total-row"><span>Transport</span><span id="previewTransport">US$0.00</span></div>
-            <div class="pbq-total-row pbq-total-row--grand">
-                <span>Total Amount</span><span id="previewGrandTotal">US$0.00</span>
-            </div>
-        </div>
-
-        <div id="previewNotes" class="qf-block" style="display:none;"></div>
+        {% include "bot/includes/quote_flat_document.html" with quote_live=True %}
     </div>
 
     {% comment %}
@@ -306,12 +279,30 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
     keyframe with animation-fill-mode both, and a retained transform would make
     it the containing block for any fixed descendant (CLAUDE.md).
     {% endcomment %}
+    {% comment %}
+    The send buttons are INDEPENDENT of Save and are never disabled: pressing
+    Email or WhatsApp saves the quote first and then sends it, so the plumber
+    never has to remember to Save before sending. Before this they had to save,
+    land on the view page and send from there, and a quote sent from a screen
+    they had already left is a quote nobody checked.
+
+    The two channels stay separate here as they are everywhere else: one, the
+    other, or both, and neither disables the other.
+    {% endcomment %}
     <div class="pbq-actionbar pbq-no-print">
         <button type="button" class="btn btn-outline-primary" onclick="showPreview()">
             <i class="fas fa-eye"></i> Preview
         </button>
         <button type="button" class="btn btn-secondary" onclick="downloadPDF()">
             <i class="fas fa-download"></i> Download
+        </button>
+        <button type="button" class="btn btn-secondary" id="sendEmailBtn"
+                onclick="sendQuote('email')">
+            <i class="fas fa-envelope"></i> Email
+        </button>
+        <button type="button" class="btn btn-success" id="sendWhatsappBtn"
+                onclick="sendQuote('whatsapp')">
+            <i class="fab fa-whatsapp"></i> WhatsApp
         </button>
         {% if quote_mode == 'edit' %}
         <button type="button" class="btn btn-danger" onclick="deleteQuotation()">
@@ -363,6 +354,56 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
     </div>
 </div>
 {% endif %}
+
+{% comment %}
+How the quote reaches the customer by email. Both routes are always offered;
+the tenant's Settings choice only decides which is pre-selected.
+
+  platform - we send it from their configured address with the PDF attached.
+  manual   - we download the PDF and open a draft in the plumber's own mail
+             app, so the mail comes from the inbox they read replies in.
+
+A mailto: draft cannot carry an attachment (a platform limit, not an oversight),
+which is why the manual route downloads the PDF first and says so.
+{% endcomment %}
+<div class="pbq-modal pbq-no-print" id="emailChoiceModal">
+    <div class="pbq-modal__panel">
+        <div class="pbq-modal__head">
+            <h2><i class="fas fa-envelope"></i> Send the quote by email</h2>
+            <button type="button" class="pbq-modal__close" onclick="closeEmailChoice()"
+                    aria-label="Close">&times;</button>
+        </div>
+        <div class="pbq-modal__body">
+            <button type="button" class="qf-choice" onclick="sendQuote('email', 'platform')"
+                    id="emailPlatformChoice">
+                <span class="qf-choice__icon"><i class="fas fa-paper-plane"></i></span>
+                <span class="qf-choice__body">
+                    <strong>Send it for me
+                        {% if quote_email_mode == 'platform' %}<em class="qf-choice__tag">Default</em>{% endif %}
+                    </strong>
+                    <small>
+                        Goes out now with the PDF attached{% if configured_sender %},
+                        from {{ configured_sender }}{% endif %}.
+                    </small>
+                </span>
+            </button>
+
+            <button type="button" class="qf-choice" onclick="sendQuote('email', 'manual')"
+                    id="emailManualChoice">
+                <span class="qf-choice__icon"><i class="fas fa-pen-to-square"></i></span>
+                <span class="qf-choice__body">
+                    <strong>Write it myself
+                        {% if quote_email_mode == 'manual' %}<em class="qf-choice__tag">Default</em>{% endif %}
+                    </strong>
+                    <small>
+                        Downloads the PDF and opens a draft in your email app,
+                        ready to attach.
+                    </small>
+                </span>
+            </button>
+        </div>
+    </div>
+</div>
 
 <script>
 (function () {
@@ -612,10 +653,10 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
     }
 
     function downloadPDF() {
-        if (QUOTATION_ID) {
+        if (currentQuotationId) {
             // A saved quote has a real PDF, byte-for-byte the one the customer
             // is sent. Only an unsaved draft falls back to the print dialog.
-            window.location.href = '/quotations/' + QUOTATION_ID + '/download/';
+            window.location.href = '/quotations/' + currentQuotationId + '/download/';
             return;
         }
         showPreview();
@@ -671,6 +712,197 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
         };
     }
 
+    // The id of the quote on screen. Starts as the row we opened (edit mode) or
+    // null (a new quote), and is filled in the moment a save returns one - so a
+    // save-then-send never creates two quotes, and a second send updates the
+    // same row rather than raising another.
+    let currentQuotationId = QUOTATION_ID;
+
+    function validate() {
+        if (!val('clientName')) {
+            showAlert('Please enter a client name before saving.', 'error');
+            document.getElementById('clientName').focus();
+            return false;
+        }
+        if (!val('projectType')) {
+            showAlert('Please choose a project type before saving.', 'error');
+            document.getElementById('projectType').focus();
+            return false;
+        }
+        return true;
+    }
+
+    // Returns the quote's id, saving it first. THE step that makes Send
+    // independent of Save: every send goes through here, so a plumber who never
+    // presses Save still sends the quote in front of them, not a stale one and
+    // not nothing.
+    async function persist() {
+        const url = currentQuotationId
+            ? '/quotations/' + currentQuotationId + '/edit/'
+            : (APPOINTMENT_ID ? '/api/quotations/create/' : '/api/quotations/create-standalone/');
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json',
+                       'Accept': 'application/json',
+                       'X-CSRFToken': getCsrfToken() },
+            body: JSON.stringify(payload())
+        });
+        const result = await response.json().catch(function () { return {}; });
+        if (!response.ok || result.success === false) {
+            throw new Error(result.error || 'could not save the quote');
+        }
+        currentQuotationId = currentQuotationId || result.quotation_id || result.id;
+        if (!currentQuotationId) { throw new Error('the quote was not saved'); }
+        const updated = document.getElementById('updatedDate');
+        if (updated) { updated.textContent = 'Just now'; }
+        return currentQuotationId;
+    }
+
+    const LEAD_WA_DIGITS = "{{ lead_wa_digits }}";
+    const LEAD_NAME = "{{ lead_display_name|escapejs }}";
+    const EMAIL_MODE_DEFAULT = "{{ quote_email_mode|default:'platform' }}";
+
+    function openEmailChoice() {
+        const modal = document.getElementById('emailChoiceModal');
+        if (!modal) { return; }
+        modal.classList.add('is-open');
+    }
+
+    function closeEmailChoice() {
+        const modal = document.getElementById('emailChoiceModal');
+        if (modal) { modal.classList.remove('is-open'); }
+    }
+
+    // Pull the PDF down so it is sitting in Downloads, ready to attach. A
+    // hidden iframe rather than a navigation: the response is an attachment, so
+    // the page must stay where it is while the file arrives.
+    function fetchPdf(id) {
+        const frame = document.createElement('iframe');
+        frame.style.display = 'none';
+        frame.src = '/quotations/' + id + '/download/';
+        document.body.appendChild(frame);
+        setTimeout(function () {
+            if (frame.parentNode) { frame.parentNode.removeChild(frame); }
+        }, 60000);
+    }
+
+    function quoteBlurb() {
+        const type = document.getElementById('projectType');
+        const service = type && type.selectedIndex > 0
+            ? type.options[type.selectedIndex].text.toLowerCase() : 'the work';
+        const hi = LEAD_NAME ? 'Hi ' + LEAD_NAME + ',' : 'Hi there,';
+        return hi + ' here is your quote for ' + service + '.';
+    }
+
+    // Tell the server the quote left on this channel, so the quotes list can
+    // say so. Best effort: a failed marker must never look like a failed send.
+    async function markSent(id, channel) {
+        try {
+            await fetch('/quotations/' + id + '/mark-sent/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json',
+                           'Accept': 'application/json',
+                           'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({ channel: channel })
+            });
+        } catch (error) { /* the send already happened in their own app */ }
+    }
+
+    async function sendQuote(channel, mode) {
+        if (!validate()) { return; }
+
+        // Email with no route chosen yet: ask, rather than assume.
+        if (channel === 'email' && !mode) {
+            if (!val('clientEmail')) {
+                showAlert('Add the customer email address above, then send.', 'error');
+                document.getElementById('clientEmail').focus();
+                return;
+            }
+            openEmailChoice();
+            return;
+        }
+        closeEmailChoice();
+
+        if (channel === 'whatsapp' && !LEAD_WA_DIGITS) {
+            showAlert('This quote is not attached to a lead with a WhatsApp number.', 'error');
+            return;
+        }
+        if (channel === 'email' && !val('clientEmail')) {
+            showAlert('Add the customer email address above, then send.', 'error');
+            document.getElementById('clientEmail').focus();
+            return;
+        }
+
+        // A handoff opens the plumber's own app, and a window opened after an
+        // await is what popup blockers stop. So it is opened NOW, inside the
+        // click, and pointed at the real URL once the save comes back.
+        const handoff = (channel === 'whatsapp' || mode === 'manual');
+        const opened = handoff ? window.open('', '_blank') : null;
+
+        const button = document.getElementById(
+            channel === 'email' ? 'sendEmailBtn' : 'sendWhatsappBtn');
+        const original = button ? button.innerHTML : '';
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+        }
+
+        try {
+            // Save first, always. What the customer receives is then the quote
+            // on screen, including any edit made since the last save.
+            const id = await persist();
+
+            if (channel === 'whatsapp') {
+                // Their own WhatsApp, so the message comes from the number the
+                // customer already knows, and the 24h messaging window that
+                // limits the bot's own sends does not apply.
+                fetchPdf(id);
+                const url = 'https://wa.me/' + LEAD_WA_DIGITS
+                          + '?text=' + encodeURIComponent(quoteBlurb());
+                if (opened) { opened.location.href = url; } else { window.open(url, '_blank'); }
+                markSent(id, 'whatsapp');
+                showAlert('WhatsApp opened and the PDF downloaded. Attach it and send.',
+                          'success');
+                return;
+            }
+
+            if (mode === 'manual') {
+                fetchPdf(id);
+                const subject = 'Your quote' + (LEAD_NAME ? ' for ' + LEAD_NAME : '');
+                const url = 'mailto:' + encodeURIComponent(val('clientEmail'))
+                          + '?subject=' + encodeURIComponent(subject)
+                          + '&body=' + encodeURIComponent(quoteBlurb()
+                              + '\n\nThe quote is attached.');
+                if (opened) { opened.location.href = url; } else { window.location.href = url; }
+                markSent(id, 'email');
+                showAlert('Draft opened and the PDF downloaded. Attach it and send.',
+                          'success');
+                return;
+            }
+
+            const response = await fetch('/quotations/' + id + '/send-email/', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json',
+                           'Content-Type': 'application/json',
+                           'X-CSRFToken': getCsrfToken() },
+                body: '{}'
+            });
+            const result = await response.json().catch(function () { return {}; });
+            if (response.ok && result.success !== false) {
+                showAlert('Quote emailed to ' + (result.sent_to || val('clientEmail')) + '.',
+                          'success');
+            } else {
+                showAlert('Could not send: ' + (result.error || 'unknown error'), 'error');
+            }
+        } catch (error) {
+            if (opened) { opened.close(); }
+            showAlert('Could not send: ' + error.message, 'error');
+        } finally {
+            if (button) { button.disabled = false; button.innerHTML = original; }
+        }
+    }
+
     async function saveQuotation() {
         const name = val('clientName');
         if (!name) {
@@ -688,47 +920,31 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
         const original = button ? button.innerHTML : '';
         if (button) {
             button.disabled = true;
-            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
         }
 
-        const url = MODE === 'edit'
-            ? '/quotations/' + QUOTATION_ID + '/edit/'
-            : (APPOINTMENT_ID ? '/api/quotations/create/' : '/api/quotations/create-standalone/');
-
+        const wasNew = !currentQuotationId;
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json',
-                           'Accept': 'application/json',
-                           'X-CSRFToken': getCsrfToken() },
-                body: JSON.stringify(payload())
-            });
-            const result = await response.json().catch(function () { return {}; });
-
-            if (response.ok && result.success !== false) {
-                showAlert('Quotation saved.', 'success');
-                const updated = document.getElementById('updatedDate');
-                if (updated) { updated.textContent = 'Just now'; }
-                const newId = result.quotation_id || result.id;
-                if (MODE !== 'edit' && newId) {
-                    window.location.href = '/quotations/' + newId + '/';
-                }
-            } else {
-                showAlert('Could not save: ' + (result.error || 'unknown error'), 'error');
+            const id = await persist();
+            showAlert('Quotation saved.', 'success');
+            // Only a brand-new quote navigates. A save that happened because
+            // the plumber pressed Send, or an edit, keeps them where they are.
+            if (wasNew && MODE !== 'edit') {
+                window.location.href = '/quotations/' + id + '/';
             }
         } catch (error) {
-            showAlert('Could not reach the server. Check your connection.', 'error');
+            showAlert('Could not save: ' + error.message, 'error');
         } finally {
             if (button) { button.disabled = false; button.innerHTML = original; }
         }
     }
 
     async function deleteQuotation() {
-        if (!QUOTATION_ID) { return; }
+        if (!currentQuotationId) { return; }
         if (!confirm('Delete this quotation permanently?')) { return; }
         const form = document.createElement('form');
         form.method = 'post';
-        form.action = '/quotations/' + QUOTATION_ID + '/delete/';
+        form.action = '/quotations/' + currentQuotationId + '/delete/';
         form.innerHTML = '<input type="hidden" name="csrfmiddlewaretoken" value="' + getCsrfToken() + '">';
         document.body.appendChild(form);
         form.submit();
@@ -912,10 +1128,12 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
         }
         const modal = document.getElementById('templateModal');
         if (modal && event.target === modal) { closeTemplateModal(); }
+        const chooser = document.getElementById('emailChoiceModal');
+        if (chooser && event.target === chooser) { closeEmailChoice(); }
     });
 
     document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') { closeTemplateModal(); }
+        if (event.key === 'Escape') { closeTemplateModal(); closeEmailChoice(); }
     });
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -937,6 +1155,8 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
     window.downloadPDF = downloadPDF;
     window.clearAll = clearAll;
     window.saveQuotation = saveQuotation;
+    window.sendQuote = sendQuote;
+    window.closeEmailChoice = closeEmailChoice;
     window.deleteQuotation = deleteQuotation;
     window.openTemplateModal = openTemplateModal;
     window.closeTemplateModal = closeTemplateModal;

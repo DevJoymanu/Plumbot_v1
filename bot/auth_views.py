@@ -46,6 +46,11 @@ _LETTERHEAD_TEXT = (
 _LETTERHEAD_BANK = ('account_name', 'bank_name', 'branch', 'account_number')
 
 
+def _quote_email_modes():
+    from .models import TenantProfile
+    return TenantProfile.QUOTE_EMAIL_MODES
+
+
 def _letterhead_form_values(profile):
     """The stored letterhead, flattened into the shapes the form inputs use.
 
@@ -442,6 +447,26 @@ def profile_view(request):
                         profile.consultation_fee or '(free)')
             return redirect('profile')
 
+        # How this business prefers to email a quote. The editor offers both
+        # routes every time; this only sets which one is pre-selected.
+        if 'quote_email_mode_submit' in request.POST:
+            profile = _tenant_profile(request)
+            if profile is None:
+                messages.error(request, 'No business is linked to your account.')
+                return redirect('profile')
+            mode = (request.POST.get('quote_email_mode') or '').strip()
+            from .models import TenantProfile
+            valid = dict(TenantProfile.QUOTE_EMAIL_MODES)
+            if mode not in valid:
+                messages.error(request, 'Choose how quotes should be emailed.')
+                return redirect('profile')
+            profile.quote_email_mode = mode
+            profile.save(update_fields=['quote_email_mode'])
+            messages.success(request, 'Quote email preference saved.')
+            logger.info("User %s set tenant %s quote_email_mode=%s",
+                        user.username, profile.tenant.slug, mode)
+            return redirect('profile')
+
         # The business's logo. Its own form because it is multipart, and its
         # own branch because a failed upload must not silently fall through to
         # the plain profile save below and report success.
@@ -530,6 +555,9 @@ def profile_view(request):
         **branding.branding_context(tenant),
         'logo_editable': profile is not None,
         'logo_help_text': branding.LOGO_HELP_TEXT,
+        'quote_email_mode': getattr(profile, 'quote_email_mode', 'platform') if profile else 'platform',
+        'quote_email_modes': _quote_email_modes(),
+        'configured_sender': tenant_customer_from_email(tenant),
         # The call-out fee has its own card and its own form. None means the
         # visit is free, which is the default for every tenant.
         'consultation_fee': getattr(profile, 'consultation_fee', None) if profile else None,

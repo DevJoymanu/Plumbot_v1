@@ -27,6 +27,7 @@ import logging
 import os
 
 from django.contrib import messages
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -194,10 +195,20 @@ def send_quotation_email(request, pk):
     quotation = get_object_or_404(_visible_quotations(request), pk=pk)
     appointment = quotation.appointment
 
-    if not (appointment.customer_email or '').strip():
-        messages.error(request, 'No email address on file for this customer. '
-                                'Add one on the lead first.')
+    # The editor sends over fetch and wants JSON back; the quotes list and the
+    # view page post a plain form and want a redirect. One handler, two shapes.
+    wants_json = 'application/json' in (
+        (request.headers.get('Accept') or '') + (request.content_type or '')).lower()
+
+    def _fail(message, status=400):
+        if wants_json:
+            return JsonResponse({'success': False, 'error': message}, status=status)
+        messages.error(request, message)
         return redirect('view_quotation', pk=quotation.pk)
+
+    if not (appointment.customer_email or '').strip():
+        return _fail('No email address on file for this customer. Add one on '
+                     'the quote and save, then send.')
 
     pdf_path = None
     try:
@@ -209,8 +220,7 @@ def send_quotation_email(request, pk):
             filename=f'Quotation-{quotation.quotation_number}.pdf')
     except Exception as exc:  # noqa: BLE001 — surfaced to the plumber, not swallowed
         logger.exception('send_quotation_email failed — quotation %s', quotation.pk)
-        messages.error(request, f'Could not email the quote: {exc}')
-        return redirect('view_quotation', pk=quotation.pk)
+        return _fail(f'Could not email the quote: {exc}', status=500)
     finally:
         if pdf_path and os.path.exists(pdf_path):
             try:
@@ -219,8 +229,7 @@ def send_quotation_email(request, pk):
                 pass
 
     if not sent:
-        messages.error(request, 'Could not email the quote. Check the email settings.')
-        return redirect('view_quotation', pk=quotation.pk)
+        return _fail('Could not email the quote. Check the email settings.', status=502)
 
     quotation.sent_via_email = True
     if quotation.status == 'draft':
@@ -235,5 +244,12 @@ def send_quotation_email(request, pk):
         content=f'{quotation.get_display_name()} emailed to {appointment.customer_email}',
         timestamp=timezone.now(),
     )
+    if wants_json:
+        return JsonResponse({
+            'success': True,
+            'quotation_id': quotation.pk,
+            'status': quotation.status,
+            'sent_to': appointment.customer_email,
+        })
     messages.success(request, f'Quote emailed to {appointment.customer_email}.')
     return redirect('view_quotation', pk=quotation.pk)

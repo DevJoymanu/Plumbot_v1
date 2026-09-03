@@ -106,6 +106,49 @@
                         </div>
                         <div class="card-body">
                             {% comment %}
+                            Which email route is pre-selected when the plumber
+                            presses Email on a quote. Both are always offered on
+                            the quote itself; this only decides the default.
+                            {% endcomment %}
+                            {% if logo_editable %}
+                            <div class="mb-4 pb-4 border-bottom">
+                                <label class="form-label fw-bold d-block">Sending quotes by email</label>
+                                <p class="text-muted small">
+                                    Both options stay available on every quote. This is
+                                    just the one offered first.
+                                </p>
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="quote_email_mode_submit" value="1">
+                                    {% for value, label in quote_email_modes %}
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="radio"
+                                               name="quote_email_mode" id="id_qem_{{ value }}"
+                                               value="{{ value }}"
+                                               {% if quote_email_mode == value %}checked{% endif %}>
+                                        <label class="form-check-label" for="id_qem_{{ value }}">
+                                            {{ label }}
+                                            {% if value == 'platform' and configured_sender %}
+                                            <small class="d-block text-muted">
+                                                Sends now, PDF attached, from {{ configured_sender }}.
+                                            </small>
+                                            {% elif value == 'manual' %}
+                                            <small class="d-block text-muted">
+                                                Downloads the PDF and opens a draft in your own
+                                                email app, ready to attach.
+                                            </small>
+                                            {% endif %}
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                    <button type="submit" class="btn btn-primary btn-sm mt-2">
+                                        <i class="fas fa-save"></i> Save preference
+                                    </button>
+                                </form>
+                            </div>
+                            {% endif %}
+
+                            {% comment %}
                             The business's logo. Its own multipart form, and a
                             live preview rendered through the same include the
                             dashboard and the quote use - so what is shown here

@@ -1,0 +1,138 @@
+{% comment %}
+THE flat quote document. One structure, two fillings.
+
+The editor's live preview and the read-only client copy render from this same
+file, so what the plumber checks on screen is the document the customer gets —
+same blocks, same order, same totals rows. They had drifted: the view page used
+a two-column key/value panel and totals of "Labor / Materials / Total", while
+the editor previewed labelled blocks and "Material / Labour / Transport /
+Total", so the same quote looked like two different papers.
+
+`quote_live` picks the filling:
+    True  — empty containers the editor's JS writes into as you type.
+    False — the saved values, rendered server-side.
+
+Nothing page-specific belongs in here. The view page's status/created/plumber
+row and its action buttons are page CHROME and live outside the document, or
+they would print on the customer's copy.
+
+Expects: lh + branding context (for the letterhead), and on the static side a
+`quotation` with its appointment.
+{% endcomment %}
+
+{% include "bot/includes/quote_flat_letterhead.html" %}
+
+<div class="qf-block">
+    <strong>Client Information</strong>
+    {% if quote_live %}
+    <div id="previewClient"></div>
+    {% else %}
+    <div>
+        <strong style="display:block; margin-bottom:2px; font-size:13px; text-transform:none; letter-spacing:0; color:var(--color-text);">
+            {{ quotation.appointment.customer_name|default:"Client" }}
+        </strong>
+        {{ quotation.appointment.customer_area|default:"" }}
+        {% if quotation.appointment.phone_number %}<br>{{ quotation.appointment.phone_number|cut:"whatsapp:" }}{% endif %}
+        {% if quotation.appointment.customer_email %}<br>{{ quotation.appointment.customer_email }}{% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="qf-block">
+    <strong>Project Details</strong>
+    {% if quote_live %}
+    <div id="previewProject"></div>
+    {% else %}
+    <div>
+        <strong style="display:block; margin-bottom:2px; font-size:13px; text-transform:none; letter-spacing:0; color:var(--color-text);">
+            {{ quotation.appointment.get_project_type_display|default:quotation.appointment.project_type|default:"Service" }}
+        </strong>
+        {{ quotation.appointment.customer_area|default:"" }}
+        {% if quotation.appointment.project_description %}<br>{{ quotation.appointment.project_description }}{% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% comment %}
+Wide table on a phone: .pbq-table--stack turns each row into a card below
+768px, which is why every <td> carries a data-label (the mobile contract in
+CLAUDE.md, pinned by QuoteMobileLayoutTests).
+{% endcomment %}
+<div class="pbq-table-wrap">
+    <table class="pbq-table pbq-table--stack">
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th class="pbq-num">Qty</th>
+                <th class="pbq-num">Price</th>
+                <th class="pbq-num">Total</th>
+            </tr>
+        </thead>
+        <tbody {% if quote_live %}id="previewItems"{% endif %}>
+            {% if not quote_live %}
+            {% for item in quotation.items.all %}
+            <tr>
+                <td data-label="Item">{{ item.description }}</td>
+                <td class="pbq-num" data-label="Qty">{{ item.quantity }}</td>
+                <td class="pbq-num" data-label="Price">US${{ item.unit_price }}</td>
+                <td class="pbq-num" data-label="Total">US${{ item.total_price }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td class="pbq-cell-full" data-label="" colspan="4">
+                    <div class="pbq-empty">
+                        <i class="fas fa-inbox"></i>
+                        <p>No items on this quote</p>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<div class="pbq-totals" style="margin-top:16px;">
+    <div class="pbq-total-row">
+        <span>Material cost</span>
+        <span {% if quote_live %}id="previewMaterials"{% endif %}>US${% if quote_live %}0.00{% else %}{{ quotation.materials_cost }}{% endif %}</span>
+    </div>
+    <div class="pbq-total-row">
+        <span>Labour</span>
+        <span {% if quote_live %}id="previewLabour"{% endif %}>US${% if quote_live %}0.00{% else %}{{ quotation.labor_cost }}{% endif %}</span>
+    </div>
+    <div class="pbq-total-row">
+        <span>Transport</span>
+        <span {% if quote_live %}id="previewTransport"{% endif %}>US${% if quote_live %}0.00{% else %}{{ quotation.transport_cost }}{% endif %}</span>
+    </div>
+    <div class="pbq-total-row pbq-total-row--grand">
+        <span>Total Amount</span>
+        <span {% if quote_live %}id="previewGrandTotal"{% endif %}>US${% if quote_live %}0.00{% else %}{{ quotation.total_amount }}{% endif %}</span>
+    </div>
+</div>
+
+{% if quote_live %}
+<div id="previewNotes" class="qf-block" style="display:none;"></div>
+{% elif quotation.notes %}
+<div class="qf-block">
+    <strong>Notes</strong>
+    <div>{{ quotation.notes|linebreaksbr }}</div>
+</div>
+{% endif %}
+
+{% comment %}
+The closing line is the TENANT's own contact, and absent means the offer is
+omitted rather than pointing the customer at another business.
+{% endcomment %}
+{% if not quote_live %}
+<div class="qf-doc__foot">
+    <strong>Prepared for:</strong>
+    {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number|cut:"whatsapp:" }}
+    {% if lh.public_email %}<br>
+    Any questions about this quotation, contact us at
+    <a href="mailto:{{ lh.public_email }}">{{ lh.public_email }}</a>
+    {% elif lh.phones %}<br>
+    Any questions about this quotation, call us on {{ lh.phones.0 }}
+    {% endif %}
+</div>
+{% endif %}

@@ -429,6 +429,31 @@ def flat_form_context(request, *, mode, appointment=None, quotation=None):
     name = context.get('brand_name') or ''
     context['brand_initials'] = ''.join(
         word[0] for word in name.split()[:2] if word).upper()
+
+    # ── Handing the send off to the plumber's own apps ────────────────────
+    #
+    # A wa.me link and a mailto: draft can carry TEXT only — neither can carry
+    # an attachment, which is a platform limit and not something to work around.
+    # So the editor downloads the PDF first and opens the conversation beside
+    # it, ready to attach.
+    from ..utils import clean_phone_number
+    from ..plumber_notifications import tenant_customer_from_email
+
+    lead = appointment or getattr(quotation, 'appointment', None)
+    context['lead_wa_digits'] = clean_phone_number(
+        getattr(lead, 'phone_number', '') or '') if lead else ''
+    context['lead_display_name'] = (
+        (getattr(lead, 'customer_name', '') or '').strip() if lead else '')
+
+    profile = getattr(tenant, 'profile', None) if tenant is not None else None
+    context['quote_email_mode'] = getattr(profile, 'quote_email_mode', 'platform') or 'platform'
+    # The address the platform would send FROM, shown so the plumber can see
+    # which identity their customer will get before choosing. Bare address, not
+    # the full 'Name <addr>' identity: the angle brackets are for a mail header,
+    # not for a sentence on a button.
+    from email.utils import parseaddr
+    context['configured_sender'] = parseaddr(
+        tenant_customer_from_email(tenant) if tenant is not None else '')[1]
     return context
 
 
@@ -787,6 +812,48 @@ def send_quotation(request, pk):
                 pass
     
     return redirect('appointment_detail', pk=quotation.appointment.pk)
+
+
+@require_POST
+@staff_required
+def mark_quotation_sent(request, pk):
+    """Record that a quote left on a channel the plumber sent it on themselves.
+
+    The WhatsApp handoff and the manual email draft both send from the
+    plumber's OWN app, so the server never sees the message. Without this the
+    quotes list would say "Not sent" forever for those routes, which reads as a
+    broken feature rather than a deliberate one.
+
+    It records what the plumber DID (opened the conversation with the quote
+    ready), not proof of delivery — the same thing the button press means. The
+    conversation note says so in as many words, so nobody reads the list as a
+    delivery receipt.
+    """
+    quotation = get_object_or_404(_visible_quotations(request), pk=pk)
+    try:
+        channel = (json.loads(request.body or '{}').get('channel') or '').strip()
+    except json.JSONDecodeError:
+        channel = ''
+    if channel not in ('whatsapp', 'email'):
+        return JsonResponse({'success': False, 'error': 'unknown channel'}, status=400)
+
+    if channel == 'whatsapp':
+        quotation.sent_via_whatsapp = True
+    else:
+        quotation.sent_via_email = True
+    if quotation.status == 'draft':
+        quotation.status = 'sent'
+    quotation.sent_at = quotation.sent_at or timezone.now()
+    quotation.save()
+
+    ConversationMessage.objects.create(
+        appointment=quotation.appointment,
+        role='assistant',
+        content=(f'{quotation.get_display_name()} handed to the plumber to send '
+                 f'on {"WhatsApp" if channel == "whatsapp" else "email"}'),
+        timestamp=timezone.now(),
+    )
+    return JsonResponse({'success': True, 'status': quotation.status})
 
 
 @staff_required

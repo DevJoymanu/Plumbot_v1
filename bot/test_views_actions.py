@@ -39,6 +39,7 @@ from django.utils import timezone
 
 from .models import (
     Appointment,
+    ConversationMessage,
     Job,
     Quotation,
     QuotationItem,
@@ -6341,3 +6342,352 @@ class OneQuoteLayoutTests(StaffClientTestCase):
             with self.subTest(template=name):
                 with self.assertRaises(TemplateDoesNotExist):
                     get_template(name)
+
+
+class QuoteEditorSendTests(StaffClientTestCase):
+    """Send from the editor is independent of Save.
+
+    Before this the plumber had to Save, land on the view page and send from
+    there — and a quote sent from a screen they had already left is a quote
+    nobody checked. The send buttons are now on the editor, never disabled, and
+    each one saves first.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9700, customer_name='Send Lead',
+                              customer_email='send@example.com',
+                              project_type='bathroom_renovation')
+        self.quote = Quotation.objects.create(appointment=self.lead,
+                                              labor_cost=Decimal('60'))
+
+    # -- the buttons are there, and never disabled --------------------------
+
+    def test_both_send_buttons_are_on_every_editor(self):
+        urls = [reverse('standalone_quotation'),
+                reverse('create_quotation', args=[self.lead.pk]),
+                reverse('edit_quotation', args=[self.quote.pk])]
+        for url in urls:
+            with self.subTest(url=url):
+                body = self.client.get(url).content.decode()
+                self.assertIn('id="sendEmailBtn"', body)
+                self.assertIn('id="sendWhatsappBtn"', body)
+
+    def test_the_send_buttons_are_not_gated_on_save(self):
+        """A disabled attribute on either would put Save back in front of Send."""
+        import re as _re
+        body = self.client.get(reverse('create_quotation', args=[self.lead.pk])).content.decode()
+        for btn_id in ('sendEmailBtn', 'sendWhatsappBtn'):
+            with self.subTest(button=btn_id):
+                tag = _re.search(r'<button[^>]*id="' + btn_id + r'"[^>]*>', body).group(0)
+                self.assertNotIn('disabled', tag)
+
+    def test_every_send_saves_first(self):
+        """persist() is the single step in front of both channels."""
+        body = self.client.get(reverse('create_quotation', args=[self.lead.pk])).content.decode()
+        self.assertIn('const id = await persist();', body)
+        self.assertIn("window.sendQuote = sendQuote;", body)
+
+    # -- the endpoints the editor calls -------------------------------------
+
+    @patch('bot.customer_emails.send_quotation_email_to_customer', return_value=True)
+    @patch('bot.views.quotations.build_quotation_pdf_file')
+    def test_the_email_endpoint_answers_json(self, build_pdf, send):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            tmp.write(b'%PDF-1.4 test')
+            build_pdf.return_value = tmp.name
+        response = self.client.post(
+            reverse('send_quotation_email', args=[self.quote.pk]),
+            data='{}', content_type='application/json', HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['sent_to'], 'send@example.com')
+        self.quote.refresh_from_db()
+        self.assertTrue(self.quote.sent_via_email)
+
+    def test_the_email_endpoint_reports_a_missing_address_as_json(self):
+        """Not a redirect: the editor is waiting on a fetch, and a redirect
+        would look like success."""
+        self.lead.customer_email = None
+        self.lead.save()
+        response = self.client.post(
+            reverse('send_quotation_email', args=[self.quote.pk]),
+            data='{}', content_type='application/json', HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()['success'])
+        self.assertIn('email address', response.json()['error'])
+
+    @patch('bot.customer_emails.send_quotation_email_to_customer', return_value=True)
+    @patch('bot.views.quotations.build_quotation_pdf_file')
+    def test_the_form_post_still_redirects(self, build_pdf, send):
+        """The quotes list and the view page post a plain form and want a
+        redirect — one handler, two shapes."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            tmp.write(b'%PDF-1.4 test')
+            build_pdf.return_value = tmp.name
+        response = self.client.post(reverse('send_quotation_email', args=[self.quote.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_sending_is_still_tenant_scoped(self):
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-send')
+        foreign = make_lead(9701, tenant=other, customer_email='x@example.com')
+        foreign_quote = Quotation.objects.create(appointment=foreign)
+        response = self.client.post(
+            reverse('send_quotation_email', args=[foreign_quote.pk]),
+            data='{}', content_type='application/json', HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 404)
+
+
+class QuoteHandoffTests(StaffClientTestCase):
+    """Sending from the plumber's OWN apps.
+
+    A wa.me link and a mailto: draft carry text only - neither can carry an
+    attachment. So both routes download the PDF first and open the conversation
+    beside it, and the server never sees the message that goes out.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.get(slug='homebase')
+        self.profile, _ = TenantProfile.objects.get_or_create(tenant=self.tenant)
+        self.lead = make_lead(9800, customer_name='Handoff Lead',
+                              customer_email='handoff@example.com',
+                              project_type='bathroom_renovation')
+        self.quote = Quotation.objects.create(appointment=self.lead)
+
+    def _editor(self):
+        return self.client.get(
+            reverse('create_quotation', args=[self.lead.pk])).content.decode()
+
+    # -- WhatsApp: the lead's chat, from the tenant's own number ------------
+
+    def test_the_editor_knows_the_leads_whatsapp_digits(self):
+        body = self._editor()
+        self.assertIn('const LEAD_WA_DIGITS = "15550009800"', body)
+        self.assertIn('https://wa.me/', body)
+
+    def test_the_digits_are_clean_enough_for_a_wa_me_link(self):
+        """wa.me takes digits only: no +, no 'whatsapp:' prefix."""
+        response = self.client.get(reverse('create_quotation', args=[self.lead.pk]))
+        digits = response.context['lead_wa_digits']
+        self.assertTrue(digits.isdigit(), digits)
+
+    def test_a_quote_with_no_lead_offers_no_whatsapp_target(self):
+        response = self.client.get(reverse('standalone_quotation'))
+        self.assertEqual(response.context['lead_wa_digits'], '')
+
+    def test_whatsapp_downloads_the_pdf_because_a_link_cannot_attach_one(self):
+        body = self._editor()
+        self.assertIn('fetchPdf(id);', body)
+        self.assertIn('/download/', body)
+
+    # -- Email: a choice, with the tenant's default pre-marked -------------
+
+    def test_the_email_button_offers_both_routes(self):
+        body = self._editor()
+        self.assertIn('id="emailChoiceModal"', body)
+        self.assertIn("sendQuote('email', 'platform')", body)
+        self.assertIn("sendQuote('email', 'manual')", body)
+
+    def test_the_configured_sender_is_named_on_the_platform_route(self):
+        response = self.client.get(reverse('create_quotation', args=[self.lead.pk]))
+        sender = response.context['configured_sender']
+        self.assertTrue(sender)
+        self.assertIn(sender, response.content.decode())
+
+    def test_the_tenants_default_is_the_one_marked(self):
+        response = self.client.get(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertEqual(response.context['quote_email_mode'], 'platform')
+
+        self.profile.quote_email_mode = 'manual'
+        self.profile.save(update_fields=['quote_email_mode'])
+        response = self.client.get(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertEqual(response.context['quote_email_mode'], 'manual')
+
+    def test_the_default_is_a_default_not_a_restriction(self):
+        """Both routes stay on the page whichever way the tenant set it."""
+        for mode in ('platform', 'manual'):
+            with self.subTest(mode=mode):
+                self.profile.quote_email_mode = mode
+                self.profile.save(update_fields=['quote_email_mode'])
+                body = self._editor()
+                self.assertIn("sendQuote('email', 'platform')", body)
+                self.assertIn("sendQuote('email', 'manual')", body)
+
+    def test_the_preference_is_set_from_settings(self):
+        self.client.post(reverse('profile'), {
+            'quote_email_mode_submit': '1', 'quote_email_mode': 'manual'})
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.quote_email_mode, 'manual')
+
+    def test_a_nonsense_preference_is_refused(self):
+        self.client.post(reverse('profile'), {
+            'quote_email_mode_submit': '1', 'quote_email_mode': 'carrier-pigeon'})
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.quote_email_mode, 'platform')
+
+    def test_the_preference_is_per_tenant(self):
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-mode')
+        other_profile = TenantProfile.objects.create(tenant=other, quote_email_mode='manual')
+        self.assertEqual(self.profile.quote_email_mode, 'platform')
+        self.assertEqual(other_profile.quote_email_mode, 'manual')
+
+    # -- recording a handoff ------------------------------------------------
+
+    def test_marking_sent_records_the_channel(self):
+        response = self.client.post(
+            reverse('mark_quotation_sent', args=[self.quote.pk]),
+            data=json.dumps({'channel': 'whatsapp'}), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.quote.refresh_from_db()
+        self.assertTrue(self.quote.sent_via_whatsapp)
+        self.assertFalse(self.quote.sent_via_email)
+        self.assertEqual(self.quote.status, 'sent')
+
+    def test_the_two_channels_stay_independent_through_a_handoff(self):
+        for channel in ('whatsapp', 'email'):
+            self.client.post(reverse('mark_quotation_sent', args=[self.quote.pk]),
+                             data=json.dumps({'channel': channel}),
+                             content_type='application/json')
+        self.quote.refresh_from_db()
+        self.assertTrue(self.quote.sent_via_whatsapp)
+        self.assertTrue(self.quote.sent_via_email)
+        self.assertEqual(self.quote.sent_channel_label(), 'Email + WhatsApp')
+
+    def test_the_note_says_handed_over_not_delivered(self):
+        """The server never saw the message, so the record must not claim it
+        was delivered."""
+        self.client.post(reverse('mark_quotation_sent', args=[self.quote.pk]),
+                         data=json.dumps({'channel': 'whatsapp'}),
+                         content_type='application/json')
+        note = ConversationMessage.objects.filter(appointment=self.lead).last()
+        self.assertIn('handed to the plumber to send', note.content)
+
+    def test_an_unknown_channel_is_refused(self):
+        response = self.client.post(
+            reverse('mark_quotation_sent', args=[self.quote.pk]),
+            data=json.dumps({'channel': 'smoke-signal'}), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.quote.refresh_from_db()
+        self.assertFalse(self.quote.sent_via_whatsapp)
+
+    def test_marking_sent_is_tenant_scoped(self):
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-mark')
+        foreign = Quotation.objects.create(appointment=make_lead(9801, tenant=other))
+        response = self.client.post(
+            reverse('mark_quotation_sent', args=[foreign.pk]),
+            data=json.dumps({'channel': 'email'}), content_type='application/json')
+        self.assertEqual(response.status_code, 404)
+
+    def test_marking_sent_needs_a_post(self):
+        self.assertEqual(
+            self.client.get(reverse('mark_quotation_sent', args=[self.quote.pk])).status_code,
+            405)
+
+
+class QuoteDocumentParityTests(StaffClientTestCase):
+    """The editor's preview and the client copy are the SAME document.
+
+    They had drifted: the view page used a two-column key/value panel and totals
+    of "Labor / Materials / Total", while the editor previewed labelled blocks
+    and "Material / Labour / Transport / Total". The same quote looked like two
+    different papers, and the plumber was checking one and sending the other.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9900, customer_name='Parity Lead',
+                              customer_email='parity@example.com',
+                              customer_area='Hatfield',
+                              project_type='bathroom_renovation')
+        self.quote = Quotation.objects.create(
+            appointment=self.lead, labor_cost=Decimal('100'),
+            transport_cost=Decimal('25'), notes='Deposit 50%')
+        QuotationItem.objects.create(quotation=self.quote, description='Basin mixer',
+                                     quantity=2, unit_price=Decimal('40'))
+
+    def _pages(self):
+        return {
+            'editor': self.client.get(reverse('edit_quotation', args=[self.quote.pk])),
+            'view': self.client.get(reverse('view_quotation', args=[self.quote.pk])),
+        }
+
+    @staticmethod
+    def _body(response):
+        """The rendered body, past the stylesheets.
+
+        Class names appear in the <style> block too, and a naive index() over
+        the whole page finds those first - which is a test measuring the CSS
+        rather than the document.
+        """
+        html = response.content.decode()
+        return html[html.rindex('</style>'):]
+
+    def test_both_render_from_the_one_document_include(self):
+        for name, response in self._pages().items():
+            with self.subTest(page=name):
+                names = [t.name for t in response.templates]
+                self.assertIn('bot/includes/quote_flat_document.html', names)
+                self.assertIn('bot/includes/quote_flat_letterhead.html', names)
+
+    def test_both_share_the_document_styles(self):
+        for name, response in self._pages().items():
+            with self.subTest(page=name):
+                self.assertIn('bot/includes/quote_flat_document_css.html',
+                              [t.name for t in response.templates])
+
+    def test_both_carry_the_same_blocks_in_the_same_order(self):
+        for name, response in self._pages().items():
+            body = self._body(response)
+            with self.subTest(page=name):
+                # From the letterhead down, the document is the same sequence on
+                # both pages.
+                doc = body[body.index('qf-doc__head'):]
+                client_at = doc.index('Client Information')
+                project_at = doc.index('Project Details')
+                total_at = doc.index('Total Amount')
+                self.assertLess(client_at, project_at)
+                self.assertLess(project_at, total_at)
+
+    def test_both_carry_the_same_totals_rows(self):
+        """'Labor Cost / Materials Cost' on one and 'Material / Labour /
+        Transport' on the other is how the two drifted."""
+        for name, response in self._pages().items():
+            body = self._body(response)
+            with self.subTest(page=name):
+                for row in ('Material cost', 'Labour', 'Transport', 'Total Amount'):
+                    self.assertIn(row, body, row)
+                self.assertNotIn('Labor Cost', body)
+                self.assertNotIn('Materials Cost', body)
+
+    def test_the_client_copy_shows_the_saved_figures(self):
+        body = self._body(self._pages()['view'])
+        self.assertIn('Basin mixer', body)
+        self.assertIn('US$100', body)      # labour
+        self.assertIn('US$25', body)       # transport
+        self.assertIn('Deposit 50%', body)
+
+    def test_the_editor_leaves_the_containers_for_its_own_js(self):
+        body = self._body(self._pages()['editor'])
+        for element_id in ('previewClient', 'previewProject', 'previewItems',
+                           'previewMaterials', 'previewLabour', 'previewTransport',
+                           'previewGrandTotal'):
+            with self.subTest(element=element_id):
+                self.assertIn('id="' + element_id + '"', body)
+
+    def test_page_chrome_is_kept_off_the_customers_copy(self):
+        """Status, created-at and the action buttons are dashboard metadata.
+        Inside the document they would print on the customer's copy."""
+        body = self._body(self._pages()['view'])
+        self.assertLess(body.index('vq-meta'), body.index('qf-doc__head'))
+        # The status row sits in a card marked no-print, above the document.
+        chrome = body[:body.index('qf-doc__head')]
+        self.assertIn('pbq-no-print', chrome)
+        self.assertIn('Status', chrome)
+
+    def test_the_closing_line_is_not_printed_twice(self):
+        body = self._body(self._pages()['view'])
+        self.assertEqual(body.count('Prepared for:'), 1)

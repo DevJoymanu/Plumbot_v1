@@ -281,6 +281,19 @@ class TenantProfile(models.Model):
     # reads it from, so the quote PDF, the quote email, the intake form and the
     # dashboard can never drift apart or fall back differently.
     logo = models.FileField(upload_to='tenant_logos/', blank=True, null=True)
+    # How this business prefers to email a quote to a customer. 'platform'
+    # sends it from their configured address with the PDF attached, which is
+    # what every tenant does today and stays the default; 'manual' opens a
+    # draft in the plumber's own mail app with the PDF downloaded ready to
+    # attach, for a business that would rather the mail come from the inbox
+    # they actually read replies in. The editor offers BOTH every time; this
+    # only decides which one is pre-selected.
+    QUOTE_EMAIL_MODES = [
+        ('platform', 'Send from our configured address'),
+        ('manual', 'Open a draft in my email app'),
+    ]
+    quote_email_mode = models.CharField(
+        max_length=10, choices=QUOTE_EMAIL_MODES, default='platform')
 
     def __str__(self):
         return f"Profile · {self.tenant.slug}"

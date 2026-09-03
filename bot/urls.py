@@ -130,6 +130,9 @@ urlpatterns = [
     path('quotations/<int:pk>/preview/', ViewQuotationView.as_view(), name='preview_quotation'),
     path('quotations/<int:pk>/edit/', EditQuotationView.as_view(), name='edit_quotation'),
     path('quotations/<int:pk>/download/', views.download_quotation_pdf, name='download_quotation_pdf'),
+    # The plumber sent it from their own WhatsApp or mail app, so the
+    # server never saw the message; this records that it went out.
+    path('quotations/<int:pk>/mark-sent/', views.mark_quotation_sent, name='mark_quotation_sent'),
     path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),
     # Independent of the WhatsApp send above — the plumber may use either
     # channel or both, and neither affects the email follow-up sequence.

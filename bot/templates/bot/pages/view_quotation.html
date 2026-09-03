@@ -1,98 +1,33 @@
 {% extends "bot/layouts/base.html" %}
 
+{% comment %}
+The read-only client copy.
+
+The document itself is bot/includes/quote_flat_document.html - the SAME include
+the editor previews - so the two cannot drift again. Everything in this file is
+page chrome around it: the title bar, the quote's status row, and the action
+buttons, all marked pbq-no-print so none of it reaches the customer's copy.
+{% endcomment %}
+
 {% block title %}{{ quotation.get_display_name }}{% endblock %}
 
 {% block extra_css %}
 {% include "bot/includes/quote_responsive_css.html" %}
+{% include "bot/includes/quote_flat_document_css.html" %}
 <style>
-    /* View Quote — document chrome only. */
-    /* The letterhead ships its own styles with the shared partial; these
-       page-local rules only cover the document chrome around it. */
-    .qf-doc__head {
-        text-align: center;
-        margin-bottom: 24px;
-        padding-bottom: 18px;
-        border-bottom: 1px solid rgba(0, 101, 145, 0.10);
-    }
-
-    .qf-doc__logo {
-        height: 66px;
-        width: auto;
-        max-width: 180px;
-        display: block;
-        margin: 0 auto 10px;
-    }
-
-    .qf-doc__mark {
-        width: 66px;
-        height: 66px;
-        margin: 0 auto 10px;
+    /* Page chrome only - the document's own styles come from the shared
+       include above, which is what keeps this page and the editor identical. */
+    .vq-meta {
         display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
         align-items: center;
-        justify-content: center;
-        border-radius: var(--radius-md);
-        background: var(--color-primary);
-        color: var(--color-on-primary);
-        font-weight: 700;
-    }
-
-    .qf-doc__name {
-        margin: 0;
-        font-size: clamp(1.05rem, 4.5vw, 1.35rem);
-        font-weight: 500;
-        color: var(--color-text);
-    }
-
-    .qf-doc__ta,
-    .qf-doc__line { margin: 4px 0 0; font-size: 12px; color: var(--color-muted); }
-
-    .vq-doc {
-        text-align: center;
-        margin-bottom: 28px;
-        padding-bottom: 18px;
-        border-bottom: 1px solid rgba(0, 101, 145, 0.10);
-    }
-
-    .vq-doc h1 {
-        margin: 0 0 6px;
-        font-size: clamp(1.3rem, 5.5vw, 2rem);
-        font-weight: 400;
-        color: var(--color-text);
-    }
-
-    .vq-doc p { margin: 0; color: var(--color-muted); font-size: 13px; }
-
-    .vq-cols {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-        gap: 24px;
-        margin-bottom: 28px;
-    }
-
-    .vq-notes {
-        padding: 18px;
-        margin: 24px 0;
-        border-radius: var(--radius-md);
-        background: var(--color-surface-low);
-    }
-
-    .vq-notes__body { font-size: 13.5px; color: var(--color-text-2); }
-    .vq-notes__body p { margin: 0 0 8px; }
-
-    .vq-foot {
-        margin-top: 28px;
-        padding-top: 18px;
-        border-top: 1px solid rgba(0, 101, 145, 0.10);
-        text-align: center;
-        font-size: 12.5px;
+        font-size: 13px;
         color: var(--color-muted);
     }
 
-    .vq-foot a { color: var(--color-primary); text-decoration: underline; }
+    .vq-meta strong { color: var(--color-text); }
 
-    @media (max-width: 767px) {
-        .vq-cols { grid-template-columns: 1fr; gap: 18px; }
-    }
 </style>
 {% endblock %}
 
@@ -111,127 +46,32 @@
         </div>
     </div>
 
+    {% comment %}
+    Quote CHROME - who it is for, its status, when it was raised. Deliberately
+    outside the document and marked no-print: it is dashboard metadata, and it
+    would otherwise print on the customer's copy. The two-column key/value panel
+    that used to carry this sat INSIDE the document, which is what made the
+    client copy look nothing like the editor's preview.
+    {% endcomment %}
+    <div class="pbq-card pbq-no-print">
+        <div class="vq-meta">
+            <span>Quote <strong>{{ quotation.quotation_number }}</strong></span>
+            <span>Status
+                <span class="pbq-status pbq-status--{{ quotation.status }}">{{ quotation.get_status_display }}</span>
+            </span>
+            <span>Created <strong>{{ quotation.created_at|date:"j M Y, H:i" }}</strong></span>
+            <span>Sent via <strong>{{ quotation.sent_channel_label }}</strong></span>
+            {% if quotation.appointment.plumber_display_name %}
+            <span>Plumber <strong>{{ quotation.appointment.plumber_display_name }}</strong></span>
+            {% endif %}
+        </div>
+    </div>
+
     <div class="pbq-card">
-        {% comment %}
-        The SAME letterhead the editor previews, so what the plumber checks on
-        screen is what their customer receives. It used to hardcode "HOMEBASE
-        CONSTRUCTION [PVT] LTD", a Hatfield address and Homebase's phone and
-        email, on every tenant's quote.
-        {% endcomment %}
-        {% include "bot/includes/quote_flat_letterhead.html" %}
+        {% include "bot/includes/quote_flat_document.html" %}
+    </div>
 
-        <!-- Document header -->
-        <div class="vq-doc">
-            <h1>{{ quotation.get_display_name }}</h1>
-            <p><em>Prepared for {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number }}</em></p>
-        </div>
-
-        <!-- Customer + quote meta -->
-        <div class="vq-cols">
-            <div>
-                <h2 class="pbq-section-title"><i class="fas fa-user"></i> Customer Details</h2>
-                <div class="pbq-kv">
-                    <div class="pbq-kv__row">
-                        <span class="pbq-kv__key">Name</span>
-                        <span class="pbq-kv__val">{{ quotation.appointment.customer_name|default:"Not provided" }}</span>
-                    </div>
-                    <div class="pbq-kv__row">
-                        <span class="pbq-kv__key">Phone</span>
-                        <span class="pbq-kv__val">{{ quotation.appointment.phone_number }}</span>
-                    </div>
-                    <div class="pbq-kv__row">
-                        <span class="pbq-kv__key">Service</span>
-                        <span class="pbq-kv__val">{{ quotation.appointment.get_project_type_display }}</span>
-                    </div>
-                    <div class="pbq-kv__row">
-                        <span class="pbq-kv__key">Area</span>
-                        <span class="pbq-kv__val">{{ quotation.appointment.customer_area|default:"Not provided" }}</span>
-                    </div>
-                </div>
-            </div>
-
-            <div>
-                <h2 class="pbq-section-title"><i class="fas fa-info-circle"></i> Quotation Info</h2>
-                <div class="pbq-kv">
-                    <div class="pbq-kv__row">
-                        <span class="pbq-kv__key">Status</span>
-                        <span class="pbq-kv__val">
-                            <span class="pbq-status pbq-status--{{ quotation.status }}">{{ quotation.get_status_display }}</span>
-                        </span>
-                    </div>
-                    <div class="pbq-kv__row">
-                        <span class="pbq-kv__key">Created</span>
-                        <span class="pbq-kv__val">{{ quotation.created_at|date:"M d, Y H:i" }}</span>
-                    </div>
-                    <div class="pbq-kv__row">
-                        <span class="pbq-kv__key">Plumber</span>
-                        <span class="pbq-kv__val">{{ quotation.appointment.plumber_display_name }}</span>
-                    </div>
-                    {% if quotation.sent_via_whatsapp %}
-                    <div class="pbq-kv__row">
-                        <span class="pbq-kv__key">Sent via WhatsApp</span>
-                        <span class="pbq-kv__val">{{ quotation.sent_at|date:"M d, Y H:i" }}</span>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Items -->
-        <h2 class="pbq-section-title"><i class="fas fa-list"></i> Quotation Items</h2>
-        <div class="pbq-table-wrap">
-            <table class="pbq-table pbq-table--stack">
-                <thead>
-                    <tr>
-                        <th>Description</th>
-                        <th class="pbq-num">Quantity</th>
-                        <th class="pbq-num">Unit Price</th>
-                        <th class="pbq-num">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in quotation.items.all %}
-                    <tr>
-                        <td class="pbq-cell-full" data-label="">{{ item.description }}</td>
-                        <td class="pbq-num" data-label="Quantity">{{ item.quantity }}</td>
-                        <td class="pbq-num" data-label="Unit Price">US${{ item.unit_price }}</td>
-                        <td class="pbq-num" data-label="Total">US${{ item.total_price }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td class="pbq-cell-full" data-label="" colspan="4">
-                            <div class="pbq-empty">
-                                <i class="fas fa-inbox"></i>
-                                <p>No items added to this quotation</p>
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Totals -->
-        <div class="pbq-totals" style="margin-top: 20px;">
-            <div class="pbq-total-row">
-                <span>Labor Cost</span><span>US${{ quotation.labor_cost }}</span>
-            </div>
-            <div class="pbq-total-row">
-                <span>Materials Cost</span><span>US${{ quotation.materials_cost }}</span>
-            </div>
-            <div class="pbq-total-row pbq-total-row--grand">
-                <span>Total Amount</span><span>US${{ quotation.total_amount }}</span>
-            </div>
-        </div>
-
-        <!-- Notes -->
-        {% if quotation.notes %}
-        <div class="vq-notes">
-            <h2 class="pbq-section-title"><i class="fas fa-sticky-note"></i> Additional Notes</h2>
-            <div class="vq-notes__body">{{ quotation.notes|linebreaks }}</div>
-        </div>
-        {% endif %}
-
+    <div class="pbq-card pbq-no-print">
         <!-- Actions -->
         <div class="pbq-actions pbq-no-print" style="margin-top: 24px;">
             <a href="{% url 'appointment_detail' quotation.appointment.pk %}" class="btn btn-secondary">
@@ -273,21 +113,6 @@
             </form>
         </div>
 
-        {% comment %}
-        The contact line is the TENANT's own, and absent means the offer is
-        omitted rather than pointing the customer at another business. It used
-        to hardcode info@homebaseplumbers.co.zw on every tenant's quote.
-        {% endcomment %}
-        <div class="vq-foot">
-            <strong>Prepared for:</strong>
-            {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number }}
-            {% if lh.public_email %}<br>
-            Any questions about this quotation, contact us at
-            <a href="mailto:{{ lh.public_email }}">{{ lh.public_email }}</a>
-            {% elif lh.phones %}<br>
-            Any questions about this quotation, call us on {{ lh.phones.0 }}
-            {% endif %}
-        </div>
     </div>
 </div>
 {% endblock %}
