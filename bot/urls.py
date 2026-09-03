@@ -19,7 +19,7 @@ from .views import (
     QuotationsListView, StandaloneQuotationView, create_standalone_quotation_api, appointment_search_api,
     quotation_detail_api, duplicate_quotation, delete_quotation,
     # Import job scheduling views
-    complete_site_visit, schedule_job, job_appointments_list, update_job_status, reschedule_job,
+    schedule_job, job_appointments_list, update_job_status, reschedule_job,
     login_view, logout_view, profile_view, change_password_view,appointment_detail_api,
     pause_chatbot, resume_chatbot,
     # Import quotation template views
@@ -109,7 +109,6 @@ urlpatterns = [
     path('site-visit/<token>/', post_visit_views.site_visit_form, name='site_visit_form'),
 
     # Job scheduling URLs
-    path('appointments/<int:pk>/complete-site-visit/', complete_site_visit, name='complete_site_visit'),
     path('appointments/<int:pk>/schedule-job/', schedule_job, name='schedule_job'),
     path('jobs/', job_appointments_list, name='job_appointments_list'),
     path('jobs/<int:pk>/update-status/', update_job_status, name='update_job_status'),

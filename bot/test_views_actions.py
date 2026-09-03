@@ -179,7 +179,6 @@ class PageSmokeTests(StaffClientTestCase):
             reverse('test_whatsapp'),
             reverse('send_bulk_followup'),
             reverse('followup_test_suite'),
-            reverse('complete_site_visit', args=[self.lead.pk]),
             reverse('schedule_job', args=[self.lead.pk]),
             reverse('reschedule_job', args=[self.job.pk]),
             reverse('lead_email_preview', args=[self.lead.pk]),
@@ -4954,16 +4953,40 @@ class PostVisitFormTests(StaffClientTestCase):
 
     # -- the in-app entry point -------------------------------------------
 
-    def test_banner_shows_on_a_finished_visit(self):
-        response = self.client.get(reverse('appointment_detail', args=[self.lead.pk]))
-        self.assertTrue(response.context['site_visit_prompt'])
-        self.assertIn('Is the site visit complete?', response.content.decode())
+    def _banner(self, lead=None):
+        response = self.client.get(
+            reverse('appointment_detail', args=[(lead or self.lead).pk]))
+        return response.context['site_visit_banner'], response.content.decode()
 
-    def test_banner_hidden_before_the_visit_has_happened(self):
+    def test_banner_shows_on_a_finished_visit(self):
+        banner, body = self._banner()
+        self.assertEqual(banner['state'], 'open')
+        self.assertIn('Is the site visit complete?', body)
+
+    def test_banner_shows_even_before_the_visit_has_happened(self):
+        """It is the only way to log a visit, so it is never conditional on the
+        row looking tidy: real visits happen without the bot pinning a slot."""
         self.lead.scheduled_datetime = timezone.now() + timedelta(days=1)
         self.lead.save()
-        response = self.client.get(reverse('appointment_detail', args=[self.lead.pk]))
-        self.assertFalse(response.context['site_visit_prompt'])
+        banner, body = self._banner()
+        self.assertEqual(banner['state'], 'open')
+        self.assertIn('Is the site visit complete?', body)
+
+    def test_banner_shows_on_a_lead_with_no_booking_at_all(self):
+        bare = make_lead(8150, customer_name='Never Booked', status='pending')
+        banner, body = self._banner(bare)
+        self.assertEqual(banner['state'], 'open')
+        self.assertIn('Is the site visit complete?', body)
+
+    def test_the_old_complete_site_visit_route_is_gone(self):
+        """One way to log a visit, one place it can be done."""
+        from django.urls import NoReverseMatch
+        with self.assertRaises(NoReverseMatch):
+            reverse('complete_site_visit', args=[self.lead.pk])
+        self.assertEqual(
+            self.client.get(f'/appointments/{self.lead.pk}/complete-site-visit/').status_code,
+            404)
+        self.assertNotIn('Complete Site Visit', self._banner()[1])
 
     def test_rendering_the_page_does_not_create_a_report(self):
         """A page view is not an action - creating the row here would start the
@@ -4979,12 +5002,38 @@ class PostVisitFormTests(StaffClientTestCase):
         self.assertRedirects(
             response, reverse('site_visit_form', kwargs={'token': report.token}))
 
-    def test_banner_disappears_once_the_form_is_submitted(self):
+    def test_banner_reports_the_outcome_once_logged(self):
+        """Resolved, not gone: the banner must never become a dead control, and
+        the plumber should be able to see what their answer set running."""
         from bot.post_visit import apply_submission
         apply_submission(self._report(), outcome='went_ahead', expectation='unknown',
                          email='rudo@example.com')
-        response = self.client.get(reverse('appointment_detail', args=[self.lead.pk]))
-        self.assertFalse(response.context['site_visit_prompt'])
+        banner, body = self._banner()
+        self.assertEqual(banner['state'], 'resolved')
+        self.assertIn('Site visit logged', body)
+        self.assertNotIn('Is the site visit complete?', body)
+        self.assertIn('Chasing a firmer date by email', body)
+
+    def test_a_logged_visit_with_a_date_says_when_we_confirm(self):
+        from bot.post_visit import apply_submission
+        target = timezone.localdate() + timedelta(days=9)
+        apply_submission(self._report(), outcome='went_ahead',
+                         expectation='specific_date', expected_date=target,
+                         email='rudo@example.com')
+        _, body = self._banner()
+        self.assertIn('we confirm two days before', body)
+        self.assertIn(target.strftime('%B'), body)
+
+    def test_a_closed_out_visit_says_nothing_is_going_out(self):
+        from bot.post_visit import ensure_report
+        lead = make_lead(8160, status='confirmed',
+                         scheduled_datetime=timezone.now() - timedelta(hours=3))
+        report = ensure_report(lead)
+        self.client.post(reverse('site_visit_form', kwargs={'token': report.token}),
+                         {'outcome': 'not_proceeding'})
+        banner, body = self._banner(lead)
+        self.assertEqual(banner['state'], 'resolved')
+        self.assertIn('No quote and no follow-ups will go out', body)
 
     # -- the form itself ---------------------------------------------------
 

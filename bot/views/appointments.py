@@ -702,20 +702,29 @@ class AppointmentDetailView(DetailView):
         return Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None))
     #
     @staticmethod
-    def _site_visit_prompt(appointment):
-        """Show the "Is the site visit complete?" banner?
+    def _site_visit_banner(appointment):
+        """State for the pinned site-visit banner at the top of the detail pane.
 
-        Only for a finished site visit whose debrief is still outstanding. This
-        deliberately does NOT create the report row — a page view is not an
+        ALWAYS present. It replaced the "Complete Site Visit" button that used
+        to sit buried in the Scheduling card, and it is now the only way to log
+        a visit, so it cannot be conditional on the row looking tidy: it is
+        deliberately NOT gated on the appointment being confirmed with a slot in
+        the past. Plenty of real visits happen without the bot ever pinning a
+        slot on the row, and gating the control on that made those impossible to
+        log at all.
+
+        Two states, so the banner is never a dead control:
+          • open     — the question and the button.
+          • resolved — what was logged, and what it set running.
+
+        Deliberately does NOT create the report row: a page view is not an
         action, and creating one here would start the fallback-email clock on
         every render. The row is created when the button is actually tapped.
         """
-        from bot.post_visit import is_due_for_report
-
-        if not is_due_for_report(appointment):
-            return False
         report = getattr(appointment, 'site_visit_report', None)
-        return report is None or report.is_open
+        if report is None or report.is_open:
+            return {'state': 'open'}
+        return {'state': 'resolved', 'report': report}
 
     @staticmethod
     def _followup_info_for(appointment):
@@ -784,7 +793,7 @@ class AppointmentDetailView(DetailView):
             'computed_lead_status': computed_status,
             'computed_lead_status_label': dict(Appointment._meta.get_field('lead_status').choices).get(computed_status, 'Cold'),
             'followup_info': self._followup_info_for(appointment),
-            'site_visit_prompt': self._site_visit_prompt(appointment),
+            'site_visit_banner': self._site_visit_banner(appointment),
             'detail_source': detail_source,
             'source_workspace': source_workspace,
             'source_back_url': source_back_url,
@@ -1113,33 +1122,6 @@ def export_appointments(request):
         ])
     
     return response
-
-
-@staff_required
-def complete_site_visit(request, pk):
-    """Mark site visit as completed and prepare for job scheduling"""
-    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
-    
-    if appointment.appointment_type != 'site_visit':
-        messages.error(request, 'This is not a site visit appointment')
-        return redirect('appointment_detail', pk=appointment.pk)
-    
-    if request.method == 'POST':
-        site_visit_notes = request.POST.get('site_visit_notes', '')
-        plumber_assessment = request.POST.get('plumber_assessment', '')
-        
-        # Mark site visit as completed
-        appointment.mark_site_visit_completed(
-            notes=site_visit_notes,
-            assessment=plumber_assessment
-        )
-        
-        messages.success(request, 'Site visit marked as completed. You can now schedule the job appointment.')
-        return redirect('schedule_job', pk=appointment.pk)
-    
-    return render(request, 'bot/pages/complete_site_visit.html', {
-        'appointment': appointment
-    })
 
 
 # NOTE: handle_whatsapp_media / download_and_save_media were removed with Twilio.

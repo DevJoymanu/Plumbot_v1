@@ -1307,6 +1307,26 @@
     flex-wrap: wrap;
   }
 
+  /* Resolved: the same block, reading as a record rather than an alarm. The
+     shape is kept so the pane does not reflow when a visit is logged. */
+  .visit-prompt--done {
+    background: var(--color-surface-low, #eff4ff);
+    border: 1px solid rgba(0, 101, 145, 0.12);
+    box-shadow: var(--shadow-glow);
+  }
+
+  .visit-prompt--done .visit-prompt-kicker { color: var(--color-muted); }
+  .visit-prompt--done .visit-prompt-kicker i { color: #16a34a; }
+  .visit-prompt--done .visit-prompt-q { color: var(--color-text, #0b1c30); font-size: 18px; }
+  .visit-prompt--done .visit-prompt-sub { color: var(--color-muted); }
+
+  .visit-prompt--done .visit-prompt-btn {
+    background: var(--color-header);
+    color: #fff;
+  }
+
+  .visit-prompt--done .visit-prompt-btn:hover { color: #fff; }
+
   .visit-prompt-kicker {
     font-family: var(--font-label);
     font-size: 11.5px;
@@ -2133,13 +2153,45 @@
         <div class="appt-detail-content">
 
           {% comment %}
-          Site visit complete? Pinned above everything else, because it is the
-          trigger for the quote and the whole post-visit follow-up sequence.
-          Shown only while the debrief is still outstanding; the view sets
-          site_visit_prompt False the moment the form is submitted from either
-          entry point, so this and the fallback email can never both be live.
+          Site visit. Pinned above every other detail, because logging it is
+          what triggers the quote and the whole post-visit follow-up sequence.
+          This is the ONLY way to log a visit - it replaced the "Complete Site
+          Visit" button that used to be buried in the Scheduling card - so it is
+          always here, never conditional on the row looking tidy, and it opens
+          the same tokenized form the plumber gets by email 35 minutes after the
+          visit. Once logged it flips to the resolved state rather than
+          disappearing, so the banner is never a dead control and the plumber
+          can always see what the answer set running.
           {% endcomment %}
-          {% if site_visit_prompt %}
+          {% if site_visit_banner.state == 'resolved' %}
+          {% with report=site_visit_banner.report %}
+          <div class="visit-prompt visit-prompt--done">
+            <div style="min-width:0;">
+              <span class="visit-prompt-kicker"><i class="fas fa-circle-check"></i> Site visit logged</span>
+              <p class="visit-prompt-q">{{ report.get_outcome_display }}</p>
+              <p class="visit-prompt-sub">
+                Logged {{ report.submitted_at|date:"j M, H:i" }}{% if report.submitted_by %} by {{ report.submitted_by.get_username }}{% endif %}.
+                {% if report.sequence == 'confirm' and report.expected_date %}
+                  Customer expects the job on {{ report.expected_date|date:"l j F" }}; we confirm two days before.
+                {% elif report.sequence == 'asks' %}
+                  Chasing a firmer date by email{% if report.ask_count %} - {{ report.ask_count }} of 3 sent{% endif %}.
+                {% elif report.sequence == 'cold' %}
+                  No reply after three follow-ups; this one is yours to close.
+                {% elif report.sequence == 'stopped' %}
+                  No quote and no follow-ups will go out.
+                {% else %}
+                  Nothing further scheduled.
+                {% endif %}
+              </p>
+            </div>
+            {% if report.outcome == 'went_ahead' %}
+            <a href="{% url 'create_quotation' appointment.pk %}" class="visit-prompt-btn">
+              <i class="fas fa-file-invoice-dollar"></i> Create quote
+            </a>
+            {% endif %}
+          </div>
+          {% endwith %}
+          {% else %}
           <div class="visit-prompt">
             <div style="min-width:0;">
               <span class="visit-prompt-kicker"><i class="fas fa-clipboard-check"></i> Action needed</span>
@@ -2410,11 +2462,15 @@
                 <div class="detail-card-body">
                   {% if appointment.appointment_type == 'site_visit' %}
                     {% if not appointment.site_visit_completed %}
+                    {% comment %}
+                    No "Complete Site Visit" button here any more. Logging the
+                    visit is the pinned banner at the TOP of this pane, which is
+                    the same tokenized form the plumber gets by email, so there
+                    is exactly one way to do it and one place it can be done.
+                    This card only reports where the job stands.
+                    {% endcomment %}
                     <div class="empty-block" style="padding:0; text-align:left;">
-                      Site visit must be completed before scheduling the job appointment.
-                    </div>
-                    <div class="detail-actions">
-                      <a href="{% url 'complete_site_visit' appointment.pk %}" class="action-btn primary"><i class="fas fa-clipboard-check"></i> Complete Site Visit</a>
+                      Log the site visit at the top of this page before scheduling the job.
                     </div>
                     {% elif appointment.can_schedule_job %}
                     <div class="mini-stat" style="margin-bottom:12px;">

@@ -53,7 +53,6 @@ from .appointments import (
     unbook_appointment,
     delete_appointment,
     export_appointments,
-    complete_site_visit,
 )
 
 from .settings_views import (
