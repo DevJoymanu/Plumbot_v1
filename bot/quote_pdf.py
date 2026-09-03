@@ -272,97 +272,369 @@ def _closing_line(page):
 
 
 # ── The sectioned sheet ──────────────────────────────────────────────────────
+#
+# Colours and proportions come straight from bot/includes/quote_sectioned_css.html
+# so the PDF is the same document as the screen, not a plain-text version of it.
+# The old renderer centred everything and led the table with Item; the sheet is
+# a two-column letterhead with a green-ruled table led by QTY.
+
+SEC = {
+    'line': '#2fae66',
+    'green': '#1f9d55',
+    'green_dark': '#178a48',
+    'teal': '#16918f',
+    'blue': '#1b75bc',
+    'red': '#d1352b',
+    'ink': '#222222',
+    'section_bg': '#f3faf5',
+}
+
+# Column proportions mirror col.bq-c-* in the stylesheet: qty 14%, description
+# the remainder, unit 17%, total 17%.
+SEC_COLS = (0.14, 0.52, 0.17, 0.17)
+
+
+def _hex(name):
+    from reportlab.lib import colors
+    return colors.HexColor(SEC[name])
+
+
+def _sectioned_letterhead(page):
+    """Two columns: the mark and the business name left, contacts right.
+
+    Mirrors .bq-head / .bq-logo / .bq-contact. Absent means omit - a tenant
+    with no website simply has no website line, never another tenant's.
+    """
+    from . import branding
+
+    top = page.y
+    text_x = page.left
+
+    raw, _ = branding.logo_bytes(page.tenant)
+    if raw:
+        try:
+            import io as _io
+            from reportlab.lib.utils import ImageReader
+            image = ImageReader(_io.BytesIO(raw))
+            iw, ih = image.getSize()
+            draw_h = 40.0
+            draw_w = min(120.0, iw * (draw_h / ih)) if ih else 90.0
+            page.c.drawImage(image, page.left, top - draw_h + 6,
+                             width=draw_w, height=draw_h,
+                             preserveAspectRatio=True, mask='auto')
+            text_x = page.left + draw_w + 10
+        except Exception:
+            logger.info('Quote PDF: logo not drawable for tenant %s', page.tenant)
+
+    name = page.lh.get('business_name') or branding.brand_name(page.tenant)
+    if name:
+        page.c.setFont('Helvetica-Bold', 17)
+        page.c.setFillColor(_hex('blue'))
+        page.c.drawString(text_x, top - 14, name.upper())
+        page.c.setFont('Helvetica-Bold', 7)
+        page.c.setFillColor(_hex('green_dark'))
+        page.c.drawString(text_x, top - 25, 'DOMESTIC | INDUSTRIAL | COMMERCIAL')
+
+    # The contact column, right-aligned, wrapped inside its own width.
+    contact = []
+    if page.lh.get('address'):
+        contact.append(page.lh['address'])
+    phones = page.lh.get('phones') or []
+    for i in range(0, len(phones), 2):
+        contact.append(' / '.join(str(p) for p in phones[i:i + 2]))
+    if page.lh.get('public_email'):
+        contact.append(page.lh['public_email'])
+    if page.lh.get('website'):
+        contact.append(page.lh['website'])
+
+    page.c.setFont('Helvetica', 8.5)
+    page.c.setFillColor(_hex('teal'))
+    line_y = top - 6
+    # .bq-contact is max-width:270px on screen; the same share of the sheet here.
+    contact_width = (page.right - page.left) * 0.42
+    for entry in contact:
+        for chunk in _wrap_px(page.c, entry, contact_width, 'Helvetica', 8.5):
+            page.c.drawRightString(page.right, line_y, chunk)
+            line_y -= 11
+
+    page.y = min(top - 40, line_y) - 8
+
+    # .bq-ta - the trading name, over a green rule.
+    if page.lh.get('trading_name'):
+        page.c.setFont('Helvetica-Bold', 14)
+        page.c.setFillColor(_hex('ink'))
+        page.c.drawString(page.left, page.y, f"t / a {page.lh['trading_name']}")
+        page.y -= 8
+    page.c.setStrokeColor(_hex('green'))
+    page.c.setLineWidth(1.6)
+    page.c.line(page.left, page.y, page.right, page.y)
+    page.c.setLineWidth(1)
+    page.y -= 14
+
+    # .bq-blurb - italic, centred, and WRAPPED. It ran off the page before.
+    blurb = ' '.join(x for x in (page.lh.get('services_blurb'),
+                                 page.lh.get('maintenance_blurb')) if x)
+    if blurb:
+        page.c.setFont('Helvetica-Oblique', 8.5)
+        page.c.setFillColor(_hex('green_dark'))
+        for chunk in _wrap_px(page.c, blurb, page.right - page.left,
+                              'Helvetica-Oblique', 8.5):
+            page.c.drawCentredString(page.width / 2, page.y, chunk)
+            page.y -= 11
+        page.y -= 4
+
 
 def _sectioned_sheet(page, document):
-    """Mirrors bot/pages/quote_sectioned_view.html and quote_footer.html.
-
-    Numbered sections with their own SUB-TOTAL, then labour, transport,
-    discount, VAT and GRAND TOTAL, then terms, banking and the signature line.
-    Every block is guarded: a tenant with no bank details gets no banking block.
-    """
-    from reportlab.lib import colors
-
+    """Mirrors bot/pages/quote_sectioned_view.html and quote_footer.html."""
     quotation = page.quotation
     appointment = getattr(quotation, 'appointment', None)
-    _letterhead(page)
-    page.centered('QUOTATION', size=13, bold=True)
-    page.gap(8)
 
-    for label, value in (
+    _sectioned_letterhead(page)
+
+    # .bq-qtitle - centred, red, underlined.
+    page.c.setFont('Helvetica-Bold', 12)
+    page.c.setFillColor(_hex('red'))
+    title = 'Quotation'
+    page.c.drawCentredString(page.width / 2, page.y, title)
+    half = page.c.stringWidth(title, 'Helvetica-Bold', 12) / 2
+    page.c.setStrokeColor(_hex('red'))
+    page.c.line(page.width / 2 - half, page.y - 2, page.width / 2 + half, page.y - 2)
+    page.y -= 22
+
+    # .bq-meta - a two-column grid of label/value.
+    meta = [(label, value) for label, value in (
         ('DATE:', quotation.created_at.strftime('%d %b %Y') if quotation.created_at else ''),
         ('CLIENT:', _client_name(appointment)),
         ('CONTACT:', _phone(appointment)),
         ('ADDRESS:', getattr(appointment, 'customer_area', '') or ''),
         ('EMAIL:', getattr(appointment, 'customer_email', '') or ''),
-    ):
-        if not value:
-            continue
-        page.c.setFont('Helvetica-Bold', 9)
-        page.c.setFillColor(colors.grey)
-        page.c.drawString(page.left, page.y, label)
+    ) if value]
+    column = (page.right - page.left) / 2
+    for index, (label, value) in enumerate(meta):
+        col_x = page.left + (column if index % 2 else 0)
+        row_y = page.y - (index // 2) * 15
+        page.c.setFont('Helvetica-Bold', 8.5)
+        page.c.setFillColor(_hex('teal'))
+        page.c.drawString(col_x, row_y, label)
         page.c.setFont('Helvetica', 10)
-        page.c.setFillColor(colors.black)
-        page.c.drawString(page.left + 70, page.y, str(value))
-        page.y -= LINE
-    page.gap(8)
+        page.c.setFillColor(_hex('ink'))
+        page.c.drawString(col_x + 62, row_y, str(value))
+    page.y -= ((len(meta) + 1) // 2) * 15 + 12
 
-    for index, group in enumerate(document.get('sections') or [], start=1):
-        page.space(80)
-        page.text(f"{index}. {group['title'] or 'ITEMS'}", size=10, bold=True)
-        _items_table(page, [
-            (item['description'], item['qty_text'], item['unit'], item['total_price'])
-            for item in group['items']
-        ], qty_is_text=True)
-        page.gap(4)
-        page.right_text(f"SUB-TOTAL   {page.money(group['subtotal'])}", size=10, bold=True)
-        page.y -= 18
-        page.gap(6)
+    # ONE table, with every section inside it - the sheet has a single <table>
+    # whose section headings are rows, so the column header belongs at the top
+    # and nowhere else. It was being redrawn before each section.
+    widths = [(page.right - page.left) * f for f in SEC_COLS]
+    sections = document.get('sections') or []
+    page.space(90)
+    _sec_table_head(page, widths)
 
-    rows = [('MATERIALS SUB-TOTAL', document.get('materials_total') or 0),
-            ('Labour', quotation.labor_cost),
-            ('Transport', quotation.transport_cost)]
+    if not sections:
+        _sec_empty_row(page, widths)
+    for index, group in enumerate(sections, start=1):
+        # A section heading alone at the foot of a page is an orphan; take the
+        # heading and its first row over together.
+        if page.space(56):
+            _sec_table_head(page, widths)
+        _sec_section_row(page, widths, index, group['title'] or 'ITEMS')
+        for item in group['items']:
+            if page.space(34):
+                _sec_table_head(page, widths)
+            _sec_item_row(page, widths, item)
+        _sec_subtotal_row(page, widths, page.money(group['subtotal']))
+    page.y -= 12
+
+    rows = [('MATERIALS SUB-TOTAL', document.get('materials_total') or 0, False),
+            ('ADD: Labour', quotation.labor_cost, False),
+            ('Transport', quotation.transport_cost, False)]
     if _dec(quotation.discount):
-        rows.append(('Discount', -_dec(quotation.discount)))
-    rows.append(('SUB-TOTAL', document.get('net_subtotal') or 0))
+        rows.append(('Discount', -_dec(quotation.discount), False))
+    rows.append(('SUB-TOTAL', document.get('net_subtotal') or 0, True))
     if _dec(quotation.vat_percent):
         rows.append((f'VAT ({_dec(quotation.vat_percent):g}%)',
-                     document.get('vat_amount') or 0))
-    page.gap(8)
-    _totals_block(page, rows, grand=('GRAND TOTAL', quotation.total_amount))
+                     document.get('vat_amount') or 0, False))
+    _sec_totals(page, widths, rows, quotation.total_amount)
 
     terms = document.get('quote_terms') or []
     if terms:
-        page.space(40 + len(terms) * LINE)
-        page.gap(12)
+        page.space(30 + len(terms) * 18)
+        page.y -= 6
         for term in terms:
-            page.text(term, size=9, colour=colors.HexColor('#3e4850'))
+            _sec_term_row(page, term)
+        page.y -= 8
 
+    _sectioned_foot(page)
+
+
+def _sec_table_head(page, widths):
+    """QTY | DESCRIPTION | UNIT PRICE | TOTAL PRICE - the sheet's own order."""
+    labels = ('QTY', 'DESCRIPTION', 'UNIT PRICE', 'TOTAL PRICE')
+    page.c.setFont('Helvetica-Bold', 9)
+    _sec_row(page, widths, labels, height=18, fill=None,
+             colour=_hex('teal'), align=('left', 'left', 'left', 'left'))
+
+
+def _sec_section_row(page, widths, number, title):
+    page.c.setFont('Helvetica-Bold', 9.5)
+    _sec_row(page, widths, (f'{number}.', title.upper(), '', ''),
+             height=18, fill=_hex('section_bg'), colour=_hex('green_dark'),
+             align=('left', 'left', 'left', 'left'))
+
+
+def _sec_item_row(page, widths, item):
+    page.c.setFont('Helvetica', 9)
+    _sec_row(page, widths,
+             (str(item['qty_text']), str(item['description'])[:52],
+              page.money(item['unit']), page.money(item['total_price'])),
+             height=18, fill=None, colour=_hex('ink'),
+             align=('left', 'left', 'left', 'left'))
+
+
+def _sec_empty_row(page, widths):
+    page.c.setFont('Helvetica', 9)
+    _sec_row(page, widths, ('', 'No items on this quotation yet.', '', ''),
+             height=18, fill=None, colour=_hex('ink'),
+             align=('left', 'left', 'left', 'left'))
+
+
+def _sec_subtotal_row(page, widths, amount):
+    """The per-section SUB-TOTAL: teal, label right-aligned over the first
+    three columns, exactly as tr.bq-subtotal renders it."""
+    page.c.setFont('Helvetica-Bold', 9.5)
+    merged = (sum(widths[:3]), widths[3])
+    _sec_row(page, merged, ('SUB-TOTAL', amount), height=18, fill=None,
+             colour=_hex('teal'), align=('right', 'left'))
+
+
+def _sec_row(page, widths, values, *, height, fill, colour, align):
+    """One bordered row, green-ruled like .bq-table th/td."""
+    x = page.left
+    top = page.y + 4
+    bottom = top - height
+    for width, value, how in zip(widths, values, align):
+        if fill is not None:
+            page.c.setFillColor(fill)
+            page.c.rect(x, bottom, width, height, stroke=0, fill=1)
+        page.c.setStrokeColor(_hex('line'))
+        page.c.rect(x, bottom, width, height, stroke=1, fill=0)
+        page.c.setFillColor(colour)
+        if how == 'right':
+            page.c.drawRightString(x + width - 6, bottom + 5, str(value))
+        else:
+            page.c.drawString(x + 6, bottom + 5, str(value))
+        x += width
+    page.y = bottom - 4
+
+
+def _sec_totals(page, widths, rows, grand):
+    """Labels teal and right-aligned, amounts right - as .bq-totals draws."""
+    page.space(40 + len(rows) * 16)
+    label_right = page.left + sum(widths[:3]) - 6
+    for label, value, underline in rows:
+        page.c.setFont('Helvetica-Bold', 9.5)
+        page.c.setFillColor(_hex('teal'))
+        page.c.drawRightString(label_right, page.y, label)
+        if underline:
+            width = page.c.stringWidth(label, 'Helvetica-Bold', 9.5)
+            page.c.setStrokeColor(_hex('teal'))
+            page.c.line(label_right - width, page.y - 2, label_right, page.y - 2)
+        page.c.setFont('Helvetica', 9.5)
+        page.c.setFillColor(_hex('ink'))
+        page.c.drawRightString(page.right - 6, page.y, page.money(value))
+        page.y -= 16
+
+    page.y -= 2
+    page.c.setStrokeColor(_hex('line'))
+    page.c.line(page.left + sum(widths[:2]), page.y + 6, page.right, page.y + 6)
+    page.y -= 8
+    page.c.setFont('Helvetica-Bold', 12)
+    page.c.setFillColor(_hex('ink'))
+    page.c.drawRightString(label_right, page.y, 'GRAND TOTAL')
+    page.c.drawRightString(page.right - 6, page.y, page.money(grand))
+    page.y -= 22
+
+
+def _sec_term_row(page, term):
+    """A payment term: red and bold, in its own ruled box (.bq-terms)."""
+    width = page.right - page.left
+    top = page.y + 4
+    page.c.setStrokeColor(_hex('line'))
+    page.c.rect(page.left, top - 18, width, 18, stroke=1, fill=0)
+    page.c.setFont('Helvetica-Bold', 9)
+    page.c.setFillColor(_hex('red'))
+    page.c.drawString(page.left + 6, top - 13, str(term))
+    page.y = top - 22
+
+
+def _sectioned_foot(page):
+    """Banking, signature and tagline - each block only if the tenant has it."""
     bank = page.lh.get('bank') or {}
     bank_lines = [(label, bank.get(key)) for label, key in (
         ('Account Name', 'account_name'), ('Bank Name', 'bank_name'),
         ('Branch', 'branch'), ('Account Number', 'account_number'))
         if bank.get(key)]
+
     if bank_lines:
-        page.space(40 + len(bank_lines) * LINE)
-        page.gap(14)
-        page.text('Banking Details', size=10, bold=True)
+        page.space(50 + len(bank_lines) * 14)
+        page.y -= 12
+        page.c.setFont('Helvetica-Bold', 11)
+        page.c.setFillColor(_hex('green_dark'))
+        page.c.drawString(page.left, page.y, 'Banking Details')
+        width = page.c.stringWidth('Banking Details', 'Helvetica-Bold', 11)
+        page.c.setStrokeColor(_hex('green_dark'))
+        page.c.line(page.left, page.y - 2, page.left + width, page.y - 2)
+        page.y -= 16
         for label, value in bank_lines:
-            page.text(f'{label}: {value}', size=9, colour=colors.HexColor('#3e4850'))
+            page.c.setFont('Helvetica', 9.5)
+            page.c.setFillColor(_hex('teal'))
+            page.c.drawString(page.left, page.y, f'{label}: - ')
+            offset = page.c.stringWidth(f'{label}: - ', 'Helvetica', 9.5)
+            page.c.setFont('Helvetica-Bold', 9.5)
+            page.c.setFillColor(_hex('ink'))
+            page.c.drawString(page.left + offset, page.y, str(value))
+            page.y -= 14
 
     page.space(50)
-    page.gap(20)
-    page.c.setFont('Helvetica', 9)
-    page.c.setFillColor(colors.black)
+    page.y -= 14
+    page.c.setFont('Helvetica-Bold', 9.5)
+    page.c.setFillColor(_hex('teal'))
     page.c.drawString(page.left, page.y, 'Client signature: ...........................')
     if page.lh.get('signatory'):
         page.c.drawRightString(page.right, page.y, f"Authorized by: {page.lh['signatory']}")
-    page.y -= 22
+    page.y -= 24
 
-    tagline = page.lh.get('tagline')
-    if tagline:
-        page.centered(tagline, size=9, italic=True, colour=colors.grey)
+    if page.lh.get('tagline'):
+        page.c.setFont('Helvetica-Oblique', 9)
+        page.c.setFillColor(_hex('teal'))
+        page.c.drawCentredString(page.width / 2, page.y, page.lh['tagline'])
+        page.y -= 13
     if page.lh.get('website'):
-        page.centered(page.lh['website'], size=9, colour=colors.grey)
+        page.c.setFont('Helvetica', 9)
+        page.c.setFillColor(_hex('blue'))
+        page.c.drawCentredString(page.width / 2, page.y, page.lh['website'])
+        page.y -= 13
+
+
+def _wrap_px(canvas_obj, value, max_width, font, size):
+    """Wrap to a MEASURED width, not a character count.
+
+    Counting characters is guesswork - it put Barmak's services blurb past the
+    right margin, where the customer's copy simply cut it off mid-word. The
+    canvas knows exactly how wide a string is; ask it.
+    """
+    words = str(value or '').split()
+    if not words:
+        return ['']
+    lines, current = [], words[0]
+    for word in words[1:]:
+        candidate = f'{current} {word}'
+        if canvas_obj.stringWidth(candidate, font, size) <= max_width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
 
 
 # ── Shared pieces ────────────────────────────────────────────────────────────

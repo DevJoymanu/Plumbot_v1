@@ -6871,12 +6871,41 @@ class QuotePdfMatchesTheAppTests(StaffClientTestCase):
 
     def test_a_sectioned_tenant_gets_their_own_sheet(self):
         text = self._text(self._sectioned_quote())
-        self.assertIn('QUOTATION', text)
+        # 'Quotation', the casing .bq-qtitle actually renders - the screen is
+        # the source of truth for the wording, not the other way round.
+        self.assertIn('Quotation', text)
         self.assertIn('PLUMBING MATERIALS', text)
         self.assertIn('SUB-TOTAL', text)
         self.assertIn('GRAND TOTAL', text)
         # ...and not the flat sheet's blocks.
         self.assertNotIn('CLIENT INFORMATION', text)
+
+    def test_the_sectioned_table_leads_with_qty_like_the_screen(self):
+        """The sheet's own column order is QTY | DESCRIPTION | UNIT PRICE |
+        TOTAL PRICE. The PDF used to lead with Item and label them Qty/Price."""
+        text = self._text(self._sectioned_quote())
+        for header in ('QTY', 'DESCRIPTION', 'UNIT PRICE', 'TOTAL PRICE'):
+            self.assertIn(header, text, header)
+        self.assertLess(text.index('QTY'), text.index('DESCRIPTION'))
+
+    def test_the_sectioned_letterhead_carries_the_trade_line(self):
+        text = self._text(self._sectioned_quote())
+        self.assertIn('DOMESTIC | INDUSTRIAL | COMMERCIAL', text)
+
+    def test_a_long_blurb_wraps_instead_of_running_off_the_page(self):
+        """Barmak's services blurb is one long line; unwrapped it ran past the
+        right margin and was simply cut off mid-word on the customer's copy."""
+        blurb = ('water & drain laying, all types of geyser, storage (jojo) tanks '
+                 '& tank stands, gutters, flushing, toilet, tubs, wash hand basin, '
+                 'sink, shower & all type mixers')
+        tenant = Tenant.objects.create(name='Wrap Plumbing', slug='wrap-pdf')
+        TenantProfile.objects.create(tenant=tenant, letterhead={
+            'layout': 'sectioned', 'services_blurb': blurb})
+        lead = make_lead(9954, tenant=tenant, customer_name='Wrap Client')
+        quote = Quotation.objects.create(appointment=lead)
+        text = self._text(quote)
+        # The tail of the blurb has to survive, on some line or other.
+        self.assertIn('mixers', text)
 
     def test_the_sectioned_sheet_carries_vat_terms_and_banking(self):
         text = self._text(self._sectioned_quote())
@@ -6927,3 +6956,157 @@ class QuotePdfMatchesTheAppTests(StaffClientTestCase):
             reverse('download_quotation_pdf', args=[self.quote.pk]))
         self.assertEqual(response['Content-Type'], 'application/pdf')
         self.assertTrue(b''.join(response.streaming_content).startswith(b'%PDF'))
+
+
+class QuotePdfGeometryTests(StaffClientTestCase):
+    """WHERE things land on the sheet, not just that they are on it.
+
+    Text extraction alone said the old PDF was fine: every value was present.
+    It was the LAYOUT that did not match - everything centred, the table led by
+    Item instead of QTY, and a services blurb running clean off the right edge
+    and being cut mid-word on the customer's copy. So these read the drawing
+    coordinates.
+    """
+
+    PAGE_WIDTH = 595.28          # A4 points
+    MARGIN = 40
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.create(name='Barmak Plumbing', slug='barmak-geom')
+        TenantProfile.objects.create(
+            tenant=self.tenant,
+            location_line='20398 Budiriro 5B Cabs Harare',
+            letterhead={
+                'layout': 'sectioned',
+                'trading_name': 'ROYAL HARDWARE',
+                'services_blurb': (
+                    'water & drain laying, all types of geyser, storage (jojo) '
+                    'tanks & tank stands, gutters, flushing, toilet, tubs, wash '
+                    'hand basin, sink, shower & all type mixers'),
+                'phones': ['+263 77 387 1503', '+263 77 324 0167',
+                           '+263 718 744 685', '+263 713 152 080'],
+                'public_email': 'info@barmakplumbing.co.zw',
+                'website': 'www.barmakplumbing.co.zw',
+            })
+        self.lead = make_lead(9960, tenant=self.tenant, customer_name='jonas',
+                              project_type='bathroom_renovation')
+        self.quote = Quotation.objects.create(appointment=self.lead)
+        for section, desc, qty, unit in (
+            ('PLUMBING MATERIALS', '20mm PPR pipe', 19, '4.50'),
+            ('PLUMBING MATERIALS', '20mm elbows', 30, '0.80'),
+            ('SANITARY WARE', 'Wash hand basin', 2, '65.00'),
+        ):
+            QuotationItem.objects.create(quotation=self.quote, section=section,
+                                         description=desc, quantity=qty,
+                                         unit_price=Decimal(unit))
+
+    def _placed(self):
+        """(x, y, size, text) for every string the PDF draws."""
+        import base64
+        import re
+        import zlib
+        from bot.quote_pdf import build_quotation_pdf
+
+        path = build_quotation_pdf(self.quote)
+        try:
+            raw = open(path, 'rb').read()
+        finally:
+            os.remove(path)
+
+        placed = []
+        for chunk in re.findall(rb'stream\r?\n(.*?)endstream', raw, re.S):
+            body = chunk.strip(b'\r\n')
+            try:
+                body = base64.a85decode(body, adobe=True)
+            except Exception:
+                pass
+            try:
+                body = zlib.decompress(body)
+            except zlib.error:
+                pass
+            blob = body.decode('latin-1')
+            size = 10.0
+            for match in re.finditer(
+                    r'/F\d+ ([\d.]+) Tf|1 0 0 1 ([\d.-]+) ([\d.-]+) Tm \((.*?)\) Tj',
+                    blob):
+                if match.group(1):
+                    size = float(match.group(1))
+                    continue
+                placed.append((float(match.group(2)), float(match.group(3)),
+                               size, match.group(4)))
+        return placed
+
+    def _find(self, placed, needle):
+        for x, y, size, text in placed:
+            if needle in text:
+                return x, y, size, text
+        self.fail(f'{needle!r} was never drawn')
+
+    # -- the letterhead is two columns, not centred -------------------------
+
+    def test_the_business_name_sits_on_the_left(self):
+        x, _, _, _ = self._find(self._placed(), 'BARMAK PLUMBING')
+        self.assertLess(x, 150, 'the name should be left-aligned, not centred')
+
+    def test_the_contacts_sit_on_the_right(self):
+        placed = self._placed()
+        for needle in ('Budiriro', 'info@barmakplumbing.co.zw'):
+            with self.subTest(line=needle):
+                x, _, _, _ = self._find(placed, needle)
+                self.assertGreater(x, self.PAGE_WIDTH / 2,
+                                   'contacts belong in the right column')
+
+    def test_the_trade_line_is_under_the_name(self):
+        placed = self._placed()
+        _, name_y, _, _ = self._find(placed, 'BARMAK PLUMBING')
+        x, sub_y, _, _ = self._find(placed, 'DOMESTIC | INDUSTRIAL | COMMERCIAL')
+        self.assertLess(sub_y, name_y)
+        self.assertLess(x, 150)
+
+    # -- nothing runs off the sheet ----------------------------------------
+
+    def test_nothing_is_drawn_past_the_right_margin(self):
+        """The services blurb was one long unwrapped line, cut mid-word."""
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        limit = self.PAGE_WIDTH - self.MARGIN + 6
+        for x, _, size, text in self._placed():
+            clean = text.replace('\\(', '(').replace('\\)', ')')
+            width = stringWidth(clean, 'Helvetica', size)
+            with self.subTest(text=clean[:40]):
+                self.assertLessEqual(x + width, limit)
+
+    def test_the_long_blurb_is_wrapped_over_lines(self):
+        placed = self._placed()
+        blurb_lines = [t for _, _, _, t in placed if 'water & drain laying' in t
+                       or 'all type mixers' in t]
+        self.assertGreaterEqual(len(blurb_lines), 2, 'the blurb should wrap')
+
+    # -- the table matches the sheet ---------------------------------------
+
+    def test_the_columns_are_in_the_sheets_own_order(self):
+        placed = self._placed()
+        qty_x, _, _, _ = self._find(placed, 'QTY')
+        desc_x, _, _, _ = self._find(placed, 'DESCRIPTION')
+        unit_x, _, _, _ = self._find(placed, 'UNIT PRICE')
+        total_x, _, _, _ = self._find(placed, 'TOTAL PRICE')
+        self.assertLess(qty_x, desc_x)
+        self.assertLess(desc_x, unit_x)
+        self.assertLess(unit_x, total_x)
+
+    def test_the_column_header_is_drawn_once_not_per_section(self):
+        """The sheet is ONE table whose section headings are rows."""
+        headers = [t for _, _, _, t in self._placed() if t == 'DESCRIPTION']
+        self.assertEqual(len(headers), 1)
+
+    def test_both_sections_are_numbered_in_order(self):
+        placed = self._placed()
+        _, first_y, _, _ = self._find(placed, 'PLUMBING MATERIALS')
+        _, second_y, _, _ = self._find(placed, 'SANITARY WARE')
+        self.assertGreater(first_y, second_y, 'sections keep their entered order')
+
+    def test_each_section_has_its_own_subtotal(self):
+        subtotals = [t for _, _, _, t in self._placed() if t == 'SUB-TOTAL']
+        # One per section, plus the net sub-total in the totals block.
+        self.assertGreaterEqual(len(subtotals), 3)
