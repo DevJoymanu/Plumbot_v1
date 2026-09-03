@@ -3,9 +3,11 @@
   <div class="appt-list-subtitle">{{ source_workspace.today|date:"l, j F" }}</div>
 </div>
 
-{# No date-window pills here: this sidebar is a diary (today / tomorrow / rest of
-   the week), and the window filtered on last_customer_response — it could only
-   hide bookings whose customer had gone quiet, never surface anything. #}
+{% comment %}
+No date-window pills here: this sidebar is a diary (today / tomorrow / rest of
+the week), and the window filtered on last_customer_response — it could only
+hide bookings whose customer had gone quiet, never surface anything.
+{% endcomment %}
 
 {% if source_workspace.hot_lead_count %}
 <a href="{% url 'priority_leads' %}" class="workspace-banner">

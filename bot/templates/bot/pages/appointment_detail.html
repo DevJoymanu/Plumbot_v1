@@ -2132,12 +2132,13 @@
       <div class="appt-tab-pane is-active" id="tab-details">
         <div class="appt-detail-content">
 
-          {# ── Site visit complete? ── Pinned above everything else, because it
-             is the trigger for the quote and the whole post-visit follow-up
-             sequence. Shown only while the debrief is still outstanding; the
-             view sets site_visit_prompt False the moment the form is submitted
-             from either entry point, so this and the fallback email can never
-             both be live. #}
+          {% comment %}
+          Site visit complete? Pinned above everything else, because it is the
+          trigger for the quote and the whole post-visit follow-up sequence.
+          Shown only while the debrief is still outstanding; the view sets
+          site_visit_prompt False the moment the form is submitted from either
+          entry point, so this and the fallback email can never both be live.
+          {% endcomment %}
           {% if site_visit_prompt %}
           <div class="visit-prompt">
             <div style="min-width:0;">
@@ -2356,17 +2357,18 @@
                     {% if appointment.status != 'cancelled' %}
                     <a href="{% url 'cancel_appointment' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn danger"><i class="fas fa-times"></i> Cancel</a>
                     {% endif %}
-                    {# Delete reuses this form's CSRF token via formaction (same trick as
-                       Complete) — a nested <form> here would be invalid HTML.
-                       Irreversible, so the control is owner-only. #}
+                    {% comment %}
+                    Delete reuses this form's CSRF token via formaction (same
+                    trick as Complete) — a nested <form> here would be invalid
+                    HTML. Irreversible, so the control is owner-only.
+                    {% endcomment %}
                     {% firstof appointment.customer_name appointment.phone_number "this lead" as lead_label %}
                     {% if is_platform_owner %}
                     <button type="submit"
                             formaction="{% url 'delete_appointment' appointment.pk %}"
                             formmethod="post"
                             formnovalidate
-                            {# This page also renders inside the conversation workspace iframe;
-                               _top keeps the post-delete redirect out of the frame. #}
+                            {# _top keeps the post-delete redirect out of the workspace iframe #}
                             formtarget="_top"
                             onclick="return confirm('Delete {{ lead_label|escapejs }} permanently?\n\nThe conversation history, quotations, follow-ups and reminders are deleted with it. This cannot be undone.');"
                             class="action-btn destructive">

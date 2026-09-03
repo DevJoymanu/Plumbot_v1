@@ -650,8 +650,10 @@
                         <i class="fas fa-chevron-down pb-chevron"></i>
                     </button>
                     <div id="sched-jobs" class="pb-schedule__body collapsed">
-                        {# A job IS the lead's own row (appointment_type='job_appointment'),
-                           so its fields and its link come off the appointment directly. #}
+                        {% comment %}
+                        A job IS the lead's own row (appointment_type='job_appointment'),
+                        so its fields and its link come off the appointment directly.
+                        {% endcomment %}
                         {% for job in week_jobs %}
                         <a href="{% url 'appointment_detail' job.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
                             <div class="pb-time-block pb-tb--job">

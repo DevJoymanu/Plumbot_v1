@@ -5568,3 +5568,56 @@ class QuoteSendChannelTests(StaffClientTestCase):
                          email='farai@example.com')
         report.refresh_from_db()
         self.assertEqual(run_post_visit_tick(now=report.next_action_at)['asks'], 1)
+
+
+class TemplateCommentTests(TestCase):
+    """Django's {# #} is SINGLE-LINE ONLY.
+
+    From the Django docs: "A {# #} comment cannot span multiple lines. This
+    limitation improves template parsing performance." One that spans lines is
+    never stripped — it renders to the page as literal text, in front of
+    whoever is looking at it. Two shipped that way and showed up on the
+    appointment detail screen and the dashboard (prod 2026-09-03); one of them
+    sat INSIDE a <button> tag, so it became bogus attributes rather than just
+    stray prose.
+
+    Multi-line commentary belongs in {% comment %}...{% endcomment %}.
+    """
+
+    def test_no_multiline_hash_comments_in_templates(self):
+        import pathlib
+        from django.conf import settings
+
+        offenders = []
+        root = pathlib.Path(settings.BASE_DIR) / 'bot' / 'templates'
+        for path in sorted(root.rglob('*.html')):
+            src = path.read_text(encoding='utf-8')
+            for lineno, line in enumerate(src.splitlines(), 1):
+                for match in re.finditer(r'\{#', line):
+                    if '#}' not in line[match.end():]:
+                        offenders.append(
+                            f'{path.relative_to(root).as_posix()}:{lineno} '
+                            f'-> {line.strip()[:70]}')
+
+        self.assertEqual(offenders, [], (
+            'These {# #} comments span multiple lines, so Django renders them '
+            'as visible text. Use {% comment %}...{% endcomment %} instead:\n  '
+            + '\n  '.join(offenders)))
+
+    def test_the_detail_page_renders_no_raw_template_syntax(self):
+        """End to end: whatever the page contains, none of it reaches the
+        browser as template source."""
+        user = get_user_model().objects.create_user(
+            username='tmpl-tester', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(
+            user=user, tenant=Tenant.objects.get(slug='homebase'), role='staff')
+        self.client.force_login(user)
+
+        lead = make_lead(9300, customer_name='Comment Check', status='confirmed',
+                         scheduled_datetime=timezone.now() - timedelta(hours=3))
+        for url in (reverse('appointment_detail', args=[lead.pk]),
+                    reverse('dashboard')):
+            body = self.client.get(url).content.decode()
+            self.assertNotIn('{#', body, url)
+            self.assertNotIn('#}', body, url)
+            self.assertNotIn('{%', body, url)
