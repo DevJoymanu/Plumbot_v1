@@ -8397,10 +8397,40 @@ try:
         not any(re.search(r'\bfree\b', o, re.I) for o in _outs),
         got=str(_outs),
     )
+    # ...and the figure is NOT volunteered in its place. It used to be, which
+    # stapled "The call-out to quote is US$20." onto "What area are you in?"
+    # the moment the Shona quote pitch's "mahara" was dropped (prod, Barmak,
+    # 2026-09-03 18:57) — and having been stated there, the note never fired,
+    # so the lead met the figure at the worst moment and never got the offer
+    # that makes sense of it. Safety does not depend on saying it: dropping
+    # the false promise is unconditional either way.
+    _no_figure = [o for o in _outs if o.strip() and 'US$20' not in o]
     results.log(
-        "consultation fee: the figure is stated instead",
-        all('US$20' in o for o in _outs),
+        "consultation fee: dropping a free claim does not volunteer the figure",
+        len(_no_figure) >= 2,
         got=str(_outs),
+    )
+    # The one exception: a reply that was ONLY the claim cannot be sent empty,
+    # so the fee sentence stands in for it.
+    results.log(
+        "consultation fee: a reply that was only the claim still says something",
+        'US$20' in _sfv('The visit is free.', _appt_stub)[0],
+        got=repr(_sfv('The visit is free.', _appt_stub)[0]),
+    )
+    # Asking outranks the gate, as always.
+    results.log(
+        "consultation fee: asking outright still gets the figure",
+        'US$20' in _sfv('What area are you in?', _appt_stub,
+                        'how much is the call out?')[0],
+        got=repr(_sfv('What area are you in?', _appt_stub,
+                      'how much is the call out?')[0]),
+    )
+    # And the area question never carries it unasked.
+    results.log(
+        "consultation fee: the area question never carries the fee",
+        _sfv('What area are you in?', _appt_stub, 'Chitungwiza')
+        == ('What area are you in?', False),
+        got=str(_sfv('What area are you in?', _appt_stub, 'Chitungwiza')),
     )
     # Stating the fee is no longer this function's job. Volunteering it on
     # every reply that mentioned the visit both repeated it and beat

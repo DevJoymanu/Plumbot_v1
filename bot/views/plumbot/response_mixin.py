@@ -539,17 +539,23 @@ def strip_free_visit_claims(reply: str, appointment, message: str = None):
     cleaned = MESSAGE_SPLIT_MARKER.join(p for p in kept_parts if p).strip()
     fee_sentence = cfg.visit_cost_sentence()
 
-    # Volunteering the fee is NOT this function's job any more. Stating it
-    # belongs to ensure_visit_price_note, which puts it with the availability
-    # ask where it reads as an answer rather than a toll gate; appending it
-    # here to every reply that merely mentioned the visit both repeated it and
-    # beat the note to it, so the note then saw the price already stated and
-    # stayed silent. Two cases still speak up:
-    #   - they asked outright, which always outranks any gate, and
-    #   - a free claim was just dropped and the fee has never been stated, so
-    #     the copy would otherwise leave a hole where a promise used to be.
-    say_fee = asks_visit_cost(message) or (
-        dropped and not _visit_fee_already_stated(appointment, cfg))
+    # Volunteering the fee is NOT this function's job. Stating it belongs to
+    # ensure_visit_price_note, which puts it in its own turn once we have the
+    # area, where it reads as an answer rather than a toll gate.
+    #
+    # This used to also speak up whenever a free claim had just been dropped.
+    # That fired on the AREA question: the Shona quote pitch says "mahara", the
+    # claim was dropped for a fee tenant, and "The call-out to quote is US$10"
+    # was stapled onto "What area are you in?" (prod, Barmak, 2026-09-03 18:57).
+    # Two things wrong with it. The fee has no business being attached to a
+    # question about where they live, and having been stated there, the note
+    # then saw the price already stated and never fired at all — so the lead
+    # met the figure at the worst moment and never got the offer that makes
+    # sense of it. Dropping the false promise is what keeps this safe, and that
+    # is unconditional; the figure follows one turn later, in its own message.
+    #
+    # So: only when they ask outright, which outranks every gate.
+    say_fee = asks_visit_cost(message)
     if fee_sentence and say_fee and not _states_visit_price(cleaned, cfg):
         cleaned = f"{cleaned}\n\n{fee_sentence}".strip()
 
