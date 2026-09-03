@@ -8363,9 +8363,15 @@ class _CfgFee:
     def visit_fee_waived_on_job(self):
         return False
 
-    def visit_price_note(self, is_shona=False):
-        return ('Just a quick note: *the call-out is free.*' if not self.fee
-                else f'Just a quick note: *US${self.fee} call-out fee.*')
+    def visit_price_note(self, is_shona=False, opening=False, job_noun=None):
+        mid = ('The call-out is free, it covers the visit and full diagnosis.'
+               if not self.fee else
+               f"There's a US${self.fee} call-out fee which covers the visit "
+               f"and full diagnosis.")
+        lead_in = 'Great, ' if opening else ''
+        ack = 'we can come for a quick site visit.'
+        body = f'{lead_in}{ack} {mid} Want me to lock in a date and time?'
+        return body if opening else body[:1].upper() + body[1:]
 
 
 _free_claims = [
@@ -8396,13 +8402,27 @@ try:
         all('US$20' in o for o in _outs),
         got=str(_outs),
     )
-    # A visit offer with no free claim still gets the fee stated once.
+    # Stating the fee is no longer this function's job. Volunteering it on
+    # every reply that mentioned the visit both repeated it and beat
+    # ensure_visit_price_note to it, which then saw the price already stated
+    # and stayed silent. The stripper now only guards the free promise.
     _offer = ('What works better, tomorrow or Friday, for us to come round '
               'and look at the space?')
-    _o, _c = _sfv(_offer, _appt_stub)
     results.log(
-        "consultation fee: a visit offer states the fee once, keeping the question",
-        _c and _o.count('US$20') == 1 and _offer in _o,
+        "consultation fee: a visit offer with no free claim is left alone",
+        _sfv(_offer, _appt_stub, 'ok') == (_offer, False),
+        got=str(_sfv(_offer, _appt_stub, 'ok')),
+    )
+    # ...and the note is what puts the figure there, exactly once.
+    from bot.views.plumbot.response_mixin import ensure_visit_price_note as _evpn0
+    _o, _c = _evpn0(_offer, _ty.SimpleNamespace(tenant=None, conversation_history=[]), 'ok')
+    results.log(
+        "consultation fee: the availability ask is where the figure lands",
+        # The note carries its own close, so it REPLACES the question it was
+        # triggered by rather than stacking a second one after it.
+        _c and _o.count('US$20') == 1
+        and _o.endswith('Want me to lock in a date and time?')
+        and 'What works better' not in _o,
         got=repr(_o),
     )
     # "Freestanding" is not "free", and a price reply is not a visit claim.
@@ -8658,10 +8678,11 @@ results.log(
     got=repr(_bco()),
 )
 
-# ── The visit price is stated ONCE, in the first message ────────────────────
+# ── The visit price is stated ONCE, with the availability ask ──────────────
 from bot.views.plumbot.response_mixin import (
     ensure_visit_price_note as _evpn,
     visit_price_already_stated as _vpas,
+    asks_visit_availability as _ava,
 )
 
 
@@ -8682,84 +8703,263 @@ class _CfgNote:
     def visit_fee_waived_on_job(self):
         return bool(self.fee) and self.waived
 
-    def visit_price_note(self, is_shona=False):
-        # Mirrors TenantConfig.visit_price_note. This stub used to say
-        # "fee — FREE if we do the job" while the real method said
-        # "fee, free if we do the job", so the gate pinned wording that never
-        # shipped. The real method is exercised directly below; keep the two
-        # in step.
+    def visit_price_note(self, is_shona=False, opening=False, job_noun=None):
+        lead_in = 'Great, ' if opening else ''
+        job = job_noun or 'work'
         if not self.fee:
-            return 'Just a quick note: *the call-out is free.*'
-        if self.visit_fee_waived_on_job():
-            return f'Just a quick note: *US${self.fee} call-out fee, FREE if we do the job.*'
-        return f'Just a quick note: *US${self.fee} call-out fee.*'
+            mid = 'The call-out is free, it covers the visit and full diagnosis.'
+        elif self.visit_fee_waived_on_job():
+            mid = (f"There's a US${self.fee} call-out fee which covers the visit "
+                   f"and full diagnosis, and it comes off the total if you go "
+                   f"ahead with the {job}.")
+        else:
+            mid = (f"There's a US${self.fee} call-out fee which covers the visit "
+                   f"and full diagnosis.")
+        ack = 'we can come for a quick site visit.'
+        body = f'{lead_in}{ack} {mid} Want me to lock in a date and time?'
+        return body if opening else body[:1].upper() + body[1:]
 
     def visit_cost_sentence(self, is_shona=False):
         return '' if not self.fee else f'The call-out to quote is US${self.fee}.'
 
 
+_fresh = lambda: _ty.SimpleNamespace(tenant=None, conversation_history=[])
+_slot_ask = ('Borrowdale is well within our area. What works better for you, '
+             'tomorrow or this Saturday, for us to come through and have a '
+             'quick look at the space?')
 _opener = ('Hello,\nWe handle bathroom and kitchen plumbing.\n\nA new '
            'installation, or a renovation of what you have?')
-_fresh = lambda: _ty.SimpleNamespace(tenant=None, conversation_history=[])
+
 _real_gc2 = _tcmod.get_config
 try:
+    # The opener must NOT carry it any more: a fee quoted before the lead
+    # knows what they are buying prices the job, it doesn't answer anything.
+    for _label, _cfg in (('free', _CfgNote()), ('flat fee', _CfgNote(20)),
+                         ('waived', _CfgNote(20, True))):
+        _tcmod.get_config = lambda tenant=None, _c=_cfg: _c
+        results.log(
+            f"visit price: the opener does NOT carry it ({_label})",
+            _evpn(_opener, _fresh(), 'hie') == (_opener, False),
+            got=str(_evpn(_opener, _fresh(), 'hie')),
+        )
+
+    # It lands with the availability ask, BETWEEN the acknowledgement and the
+    # question, which is the shape a person would text.
     for _label, _cfg, _want in (
-        ('free', _CfgNote(), 'the call-out is free'),
-        ('flat fee', _CfgNote(20), 'US$20 call-out fee'),
-        ('waived on the job', _CfgNote(20, True), 'US$20 call-out fee, FREE if we do the job'),
+        ('free', _CfgNote(), 'The call-out is free, it covers the visit'),
+        ('flat fee', _CfgNote(20), "There's a US$20 call-out fee which covers the visit"),
+        ('waived', _CfgNote(20, True), 'it comes off the total if you go ahead'),
     ):
         _tcmod.get_config = lambda tenant=None, _c=_cfg: _c
-        _out, _added = _evpn(_opener, _fresh(), 'hie')
+        _out, _added = _evpn(_slot_ask, _fresh(), 'borrowdale')
+        _parts = _out.split('\n\n')
         results.log(
-            f"visit price note: the first message states it ({_label})",
-            _added and _want in _out and _out.startswith(_opener),
+            f"visit price: stated with the availability ask ({_label})",
+            # The note carries its own close, so it REPLACES the question
+            # rather than stacking a second one in front of it. What the reply
+            # said before the question is kept.
+            _added and _want in _out and len(_parts) == 2
+            and _parts[0].startswith('Borrowdale')
+            and _parts[1].endswith('Want me to lock in a date and time?')
+            and 'What works better' not in _out,
             got=repr(_out),
         )
 
-    # Once it has been said, no later reply carries it again.
-    _tcmod.get_config = lambda tenant=None: _CfgNote()
-    _told_note = _ty.SimpleNamespace(tenant=None, conversation_history=[
-        {'role': 'assistant',
-         'content': _opener + '\n\nJust a quick note: *the call-out is free.*'},
-    ])
-    _second = 'Borrowdale is well within our area. Tuesday or Thursday?'
-    results.log(
-        "visit price note: never repeated on a later turn",
-        _evpn(_second, _told_note, 'borrowdale') == (_second, False),
-        got=str(_evpn(_second, _told_note, 'borrowdale')),
-    )
-    results.log(
-        "visit price note: the transcript read sees it in either wording",
-        _vpas(_told_note, _CfgNote()) is True
-        and _vpas(_fresh(), _CfgNote()) is False,
-    )
-    # A reply that already prices the visit is not given a second note.
-    _prices_it = 'The site visit is free, so there is nothing to lose.'
-    results.log(
-        "visit price note: a reply that already states it is left alone",
-        _evpn(_prices_it, _fresh(), 'hi') == (_prices_it, False),
-        got=str(_evpn(_prices_it, _fresh(), 'hi')),
-    )
-    # A fee tenant's note must not be read back as a free promise and dropped:
-    # the note is appended AFTER both strippers for exactly this reason.
+    # With nothing in front of it the note leads, so it gets its warm-up word.
     _tcmod.get_config = lambda tenant=None: _CfgNote(20, True)
-    _noted, _ = _evpn(_opener, _fresh(), 'hie')
+    _bare = 'What works better for you, tomorrow or this Saturday?'
+    _out, _ = _evpn(_bare, _fresh(), 'ok')
     results.log(
-        "visit price note: the waived-fee note survives the fee stripper's order",
-        'FREE if we do the job' in _noted,
-        got=repr(_noted),
+        "visit price: leading the message, it opens with 'Great,'",
+        _out.startswith('Great, we can come for a quick site visit.'), got=repr(_out),
     )
-    # The fee stripper de-qualifies before it drops, so the pitch keeps its
-    # question instead of the whole sentence being deleted.
-    _pitch = 'Good one. Would you like us to come round for a free site visit?'
-    _kept, _ = _sfv(_pitch, _ty.SimpleNamespace(tenant=None, conversation_history=[]), 'ok')
+
+    # Once said, never again, including at the next slot question.
+    _told = _ty.SimpleNamespace(tenant=None, conversation_history=[
+        {'role': 'assistant', 'content': "Borrowdale is well within our area.\n\n"
+         "We can come for a quick site visit. There's a US$20 call-out fee "
+         "which covers the visit and full diagnosis, and it comes off the "
+         "total if you go ahead with the work. Want me to lock in a date and time?"},
+    ])
+    _next_ask = 'Saturday it is. Morning or afternoon, which suits you better?'
     results.log(
-        "consultation fee: the visit pitch keeps its question, minus the claim",
-        'free' not in _kept.lower() and 'come round for a site visit?' in _kept,
-        got=repr(_kept),
+        "visit price: not repeated at the next slot question",
+        _evpn(_next_ask, _told, 'saturday') == (_next_ask, False),
+        got=str(_evpn(_next_ask, _told, 'saturday')),
+    )
+    results.log(
+        "visit price: the transcript read sees the note's own wording",
+        _vpas(_told, _CfgNote(20, True)) is True
+        and _vpas(_fresh(), _CfgNote(20, True)) is False,
     )
 finally:
     _tcmod.get_config = _real_gc2
+
+# What counts as asking for a day.
+for _yes in ('What works better for you, tomorrow or this Saturday?',
+             'Would Monday or Tuesday work for a site visit?',
+             'Morning or afternoon, which suits you better?',
+             'What day works best?',
+             'Shall I lock that in for you?',
+             'Mangwanani kana masikati, ndeipi inokukodzerai?'):
+    results.log(f"availability ask: recognised ({_yes[:36]}...)", _ava(_yes))
+
+for _no in ('Shower cubicles from US$170 all-in.',
+            'Borrowdale is well within our area.',
+            'What are you looking to get sorted?',
+            'The plumber will call 30 minutes before.',
+            'What exactly needs doing?'):
+    results.log(f"availability ask: not every question is one ({_no[:36]}...)",
+                _ava(_no) is False)
+
+# The waiver clause names the lead's OWN service type.
+from bot.views.plumbot.response_mixin import _visit_job_noun as _vjn
+
+for _pt, _desc, _want in (
+    ('bathroom_renovation', '', 'bathroom renovation'),
+    ('kitchen_renovation', '', 'kitchen renovation'),
+    ('new_plumbing_installation', '', 'new plumbing installation'),
+    ('geyser_repair', '', 'geyser repair'),
+    ('bathroom_and_kitchen_renovation', '', 'bathroom and kitchen renovation'),
+    # Unknown or "other": say the honest generic thing, never a made-up type.
+    ('other', 'my geyser is leaking', 'repair'),
+    ('', 'my geyser is leaking', 'repair'),
+    ('other', '', 'work'),
+    ('', '', 'work'),
+):
+    results.log(
+        f"visit price: the waiver names the lead's own service ({_pt or 'unset'})",
+        _vjn(_ty.SimpleNamespace(project_type=_pt, project_description=_desc)) == _want,
+        got=repr(_vjn(_ty.SimpleNamespace(project_type=_pt, project_description=_desc))),
+    )
+# An underscore is a word character, so "geyser_repair" has no boundary before
+# "repair"; without normalising, the Shona branch called every repair "basa".
+results.log(
+    "visit price: an underscored type still reads as a repair in Shona",
+    _vjn(_ty.SimpleNamespace(project_type='geyser_repair', project_description=''),
+         True) == 'kugadzirisa',
+)
+
+# The note is said ONCE even though its wording now varies by service type.
+# Enumerating its wordings could not see that: generated with job_noun
+# defaulted to "work", nothing matched a note that went out saying "the geyser
+# repair", and it was sent again on the very next turn.
+_real_gc4 = _tcmod.get_config
+try:
+    _tcmod.get_config = lambda tenant=None: _CfgNote(10, True)
+    _sent = ("Avondale is well within our area.\n\nWe can come for a quick site "
+             "visit. There's a US$10 call-out fee which covers the visit and full "
+             "diagnosis, and it comes off the total if you go ahead with the "
+             "geyser repair. Want me to lock in a date and time?")
+    _after = _ty.SimpleNamespace(
+        tenant=None, project_type='geyser_repair', project_description='',
+        conversation_history=[{'role': 'assistant', 'content': _sent}])
+    _next = 'Saturday it is. Morning or afternoon, which suits you better?'
+    results.log(
+        "visit price: not repeated when the wording carried a service type",
+        _evpn(_next, _after, 'saturday') == (_next, False),
+        got=str(_evpn(_next, _after, 'saturday')),
+    )
+finally:
+    _tcmod.get_config = _real_gc4
+
+# The close is copy the owner edits, and TWO mechanisms read it: the
+# once-only check and the no-guard-rails. Matching its literal words meant
+# rewording it silently broke both, which is exactly what "lock in a time" ->
+# "lock in a date and time" would have done. One regex, both readers.
+from bot.views.plumbot.response_mixin import asked_lock_in_close as _alc
+
+for _close in ('Want me to lock in a time?',
+               'Want me to lock in a date and time?',
+               'want me to lock in a date & time?',
+               'Ndokubhukira nguva here?',
+               'Ndokubhukira zuva nenguva here?'):
+    results.log(
+        f"lock-in close: recognised however it is worded ({_close[:34]}...)",
+        _alc(_close),
+    )
+for _not in ('Morning or afternoon, which suits you better?',
+             'What day works best?',
+             'Would Monday or Tuesday work for a site visit?'):
+    results.log(
+        f"lock-in close: not confused with a slot offer ({_not[:34]}...)",
+        _alc(_not) is False,
+    )
+
+# ── Guard rails: the lock-in close is a yes/no, so "no" gets an answer ─────
+from bot.views.plumbot.response_mixin import ResponseMixin as _RMix
+
+
+class _FakeLockIn:
+    _BARE_NEGATIVES = _RMix._BARE_NEGATIVES
+    _LOCK_IN_DECLINE_RE = _RMix._LOCK_IN_DECLINE_RE
+    _is_bare_negative = _RMix._is_bare_negative
+    _declines_lock_in = _RMix._declines_lock_in
+    _last_assistant_asked_to_lock_in = _RMix._last_assistant_asked_to_lock_in
+    _handle_no_to_lock_in = _RMix._handle_no_to_lock_in
+
+    def __init__(self, last):
+        self.appointment = _ty.SimpleNamespace(
+            tenant=None,
+            conversation_history=[{'role': 'assistant', 'content': last}])
+
+
+_LOCK_NOTE = ("Avondale is well within our area.\n\nWe can come for a quick "
+              "site visit. There's a US$10 call-out fee which covers the visit "
+              "and full diagnosis, and it comes off the total if you go ahead "
+              "with the geyser repair. Want me to lock in a date and time?")
+_FREE_NOTE = ("We can come for a quick site visit. The call-out is free, it "
+              "covers the visit and full diagnosis. Want me to lock in a date and time?")
+
+_real_gc3 = _tcmod.get_config
+try:
+    _tcmod.get_config = lambda tenant=None: _CfgNote(10, True)
+    # Every ordinary way of saying no to a yes/no close gets an answer, and
+    # the answer is never the same question again.
+    for _no in ('no', 'No', 'nope', 'nah', 'no thanks', 'not yet',
+                'maybe later', 'kwete'):
+        _r = _FakeLockIn(_LOCK_NOTE)._handle_no_to_lock_in(_no)
+        results.log(
+            f"lock-in no: answered, never re-asked ({_no})",
+            bool(_r) and 'lock in a date and time' not in _r.lower()
+            and 'US$10' not in _r and _r.startswith('No problem at all.'),
+            got=repr(_r),
+        )
+    # A fee tenant isolates the objection, because the fee is the thing we
+    # just named and the likeliest reason for the no.
+    results.log(
+        "lock-in no: a fee tenant isolates timing vs the fee",
+        "call-out fee?" in _FakeLockIn(_LOCK_NOTE)._handle_no_to_lock_in('no'),
+        got=repr(_FakeLockIn(_LOCK_NOTE)._handle_no_to_lock_in('no')),
+    )
+    # A free tenant must not invent a fee objection the lead never had.
+    _tcmod.get_config = lambda tenant=None: _CfgNote()
+    _fr = _FakeLockIn(_FREE_NOTE)._handle_no_to_lock_in('no')
+    results.log(
+        "lock-in no: a free tenant never offers the fee as the objection",
+        'fee' not in _fr.lower() and 'something else' in _fr.lower(),
+        got=repr(_fr),
+    )
+    # What must NOT be swallowed.
+    _tcmod.get_config = lambda tenant=None: _CfgNote(10, True)
+    for _label, _last, _msg in (
+        ('a yes', _LOCK_NOTE, 'yes'),
+        ('a no that carries the answer', _LOCK_NOTE, 'no, Saturday is better'),
+        ('a day', _LOCK_NOTE, 'saturday works'),
+        ('a no that carries information', _LOCK_NOTE,
+         'no thanks, I got someone to do it Friday'),
+        ('a no we never asked for', 'Morning or afternoon, which suits you?', 'no'),
+        # "not right now" is a HIGH delay signal: the delay flow parks it with
+        # a real check-back date, which beats an isolating question.
+        ('a delay signal', _LOCK_NOTE, 'not right now'),
+    ):
+        results.log(
+            f"lock-in no: left alone ({_label})",
+            _FakeLockIn(_last)._handle_no_to_lock_in(_msg) is None,
+            got=repr(_FakeLockIn(_last)._handle_no_to_lock_in(_msg)),
+        )
+finally:
+    _tcmod.get_config = _real_gc3
 
 # ── Out of scope: decline, never loop ───────────────────────────────────────
 from bot.out_of_scope_handler import (
@@ -9325,27 +9525,43 @@ class _RealNoteCfg:
 
 
 results.log(
-    "visit price note (real): no fee states the call-out is free",
-    _RealNoteCfg().visit_price_note() == 'Just a quick note: *the call-out is free.*',
+    "visit price note (real): no fee says the call-out is free and what it covers",
+    _RealNoteCfg().visit_price_note()
+    == ('We can come for a quick site visit. The call-out is free, it covers '
+        'the visit and full diagnosis. Want me to lock in a date and time?'),
     got=repr(_RealNoteCfg().visit_price_note()),
 )
 results.log(
-    "visit price note (real): a flat fee states the figure only",
-    _RealNoteCfg(10).visit_price_note() == 'Just a quick note: *US$10 call-out fee.*',
+    "visit price note (real): a flat fee says the figure and what it buys",
+    _RealNoteCfg(10).visit_price_note()
+    == ("We can come for a quick site visit. There's a US$10 call-out fee "
+        "which covers the visit and full diagnosis. Want me to lock in a date and time?"),
     got=repr(_RealNoteCfg(10).visit_price_note()),
 )
 results.log(
-    "visit price note (real): a waived fee says FREE if we do the job",
-    _RealNoteCfg(10, True).visit_price_note()
-    == 'Just a quick note: *US$10 call-out fee, FREE if we do the job.*',
-    got=repr(_RealNoteCfg(10, True).visit_price_note()),
-    expected="US$10 call-out fee, FREE if we do the job",
+    "visit price note (real): a waived fee says it comes off the total",
+    _RealNoteCfg(10, True).visit_price_note(job_noun='bathroom renovation')
+    == ("We can come for a quick site visit. There's a US$10 call-out fee "
+        "which covers the visit and full diagnosis, and it comes off the "
+        "total if you go ahead with the bathroom renovation. Want me to "
+        "lock in a date and time?"),
+    got=repr(_RealNoteCfg(10, True).visit_price_note(job_noun='bathroom renovation')),
+    expected="comes off the total if you go ahead with the work",
 )
 results.log(
-    "visit price note (real): the waiver is emphasised, and in Shona too",
-    'FREE' in _RealNoteCfg(10, True).visit_price_note()
-    and 'MAHARA' in _RealNoteCfg(10, True).visit_price_note(is_shona=True),
+    "visit price note (real): the waiver is spelled out, and in Shona too",
+    'comes off the total' in _RealNoteCfg(10, True).visit_price_note()
+    and 'unobviswa pamutengo' in _RealNoteCfg(10, True).visit_price_note(is_shona=True),
     got=repr(_RealNoteCfg(10, True).visit_price_note(is_shona=True)),
+)
+# Leading the message it needs a warm-up word; mid-message it must not have
+# one, or it reads as a second greeting stapled into the middle of a reply.
+results.log(
+    "visit price note (real): 'Great,' only when the note leads the message",
+    _RealNoteCfg(10, True).visit_price_note(opening=True)
+    .startswith('Great, we can come for a quick site visit.')
+    and not _RealNoteCfg(10, True).visit_price_note().startswith('Great'),
+    got=repr(_RealNoteCfg(10, True).visit_price_note(opening=True)),
 )
 # The separator is a comma, not a dash: strip_dashes runs on the final message
 # and would only have to repair one written here.
@@ -9363,7 +9579,8 @@ results.log(
 results.log(
     "visit price note (real): the waiver flag alone changes nothing",
     _RealNoteCfg(None, True).visit_price_note()
-    == 'Just a quick note: *the call-out is free.*',
+    == ('We can come for a quick site visit. The call-out is free, it covers '
+        'the visit and full diagnosis. Want me to lock in a date and time?'),
     got=repr(_RealNoteCfg(None, True).visit_price_note()),
 )
 # The full sentence (given when a lead ASKS) stays lowercase prose - caps mid

@@ -447,26 +447,49 @@ _VISIT_WORD_RE = re.compile(
 )
 
 
+# The note's invariant half, and the ONE reader of it. Everything else in the
+# note moves — the figure, the language, the "Great," warm-up, the lead's own
+# service type — so enumerating its wordings is a losing game: an earlier
+# version of this check generated them with job_noun defaulted to "work",
+# matched nothing once the note went out saying "the geyser repair", and sent
+# the note again on the very next turn.
+#
+# The close belongs to this note and nothing else, so it is the signature. It
+# is a REGEX, not a literal, because the exact words are copy the owner edits:
+# changing "lock in a time" to "lock in a date and time" would otherwise have
+# silently broken both the once-only check AND the no-guard-rails that read
+# it, in a way no test naming the old string would catch.
+_LOCK_IN_CLOSE_RE = re.compile(
+    r"lock\s+in\s+a\s+(?:date\s*(?:and|&|/)\s*)?(?:time|date)"
+    r"|ndokubhukira\s+(?:zuva\s*(?:ne)?)?nguva"
+    r"|ndokubhukira\s+zuva",
+    re.IGNORECASE,
+)
+
+
+def asked_lock_in_close(text: str) -> bool:
+    """Does this copy carry our lock-in close?"""
+    return bool(text) and bool(_LOCK_IN_CLOSE_RE.search(text))
+
+
 def _visit_fee_already_stated(appointment, cfg) -> bool:
     """Have we already told this lead what the call-out costs?
 
-    Matched on the fee sentence itself, not on the bare figure: "US$20" also
-    turns up as a fixture price, and a false "already told them" would mean the
-    fee never gets stated at all. Wording that drifts away from the sentence
-    fails toward saying it once more, which is the safe direction.
+    Matched on the note's own close and on the fee SENTENCE (the answer given
+    when they ask outright), never on the bare figure: "US$20" also turns up
+    as a fixture price, and a false "already told them" would mean the fee
+    never gets stated at all.
     """
     wordings = {cfg.visit_cost_sentence(False).strip(),
-                cfg.visit_cost_sentence(True).strip(),
-                cfg.visit_price_note(False).strip(),
-                cfg.visit_price_note(True).strip()}
+                cfg.visit_cost_sentence(True).strip()}
     wordings.discard('')
-    if not wordings:
-        return False
     for turn in getattr(appointment, 'conversation_history', None) or []:
         if not isinstance(turn, dict) or turn.get('role') != 'assistant':
             continue
         content = str(turn.get('content') or '')
         if any(w in content for w in wordings):
+            return True
+        if asked_lock_in_close(content):
             return True
     return False
 
@@ -516,16 +539,18 @@ def strip_free_visit_claims(reply: str, appointment, message: str = None):
     cleaned = MESSAGE_SPLIT_MARKER.join(p for p in kept_parts if p).strip()
     fee_sentence = cfg.visit_cost_sentence()
 
-    # Say what it costs the FIRST time the reply is about visiting at all, and
-    # after that only when they ask — a price restated on every turn is the
-    # same complaint whether the figure is US$20 or the word "free" (see
-    # strip_repeat_free_visit). Dropping the false promise above is what keeps
-    # this safe: the claim never survives, whether or not the fee is repeated.
-    mentions_visit = bool(_VISIT_WORD_RE.search(cleaned))
-    say_fee = (not _visit_fee_already_stated(appointment, cfg)
-               or asks_visit_cost(message))
-    if fee_sentence and (dropped or mentions_visit) and say_fee \
-            and not _states_visit_price(cleaned, cfg):
+    # Volunteering the fee is NOT this function's job any more. Stating it
+    # belongs to ensure_visit_price_note, which puts it with the availability
+    # ask where it reads as an answer rather than a toll gate; appending it
+    # here to every reply that merely mentioned the visit both repeated it and
+    # beat the note to it, so the note then saw the price already stated and
+    # stayed silent. Two cases still speak up:
+    #   - they asked outright, which always outranks any gate, and
+    #   - a free claim was just dropped and the fee has never been stated, so
+    #     the copy would otherwise leave a hole where a promise used to be.
+    say_fee = asks_visit_cost(message) or (
+        dropped and not _visit_fee_already_stated(appointment, cfg))
+    if fee_sentence and say_fee and not _states_visit_price(cleaned, cfg):
         cleaned = f"{cleaned}\n\n{fee_sentence}".strip()
 
     if not cleaned:
@@ -772,22 +797,128 @@ def visit_price_already_stated(appointment, cfg) -> bool:
             or _visit_fee_already_stated(appointment, cfg))
 
 
+# The moment we ask for a day is the moment the fee has to be on the table.
+# Anything that offers a slot, a day, a time, or the visit itself counts: the
+# lead is one word away from committing, and a fee they meet AFTER that is a
+# fee they meet as a nasty surprise.
+_AVAILABILITY_ASK_RE = re.compile(
+    r"\bwhat\s+(?:day|time)\b"
+    r"|\b(?:what|which)\b[^?]{0,30}\bwork(?:s)?\s+(?:better|best|for)\b"
+    r"|\bworks?\s+(?:better|best)\s+for\s+you\b"
+    r"|\bmorning\s+or\s+afternoon\b"
+    r"|\bwhen\s+(?:would|are|works|can|is)\b"
+    r"|\bwould\s+\w+(?:\s+\w+)?\s+or\s+\w+(?:\s+\w+)?\s+(?:work|suit)\b"
+    r"|\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b[^?]{0,40}\bor\b"
+    r"|\b(?:tomorrow|today|this\s+week|next\s+week)\b[^?]{0,40}\bor\b"
+    r"|\bcome\s+(?:round|through|out|and\s+(?:see|look|have))\b"
+    r"|\block\s+(?:it|that|you)\s+in\b|\bbook\s+you\s+in\b"
+    r"|\bshall\s+i\s+lock\b"
+    # Shona
+    r"|\bndeipi\b|\bzuva\s+ripi\b|\bnguva\s+ipi\b"
+    r"|\bmangwanani\s+kana\s+masikati\b|\btiuye\b|\bkuuya\b",
+    re.IGNORECASE,
+)
+
+
+def asks_visit_availability(reply: str) -> bool:
+    """Is this reply asking the lead when we can come?
+
+    Deterministic, and it requires an actual question mark: copy that merely
+    MENTIONS the visit is not the moment the fee has to be stated, the copy
+    that asks them to pick a slot is.
+    """
+    if not reply or '?' not in reply:
+        return False
+    return bool(_AVAILABILITY_ASK_RE.search(reply))
+
+
+def _question_offset(reply: str) -> int:
+    """Where the closing question starts, so the note can sit in front of it.
+
+    The shape we want is the one a person would text: acknowledge, state the
+    fee, then ask for the day. That means the note goes BETWEEN the ack and
+    the question, not bolted on the end where it would read as an afterthought
+    the lead has already scrolled past.
+    """
+    best = -1
+    for para in re.finditer(r'[^\n]+', reply):
+        for sentence in _split_sentences(para.group(0)) or []:
+            if '?' in sentence and _AVAILABILITY_ASK_RE.search(sentence):
+                idx = reply.find(sentence, para.start())
+                if idx != -1:
+                    best = idx
+                    break
+        if best != -1:
+            break
+    return best
+
+
+# The waiver clause names the lead's OWN job. A generic "the work" is a
+# throwaway; "the bathroom renovation" is proof we were listening, and it is
+# the thing the fee is coming off, so it should be the thing they asked for.
+_REPAIR_JOB_RE = re.compile(
+    r"\b(repair|leak|leaking|burst|block(?:ed|age)?|unblock|fix(?:ing)?|"
+    r"broken|drip(?:ping)?|not\s+working|faulty|seep|overflow)\b",
+    re.IGNORECASE,
+)
+
+
+def _visit_job_noun(appointment, is_shona: bool = False) -> str:
+    """The lead's service type in words, for the waiver clause.
+
+    Shona keeps the two plain words rather than a translated service name:
+    the type labels are English trade terms and bending them into Shona reads
+    worse than the simple noun does.
+    """
+    description = str(getattr(appointment, 'project_description', '') or '')
+    project_type = str(getattr(appointment, 'project_type', '') or '')
+    # Underscores are word characters, so "geyser_repair" has no boundary
+    # before "repair" and would not match. Normalise before testing.
+    repair = bool(_REPAIR_JOB_RE.search(
+        f"{project_type} {description}".replace('_', ' ')))
+    if is_shona:
+        return 'kugadzirisa' if repair else 'basa'
+
+    # The stored type, read back the way it was offered to them.
+    if project_type and project_type != 'other':
+        label = ''
+        try:
+            from bot.models import Appointment
+            label = dict(Appointment.PROJECT_TYPE_CHOICES).get(project_type, '')
+        except Exception:
+            logger.warning("Could not read the project type label", exc_info=True)
+        label = (label or project_type.replace('_', ' ')).lower()
+        label = label.replace('&', 'and').replace('  ', ' ').strip()
+        if label and label != 'other':
+            return label
+
+    return 'repair' if repair else 'work'
+
+
 def ensure_visit_price_note(reply: str, appointment, message: str = None):
-    """Open the conversation with what the visit costs, once.
+    """State what the visit costs once, when we ask for a day.
 
-    Every lead is quietly asking it, so answering up front — "US$20 call-out
-    fee, free if we do the job", or that the call-out is free — buys trust and
-    takes the question off the table. Answering it AGAIN on every turn is what
-    made the price the subject of the conversation instead of the work, which
-    is what strip_repeat_free_visit undoes.
+    Not on the opener: leading with a fee prices the job before the lead knows
+    what they are buying. At the availability ask it answers the question they
+    are about to ask anyway, and clears the last thing standing between them
+    and a slot.
 
-    Appended LAST at the choke point, after both strippers: the note is
+    The note carries its OWN close ("Want me to lock in a time?"), so it
+    REPLACES the availability question rather than sitting in front of it —
+    two questions in one reply is the house rule this would otherwise break,
+    and the lead would answer only the last one anyway. Anything the reply
+    said BEFORE the question is kept, so the area confirmation or the answer
+    to their actual question is not thrown away with it.
+
+    Runs LAST at the choke point, after both strippers: the note is
     tenant-resolved and authoritative, and the fee stripper would otherwise
-    read "FREE if we do the job" as a false promise and drop the sentence.
+    read "it comes off the total" as a free promise and drop the sentence.
 
     Returns (reply, added).
     """
     if not reply or not reply.strip():
+        return reply, False
+    if not asks_visit_availability(reply):
         return reply, False
     from bot.tenant_config import get_config
     cfg = get_config(getattr(appointment, 'tenant', None))
@@ -795,10 +926,17 @@ def ensure_visit_price_note(reply: str, appointment, message: str = None):
         return reply, False
     from bot.repeated_question_detector import detect_language_simple
     is_shona = detect_language_simple(message or '') == 'shona'
-    note = cfg.visit_price_note(is_shona=is_shona)
+
+    cut = _question_offset(reply)
+    head = reply[:cut].strip() if cut > 0 else ''
+    note = cfg.visit_price_note(
+        is_shona=is_shona,
+        opening=not head,
+        job_noun=_visit_job_noun(appointment, is_shona),
+    )
     if not note:
         return reply, False
-    return f"{reply}\n\n{note}", True
+    return (f"{head}\n\n{note}" if head else note), True
 
 
 def dequalify_free_visit(lead, message: str) -> str:
@@ -4335,6 +4473,94 @@ class ResponseMixin:
                 '',
             ).lower()
             return any(m in last for m in self._DETAIL_REQUEST_MARKERS)
+
+        def _last_assistant_asked_to_lock_in(self) -> bool:
+            """Did our last turn end on the lock-in close?
+
+            Shares _LOCK_IN_CLOSE_RE with the once-only check, so the guard
+            rails and the note can never disagree about what the close is.
+            """
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            last = next(
+                (m.get('content') or '' for m in reversed(history)
+                 if isinstance(m, dict) and m.get('role') == 'assistant'),
+                '',
+            )
+            return asked_lock_in_close(last)
+
+        # A refusal of the lock-in close. Wider than _is_bare_negative on
+        # purpose: "no thanks" and "not yet" are the ordinary way to decline a
+        # yes/no close, and neither is a bare "no" nor a delay signal, so
+        # without this they fell through to the generic flow and risked the
+        # close being asked again. Capped at five words, so "no thanks, I got
+        # someone to do it Friday" keeps its information and goes elsewhere.
+        _LOCK_IN_DECLINE_RE = re.compile(
+            r"^(?:no+|nope|nah|not\s+(?:yet|now|really|for\s+now|"
+            r"at\s+the\s+moment)|maybe\s+later|later|kwete|aiwa|"
+            r"handisi\s+kuda|handidi)"
+            r"(?:[,\s]+(?:thanks?|thank\s+you|ta|for\s+now|please|sha|hako))?$",
+            re.IGNORECASE,
+        )
+
+        def _declines_lock_in(self, message: str) -> bool:
+            norm = ' '.join(
+                re.sub(r"[^a-z' ]", ' ', (message or '').lower()).split())
+            if not norm or len(norm.split()) > 5:
+                return False
+            return (self._is_bare_negative(message)
+                    or bool(self._LOCK_IN_DECLINE_RE.match(norm)))
+
+        def _handle_no_to_lock_in(self, message: str):
+            """A bare no to "Want me to lock in a time?".
+
+            The close is a yes/no, so it can be answered with a flat no, and
+            the reply that prompted it is the one that just named a call-out
+            fee. That makes the no ambiguous in a way the day/time offers never
+            are: it can mean "not at that price" or "not right now", and those
+            need opposite answers. So we do NOT guess and we do NOT re-ask —
+            we isolate it, in one question, with two options.
+
+            The fee only goes in the question for a tenant who charges one:
+            offering "or is it the call-out fee?" to a lead who was just told
+            the call-out is free invents an objection they never had.
+
+            Never restates the figure (visit_price_already_stated has it) and
+            never repeats the close, which is the whole point of the guard.
+            """
+            if not self._last_assistant_asked_to_lock_in():
+                return None
+            if not self._declines_lock_in(message):
+                return None
+            # "not right now" is a delay signal, and the delay flow answers it
+            # better than an isolating question can: it parks the lead with a
+            # real check-back date. Exit and delay signals outrank flow logic
+            # (CLAUDE.md), so hand those straight back.
+            try:
+                from bot.out_of_scope_handler import detect_delay_signal_message
+                _d = detect_delay_signal_message(message) or {}
+                if _d.get('is_delay') and _d.get('confidence') == 'HIGH':
+                    logger.info("Lock-in no is a delay signal — leaving it to "
+                                "the delay flow")
+                    return None
+            except Exception:
+                logger.warning("Delay check failed on the lock-in no",
+                               exc_info=True)
+            from bot.repeated_question_detector import detect_language_simple
+            is_shona = detect_language_simple(message or '') == 'shona'
+            from bot.tenant_config import get_config
+            cfg = get_config(getattr(self.appointment, 'tenant', None))
+            charges = not cfg.visit_is_free()
+            logger.info("Bare no to the lock-in close — isolating, not re-asking")
+            if charges:
+                return ("Hapana dambudziko. Inguva here isingakukodzeri, kana "
+                        "kuti muripo wekuuya?" if is_shona else
+                        "No problem at all. Is it the timing that's off, or "
+                        "the call-out fee?")
+            return ("Hapana dambudziko. Inguva here isingakukodzeri, kana "
+                    "kuti pane chimwe chamunoda kuziva kutanga?" if is_shona
+                    else "No problem at all. Is it the timing, or is there "
+                         "something else you want to know first?")
 
         def _handle_no_to_detail_request(self, message: str):
             """A bare no to "Can you tell me a bit more about the project?".

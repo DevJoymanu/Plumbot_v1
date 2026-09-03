@@ -3231,6 +3231,22 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             ).start()
             return
 
+        # ── "NO" TO THE LOCK-IN CLOSE ────────────────────────────────────────
+        # The visit-price note ends on a yes/no ("Want me to lock in a time?"),
+        # and the message it ends is the one that just named a call-out fee. So
+        # a no here is ambiguous in a way a day/time no never is: it can mean
+        # "not at that price" or "not right now". Isolate it in one question
+        # with two options instead of guessing, and never re-send the close.
+        _lock_no = plumbot._handle_no_to_lock_in(message_body)
+        if _lock_no:
+            appointment.add_conversation_message("assistant", _lock_no)
+            delay = get_random_delay(sender=sender)
+            threading.Thread(
+                target=delayed_response, args=(sender, _lock_no, delay, message_id),
+                kwargs={'tenant': tenant}, daemon=True,
+            ).start()
+            return
+
         # ── "NO" / "NEITHER" TO A DAY OR TIME OFFER ───────────────────────────
         # The slots we named don't work. Open the question up instead of putting
         # the same two back — "No" to "what works better: 9AM or 2PM?" used to be
