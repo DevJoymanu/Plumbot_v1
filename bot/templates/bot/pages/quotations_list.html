@@ -83,6 +83,16 @@ contract pinned by QuoteMobileLayoutTests).
         margin: 0 0 14px;
     }
 
+    /* Cross-client mode is unmistakable: it is the one view where the figures
+       on screen are not this workspace's. */
+    .ql-scope-note--all {
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        border-radius: 12px;
+        padding: 10px 14px;
+        color: #9a3412;
+    }
+
     @media (max-width: 767px) {
         /* The row is a card; its actions become equal tap targets. */
         .pbq-table--stack td.ql-cell-actions { padding-top: 10px; }
@@ -115,14 +125,27 @@ contract pinned by QuoteMobileLayoutTests).
         </div>
     </div>
 
+    {% comment %}
+    Cross-client viewing is OFF by default, even for the operator. The tenant
+    switcher is impersonation - viewing Barmak must show Barmak's quotes - so
+    looking across clients takes a deliberate click and says so while it is on.
+    {% endcomment %}
     {% if sees_all_tenants %}
-    <p class="ql-scope-note">
+    <p class="ql-scope-note ql-scope-note--all">
         <i class="fas fa-globe"></i>
-        Platform view: quotes across every client. Clients only ever see their own.
+        Showing quotes across <strong>every client</strong>.
+        <a href="{% url 'quotations_list' %}">Back to {{ request.tenant.name|default:"this workspace" }} only</a>
+    </p>
+    {% elif can_see_all_tenants %}
+    <p class="ql-scope-note">
+        <i class="fas fa-building"></i>
+        {{ request.tenant.name|default:"This workspace" }} only.
+        <a href="?all=1{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">View across all clients</a>
     </p>
     {% endif %}
 
     <form method="get" class="ql-filters">
+        {% if sees_all_tenants %}<input type="hidden" name="all" value="1">{% endif %}
         <label class="ql-search" for="ql-q">
             <i class="fas fa-search"></i>
             <input type="search" id="ql-q" name="q" value="{{ search_query }}"
@@ -226,7 +249,7 @@ contract pinned by QuoteMobileLayoutTests).
             search silently becomes page 2 of everything.
             {% endcomment %}
             {% if page_obj.has_previous %}
-            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" aria-label="Previous page">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if sees_all_tenants %}&all=1{% endif %}" aria-label="Previous page">
                 <i class="fas fa-chevron-left"></i>
             </a>
             {% endif %}
@@ -234,7 +257,7 @@ contract pinned by QuoteMobileLayoutTests).
                 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
             </span>
             {% if page_obj.has_next %}
-            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" aria-label="Next page">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if sees_all_tenants %}&all=1{% endif %}" aria-label="Next page">
                 <i class="fas fa-chevron-right"></i>
             </a>
             {% endif %}

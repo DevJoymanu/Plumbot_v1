@@ -484,13 +484,19 @@ class QuotationTemplateDetailView(DetailView):
 
 
 def _visible_templates(request):
-    """Templates this request may SEE: their own plus the global set.
+    """Templates this request may SEE: this workspace's, plus the global set.
 
     QuotationTemplate.for_user is the single reader for visibility - a plain
     .filter(tenant=...) here would hide every global template, which is the
     whole point of them.
+
+    Scoped to the CURRENT WORKSPACE even for the operator: the tenant switcher
+    is impersonation, so viewing Barmak must show Barmak's templates. `?all=1`
+    is the deliberate opt-out, and only the operator gets it.
     """
-    return QuotationTemplate.for_user(getattr(request, 'tenant', None), request.user)
+    across = bool(request.GET.get('all')) and is_platform_owner(request.user)
+    return QuotationTemplate.for_user(
+        getattr(request, 'tenant', None), request.user, across_tenants=across)
 
 
 def _editable_template(request, pk):

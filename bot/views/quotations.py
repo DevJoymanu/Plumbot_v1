@@ -376,15 +376,37 @@ def _branding_tenant(request, context=None):
     return getattr(request, 'tenant', None)
 
 
-def _visible_quotations(request):
-    """Quotes this request may touch: their own tenant's, everything for the
-    platform operator. The single scoping resolver for the quote actions - the
-    per-view `.filter(appointment__tenant=...) if ... else Quotation.objects`
-    inline was subtly different (it fell back to EVERY tenant when no workspace
-    resolved) and had to be repeated correctly at each call site."""
+def _viewing_all_tenants(request) -> bool:
+    """Is the operator explicitly asking to look across every client?
+
+    NOT the default, even for the platform owner. The tenant switcher is
+    impersonation - "the dashboard then shows that tenant's world" - and every
+    other page in the app honours it. Bypassing it here put Homebase's quote in
+    Barmak's section, which is exactly what the switcher exists to prevent.
+    Seeing across clients is a deliberate act, so it takes a deliberate flag.
+    """
     from ..decorators import is_platform_owner
 
-    if is_platform_owner(request.user):
+    return bool(request.GET.get('all')) and is_platform_owner(request.user)
+
+
+def _visible_quotations(request, across_tenants=None):
+    """Quotes this request may touch.
+
+    Scoped to the CURRENT WORKSPACE - the tenant the switcher is pointing at -
+    for everybody, operator included. The single scoping resolver for the quote
+    actions: the per-view `.filter(appointment__tenant=...) if ... else
+    Quotation.objects` inline was subtly different (it fell back to EVERY tenant
+    when no workspace resolved) and had to be repeated correctly at each call
+    site.
+
+    `across_tenants` is the opt-out, and only the operator can set it. Leave it
+    None and it is read from the request, so a per-quote action never widens
+    past the workspace by accident.
+    """
+    if across_tenants is None:
+        across_tenants = _viewing_all_tenants(request)
+    if across_tenants:
         return Quotation.objects.all()
     tenant = getattr(request, 'tenant', None)
     if tenant is None:
@@ -411,23 +433,22 @@ class QuotationsListView(ListView):
         return getattr(self.request, 'tenant', None)
 
     def _sees_all_tenants(self):
+        return _viewing_all_tenants(self.request)
+
+    def _can_see_all_tenants(self):
+        """May this user switch the cross-client view ON? (Offering the toggle
+        is a different question from having it on.)"""
         from ..decorators import is_platform_owner
         return is_platform_owner(self.request.user)
 
     def get_queryset(self):
-        qs = (Quotation.objects
-              .select_related('appointment', 'appointment__tenant')
+        qs = (_visible_quotations(self.request)
+              .select_related('appointment', 'appointment__tenant', 'tenant')
               # Newest first, with id as the tie-break: created_at is
               # auto_now_add, so two quotes raised in the same instant would
               # otherwise come back in whatever order the database felt like -
               # and the order would change between page loads.
               .order_by('-created_at', '-id'))
-
-        if not self._sees_all_tenants():
-            tenant = self._tenant()
-            # No workspace resolved means no quotes, never everyone's. The
-            # middleware already blocks this case; the query refuses it too.
-            qs = qs.filter(tenant=tenant) if tenant is not None else qs.none()
 
         status = (self.request.GET.get('status') or '').strip()
         if status in dict(Quotation.STATUS_CHOICES):
@@ -452,6 +473,7 @@ class QuotationsListView(ListView):
             'status_filter': (self.request.GET.get('status') or '').strip(),
             'status_choices': Quotation.STATUS_CHOICES,
             'sees_all_tenants': self._sees_all_tenants(),
+            'can_see_all_tenants': self._can_see_all_tenants(),
             # Distinguishes "no quotes yet" from "nothing matched your search":
             # the same empty table means very different things.
             'is_filtered': bool(self.request.GET.get('q') or self.request.GET.get('status')),

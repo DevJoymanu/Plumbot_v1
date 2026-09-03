@@ -3211,16 +3211,21 @@ class QuotationTemplate(models.Model):
     # templates to another.
 
     @classmethod
-    def for_user(cls, tenant, user=None):
-        """Templates this user may SEE: their own tenant's, plus the global set.
+    def for_user(cls, tenant, user=None, across_tenants=False):
+        """Templates this user may SEE: this WORKSPACE's, plus the global set.
 
-        The platform operator sees everything, because they author the global
-        templates and support every client's own.
+        Scoped to `tenant` for everybody, the platform operator included. The
+        tenant switcher is impersonation - it shows that tenant's world - so an
+        operator looking at Barmak's Templates page must see Barmak's templates
+        and the global set, not every client's private ones. Bypassing the lens
+        for the operator is what put one tenant's work in another's section.
+
+        `across_tenants` is the deliberate opt-out, passed only by a caller that
+        has already checked the user is the operator.
         """
         from django.db.models import Q
-        from bot.decorators import is_platform_owner
 
-        if user is not None and is_platform_owner(user):
+        if across_tenants:
             return cls.objects.all()
         if tenant is None:
             return cls.objects.filter(is_global=True)

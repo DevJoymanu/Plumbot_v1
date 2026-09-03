@@ -5928,15 +5928,52 @@ class MyQuotesHistoryTests(StaffClientTestCase):
         rows = list(self._list(q='Acme').context['quotations'])
         self.assertEqual(rows, [])
 
-    def test_the_operator_sees_across_clients(self):
+    def _as_owner(self, tenant_slug=None):
+        """Log in as the platform operator, optionally lensed into a tenant."""
+        from bot.middleware import TENANT_SESSION_KEY
         owner = get_user_model().objects.create_superuser(
             username='adminJ', password='pass12345', email='jones86xi@gmail.com')
         self.client.force_login(owner)
+        if tenant_slug:
+            session = self.client.session
+            session[TENANT_SESSION_KEY] = tenant_slug
+            session.save()
+        return owner
+
+    def test_the_operator_lensed_into_a_client_sees_only_that_client(self):
+        """The tenant switcher is impersonation - viewing Barmak shows Barmak's
+        world. Letting the operator bypass it put Homebase's quote in Barmak's
+        section (prod 2026-09-03)."""
+        self._as_owner(tenant_slug=self.other.slug)
         response = self._list()
+        rows = list(response.context['quotations'])
+        self.assertIn(self.foreign_quote, rows)
+        self.assertNotIn(self.quote, rows)
+        self.assertFalse(response.context['sees_all_tenants'])
+        self.assertNotIn('Rudo Moyo', response.content.decode())
+
+    def test_the_operator_sees_across_clients_only_when_they_ask(self):
+        self._as_owner(tenant_slug=self.other.slug)
+        response = self._list(all='1')
         rows = list(response.context['quotations'])
         self.assertIn(self.quote, rows)
         self.assertIn(self.foreign_quote, rows)
         self.assertTrue(response.context['sees_all_tenants'])
+
+    def test_a_client_cannot_widen_the_view_with_the_flag(self):
+        """?all=1 is an operator control, not a query parameter anyone can set."""
+        response = self._list(all='1')
+        self.assertFalse(response.context['sees_all_tenants'])
+        self.assertNotIn(self.foreign_quote, list(response.context['quotations']))
+
+    def test_a_per_quote_action_never_widens_past_the_workspace(self):
+        """Even for the operator: ?all=1 on a download must not reach into
+        another workspace than the one they are lensed into."""
+        self._as_owner(tenant_slug=self.other.slug)
+        self.assertEqual(
+            self.client.get(
+                reverse('download_quotation_pdf', args=[self.quote.pk])).status_code,
+            404)
 
     # -- the row -----------------------------------------------------------
 
@@ -6129,6 +6166,34 @@ class GlobalTemplateTests(StaffClientTestCase):
         self.assertEqual(self.shared.tenant, self.other)
 
     # -- the operator ------------------------------------------------------
+
+    def test_the_operator_lensed_into_a_client_sees_only_that_client(self):
+        """Same lens rule as the quotes list: an operator viewing Barmak sees
+        Barmak's templates plus the global set, not every client's private
+        ones."""
+        from bot.middleware import TENANT_SESSION_KEY
+        self._owner()
+        session = self.client.session
+        session[TENANT_SESSION_KEY] = self.other.slug
+        session.save()
+
+        rows = list(self.client.get(
+            reverse('quotation_templates_list')).context['templates'])
+        self.assertIn(self.theirs, rows)
+        self.assertIn(self.shared, rows)
+        self.assertNotIn(self.mine, rows)
+
+    def test_the_operator_sees_every_template_only_when_they_ask(self):
+        self._owner()
+        rows = list(self.client.get(
+            reverse('quotation_templates_list'), {'all': '1'}).context['templates'])
+        for template in (self.mine, self.theirs, self.shared):
+            self.assertIn(template, rows)
+
+    def test_a_client_cannot_widen_the_template_view(self):
+        rows = list(self.client.get(
+            reverse('quotation_templates_list'), {'all': '1'}).context['templates'])
+        self.assertNotIn(self.theirs, rows)
 
     def test_the_operator_may_edit_both_kinds(self):
         owner = self._owner()
