@@ -8564,10 +8564,15 @@ class _CfgNote:
         return bool(self.fee) and self.waived
 
     def visit_price_note(self, is_shona=False):
+        # Mirrors TenantConfig.visit_price_note. This stub used to say
+        # "fee — FREE if we do the job" while the real method said
+        # "fee, free if we do the job", so the gate pinned wording that never
+        # shipped. The real method is exercised directly below; keep the two
+        # in step.
         if not self.fee:
             return 'Just a quick note: *the call-out is free.*'
         if self.visit_fee_waived_on_job():
-            return f'Just a quick note: *US${self.fee} call-out fee — FREE if we do the job.*'
+            return f'Just a quick note: *US${self.fee} call-out fee, FREE if we do the job.*'
         return f'Just a quick note: *US${self.fee} call-out fee.*'
 
     def visit_cost_sentence(self, is_shona=False):
@@ -8582,7 +8587,7 @@ try:
     for _label, _cfg, _want in (
         ('free', _CfgNote(), 'the call-out is free'),
         ('flat fee', _CfgNote(20), 'US$20 call-out fee'),
-        ('waived on the job', _CfgNote(20, True), 'US$20 call-out fee — FREE if we do the job'),
+        ('waived on the job', _CfgNote(20, True), 'US$20 call-out fee, FREE if we do the job'),
     ):
         _tcmod.get_config = lambda tenant=None, _c=_cfg: _c
         _out, _added = _evpn(_opener, _fresh(), 'hie')
@@ -9173,6 +9178,82 @@ results.log(
     "transcript: an already-sent turn is never dropped as a draft",
     any(e.get("message_id") == "wamid.X" for e in _dl5.conversation_history),
     got="sent turn kept",
+)
+
+
+# ── The REAL visit price note, not a stub of it ──────────────────────────────
+# The stub above mirrors this copy, and the two had already drifted: the stub
+# pinned "fee — FREE if we do the job" while TenantConfig actually returned
+# "fee, free if we do the job", so the gate was green on wording that never
+# shipped. Bind the real methods onto a config with no DB behind it and assert
+# the strings a customer actually reads.
+import bot.tenant_config as _tcfg
+
+
+class _RealNoteCfg:
+    """TenantConfig's own methods over plain attributes - no DB, real code."""
+    def __init__(self, fee=None, waived=False, currency='US$'):
+        self.consultation_fee = fee
+        self.currency = currency
+        self._waived = waived
+
+    def _field(self, name, default=None):
+        return self._waived if name == 'consultation_fee_waived_on_job' else default
+
+    visit_fee_waived_on_job = _tcfg.TenantConfig.visit_fee_waived_on_job
+    visit_price_note = _tcfg.TenantConfig.visit_price_note
+    visit_cost_sentence = _tcfg.TenantConfig.visit_cost_sentence
+
+
+results.log(
+    "visit price note (real): no fee states the call-out is free",
+    _RealNoteCfg().visit_price_note() == 'Just a quick note: *the call-out is free.*',
+    got=repr(_RealNoteCfg().visit_price_note()),
+)
+results.log(
+    "visit price note (real): a flat fee states the figure only",
+    _RealNoteCfg(10).visit_price_note() == 'Just a quick note: *US$10 call-out fee.*',
+    got=repr(_RealNoteCfg(10).visit_price_note()),
+)
+results.log(
+    "visit price note (real): a waived fee says FREE if we do the job",
+    _RealNoteCfg(10, True).visit_price_note()
+    == 'Just a quick note: *US$10 call-out fee, FREE if we do the job.*',
+    got=repr(_RealNoteCfg(10, True).visit_price_note()),
+    expected="US$10 call-out fee, FREE if we do the job",
+)
+results.log(
+    "visit price note (real): the waiver is emphasised, and in Shona too",
+    'FREE' in _RealNoteCfg(10, True).visit_price_note()
+    and 'MAHARA' in _RealNoteCfg(10, True).visit_price_note(is_shona=True),
+    got=repr(_RealNoteCfg(10, True).visit_price_note(is_shona=True)),
+)
+# The separator is a comma, not a dash: strip_dashes runs on the final message
+# and would only have to repair one written here.
+results.log(
+    "visit price note (real): no dash punctuation to be repaired downstream",
+    all('—' not in _n and '–' not in _n and ' - ' not in _n for _n in (
+        _RealNoteCfg(10, True).visit_price_note(),
+        _RealNoteCfg(10, True).visit_price_note(is_shona=True),
+        _RealNoteCfg(10).visit_price_note(),
+        _RealNoteCfg().visit_price_note())),
+    got="comma separated",
+)
+# The waiver is meaningless without a fee - a business with nothing to charge
+# has nothing to waive, and saying so would be noise.
+results.log(
+    "visit price note (real): the waiver flag alone changes nothing",
+    _RealNoteCfg(None, True).visit_price_note()
+    == 'Just a quick note: *the call-out is free.*',
+    got=repr(_RealNoteCfg(None, True).visit_price_note()),
+)
+# The full sentence (given when a lead ASKS) stays lowercase prose - caps mid
+# sentence reads as shouting; the note is a headline, the sentence is an answer.
+results.log(
+    "visit cost sentence (real): waived reads as prose, not caps",
+    _RealNoteCfg(10, True).visit_cost_sentence()
+    == 'The call-out to quote is US$10, and it is free if we do the job.',
+    got=repr(_RealNoteCfg(10, True).visit_cost_sentence()),
 )
 
 if GATE_ONLY:

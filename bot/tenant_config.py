@@ -463,9 +463,16 @@ class TenantConfig:
                     else 'Just a quick note: *the call-out is free.*')
         amount = f"{self.currency}{fee}"
         if self.visit_fee_waived_on_job():
-            return (f'Chinhu chidiki: *{amount} yekuuya kuzoona, mahara kana '
+            # FREE carries the caps because it is the offer, not an aside: the
+            # fee is the objection and the waiver is the answer to it, and the
+            # Profile page promises the tenant exactly this wording. The
+            # separator is a COMMA, not the dash the Profile help text draws —
+            # dash punctuation comes out of customer copy at the choke point
+            # anyway (utils.strip_dashes), so writing one here only means the
+            # stripper has to repair it.
+            return (f'Chinhu chidiki: *{amount} yekuuya kuzoona, MAHARA kana '
                     f'tikaita basa.*' if is_shona else
-                    f'Just a quick note: *{amount} call-out fee, free if we '
+                    f'Just a quick note: *{amount} call-out fee, FREE if we '
                     f'do the job.*')
         return (f'Chinhu chidiki: *kuuya kuzoona kunobhadharwa {amount}.*'
                 if is_shona else
