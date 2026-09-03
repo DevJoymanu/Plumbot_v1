@@ -6482,18 +6482,54 @@ class QuoteHandoffTests(StaffClientTestCase):
         response = self.client.get(reverse('standalone_quotation'))
         self.assertEqual(response.context['lead_wa_digits'], '')
 
-    def test_the_handoff_page_downloads_the_pdf_and_opens_the_chat(self):
-        """A wa.me link carries text only, so the PDF has to arrive separately."""
-        body = self.client.get(
+    def _handoff(self):
+        return self.client.get(
             reverse('quotation_whatsapp_handoff', args=[self.quote.pk])).content.decode()
+
+    def test_the_handoff_offers_both_routes(self):
+        """Two routes because the platform gives us two: the Web Share API can
+        attach the FILE but not pick the chat, and a wa.me link picks the CHAT
+        but can never carry a file."""
+        body = self._handoff()
+        self.assertIn('navigator.share', body)          # the file route
+        self.assertIn('https://wa.me/15550009800', body)  # the chat route
         self.assertIn(reverse('download_quotation_pdf', args=[self.quote.pk]), body)
-        self.assertIn('https://wa.me/15550009800', body)
-        self.assertIn('Open WhatsApp', body)
+
+    def test_the_pdf_is_attached_through_the_share_sheet(self):
+        """This is what 'preloaded in WhatsApp' actually means: a real File
+        handed to navigator.share, not a link that hopes for the best."""
+        body = self._handoff()
+        self.assertIn('new File([blob]', body)
+        self.assertIn("type: 'application/pdf'", body)
+        self.assertIn('files: [pdfFile]', body)
+
+    def test_the_share_button_is_hidden_until_the_browser_proves_it_can(self):
+        """canShare({files}) against the REAL file: a button that fails on tap
+        is worse than one that was never offered."""
+        body = self._handoff()
+        self.assertIn('id="whShare" hidden', body)
+        self.assertIn('navigator.canShare({ files: [file] })', body)
+
+    def test_the_pdf_is_fetched_before_the_click_not_during_it(self):
+        """navigator.share must run inside the gesture that triggered it;
+        awaiting a fetch first spends it and Safari throws NotAllowedError."""
+        body = self._handoff()
+        share_at = body.index('shareBtn.addEventListener')
+        preload_at = body.index('function preload()')
+        self.assertLess(preload_at, share_at)
+        self.assertIn('preload();', body)
+
+    def test_a_cancelled_share_is_not_reported_as_a_failure(self):
+        """Closing the share sheet is an AbortError, not something to alarm
+        the plumber about."""
+        self.assertIn("error.name === 'AbortError'", self._handoff())
 
     def test_the_handoff_page_says_the_bot_is_not_sending_it(self):
-        body = self.client.get(
-            reverse('quotation_whatsapp_handoff', args=[self.quote.pk])).content.decode()
-        self.assertIn('Nothing is sent until you send it', body)
+        # Whitespace-collapsed: prose wraps across source lines, and where a
+        # line happens to break is not something a test should depend on.
+        prose = ' '.join(self._handoff().split())
+        self.assertIn('from your own number', prose)
+        self.assertIn('Nothing is sent until you send it', prose)
 
     def test_no_screen_still_asks_the_bot_to_send_the_quote(self):
         """Every WhatsApp control hands off; none posts to the Cloud API send."""

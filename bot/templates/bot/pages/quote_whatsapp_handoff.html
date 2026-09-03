@@ -1,21 +1,30 @@
 {% extends "bot/layouts/base.html" %}
 
 {% comment %}
-Hand the quote to the plumber's OWN WhatsApp.
+Hand the quote to the plumber's OWN WhatsApp, with the PDF already attached.
 
-The bot does NOT send the quote. This opens the customer's chat on the
-plumber's phone, from the number the customer already knows, with the PDF
-already downloaded so it is one tap to attach.
+The bot does not send the quote. The plumber does, from the number the customer
+already knows — which also sidesteps WhatsApp's 24h messaging window, the thing
+that makes the bot's own document sends fail (131047) days after a visit.
 
-Two reasons it works this way rather than the Cloud API sending it:
-  * a wa.me link carries TEXT only - no link can attach a file - so the PDF
-    has to arrive separately, which the hidden iframe below starts on load;
-  * the bot's own sends are bound by WhatsApp's 24h messaging window, and a
-    quote usually goes out days after the visit, when that send fails 131047.
+TWO routes, because the platform gives us two and neither does everything:
 
-The "Open WhatsApp" control is a real link the plumber clicks, not something
-this page opens for them: a window opened without a click is what popup
-blockers stop.
+  1. The Web Share API (navigator.share with `files`). This genuinely hands
+     WhatsApp the PDF as an attachment — the plumber picks the chat and sends.
+     It is the primary route, and it is what "preloaded in WhatsApp" means in
+     practice. Needs a secure context and a real mobile browser; the OS share
+     sheet owns the contact picker, so the chat cannot be preselected here.
+
+  2. A wa.me link, which opens THE customer's chat directly but can carry text
+     only — no link of any kind can attach a file. The PDF is downloaded
+     alongside so it is one tap to attach.
+
+So: route 1 preselects the FILE, route 2 preselects the CHAT. Both are offered,
+with whichever the device supports leading, and the page says which is which
+rather than pretending either is the whole job.
+
+The blob is fetched on LOAD, not on click: navigator.share must be called
+inside a user gesture, and awaiting a fetch first loses that gesture on Safari.
 {% endcomment %}
 
 {% block title %}Send on WhatsApp{% endblock %}
@@ -23,23 +32,21 @@ blockers stop.
 {% block extra_css %}
 {% include "bot/includes/quote_responsive_css.html" %}
 <style>
-    .wh-steps { counter-reset: step; margin: 0; padding: 0; list-style: none; }
+    .wh-card { max-width: 640px; }
 
-    .wh-step {
+    .wh-lead {
         display: flex;
         gap: 14px;
-        align-items: flex-start;
-        padding: 16px 0;
+        align-items: center;
+        padding-bottom: 18px;
+        margin-bottom: 18px;
         border-bottom: 1px solid rgba(0, 101, 145, 0.08);
     }
 
-    .wh-step:last-child { border-bottom: none; }
-
-    .wh-step__num {
-        counter-increment: step;
+    .wh-lead__avatar {
         flex: 0 0 auto;
-        width: 30px;
-        height: 30px;
+        width: 46px;
+        height: 46px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -48,49 +55,81 @@ blockers stop.
         color: var(--color-primary);
         font-family: var(--font-label);
         font-weight: 600;
-        font-size: 13px;
     }
 
-    .wh-step__num::before { content: counter(step); }
-
-    .wh-step__body { min-width: 0; flex: 1; }
-    .wh-step__body strong { display: block; color: var(--color-text); margin-bottom: 3px; }
-    .wh-step__body small { color: var(--color-muted); font-size: 12.5px; }
+    .wh-lead__name { font-weight: 600; color: var(--color-text); }
+    .wh-lead__sub { font-size: 13px; color: var(--color-muted); }
 
     .wh-msg {
-        margin-top: 10px;
         padding: 12px 14px;
+        margin-bottom: 18px;
         border-radius: var(--radius-md);
         background: var(--color-surface-low);
-        font-size: 13px;
+        font-size: 13.5px;
         color: var(--color-text);
         white-space: pre-wrap;
     }
 
-    .wh-wa {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        margin-top: 12px;
-        padding: 15px 28px;
-        border-radius: 999px;
-        background: #25D366;
-        color: #fff;
-        text-decoration: none;
+    .wh-msg__label {
+        display: block;
+        margin-bottom: 5px;
         font-family: var(--font-label);
-        font-weight: 600;
-        font-size: 15px;
-        box-shadow: 0 10px 22px -10px rgba(37, 211, 102, .8);
-    }
-
-    .wh-wa:hover { color: #fff; opacity: .93; }
-    .wh-wa:active { transform: scale(.97); }
-
-    .wh-note {
-        margin-top: 18px;
-        font-size: 12.5px;
+        font-size: 10.5px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
         color: var(--color-muted);
     }
+
+    .wh-action {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        width: 100%;
+        text-align: left;
+        padding: 16px;
+        margin-bottom: 12px;
+        border: 1px solid rgba(0, 101, 145, 0.12);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-lowest);
+        color: inherit;
+        text-decoration: none;
+        cursor: pointer;
+        transition: border-color .2s ease, transform .2s ease;
+    }
+
+    .wh-action:hover { border-color: var(--color-primary); color: inherit; }
+    .wh-action:active { transform: scale(.98); }
+    .wh-action[disabled] { opacity: .5; cursor: default; }
+
+    .wh-action--primary {
+        border-color: #25D366;
+        background: #25D366;
+        color: #fff;
+    }
+
+    .wh-action--primary:hover { color: #fff; opacity: .93; }
+    .wh-action--primary .wh-action__icon { background: rgba(255,255,255,.2); color: #fff; }
+    .wh-action--primary small { color: rgba(255,255,255,.9); }
+
+    .wh-action__icon {
+        flex: 0 0 auto;
+        width: 38px;
+        height: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: var(--color-surface-low);
+        color: var(--color-primary);
+        font-size: 17px;
+    }
+
+    .wh-action__body strong { display: block; margin-bottom: 3px; }
+    .wh-action__body small { display: block; font-size: 12.5px; color: var(--color-muted); }
+
+    .wh-note { margin-top: 16px; font-size: 12.5px; color: var(--color-muted); }
+    .wh-status { margin-bottom: 14px; }
 </style>
 {% endblock %}
 
@@ -100,9 +139,7 @@ blockers stop.
     <div class="pbq-head">
         <div>
             <h1 class="pbq-head__title">Send on WhatsApp</h1>
-            <p class="pbq-head__sub">
-                {{ quotation.quotation_number }} · {{ quotation.get_display_name }}
-            </p>
+            <p class="pbq-head__sub">{{ quotation.quotation_number }} · {{ quotation.get_display_name }}</p>
         </div>
         <div class="pbq-head__actions">
             <a href="{% url 'view_quotation' quotation.pk %}" class="btn btn-secondary">
@@ -111,78 +148,152 @@ blockers stop.
         </div>
     </div>
 
-    <div class="pbq-card">
-        <ol class="wh-steps">
-            <li class="wh-step">
-                <span class="wh-step__num"></span>
-                <span class="wh-step__body">
-                    <strong>The PDF is downloading now</strong>
-                    <small>
-                        It goes to your usual downloads folder as
-                        <em>{{ pdf_filename }}</em>. If it did not start,
-                        <a href="{% url 'download_quotation_pdf' quotation.pk %}">download it here</a>.
-                    </small>
+    <div class="pbq-card wh-card">
+        <div class="wh-lead">
+            <span class="wh-lead__avatar">{{ lead_name|slice:":2"|upper }}</span>
+            <span>
+                <span class="wh-lead__name">{{ lead_name }}</span>
+                <span class="wh-lead__sub">
+                    {% if lead_wa_digits %}+{{ lead_wa_digits }}{% else %}No WhatsApp number on this lead{% endif %}
                 </span>
-            </li>
+            </span>
+        </div>
 
-            <li class="wh-step">
-                <span class="wh-step__num"></span>
-                <span class="wh-step__body">
-                    <strong>Open the chat and attach it</strong>
-                    <small>
-                        This opens {{ lead_name }}'s chat in <em>your</em> WhatsApp, so the
-                        quote comes from your own number.
-                    </small>
-                    <div class="wh-msg">{{ prefilled_message }}</div>
-                    {% if lead_wa_digits %}
-                    <a class="wh-wa" id="openWhatsapp" target="_blank" rel="noopener"
-                       href="https://wa.me/{{ lead_wa_digits }}?text={{ prefilled_message|urlencode }}">
-                        <i class="fab fa-whatsapp"></i> Open WhatsApp
-                    </a>
-                    {% else %}
-                    <div class="pbq-empty" style="margin-top:12px;">
-                        <i class="fas fa-triangle-exclamation"></i>
-                        <p>This quote has no WhatsApp number on its lead, so there is no chat to open.</p>
-                    </div>
-                    {% endif %}
-                </span>
-            </li>
-        </ol>
+        <div class="wh-msg">
+            <span class="wh-msg__label">Message</span>{{ prefilled_message }}
+        </div>
+
+        <div id="whStatus" class="wh-status"></div>
+
+        {% comment %}
+        Hidden until the browser confirms it can share files. Feature detection
+        happens against the REAL file, not a guess: canShare({files}) is the
+        only honest test, and a button that fails on tap is worse than one that
+        was never offered.
+        {% endcomment %}
+        <button type="button" class="wh-action wh-action--primary" id="whShare" hidden>
+            <span class="wh-action__icon"><i class="fas fa-paper-plane"></i></span>
+            <span class="wh-action__body">
+                <strong>Send the quote with the PDF attached</strong>
+                <small>Opens WhatsApp with {{ pdf_filename }} already attached. Pick the chat and send.</small>
+            </span>
+        </button>
+
+        {% if lead_wa_digits %}
+        <a class="wh-action" id="whOpenChat" target="_blank" rel="noopener"
+           href="https://wa.me/{{ lead_wa_digits }}?text={{ prefilled_message|urlencode }}">
+            <span class="wh-action__icon"><i class="fab fa-whatsapp"></i></span>
+            <span class="wh-action__body">
+                <strong>Open {{ lead_name }}'s chat</strong>
+                <small id="whOpenChatHint">Goes straight to their chat. Attach the downloaded PDF yourself.</small>
+            </span>
+        </a>
+        {% endif %}
+
+        <a class="wh-action" href="{% url 'download_quotation_pdf' quotation.pk %}" id="whDownload">
+            <span class="wh-action__icon"><i class="fas fa-file-pdf"></i></span>
+            <span class="wh-action__body">
+                <strong>Download the PDF</strong>
+                <small>{{ pdf_filename }}</small>
+            </span>
+        </a>
 
         <p class="wh-note">
             <i class="far fa-circle-question"></i>
-            A WhatsApp link can carry a message but never a file, which is why the
-            PDF comes down separately. Nothing is sent until you send it.
+            The quote goes from your own number, not the assistant's. Nothing is
+            sent until you send it.
         </p>
     </div>
 </div>
 
+<script>
+(function () {
+    'use strict';
+
+    var PDF_URL = "{% url 'download_quotation_pdf' quotation.pk %}";
+    var MARK_URL = "{% url 'mark_quotation_sent' quotation.pk %}";
+    var CSRF = "{{ csrf_token }}";
+    var FILENAME = "{{ pdf_filename|escapejs }}";
+    var MESSAGE = "{{ prefilled_message|escapejs }}";
+
+    var shareBtn = document.getElementById('whShare');
+    var chatLink = document.getElementById('whOpenChat');
+    var chatHint = document.getElementById('whOpenChatHint');
+    var status = document.getElementById('whStatus');
+    var pdfFile = null;
+
+    function say(message, kind) {
+        status.innerHTML = '<div class="pb-alert pb-alert--' + (kind || 'info') + '">'
+                         + message + '</div>';
+    }
+
+    // Best effort: the send already happened in their own app, so a failed
+    // marker must never look like a failed send.
+    function markSent() {
+        try {
+            fetch(MARK_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify({ channel: 'whatsapp' }),
+                keepalive: true
+            });
+        } catch (error) { /* nothing to do about it from here */ }
+    }
+
+    // Fetch the PDF up front. navigator.share has to be called inside the click
+    // that triggered it, and awaiting a fetch first spends that gesture - on
+    // Safari the share then throws NotAllowedError.
+    function preload() {
+        if (!navigator.canShare) { return; }
+        fetch(PDF_URL, { credentials: 'same-origin' })
+            .then(function (response) {
+                if (!response.ok) { throw new Error('could not build the PDF'); }
+                return response.blob();
+            })
+            .then(function (blob) {
+                var file = new File([blob], FILENAME, { type: 'application/pdf' });
+                if (!navigator.canShare({ files: [file] })) { return; }
+                pdfFile = file;
+                shareBtn.hidden = false;
+                if (chatHint) {
+                    chatHint.textContent =
+                        'Goes straight to their chat, without the attachment.';
+                }
+            })
+            .catch(function () {
+                // No share button; the download and wa.me routes still stand.
+            });
+    }
+
+    if (shareBtn) {
+        shareBtn.addEventListener('click', function () {
+            if (!pdfFile) { return; }
+            navigator.share({ files: [pdfFile], text: MESSAGE })
+                .then(function () {
+                    markSent();
+                    say('Sent to WhatsApp with the PDF attached.', 'success');
+                })
+                .catch(function (error) {
+                    // AbortError just means they closed the share sheet.
+                    if (error && error.name === 'AbortError') { return; }
+                    say('Could not open the share sheet. Use the options below instead.',
+                        'error');
+                });
+        });
+    }
+
+    if (chatLink) {
+        chatLink.addEventListener('click', function () { markSent(); });
+    }
+
+    preload();
+})();
+</script>
+
 {% comment %}
-Starts the download without script and without navigating away. The page has to
-stay put: the plumber still needs the Open WhatsApp button on it.
+Starts the download for the routes that need the file on disk. Kept off the
+share path's critical work: it is a convenience, and the page must stay put.
 {% endcomment %}
 <iframe src="{% url 'download_quotation_pdf' quotation.pk %}" title="Quote PDF download"
         style="display:none;" aria-hidden="true"></iframe>
-
-<script>
-    // Record that the quote went out on WhatsApp when the plumber opens the
-    // chat. The server never sees the message itself, so this is the only
-    // moment we learn it happened - and it records what they DID, not proof of
-    // delivery. Best effort: a failed marker must never block the handoff.
-    (function () {
-        var link = document.getElementById('openWhatsapp');
-        if (!link) { return; }
-        link.addEventListener('click', function () {
-            try {
-                fetch('{% url "mark_quotation_sent" quotation.pk %}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json',
-                               'X-CSRFToken': '{{ csrf_token }}' },
-                    body: JSON.stringify({ channel: 'whatsapp' }),
-                    keepalive: true
-                });
-            } catch (error) { /* they are already on their way to WhatsApp */ }
-        });
-    })();
-</script>
 {% endblock %}
