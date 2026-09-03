@@ -3745,7 +3745,11 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     appointment.property_type is not None
                 )
             ) or
+            # "Have we ever chased this lead?" - the COUNTER resets to zero on
+            # every reply now (reset_followup_sequence), so ask the timestamp,
+            # which is the durable record of a follow-up having gone out.
             (appointment.followup_count > 0) or
+            (getattr(appointment, 'last_followup_sent', None) is not None) or
             (appointment.conversation_history and len(appointment.conversation_history) > 4)
         )
 

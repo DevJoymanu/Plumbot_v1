@@ -926,7 +926,13 @@ class Command(BaseCommand):
                     _now = timezone.now()
                     apt.last_customer_response = _now
                     apt.last_inbound_at = _now
-                    apt.save(update_fields=["last_customer_response", "last_inbound_at"])
+                    # A reply is a reply whatever channel it came in on: the
+                    # follow-up counter goes back to zero, same as WhatsApp.
+                    apt.reset_followup_sequence()
+                    apt.save(update_fields=[
+                        "last_customer_response", "last_inbound_at",
+                        "followup_count", "followup_stage",
+                    ])
 
                 out(f"    APT #{apt_id} | Customer: {apt.customer_name or sender}")
                 out(f"    Body: {clean[:100]}{'…' if len(clean) > 100 else ''}")

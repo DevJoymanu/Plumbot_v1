@@ -1926,11 +1926,28 @@ class Appointment(models.Model):
         help_text='14 days after delay_signal_detected_at — plumber follow-up deadline.')    
 
     
+    def reset_followup_sequence(self):
+        """Put the follow-up counter back to zero because the lead replied.
+
+        The cadence (2 touches in the first 24h, 1 by 48h, 1 by 72h) counts
+        attempts SINCE THE LEAD LAST SPOKE, not attempts in the lifetime of the
+        lead: someone who answers is in a conversation, and a conversation does
+        not get "retired after four". Their reply also reopens the WhatsApp
+        free-form window, which is what the whole schedule is measured from, so
+        the counter and the reference restart together or the next touch is
+        placed against a window that no longer exists.
+
+        Sets fields only - the caller saves, so this composes with the callers
+        that batch their own update_fields.
+        """
+        self.followup_count = 0
+        self.followup_stage = 'responded'
+
     def mark_customer_response(self):
         """Mark that customer has responded - resets follow-up stage"""
         self.last_customer_response = timezone.now()
         self.last_inbound_at = self.last_customer_response
-        self.followup_stage = 'responded'
+        self.reset_followup_sequence()
         self.is_lead_active = True
         self.retry_count = 0  # ADD THIS LINE
         # A fresh inbound reopens the WhatsApp free-form window on Meta's side, so

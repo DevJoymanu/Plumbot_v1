@@ -4525,7 +4525,8 @@ except Exception as e:
 from datetime import timedelta as _td
 from django.utils import timezone as _tz
 from bot.management.commands.send_followups import (
-    Command as _FollowupCmd, CTWA_FOLLOWUP_OFFSETS as _CTWA_OFFS,
+    Command as _FollowupCmd, FOLLOWUP_BAND_OFFSETS as _BAND_OFFS,
+    FOLLOWUP_BANDS as _BANDS, SHORT_WINDOW_FRACTIONS as _SHORT_FRACS,
     max_followups_for as _max_fu_ctwa,
 )
 from bot.models import LeadStatus as _LS
@@ -4571,28 +4572,33 @@ class _StubLead:
 _fu = _FollowupCmd()
 
 # (label, ctwa, followup_count, hours_since_resp, expected_ready)
-# Use ±1.5h margins so deterministic jitter (3-57 min) never flips the result.
+# The cadence is 2 touches in the first 24h, 1 in 24-48h, 1 in 48-72h, measured
+# from the lead's last message. An ad lead has the full 72h window, so those
+# land at their written hours (COLD: 6, 13, 33, 60). Use +/-2h margins so the
+# deterministic jitter (3-57 min) never flips a result.
 _CTWA_CADENCE_CASES = [
-    ("CTWA FU1 before 4h",  True, 0, 2.0,  False),
-    ("CTWA FU1 after 4h",   True, 0, 6.0,  True),
-    ("CTWA FU2 before 8h",  True, 1, 6.0,  False),
-    ("CTWA FU2 after 8h",   True, 1, 10.0, True),
-    ("CTWA FU3 before 20h", True, 2, 18.0, False),
-    ("CTWA FU3 after 20h",  True, 2, 22.0, True),
-    ("CTWA FU4 before 32h", True, 3, 30.0, False),
-    ("CTWA FU4 after 32h",  True, 3, 34.0, True),
-    ("CTWA FU5 before 48h", True, 4, 46.0, False),
-    ("CTWA FU5 after 48h",  True, 4, 50.0, True),
-    # The touch that only exists because the window is 72h: day three, the last
-    # chance to reach an ad lead before free-form sending shuts off.
-    ("CTWA FU6 before 66h", True, 5, 64.0, False),
-    ("CTWA FU6 after 66h",  True, 5, 68.0, True),
-    # Non-ad COLD lead must NOT use the 72h offsets: at 26h with 2 prior sends
-    # it'd be "after 24h" under CTWA, but the tier path measures from the last
-    # send (here = last response) with a 6h step, so it IS ready — proving the
-    # branch only changes ad leads. The discriminating case is FU1 timing:
-    ("non-CTWA FU1 before 4h", False, 0, 2.0, False),  # COLD tier[0]=4h
-    ("non-CTWA FU1 after 4h",  False, 0, 6.0, True),
+    ("ad FU1 before 6h",  True, 0, 4.0,  False),
+    ("ad FU1 after 6h",   True, 0, 8.5,  True),
+    ("ad FU2 before 13h", True, 1, 11.0, False),
+    ("ad FU2 after 13h",  True, 1, 15.5, True),
+    # Day two: exactly one touch in the 24-48h band.
+    ("ad FU3 before 33h", True, 2, 31.0, False),
+    ("ad FU3 after 33h",  True, 2, 35.5, True),
+    # Day three: the last chance before free-form sending shuts off for good.
+    ("ad FU4 before 60h", True, 3, 58.0, False),
+    ("ad FU4 after 60h",  True, 3, 62.5, True),
+    # A standard lead gets the same FOUR touches, but not the band placement -
+    # a touch written for 33h could only bounce with 131047 on a window that
+    # shut at 24h. They are spread across the window they have instead
+    # (COLD: ~3.6, ~8.6, ~13.5, ~18.9h).
+    ("organic FU1 before 3.6h",  False, 0, 2.0,  False),
+    ("organic FU1 after 3.6h",   False, 0, 5.5,  True),
+    ("organic FU2 before 8.6h",  False, 1, 7.0,  False),
+    ("organic FU2 after 8.6h",   False, 1, 10.5, True),
+    ("organic FU3 before 13.5h", False, 2, 12.0, False),
+    ("organic FU3 after 13.5h",  False, 2, 15.5, True),
+    ("organic FU4 before 18.9h", False, 3, 17.0, False),
+    ("organic FU4 after 18.9h",  False, 3, 21.0, True),
 ]
 _real_tz = _fu_mod.timezone
 try:
@@ -4612,29 +4618,51 @@ try:
 finally:
     _fu_mod.timezone = _real_tz
 
-# Offsets themselves are the contract — pin them so a refactor can't silently
-# change the schedule.
+# The BANDS are the contract - 2 follow-ups in the first 24h, 1 in 24-48h, 1 in
+# 48-72h. Temperature may move a touch inside its band; it may never move one
+# into another band, or a lead gets three messages on day one and silence after.
+for _tier, _offs_t in _BAND_OFFS.items():
+    _counts = tuple(
+        len([o for o in _offs_t if _lo <= o < _hi]) for _lo, _hi, _n in _BANDS
+    )
+    _expected = tuple(_n for _lo, _hi, _n in _BANDS)
+    results.log(
+        f"followup cadence [{_tier}]: 2 touches in 0-24h, 1 in 24-48h, 1 in 48-72h",
+        _counts == _expected,
+        f"offsets={_offs_t}",
+        expected=str(_expected),
+        got=f"{_counts} from {_offs_t}",
+    )
+    results.log(
+        f"followup cadence [{_tier}]: exactly 4 touches, strictly increasing",
+        len(_offs_t) == 4 and all(b > a for a, b in zip(_offs_t, _offs_t[1:])),
+        got=str(_offs_t),
+    )
+
 results.log(
-    "followup cadence: CTWA offsets are (4, 8, 20, 32, 48, 66)",
-    _CTWA_OFFS == (4, 8, 20, 32, 48, 66),
-    f"offsets={_CTWA_OFFS}",
-    expected="(4, 8, 20, 32, 48, 66)",
-    got=str(_CTWA_OFFS),
+    "followup cadence: the bands are 2 / 1 / 1 across three days",
+    _BANDS == ((0, 24, 2), (24, 48, 1), (48, 72, 1)),
+    got=str(_BANDS),
 )
-# The 72h window must actually be worked: touches on all three days, and the
-# last one late enough to use the final day without crowding the close.
+# FOUR TOUCHES FOR EVERY LEAD - the window changes WHERE they sit, never how
+# many. Only a 72h window can carry the three-day band placement; a 24h lead
+# gets four spread across the day they have, because a touch written for 33h
+# could only ever bounce with 131047 once their window shut at 24h.
 results.log(
-    "followup cadence: CTWA works all three days of the 72h window",
-    (len([o for o in _CTWA_OFFS if o < 24]) >= 2 and
-     any(24 <= o < 48 for o in _CTWA_OFFS) and
-     any(48 <= o <= 70 for o in _CTWA_OFFS)),
-    got=str(_CTWA_OFFS),
-)
-results.log(
-    "followup cadence: an ad lead gets more touches than an organic one",
-    _max_fu_ctwa(_StubLead(True, 0, 0.0)) > _max_fu_ctwa(_StubLead(False, 0, 0.0)),
+    "followup cadence: every lead gets four touches, whatever their window",
+    _max_fu_ctwa(_StubLead(True, 0, 0.0)) == _max_fu_ctwa(_StubLead(False, 0, 0.0)) == 4,
     got=f"ctwa={_max_fu_ctwa(_StubLead(True, 0, 0.0))} "
         f"organic={_max_fu_ctwa(_StubLead(False, 0, 0.0))}",
+)
+# ...and only the 72h lead is on the band placement.
+_org_offs_sl = _fu._followup_offsets(_StubLead(False, 0, 0.0))
+results.log(
+    "followup cadence: only a 72h window uses the literal band hours",
+    _fu._followup_offsets(_StubLead(True, 0, 0.0)) == _BAND_OFFS[_LS.COLD]
+    and _org_offs_sl != _BAND_OFFS[_LS.COLD]
+    and all(o < 24 for o in _org_offs_sl),
+    got=f"ad={_fu._followup_offsets(_StubLead(True, 0, 0.0))} organic="
+        f"{[round(o, 1) for o in _org_offs_sl]}",
 )
 
 # next_followup_due_at powers the UI "next follow-up" chip. It must agree with the
@@ -4642,12 +4670,26 @@ results.log(
 def _due(lead):
     return _fu.next_followup_due_at(lead)
 
-# CTWA lead, no follow-ups yet → attempt 1, due ~4h after last response, ad flag set.
+# CTWA lead, no follow-ups yet → attempt 1 of 4, due ~6h after their last
+# message, ad flag set. The chip shows the same four for an ad lead as for
+# anyone else - the longer window buys spacing, not extra messages.
 _info = _due(_StubLead(True, 0, 0.0))
 results.log(
     "next_followup_due_at: CTWA FU1 attempt+flag",
-    bool(_info) and _info['attempt'] == 1 and _info['max'] == 6 and _info['is_ctwa'] is True,
+    bool(_info) and _info['attempt'] == 1 and _info['max'] == 4 and _info['is_ctwa'] is True,
     got=str(_info),
+)
+# The chip reads its run length off the schedule, so it says "1 of 4" for a
+# standard lead too - they get four touches, just placed inside their own day.
+_info_org = _due(_StubLead(False, 0, 0.0))
+results.log(
+    "next_followup_due_at: the chip shows 1 of 4 on a 24h window too",
+    bool(_info_org) and _info_org['attempt'] == 1 and _info_org['max'] == 4,
+    got=str(_info_org),
+)
+results.log(
+    "next_followup_due_at: a 24h lead is retired after its four touches",
+    _due(_StubLead(False, 4, 0.0)) is None, got=str(_due(_StubLead(False, 4, 0.0))),
 )
 # The displayed due time is clamped to the daily contact window (it only sends
 # when the window is open), so it must always land inside a CONTACT_WINDOW.
@@ -4677,11 +4719,13 @@ results.log(
     bool(_info2) and _info2['is_ctwa'] is False,
     got=str(_info2),
 )
-# Retired / not-in-flow leads return None.
-results.log("next_followup_due_at: an ad lead is NOT retired at 4 — the 72h window has more",
-            _due(_StubLead(True, 4, 0.0)) is not None, got=str(_due(_StubLead(True, 4, 0.0))))
-results.log("next_followup_due_at: None when count>=max",
-            _due(_StubLead(True, 6, 0.0)) is None, got=str(_due(_StubLead(True, 6, 0.0))))
+# Retired / not-in-flow leads return None. Four touches is the whole run for an
+# ad lead too now - but the counter resets on every reply, so a lead who is
+# still talking to us keeps earning four more (see "followup reset" below).
+results.log("next_followup_due_at: None once the four touches are spent",
+            _due(_StubLead(True, 4, 0.0)) is None, got=str(_due(_StubLead(True, 4, 0.0))))
+results.log("next_followup_due_at: a lead partway through the run still has a due time",
+            _due(_StubLead(True, 3, 0.0)) is not None, got=str(_due(_StubLead(True, 3, 0.0))))
 results.log("next_followup_due_at: None when inactive",
             _due(_StubLead(True, 0, 0.0, is_lead_active=False)) is None)
 results.log("next_followup_due_at: None when booked",
@@ -5261,15 +5305,22 @@ try:
     _real_tz2 = _fu_mod.timezone
     _fu_mod.timezone = _FrozenClock(_real_tz2, _FU_NOW)
 
-    results.log("followup minimum: FOLLOWUP_MIN_COUNT is 4", _FU_MIN == 4, got=str(_FU_MIN))
+    # A run is four touches, for every lead - the window changes the placement,
+    # never the count.
+    results.log("followup cadence: a full run is 4 touches", _FU_MIN == 4, got=str(_FU_MIN))
+    results.log("followup cadence: the count is 4 whatever the window",
+                _max_fu(_WindowLead(ctwa=True)) == _FU_MIN == _max_fu(_WindowLead()),
+                got=f"ad={_max_fu(_WindowLead(ctwa=True))} organic={_max_fu(_WindowLead())}")
 
-    # Every tier gets at least four attempts, and the whole schedule fits the window.
+    # Every tier gets four touches on a 24h window, and the whole schedule fits
+    # inside it. The count is read off the schedule, so it is asserted through
+    # max_followups_for rather than trusting a constant.
     for _st in (_LS2.VERY_HOT, _LS2.HOT, _LS2.WARM, _LS2.COLD):
         _lead = _WindowLead(status=_st)
         _offs = _fu2._followup_offsets(_lead)
         _win = _fu2._messaging_window_hours(_lead)
-        results.log(f"followup cadence [{_st}]: at least 4 touches",
-                    len(_offs) >= 4 and _max_fu(_lead) >= 4,
+        results.log(f"followup cadence [{_st}]: 4 touches on a 24h window",
+                    len(_offs) == 4 and _max_fu(_lead) == 4,
                     got=f"{len(_offs)} offsets, max={_max_fu(_lead)}")
         results.log(f"followup cadence [{_st}]: strictly increasing",
                     all(b > a for a, b in zip(_offs, _offs[1:])),
@@ -5281,7 +5332,7 @@ try:
         results.log(f"followup cadence [{_st}]: first touch is not instant",
                     _offs[0] >= 1.0, got=f"{_offs[0]:.1f}h")
 
-    # Hotter leads are chased sooner than colder ones.
+    # Hotter leads are chased sooner than colder ones, in every band they share.
     _hot_offs = _fu2._followup_offsets(_WindowLead(status=_LS2.VERY_HOT))
     _cold_offs = _fu2._followup_offsets(_WindowLead(status=_LS2.COLD))
     results.log("followup cadence: very hot is chased sooner than cold",
@@ -5294,15 +5345,34 @@ try:
     results.log("followup cadence: a 72h window spreads further than a 24h one",
                 _ctwa_offs[-1] > _cold_offs[-1] * 2,
                 got=f"ctwa={[round(o,1) for o in _ctwa_offs]}")
-    results.log("followup cadence: CTWA keeps its tuned band offsets on a full window",
-                tuple(round(o, 1) for o in _ctwa_offs) == (4.0, 8.0, 20.0, 32.0, 48.0, 66.0),
+    results.log("followup cadence: a full 72h window takes the band offsets literally",
+                tuple(round(o, 1) for o in _ctwa_offs) == (6.0, 13.0, 33.0, 60.0),
                 got=str([round(o, 1) for o in _ctwa_offs]))
-    results.log("followup cadence: the 72h window earns extra touches (6 vs 4)",
-                len(_ctwa_offs) == 6 and _max_fu(_WindowLead(ctwa=True)) == 6,
+    results.log("followup cadence: a 72h window gets four touches on the band hours",
+                len(_ctwa_offs) == 4 and _max_fu(_WindowLead(ctwa=True)) == 4,
                 got=f"{len(_ctwa_offs)} offsets")
+    # One touch per day of the ad window, in the bands the owner asked for.
+    results.log("followup cadence: the ad window is worked on all three days",
+                (len([o for o in _ctwa_offs if o < 24]) == 2 and
+                 len([o for o in _ctwa_offs if 24 <= o < 48]) == 1 and
+                 len([o for o in _ctwa_offs if 48 <= o < 72]) == 1),
+                got=str([round(o, 1) for o in _ctwa_offs]))
     results.log("followup cadence: the last CTWA touch still clears the 72h close",
                 _ctwa_offs[-1] + 1.0 <= 72 - 1.5,
                 got=f"{_ctwa_offs[-1]:.1f}h")
+    # A standard 24h lead keeps all four touches, on the short-window placement:
+    # nothing is scheduled past the close, where it could only bounce with
+    # 131047, and nothing from the three-day bands is squeezed into one day.
+    results.log("followup cadence: a 24h lead still gets four touches",
+                len(_cold_offs) == 4 and all(o < 24 for o in _cold_offs),
+                got=str([round(o, 1) for o in _cold_offs]))
+    results.log("followup cadence: a 24h lead's last touch clears its own close",
+                _cold_offs[-1] + 1.0 <= 24 - 1.5,
+                got=f"{_cold_offs[-1]:.1f}h")
+    results.log("followup cadence: a 24h lead is on the short-window placement",
+                tuple(round(o, 2) for o in _cold_offs)
+                == tuple(round(f * 22.5, 2) for f in _SHORT_FRACS[_LS2.COLD]),
+                got=str([round(o, 1) for o in _cold_offs]))
     # A CTWA lead whose last message left less than the full 72h ahead gets the
     # same shape, squeezed — never a schedule that runs past the close.
     # Ad tapped 60h ago, lead last messaged 30h ago → only ~12h of the ad window
@@ -5310,15 +5380,18 @@ try:
     _short = _WindowLead(ctwa=True, hours_ago=30.0, entry_hours_ago=60.0)
     _short_offs = _fu2._followup_offsets(_short)
     _short_win = _fu2._messaging_window_hours(_short)
-    results.log("followup cadence: a partly-spent ad window is scaled, not overrun",
-                len(_short_offs) == 6 and _short_offs[-1] <= _short_win - 1.0,
+    results.log("followup cadence: a partly-spent ad window keeps four, spread over what is left",
+                len(_short_offs) == 4 and _short_offs[-1] <= _short_win - 1.0,
                 got=f"window={_short_win:.1f}h offsets={[round(o,1) for o in _short_offs]}")
 
     # A per-status override below four is floored back up to four.
     class _OddStatus:
         lead_status = 'made_up_status'
-    results.log("followup minimum: unknown status still gets 4",
-                _max_fu(_OddStatus()) == 4, got=str(_max_fu(_OddStatus())))
+    results.log("followup cadence: unknown status falls back to the COLD cadence",
+                _max_fu(_OddStatus()) == 4 and
+                tuple(round(o, 2) for o in _fu2._followup_offsets(_OddStatus()))
+                == tuple(round(f * 22.5, 2) for f in _SHORT_FRACS[_LS2.COLD]),
+                got=str(_fu2._followup_offsets(_OddStatus())))
 
     # Offsets are ABSOLUTE from the window opening, so a late attempt never
     # pushes the rest past the close (the old per-send reference drifted).
@@ -5327,6 +5400,10 @@ try:
     _idx, _wait, _ref = _fu2._followup_wait_and_reference(_late)
     results.log("followup cadence: reference is the window start, not the last send",
                 _ref == _late.last_customer_response, got=str(_ref))
+    # Attempt 2 sits at ITS band position (COLD FU2 = 13h from the window
+    # opening), not 13h after the last send. With the old per-send reference a
+    # lead whose FU1 went out 9h late would have waited 9 + 13 = 22h and lost
+    # the touch to the close.
     results.log("followup cadence: attempt 2 sits at its window position, so a "
                 "12h-old lead is due now",
                 _wait < 12.0, got=f"wait={_wait:.1f}h")
@@ -5475,17 +5552,24 @@ try:
                 _LIVE_MIN >= 15 and _QUIET_OUT >= 1.0,
                 got=f"live={_LIVE_MIN}min quiet_after_outbound={_QUIET_OUT}h")
 
-    # The whole schedule is planned against sendable hours, so a lead whose
-    # window tail falls in the quiet hours still gets every touch.
-    _tight = _ClockLead(_at(7, 0, day=23))
+    # A lead whose window tail falls in the quiet hours still gets every touch:
+    # the schedule is not shortened, the DUE MOMENT is pulled back to the last
+    # sendable minute. That is the guarantee that matters - a touch is delivered
+    # inside the sendable span, not merely scheduled inside the window.
+    _tight = _ClockLead(_at(7, 0, day=23), count=3)
     with _frozen(_at(7, 0, day=23)):
         _tight._now = _at(7, 0, day=23)
         _tight_offs = _fu2._followup_offsets(_tight)
-        _tight_sendable = _fu2._sendable_hours(_tight)
-    results.log("sending hours: the schedule fits the SENDABLE span, not just the window",
-                _tight_offs[-1] <= _tight_sendable,
-                expected=f"last offset <= {_tight_sendable:.1f}h of sendable time",
-                got=str([round(o, 1) for o in _tight_offs]))
+        _tight_due = _fu2._scheduled_due_at(_tight)
+        _tight_deadline = _fu2._last_sendable_moment(_tight)
+    results.log("sending hours: the last touch is DELIVERED inside the sendable span",
+                _tight_due is not None and _tight_deadline is not None
+                and _tight_due <= _tight_deadline,
+                expected=f"due <= {_tight_deadline}",
+                got=f"due={_tight_due} offsets={[round(o, 1) for o in _tight_offs]}")
+    results.log("sending hours: a tight window still keeps its whole run",
+                len(_tight_offs) == _max_fu(_tight),
+                got=f"{len(_tight_offs)} offsets, max={_max_fu(_tight)}")
 
     # Delay-flow and parked nudges follow the same window rule and also do 4.
     _dl = _fu2._delay_nudge_offsets(_WindowLead())
@@ -5502,32 +5586,67 @@ try:
                 len(_FuCmd2._PARKED_NUDGE_MESSAGES) >= 4,
                 got=str(len(_FuCmd2._PARKED_NUDGE_MESSAGES)))
 
-    # An ad lead only earns the six-touch cadence while the long window is
-    # genuinely still ahead of us. One who replied late — most of the 72h spent,
-    # a standard 24h left — falls back to the four-touch tier schedule that is
-    # tuned for 24h, rather than cramming six touches into one day.
-    from bot.management.commands.send_followups import (
-        has_extended_window as _has_ext, CTWA_EXTENDED_MIN_HOURS as _EXT_MIN,
-    )
+    # An ad lead who replied late has most of the 72h behind them, so the three
+    # bands no longer fit in real time. There is no separate "extended cadence"
+    # to fall out of any more - the one shape is scaled onto whatever window is
+    # actually left, which is what keeps all four touches deliverable.
     _late_ad = _WindowLead(ctwa=True, hours_ago=2.0, entry_hours_ago=50.0)
-    results.log("ad window: a nearly-spent ad window drops back to the 24h cadence",
-                _has_ext(_late_ad) is False and _max_fu(_late_ad) == 4,
+    _late_offs = _fu2._followup_offsets(_late_ad)
+    results.log("ad window: a nearly-spent ad window keeps four, inside what is left",
+                len(_late_offs) == 4 and _max_fu(_late_ad) == 4 and
+                _late_offs[-1] <= _fu2._messaging_window_hours(_late_ad) - 1.0,
                 got=f"window={_fu2._messaging_window_hours(_late_ad):.1f}h "
-                    f"extended={_has_ext(_late_ad)} touches={_max_fu(_late_ad)}")
-    results.log("ad window: a fresh ad lead is on the extended cadence",
-                _has_ext(_WindowLead(ctwa=True)) is True and _max_fu(_WindowLead(ctwa=True)) == 6)
-    results.log("ad window: an organic lead is never on the extended cadence",
-                _has_ext(_WindowLead()) is False, got=str(_has_ext(_WindowLead())))
-    # Half the ad window left is still worth the extra touches.
-    _mid_ad = _WindowLead(ctwa=True, hours_ago=30.0, entry_hours_ago=60.0)
-    results.log("ad window: 42h of ad window left still earns 6 touches",
-                _has_ext(_mid_ad) is True and _max_fu(_mid_ad) == 6,
-                got=f"window={_fu2._messaging_window_hours(_mid_ad):.1f}h")
-    results.log("ad window: the extended threshold sits above a standard window",
-                _EXT_MIN > 24, got=str(_EXT_MIN))
+                    f"offsets={[round(o, 1) for o in _late_offs]}")
+    # More window = the same four touches, spread further out. Never more of
+    # them, and never the band hours on a window that cannot carry them.
+    results.log("ad window: a longer window spaces the four further out",
+                all(a > b for a, b in zip(_fu2._followup_offsets(_WindowLead(ctwa=True)),
+                                          _fu2._followup_offsets(_WindowLead()))),
+                got=f"ad={[round(o, 1) for o in _fu2._followup_offsets(_WindowLead(ctwa=True))]} "
+                    f"organic={[round(o, 1) for o in _fu2._followup_offsets(_WindowLead())]}")
+    # Even a sliver of window earns the full run - the min-gap rule, not the
+    # schedule, is what stops them going out on top of each other.
+    class _SliverWindow(_WindowLead):
+        @property
+        def messaging_window_closes_at(self):
+            return self.last_inbound_at + _td2(hours=2)
+    _sliver_offs = _fu2._followup_offsets(_SliverWindow())
+    results.log("ad window: even a sliver of window still schedules four touches",
+                len(_sliver_offs) == 4 and all(o < 2 for o in _sliver_offs),
+                got=str([round(o, 2) for o in _sliver_offs]))
+
+    # THE RESET: a reply puts the counter back to zero, so the four touches are
+    # four SINCE THEY LAST SPOKE. A lead who answers every time is never retired.
+    from bot.models import Appointment as _ApptReset
+
+    class _ReplyingLead:
+        followup_count = 3
+        followup_stage = 'week_1'
+        last_followup_sent = _FU_NOW
+
+    _rl = _ReplyingLead()
+    _ApptReset.reset_followup_sequence(_rl)
+    results.log("followup reset: a reply puts the counter back to zero",
+                _rl.followup_count == 0, got=str(_rl.followup_count))
+    results.log("followup reset: the stage says they responded",
+                _rl.followup_stage == 'responded', got=str(_rl.followup_stage))
+    # last_followup_sent is NOT cleared: it is the durable "have we ever chased
+    # this lead" record the webhook reads, and the min-gap guard leans on it.
+    results.log("followup reset: the last-sent timestamp survives the reset",
+                _rl.last_followup_sent == _FU_NOW, got=str(_rl.last_followup_sent))
+    # A lead back at zero is due again, not retired - even one who had already
+    # spent the whole run their window allows.
+    results.log("followup reset: a reset lead is back on attempt 1",
+                _fu2.next_followup_due_at(_WindowLead(count=0))['attempt'] == 1,
+                got=str(_fu2.next_followup_due_at(_WindowLead(count=0))))
+    results.log("followup reset: a spent lead is retired until the reset revives it",
+                _fu2.next_followup_due_at(_WindowLead(count=4)) is None and
+                _fu2.next_followup_due_at(_WindowLead(count=0)) is not None,
+                got=str(_fu2.next_followup_due_at(_WindowLead(count=4))))
+
     # Whatever the shape, consecutive touches never breach the minimum gap.
     for _lbl, _ld in (("fresh ad", _WindowLead(ctwa=True)),
-                      ("mid ad", _mid_ad),
+                      ("mid ad", _WindowLead(ctwa=True, hours_ago=30.0, entry_hours_ago=60.0)),
                       ("late ad", _late_ad),
                       ("organic", _WindowLead())):
         _o = _fu2._followup_offsets(_ld)
@@ -5547,8 +5666,8 @@ try:
         ctwa_entry_at = None
         messaging_window_closes_at = None
     _bare_offs = _fu2._followup_offsets(_BareLead())
-    results.log("followup cadence: no timestamps → assumes a 24h window",
-                len(_bare_offs) >= 4 and _bare_offs[-1] < 24,
+    results.log("followup cadence: no timestamps → assumes a 24h window (4 touches)",
+                len(_bare_offs) == 4 and all(o < 24 for o in _bare_offs),
                 got=str([round(o, 1) for o in _bare_offs]))
     results.log("followup cadence: no reference time → not ready (never sends blind)",
                 _fu2._is_ready_for_followup(_BareLead(), None, force=True)[0] is False,

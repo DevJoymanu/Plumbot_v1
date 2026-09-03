@@ -2,30 +2,47 @@
 #
 # HIGH-CONVERTING FOLLOW-UP SYSTEM
 #
-# EVERY lead gets AT LEAST 4 follow-ups (FOLLOWUP_MIN_COUNT), and they are spread
-# across the lead's own WhatsApp free-form messaging window rather than a fixed
-# hour count. The window is the hard deadline: once it shuts, a free-form send
-# bounces with 131047 and we don't pay for templates, so a touch scheduled past
-# the close is a touch the lead never gets.
+# THE CADENCE (owner rule). Every lead gets FOUR follow-ups, placed in three
+# bands measured from the moment the lead last messaged us:
 #
+#       0-24h  →  2 follow-ups
+#      24-48h  →  1 follow-up
+#      48-72h  →  1 follow-up
+#
+# FOLLOWUP_BAND_OFFSETS holds that shape as absolute hours-from-window-open, one
+# tuple per lead temperature: hotter leads are chased sooner INSIDE each band,
+# never moved into a different one. Because the offsets are absolute, a touch
+# delayed by the nightly contact-window pause never pushes the later ones out,
+# they self-correct.
+#
+# THE RESET. A reply from the lead puts the counter back to zero
+# (Appointment.reset_followup_sequence, called from mark_customer_response), so
+# the four touches are four touches SINCE THEY LAST SPOKE, not four in the
+# lifetime of the lead. Someone who answers every time is never retired; someone
+# who goes quiet gets four and stops.
+#
+# THE WINDOW IS THE HARD DEADLINE. Once the WhatsApp free-form window shuts, a
+# send bounces with 131047 and we don't pay for templates, so a touch scheduled
+# past the close is a touch the lead never gets:
+#
+#   CTWA ad lead  → 72h window (from the ad click), the bands land literally
 #   Standard lead → 24h window (from the lead's last message)
-#   CTWA ad lead  → 72h window (from the ad click)
 #
-# Attempts are placed at fixed FRACTIONS of that window (TIER_WINDOW_FRACTIONS),
-# measured absolutely from the window's start, minus a safety margin at the end.
-# Hotter leads are front-loaded; colder ones get more room to breathe. Because
-# the offsets are absolute, a touch delayed by the nightly contact-window pause
-# never pushes the later ones out past the close — they self-correct.
+# **FOUR TOUCHES FOR EVERY LEAD. The BANDS are what needs the 72h window.**
+# A 24h lead cannot be reached at 33h or 60h at all - free-form sending is dead
+# once their window shuts and we don't pay for templates - so the three-day band
+# placement is simply not theirs to use. They still get four touches; they get
+# them spread across the window they actually have (SHORT_WINDOW_FRACTIONS,
+# positions as a share of the usable span, so a half-spent ad window is handled
+# by the same rule).
 #
-# On a 24h window that works out roughly: FU1 ~2-4h, FU2 ~7-9h, FU3 ~12-14h,
-# FU4 ~17-19h — the old fixed cadence, but now guaranteed to finish inside the
-# window instead of spilling past it.
+#   window carries the full cadence  -> FOLLOWUP_BAND_OFFSETS, at their literal
+#                                       hours (2 / 1 / 1 across three days)
+#   anything shorter                 -> four touches spread over what is left
 #
-# CTWA leads (a tap on a Facebook/Instagram click-to-WhatsApp ad) open a 72h
-# window, so they get SIX touches on their own hand-tuned offsets
-# (CTWA_FOLLOWUP_OFFSETS: 4h, 8h, 20h, 32h, 48h, 66h) — three on day one while
-# ad intent is hottest, then day two, then a last call on day three. Those are
-# scaled down only if the real window turns out shorter than 72h.
+# Either way it is four, and max_followups_for is len(followup_offsets_for(lead))
+# so the cron's retirement, the UI chip, the dashboard due-list and the LLM
+# prompt read the same number off the same schedule.
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -57,17 +74,11 @@ CONTACT_WINDOWS = [
 ]
 
 # ─── How many follow-ups ──────────────────────────────────────────────────────
-# Never fewer than four attempts, whatever a per-status override says. Three
-# touches leave conversions on the table, and the old fixed cadence could push
-# the fourth past the messaging window, silently retiring leads on three.
+# Four touches per run, for every lead. What a lead's window changes is where
+# those four SIT (see followup_offsets_for), never how many there are. The delay
+# and parked nudge loops, which have their own fraction lists, use it as their
+# target count too.
 FOLLOWUP_MIN_COUNT = 4
-
-MAX_FOLLOWUPS_PER_STATUS = {
-    LeadStatus.VERY_HOT: 4,
-    LeadStatus.HOT:      4,
-    LeadStatus.WARM:     4,
-    LeadStatus.COLD:     4,
-}
 
 
 def followup_window_start(lead):
@@ -104,36 +115,80 @@ def messaging_window_hours(lead) -> float:
     return hours if hours > 1 else default
 
 
-def has_extended_window(lead) -> bool:
-    """True when the lead's ad window is genuinely still long — the condition
-    for the six-touch ad cadence. An ad lead who replied late can have most of
-    the 72h behind them; once what's left is no bigger than a standard window
-    there is nothing extra to use, so they fall back to the four-touch tier
-    schedule that's tuned for 24h."""
-    return is_ctwa_lead(lead) and messaging_window_hours(lead) >= CTWA_EXTENDED_MIN_HOURS
+def usable_window_hours(lead) -> float:
+    """The span a schedule may occupy: the lead's messaging window less the
+    safety margin, floored at half the window so a freak value can't collapse
+    it to nothing."""
+    window_hours = messaging_window_hours(lead)
+    return max(window_hours - FOLLOWUP_WINDOW_MARGIN_HOURS, window_hours * 0.5)
+
+
+def followup_offsets_for(lead):
+    """The four touches this lead gets, as absolute hours from the moment their
+    messaging window opened (their last message to us).
+
+    ALWAYS FOUR. What the window changes is WHERE they sit:
+
+        72h of window  -> FOLLOWUP_BAND_OFFSETS, at their literal hours: 2
+                          touches on day one, 1 on day two, 1 on day three
+        anything less  -> SHORT_WINDOW_FRACTIONS, four touches spread across
+                          the span the lead actually has
+
+    The band placement is not something a 24h lead can be given: a touch written
+    for 33h or 60h could only ever bounce with 131047, since free-form sending
+    is dead once their window shuts and we don't pay for templates. Nor is it
+    something to squeeze - scaling the three-day shape into one day is just four
+    messages in a day wearing the cadence's clothes. So a short window gets its
+    own placement, tuned for a single day, and keeps the full four attempts.
+
+    Fractions (rather than a second hour table) mean the same branch covers
+    everything in between: an ad lead who replied late, with 40h of window left,
+    gets four touches spread across those 40 hours.
+    """
+    tier = getattr(lead, 'lead_status', None)
+    bands = FOLLOWUP_BAND_OFFSETS.get(tier, FOLLOWUP_BAND_OFFSETS[LeadStatus.COLD])
+    usable = usable_window_hours(lead)
+    if bands[-1] <= usable:
+        return bands
+    fractions = SHORT_WINDOW_FRACTIONS.get(tier, SHORT_WINDOW_FRACTIONS[LeadStatus.COLD])
+    return tuple(f * usable for f in fractions)
 
 
 def max_followups_for(lead) -> int:
-    """Attempts this lead gets — the per-status setting, floored at four.
+    """Attempts this lead gets before the run is retired: four, for everybody.
 
-    A CTWA lead still sitting on a long window gets one touch per offset in
-    CTWA_FOLLOWUP_OFFSETS instead: 72h is three times the room, so four touches
-    would leave two thirds of it unused.
+    Read off the schedule rather than declared, so the count and the timing can
+    never disagree - whichever placement a lead's window earns them, it is four
+    touches. The counter resets on every reply (reset_followup_sequence), so a
+    lead who is actually talking to us keeps earning another run.
     """
-    if has_extended_window(lead):
-        return max(len(CTWA_FOLLOWUP_OFFSETS), FOLLOWUP_MIN_COUNT)
-    configured = MAX_FOLLOWUPS_PER_STATUS.get(
-        getattr(lead, 'lead_status', None), FOLLOWUP_MIN_COUNT
-    )
-    return max(int(configured or 0), FOLLOWUP_MIN_COUNT)
+    return len(followup_offsets_for(lead))
 
 
-# ─── Spacing: fractions of the lead's own messaging window ────────────────────
-# Cumulative positions, measured absolutely from the moment the window opened
-# (the lead's last message). Hotter = front-loaded; colder = more breathing room.
-# The last fraction stays well under 1.0 so the final touch clears the close even
-# after jitter and a contact-window roll.
-TIER_WINDOW_FRACTIONS = {
+# ─── Spacing: the 2 / 1 / 1 cadence, in hours from the window opening ─────
+# Absolute positions, measured from the moment the lead last messaged us. Every
+# tuple obeys the same band contract (two touches inside the first day, one on
+# the second, one on the third) and temperature only moves a touch WITHIN its
+# band: hotter is chased sooner, colder gets more room to breathe.
+#
+# FOLLOWUP_BANDS is that contract in data, so a refactor that quietly drops a
+# touch out of its day fails the test instead of the lead.
+FOLLOWUP_BANDS = ((0, 24, 2), (24, 48, 1), (48, 72, 1))
+
+FOLLOWUP_BAND_OFFSETS = {
+    LeadStatus.VERY_HOT: (4.0, 10.0, 27.0, 51.0),
+    LeadStatus.HOT:      (4.5, 11.0, 29.0, 54.0),
+    LeadStatus.WARM:     (5.0, 12.0, 31.0, 57.0),
+    LeadStatus.COLD:     (6.0, 13.0, 33.0, 60.0),
+}
+
+# The same four touches for a lead whose window cannot carry the three-day
+# bands - a standard 24h lead, or an ad lead who replied with most of their 72h
+# already spent. Positions as a SHARE of the usable span, so one table covers
+# every window length; the last stays well under 1.0 so the final touch clears
+# the close even after jitter and a contact-window roll. On a 24h window this is
+# roughly COLD 3.6 / 8.6 / 13.5 / 18.9h.
+SHORT_WINDOW_FRACTIONS = {
     LeadStatus.VERY_HOT: (0.08, 0.25, 0.45, 0.70),
     LeadStatus.HOT:      (0.10, 0.30, 0.52, 0.76),
     LeadStatus.WARM:     (0.13, 0.34, 0.56, 0.80),
@@ -166,34 +221,16 @@ LAST_CALL_GRACE_MINUTES = 30
 # worth a tighter gap than one with a whole day of window ahead of it.
 LAST_CALL_MIN_GAP_HOURS = 0.75
 
-# Below this there isn't enough sendable time left to plan a schedule around —
-# fall back to the plain window span and let the last-call rule do what it can.
-MIN_SENDABLE_SPAN_HOURS = 4.0
-
 # Assumed window length when the lead has no usable inbound timestamp yet.
 DEFAULT_WINDOW_HOURS = 24.0
 
-# ─── CTWA (Click-to-WhatsApp / Facebook ad) cadence ───────────────────────────
+# ─── CTWA (Click-to-WhatsApp / Facebook ad) window ────────────────────────
 # A lead who taps a Facebook or Instagram "Send message" ad opens a 72-hour
-# free-form window instead of the standard 24 — three times the room, so they get
-# SIX touches instead of four, placed to work all three days. The old four-touch
-# schedule stopped at 48h and left the last day of the window (the final chance
-# to reach them before it shuts for good) completely unused.
-#
-# Absolute offsets from the lead's last response, so each touch lands at a fixed
-# point in the window no matter when the earlier ones actually went out:
-#   FU1 →  4h, FU2 →  8h, FU3 → 20h   (day 1: strike while ad intent is hot)
-#   FU4 → 32h, FU5 → 48h              (day 2)
-#   FU6 → 66h                         (day 3: last call before the window shuts)
-# _followup_offsets scales these down if the lead's real window is shorter than
-# 72h (their last message can leave less than the full span ahead of us).
-CTWA_FOLLOWUP_OFFSETS = (4, 8, 20, 32, 48, 66)
-
-# The nominal ad window, and the shortest remaining window that still earns the
-# extended six-touch cadence. Below this there is no extra room to use, so an ad
-# lead falls back to the standard four touches over what's left.
+# free-form window instead of the standard 24. That is the ONLY thing the ad
+# entry changes here: it is what lets the 2 / 1 / 1 cadence land at its written
+# hours (day one, day two, day three) instead of being scaled into a single day.
+# The touch COUNT is the same four for everyone.
 CTWA_WINDOW_HOURS = 72.0
-CTWA_EXTENDED_MIN_HOURS = 36.0
 
 # Hours between the first delay re-engagement email (sent on the agreed
 # follow-up date) and the second/final "last check" email. Keep this on the
@@ -1260,47 +1297,10 @@ class Command(BaseCommand):
     def _followup_offsets(self, lead):
         """Absolute hours-from-window-open for each attempt this lead will get.
 
-        The whole schedule is derived from the lead's own messaging window, minus
-        a safety margin, so the last touch always lands while we can still send.
+        Thin wrapper: the resolver is module-level so the cron, the UI chip and
+        max_followups_for can never drift apart on a lead's schedule.
         """
-        count = max_followups_for(lead)
-        window_hours = self._messaging_window_hours(lead)
-        usable = max(window_hours - FOLLOWUP_WINDOW_MARGIN_HOURS, window_hours * 0.5)
-
-        # Spread over the hours we can actually SEND in, not just the hours the
-        # window is open. If the tail of the window falls in the nightly quiet
-        # hours, the whole schedule tightens to finish before we go quiet —
-        # otherwise the last touches pile up against the deadline and one of
-        # them ends up stranded until the lead writes again.
-        sendable = self._sendable_hours(lead)
-        if sendable is not None and MIN_SENDABLE_SPAN_HOURS <= sendable < usable:
-            usable = sendable
-
-        if has_extended_window(lead):
-            # Ad leads keep their hand-tuned band placement across the 72h ad
-            # window (three touches day one, two day two, a last call day
-            # three), scaled down only if the real window is shorter.
-            offsets = list(CTWA_FOLLOWUP_OFFSETS)
-            while len(offsets) < count:               # extra attempts, if ever
-                offsets.append(offsets[-1] + 12)
-            span = offsets[len(offsets) - 1]
-            if span > usable:
-                scale = usable / span
-                offsets = [o * scale for o in offsets]
-            return tuple(offsets[:count])
-
-        fractions = list(
-            TIER_WINDOW_FRACTIONS.get(
-                getattr(lead, 'lead_status', None),
-                TIER_WINDOW_FRACTIONS[LeadStatus.COLD],
-            )
-        )
-        # More attempts than the shape defines → keep spreading evenly to 0.95.
-        while len(fractions) < count:
-            remaining = count - len(fractions) + 1
-            step = (0.95 - fractions[-1]) / remaining
-            fractions.append(fractions[-1] + step)
-        return tuple(f * usable for f in fractions[:count])
+        return followup_offsets_for(lead)
 
     def _followup_wait_and_reference(self, lead):
         """Shared timing core — returns (attempt_index, wait_hours, reference) for
@@ -1366,17 +1366,6 @@ class Command(BaseCommand):
             if due < floor:
                 due = self._next_window_open(floor)
         return due
-
-    def _sendable_hours(self, lead):
-        """Hours between the lead's window opening and the last moment we can
-        still send them something — the messaging window intersected with the
-        daily contact hours. None when either end is unknown."""
-        start = followup_window_start(lead)
-        deadline = self._last_sendable_moment(lead)
-        if start is None or deadline is None:
-            return None
-        hours = (deadline - start).total_seconds() / 3600
-        return hours if hours > 0 else None
 
     def _is_last_call(self, lead, now=None):
         """True when we are in the final stretch of sendable time before this
@@ -1668,7 +1657,7 @@ LEAD CONTEXT:
 - Interest: {service}
 - Area: {area or 'not yet shared'}
 - Last heard from them: {time_ref}
-- This is follow-up attempt #{attempt} of {max_followups_for(lead)} (all within {'72 hours — they came from a Facebook ad' if has_extended_window(lead) else '24 hours'})
+- This is follow-up attempt #{attempt} of {max_followups_for(lead)} (spread across {'three days — they came from a Facebook ad, so the window is 72 hours' if is_ctwa_lead(lead) else 'the 24 hours since they last messaged'})
 
 ALREADY COLLECTED (do NOT ask for any of these again):
 {already_collected}
