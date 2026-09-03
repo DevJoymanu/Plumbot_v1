@@ -455,63 +455,55 @@ class TenantConfig:
     def visit_price_note(self, is_shona: bool = False,
                          opening: bool = False,
                          job_noun: str = None) -> str:
-        """What the visit costs, said once, at the moment we ask for a day.
+        """What the visit costs, said once, in its own turn before we ask for
+        a day.
 
-        Deliberately NOT the opener. Leading with a fee prices the job before
-        the lead has any sense of what they are buying; the same sentence at
-        the availability ask lands as a straight answer to the question they
-        are about to ask anyway, and it is the last thing standing between
-        them and a slot.
+        Deliberately NOT the opener, and not bolted to the area question
+        either. A fee quoted before the lead knows what they are buying prices
+        the job; the same sentence once we know where they are, and just
+        before we ask for a day, answers the question they are about to ask
+        anyway and clears the last thing between them and a slot.
 
-        The note says what the fee BUYS, not just what it is: the visit, a
-        full diagnosis, and (where the tenant waives it) that it comes off the
-        total. A bare figure is a cost; the same figure with what it covers is
-        a reason to say yes. It carries its OWN close, so it replaces the
-        availability question rather than stacking a second one in front of it
-        (see ensure_visit_price_note).
-
-        `job_noun` is the lead's OWN service type, so the waiver clause names
-        the thing they actually asked for: "if you go ahead with the bathroom
-        renovation", "with the geyser repair". It degrades to "the work" while
-        the service is still unknown, which is the only honest thing to say
-        before they have told us. `opening` is for when the note leads the
-        message with nothing in front of it, which is the only time it needs a
-        warm-up word. Three offers, three notes, and never another tenant's.
+        Plain words on purpose. "Full diagnosis" is trade language, and the
+        waiver read as one long clause hanging off the fee; split into its own
+        sentence it is an offer rather than a caveat. `job_noun` is the lead's
+        OWN service type, so the waiver names the thing they actually asked
+        for, and degrades to "work" while the service is still unknown.
+        `opening` adds the warm-up word only when the note leads the message.
+        Three offers, three notes, and never another tenant's.
         """
         fee = self.consultation_fee
+
         if is_shona:
             lead_in = 'Zvakanaka, ' if opening else ''
             job = job_noun if job_noun in ('kugadzirisa', 'basa') else 'basa'
             ack = 'tinogona kuuya kuzoona nzvimbo nekukurumidza.'
-            close = 'Ndokubhukira zuva nenguva here?'
+            close = 'Ndokubhukira nguva here?'
             if not fee:
-                middle = ('Kuuya kuzoona kumahara, kunosanganisira kutarisa '
-                          'kwese nekuongorora.')
+                middle = 'Kuuya kwedu kumahara, uye tinoongorora zvese zvakanaka.'
             else:
                 amount = f"{self.currency}{fee}"
-                middle = (f'Pane muripo we{amount} wekuuya kuzoona, '
-                          f'unosanganisira kutarisa kwese nekuongorora')
-                middle += (f', uye unobviswa pamutengo wese kana mukaenderera '
-                           f'mberi ne{job}.' if self.visit_fee_waived_on_job()
-                           else '.')
+                middle = (f'Pane muripo we{amount} wekuuya, uye tinoongorora '
+                          f'zvese zvakanaka.')
+                if self.visit_fee_waived_on_job():
+                    middle += (f'\nKana mukasarudza kuenderera mberi ne{job}, '
+                               f'tinobvisa mari iyoyo pamutengo wekupedzisira.')
             body = f'{lead_in}{ack} {middle} {close}'
-            return body[:1].upper() + body[1:] if not opening else body
+            return body if opening else body[:1].upper() + body[1:]
 
         lead_in = 'Great, ' if opening else ''
         job = job_noun or 'work'
-        # Lower-case, because the warm-up word takes the capital when there is
-        # one: "Great, we can come..." not "Great, We can come...". Mirrors
-        # the Shona branch above.
         ack = 'we can come for a quick site visit.'
-        close = 'Want me to lock in a date and time?'
+        close = 'Want me to book you a time?'
         if not fee:
-            middle = 'The call-out is free, it covers the visit and full diagnosis.'
+            middle = "The call-out is free, and we'll do a full check for you."
         else:
             amount = f"{self.currency}{fee}"
             middle = (f"There's a {amount} call-out fee which covers the visit "
-                      f"and full diagnosis")
-            middle += (f", and it comes off the total if you go ahead with the "
-                       f"{job}." if self.visit_fee_waived_on_job() else '.')
+                      f"and we'll do a full check for you.")
+            if self.visit_fee_waived_on_job():
+                middle += (f"\nIf you decide to go ahead with the {job}, we'll "
+                           f"take that cost off the final price.")
         body = f'{lead_in}{ack} {middle} {close}'
         return body if opening else body[:1].upper() + body[1:]
 

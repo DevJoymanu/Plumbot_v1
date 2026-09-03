@@ -460,7 +460,10 @@ _VISIT_WORD_RE = re.compile(
 # silently broken both the once-only check AND the no-guard-rails that read
 # it, in a way no test naming the old string would catch.
 _LOCK_IN_CLOSE_RE = re.compile(
+    # "lock in a time", "lock in a date and time"
     r"lock\s+in\s+a\s+(?:date\s*(?:and|&|/)\s*)?(?:time|date)"
+    # "book you a time", "book you in", "book a time"
+    r"|book\s+(?:you\s+)?(?:a\s+)?(?:time|date|slot|in)\b"
     r"|ndokubhukira\s+(?:zuva\s*(?:ne)?)?nguva"
     r"|ndokubhukira\s+zuva",
     re.IGNORECASE,

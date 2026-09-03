@@ -8370,7 +8370,7 @@ class _CfgFee:
                f"and full diagnosis.")
         lead_in = 'Great, ' if opening else ''
         ack = 'we can come for a quick site visit.'
-        body = f'{lead_in}{ack} {mid} Want me to lock in a date and time?'
+        body = f'{lead_in}{ack} {mid} Want me to book you a time?'
         return body if opening else body[:1].upper() + body[1:]
 
 
@@ -8451,7 +8451,7 @@ try:
         # The note carries its own close, so it REPLACES the question it was
         # triggered by rather than stacking a second one after it.
         _c and _o.count('US$20') == 1
-        and _o.endswith('Want me to lock in a date and time?')
+        and _o.endswith('Want me to book you a time?')
         and 'What works better' not in _o,
         got=repr(_o),
     )
@@ -8746,7 +8746,7 @@ class _CfgNote:
             mid = (f"There's a US${self.fee} call-out fee which covers the visit "
                    f"and full diagnosis.")
         ack = 'we can come for a quick site visit.'
-        body = f'{lead_in}{ack} {mid} Want me to lock in a date and time?'
+        body = f'{lead_in}{ack} {mid} Want me to book you a time?'
         return body if opening else body[:1].upper() + body[1:]
 
     def visit_cost_sentence(self, is_shona=False):
@@ -8790,7 +8790,7 @@ try:
             # said before the question is kept.
             _added and _want in _out and len(_parts) == 2
             and _parts[0].startswith('Borrowdale')
-            and _parts[1].endswith('Want me to lock in a date and time?')
+            and _parts[1].endswith('Want me to book you a time?')
             and 'What works better' not in _out,
             got=repr(_out),
         )
@@ -8809,7 +8809,7 @@ try:
         {'role': 'assistant', 'content': "Borrowdale is well within our area.\n\n"
          "We can come for a quick site visit. There's a US$20 call-out fee "
          "which covers the visit and full diagnosis, and it comes off the "
-         "total if you go ahead with the work. Want me to lock in a date and time?"},
+         "total if you go ahead with the work. Want me to book you a time?"},
     ])
     _next_ask = 'Saturday it is. Morning or afternoon, which suits you better?'
     results.log(
@@ -8880,7 +8880,7 @@ try:
     _sent = ("Avondale is well within our area.\n\nWe can come for a quick site "
              "visit. There's a US$10 call-out fee which covers the visit and full "
              "diagnosis, and it comes off the total if you go ahead with the "
-             "geyser repair. Want me to lock in a date and time?")
+             "geyser repair. Want me to book you a time?")
     _after = _ty.SimpleNamespace(
         tenant=None, project_type='geyser_repair', project_description='',
         conversation_history=[{'role': 'assistant', 'content': _sent}])
@@ -8900,7 +8900,7 @@ finally:
 from bot.views.plumbot.response_mixin import asked_lock_in_close as _alc
 
 for _close in ('Want me to lock in a time?',
-               'Want me to lock in a date and time?',
+               'Want me to book you a time?',
                'want me to lock in a date & time?',
                'Ndokubhukira nguva here?',
                'Ndokubhukira zuva nenguva here?'):
@@ -8997,9 +8997,9 @@ class _FakeLockIn:
 _LOCK_NOTE = ("Avondale is well within our area.\n\nWe can come for a quick "
               "site visit. There's a US$10 call-out fee which covers the visit "
               "and full diagnosis, and it comes off the total if you go ahead "
-              "with the geyser repair. Want me to lock in a date and time?")
+              "with the geyser repair. Want me to book you a time?")
 _FREE_NOTE = ("We can come for a quick site visit. The call-out is free, it "
-              "covers the visit and full diagnosis. Want me to lock in a date and time?")
+              "covers the visit and full diagnosis. Want me to book you a time?")
 
 _real_gc3 = _tcmod.get_config
 try:
@@ -9011,7 +9011,7 @@ try:
         _r = _FakeLockIn(_LOCK_NOTE)._handle_no_to_lock_in(_no)
         results.log(
             f"lock-in no: answered, never re-asked ({_no})",
-            bool(_r) and 'lock in a date and time' not in _r.lower()
+            bool(_r) and 'book you a time' not in _r.lower()
             and 'US$10' not in _r and _r.startswith('No problem at all.'),
             got=repr(_r),
         )
@@ -9617,31 +9617,32 @@ class _RealNoteCfg:
 results.log(
     "visit price note (real): no fee says the call-out is free and what it covers",
     _RealNoteCfg().visit_price_note()
-    == ('We can come for a quick site visit. The call-out is free, it covers '
-        'the visit and full diagnosis. Want me to lock in a date and time?'),
+    == ("We can come for a quick site visit. The call-out is free, and we'll "
+        "do a full check for you. Want me to book you a time?"),
     got=repr(_RealNoteCfg().visit_price_note()),
 )
 results.log(
     "visit price note (real): a flat fee says the figure and what it buys",
     _RealNoteCfg(10).visit_price_note()
     == ("We can come for a quick site visit. There's a US$10 call-out fee "
-        "which covers the visit and full diagnosis. Want me to lock in a date and time?"),
+        "which covers the visit and we'll do a full check for you. "
+        "Want me to book you a time?"),
     got=repr(_RealNoteCfg(10).visit_price_note()),
 )
 results.log(
     "visit price note (real): a waived fee says it comes off the total",
     _RealNoteCfg(10, True).visit_price_note(job_noun='bathroom renovation')
     == ("We can come for a quick site visit. There's a US$10 call-out fee "
-        "which covers the visit and full diagnosis, and it comes off the "
-        "total if you go ahead with the bathroom renovation. Want me to "
-        "lock in a date and time?"),
+        "which covers the visit and we'll do a full check for you." + chr(10) +
+        "If you decide to go ahead with the bathroom renovation, we'll take "
+        "that cost off the final price. Want me to book you a time?"),
     got=repr(_RealNoteCfg(10, True).visit_price_note(job_noun='bathroom renovation')),
-    expected="comes off the total if you go ahead with the work",
+    expected="we'll take that cost off the final price",
 )
 results.log(
     "visit price note (real): the waiver is spelled out, and in Shona too",
-    'comes off the total' in _RealNoteCfg(10, True).visit_price_note()
-    and 'unobviswa pamutengo' in _RealNoteCfg(10, True).visit_price_note(is_shona=True),
+    'take that cost off the final price' in _RealNoteCfg(10, True).visit_price_note()
+    and 'tinobvisa mari iyoyo' in _RealNoteCfg(10, True).visit_price_note(is_shona=True),
     got=repr(_RealNoteCfg(10, True).visit_price_note(is_shona=True)),
 )
 # Leading the message it needs a warm-up word; mid-message it must not have
@@ -9669,8 +9670,8 @@ results.log(
 results.log(
     "visit price note (real): the waiver flag alone changes nothing",
     _RealNoteCfg(None, True).visit_price_note()
-    == ('We can come for a quick site visit. The call-out is free, it covers '
-        'the visit and full diagnosis. Want me to lock in a date and time?'),
+    == ("We can come for a quick site visit. The call-out is free, and we'll "
+        "do a full check for you. Want me to book you a time?"),
     got=repr(_RealNoteCfg(None, True).visit_price_note()),
 )
 # The full sentence (given when a lead ASKS) stays lowercase prose - caps mid
