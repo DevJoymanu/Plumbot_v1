@@ -20,6 +20,7 @@ from django.views.decorators.http import require_POST
 from django.utils import timezone
 
 from ..middleware import TENANT_SESSION_KEY
+from .. import branding
 from ..models import Tenant, TenantIntake, TenantPriceItem, TenantProfile, TenantSetting
 from ..platform_flags import (
     TIMER_FLAGS, TENANT_FLAGS, timer_flag_rows, email_flag_rows,
@@ -464,6 +465,7 @@ def intake_form(request, token):
                 'existing_json': _json.dumps(intake.data or {}),
                 'price_parts_json': _json.dumps(_intake_price_parts()),
                 'error': 'Please provide names of items for the image.',
+                **branding.branding_context(intake.tenant),
             })
         intake.data = data
         intake.status = 'submitted'
@@ -477,6 +479,8 @@ def intake_form(request, token):
         'profile_fields': INTAKE_PROFILE_FIELDS,
         'existing_json': _json.dumps(intake.data or {}),
         'price_parts_json': _json.dumps(_intake_price_parts()),
+        # The owner filling this in should see their own brand on it.
+        **branding.branding_context(intake.tenant),
     })
 
 
@@ -1013,6 +1017,24 @@ def platform_tenant_config_edit(request, slug):
                if (row['family'], row['variant']) not in have] or None
 
     if request.method == 'POST':
+        # The operator can set or clear any client's logo from here, which is
+        # the "admin/Jones on behalf of a client" half of the requirement. Its
+        # own branch, before the main form: it is a multipart file and a
+        # rejected upload must say so rather than falling through to a success
+        # message about the whole config.
+        if 'logo_submit' in request.POST:
+            if request.POST.get('remove_logo'):
+                branding.clear_logo(tenant)
+                messages.success(request, f'Logo removed for {tenant.name}.')
+            else:
+                try:
+                    branding.save_logo(tenant, request.FILES.get('logo'))
+                except branding.LogoRejected as exc:
+                    messages.error(request, str(exc))
+                else:
+                    messages.success(request, f'Logo updated for {tenant.name}.')
+            return redirect('platform_tenant_config_edit', slug=tenant.slug)
+
         form = TenantProfileForm(request.POST, instance=profile)
         formset = _price_formset(0)(request.POST, queryset=prices_qs)
         if form.is_valid() and formset.is_valid():
@@ -1064,6 +1086,9 @@ def platform_tenant_config_edit(request, slug):
         'currency': (profile.currency or 'US$'),
         'channel': tenant.whatsapp_channels.order_by('pk').first(),
         'active_nav': 'platform',
+        # THIS tenant's mark, not the operator's own workspace's.
+        **branding.branding_context(tenant),
+        'logo_help_text': branding.LOGO_HELP_TEXT,
     }
     ctx.update(_profile_structured_ctx(profile))
     ctx.update(_email_identity_ctx(tenant))

@@ -28,6 +28,7 @@ import tempfile
 import base64
 import logging
 
+from .. import branding
 from ..models import (
     Appointment, Quotation, QuotationItem,
     QuotationTemplate, QuotationTemplateItem, ConversationMessage,
@@ -504,6 +505,10 @@ class DashboardView(TemplateView):
         context.update({
             'active_nav': 'dashboard',
             **workspace,
+            # This workspace's own mark in the top bar. One reader
+            # (bot/branding) for all four surfaces, so the fallback here is the
+            # same one the quote and the email use.
+            **branding.branding_context(getattr(self.request, 'tenant', None)),
             'calendar_status': 'Connected' if hasattr(settings, 'GOOGLE_CALENDAR_CREDENTIALS') else 'Not configured',
         })
 

@@ -1,18 +1,90 @@
 {% extends "bot/layouts/base.html" %}
 
-{% block title %}Quotations{% endblock %}
+{% comment %}
+"My quotes" — every quote this business has raised, and only theirs.
+
+Scoping is done in QuotationsListView.get_queryset, never here: a template-level
+filter would be one `{% if %}` away from leaking another client's figures, and
+the view previously had no scoping at all. The one role that sees across clients
+is the platform operator, and the page says so when they do.
+
+Wide table on a phone: `.pbq-table--stack` turns each row into a card below
+768px, which is why EVERY <td> carries a data-label (see CLAUDE.md, the mobile
+contract pinned by QuoteMobileLayoutTests).
+{% endcomment %}
+
+{% block title %}My Quotes{% endblock %}
 
 {% block extra_css %}
 {% include "bot/includes/quote_responsive_css.html" %}
 <style>
-    .ql-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .ql-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 
     .ql-name { font-weight: 600; color: var(--color-text); }
+    .ql-number {
+        font-family: var(--font-label);
+        font-size: 12px;
+        letter-spacing: 0.03em;
+        color: var(--color-muted);
+        display: block;
+    }
 
     .ql-total { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+    .ql-channel { font-size: 13px; color: var(--color-muted); white-space: nowrap; }
+    .ql-channel i { margin-right: 5px; opacity: .75; }
+    .ql-channel--none { opacity: .55; }
+
+    /* Search + status filter. One row on a desktop, stacked on a phone. */
+    .ql-filters {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 18px;
+    }
+
+    .ql-search {
+        flex: 1 1 260px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--color-surface-low, #eff4ff);
+        border-radius: 999px;
+        padding: 0 16px;
+        min-height: 44px;
+    }
+
+    .ql-search i { color: var(--color-muted); }
+
+    .ql-search input {
+        border: none;
+        background: none;
+        outline: none;
+        width: 100%;
+        min-height: 44px;
+        font-size: 15px;
+        color: var(--color-text);
+    }
+
+    .ql-filters select {
+        min-height: 44px;
+        border-radius: 999px;
+        border: 1px solid rgba(0, 101, 145, 0.12);
+        background: #fff;
+        padding: 0 16px;
+        font-size: 14px;
+        color: var(--color-text);
+    }
+
+    .ql-scope-note {
+        font-size: 13px;
+        color: var(--color-muted);
+        margin: 0 0 14px;
+    }
+
     @media (max-width: 767px) {
-        /* The row is a card; its actions become two equal tap targets. */
+        /* The row is a card; its actions become equal tap targets. */
         .pbq-table--stack td.ql-cell-actions { padding-top: 10px; }
 
         .ql-actions {
@@ -31,17 +103,42 @@
 
     <div class="pbq-head">
         <div>
-            <h1 class="pbq-head__title">Quotations</h1>
+            <h1 class="pbq-head__title">My Quotes</h1>
             <p class="pbq-head__sub">
-                {% if page_obj %}{{ page_obj.paginator.count }} quotation{{ page_obj.paginator.count|pluralize }} in total{% else %}Every quote you have drafted or sent{% endif %}
+                {% if page_obj %}{{ page_obj.paginator.count }} quote{{ page_obj.paginator.count|pluralize }}{% if is_filtered %} matching{% else %} in total{% endif %}{% else %}Every quote you have drafted or sent{% endif %}
             </p>
         </div>
         <div class="pbq-head__actions">
             <a href="{% url 'standalone_quotation' %}" class="btn btn-primary">
-                <i class="fas fa-plus"></i> New Quotation
+                <i class="fas fa-plus"></i> New Quote
             </a>
         </div>
     </div>
+
+    {% if sees_all_tenants %}
+    <p class="ql-scope-note">
+        <i class="fas fa-globe"></i>
+        Platform view: quotes across every client. Clients only ever see their own.
+    </p>
+    {% endif %}
+
+    <form method="get" class="ql-filters">
+        <label class="ql-search" for="ql-q">
+            <i class="fas fa-search"></i>
+            <input type="search" id="ql-q" name="q" value="{{ search_query }}"
+                   placeholder="Search lead name or quote number" autocomplete="off">
+        </label>
+        <select name="status" onchange="this.form.submit()" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-secondary">Search</button>
+        {% if is_filtered %}
+        <a href="{% url 'quotations_list' %}" class="btn btn-outline-primary">Clear</a>
+        {% endif %}
+    </form>
 
     <div class="pbq-card">
         {% if quotations %}
@@ -49,30 +146,71 @@
             <table class="pbq-table pbq-table--stack">
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Status</th>
-                        <th class="pbq-num">Total</th>
+                        <th>Lead</th>
                         <th>Created</th>
+                        <th class="pbq-num">Amount</th>
+                        <th>Status</th>
+                        <th>Sent via</th>
                         <th style="text-align: right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for q in quotations %}
                     <tr>
-                        <td class="pbq-cell-full ql-name" data-label="">{{ q.get_display_name }}</td>
+                        <td class="pbq-cell-full ql-name" data-label="">
+                            {{ q.lead_name }}
+                            <span class="ql-number">{{ q.quotation_number }}{% if sees_all_tenants %} · {{ q.tenant.name }}{% endif %}</span>
+                        </td>
+                        <td data-label="Created">{{ q.created_at|date:"j M Y, H:i" }}</td>
+                        <td class="pbq-num ql-total" data-label="Amount">US${{ q.total_amount }}</td>
                         <td data-label="Status">
                             <span class="pbq-status pbq-status--{{ q.status }}">{{ q.get_status_display }}</span>
                         </td>
-                        <td class="pbq-num ql-total" data-label="Total">US${{ q.total_amount }}</td>
-                        <td data-label="Created">{{ q.created_at|date:"M d, Y H:i" }}</td>
+                        <td data-label="Sent via">
+                            {% with channels=q.sent_channels %}
+                            {% if channels %}
+                            <span class="ql-channel">
+                                {% if q.sent_via_email %}<i class="fas fa-envelope"></i>{% endif %}{% if q.sent_via_whatsapp %}<i class="fab fa-whatsapp"></i>{% endif %}{{ q.sent_channel_label }}
+                            </span>
+                            {% else %}
+                            <span class="ql-channel ql-channel--none">Not sent</span>
+                            {% endif %}
+                            {% endwith %}
+                        </td>
                         <td class="pbq-cell-full ql-cell-actions" data-label="">
                             <div class="ql-actions">
                                 <a href="{% url 'view_quotation' q.pk %}" class="btn btn-outline-primary">
                                     <i class="fas fa-eye"></i> View
                                 </a>
-                                <a href="{% url 'edit_quotation' q.pk %}" class="btn btn-secondary">
-                                    <i class="fas fa-edit"></i> Edit
+                                <a href="{% url 'download_quotation_pdf' q.pk %}" class="btn btn-secondary">
+                                    <i class="fas fa-file-pdf"></i> PDF
                                 </a>
+                                {% comment %}
+                                Resend is two buttons, not one: the channels are
+                                independent everywhere else in this system, and
+                                collapsing them here would be the only place
+                                that decides for the plumber. Email is disabled
+                                rather than hidden when there is no address, so
+                                the reason is visible.
+                                {% endcomment %}
+                                <form method="post" action="{% url 'send_quotation_email' q.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-secondary"
+                                            {% if not q.appointment.customer_email %}disabled
+                                            title="No email address on file for this lead"{% endif %}>
+                                        <i class="fas fa-envelope"></i> {% if q.sent_via_email %}Resend{% else %}Email{% endif %}
+                                    </button>
+                                </form>
+                                <a href="{% url 'send_quotation' q.pk %}" class="btn btn-secondary">
+                                    <i class="fab fa-whatsapp"></i> {% if q.sent_via_whatsapp %}Resend{% else %}Send{% endif %}
+                                </a>
+                                <form method="post" action="{% url 'duplicate_quotation' q.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-secondary"
+                                            onclick="return confirm('Duplicate this quote?');">
+                                        <i class="fas fa-copy"></i> Duplicate
+                                    </button>
+                                </form>
                             </div>
                         </td>
                     </tr>
@@ -83,8 +221,12 @@
 
         {% if is_paginated %}
         <div class="pagination pbq-no-print">
+            {% comment %}
+            The search and status filter have to survive paging, or page 2 of a
+            search silently becomes page 2 of everything.
+            {% endcomment %}
             {% if page_obj.has_previous %}
-            <a class="page-link" href="?page={{ page_obj.previous_page_number }}" aria-label="Previous page">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" aria-label="Previous page">
                 <i class="fas fa-chevron-left"></i>
             </a>
             {% endif %}
@@ -92,7 +234,7 @@
                 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
             </span>
             {% if page_obj.has_next %}
-            <a class="page-link" href="?page={{ page_obj.next_page_number }}" aria-label="Next page">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" aria-label="Next page">
                 <i class="fas fa-chevron-right"></i>
             </a>
             {% endif %}
@@ -100,9 +242,23 @@
         {% endif %}
 
         {% else %}
+        {% comment %}
+        Two different empty states: "you have no quotes" and "your search found
+        nothing" are not the same message, and offering "create a quote" to
+        someone who is searching is unhelpful.
+        {% endcomment %}
         <div class="pbq-empty">
+            {% if is_filtered %}
+            <i class="fas fa-search"></i>
+            <p>No quotes match that search.</p>
+            <a href="{% url 'quotations_list' %}" class="btn btn-secondary">Show all quotes</a>
+            {% else %}
             <i class="fas fa-file-invoice-dollar"></i>
-            <p>No quotations yet. Start one from a lead, or create a standalone quote.</p>
+            <p>No quotes yet. Start one from a lead, or create a standalone quote.</p>
+            <a href="{% url 'standalone_quotation' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> New Quote
+            </a>
+            {% endif %}
         </div>
         {% endif %}
     </div>

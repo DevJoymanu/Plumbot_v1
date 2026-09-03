@@ -3,7 +3,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods, require_GET
 from django.utils.decorators import method_decorator
-from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
+from django.http import Http404, HttpResponse, JsonResponse, HttpResponseRedirect
 from django.urls import reverse, reverse_lazy
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -37,7 +37,9 @@ from ..forms import (
     QuotationForm, QuotationItemFormSet,
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
-from ..decorators import staff_required, anonymous_required, StaffRequiredMixin
+from .. import branding
+from ..decorators import (staff_required, anonymous_required, StaffRequiredMixin,
+                          is_platform_owner)
 from ..whatsapp_cloud_api import whatsapp_api
 from ..services.clients import (
     deepseek_client, GOOGLE_CALENDAR_CREDENTIALS, DEEPSEEK_API_KEY,
@@ -62,7 +64,7 @@ def quotation_templates_api(request):
         active_only = request.GET.get('active_only', 'true').lower() == 'true'
         
         # Build queryset
-        templates = QuotationTemplate.objects.filter(tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else QuotationTemplate.objects.all()
+        templates = _visible_templates(request)
         
         if active_only:
             templates = templates.filter(is_active=True)
@@ -118,8 +120,7 @@ class StandaloneQuotationView(View):
 
     def get(self, request, *args, **kwargs):
         context = {
-            'logo_url':      _safe_logo_url(),
-            'logo_data_uri': _safe_logo_data_uri(),
+            **branding.branding_context(getattr(request, 'tenant', None)),
         }
 
         # A tenant on the sectioned layout builds even an unattached quote on
@@ -319,7 +320,7 @@ class QuotationTemplatesListView(ListView):
     paginate_by = 20
     
     def get_queryset(self):
-        queryset = QuotationTemplate.objects.filter(tenant=getattr(self.request, 'tenant', None)) if getattr(self.request, 'tenant', None) else QuotationTemplate.objects.all()
+        queryset = _visible_templates(self.request)
         
         # Filter by project type
         project_type = self.request.GET.get('project_type')
@@ -345,8 +346,22 @@ class QuotationTemplatesListView(ListView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['total_templates'] = QuotationTemplate.objects.filter(tenant=getattr(self.request, 'tenant', None)).count()
-        context['active_templates'] = QuotationTemplate.objects.filter(tenant=getattr(self.request, 'tenant', None), is_active=True).count()
+        # Counted over the SAME set the rows come from. Filtering these by
+        # tenant alone excluded every global template, so the totals disagreed
+        # with the list underneath them.
+        visible = _visible_templates(self.request)
+        tenant = getattr(self.request, 'tenant', None)
+        context['active_nav'] = 'templates'
+        context['total_templates'] = visible.count()
+        context['active_templates'] = visible.filter(is_active=True).count()
+        context['global_templates'] = visible.filter(is_global=True).count()
+        context['can_create_global'] = is_platform_owner(self.request.user)
+        # Per-row permission, resolved once here rather than in the template:
+        # a client may duplicate a global template but never edit it.
+        context['editable_ids'] = {
+            t.pk for t in context['templates']
+            if t.editable_by(self.request.user, tenant)
+        }
         return context
 
 
@@ -363,16 +378,25 @@ class CreateQuotationTemplateView(CreateView):
             context['formset'] = QuotationTemplateItemFormSet(self.request.POST)
         else:
             context['formset'] = QuotationTemplateItemFormSet()
+        # Only the platform operator is offered the "share with every client"
+        # checkbox; a client's create screen never shows it, and the POST is
+        # re-checked below rather than trusting the absent field.
+        context['can_create_global'] = is_platform_owner(self.request.user)
         return context
-    
+
     def form_valid(self, form):
         # New templates belong to the creating staff's tenant (Phase 3.1).
         _t = getattr(self.request, 'tenant', None)
         if _t is not None:
             form.instance.tenant = _t
+        # Global is an OPERATOR decision, re-checked server-side: hiding the
+        # checkbox is presentation, and a posted is_global from a client must
+        # not be honoured.
+        form.instance.is_global = bool(
+            self.request.POST.get('is_global')) and is_platform_owner(self.request.user)
         context = self.get_context_data()
         formset = context['formset']
-        
+
         form.instance.created_by = self.request.user
         
         if formset.is_valid():
@@ -398,8 +422,20 @@ class EditQuotationTemplateView(UpdateView):
     
 
     def get_queryset(self):
-        _t = getattr(self.request, 'tenant', None)
-        return QuotationTemplate.objects.filter(tenant=_t) if _t else QuotationTemplate.objects.all()
+        return _visible_templates(self.request)
+
+    def get_object(self, queryset=None):
+        """Visibility is not permission.
+
+        A client can SEE a global template and must not be able to edit it -
+        Duplicate is how they make one theirs - so the edit screen asks the
+        second question too. Without this, get_queryset alone would have handed
+        the global set straight to any client's edit form.
+        """
+        template = super().get_object(queryset)
+        if not template.editable_by(self.request.user, getattr(self.request, 'tenant', None)):
+            raise Http404('This template is read-only. Duplicate it to make your own copy.')
+        return template
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -436,24 +472,60 @@ class QuotationTemplateDetailView(DetailView):
     
 
     def get_queryset(self):
-        _t = getattr(self.request, 'tenant', None)
-        return QuotationTemplate.objects.filter(tenant=_t) if _t else QuotationTemplate.objects.all()
+        return _visible_templates(self.request)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context['can_edit'] = self.object.editable_by(
+            self.request.user, getattr(self.request, 'tenant', None))
         context['items'] = self.object.items.all()
         context['total_cost'] = self.object.get_total_estimated_cost()
         return context
 
 
+def _visible_templates(request):
+    """Templates this request may SEE: their own plus the global set.
+
+    QuotationTemplate.for_user is the single reader for visibility - a plain
+    .filter(tenant=...) here would hide every global template, which is the
+    whole point of them.
+    """
+    return QuotationTemplate.for_user(getattr(request, 'tenant', None), request.user)
+
+
+def _editable_template(request, pk):
+    """Fetch a template this request may CHANGE, or 404.
+
+    SECURITY: duplicate/delete/toggle used get_object_or_404(QuotationTemplate,
+    pk=pk) with no scoping at all, so any staff user could delete another
+    tenant's template by guessing a pk. Visibility is not permission: a client
+    can SEE a global template and must not be able to edit it, so the two
+    questions are asked separately - for_user, then editable_by.
+    """
+    template = get_object_or_404(_visible_templates(request), pk=pk)
+    if not template.editable_by(request.user, getattr(request, 'tenant', None)):
+        raise Http404('This template is read-only.')
+    return template
+
+
 @staff_required
 def duplicate_template(request, pk):
-    """Duplicate an existing template"""
-    template = get_object_or_404(QuotationTemplate, pk=pk)
-    
+    """Duplicate a template into this workspace.
+
+    Duplicating reads, it does not write, so ANY visible template qualifies -
+    including a global one. That is exactly how a client takes a global
+    template for themselves: the copy lands in their own tenant as an ordinary
+    editable template, never as another global one.
+    """
+    template = get_object_or_404(_visible_templates(request), pk=pk)
+
     if request.method == 'POST':
         new_name = request.POST.get('new_name', f"{template.name} (Copy)")
-        new_template = template.duplicate(new_name=new_name)
+        new_template = template.duplicate(
+            new_name=new_name,
+            tenant=getattr(request, 'tenant', None) or template.tenant,
+            created_by=request.user if request.user.is_authenticated else None,
+        )
         
         messages.success(request, f'Template duplicated as "{new_template.name}"')
         return redirect('edit_quotation_template', pk=new_template.pk)
@@ -465,8 +537,9 @@ def duplicate_template(request, pk):
 
 @staff_required
 def delete_template(request, pk):
-    """Delete a template"""
-    template = get_object_or_404(QuotationTemplate, pk=pk)
+    """Delete a template. Read-only templates (the global set, for a client)
+    are refused by _editable_template before we get here."""
+    template = _editable_template(request, pk)
     
     if request.method == 'POST':
         template_name = template.name
@@ -483,7 +556,7 @@ def delete_template(request, pk):
 def toggle_template_status(request, pk):
     """Toggle template active status"""
     if request.method == 'POST':
-        template = get_object_or_404(QuotationTemplate, pk=pk)
+        template = _editable_template(request, pk)
         template.is_active = not template.is_active
         template.save()
         

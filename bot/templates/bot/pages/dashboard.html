@@ -23,6 +23,26 @@
         -webkit-backdrop-filter: blur(var(--glass-blur));
         border-bottom: var(--glass-border);
     }
+    /* The business's own mark sits beside the page title. Absent means the
+       row simply has no image - never a placeholder and never the platform's
+       logo (see bot/includes/brand_mark.html). */
+    .pb-topbar__brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+    }
+
+    .pb-topbar__brand .brand-mark__word {
+        font-family: var(--font-label);
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--color-primary);
+        white-space: nowrap;
+    }
+
     .pb-topbar__title {
         color: var(--color-primary);
         font-size: 22px;
@@ -460,9 +480,12 @@
 
     {# ── TopBar ── #}
     <div class="pb-topbar">
-        <div>
-            <div class="pb-topbar__title">Dashboard</div>
-            <div class="pb-topbar__sub">{{ today|date:"l, j F Y" }}</div>
+        <div class="pb-topbar__brand">
+            {% include "bot/includes/brand_mark.html" with brand_size="44px" %}
+            <div>
+                <div class="pb-topbar__title">Dashboard</div>
+                <div class="pb-topbar__sub">{{ today|date:"l, j F Y" }}</div>
+            </div>
         </div>
     </div>
 

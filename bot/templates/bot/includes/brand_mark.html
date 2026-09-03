@@ -1,0 +1,27 @@
+{% comment %}
+The business's own mark, rendered the same way everywhere.
+
+Include this rather than writing an <img> — it is the template half of
+bot/branding.py, and it is what keeps the fallback identical on the quote, the
+email, the intake form and the dashboard:
+
+    logo  ->  business name in text  ->  nothing at all
+
+"Nothing at all" is a real outcome and deliberately not a placeholder: a tenant
+who has set neither a logo nor a name must NOT be given the platform's mark or
+another tenant's. Absent means omit.
+
+Context (all optional, from branding.branding_context):
+    logo_url, logo_data_uri, brand_name
+Extra:
+    brand_size   — css height for the image (default 40px)
+    brand_class  — extra class on the wrapper
+{% endcomment %}
+{% if logo_data_uri or logo_url %}
+  <img class="brand-mark__img {{ brand_class }}"
+       src="{{ logo_data_uri|default:logo_url }}"
+       alt="{{ brand_name|default:'Logo' }}"
+       style="height:{{ brand_size|default:'40px' }};width:auto;max-width:220px;display:block;">
+{% elif brand_name %}
+  <span class="brand-mark__word {{ brand_class }}">{{ brand_name }}</span>
+{% endif %}

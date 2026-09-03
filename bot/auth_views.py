@@ -15,6 +15,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from . import branding
 from .decorators import superuser_required
 import logging
 
@@ -441,6 +442,41 @@ def profile_view(request):
                         profile.consultation_fee or '(free)')
             return redirect('profile')
 
+        # The business's logo. Its own form because it is multipart, and its
+        # own branch because a failed upload must not silently fall through to
+        # the plain profile save below and report success.
+        if 'logo_submit' in request.POST:
+            profile = _tenant_profile(request)
+            if profile is None:
+                messages.error(
+                    request,
+                    'No business is linked to your account, so the logo could '
+                    'not be saved.',
+                )
+                return redirect('profile')
+            if request.POST.get('remove_logo'):
+                branding.clear_logo(profile.tenant)
+                messages.success(
+                    request,
+                    'Logo removed. Your business name is shown instead.')
+                logger.info("User %s removed tenant %s logo",
+                            user.username, profile.tenant.slug)
+                return redirect('profile')
+            upload = request.FILES.get('logo')
+            try:
+                branding.save_logo(profile.tenant, upload)
+            except branding.LogoRejected as exc:
+                # The message names what to do, so it is shown as written.
+                messages.error(request, str(exc))
+                return redirect('profile')
+            messages.success(
+                request,
+                'Logo updated. It now appears on your quotes, your emails and '
+                'your dashboard.')
+            logger.info("User %s updated tenant %s logo",
+                        user.username, profile.tenant.slug)
+            return redirect('profile')
+
         # The quote letterhead: everything that appears on this business's
         # own quote document. Posted from its own form on the Profile page.
         if 'letterhead_submit' in request.POST:
@@ -488,6 +524,12 @@ def profile_view(request):
         'platform_sender': tenant_platform_from_email(tenant),
         'letterhead': _letterhead_form_values(profile),
         'letterhead_editable': profile is not None,
+        # The logo card. branding_context is the same call the dashboard, the
+        # quote and the intake form make, so the preview here is exactly what
+        # a customer will see.
+        **branding.branding_context(tenant),
+        'logo_editable': profile is not None,
+        'logo_help_text': branding.LOGO_HELP_TEXT,
         # The call-out fee has its own card and its own form. None means the
         # visit is free, which is the default for every tenant.
         'consultation_fee': getattr(profile, 'consultation_fee', None) if profile else None,

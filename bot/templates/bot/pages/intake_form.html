@@ -47,6 +47,15 @@
   .step { display: none; animation: rise 0.35s ease; }
   .step.active { display: block; }
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  /* The tenant's own mark above step 1. Empty when they have neither a logo
+     nor a name yet, which is common on a brand-new intake - the block simply
+     collapses rather than showing a placeholder. */
+  .intake-brand { margin: 0 0 14px; }
+  .intake-brand:empty { display: none; }
+  .intake-brand .brand-mark__word {
+    font-size: 15px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--primary);
+  }
   .step-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vibrant); margin: 0 0 2px; }
   .card {
     background: var(--surface); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
@@ -244,6 +253,10 @@
 
     <!-- STEP 1 — Identity -->
     <section class="step active" data-step="0">
+      {# The tenant's own mark, or their name, or nothing - never a stand-in. #}
+      <div class="intake-brand">
+        {% include "bot/includes/brand_mark.html" with brand_size="48px" %}
+      </div>
       <p class="step-eyebrow">Step 1 of 6 · 2 minutes</p>
       <h1>Let's introduce your business</h1>
       <p class="sub">How your assistant introduces your team to customers.</p>

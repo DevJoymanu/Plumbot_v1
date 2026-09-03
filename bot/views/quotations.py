@@ -3,7 +3,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods, require_GET
 from django.utils.decorators import method_decorator
-from django.http import HttpResponse, JsonResponse, HttpResponseRedirect
+from django.http import FileResponse, HttpResponse, JsonResponse, HttpResponseRedirect
 from django.urls import reverse, reverse_lazy
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -26,6 +26,7 @@ import json
 import re
 import tempfile
 import base64
+import io
 import logging
 
 from ..models import (
@@ -49,6 +50,8 @@ from ..utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+from .. import branding
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 try:
@@ -118,14 +121,18 @@ class CreateQuotationView(CreateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['logo_url'] = _safe_logo_url()
-        context['logo_data_uri'] = _safe_logo_data_uri()
-        
+
         # Get appointment if pk is provided
         appointment = None
         if 'pk' in self.kwargs:
             appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)), pk=self.kwargs['pk'])
             context['appointment'] = appointment
+
+        # Resolved AFTER the appointment lands in context, so the LEAD's tenant
+        # wins: an operator raising a quote for a client must get the client's
+        # letterhead, not their own workspace's.
+        context.update(branding.branding_context(
+            _branding_tenant(self.request, context)))
 
         # Job notes from the post-visit debrief carry into the quote screen —
         # the plumber typed them minutes ago and should not retype them. Only
@@ -332,13 +339,13 @@ class ViewQuotationView(DetailView):
 
 
     def get_queryset(self):
-        _t = getattr(self.request, 'tenant', None)
-        return Quotation.objects.filter(appointment__tenant=_t) if _t else Quotation.objects.all()
+        # Same resolver as every other quote action: no workspace means no
+        # quotes, never all of them.
+        return _visible_quotations(self.request)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['logo_url'] = _safe_logo_url()
-        context['logo_data_uri'] = _safe_logo_data_uri()
+        context.update(branding.branding_context(_branding_tenant(self.request, context)))
 
         quotation = context['quotation']
         tenant = tenant_of(self.request, quotation=quotation)
@@ -349,20 +356,114 @@ class ViewQuotationView(DetailView):
         return context
 
 
+def _branding_tenant(request, context=None):
+    """Whose brand goes on this quote screen.
+
+    The QUOTE's own tenant wins over the request's: a platform operator
+    reviewing a client's quote must see the client's letterhead, not homebase's.
+    Falls back to the request's workspace for the blank/standalone screens,
+    where there is no quote yet to ask.
+    """
+    context = context or {}
+    for key in ('quotation', 'object', 'appointment'):
+        obj = context.get(key)
+        tenant = getattr(obj, 'tenant', None)
+        if tenant is not None:
+            return tenant
+        apt = getattr(obj, 'appointment', None)
+        if apt is not None and getattr(apt, 'tenant', None) is not None:
+            return apt.tenant
+    return getattr(request, 'tenant', None)
+
+
+def _visible_quotations(request):
+    """Quotes this request may touch: their own tenant's, everything for the
+    platform operator. The single scoping resolver for the quote actions - the
+    per-view `.filter(appointment__tenant=...) if ... else Quotation.objects`
+    inline was subtly different (it fell back to EVERY tenant when no workspace
+    resolved) and had to be repeated correctly at each call site."""
+    from ..decorators import is_platform_owner
+
+    if is_platform_owner(request.user):
+        return Quotation.objects.all()
+    tenant = getattr(request, 'tenant', None)
+    if tenant is None:
+        return Quotation.objects.none()
+    return Quotation.objects.filter(tenant=tenant)
+
+
 @method_decorator(staff_required, name='dispatch')
 class QuotationsListView(ListView):
+    """"My quotes" - every quote this business has raised, and only theirs.
+
+    SECURITY: this view had no get_queryset at all, so ListView fell back to
+    Quotation.objects.all() and every client saw every other client's quotes,
+    lead names and figures. Scoping is done at the QUERY, never in the template,
+    so nothing downstream can reintroduce the leak. The platform operator is the
+    one role that sees across clients, and the page says so when they do.
+    """
     model = Quotation
     template_name = 'bot/pages/quotations_list.html'
     context_object_name = 'quotations'
     paginate_by = 25
-    ordering = ['-created_at']
+
+    def _tenant(self):
+        return getattr(self.request, 'tenant', None)
+
+    def _sees_all_tenants(self):
+        from ..decorators import is_platform_owner
+        return is_platform_owner(self.request.user)
+
+    def get_queryset(self):
+        qs = (Quotation.objects
+              .select_related('appointment', 'appointment__tenant')
+              # Newest first, with id as the tie-break: created_at is
+              # auto_now_add, so two quotes raised in the same instant would
+              # otherwise come back in whatever order the database felt like -
+              # and the order would change between page loads.
+              .order_by('-created_at', '-id'))
+
+        if not self._sees_all_tenants():
+            tenant = self._tenant()
+            # No workspace resolved means no quotes, never everyone's. The
+            # middleware already blocks this case; the query refuses it too.
+            qs = qs.filter(tenant=tenant) if tenant is not None else qs.none()
+
+        status = (self.request.GET.get('status') or '').strip()
+        if status in dict(Quotation.STATUS_CHOICES):
+            qs = qs.filter(status=status)
+
+        # Search by lead name or quote number - the two things anyone actually
+        # has to hand when looking for a quote.
+        query = (self.request.GET.get('q') or '').strip()
+        if query:
+            qs = qs.filter(
+                Q(quotation_number__icontains=query)
+                | Q(appointment__customer_name__icontains=query)
+                | Q(appointment__phone_number__icontains=query)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            'active_nav': 'quotations',
+            'search_query': (self.request.GET.get('q') or '').strip(),
+            'status_filter': (self.request.GET.get('status') or '').strip(),
+            'status_choices': Quotation.STATUS_CHOICES,
+            'sees_all_tenants': self._sees_all_tenants(),
+            # Distinguishes "no quotes yet" from "nothing matched your search":
+            # the same empty table means very different things.
+            'is_filtered': bool(self.request.GET.get('q') or self.request.GET.get('status')),
+        })
+        return context
 
 
 @staff_required
 @require_http_methods(["GET"])
 def quotation_detail_api(request, pk):
     """Return quotation payload used by edit_quotation.html."""
-    quotation = get_object_or_404(Quotation.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else Quotation.objects, pk=pk)
+    quotation = get_object_or_404(_visible_quotations(request), pk=pk)
     appointment = quotation.appointment
 
     items = [
@@ -432,8 +533,7 @@ class EditQuotationView(UpdateView):
 
         quotation = self.object
         if is_sectioned(tenant_of(self.request, quotation=quotation)):
-            context['logo_url'] = _safe_logo_url()
-            context['logo_data_uri'] = _safe_logo_data_uri()
+            context.update(branding.branding_context(_branding_tenant(self.request, context)))
             context.update(_sectioned_form_context(self.request, quotation=quotation))
         return context
     
@@ -512,7 +612,7 @@ class EditQuotationView(UpdateView):
 @staff_required
 @require_http_methods(["POST"])
 def duplicate_quotation(request, pk):
-    quotation = get_object_or_404(Quotation.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else Quotation.objects, pk=pk)
+    quotation = get_object_or_404(_visible_quotations(request), pk=pk)
     new_quote = Quotation.objects.create(
         appointment=quotation.appointment,
         plumber=quotation.plumber,
@@ -545,7 +645,7 @@ def duplicate_quotation(request, pk):
 @staff_required
 @require_http_methods(["POST"])
 def delete_quotation(request, pk):
-    quotation = get_object_or_404(Quotation.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else Quotation.objects, pk=pk)
+    quotation = get_object_or_404(_visible_quotations(request), pk=pk)
     appointment_id = quotation.appointment_id
     quotation_name = quotation.get_display_name()
     quotation.delete()
@@ -565,7 +665,7 @@ def delete_quotation(request, pk):
 
 @staff_required
 def send_quotation(request, pk):
-    quotation = get_object_or_404(Quotation.objects.filter(appointment__tenant=getattr(request, 'tenant', None)) if getattr(request, 'tenant', None) else Quotation.objects, pk=pk)
+    quotation = get_object_or_404(_visible_quotations(request), pk=pk)
     temp_doc_path = None
     content_type = (request.content_type or '').lower()
     wants_json = (
@@ -627,6 +727,33 @@ def send_quotation(request, pk):
     return redirect('appointment_detail', pk=quotation.appointment.pk)
 
 
+@staff_required
+def download_quotation_pdf(request, pk):
+    """Stream the quote as a PDF - the same file the send paths attach.
+
+    One builder (build_quotation_pdf_file) behind the download, the WhatsApp
+    send and the email send, so what the plumber checks is byte-for-byte what
+    the customer receives.
+    """
+    quotation = get_object_or_404(_visible_quotations(request), pk=pk)
+    pdf_path = build_quotation_pdf_file(quotation)
+    safe = re.sub(r'[^A-Za-z0-9 _-]+', '', quotation.get_display_name()).strip().replace(' ', '_')
+    filename = f"{safe[:80] or 'Quotation'}-{quotation.quotation_number}.pdf"
+    # FileResponse closes the handle; the temp file is unlinked after the
+    # response is written, so a slow client cannot be served a deleted file.
+    response = FileResponse(open(pdf_path, 'rb'), content_type='application/pdf',
+                            as_attachment=True, filename=filename)
+    response._resource_closers.append(lambda: _quiet_unlink(pdf_path))
+    return response
+
+
+def _quiet_unlink(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def format_quotation_message(quotation):
     """Format quotation for WhatsApp message"""
     items_text = ""
@@ -682,40 +809,64 @@ def build_quotation_pdf_file(quotation):
     c.setFillColor(colors.whitesmoke)
     c.roundRect(left - 8, y - 105, right - left + 16, 95, 8, stroke=0, fill=1)
 
-    # Logo with fallbacks
-    logo_candidates = [
-        os.path.join(settings.BASE_DIR, 'bot', 'static', 'logo.jpg'),
-        os.path.join(settings.BASE_DIR, 'bot', 'static', 'images', 'logo.jpg'),
-        os.path.join(settings.BASE_DIR, 'static', 'images', 'logo.jpg'),
-    ]
-    logo_path = next((p for p in logo_candidates if os.path.exists(p)), None)
-    if logo_path:
-        try:
-            c.drawImage(logo_path, left, y - 82, width=70, height=70, preserveAspectRatio=True, mask='auto')
-        except Exception:
-            pass
-
-    # Tenant identity on the quotation header (Phase 2.2b). NOTE pre-existing
-    # oddities kept verbatim pending owner review: "HOMEBASE CONSTRUCTION"
-    # (not Plumbers) and the Johannesburg street address look like template
-    # remnants — flagged 2026-07-15, replace with tenant branding/address
-    # fields when the owner confirms what should appear on quotes.
+    # THIS tenant's logo, never a hardcoded file. The old block reached for
+    # bot/static/logo.jpg - Homebase's mark - so every other tenant's quote went
+    # out under someone else's brand. bot/branding is the single reader, and a
+    # tenant with no logo falls back to their own name in text (below), never to
+    # the platform's mark and never to another tenant's.
     _apt = getattr(quotation, 'appointment', None)
-    _tenant_name = (getattr(getattr(_apt, 'tenant', None), 'name', '') or 'HOMEBASE CONSTRUCTION').upper()
+    _tenant = getattr(_apt, 'tenant', None) or getattr(quotation, 'tenant', None)
+    _text_x = left
+    _logo_bytes, _ = branding.logo_bytes(_tenant)
+    if _logo_bytes:
+        try:
+            from reportlab.lib.utils import ImageReader
+            c.drawImage(ImageReader(io.BytesIO(_logo_bytes)), left, y - 82,
+                        width=70, height=70, preserveAspectRatio=True, mask='auto')
+            _text_x = left + 85
+        except Exception:
+            # An SVG, or a file reportlab cannot draw. The name still prints,
+            # so the header is never blank - it just starts at the margin.
+            logger.info('Quote PDF: logo not drawable for tenant %s', _tenant)
+
+    # Tenant identity on the quotation header (Phase 2.2b). The strapline and
+    # street address come from the tenant's own letterhead; absent means the
+    # line is omitted, never filled with another tenant's. (The hardcoded
+    # "HOMEBASE CONSTRUCTION" / Johannesburg address that used to sit here were
+    # template remnants printed on every tenant's quote.)
+    _letterhead = {}
+    if _tenant is not None:
+        from ..tenant_config import get_config
+        _letterhead = get_config(_tenant).letterhead() or {}
+    _name = (branding.brand_name(_tenant) or '').upper()
     _cell = _apt.plumber_contact() if _apt is not None and hasattr(_apt, 'plumber_contact') else ''
+    _strapline = (_letterhead.get('strapline') or '').strip()
+    _address = (_letterhead.get('address') or _letterhead.get('location_line') or '').strip()
+
+    _line_y = y - 20
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(left + 85, y - 20, _tenant_name)
-    c.setFont("Helvetica-Oblique", 10)
-    c.setFillColor(colors.grey)
-    c.drawString(left + 85, y - 38, '"Quality Is Our Qualification"')
-    c.setFont("Helvetica", 9)
-    c.drawString(left + 85, y - 55, "141 Pritchard St, 2001, Johannesburg")
+    if _name:
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(_text_x, _line_y, _name[:48])
+        _line_y -= 18
+    if _strapline:
+        c.setFont("Helvetica-Oblique", 10)
+        c.setFillColor(colors.grey)
+        c.drawString(_text_x, _line_y, _strapline[:70])
+        _line_y -= 17
+    if _address:
+        c.setFont("Helvetica", 9)
+        c.setFillColor(colors.grey)
+        c.drawString(_text_x, _line_y, _address[:80])
+        _line_y -= 14
     if _cell:
-        c.drawString(left + 85, y - 69, f"Cell: {_cell}")
+        c.setFont("Helvetica", 9)
+        c.setFillColor(colors.grey)
+        c.drawString(_text_x, _line_y, f"Cell: {_cell}")
+        _line_y -= 17
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(colors.black)
-    c.drawString(left + 85, y - 86, quotation.get_display_name()[:80])
+    c.drawString(_text_x, min(_line_y, y - 86), quotation.get_display_name()[:80])
     y -= 125
 
     # Client info block

@@ -5670,3 +5670,490 @@ class TemplateCommentTests(TestCase):
             self.assertNotIn('{#', body, url)
             self.assertNotIn('#}', body, url)
             self.assertNotIn('{%', body, url)
+
+
+# ======================================================================
+# Quotes: branding, history and templates
+# ======================================================================
+
+def _png(name='logo.png'):
+    """A tiny real PNG, so uploads exercise the same path a browser takes."""
+    import base64
+    raw = base64.b64decode(
+        b'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM'
+        b'IQAAAABJRU5ErkJggg==')
+    return SimpleUploadedFile(name, raw, content_type='image/png')
+
+
+class TenantLogoTests(TestCase):
+    """One logo per business, one reader, and a fallback that never borrows."""
+
+    def setUp(self):
+        self.tenant = Tenant.objects.get(slug='homebase')
+        self.profile, _ = TenantProfile.objects.get_or_create(tenant=self.tenant)
+
+    # -- validation --------------------------------------------------------
+
+    def test_accepted_formats(self):
+        from bot.branding import validate_logo
+        for name, ctype in (('a.png', 'image/png'), ('a.jpg', 'image/jpeg'),
+                            ('a.jpeg', 'image/jpeg'), ('a.svg', 'image/svg+xml')):
+            validate_logo(SimpleUploadedFile(name, b'x', content_type=ctype))
+
+    def test_other_formats_are_refused(self):
+        from bot.branding import LogoRejected, validate_logo
+        for name, ctype in (('a.pdf', 'application/pdf'), ('a.gif', 'image/gif'),
+                            ('a.exe', 'application/octet-stream'),
+                            ('a.png', 'application/pdf')):
+            with self.assertRaises(LogoRejected, msg=name):
+                validate_logo(SimpleUploadedFile(name, b'x', content_type=ctype))
+
+    def test_oversized_files_are_refused(self):
+        from bot.branding import MAX_LOGO_BYTES, LogoRejected, validate_logo
+        big = SimpleUploadedFile('big.png', b'x' * (MAX_LOGO_BYTES + 1),
+                                 content_type='image/png')
+        with self.assertRaises(LogoRejected) as caught:
+            validate_logo(big)
+        # The message has to say what to do, not just that something failed.
+        self.assertIn('2 MB', str(caught.exception))
+
+    def test_the_limit_is_two_megabytes(self):
+        from bot.branding import MAX_LOGO_BYTES, RECOMMENDED_LOGO_WIDTH
+        self.assertEqual(MAX_LOGO_BYTES, 2 * 1024 * 1024)
+        self.assertEqual(RECOMMENDED_LOGO_WIDTH, 400)
+
+    # -- storage and reading back -----------------------------------------
+
+    def test_a_saved_logo_is_readable_every_way(self):
+        from bot import branding
+        branding.save_logo(self.tenant, _png())
+        self.assertTrue(branding.has_logo(self.tenant))
+        self.assertTrue(branding.logo_url(self.tenant))
+        self.assertTrue(branding.logo_data_uri(self.tenant).startswith('data:image/png;base64,'))
+        raw, ctype = branding.logo_bytes(self.tenant)
+        self.assertTrue(raw)
+        self.assertEqual(ctype, 'image/png')
+
+    def test_no_logo_falls_back_to_the_business_name(self):
+        from bot import branding
+        ctx = branding.branding_context(self.tenant)
+        self.assertFalse(ctx['has_logo'])
+        self.assertEqual(ctx['logo_url'], '')
+        self.assertEqual(ctx['brand_name'], self.tenant.name)
+
+    def test_the_letterhead_trading_name_wins_as_the_fallback(self):
+        from bot import branding
+        self.profile.letterhead = {'business_name': 'Homebase Trading Co'}
+        self.profile.save(update_fields=['letterhead'])
+        self.assertEqual(branding.brand_name(self.tenant), 'Homebase Trading Co')
+
+    def test_a_logo_is_never_borrowed_from_another_tenant(self):
+        """The whole point: absent means fall back to your own name, never to
+        somebody else's mark."""
+        from bot import branding
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-logo')
+        TenantProfile.objects.create(tenant=other)
+        branding.save_logo(self.tenant, _png())
+
+        self.assertTrue(branding.has_logo(self.tenant))
+        self.assertFalse(branding.has_logo(other))
+        self.assertEqual(branding.logo_url(other), '')
+        self.assertEqual(branding.logo_data_uri(other), '')
+        self.assertEqual(branding.brand_name(other), 'Acme Plumbing')
+
+    def test_clearing_a_logo_returns_to_the_name(self):
+        from bot import branding
+        branding.save_logo(self.tenant, _png())
+        branding.clear_logo(self.tenant)
+        self.assertFalse(branding.has_logo(self.tenant))
+        self.assertEqual(branding.branding_context(self.tenant)['brand_name'],
+                         self.tenant.name)
+
+    def test_no_tenant_yields_nothing_rather_than_a_default(self):
+        from bot import branding
+        ctx = branding.branding_context(None)
+        self.assertEqual(ctx, {'logo_url': '', 'logo_data_uri': '',
+                               'brand_name': '', 'has_logo': False})
+
+
+class LogoSurfaceTests(StaffClientTestCase):
+    """The four places the spec says the logo appears."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.get(slug='homebase')
+        self.profile, _ = TenantProfile.objects.get_or_create(tenant=self.tenant)
+        from bot import branding
+        branding.save_logo(self.tenant, _png())
+        self.lead = make_lead(9400, customer_name='Brand Check',
+                              customer_email='brand@example.com')
+
+    def test_dashboard_shows_it(self):
+        response = self.client.get(reverse('dashboard'))
+        self.assertTrue(response.context['has_logo'])
+        self.assertIn('brand-mark__img', response.content.decode())
+
+    def test_quote_screen_shows_it(self):
+        response = self.client.get(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertTrue(response.context['has_logo'])
+
+    def test_customer_email_carries_it_inline(self):
+        """Inlined, not linked: mail clients block remote images."""
+        from bot.customer_emails import build_post_visit_ask_email
+        _, html = build_post_visit_ask_email(self.lead, 1)
+        self.assertIn('data:image/png;base64,', html)
+
+    def test_the_email_falls_back_to_the_name(self):
+        from bot import branding
+        from bot.customer_emails import build_post_visit_ask_email
+        branding.clear_logo(self.tenant)
+        _, html = build_post_visit_ask_email(self.lead, 1)
+        self.assertNotIn('data:image', html)
+        self.assertIn(self.tenant.name, html)
+
+    def test_booking_form_shows_it(self):
+        """The intake wizard - the 'booking form' of the spec."""
+        from bot.models import TenantIntake
+        intake = TenantIntake.objects.create(tenant=self.tenant)
+        self.client.logout()
+        body = self.client.get(
+            reverse('intake_form', kwargs={'token': intake.token})).content.decode()
+        self.assertIn('intake-brand', body)
+        self.assertIn('data:image/png;base64,', body)
+
+    def test_the_quote_pdf_uses_this_tenant_and_not_a_static_file(self):
+        from bot.views.quotations import build_quotation_pdf_file
+        quotation = Quotation.objects.create(appointment=self.lead, labor_cost=Decimal('50'))
+        path = build_quotation_pdf_file(quotation)
+        try:
+            self.assertTrue(os.path.getsize(path) > 500)
+        finally:
+            os.remove(path)
+
+    def test_a_tenant_with_no_logo_still_renders_a_pdf(self):
+        """Absent means omit, not crash."""
+        from bot import branding
+        from bot.views.quotations import build_quotation_pdf_file
+        branding.clear_logo(self.tenant)
+        quotation = Quotation.objects.create(appointment=self.lead, labor_cost=Decimal('50'))
+        path = build_quotation_pdf_file(quotation)
+        try:
+            self.assertTrue(os.path.getsize(path) > 500)
+        finally:
+            os.remove(path)
+
+
+class LogoUploadUITests(StaffClientTestCase):
+    """Both editors: the client's own, and the operator on their behalf."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.get(slug='homebase')
+        TenantProfile.objects.get_or_create(tenant=self.tenant)
+
+    def test_client_uploads_their_own_from_the_profile_page(self):
+        from bot import branding
+        self.client.post(reverse('profile'), {'logo_submit': '1', 'logo': _png()})
+        self.assertTrue(branding.has_logo(self.tenant))
+
+    def test_a_bad_upload_is_refused_with_a_reason(self):
+        from bot import branding
+        response = self.client.post(reverse('profile'), {
+            'logo_submit': '1',
+            'logo': SimpleUploadedFile('x.pdf', b'x', content_type='application/pdf'),
+        }, follow=True)
+        self.assertFalse(branding.has_logo(self.tenant))
+        self.assertIn('PNG, JPG or SVG', response.content.decode())
+
+    def test_client_can_remove_their_logo(self):
+        from bot import branding
+        branding.save_logo(self.tenant, _png())
+        self.client.post(reverse('profile'), {'logo_submit': '1', 'remove_logo': '1'})
+        self.assertFalse(branding.has_logo(self.tenant))
+
+    def test_operator_uploads_on_behalf_of_a_client(self):
+        from bot import branding
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-upload')
+        TenantProfile.objects.create(tenant=other)
+        owner = get_user_model().objects.create_superuser(
+            username='adminJ', password='pass12345', email='jones86xi@gmail.com')
+        self.client.force_login(owner)
+
+        self.client.post(
+            reverse('platform_tenant_config_edit', kwargs={'slug': other.slug}),
+            {'logo_submit': '1', 'logo': _png()})
+        self.assertTrue(branding.has_logo(other))
+        # ...and only for that client.
+        self.assertFalse(branding.has_logo(self.tenant))
+
+
+class MyQuotesHistoryTests(StaffClientTestCase):
+    """The quotes list: scoped, searchable, paged, and honest when empty."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.get(slug='homebase')
+        self.other = Tenant.objects.create(name='Acme Plumbing', slug='acme-quotes')
+
+        self.lead = make_lead(9500, customer_name='Rudo Moyo',
+                              customer_email='rudo@example.com')
+        self.quote = Quotation.objects.create(appointment=self.lead, labor_cost=Decimal('120'))
+
+        self.foreign_lead = make_lead(9501, tenant=self.other, customer_name='Acme Client')
+        self.foreign_quote = Quotation.objects.create(
+            appointment=self.foreign_lead, labor_cost=Decimal('999'))
+
+    def _list(self, **params):
+        return self.client.get(reverse('quotations_list'), params)
+
+    # -- scoping (the leak this fixed) -------------------------------------
+
+    def test_a_client_sees_only_their_own_quotes(self):
+        """The view had no get_queryset at all, so ListView fell back to
+        Quotation.objects.all() and every client saw every other client's
+        quotes, lead names and figures."""
+        response = self._list()
+        rows = list(response.context['quotations'])
+        self.assertIn(self.quote, rows)
+        self.assertNotIn(self.foreign_quote, rows)
+        body = response.content.decode()
+        self.assertIn('Rudo Moyo', body)
+        self.assertNotIn('Acme Client', body)
+        # The figure, not the bare digits: '999' also appears in the pill CSS.
+        self.assertNotIn('US$999', body)
+        self.assertNotIn(self.foreign_quote.quotation_number, body)
+
+    def test_scoping_survives_a_search(self):
+        """Search must narrow within the tenant, never widen past it."""
+        rows = list(self._list(q='Acme').context['quotations'])
+        self.assertEqual(rows, [])
+
+    def test_the_operator_sees_across_clients(self):
+        owner = get_user_model().objects.create_superuser(
+            username='adminJ', password='pass12345', email='jones86xi@gmail.com')
+        self.client.force_login(owner)
+        response = self._list()
+        rows = list(response.context['quotations'])
+        self.assertIn(self.quote, rows)
+        self.assertIn(self.foreign_quote, rows)
+        self.assertTrue(response.context['sees_all_tenants'])
+
+    # -- the row -----------------------------------------------------------
+
+    def test_the_row_carries_every_column_the_spec_asks_for(self):
+        self.quote.sent_via_email = True
+        self.quote.status = 'sent'
+        self.quote.save()
+        body = self._list().content.decode()
+        self.assertIn(self.quote.quotation_number, body)   # quote number
+        self.assertIn('Rudo Moyo', body)                   # lead name
+        self.assertIn(str(self.quote.total_amount), body)  # amount
+        self.assertIn('Sent', body)                        # status
+        self.assertIn('Email', body)                       # channel sent
+
+    def test_the_channel_cell_reports_both_when_both_were_used(self):
+        self.quote.sent_via_email = True
+        self.quote.sent_via_whatsapp = True
+        self.quote.save()
+        self.assertEqual(self.quote.sent_channel_label(), 'Email + WhatsApp')
+        self.assertIn('Email + WhatsApp', self._list().content.decode())
+
+    def test_an_unsent_quote_says_so(self):
+        self.assertEqual(self.quote.sent_channel_label(), 'Not sent')
+        self.assertIn('Not sent', self._list().content.decode())
+
+    def test_a_nameless_lead_still_shows_something_findable(self):
+        bare = make_lead(9502, customer_name='')
+        quote = Quotation.objects.create(appointment=bare)
+        self.assertTrue(quote.lead_name())
+        self.assertNotIn('None', self._list().content.decode())
+
+    # -- sort, search, filter, paging -------------------------------------
+
+    def test_newest_first(self):
+        newer = Quotation.objects.create(appointment=self.lead, labor_cost=Decimal('1'))
+        rows = list(self._list().context['quotations'])
+        self.assertEqual(rows[0], newer)
+
+    def test_search_by_lead_name_and_by_quote_number(self):
+        self.assertIn(self.quote, list(self._list(q='Rudo').context['quotations']))
+        self.assertIn(self.quote,
+                      list(self._list(q=self.quote.quotation_number).context['quotations']))
+        self.assertEqual(list(self._list(q='nobody-by-that-name').context['quotations']), [])
+
+    def test_filter_by_status(self):
+        self.quote.status = 'accepted'
+        self.quote.save()
+        self.assertIn(self.quote, list(self._list(status='accepted').context['quotations']))
+        self.assertEqual(list(self._list(status='draft').context['quotations']), [])
+
+    def test_pagination_keeps_the_search(self):
+        for i in range(30):
+            Quotation.objects.create(appointment=self.lead, labor_cost=Decimal(i))
+        body = self._list(q='Rudo', page=1).content.decode()
+        self.assertIn('q=Rudo', body)
+        self.assertEqual(len(self._list(q='Rudo').context['quotations']), 25)
+
+    # -- empty states ------------------------------------------------------
+
+    def test_the_two_empty_states_say_different_things(self):
+        Quotation.objects.all().delete()
+        fresh = self._list().content.decode()
+        self.assertIn('No quotes yet', fresh)
+
+        searched = self._list(q='zzz').content.decode()
+        self.assertIn('No quotes match that search', searched)
+        self.assertNotIn('No quotes yet', searched)
+
+    # -- row actions -------------------------------------------------------
+
+    def test_download_returns_a_pdf(self):
+        response = self.client.get(reverse('download_quotation_pdf', args=[self.quote.pk]))
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('attachment', response['Content-Disposition'])
+        self.assertTrue(b''.join(response.streaming_content).startswith(b'%PDF'))
+
+    def test_download_is_tenant_scoped(self):
+        self.assertEqual(
+            self.client.get(
+                reverse('download_quotation_pdf', args=[self.foreign_quote.pk])).status_code,
+            404)
+
+    def test_duplicate_from_the_list(self):
+        before = Quotation.objects.filter(tenant=self.tenant).count()
+        self.client.post(reverse('duplicate_quotation', args=[self.quote.pk]))
+        self.assertEqual(Quotation.objects.filter(tenant=self.tenant).count(), before + 1)
+
+    def test_status_vocabulary_matches_the_scheduler(self):
+        """'cold' replaced 'rejected' so the quote can say what the post-visit
+        scheduler says when it gives up on a lead."""
+        values = [v for v, _ in Quotation.STATUS_CHOICES]
+        self.assertEqual(values, ['draft', 'sent', 'accepted', 'cold'])
+        self.assertNotIn('rejected', values)
+
+
+class GlobalTemplateTests(StaffClientTestCase):
+    """Client templates, global templates, and who may change which."""
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.get(slug='homebase')
+        self.other = Tenant.objects.create(name='Acme Plumbing', slug='acme-tmpl')
+
+        self.mine = QuotationTemplate.objects.create(
+            tenant=self.tenant, name='My Bathroom Template')
+        self.theirs = QuotationTemplate.objects.create(
+            tenant=self.other, name='Acme Private Template')
+        self.shared = QuotationTemplate.objects.create(
+            tenant=self.other, name='Platform Standard Bathroom', is_global=True)
+
+    def _owner(self):
+        owner = get_user_model().objects.create_superuser(
+            username='adminJ', password='pass12345', email='jones86xi@gmail.com')
+        self.client.force_login(owner)
+        return owner
+
+    # -- visibility --------------------------------------------------------
+
+    def test_a_client_sees_their_own_plus_global(self):
+        rows = list(self.client.get(
+            reverse('quotation_templates_list')).context['templates'])
+        self.assertIn(self.mine, rows)
+        self.assertIn(self.shared, rows)
+        self.assertNotIn(self.theirs, rows)
+
+    def test_the_global_row_is_labelled(self):
+        body = self.client.get(reverse('quotation_templates_list')).content.decode()
+        self.assertIn('Platform Standard Bathroom', body)
+        self.assertIn('Global', body)
+
+    def test_the_counts_describe_the_list_underneath_them(self):
+        """Counting by tenant alone excluded every global template, so the
+        totals disagreed with the rows."""
+        context = self.client.get(reverse('quotation_templates_list')).context
+        self.assertEqual(context['total_templates'], 2)
+        self.assertEqual(context['global_templates'], 1)
+
+    # -- permission --------------------------------------------------------
+
+    def test_a_client_may_edit_their_own(self):
+        self.assertTrue(self.mine.editable_by(self.user, self.tenant))
+        self.assertEqual(
+            self.client.get(reverse('edit_quotation_template', args=[self.mine.pk])).status_code,
+            200)
+
+    def test_a_global_template_is_read_only_to_a_client(self):
+        self.assertFalse(self.shared.editable_by(self.user, self.tenant))
+        self.assertEqual(
+            self.client.get(reverse('edit_quotation_template', args=[self.shared.pk])).status_code,
+            404)
+
+    def test_a_client_cannot_delete_a_global_template(self):
+        self.client.post(reverse('delete_template', args=[self.shared.pk]))
+        self.assertTrue(QuotationTemplate.objects.filter(pk=self.shared.pk).exists())
+
+    def test_a_client_cannot_touch_another_clients_template(self):
+        """delete/duplicate/toggle fetched by bare pk with no scoping at all,
+        so any staff user could delete another tenant's template."""
+        for name, url in (
+            ('edit', reverse('edit_quotation_template', args=[self.theirs.pk])),
+            ('delete', reverse('delete_template', args=[self.theirs.pk])),
+            ('duplicate', reverse('duplicate_template', args=[self.theirs.pk])),
+        ):
+            with self.subTest(action=name):
+                self.assertEqual(self.client.get(url).status_code, 404)
+        self.client.post(reverse('delete_template', args=[self.theirs.pk]))
+        self.assertTrue(QuotationTemplate.objects.filter(pk=self.theirs.pk).exists())
+
+    def test_toggling_another_clients_template_is_refused(self):
+        was = self.theirs.is_active
+        self.client.post(reverse('toggle_template_status', args=[self.theirs.pk]))
+        self.theirs.refresh_from_db()
+        self.assertEqual(self.theirs.is_active, was)
+
+    # -- duplicate is how a client takes a global one -----------------------
+
+    def test_duplicating_a_global_lands_an_editable_copy_in_my_workspace(self):
+        self.client.post(reverse('duplicate_template', args=[self.shared.pk]),
+                         {'new_name': 'My Copy'})
+        copy = QuotationTemplate.objects.get(name='My Copy')
+        self.assertEqual(copy.tenant, self.tenant)
+        self.assertFalse(copy.is_global)
+        self.assertTrue(copy.editable_by(self.user, self.tenant))
+
+    def test_the_original_global_is_untouched_by_the_copy(self):
+        self.client.post(reverse('duplicate_template', args=[self.shared.pk]),
+                         {'new_name': 'My Copy'})
+        self.shared.refresh_from_db()
+        self.assertTrue(self.shared.is_global)
+        self.assertEqual(self.shared.tenant, self.other)
+
+    # -- the operator ------------------------------------------------------
+
+    def test_the_operator_may_edit_both_kinds(self):
+        owner = self._owner()
+        self.assertTrue(self.shared.editable_by(owner, self.tenant))
+        self.assertTrue(self.theirs.editable_by(owner, self.tenant))
+
+    def test_only_the_operator_is_offered_the_global_checkbox(self):
+        client_view = self.client.get(reverse('create_quotation_template'))
+        self.assertFalse(client_view.context['can_create_global'])
+        self.assertNotIn('name="is_global"', client_view.content.decode())
+
+        self._owner()
+        owner_view = self.client.get(reverse('create_quotation_template'))
+        self.assertTrue(owner_view.context['can_create_global'])
+        self.assertIn('name="is_global"', owner_view.content.decode())
+
+    def test_a_client_posting_is_global_is_not_honoured(self):
+        """Hiding a checkbox is presentation, not permission."""
+        self.client.post(reverse('create_quotation_template'), {
+            'name': 'Sneaky Global', 'project_type': 'general',
+            'default_labor_cost': '0', 'default_transport_cost': '0',
+            'is_active': 'on', 'is_global': 'on',
+            'items-TOTAL_FORMS': '0', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+        })
+        created = QuotationTemplate.objects.filter(name='Sneaky Global').first()
+        if created is not None:
+            self.assertFalse(created.is_global)

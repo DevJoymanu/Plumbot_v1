@@ -372,6 +372,25 @@
                                 Active (available for use)
                             </label>
                         </div>
+                        {% comment %}
+                        Operator-only. Hidden from clients here AND re-checked
+                        server-side in form_valid: hiding a checkbox is
+                        presentation, not permission, and a posted is_global
+                        from a client must not be honoured.
+                        {% endcomment %}
+                        {% if can_create_global %}
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox"
+                                   id="id_is_global" name="is_global">
+                            <label class="form-check-label" for="id_is_global">
+                                Share with every client
+                            </label>
+                            <small class="d-block text-muted">
+                                Global templates appear on every client's Templates page,
+                                read-only. They duplicate one to make their own editable copy.
+                            </small>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
 

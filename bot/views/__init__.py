@@ -23,6 +23,7 @@ from .quotations import (
     create_quotation_api,
     ViewQuotationView,
     QuotationsListView,
+    download_quotation_pdf,
     quotation_detail_api,
     EditQuotationView,
     duplicate_quotation,

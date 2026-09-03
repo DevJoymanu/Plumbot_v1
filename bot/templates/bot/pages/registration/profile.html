@@ -105,6 +105,59 @@
                             <h5 class="card-title mb-0"><i class="fas fa-car me-2"></i>Call-out fee</h5>
                         </div>
                         <div class="card-body">
+                            {% comment %}
+                            The business's logo. Its own multipart form, and a
+                            live preview rendered through the same include the
+                            dashboard and the quote use - so what is shown here
+                            is exactly what a customer will see.
+                            {% endcomment %}
+                            {% if logo_editable %}
+                            <div class="mb-4 pb-4 border-bottom">
+                                <label class="form-label fw-bold d-block">Business logo</label>
+                                <p class="text-muted small">
+                                    Appears on your quotes, the emails your customers
+                                    receive, your booking form and this dashboard.
+                                    {% if not has_logo %}
+                                    Until you add one, your business name is shown instead.
+                                    {% endif %}
+                                </p>
+                                <div class="d-flex align-items-center gap-3 flex-wrap mb-3">
+                                    <div style="min-height:48px; display:flex; align-items:center;
+                                                padding:10px 14px; background:#f8f9ff;
+                                                border:1px solid rgba(0,101,145,0.10);
+                                                border-radius:12px;">
+                                        {% include "bot/includes/brand_mark.html" with brand_size="44px" %}
+                                        {% if not has_logo and not brand_name %}
+                                        <span class="text-muted small">Nothing to show yet</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if has_logo %}
+                                    <form method="post" onsubmit="return confirm('Remove the logo? Your business name will be shown instead.');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="logo_submit" value="1">
+                                        <input type="hidden" name="remove_logo" value="1">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                                            <i class="fas fa-trash-can"></i> Remove
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                                <form method="post" enctype="multipart/form-data">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="logo_submit" value="1">
+                                    <div class="mb-2">
+                                        <input type="file" class="form-control" name="logo"
+                                               id="id_logo" accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+                                               required>
+                                        <small class="text-muted">{{ logo_help_text }}</small>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-sm">
+                                        <i class="fas fa-upload"></i> Upload logo
+                                    </button>
+                                </form>
+                            </div>
+                            {% endif %}
+
                             {% if letterhead_editable %}
                             <p class="text-muted small">
                                 What {% if tenant %}{{ tenant.name }}{% else %}your business{% endif %}

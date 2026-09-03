@@ -110,6 +110,49 @@
 {% endblock %}
 
 {% block content %}
+{% comment %}
+The logo is its OWN form, above the main one, because it is multipart and a
+<form> cannot be nested inside another. Same handler and same validation as the
+client-facing Profile page (bot/branding.save_logo), so an operator setting a
+logo on a client's behalf gets identical results to the client doing it.
+{% endcomment %}
+<div class="cfg-wrap" style="padding-bottom:0;">
+  <div class="cfg-glass" style="padding:20px 24px; margin-bottom:18px;">
+    <div class="cfg-eyebrow">Business logo</div>
+    <p style="color:#3e4850; font-size:14px; margin:6px 0 14px;">
+      Appears on {{ tenant.name }}'s quotes, their customer emails, their booking
+      form and their dashboard.
+      {% if not has_logo %}They have not set one, so their business name is shown instead.{% endif %}
+    </p>
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <div style="min-height:52px; display:flex; align-items:center; padding:10px 16px;
+                  background:#f8f9ff; border:1px solid rgba(0,101,145,0.10); border-radius:12px;">
+        {% include "bot/includes/brand_mark.html" with brand_size="44px" %}
+        {% if not has_logo and not brand_name %}
+        <span style="color:#6e7881; font-size:13px;">Nothing to show yet</span>
+        {% endif %}
+      </div>
+      <form method="post" enctype="multipart/form-data"
+            style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        {% csrf_token %}
+        <input type="hidden" name="logo_submit" value="1">
+        <input type="file" name="logo" class="form-control" style="max-width:320px;"
+               accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml" required>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-upload"></i> Upload</button>
+      </form>
+      {% if has_logo %}
+      <form method="post" onsubmit="return confirm('Remove {{ tenant.name|escapejs }}'s logo?');">
+        {% csrf_token %}
+        <input type="hidden" name="logo_submit" value="1">
+        <input type="hidden" name="remove_logo" value="1">
+        <button type="submit" class="btn btn-secondary"><i class="fas fa-trash-can"></i> Remove</button>
+      </form>
+      {% endif %}
+    </div>
+    <p style="color:#6e7881; font-size:12px; margin:12px 0 0;">{{ logo_help_text }}</p>
+  </div>
+</div>
+
 <form method="post">
   {% csrf_token %}
   <div class="cfg-wrap">

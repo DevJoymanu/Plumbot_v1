@@ -129,6 +129,7 @@ urlpatterns = [
     path('quotations/<int:pk>/', ViewQuotationView.as_view(), name='view_quotation'),
     path('quotations/<int:pk>/preview/', ViewQuotationView.as_view(), name='preview_quotation'),
     path('quotations/<int:pk>/edit/', EditQuotationView.as_view(), name='edit_quotation'),
+    path('quotations/<int:pk>/download/', views.download_quotation_pdf, name='download_quotation_pdf'),
     path('quotations/<int:pk>/send/', send_quotation, name='send_quotation'),
     # Independent of the WhatsApp send above — the plumber may use either
     # channel or both, and neither affects the email follow-up sequence.

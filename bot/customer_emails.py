@@ -207,6 +207,35 @@ def _customer_contact_buttons(customer_phone_digits):
     )
 
 
+def _brand_header(apt):
+    """The tenant's own logo at the top of a customer email, or their name.
+
+    Inlined as a data: URI rather than linked: mail clients block remote images
+    by default, and a linked logo would also depend on the media host being
+    reachable from wherever the mail is opened. Absent means the business NAME
+    is printed instead — never the platform's mark, never another tenant's.
+    """
+    tenant = getattr(apt, 'tenant', None) if apt is not None else None
+    if tenant is None:
+        return ''
+    from bot import branding
+    data_uri = branding.logo_data_uri(tenant)
+    name = branding.brand_name(tenant)
+    if data_uri:
+        return (
+            '<div style="margin:0 0 24px;">'
+            f'<img src="{data_uri}" alt="{name}" '
+            'style="max-height:56px;max-width:220px;height:auto;width:auto;">'
+            '</div>'
+        )
+    if name:
+        return (
+            '<div style="margin:0 0 24px;font-size:18px;font-weight:bold;'
+            f'color:#111;">{name}</div>'
+        )
+    return ''
+
+
 def _wrap(body_html, apt=None):
     """Minimal HTML wrapper — clean, not promotional."""
     footer_name = _business_name(apt) if apt is not None else 'Our team'
@@ -217,6 +246,7 @@ def _wrap(body_html, apt=None):
         '</head>'
         '<body style="margin:0;padding:20px;background:#ffffff;'
         'font-family:Arial,sans-serif;font-size:15px;color:#333;line-height:1.6;">'
+        f'{_brand_header(apt)}'
         f'{body_html}'
         '<p style="margin-top:32px;font-size:12px;color:#aaa;border-top:1px solid #eee;'
         f'padding-top:12px;">{footer_name} · Zimbabwe</p>'

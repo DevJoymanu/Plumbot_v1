@@ -190,9 +190,8 @@ def send_quotation_email(request, pk):
     from .quotations import build_quotation_pdf_file
     from ..customer_emails import send_quotation_email_to_customer
 
-    tenant = getattr(request, 'tenant', None)
-    qs = Quotation.objects.filter(appointment__tenant=tenant) if tenant else Quotation.objects
-    quotation = get_object_or_404(qs, pk=pk)
+    from .quotations import _visible_quotations
+    quotation = get_object_or_404(_visible_quotations(request), pk=pk)
     appointment = quotation.appointment
 
     if not (appointment.customer_email or '').strip():

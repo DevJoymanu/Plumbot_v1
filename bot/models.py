@@ -274,6 +274,13 @@ class TenantProfile(models.Model):
     # other per-tenant config fields above. Every key is optional: absent
     # means the quote omits that block, never borrows another tenant's.
     letterhead = models.JSONField(default=dict, blank=True)
+    # This business's own mark. A FileField, not an ImageField: ImageField
+    # needs Pillow (not a dependency here) and would reject SVG, which is the
+    # format most businesses actually have a logo in. Validated on upload
+    # instead - see bot/branding.py, which is also the single place anything
+    # reads it from, so the quote PDF, the quote email, the intake form and the
+    # dashboard can never drift apart or fall back differently.
+    logo = models.FileField(upload_to='tenant_logos/', blank=True, null=True)
 
     def __str__(self):
         return f"Profile · {self.tenant.slug}"
@@ -2960,11 +2967,16 @@ class Job(models.Model):
 
 
 class Quotation(models.Model):
+    # The vocabulary is shared with the post-visit scheduler on purpose: when
+    # that gives up on a lead it marks them cold, and the quote has to be able
+    # to say the same thing. 'rejected' was the old fourth state and said
+    # something stronger than we ever actually know - a lead who stops replying
+    # has not rejected anything - so migration 0078 renames it in place.
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('sent', 'Sent'),
         ('accepted', 'Accepted'),
-        ('rejected', 'Rejected'),
+        ('cold', 'Cold'),
     ]
     
     tenant = _tenant_fk()
@@ -2996,6 +3008,40 @@ class Quotation(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+    def sent_channels(self):
+        """Which channels this quote actually went out on, as labels.
+
+        The two send flags are independent (the plumber may use one, the other
+        or both), so this is a list rather than a single value - 'both' is a
+        real answer, and so is 'not sent yet'.
+        """
+        channels = []
+        if self.sent_via_email:
+            channels.append('Email')
+        if self.sent_via_whatsapp:
+            channels.append('WhatsApp')
+        return channels
+
+    def sent_channel_label(self) -> str:
+        """One-cell summary of the above for the quotes list."""
+        channels = self.sent_channels()
+        if not channels:
+            return 'Not sent'
+        return ' + '.join(channels)
+
+    def lead_name(self) -> str:
+        """The lead this quote is for, for a list row. Never blank: a quote
+        with no name still has to be findable, so the number stands in."""
+        apt = self.appointment
+        if apt is not None:
+            name = (apt.customer_name or '').strip()
+            if name:
+                return name
+            phone = (apt.phone_number or '').replace('whatsapp:', '').strip()
+            if phone:
+                return phone
+        return self.quotation_number or 'Unknown'
 
     def get_display_name(self):
         service = ''
@@ -3105,8 +3151,23 @@ class QuotationItem(models.Model):
 
 
 class QuotationTemplate(models.Model):
-    """Template for creating quotations quickly"""
+    """Template for creating quotations quickly.
+
+    Two kinds, separated by `is_global`:
+      * a CLIENT template belongs to its tenant, and only that tenant sees it;
+      * a GLOBAL template is written by the platform operator and offered to
+        every tenant, read-only, with Duplicate as the way to make it yours.
+
+    A global row still carries a tenant (the FK is non-null platform-wide), but
+    that tenant is only its authorship - `for_user` is what decides visibility,
+    and it must be the single reader, or a tenant-scoped query somewhere else
+    will quietly hide the global set.
+    """
     tenant = _tenant_fk()
+    # Written by the operator, offered to everyone, editable only by them.
+    is_global = models.BooleanField(
+        default=False, db_index=True,
+        help_text="Platform template offered to every tenant, read-only to them")
     name = models.CharField(max_length=200, help_text="Template name (e.g., 'Standard Bathroom Renovation')")
     description = models.TextField(blank=True, help_text="Description of what this template is for")
     project_type = models.CharField(
@@ -3141,17 +3202,62 @@ class QuotationTemplate(models.Model):
         """Calculate estimated total cost from template items"""
         items_total = sum(item.get_line_total() for item in self.items.all())
         return self.default_labor_cost + self.default_transport_cost + items_total
-    
-    def duplicate(self, new_name=None):
-        """Create a copy of this template"""
+
+    # ── Visibility and ownership ─────────────────────────────────────────────
+    #
+    # THE single reader for both questions. Every list, picker and API goes
+    # through these two: a plain .filter(tenant=...) elsewhere would silently
+    # hide every global template, and a plain .all() would leak one tenant's
+    # templates to another.
+
+    @classmethod
+    def for_user(cls, tenant, user=None):
+        """Templates this user may SEE: their own tenant's, plus the global set.
+
+        The platform operator sees everything, because they author the global
+        templates and support every client's own.
+        """
+        from django.db.models import Q
+        from bot.decorators import is_platform_owner
+
+        if user is not None and is_platform_owner(user):
+            return cls.objects.all()
+        if tenant is None:
+            return cls.objects.filter(is_global=True)
+        return cls.objects.filter(Q(tenant=tenant) | Q(is_global=True))
+
+    def editable_by(self, user, tenant=None) -> bool:
+        """May this user change or delete this template?
+
+        A global template is read-only to clients - Duplicate is how they make
+        one theirs - and only the platform operator may edit the global set.
+        """
+        from bot.decorators import is_platform_owner
+
+        if user is None or not getattr(user, 'is_authenticated', False):
+            return False
+        if is_platform_owner(user):
+            return True
+        if self.is_global:
+            return False
+        return tenant is not None and self.tenant_id == getattr(tenant, 'pk', tenant)
+
+    def duplicate(self, new_name=None, tenant=None, created_by=None):
+        """Create a copy of this template.
+
+        `tenant` is how a client takes a global template for themselves: the
+        copy lands in THEIR workspace as an ordinary editable template, never
+        as another global one.
+        """
         new_template = QuotationTemplate.objects.create(
-            tenant=self.tenant,  # a copy stays with its owner (Phase 3.1)
+            tenant=tenant or self.tenant,  # a copy stays with its owner (Phase 3.1)
+            is_global=False,
             name=new_name or f"{self.name} (Copy)",
             description=self.description,
             project_type=self.project_type,
             default_labor_cost=self.default_labor_cost,
             default_transport_cost=self.default_transport_cost,
-            created_by=self.created_by
+            created_by=created_by or self.created_by,
         )
         
         # Copy all items

@@ -174,6 +174,10 @@
         font-weight: 600;
     }
     .pill-active  { background: #d1fae5; color: #059669; }
+    /* A platform template reads as borrowed, not owned: the client can use it
+       and copy it, but it is not theirs to change. */
+    .pill-global  { background: #dbeafe; color: #1d4ed8; margin-left: 6px; }
+    .template-card--global { border-left: 3px solid var(--color-primary-container, #0ea5e9); }
     .pill-inactive { background: var(--color-surface-low); color: var(--color-muted); }
 
     /* Pagination */
@@ -302,15 +306,31 @@
     <!-- Templates Grid -->
     <div class="card">
         <div class="section-header">
-            <p class="card-title" style="margin:0;">All Templates ({{ templates|length }})</p>
+            <p class="card-title" style="margin:0;">All Templates ({{ templates|length }}){% if global_templates %} <span style="font-weight:400;color:var(--color-muted);">&middot; {{ global_templates }} provided by the platform</span>{% endif %}</p>
         </div>
 
         {% if templates %}
         <div class="templates-grid" id="templatesView">
             {% for template in templates %}
-            <div class="template-card">
+            {% comment %}
+            Two kinds of template share this grid. A GLOBAL one is written by
+            the platform and offered to every client read-only: the card says
+            so, and its only write action is Duplicate, which drops an editable
+            copy into the client's own workspace. `editable_ids` is resolved in
+            the view (QuotationTemplate.editable_by), never re-derived here -
+            the server refuses the edit either way, but the UI must not offer a
+            button that 404s.
+            {% endcomment %}
+            <div class="template-card{% if template.is_global %} template-card--global{% endif %}">
                 <div>
-                    <p class="template-name">{{ template.name }}</p>
+                    <p class="template-name">
+                        {{ template.name }}
+                        {% if template.is_global %}
+                        <span class="pill pill-global" title="Provided by the platform for every client">
+                            <i class="fas fa-globe"></i> Global
+                        </span>
+                        {% endif %}
+                    </p>
                     <p class="template-sub">{{ template.get_project_type_display }}</p>
                 </div>
                 <div class="template-meta">
@@ -327,9 +347,16 @@
                 <p style="font-size:12px;color:var(--color-muted);margin:0;">{{ template.description|truncatewords:15 }}</p>
                 {% endif %}
                 <div class="template-footer">
+                    {% if template.pk in editable_ids %}
                     <a href="{% url 'edit_quotation_template' template.pk %}" class="btn-primary btn-sm">
                         <i class="fas fa-edit"></i> Edit
                     </a>
+                    {% else %}
+                    <a href="{% url 'duplicate_template' template.pk %}" class="btn-primary btn-sm"
+                       title="Global templates are read-only. Make your own copy to change it.">
+                        <i class="fas fa-copy"></i> Duplicate to edit
+                    </a>
+                    {% endif %}
                     <button type="button" onclick="quickUseTemplate({{ template.pk }})" class="btn-success btn-sm">
                         <i class="fas fa-plus-circle"></i> Use
                     </button>
